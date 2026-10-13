@@ -1,0 +1,114 @@
+[
+  {
+    "phase": "before",
+    "functions": 105,
+    "stored_instructions": 9469,
+    "hypothetical_fully_inlined_instructions": 290625,
+    "largest": [
+      [
+        "%main",
+        290625
+      ],
+      [
+        "%pev_admit_catalog_implementation",
+        280170
+      ],
+      [
+        "%pev_admit_implementation",
+        252883
+      ],
+      [
+        "%pev_admit_goal_roots",
+        210303
+      ],
+      [
+        "%pev_admit_catalog_definition_root",
+        103173
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        103164
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        20562
+      ],
+      [
+        "%pev_admit_catalog_atom",
+        19321
+      ],
+      [
+        "%pev_admit_owner_chain",
+        15865
+      ],
+      [
+        "%pev_parameter_visible",
+        15543
+      ],
+      [
+        "%pev_node_is_valid",
+        12897
+      ],
+      [
+        "%pev_owner_row_is_valid",
+        7314
+      ]
+    ]
+  },
+  {
+    "phase": "after",
+    "functions": 88,
+    "stored_instructions": 7348,
+    "hypothetical_fully_inlined_instructions": 77399,
+    "largest": [
+      [
+        "%main",
+        77399
+      ],
+      [
+        "%pev_admit_catalog_implementation",
+        66944
+      ],
+      [
+        "%pev_admit_implementation",
+        39657
+      ],
+      [
+        "%pev_admit_goal_roots",
+        23523
+      ],
+      [
+        "%pev_admit_catalog_atom",
+        19321
+      ],
+      [
+        "%pev_admit_catalog_definition_root",
+        10503
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        10494
+      ],
+      [
+        "%pev_catalog_parameter",
+        6388
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        5189
+      ],
+      [
+        "%pev_catalog_admission_row",
+        4222
+      ],
+      [
+        "%pev_write_status",
+        3122
+      ],
+      [
+        "%pev_catalog_binder",
+        3093
+      ]
+    ]
+  }
+]

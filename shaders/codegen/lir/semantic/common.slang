@@ -1,5 +1,7 @@
+import primitive_types;
 import hir_records;
 import codegen.lowering_ir;
+import codegen.lir.semantic.match_recipe;
 
 
 static const uint LIR_INVALID = 0xffffffffu;
@@ -170,7 +172,7 @@ uint semantic_lir_row_count(HirCore core, HirPayload payload)
 }
 
 uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
-                           uint row_count)
+                           uint row_count, uint match_address_loads = 0u)
 {
     if (semantic_lir_is_short_circuit(core, payload))
     {
@@ -182,25 +184,8 @@ uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
         return SEMANTIC_LIR_OP_VALUE_GET;
     }
     if (core.kind == HIR_MATCH_EXPR)
-    {
-        if (local_row + 1u == row_count) return SEMANTIC_LIR_OP_VALUE_GET;
-        if (local_row == 0u) return SEMANTIC_LIR_OP_VALUE_SET;
-        if (local_row == 1u) return SEMANTIC_LIR_OP_BLOCK_BEGIN;
-        if (local_row + 3u >= row_count)
-        {
-            return local_row + 3u == row_count
-                ? SEMANTIC_LIR_OP_TRAP : SEMANTIC_LIR_OP_CONTROL_END;
-        }
-        uint arm_row = (local_row - 2u) % 8u;
-        if (arm_row == 0u) return SEMANTIC_LIR_OP_VALUE_GET;
-        if (arm_row == 1u) return SEMANTIC_LIR_OP_LOAD;
-        if (arm_row == 2u) return SEMANTIC_LIR_OP_CONST_I32;
-        if (arm_row == 3u) return SEMANTIC_LIR_OP_COMPARE;
-        if (arm_row == 4u) return SEMANTIC_LIR_OP_IF_BEGIN;
-        if (arm_row == 5u) return SEMANTIC_LIR_OP_VALUE_SET;
-        if (arm_row == 6u) return SEMANTIC_LIR_OP_BRANCH;
-        return SEMANTIC_LIR_OP_CONTROL_END;
-    }
+        return semantic_match_op(
+            semantic_match_recipe_from_count(row_count, match_address_loads), local_row);
     if (semantic_lir_is_assignment(core, payload))
     {
         if (payload.d == HIR_ASSIGN_OP_SET) return SEMANTIC_LIR_OP_STORE;
@@ -286,7 +271,7 @@ uint semantic_lir_op(HirCore core, HirPayload payload)
 
 uint semantic_lir_type(uint packed_type)
 {
-    return packed_type >> 28u;
+    return packed_type >> SCALAR_TYPE_SHIFT;
 }
 
 uint comparison_predicate(uint form)

@@ -1,0 +1,1 @@
+import core::closes; fn main() -> i32 { let v: core::closes::Id<core::closes::Id<i32>> = 42; return v - 42; }

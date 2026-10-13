@@ -20,7 +20,7 @@ use laniusc_compiler::{
         SourcePackHierarchicalLinkExecutionPage,
         SourcePackHierarchicalLinkGroupKind,
         SourcePackLinkDescriptorSummary,
-        compile_entry_to_wasm_with_stdlib,
+        compile_entry_to_x86_64_with_stdlib,
         diagnostic_explanation_json_pretty,
         load_entry_path_manifest_with_stdlib,
         runtime_bound_api_diagnostic_info,
@@ -2444,19 +2444,24 @@ fn main() {
         "path manifest should include core::bool from the stdlib root"
     );
 
-    let wasm = common::run_gpu_codegen_with_timeout(
-        "GPU WASM compile stdlib-root core::bool public helpers",
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "GPU x86 compile stdlib-root core::bool public helpers",
         {
             let entry_path = entry.path().to_path_buf();
             let stdlib_root = stdlib_root.clone();
-            move || pollster::block_on(compile_entry_to_wasm_with_stdlib(entry_path, stdlib_root))
+            move || pollster::block_on(compile_entry_to_x86_64_with_stdlib(entry_path, stdlib_root))
         },
     )
-    .expect("core::bool stdlib-root helpers should compile to WASM");
-    assert_eq!(
-        common::run_wasm_main_return_with_node("core::bool stdlib helpers", "core_bool", &wasm),
-        0
-    );
+    .expect("core::bool stdlib-root helpers should compile to x86");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "core::bool stdlib helpers", "core_bool", &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
 }
 
 #[test]
@@ -3322,7 +3327,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::i64");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
         assert!(
             manifest
                 .files
@@ -3368,7 +3373,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::i64");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
         assert!(
             manifest
                 .files
@@ -5570,7 +5575,9 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert!(manifest.files.iter().any(|file| {
+        file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
+    }));
     assert!(
         runtime_bound_api_diagnostic_info("std::path::path_byte_is_ascii_digit").is_none(),
         "std::path::path_byte_is_ascii_digit is a source-level helper and must not claim a runtime binding"
@@ -5632,7 +5639,9 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert!(manifest.files.iter().any(|file| {
+        file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
+    }));
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::path Unix hidden-component helper",
@@ -7347,53 +7356,6 @@ fn main() {
 }
 
 #[test]
-fn core_option_or_type_checks_through_stdlib_root_without_runtime_binding() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "option_or", Some("lani"));
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::option;
-
-fn main() {
-    let primary: core::option::Option<i32> = core::option::Some(7);
-    let fallback: core::option::Option<i32> = core::option::Some(11);
-    let selected: core::option::Option<i32> = core::option::or(primary, fallback);
-    let selected_value: i32 = core::option::unwrap_or(selected, 0);
-    let empty: core::option::Option<i32> = core::option::None;
-    let recovered: core::option::Option<i32> =
-        core::option::or(empty, core::option::Some(5));
-    let recovered_value: i32 = core::option::unwrap_or(recovered, 0);
-    if (selected_value != 7 || recovered_value != 5) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::option import");
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")
-        }),
-        "path manifest should include core::option from the stdlib root"
-    );
-    assert!(
-        runtime_bound_api_diagnostic_info("core::option::or").is_none(),
-        "core::option::or is a source-level helper and must not claim a runtime binding"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core::option::or helper",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect("core::option::or should type check through --stdlib-root");
-}
-
-#[test]
 fn core_result_or_type_checks_through_stdlib_root_without_runtime_binding() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "result_or", Some("lani"));
@@ -7546,7 +7508,7 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(manifest.files.len(), 4);
     for helper_name in [
         "core::option::contains_i32",
         "core::result::contains_i32",
@@ -7572,7 +7534,7 @@ fn main() {
 }
 
 #[test]
-fn core_option_result_and_type_checks_through_stdlib_root_without_runtime_binding() {
+fn core_result_and_type_checks_through_stdlib_root_without_runtime_binding() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry =
         common::TempArtifact::new("laniusc_stdlib_runtime", "option_result_and", Some("lani"));
@@ -7580,22 +7542,9 @@ fn core_option_result_and_type_checks_through_stdlib_root_without_runtime_bindin
         r#"
 module app::main;
 
-import core::option;
 import core::result;
 
 fn main() {
-    let option_primary: core::option::Option<i32> = core::option::Some(7);
-    let option_next: core::option::Option<i32> = core::option::Some(11);
-    let option_selected: core::option::Option<i32> =
-        core::option::and(option_primary, option_next);
-    let option_selected_value: i32 =
-        core::option::unwrap_or(option_selected, 0);
-    let option_empty: core::option::Option<i32> = core::option::None;
-    let option_blocked: core::option::Option<i32> =
-        core::option::and(option_empty, core::option::Some(13));
-    let option_blocked_value: i32 =
-        core::option::unwrap_or(option_blocked, 0);
-
     let result_primary: core::result::Result<i32, bool> = core::result::Ok(3);
     let result_next: core::result::Result<i32, bool> = core::result::Ok(5);
     let result_selected: core::result::Result<i32, bool> =
@@ -7609,9 +7558,6 @@ fn main() {
     let result_blocked_value: i32 =
         core::result::unwrap_or(result_blocked, 0);
 
-    if (option_selected_value != 11 || option_blocked_value != 0) {
-        return 1;
-    }
     if (result_selected_value != 5 || result_blocked_value != 0) {
         return 1;
     }
@@ -7621,21 +7567,15 @@ fn main() {
     );
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core option/result imports");
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")
-        }),
-        "path manifest should include core::option from the stdlib root"
-    );
+        .expect("stdlib-root path manifest should load core result imports");
     assert!(
         manifest.files.iter().any(|file| {
             file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
-    for helper_name in ["core::option::and", "core::result::and"] {
+    assert_eq!(manifest.files.len(), 2);
+    for helper_name in ["core::result::and"] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),
             "{helper_name} is a source-level helper and must not claim a runtime binding"
@@ -7643,8 +7583,8 @@ fn main() {
     }
 
     common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core option/result and helpers",
+        "GPU type check stdlib-root core result and helpers",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core option/result and helpers should type check through --stdlib-root");
+    .expect("core result and helpers should type check through --stdlib-root");
 }

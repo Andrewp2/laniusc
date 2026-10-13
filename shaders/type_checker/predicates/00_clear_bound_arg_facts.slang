@@ -21,10 +21,11 @@ RWStructuredBuffer<uint> predicate_trait_impl_trait_type_node;
 RWStructuredBuffer<uint> predicate_owner_node;
 RWStructuredBuffer<uint> predicate_subject_token;
 RWStructuredBuffer<uint> predicate_bound_token;
-RWStructuredBuffer<uint> predicate_bound_decl_id;
+RWStructuredBuffer<uint> predicate_bound_reference;
 RWStructuredBuffer<uint> predicate_method_contract_owner_count;
 RWStructuredBuffer<uint> predicate_method_contract_lookup_head;
 RWStructuredBuffer<uint> predicate_method_validation_status;
+RWStructuredBuffer<uint> predicate_method_validation_required_symbol;
 RWStructuredBuffer<uint> predicate_method_validation_first_error_row;
 RWStructuredBuffer<uint> predicate_owner_lookup_head;
 RWStructuredBuffer<uint> predicate_owner_lookup_next;
@@ -91,7 +92,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_owner_node[node] = INVALID;
     predicate_subject_token[node] = INVALID;
     predicate_bound_token[node] = INVALID;
-    predicate_bound_decl_id[node] = INVALID;
+    predicate_bound_reference[node] = INVALID;
     predicate_method_validation_status[node] = INVALID;
+    predicate_method_validation_required_symbol[node] = INVALID;
     predicate_method_validation_first_error_row[node] = INVALID;
 }

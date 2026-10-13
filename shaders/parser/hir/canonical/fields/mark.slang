@@ -7,6 +7,9 @@ StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> decl_owner;
 StructuredBuffer<uint> literal_owner;
+StructuredBuffer<uint> decl_ordinal;
+StructuredBuffer<uint> literal_ordinal;
+StructuredBuffer<uint> alias_to_hir;
 StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
@@ -33,5 +36,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (anchor >= gCanonical.canonical_capacity) return;
     uint ignored;
     InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
-    InterlockedMax(family_flag[anchor], 1u, ignored);
+    // Prefix owner counts so nested literal fields cannot interrupt their
+    // parent's range. Max ordinal also deduplicates grammar candidates that
+    // share the same source anchor.
+    uint raw_owner = declaration ? decl_owner[raw] : literal_owner[literal_row];
+    uint owner = raw_owner < gCanonical.raw_capacity ? alias_to_hir[raw_owner] : INVALID;
+    uint ordinal = declaration ? decl_ordinal[raw] : literal_ordinal[raw];
+    if (owner < gCanonical.canonical_capacity && ordinal != INVALID)
+        InterlockedMax(family_flag[owner], ordinal + 1u, ignored);
 }

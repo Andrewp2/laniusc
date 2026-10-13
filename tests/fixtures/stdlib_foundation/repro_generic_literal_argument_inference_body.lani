@@ -1,0 +1,18 @@
+fn choose<T>(left: T, right: T, first: bool) -> T {
+    if (first) { return left; }
+    return right;
+}
+
+fn inspect<T>(value: T) -> u32 {
+    let known: u32 = 4294967295;
+    let selected = choose(1, known, false);
+    return selected;
+}
+
+fn main() -> i32 {
+    if (inspect(false) / 2 != 2147483647) { return 1; }
+    if (inspect("string λ") / 2 != 2147483647) { return 2; }
+    let values: [i32; 2] = [1, 2];
+    if (inspect(values) / 2 != 2147483647) { return 3; }
+    return 0;
+}

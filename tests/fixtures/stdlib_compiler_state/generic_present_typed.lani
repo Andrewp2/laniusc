@@ -1,0 +1,1 @@
+import core::option; fn present<T>(value:T)->core::option::Option<T> { let v:core::option::Option<T> = core::option::Some(value); return v; } fn main()->i32 { let v:core::option::Option<i32> = present(42); return core::option::unwrap_or(v,0)-42; }

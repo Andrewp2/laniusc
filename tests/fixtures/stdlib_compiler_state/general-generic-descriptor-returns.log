@@ -1,0 +1,48 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 55.92s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 5 tests
+test generic_calls_forward_concrete_record_and_slice_types ... FAILED
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... FAILED
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... FAILED
+
+failures:
+
+---- generic_calls_forward_concrete_record_and_slice_types stdout ----
+
+thread 'generic_calls_forward_concrete_record_and_slice_types' (687145) panicked at tests/compiler_generic_types_execution.rs:15:5:
+assertion `left == right` failed: generic forwarding: Output { status: ExitStatus(unix_wait_status(768)), stdout: "", stderr: "" }
+  left: Some(3)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- imported_option_generic_functions_preserve_borrowed_slice_payloads stdout ----
+
+thread 'imported_option_generic_functions_preserve_borrowed_slice_payloads' (687167) panicked at tests/compiler_generic_types_execution.rs:15:5:
+assertion `left == right` failed: imported optional descriptor: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+
+---- local_generic_value_functions_preserve_borrowed_slices stdout ----
+
+thread 'local_generic_value_functions_preserve_borrowed_slices' (687197) panicked at tests/compiler_generic_types_execution.rs:15:5:
+assertion `left == right` failed: local borrowed descriptor: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+
+
+failures:
+    generic_calls_forward_concrete_record_and_slice_types
+    imported_option_generic_functions_preserve_borrowed_slice_payloads
+    local_generic_value_functions_preserve_borrowed_slices
+
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.19s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

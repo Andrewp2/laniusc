@@ -1,0 +1,16 @@
+
+running 2 tests
+test generic_nested_condition_headers_preserve_branches_and_loop_effects ... 
+thread 'generic_nested_condition_headers_preserve_branches_and_loop_effects' (70933) panicked at tests/compiler_generic_types_execution.rs:136:29:
+generic nested condition ownership and runtime effects: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 85, length: 4, byte_start: Some(538), byte_end: Some(542), source_line: Some("    let record: core::option::Option<Cell<bool>> = core::option::Some(Cell { value: true });"), message: "value type is bool but this context expects generic parameter 0" }), help: None, notes: ["expected generic parameter 0, found bool; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test ordinary_match_in_condition_header_executes ... ok
+
+failures:
+
+failures:
+    generic_nested_condition_headers_preserve_branches_and_loop_effects
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 193 filtered out; finished in 2.02s
+

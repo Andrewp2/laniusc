@@ -1,0 +1,33 @@
+// Returning an optional borrowed view must preserve the input length and tag.
+module app::main;
+import core::mem;
+import core::option;
+
+fn count_values(values: [i32]) -> i32 {
+    let count: i32 = 0;
+    for value in values { count = count + 1; }
+    return count;
+}
+
+fn nonempty(values: [i32]) -> core::option::Option<[i32]> {
+    let absent: core::option::Option<[i32]> = core::option::None();
+    let count: i32 = 0;
+    for value in values { count = count + 1; }
+    if (count == 0) { return absent; }
+    let present: core::option::Option<[i32]> = core::option::Some(values);
+    return present;
+}
+
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let data: ptr = core::mem::i32_array_data_ptr(backing);
+    let values: [i32] = core::mem::i32_slice_from_raw_parts(data, 3);
+    let empty: [i32] = core::mem::i32_slice_from_raw_parts(data, 0);
+    if (count_values(empty) != 0) { return 1; }
+    if (count_values(values) != 3) { return 2; }
+    let present: core::option::Option<[i32]> = nonempty(values);
+    let absent: core::option::Option<[i32]> = nonempty(empty);
+    if (!present.is_some()) { return 3; }
+    if (!absent.is_none()) { return 4; }
+    return 0;
+}

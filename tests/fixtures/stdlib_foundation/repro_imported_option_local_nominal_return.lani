@@ -1,0 +1,14 @@
+module app::main;
+import core::option;
+struct Pair { first: i32, second: i32 }
+fn make_pair() -> core::option::Option<Pair> {
+    let pair: Pair = Pair { first: 7, second: 9 };
+    let present: core::option::Option<Pair> = core::option::Some(pair);
+    return present;
+}
+fn main() -> i32 {
+    let value: core::option::Option<Pair> = make_pair();
+    let second: i32 = match (value) { core::option::Some(inner) -> inner.second, core::option::None -> 0 };
+    if (second != 9) { return 1; }
+    return 0;
+}

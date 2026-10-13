@@ -22,6 +22,7 @@ static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 static const int INF = 2147483647;
 groupshared int local_depth[256];
 
@@ -41,7 +42,8 @@ bool is_angle_open(uint kind)
 bool is_angle_close(uint kind)
 {
     return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_GENERIC_PARAM_GT ||
-           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
+           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT ||
+           kind == TK_MEMBER_TYPE_ARG_GT;
 }
 
 [shader("compute")]

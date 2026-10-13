@@ -1,0 +1,16 @@
+
+running 1 test
+test generic_aliases_preserve_mixed_compositions_and_empty_values ... GPU source-pack type-check rejection: token=137 code=AssignMismatch detail=0
+
+thread 'generic_aliases_preserve_mixed_compositions_and_empty_values' (37031) panicked at tests/compiler_generic_types_execution.rs:141:29:
+mixed composed aliases: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_mixed_composed_aliases_37030_2.lani", line: 7, column: 74, length: 5, byte_start: Some(328), byte_end: Some(333), source_line: Some("fn keep<T, const N: usize>(value: Packed<T, N>) -> Packed<T, N> { return value; }"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_aliases_preserve_mixed_compositions_and_empty_values
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 294 filtered out; finished in 2.26s
+

@@ -8,19 +8,25 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
+StructuredBuffer<HirMethodSignature> compact_method_signatures;
+#include "function_method.slang"
 StructuredBuffer<uint> compact_expr_root;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
-StructuredBuffer<uint> semantic_value_const_by_hir;
+StructuredBuffer<uint2> semantic_value_const_by_hir;
 StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
 StructuredBuffer<uint> semantic_function_id_by_token;
+StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<uint> semantic_const_function_by_root;
 RWStructuredBuffer<uint> semantic_value_id;
@@ -55,7 +61,27 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
+#include "function_generic_environment.slang"
+
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+
+uint local_function_hir(uint start, uint count)
+{
+    uint lo = 0u;
+    uint hi = count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_hir_core[mid].token_start < start) lo = mid + 1u;
+        else hi = mid;
+    }
+    while (lo < count && compact_hir_core[lo].token_start == start)
+    {
+        if (compact_hir_core[lo].kind == 3u) return lo;
+        lo++;
+    }
+    return INVALID;
+}
 
 uint unit_variant_ordinal(uint declaration_token)
 {
@@ -100,13 +126,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     semantic_function_id[node] = hir_function < gParams.n_hir_nodes &&
         semantic_function_flag[hir_function] != 0u
         ? semantic_function_prefix[hir_function] : INVALID;
-    if (semantic_function_flag[node] != 0u && core.kind == HIR_CONST_ITEM)
+    if (semantic_function_flag[node] != 0u && (core.kind == HIR_CONST_ITEM || core.kind == 3u))
         semantic_function_id[node] = semantic_function_prefix[node];
     if (semantic_function_id[node] == INVALID)
     {
         uint root = compact_expr_root[node];
         if (root < count) semantic_function_id[node] = semantic_const_function_by_root[root];
     }
+    // Deferred templates retain checked metadata but own no executable calls
+    // or argument rows in this unit.
+    if (semantic_function_id[node] == INVALID) return;
     if (core.kind == HIR_CALL_EXPR && valid_token(core.token_start))
     {
         CheckedCallArtifact checked = semantic_calls_by_hir[node];
@@ -125,7 +154,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint target = valid_token(checked.target_token)
                 ? semantic_function_id_by_token[checked.target_token] : INVALID;
-            if (target != INVALID)
+            uint declaration = local_function_hir(checked.target_token, count);
+            bool generic = function_has_generic_environment(declaration, count);
+            if (target != INVALID && !generic)
             {
                 SemanticLirFunction function = semantic_lir_functions[target];
                 uint service = function.host_service;
@@ -134,6 +165,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 semantic_call_target[node] = service != INVALID ? service : target;
                 semantic_call_result_type[node] = function.result_type;
                 semantic_call_receiver[node] = checked.receiver_hir;
+            }
+            else
+            {
+                if (declaration < count)
+                {
+                    // Resolve this source-local deferred body at the object
+                    // boundary using the unit identity supplied to emission.
+                    semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
+                    semantic_call_symbol_library_id[node] = INVALID;
+                    semantic_call_symbol_unit_id[node] = INVALID;
+                    semantic_call_symbol_local_index[node] = local_function_symbol(
+                        declaration, count, public_decl_index_by_hir[declaration], checked.target_token);
+                    semantic_call_result_type[node] = checked.return_type;
+                    semantic_call_receiver[node] = checked.receiver_hir;
+                }
             }
         }
         else if (checked.callable_kind == CHECKED_CALLABLE_DEPENDENCY)
@@ -168,7 +214,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
              semantic_value_const_present_by_hir[node] == IMPORTED_UNIT_VARIANT_PRESENT)
     {
         semantic_call_kind[node] = SEMANTIC_CALL_ENUM_CONSTRUCTOR;
-        semantic_call_target[node] = semantic_value_const_by_hir[node];
+        semantic_call_target[node] = semantic_value_const_by_hir[node].x;
         semantic_call_result_type[node] = semantic_value_type[node];
     }
     else if (semantic_value_const_present_by_hir[node] != 0x80000000u &&

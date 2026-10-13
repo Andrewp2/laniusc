@@ -1,0 +1,39 @@
+module app::main;
+import core::mem;
+import core::option;
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let data: ptr = core::mem::i32_array_data_ptr(backing);
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(data, 3);
+    let present: core::option::Option<[i32]> = core::option::Some(view);
+    if (!present.is_some() || present.is_none()) { return 1; }
+    let absent: core::option::Option<[i32]> = core::option::None();
+    if (absent.is_some() || !absent.is_none()) { return 2; }
+    if (!core::option::is_some(present) || !core::option::is_none(absent)) { return 6; }
+    let empty: [i32] = core::mem::i32_slice_from_raw_parts(data, 0);
+    let present_empty: core::option::Option<[i32]> = core::option::Some(empty);
+    if (!present_empty.is_some() || present_empty.is_none()) { return 7; }
+    let empty_recovered: [i32] = match (present_empty) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> view,
+    };
+    let empty_count: i32 = 0;
+    for value in empty_recovered { empty_count = empty_count + 1; }
+    if (empty_count != 0) { return 8; }
+    let recovered: [i32] = match (present) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> view,
+    };
+    if (recovered[0] != 4 || recovered[1] != 7 || recovered[2] != -9) { return 3; }
+    recovered[1] = 20;
+    if (backing[1] != 20) { return 4; }
+    let total: i32 = 0;
+    for value in recovered { total = total + value; }
+    if (total != 15) { return 5; }
+    let fallback: [i32] = match (absent) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> view,
+    };
+    if (fallback[1] != 20) { return 9; }
+    return 0;
+}

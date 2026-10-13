@@ -1181,6 +1181,13 @@ mod tests {
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.param_count", &[2]);
         let semantic_local_count =
             storage_ro_from_u32s(&gpu.device, "test.wasm_stage.local_count", &[2]);
+        let place_storage_by_token = storage_ro_from_u32s(
+            &gpu.device,
+            "test.place_storage_by_token",
+            &vec![0u32; capacities.declaration_capacity() as usize * 4],
+        );
+        let param_value_layout =
+            storage_ro_from_u32s(&gpu.device, "test.parameter_value_layout", &[0u32; 128]);
         macro_rules! semantic_view {
             ($status:expr, $order:expr) => {
                 GpuSemanticLirView {
@@ -1203,6 +1210,8 @@ mod tests {
                     functions: &semantic_functions,
                     function_count: &semantic_function_count,
                     params: &semantic_params,
+                    param_value_layout: &param_value_layout,
+                    place_storage_by_token: &place_storage_by_token,
                     param_count: &semantic_param_count,
                     locals: &semantic_locals,
                     local_count: &semantic_local_count,

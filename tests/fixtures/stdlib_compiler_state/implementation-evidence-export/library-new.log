@@ -1,0 +1,14 @@
+
+running 9 tests
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_constant_operand_substitutes_array_length ... ok
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_keeps_imported_nominal_subject_identity ... ok
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_marker_trait_requires_no_callable_binding ... ok
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_rebases_tagged_owners_without_rebasing_symbols ... ok
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_rejects_corrupt_ownership_identity_and_bindings ... ok
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_rejects_generic_headers_and_prerequisites_explicitly ... ok
+test compiler::semantic_interface::implementation_evidence::tests::implementation_evidence_roundtrip_retains_compound_subject_and_private_callable ... ok
+test compiler::tests::imported_trait_contracts_survive_page_order_and_workspace_reuse ... ok
+test type_checker::dependency_interface::tests::dependency_page_preserves_callable_predicate_identity_and_graph_roots ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 649 filtered out; finished in 3.23s
+

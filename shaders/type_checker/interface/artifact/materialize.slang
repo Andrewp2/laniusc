@@ -1,3 +1,4 @@
+import semantic_interface_layout;
 // Materialize the exact persisted semantic-interface byte stream on the GPU.
 // Every lane copies one row from each compact table when that row is active;
 // the host reads only the byte length written by lane zero.
@@ -17,6 +18,11 @@ struct Params
     uint artifact_word_capacity;
     uint unit_id;
     uint version;
+    uint predicate_capacity;
+    uint predicate_argument_capacity;
+    uint implementation_capacity;
+    uint implementation_argument_capacity;
+    uint implementation_method_binding_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -32,6 +38,21 @@ StructuredBuffer<uint> interface_edges;
 StructuredBuffer<uint> interface_edge_written;
 StructuredBuffer<uint> interface_member_words;
 StructuredBuffer<uint> interface_member_written;
+StructuredBuffer<uint> interface_predicate_total;
+StructuredBuffer<uint> interface_predicate_argument_total;
+StructuredBuffer<uint> interface_predicate_words;
+StructuredBuffer<uint> interface_predicate_written;
+StructuredBuffer<uint> interface_predicate_arguments;
+StructuredBuffer<uint> interface_predicate_argument_written;
+StructuredBuffer<uint> interface_implementation_total;
+StructuredBuffer<uint> interface_implementation_argument_total;
+StructuredBuffer<uint> interface_implementation_method_total;
+StructuredBuffer<uint> interface_implementation_words;
+StructuredBuffer<uint> interface_implementation_written;
+StructuredBuffer<uint> interface_implementation_arguments;
+StructuredBuffer<uint> interface_implementation_argument_written;
+StructuredBuffer<uint> interface_implementation_method_binding_words;
+StructuredBuffer<uint> interface_implementation_method_binding_written;
 StructuredBuffer<uint> interface_name_byte_words;
 RWStructuredBuffer<uint> interface_status;
 RWStructuredBuffer<uint> interface_artifact_words;
@@ -44,7 +65,7 @@ static const uint MODULE_WORDS = 2u;
 static const uint MODULE_SEGMENT_WORDS = 4u;
 static const uint DECLARATION_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
-static const uint MEMBER_WORDS = 11u;
+static const uint MEMBER_WORDS =SEMANTIC_INTERFACE_MEMBER_WORDS;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -78,6 +99,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint type_count = interface_complete_type_count[0u];
     uint edge_count = interface_complete_edge_total[0u];
     uint member_count = interface_member_total[0u];
+    uint predicate_count = interface_predicate_total[0u];
+    uint predicate_argument_count = interface_predicate_argument_total[0u];
+    uint implementation_count = interface_implementation_total[0u];
+    uint implementation_argument_count = interface_implementation_argument_total[0u];
+    uint implementation_method_binding_count = interface_implementation_method_total[0u];
 
     bool valid = module_count <= gParams.module_capacity
               && module_segment_count <= gParams.module_segment_capacity
@@ -85,6 +111,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
               && type_count <= gParams.type_capacity
               && edge_count <= gParams.edge_capacity
               && member_count <= gParams.member_capacity
+              && predicate_count <= gParams.predicate_capacity
+              && predicate_argument_count <= gParams.predicate_argument_capacity
+              && implementation_count <= gParams.implementation_capacity
+              && implementation_argument_count <= gParams.implementation_argument_capacity
+              && implementation_method_binding_count <= gParams.implementation_method_binding_capacity
               && name_byte_count <= gParams.name_byte_capacity;
     uint module_start = HEADER_WORDS;
     uint module_segment_start = module_start + module_count * MODULE_WORDS;
@@ -92,7 +123,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint type_start = declaration_start + declaration_count * DECLARATION_WORDS;
     uint edge_start = type_start + type_count * TYPE_WORDS;
     uint member_start = edge_start + edge_count;
-    uint name_start = member_start + member_count * MEMBER_WORDS;
+    uint predicate_start = member_start + member_count * MEMBER_WORDS;
+    uint predicate_argument_start = predicate_start + predicate_count * SEMANTIC_INTERFACE_PREDICATE_WORDS;
+    uint implementation_start = predicate_argument_start + predicate_argument_count;
+    uint implementation_argument_start = implementation_start + implementation_count * SEMANTIC_INTERFACE_IMPLEMENTATION_WORDS;
+    uint implementation_method_binding_start = implementation_argument_start + implementation_argument_count;
+    uint name_start = implementation_method_binding_start + implementation_method_binding_count * SEMANTIC_INTERFACE_IMPLEMENTATION_METHOD_BINDING_WORDS;
     uint artifact_words = name_start + (name_byte_count + 3u) / 4u;
     valid = valid && artifact_words <= gParams.artifact_word_capacity;
     if (!valid)
@@ -107,7 +143,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 (edge_count > gParams.edge_capacity ? 16u : 0u) |
                 (member_count > gParams.member_capacity ? 32u : 0u) |
                 (name_byte_count > gParams.name_byte_capacity ? 64u : 0u) |
-                (artifact_words > gParams.artifact_word_capacity ? 128u : 0u);
+                (artifact_words > gParams.artifact_word_capacity ? 128u : 0u) |
+                (predicate_count > gParams.predicate_capacity ? 256u : 0u) |
+                (predicate_argument_count > gParams.predicate_argument_capacity ? 512u : 0u) |
+                (implementation_count > gParams.implementation_capacity ? 1024u : 0u) |
+                (implementation_argument_count > gParams.implementation_argument_capacity ? 2048u : 0u) |
+                (implementation_method_binding_count > gParams.implementation_method_binding_capacity ? 4096u : 0u);
             interface_artifact_length[0u] = 0u;
         }
         return;
@@ -119,6 +160,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (row < member_count && interface_member_written[row] != 1u)
         atomic_u32_or(interface_status, 0u, 0x40000000u);
+
+    if ((row < predicate_count && interface_predicate_written[row] != 1u) ||
+        (row < predicate_argument_count && interface_predicate_argument_written[row] != 1u))
+    {
+        atomic_u32_or(interface_status, 0u, 65536u);
+        atomic_u32_min(interface_status, 1u, row);
+    }
+
+    if ((row < implementation_count && interface_implementation_written[row] != 1u) ||
+        (row < implementation_argument_count && interface_implementation_argument_written[row] != 1u) ||
+        (row < implementation_method_binding_count && interface_implementation_method_binding_written[row] != 1u))
+    {
+        atomic_u32_or(interface_status, 0u, 131072u);
+        atomic_u32_min(interface_status, 1u, row);
+    }
 
     if (row == 0u)
     {
@@ -134,8 +190,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         interface_artifact_words[9u] = member_count;
         interface_artifact_words[10u] = name_byte_count;
         interface_artifact_words[11u] = gParams.unit_id;
-        for (uint word = 12u; word < HEADER_WORDS; ++word)
-            interface_artifact_words[word] = 0u;
+        interface_artifact_words[12u] = predicate_count;
+        interface_artifact_words[13u] = predicate_argument_count;
+        interface_artifact_words[14u] = implementation_count;
+        interface_artifact_words[15u] = implementation_argument_count;
+        interface_artifact_words[16u] = implementation_method_binding_count;
+        interface_artifact_words[17u] = 0u;
         interface_artifact_length[0u] = name_start * 4u + name_byte_count;
     }
 
@@ -155,6 +215,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     copy_words(row, type_count, TYPE_WORDS, type_start, interface_types);
     copy_words(row, edge_count, 1u, edge_start, interface_edges);
     copy_words(row, member_count, MEMBER_WORDS, member_start, interface_member_words);
+    copy_words(row, predicate_count, SEMANTIC_INTERFACE_PREDICATE_WORDS, predicate_start, interface_predicate_words);
+    copy_words(row, predicate_argument_count, 1u, predicate_argument_start, interface_predicate_arguments);
+    copy_words(row, implementation_count, SEMANTIC_INTERFACE_IMPLEMENTATION_WORDS, implementation_start, interface_implementation_words);
+    copy_words(row, implementation_argument_count, 1u, implementation_argument_start, interface_implementation_arguments);
+    copy_words(row, implementation_method_binding_count, SEMANTIC_INTERFACE_IMPLEMENTATION_METHOD_BINDING_WORDS,
+        implementation_method_binding_start, interface_implementation_method_binding_words);
     copy_words(
         row,
         (name_byte_count + 3u) / 4u,

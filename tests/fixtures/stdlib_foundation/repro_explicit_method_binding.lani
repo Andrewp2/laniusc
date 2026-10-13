@@ -1,0 +1,7 @@
+struct Box<T> { value: T }
+impl<T> Box<T> {
+    fn make<U>(value: U) -> U { return value; }
+}
+fn main() -> i32 {
+    return Box<bool>::make<i32>(42);
+}

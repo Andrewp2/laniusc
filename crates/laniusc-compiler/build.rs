@@ -19,6 +19,7 @@ fn main() {
 
     let workspace_root = workspace_root();
     generate_lowering_ir_opcodes(&workspace_root);
+    generate_primitive_type_constants(&workspace_root);
     let slangc_version_timeout = timeout_from_env_ms(
         "LANIUS_SLANGC_VERSION_TIMEOUT_MS",
         DEFAULT_SLANGC_VERSION_TIMEOUT_MS,
@@ -58,6 +59,31 @@ fn main() {
         "cargo:rustc-env=LANIUS_SHADER_ARTIFACT_ROOT={}",
         shader_artifact_root(&workspace_root).display()
     );
+}
+
+fn generate_primitive_type_constants(workspace_root: &Path) {
+    let source = workspace_root.join("shaders/primitive_types.slang");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let text = fs::read_to_string(&source).expect("read primitive type schema");
+    let mut generated = String::from("// Generated from shaders/primitive_types.slang.\n");
+    let mut marked = false;
+    let mut count = 0;
+    for line in text.lines().map(str::trim) {
+        if line == "// PRIMITIVE_CONSTANT" { marked = true; continue; }
+        if !marked { continue; }
+        marked = false;
+        let declaration = line.strip_prefix("public static const uint ")
+            .expect("PRIMITIVE_CONSTANT must precede a public uint constant");
+        let (name, value) = declaration.split_once('=').expect("primitive constant declaration");
+        let name = name.trim();
+        let value = value.trim().strip_suffix("u;").expect("primitive constant literal");
+        let _ = parse_schema_u32(value, name);
+        generated.push_str(&format!("pub const {name}: u32 = {value};\n"));
+        count += 1;
+    }
+    assert_eq!(count, 20, "primitive schema must declare18 identities and2 packing constants");
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
+    fs::write(out_dir.join("primitive_types.rs"), generated).expect("write primitive type constants");
 }
 
 fn generate_lowering_ir_opcodes(workspace_root: &Path) {

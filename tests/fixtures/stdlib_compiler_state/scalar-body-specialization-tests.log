@@ -1,0 +1,13 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+    Finished `release` profile [optimized] target(s) in 57.56s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/stdlib-perf/build/release/deps/laniusc_compiler-2bd833ccf41b075f)
+
+running 2 tests
+test compiler::gpu_compiler::x86_codegen::tests::scalar_body_specialization_executes_both_variants_and_clears_between_jobs ... ok
+test compiler::gpu_compiler::x86_codegen::tests::scalar_body_specializations_route_multiple_types_in_one_native_program ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 611 filtered out; finished in 1.94s
+

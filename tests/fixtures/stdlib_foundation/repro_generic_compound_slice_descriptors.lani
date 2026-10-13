@@ -1,0 +1,35 @@
+module app::main;
+import core::mem;
+import std::io;
+
+struct Text { label: str, marker: i32 }
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+
+fn inspect(values: [Text], fallback: [Text]) -> i32 {
+    let copied: [Text] = core::mem::identity(values);
+    let forwarded: [Text] = keep(copied);
+    if (forwarded[0].marker != -7 || forwarded[1].marker != 99) { return 1; }
+    if (std::io::println(forwarded[0].label) != 3 || std::io::println(forwarded[1].label) != 1) { return 2; }
+    forwarded[0].label = "backup";
+    if (std::io::println(values[0].label) != 7 || values[0].marker != -7 || copied[0].marker != -7) { return 3; }
+    let chosen: [Text] = core::mem::select(false, copied, fallback);
+    if (std::io::println(chosen[0].label) != 2 || chosen[0].marker != 42) { return 4; }
+    let count: i32 = 0;
+    for value in chosen { count += 1; }
+    if (count != 1) { return 5; }
+    chosen[0].label = "";
+    if (std::io::println(fallback[0].label) != 1 || fallback[0].marker != 42) { return 6; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let text: Text = Text { label: "Ω", marker: -7 };
+    let empty: Text = Text { label: "", marker: 99 };
+    let other: Text = Text { label: "x", marker: 42 };
+    let rows: [Text; 2] = [text, empty];
+    let fallback: [Text; 1] = [other];
+    let status: i32 = inspect(rows, fallback);
+    if (status != 0) { return status; }
+    if (std::io::println(rows[0].label) != 7 || std::io::println(text.label) != 3 || std::io::println(other.label) != 2) { return 7; }
+    return 0;
+}

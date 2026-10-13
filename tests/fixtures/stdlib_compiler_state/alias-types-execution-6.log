@@ -1,0 +1,19 @@
+
+running 4 tests
+test generic_aliases_preserve_nominal_forwarding ... GPU source-pack type-check rejection: token=39 code=AssignMismatch detail=0
+
+thread 'generic_aliases_preserve_nominal_forwarding' (25861) panicked at tests/compiler_generic_types_execution.rs:141:29:
+aliased nominal forwarding: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 3, column: 44, length: 5, byte_start: Some(97), byte_end: Some(102), source_line: Some("fn keep<T>(value: Id<T>) -> Id<T> { return value; } fn main() -> i32 { let original: Id<Pair> = Pair { left: 19, right: 23 }; let copied = keep(original); original.left = 0; if (copied.left != 19 || copied.right != 23) { return 1; } return 0; }"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test generic_aliases_preserve_slice_arguments_and_results ... ok
+test generic_aliases_substitute_reordered_record_parameters ... ok
+test transparent_aliases_preserve_scalar_and_array_values ... ok
+
+failures:
+
+failures:
+    generic_aliases_preserve_nominal_forwarding
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 288 filtered out; finished in 3.93s
+

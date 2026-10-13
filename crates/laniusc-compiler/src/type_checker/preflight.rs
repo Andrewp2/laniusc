@@ -173,6 +173,9 @@ impl GpuTypeChecker {
             n_source_files: source_file_capacity,
             parser_feature_flags: parse_bufs.parser_feature_flags,
             dependency_interfaces_present: 0,
+            retain_callable_owners: 0,
+            trait_obligation_mode: 0,
+            authorized_replay_callable: u32::MAX,
         };
         queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
 

@@ -1,0 +1,20 @@
+    Finished `release` profile [optimized] target(s) in 0.19s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+
+running 11 tests
+test boolean_programs_use_option_bool_enum_on_x86 ... ok
+test concrete_generic_enum_return_executes_on_x86 ... ok
+test four_argument_generic_factory_receiver_executes_on_x86 ... ok
+test imported_generic_factories_preserve_receiver_specializations ... ok
+test imported_generic_factory_methods_reject_wrong_result_types ... ok
+test imported_option_bool_factory_result_supports_method_calls ... ok
+test imported_option_bool_methods_reject_wrong_argument_types ... ignored, dependency 70: imported method interfaces omit parameter types
+test mixed_generic_factories_execute_in_one_module ... ignored, dependency 74: mixed generic enum factories in one module reach unsupported x86 LIR opcode 30
+test option_bool_enum_methods_execute_on_x86 ... ok
+test option_bool_method_results_pass_directly_to_imported_functions ... ok
+test option_bool_rejects_wrong_payload_and_receiver ... ok
+
+test result: ok. 9 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.44s
+

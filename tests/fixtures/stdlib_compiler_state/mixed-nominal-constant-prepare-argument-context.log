@@ -1,0 +1,24 @@
+[gpu_compile_host_timer] pipeline_cache.create.path: 0.005ms
+[gpu_compile_host_timer] pipeline_cache.create.prune: 0.036ms
+[gpu_compile_host_timer] pipeline_cache.create.read: 356.197ms
+[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 240435717 bytes
+[gpu_compile_host_timer] pipeline_cache.create.decode: 54.620ms
+[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 240435677 bytes
+[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 192.222ms
+[gpu_compile_host_timer] pipeline_cache.create.total: 651.756ms
+[laniusc][pipeline-timing] label=type_checker/calls/03k_project_argument_contexts total_ms=74395.363 shader_module_ms=0.410 pipeline_layout_ms=1.707 compute_pipeline_ms=74393.246
+prepared type_checker/calls/03k_project_argument_contexts in 74.397553681s; workgroup [256, 1, 1]
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 80.817ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 240985225 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 37.019ms
+[gpu_compile_host_timer] pipeline_cache.persist.create_dir_all: 0.015ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.encode_header: 0.000ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.create_file: 0.606ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.write_header: 0.018ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.write_data: 373.475ms
+[gpu_compile_host_timer] pipeline_cache.persist.file_bytes: 240985265 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.flush: 0.000ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.close: 0.004ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp: 374.225ms
+[gpu_compile_host_timer] pipeline_cache.persist.rename: 217.841ms
+[gpu_compile_host_timer] pipeline_cache.persist.total: 710.064ms

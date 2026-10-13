@@ -1,0 +1,1 @@
+[gen_parse_tables] wrote tables/parse_tables.bin, tables/parse_tables.meta.json, and shaders/parser/generated_parse_production_ids.slang (start=file, productions=294, predictions=1329, stack_change_cells=2263, stack_change_conflicts=0, partial_parse_cells=2263, partial_parse_conflicts=0, terminals=229, nonterminals=317, nullable=77, diagnostics=clean)

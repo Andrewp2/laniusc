@@ -16,6 +16,9 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+RWStructuredBuffer<uint> type_decl_generic_param_count;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
@@ -32,6 +35,12 @@ StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> method_decl_method_row;
 StructuredBuffer<uint> method_decl_name_token;
 
+// The method lane owns the synthetic checked type for its &self binding.
+RWStructuredBuffer<uint> type_instance_kind;
+RWStructuredBuffer<uint> type_instance_head_token;
+RWStructuredBuffer<uint> type_instance_state;
+RWStructuredBuffer<uint> type_instance_elem_ref_tag;
+RWStructuredBuffer<uint> type_instance_elem_ref_payload;
 RWStructuredBuffer<uint> method_decl_receiver_ref_tag;
 RWStructuredBuffer<uint> method_decl_receiver_ref_payload;
 RWStructuredBuffer<uint> method_decl_module_id;
@@ -135,6 +144,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirMethodSignature signature = compact_method_signatures[method_row];
     if (!valid_hir(core.impl_node))
         return;
+    // Callable arity is the composed environment. Declaration-owned counts
+    // remain unchanged so lexical lookup and replay can distinguish scopes.
+    uint impl_token = hir_generic_owner_token(compact_hir_core[core.impl_node],
+        compact_hir_payload[core.impl_node], active_token_count());
+    uint count = type_decl_generic_param_count_by_owner_token[fn_token] +
+        (impl_token < active_token_count() ? type_decl_generic_param_count_by_owner_token[impl_token] : 0u);
+    type_decl_generic_param_count[fn_token] = count;
+    uint function_token = compact_hir_core[core.node].token_start;
+    if (function_token < active_token_count()) type_decl_generic_param_count[function_token] = count;
     uint type_i = receiver_ref_token_for_type_hir(signature.impl_receiver_type);
 
     method_decl_receiver_ref_tag[fn_token] =
@@ -142,6 +160,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
                                                             : type_expr_ref_tag[type_i];
     method_decl_receiver_ref_payload[fn_token] =
         type_i == INVALID || type_i >= active_token_count() ? INVALID : type_expr_ref_payload[type_i];
+    uint self_token = signature.first_param_token;
+    if (signature.receiver_mode == 2u && self_token < active_token_count() &&
+        type_i < active_token_count())
+    {
+        type_instance_kind[self_token] = 4u;
+        type_instance_head_token[self_token] = self_token;
+        type_instance_state[self_token] = 1u;
+        type_instance_elem_ref_tag[self_token] = type_expr_ref_tag[type_i];
+        type_instance_elem_ref_payload[self_token] = type_expr_ref_payload[type_i];
+    }
     uint file_id = compact_hir_links[core.impl_node].file_id;
     method_decl_module_id[fn_token] = module_for_file(file_id);
     method_decl_name_id[fn_token] = name_id_for_token(method_decl_name_token[fn_token]);

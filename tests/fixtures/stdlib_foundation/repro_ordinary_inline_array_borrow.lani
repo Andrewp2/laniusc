@@ -1,0 +1,12 @@
+struct Container { before: i32, values: [i32; 3], after: i32 }
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let item: Container = Container { before: -7, values: [11, 22, 33], after: 99 };
+    let shared: [i32] = view(item.values);
+    if (shared[0] != 11 || shared[1] != 22 || shared[2] != 33) { return 1; }
+    shared[1] = 44;
+    if (item.values[1] != 44 || item.before != -7 || item.after != 99) { return 2; }
+    item.values[2] = 55;
+    if (shared[2] != 55 || item.values[0] != 11) { return 3; }
+    return 0;
+}

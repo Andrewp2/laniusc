@@ -4,6 +4,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import codegen.lir.optimization.ssa_sparse_work;
 import atomics;
 
@@ -51,7 +52,8 @@ uint function_for_node(uint row)
 
 void admit(uint value, uint position, uint total, uint function_id)
 {
-    if (value >= total || function_for_node(value) != function_id) return;
+    if (!opt_ir_node_is_executable(value, total) ||
+        function_for_node(value) != function_id) return;
     uint ignored;
     InterlockedMax(x86_last_use_by_semantic[value], position, ignored);
     uint prior = atomic_u32_compare_exchange(
@@ -64,6 +66,7 @@ void admit(uint value, uint position, uint total, uint function_id)
 
 void admit_dependencies(uint row, uint total)
 {
+    if (!opt_ir_node_is_executable(row, total)) return;
     uint position = x86_position_by_semantic[row];
     uint function_id = function_for_node(row);
     if (position == INVALID || function_id == INVALID) return;
@@ -103,8 +106,14 @@ void admit_dependencies(uint row, uint total)
     else if (op == SEMANTIC_LIR_OP_NEGATE ||
              op == SEMANTIC_LIR_OP_LOGICAL_NOT ||
              op == SEMANTIC_LIR_OP_CONVERT || op == SEMANTIC_LIR_OP_DROP ||
-             op == SEMANTIC_LIR_OP_ADDRESS || op == SEMANTIC_LIR_OP_RETURN)
+             op == SEMANTIC_LIR_OP_PLACE_LOAD || op == SEMANTIC_LIR_OP_FIELD_ADDRESS ||
+             op == SEMANTIC_LIR_OP_RETURN)
         admit(operands.a, position, total, function_id);
+    else if (op == SEMANTIC_LIR_OP_INDEX_ADDRESS || op == SEMANTIC_LIR_OP_PLACE_STORE)
+    {
+        admit(operands.a, position, total, function_id);
+        admit(operands.b, position, total, function_id);
+    }
     else if (op == SEMANTIC_LIR_OP_LOAD)
     {
         admit(operands.a, position, total, function_id);

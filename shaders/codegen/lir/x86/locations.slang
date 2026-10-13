@@ -120,7 +120,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             locations.result = stack_location(allocated + row - producer);
     }
 
-    if (core.op == X86_LIR_OP_STORE_LOCAL)
+    if (core.op == X86_LIR_OP_PLACE_STORE)
+    {
+        locations.a = value_location(operands.a);
+        locations.b = value_location(operands.b);
+    }
+    else if (core.op == X86_LIR_OP_PLACE_LOAD || core.op == X86_LIR_OP_FIELD_ADDRESS)
+        locations.a = value_location(operands.a);
+    else if (core.op == X86_LIR_OP_STORE_LOCAL)
     {
         locations.b = value_location(operands.b);
         if ((operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u)
@@ -147,7 +154,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_RETURN)
         locations.a = value_location(operands.a);
     else if (core.op == X86_LIR_OP_INLINE_RESULT)
+    {
         locations.a = value_location(operands.a);
+        if ((operands.metadata & X86_LIR_METADATA_ARRAY_LEN) != 0u)
+            locations.a = locations.a != X86_LOCATION_INVALID &&
+                !x86_location_is_register(locations.a)
+                    ? stack_location(locations.a + 1u) : X86_LOCATION_INVALID;
+    }
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
         locations.a = value_location(operands.a);
     else if (core.op == X86_LIR_OP_AGGREGATE_COPY_WORD)
@@ -160,12 +173,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
             locations.a = value_location(operands.a);
         else if ((operands.metadata &
-            (X86_LIR_METADATA_STRING_LEN | X86_LIR_METADATA_ARRAY_LEN)) != 0u)
+            (X86_LIR_METADATA_STRING_LEN | X86_LIR_METADATA_ARRAY_PAIR)) != 0u && operands.c != 0u)
         {
             uint string_start = value_location(operands.a);
             locations.a = string_start != INVALID &&
                 (string_start & X86_LOCATION_REGISTER) == 0u
-                    ? stack_location(string_start + 1u) : X86_LOCATION_INVALID;
+                    ? stack_location(string_start + operands.c) : X86_LOCATION_INVALID;
         }
         else locations.a = value_location(operands.a);
     }
@@ -173,14 +186,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         locations.a = (operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
             ? X86_LOCATION_INVALID : value_location(operands.a);
-        if ((operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u)
+        if ((operands.metadata &
+            (X86_LIR_METADATA_ARRAY_PAIR | X86_LIR_METADATA_STRING_PAIR)) != 0u)
             locations.a = locations.a != X86_LOCATION_INVALID &&
                 (locations.a & X86_LOCATION_REGISTER) == 0u
                     ? stack_location(locations.a + operands.b)
                     : X86_LOCATION_INVALID;
         locations.c = locations.result;
     }
-    else if (core.op == X86_LIR_OP_INDEX_LOAD)
+    else if (core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_ADDRESS)
     {
         locations.a = value_location(operands.a);
         locations.b = value_location(operands.b);

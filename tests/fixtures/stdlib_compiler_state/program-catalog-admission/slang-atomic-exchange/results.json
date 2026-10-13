@@ -1,0 +1,40 @@
+[
+  {
+    "compile": [
+      "/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc",
+      "-target",
+      "spirv",
+      "-profile",
+      "glsl_450",
+      "-emit-spirv-directly",
+      "-O0",
+      "-minimum-slang-optimization",
+      "-o",
+      "tests/fixtures/stdlib_compiler_state/program-catalog-admission/slang-atomic-exchange/repro-o0.spv",
+      "tests/fixtures/stdlib_compiler_state/program-catalog-admission/slang-atomic-exchange/repro.slang"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "",
+    "validation_exit": 1,
+    "validation": "error: line 40: ID '19[%19]' has not been defined\n  OpStore %24 %19\n\n"
+  },
+  {
+    "compile": [
+      "/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc",
+      "-target",
+      "spirv",
+      "-profile",
+      "glsl_450",
+      "-emit-spirv-directly",
+      "-O1",
+      "-minimum-slang-optimization",
+      "-o",
+      "tests/fixtures/stdlib_compiler_state/program-catalog-admission/slang-atomic-exchange/repro-o1.spv",
+      "tests/fixtures/stdlib_compiler_state/program-catalog-admission/slang-atomic-exchange/repro.slang"
+    ],
+    "exit_code": -11,
+    "stdout": "",
+    "stderr": ""
+  }
+]

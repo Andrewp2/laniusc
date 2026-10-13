@@ -3,6 +3,7 @@ import segment_tree;
 struct Params
 {
     uint n_tokens;
+    uint match_tree_leaf_base;
 };
 
 ConstantBuffer<Params> gParams;
@@ -69,8 +70,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
     public static uint leaf_base()
     {
-        uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-        return range_search_leaf_base_for_block_count(n_blocks);
+        return gParams.match_tree_leaf_base;
     }
 
     public static int leaf_value(uint block)

@@ -1,0 +1,7 @@
+{
+  "index": 30,
+  "shader": "type_checker/predicates/01_collect_impls.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.9169448529974034,
+  "sha256": "af1bdc452fc9d9ca33669ab3a20d9217ca02b30604c4e08811a5a7a6ae6bcdc0"
+}

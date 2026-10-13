@@ -1,0 +1,9 @@
+previous pair 0: median 20.846 ms; final output passed
+fixed pair 0: median 21.151 ms; final output passed
+fixed pair 1: median 20.402 ms; final output passed
+previous pair 1: median 21.194 ms; final output passed
+previous pair 2: median 20.922 ms; final output passed
+fixed pair 2: median 21.244 ms; final output passed
+fixed pair 3: median 20.835 ms; final output passed
+previous pair 3: median 21.302 ms; final output passed
+previous=21.198 ms fixed=21.011 ms change=-0.882%; all 80 rebuilds succeeded and eight final outputs passed

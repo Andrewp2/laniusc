@@ -1,0 +1,8 @@
+enum Maybe<T> { Present(T), Absent }
+fn main() -> i32 {
+    let seed: u32 = 4294967295;
+    let wrapped: Maybe<u32> = Present(seed);
+    let value: u32 = match (wrapped) { Present(number) -> number, Absent -> 0 };
+    if (value / 2 != 2147483647) { return 1; }
+    return 0;
+}

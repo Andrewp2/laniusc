@@ -1,0 +1,127 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 9 tests
+test deferred_template_interfaces_still_check_payload_arguments ... GPU source-pack type-check rejection: token=55 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=99 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=AssignMismatch detail=0
+ok
+test imported_generic_slice_payloads_execute_reads_writes_and_swaps ... ok
+test imported_receiver_payload_templates_execute_distinct_scalar_instances ... ok
+test imported_scalar_payload_templates_execute_both_branches ... ok
+test qualified_generic_scalar_returns_execute_after_substitution ... ok
+test unresolved_payload_templates_do_not_poison_imported_executable_functions ... ok
+test unused_local_payload_templates_preserve_executable_predicates ... ok
+test used_local_payload_templates_execute ... ok
+test used_local_slice_element_templates_execute ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.90s
+
+     Running tests/stdlib_mem_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_mem_generic_execution-3d5775ab86854f89)
+
+running 1 test
+test generic_value_helpers_preserve_scalar_and_string_values ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.35s
+
+     Running tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+
+running 18 tests
+test boolean_programs_use_option_bool_enum_on_x86 ... ok
+test concrete_generic_enum_return_executes_on_x86 ... ok
+test enum_match_later_payload_comparison_executes_on_x86 ... ok
+test enum_match_payload_short_circuit_executes_on_x86 ... ok
+test enum_match_result_consumers_execute_on_x86 ... ok
+test four_argument_generic_factory_receiver_executes_on_x86 ... ok
+test imported_empty_struct_results_execute_without_erasing_nominal_checks ... GPU source-pack type-check rejection: token=31 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=31 code=AssignMismatch detail=769
+ok
+test imported_generic_factories_preserve_receiver_specializations ... ok
+test imported_generic_factory_methods_reject_wrong_result_types ... GPU source-pack type-check rejection: token=31 code=AssignMismatch detail=516
+GPU source-pack type-check rejection: token=24 code=AssignMismatch detail=1026
+ok
+test imported_methods_validate_multiple_scalar_and_nominal_parameters ... GPU source-pack type-check rejection: token=75 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=77 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=62 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=64 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=72 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=80 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=62 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=64 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=81 code=AssignMismatch detail=0
+ok
+test imported_option_bool_factory_result_supports_method_calls ... ok
+test imported_option_bool_methods_reject_wrong_argument_types ... GPU source-pack type-check rejection: token=59 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=0
+ok
+test later_generic_enums_preserve_payloads_and_empty_variants ... ok
+test mixed_generic_factories_execute_in_one_module ... ok
+test option_bool_enum_methods_execute_on_x86 ... ok
+test option_bool_method_results_pass_directly_to_imported_functions ... ok
+test option_bool_rejects_wrong_payload_and_receiver ... GPU source-pack type-check rejection: token=39 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=63 code=AssignMismatch detail=0
+ok
+test unused_generic_enum_does_not_prevent_later_construction ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.30s
+
+     Running tests/stdlib_option_generic_payload_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_generic_payload_execution-eeaa609c017fb174)
+
+running 3 tests
+test actual_option_generic_payload_functions_execute_scalar_and_string_instances ... ok
+test option_string_payload_methods_execute_all_state_pairs ... ok
+test option_string_payload_methods_reject_inconsistent_arguments ... GPU source-pack type-check rejection: token=78 code=AssignMismatch detail=1794
+GPU source-pack type-check rejection: token=87 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=87 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=87 code=AssignMismatch detail=0
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.23s
+
+     Running tests/stdlib_result_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_result_generic_execution-82a33b04090f5a93)
+
+running 9 tests
+test actual_result_module_predicates_and_membership_execute ... ok
+test result_membership_rejects_wrong_scalar_argument_types ... GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=515
+ok
+test result_payload_functions_preserve_float_char_unsigned_and_string_values ... ok
+test result_predicates_and_matches_preserve_borrowed_descriptors ... ok
+test result_reading_total_program_executes_both_concrete_return_variants ... ok
+test result_scalar_payload_functions_execute_both_variants ... ok
+test result_slice_arguments_preserve_generic_and_concrete_type_relations ... GPU source-pack type-check rejection: token=98 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=98 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=96 code=AssignMismatch detail=0
+ok
+test result_slice_payload_functions_execute_both_branches_and_preserve_aliases ... ok
+test result_slice_payloads_keep_native_bounds ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.95s
+
+     Running tests/stdlib_slice_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_slice_generic_execution-e40555ee32eecc54)
+
+running 9 tests
+test generic_slice_access_and_copying_execute_for_supported_scalar_types ... ok
+test generic_slice_access_preserves_native_physical_bounds ... ok
+test generic_slice_arguments_preserve_element_type_relations ... GPU source-pack type-check rejection: token=73 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=73 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=71 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=66 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=68 code=AssignMismatch detail=0
+ok
+test generic_slice_copying_preserves_nan_and_negative_zero ... ok
+test generic_slice_lengths_reject_boolean_fields ... GPU source-pack type-check rejection: token=64 code=AssignMismatch detail=770
+ok
+test generic_slice_raw_storage_keeps_checked_element_types ... GPU source-pack type-check rejection: token=103 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=101 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=101 code=AssignMismatch detail=0
+ok
+test generic_slice_string_elements_preserve_pointer_and_length ... ok
+test generic_slice_summary_program_executes_with_option_ranges_and_arithmetic ... ok
+test owned_vector_reversal_remains_executable_after_slice_api_migration ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.93s
+

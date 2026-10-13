@@ -1,0 +1,23 @@
+import std::io;
+
+fn keep<T, const M: usize>(values: [T; M]) -> [T; M] { return values; }
+
+fn forward<T, const N: usize>(values: [T; N]) -> [T; N] {
+    let copied = keep(values);
+    return copied;
+}
+
+fn main() -> i32 {
+    let words: [str; 2] = ["first λ", "last"];
+    let copy: [str; 2] = forward(words);
+    copy[0] = "changed";
+    std::io::println(words[0]);
+    std::io::println(copy[0]);
+    std::io::println(copy[1]);
+    let empty: [bool; 0] = [];
+    let zero: [bool; 0] = forward(empty);
+    let numbers: [i32; 3] = [7, 11, 42];
+    let result: [i32; 3] = forward(numbers);
+    if (result[0] != 7 || result[2] != 42) { return 2; }
+    return 0;
+}

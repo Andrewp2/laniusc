@@ -1,8 +1,8 @@
 module app::main;
-import core::option;
+import core::maybe_fn;
 fn main() -> i32 {
-    let value: core::option::Option<i32> = core::option::Some(7);
-    if (core::option::is_some(value)) {
+    let value: core::maybe_fn::Maybe<bool> = core::maybe_fn::Some(false);
+    if (core::maybe_fn::is_some(value)) {
         return 0;
     }
     return 1;

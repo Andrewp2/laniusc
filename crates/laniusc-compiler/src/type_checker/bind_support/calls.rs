@@ -10,8 +10,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     token_capacity: u32,
     hir_capacity: u32,
     call_param_capacity: u32,
-    call_arg_capacity: u32,
+    _call_arg_capacity: u32,
     claim_capacity: u32,
+    parser_feature_flags: u32,
+    has_dependency_interfaces: bool,
 ) -> Result<CallBindGroups> {
     let indirect = |spec| {
         ComputeOperation::indirect_spec(device, graph, resources, passes, spec, hir_dispatch_args)
@@ -21,6 +23,39 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     };
     let direct_name = |name, pass, workgroups| {
         ComputeOperation::direct(device, graph, resources, name, pass, workgroups)
+    };
+    let token_dispatch_args = typed_buffer_from_resources(resources, "token_active_dispatch_args")?;
+    let inference_state: LaniusBuffer<u32> =
+        typed_buffer_from_resources(resources, "call_inference_state")?;
+    let inference_readback: LaniusBuffer<u32> =
+        typed_buffer_from_resources(resources, "call_inference_readback")?;
+    let optional_generic = |name, kernel, dispatch| {
+        if generic_param_record_passes_required(parser_feature_flags) || has_dependency_interfaces {
+            ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                name,
+                &passes.kernel(kernel),
+                dispatch,
+            )
+            .map(Some)
+        } else {
+            Ok(None)
+        }
+    };
+    // Ordinary unannotated calls also need accepted expression/return facts.
+    // Only type application indexing and generic environments are optional.
+    let inference = |name, kernel| {
+        ComputeOperation::indirect(
+            device,
+            graph,
+            resources,
+            name,
+            &passes.kernel(kernel),
+            hir_dispatch_args,
+        )
+        .map(Some)
     };
     let lookup_work = token_capacity
         .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
@@ -73,7 +108,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         passes,
         CallClaimIndexBuild {
             kind: CallClaimKind::Const,
-            claim_capacity: call_arg_capacity,
+            claim_capacity,
             dispatch_args: &call_const_claim_index_dispatch_args,
             graph,
             resources,
@@ -87,7 +122,8 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     let generic_claim_validation =
         CallGenericClaimValidationOperation::new(CallGenericClaimValidationBuild {
             claim_scan: prefix_scan_spec(compiler_graph::GENERIC_CLAIM_SCAN)?,
-            emit_claims: direct(CALLS_GENERIC_CLAIM_EMIT, claim_capacity.saturating_add(1))?,
+            const_scan: prefix_scan_spec(compiler_graph::CONST_CLAIM_SCAN)?,
+            emit_claims: indirect(CALLS_GENERIC_CLAIM_EMIT)?,
             validate_generic: ComputeOperation::indirect_spec(
                 device,
                 graph,
@@ -141,6 +177,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         call_param_segment_scan: prefix_scan_spec(compiler_graph::CALL_PARAM_ROW_SCAN)?,
         scatter_compact_hir_params: direct(CALLS_PARAM_SCATTER, call_param_capacity)?,
         resolve: indirect(CALLS_RESOLVE)?,
+        explicit_application_binding: ComputeOperation::indirect_spec(
+            device, graph, resources, passes, CALLS_EXPLICIT_APPLICATIONS_BIND,
+            &typed_buffer_from_resources(resources, "explicit_application_dispatch_args")?,
+        )?,
+        explicit_application_validation: ComputeOperation::indirect_spec(
+            device, graph, resources, passes, CALLS_EXPLICIT_APPLICATIONS_VALIDATE,
+            &typed_buffer_from_resources(resources, "explicit_application_dispatch_args")?,
+        )?,
         backend_targets: direct_name(
             compiler_graph::CALLS_BACKEND_TARGETS_PASS,
             &passes.kernel("type_checker/calls/04_backend_targets"),
@@ -151,6 +195,131 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
         clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,
+        bind_method_receiver_environment: inference(
+            compiler_graph::CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
+            "type_checker/calls/03d_bind_method_receiver_environment",
+        )?,
+        materialize_return_types: inference(
+            compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
+            "type_checker/calls/03e_materialize_return_types",
+        )?,
+        expand_application_fields: inference(
+            compiler_graph::CALLS_EXPAND_APPLICATION_FIELDS_PASS,
+            "type_checker/calls/03e1_expand_application_fields",
+        )?,
+        project_argument_contexts: inference(
+            compiler_graph::CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
+            "type_checker/calls/03k_project_argument_contexts",
+        )?,
+        return_type_index_clear: optional_generic(
+            compiler_graph::CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
+            "type_checker/type/instances/02b_clear_application_index",
+            &token_dispatch_args,
+        )?,
+        return_type_source_index: optional_generic(
+            compiler_graph::CALLS_RETURN_TYPE_SOURCE_INDEX_PASS,
+            "type_checker/type/instances/02c_index_closed_applications",
+            &token_dispatch_args,
+        )?,
+        return_type_index: optional_generic(
+            compiler_graph::CALLS_RETURN_TYPE_INDEX_PASS,
+            "type_checker/type/instances/02c_index_closed_applications",
+            &token_dispatch_args,
+        )?,
+        return_imported_fields: optional_generic(
+            compiler_graph::CALLS_RETURN_IMPORTED_FIELDS_PASS,
+            "type_checker/type/instances/02e_project_imported_fields",
+            &token_dispatch_args,
+        )?,
+        project_expression_types: inference(
+            compiler_graph::CALLS_PROJECT_EXPRESSION_TYPES_PASS,
+            "type_checker/calls/03g_project_expression_types",
+        )?,
+        record_literal_inference: if struct_init_passes_required(parser_feature_flags) {
+            let operation = |name, kernel| {
+                ComputeOperation::indirect(
+                    device,
+                    graph,
+                    resources,
+                    name,
+                    &passes.kernel(kernel),
+                    hir_dispatch_args,
+                )
+            };
+            Some(RecordLiteralInferenceOperations {
+                contexts: operation(
+                    compiler_graph::CALLS_RECORD_CONTEXTS_PASS,
+                    "type_checker/calls/03k3_project_record_contexts",
+                )?,
+                nested_contexts: operation(
+                    compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
+                    "type_checker/type/instances/04a3_nested_struct_contexts",
+                )?,
+                fields: operation(
+                    compiler_graph::CALLS_RECORD_FIELDS_PASS,
+                    "type_checker/type/instances/04_struct_init_fields",
+                )?,
+                references: operation(
+                    compiler_graph::CALLS_RECORD_REFS_PASS,
+                    "type_checker/semantic/artifact/01a_struct_literal_refs",
+                )?,
+            })
+        } else {
+            None
+        },
+        project_literal_contexts: inference(
+            compiler_graph::CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
+            "type_checker/calls/03k1_project_literal_contexts",
+        )?,
+        materialize_match_payloads: if match_passes_required(parser_feature_flags)
+            && has_dependency_interfaces
+        {
+            inference(
+                compiler_graph::CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
+                "type_checker/calls/03k2_materialize_match_payloads",
+            )?
+        } else {
+            None
+        },
+        project_array_literal_elements: if array_passes_required(parser_feature_flags) {
+            inference(
+                compiler_graph::CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
+                "type_checker/calls/03h_project_array_literal_elements",
+            )?
+        } else {
+            None
+        },
+        materialize_array_literals: if array_passes_required(parser_feature_flags) {
+            inference(
+                compiler_graph::CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
+                "type_checker/calls/03i_materialize_array_literals",
+            )?
+        } else {
+            None
+        },
+        validate_array_literals: if array_passes_required(parser_feature_flags) {
+            inference(
+                compiler_graph::CALLS_VALIDATE_ARRAY_LITERALS_PASS,
+                "type_checker/calls/03j_validate_array_literals",
+            )?
+        } else {
+            None
+        },
+        infer_return_bindings: inference(
+            compiler_graph::CALLS_INFER_RETURN_BINDINGS_PASS,
+            "type_checker/calls/03f_infer_return_bindings",
+        )?,
+        inference_readback: crate::gpu::operations::CopyBufferOperation::new(
+            graph,
+            compiler_graph::CALLS_INFERENCE_READBACK_PASS,
+            "call_inference_state",
+            &inference_state,
+            0,
+            "call_inference_readback",
+            &inference_readback,
+            0,
+            8,
+        )?,
         infer_array_generics: ComputeOperation::direct_spec(
             device,
             graph,

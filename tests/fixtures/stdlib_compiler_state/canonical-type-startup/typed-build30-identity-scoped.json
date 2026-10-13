@@ -1,0 +1,18 @@
+{
+  "environment": {
+    "LANIUS_PIPELINE_TIMING": "1",
+    "LANIUS_PIPELINE_TRACE": "1"
+  },
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "gpu::typed_constant_tests::physical_gpu_typed_constant_identity_and_claim_provenance_scoped",
+    "--exact"
+  ],
+  "exit_code": 0,
+  "seconds": 0.9154088670038618,
+  "binary_sha256": "bdc40c5e2530d2ac9061c35d295a5de31b7dc62ae439420f30b0bb0aba73ab5d",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

@@ -1,0 +1,6 @@
+error[LNC0006]: type mismatch
+ --> <source pack file 0>:49:52
+   |
+49 |     let present_pair: core::option::Option<Pair> = core::option::Some(pair);
+   |                                                    ^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

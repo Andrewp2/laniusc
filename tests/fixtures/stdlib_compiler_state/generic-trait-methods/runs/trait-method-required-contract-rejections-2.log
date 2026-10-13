@@ -1,0 +1,9 @@
+
+running 4 tests
+test generic_impl_qualified_prerequisites_respect_source_module_visibility ... ok
+test generic_method_calls_require_every_inherited_and_own_prerequisite ... ok
+test generic_trait_method_calls_reject_unbound_impl_trait_operands ... ok
+test generic_trait_methods_keep_unimplemented_required_member_contracts_explicit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 379 filtered out; finished in 6.84s
+

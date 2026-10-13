@@ -1,0 +1,35 @@
+
+running 30 tests
+test bare_nominal_compositions_preserve_copies_and_aliases ... ok
+test enum_layouts_include_unconstructed_compound_variants ... ok
+test explicit_callable_arguments_execute_imported_own_method_headers ... ok
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... ok
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test explicit_dotted_arguments_reject_conflicts_and_wrong_headers ... ok
+test generic_enum_constructors_infer_complete_payload_types ... ok
+test generic_enum_constructors_reject_inconsistent_and_missing_bindings ... ok
+test generic_nominal_arguments_survive_imported_and_forwarded_body_replay ... ok
+test generic_unit_values_preserve_complete_local_and_imported_types ... ok
+test generic_unit_values_reject_missing_and_incompatible_contexts ... ok
+test implicit_method_receivers_preserve_argument_constraints ... ok
+test imported_bare_nominal_annotations_preserve_composed_values ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_generic_record_fields_execute_in_the_importing_module ... ok
+test imported_generic_record_fields_preserve_native_slice_bounds ... ok
+test imported_generic_record_fields_reject_wrong_types_and_names ... ok
+test imported_reference_fields_preserve_pointer_layout_and_aliases ... ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nominal_constant_arguments_execute_imported_records_functions_and_methods ... ok
+test nominal_constant_arguments_preserve_compound_payloads_and_aliases ... ok
+test qualified_enum_variant_parent_forms_execute_independently ... ok
+test qualified_enum_variants_bind_parent_applications ... ok
+test qualified_enum_variants_bind_qualifier_scope_before_members ... ok
+test qualified_enum_variants_forward_symbolic_parameters ... ok
+test qualified_enum_variants_preserve_wide_and_symbolic_parent_headers ... ok
+test qualified_enum_variants_reject_ambiguous_and_unrelated_names ... ok
+test qualified_enum_variants_reject_conflicting_parent_applications ... ok
+test qualified_enum_variants_retain_their_parent_declarations ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 257 filtered out; finished in 25.15s
+

@@ -1,0 +1,22 @@
+
+running 17 tests
+test x86_executes_deeply_nested_short_circuit_rhs_call_past_eight_levels ... ok
+test x86_executes_for_array_with_helper_call_and_branch ... ok
+test x86_executes_four_argument_call_with_mixed_argument_sources ... ok
+test x86_executes_nested_call_results_as_call_arguments ... ok
+test x86_executes_nested_range_f32_accumulation ... ok
+test x86_executes_nested_short_circuit_rhs_call ... ok
+test x86_executes_numeric_range_for_loop_with_dynamic_end ... ok
+test x86_executes_numeric_range_for_loop_with_struct_field_end ... ok
+test x86_executes_numeric_ranges_without_explicit_start ... ok
+test x86_executes_short_circuit_enum_comparison_as_scalar_bool ... ok
+test x86_executes_short_circuit_in_array_and_loop ... ok
+test x86_executes_short_circuit_rhs_call ... ok
+test x86_executes_short_circuit_rhs_dynamic_index ... ok
+test x86_executes_short_circuit_rhs_remainder_with_static_nonzero_divisor ... ok
+test x86_executes_short_circuit_rhs_trapping_arithmetic ... ok
+test x86_executes_struct_literal_field_mutation_and_copy ... ok
+test x86_executes_while_loop_with_scalar_local_mutation ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 314 filtered out; finished in 4.07s
+

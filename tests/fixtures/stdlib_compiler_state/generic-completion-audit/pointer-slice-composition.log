@@ -1,0 +1,2 @@
+sample=0 ms=87.039
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/generic-completion-audit/pointer-slice-composition.lani rebuild_entry=false warmups=1 iters=1 output_bytes=12656 min_ms=87.039 median_ms=87.039 avg_ms=87.039 max_ms=87.039 output_verified=true

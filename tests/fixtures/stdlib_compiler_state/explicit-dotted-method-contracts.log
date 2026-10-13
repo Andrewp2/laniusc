@@ -1,0 +1,9 @@
+
+running 4 tests
+test lexer::tables::tokens::tests::every_contextual_kind_has_an_idempotent_raw_lexer_origin ... ok
+test lexer::tables::tokens::tests::grammar_terminal_names_resolve ... ok
+test parser::compiler_graph::tests::frontend_graph_contains_exact_scan_regions ... ok
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 626 filtered out; finished in 0.86s
+

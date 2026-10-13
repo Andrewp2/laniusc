@@ -1,0 +1,25 @@
+struct Cell<T> { value: T }
+fn pair<T>(first: T, second: T) -> T { return second; }
+fn as_f64(value: f64) -> f64 { return value; }
+fn main() -> i32 {
+    let one32: f32 = 1.0;
+    let even32: f32 = 1.000000059604644775390625;
+    let above32: f32 = 1.000000059604644775390626;
+    if (even32 != one32 || above32 - one32 != 1.1920928955078125e-7) { return 1; }
+    let one64: f64 = 1.0;
+    let even64: f64 = 1.00000000000000011102230246251565404236316680908203125;
+    let above64: f64 = 1.000000000000000111022302462515654042363166809082031251;
+    if (even64 != one64 || above64 - one64 != 2.220446049250313e-16) { return 2; }
+    let inferred: f64 = pair(one64, 1.0000000000000002);
+    if (inferred != above64) { return 3; }
+    let record: Cell<f64> = Cell { value: 1.0e300 };
+    let values: [f64; 2] = [1.0e300, 1.0000000000000002];
+    if (record.value != values[0] || values[1] != above64) { return 4; }
+    record.value = 1.0e299;
+    values[0] = 1.0e299;
+    if (record.value != values[0]) { return 5; }
+    let tiny: f64 = -1.0e-5000;
+    if (tiny != 0.0 || one64 / tiny >= 0.0) { return 6; }
+    if (as_f64(1.0e300) <= 1.0e299) { return 7; }
+    return 0;
+}

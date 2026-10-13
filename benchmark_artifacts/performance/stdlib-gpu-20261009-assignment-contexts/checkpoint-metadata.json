@@ -1,0 +1,35 @@
+{
+  "sources_unchanged": 3096,
+  "shader_payloads_unchanged": 1492,
+  "shader_metadata": "digest=caaa3abf58dc0753\ncount=746\nmax_spv_bytes=522440\nmax_spv_name=type_checker/semantic/artifact/01b_array_index_refs\nsize_guard_status=enforced\nsize_guard_max_bytes=524288\n",
+  "canonical_compiler_ms": 45.82424949999999,
+  "canonical_wall_ms": 48.7716875,
+  "canonical_elfs_verified": 20,
+  "canonical_source_hashes_match_baseline": true,
+  "canonical_cache_hits": 0,
+  "canonical_resource_creations": 0,
+  "canonical_runner_status": "saved_report_then_existing_catalogue_list_get_exception",
+  "tracked_live_bytes": [
+    1619201735
+  ],
+  "excluded_raw_buffers": [
+    5
+  ],
+  "generic_32_ms": 414.383,
+  "generic_32_final_elf_verified": true,
+  "verification": {
+    "focused_passes": 3,
+    "focused_seconds": 2.75,
+    "control_passes": 29,
+    "control_seconds": 13.53,
+    "resource_contract_passes": 2,
+    "registered_tests": 252,
+    "preceding_full_matrix_not_rerun": true
+  },
+  "measured_binary_identities": {
+    "target/stdlib-perf/build/release/laniusc": "c8c57ca566998536db9d9f497d97f7a23df5c1a63d70d3c2bcd36f28a2b83916",
+    "target/stdlib-perf/build/release/examples/stdlib_gpu_perf": "789d2df11440be6a7183d066ba6f379b8afe514b7c23f9574dc227a4cfcc0a61",
+    "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248": "bc13e1e957bf5fae04f017dc79e7eaa24762a85d9dd321e6429213d6f1d22ea2",
+    "target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66": "f54787904d7d51a1295a23388924c2d9adec6fc3196242e865e7f4b7e7dd0f0f"
+  }
+}

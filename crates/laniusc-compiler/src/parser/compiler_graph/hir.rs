@@ -1,5 +1,7 @@
 //! Resources and operations that refine semantic HIR after dense identity.
 
+use crate::lexer::features::PARSER_FEATURE_FLOAT_LITERALS;
+
 use super::{
     clear,
     external,
@@ -79,6 +81,8 @@ fn graph_owned_hir_workspace(name: &str) -> bool {
         || matches!(
             name,
             "hir_type_arg_owner_a"
+                | "hir_type_arg_application_owner"
+                | "hir_type_arg_application_token"
                 | "hir_type_arg_owner_b"
                 | "hir_type_arg_link_a"
                 | "hir_type_arg_link_b"
@@ -293,6 +297,8 @@ pub(super) fn register_resources(
 
     for name in [
         "hir_type_arg_owner_a",
+        "hir_type_arg_application_owner",
+        "hir_type_arg_application_token",
         "hir_type_arg_owner_b",
         "hir_type_arg_link_a",
         "hir_type_arg_link_b",
@@ -589,11 +595,14 @@ pub(super) fn register_resources(
             } else {
                 canonical_rows * 4
             }
+        } else if name == "hir_expr_int_value" {
+            if capacity.retain_debug_hir_buffers { tree_rows * 8 } else { canonical_rows * 8 }
+        } else if name == "hir_expr_float_bits" {
+            if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS == 0 { 16 }
+            else if capacity.retain_debug_hir_buffers { tree_rows * 16 } else { canonical_rows * 16 }
         } else if matches!(
             name,
-            "hir_expr_int_value"
-                | "hir_expr_float_bits"
-                | "hir_expr_string_start"
+            "hir_expr_string_start"
                 | "hir_expr_string_len"
         ) {
             if capacity.retain_debug_hir_buffers {
@@ -802,9 +811,10 @@ pub(super) fn register_resources(
             u64::from(capacity.token_capacity.max(1)) * 16,
         )?;
     }
+    output(graph, "hir_type_arg_rows", ResourceDomain::HirNodes,
+        u64::from(capacity.token_capacity.max(1)) * core::mem::size_of::<crate::parser::buffers::HirTypeArg>() as u64)?;
     for name in [
         "hir_param_rows",
-        "hir_type_arg_rows",
         "hir_generic_param_rows",
         "hir_path_rows",
         "hir_path_segment_rows",
@@ -828,17 +838,33 @@ pub(super) fn register_resources(
             u64::from(capacity.token_capacity.max(1)) * 16,
         )?;
     }
+    // Bounded storage, independent of token/tree capacity. No private 768-word
+    // array is added to ordinary parser lanes.
+    workspace(graph, "hir_float_workspace", ResourceDomain::HirNodes,
+        if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 { 2048 * 768 * 4 } else { 4 })?;
+    if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS == 0 {
+        // The absent float family retains only inert sentinel views. Both
+        // views still need an initialization owner in the compiler graph.
+        graph.mark_zero_initialized(graph.resource_id("hir_float_workspace").unwrap())?;
+        graph.mark_zero_initialized(graph.resource_id("hir_expr_float_bits").unwrap())?;
+    }
     output(
         graph,
         "hir_canonical_semantic_facts",
         ResourceDomain::HirNodes,
-        u64::from(capacity.token_capacity.max(1)) * 28,
+        u64::from(capacity.token_capacity.max(1)) * 32,
     )?;
     output(
         graph,
         "hir_generic_param_ranges",
         ResourceDomain::HirNodes,
         u64::from(capacity.token_capacity.max(1)) * 8,
+    )?;
+    output(
+        graph,
+        "hir_generic_param_types",
+        ResourceDomain::HirNodes,
+        u64::from(capacity.token_capacity.max(1)) * 4,
     )?;
     workspace_indirect(graph, "hir_list_rank_dispatch_args", 12)?;
     workspace_indirect(graph, "hir_enum_rank_dispatch_args", 12)?;
@@ -1183,6 +1209,8 @@ fn register_type_argument_ranking(
         "hir_type_arg_links",
         &[
             "hir_type_arg_owner_a",
+            "hir_type_arg_application_owner",
+            "hir_type_arg_application_token",
             "hir_type_arg_link_a",
             "hir_type_arg_rank_a",
             "hir_type_arg_previous",
@@ -1899,7 +1927,6 @@ fn register_literals_and_raw_expression_records(
         "parser_hir_literal_values",
         &[
             "hir_expr_int_value",
-            "hir_expr_float_bits",
             "hir_expr_string_start",
             "hir_expr_string_len",
         ],
@@ -1909,6 +1936,14 @@ fn register_literals_and_raw_expression_records(
         "parser_hir_literal_values",
         "tree_active_dispatch_args",
     )?;
+
+    if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 {
+        reflected(graph, "parser_hir_float_values", CompilerPhase::Hir,
+            ResourceDomain::HirNodes, passes.hir_float_values.graph_pass(),
+            &[("tree_count_status", "partial_parse_status", None)])?;
+        graph.mark_pass_bindings_initialize("parser_hir_float_values",
+            &["hir_float_workspace", "hir_expr_float_bits"])?;
+    }
 
     static_pass(
         graph,
@@ -2457,6 +2492,7 @@ fn register_array_elements(
         &[
             ("tree_count_status", "partial_parse_status", None),
             ("element_owner", "hir_array_element_parent_lit", None),
+            ("element_ordinal", "hir_array_element_ordinal", None),
             (
                 "candidate_raw_by_anchor",
                 "hir_canonical_anchor_owner",
@@ -3189,6 +3225,9 @@ fn register_struct_fields(
             ("tree_count_status", "partial_parse_status", None),
             ("decl_owner", "hir_struct_field_parent_struct", None),
             ("literal_owner", "hir_struct_lit_field_parent_lit", None),
+            ("decl_ordinal", "hir_struct_field_ordinal", None),
+            ("literal_ordinal", "hir_struct_lit_field_rank_a", None),
+            ("alias_to_hir", "hir_canonical_alias_to_dense", None),
             (
                 "candidate_raw_by_anchor",
                 "hir_canonical_anchor_owner",
@@ -3448,7 +3487,10 @@ fn register_canonical_materialization(
         graph,
         CANONICAL_TYPE_ARGUMENT_CLEAR,
         CompilerPhase::Hir,
-        &[("hir_type_arg_table_count", "hir_type_arg_table_count")],
+        &[
+            ("hir_type_arg_table_count", "hir_type_arg_table_count"),
+            ("hir_type_arg_family_flag", "hir_type_arg_family_flag"),
+        ],
     )?;
 
     static_pass(
@@ -3461,10 +3503,10 @@ fn register_canonical_materialization(
             ("canonical_dense_to_raw", "hir_canonical_dense_to_raw", None),
             ("hir_type_arg_owner", "hir_type_arg_owner_a", None),
             ("hir_type_arg_rank", "hir_type_arg_rank_a", None),
+            ("raw_to_hir", "hir_canonical_alias_to_dense", None),
             ("family_flag", "hir_type_arg_family_flag", None),
         ],
     )?;
-    graph.mark_pass_bindings_initialize("hir_canonical_type_arg_mark", &["family_flag"])?;
     register_canonical_compaction_prefix(
         graph,
         capacity,
@@ -3489,6 +3531,7 @@ fn register_canonical_materialization(
             ("family_count", "hir_type_arg_table_count", None),
             ("hir_type_args", "hir_type_arg_rows", None),
             ("type_arg_ranges", "hir_type_arg_ranges", None),
+            ("path_type_arg_ranges", "hir_path_type_arg_ranges", None),
             ("canonical_status", "hir_canonical_status", None),
         ],
     )?;
@@ -3699,6 +3742,7 @@ fn register_canonical_materialization(
             ("raw_to_hir", "hir_canonical_alias_to_dense", None),
             ("family_count", "hir_generic_param_table_count", None),
             ("hir_generic_params", "hir_generic_param_rows", None),
+            ("hir_generic_param_types", "hir_generic_param_types", None),
             ("generic_param_ranges", "hir_generic_param_ranges", None),
             ("canonical_status", "hir_canonical_status", None),
         ],
@@ -3922,11 +3966,6 @@ fn register_canonical_materialization(
             ("hir_to_raw", "hir_canonical_dense_to_raw", None),
             ("type_root_owner", "hir_type_root_owner", None),
             ("hir_item_kind", "hir_item_kind", None),
-            (
-                "hir_method_signature_flags",
-                "hir_method_signature_flags",
-                None,
-            ),
             ("raw_to_item", "hir_canonical_raw_to_dense", None),
             (
                 "subject_anchor",

@@ -1,0 +1,1 @@
+fn main() -> i32 { let amount: u64 = 64; let result: u64 = 1 << amount; if (result == 0) { return 1; } return 2; }

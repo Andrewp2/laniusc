@@ -1,0 +1,16 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "semantic_seed_preserves_missing_zero_and_known_width_witnesses",
+    "completed_gpu_layouts_replace_unknown_cache_witnesses_before_reuse",
+    "semantic_packets_reject_symbolic_graphs_but_preserve_missing_layouts",
+    "closed_replay_defers_missing_native_layout_to_gpu_materialization"
+  ],
+  "exit_code": 0,
+  "seconds": 0.0035407270006544422,
+  "binary_sha256": "0215671faf2eae191a63b7c4cbd172b4c1da1b9ca2964133237bd14a870731ed",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

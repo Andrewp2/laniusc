@@ -1,0 +1,14 @@
+[
+  {
+    "path": "codegen/lir/semantic/function_templates.spv",
+    "sha256": "80a91ae3702ccde171dca3be191aa47e30b26231ad8044ddda0fc26eff1c0484",
+    "exit_code": 0,
+    "output": ""
+  },
+  {
+    "path": "codegen/lir/semantic/project.spv",
+    "sha256": "557987eecf728cb09d85269af5ad360644af823d6dba86fefb015f7a24553271",
+    "exit_code": 0,
+    "output": ""
+  }
+]

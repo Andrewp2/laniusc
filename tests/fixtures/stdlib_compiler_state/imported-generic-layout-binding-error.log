@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test local_generic_value_functions_execute_distinct_scalar_types ... GPU type-check detail: Gpu(compiler pass type_check.semantic_artifact.generic_native_words has reflected storage binding compact_expr_scalar_type with no same-named graph resource or override)
+
+thread 'local_generic_value_functions_execute_distinct_scalar_types' (705912) panicked at tests/compiler_generic_types_execution.rs:13:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_scalar_environments_705911_0.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    local_generic_value_functions_execute_distinct_scalar_types
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.77s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

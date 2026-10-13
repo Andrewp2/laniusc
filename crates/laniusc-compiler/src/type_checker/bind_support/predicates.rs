@@ -74,9 +74,9 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         "type_checker/predicates/01f1_emit_method_param_validation_rows",
         &predicate_dispatch_args,
     )?;
-    let validate_method_type_arg_rows = indirect(
-        compiler_graph::PREDICATES_VALIDATE_METHOD_TYPE_ARG_ROWS_PASS,
-        "type_checker/predicates/01f2_validate_method_type_arg_rows",
+    let validate_imported_methods = indirect(
+        compiler_graph::PREDICATES_VALIDATE_IMPORTED_METHODS_PASS,
+        "type_checker/predicates/01f2_validate_imported_methods",
         &predicate_dispatch_args,
     )?;
     let reduce_method_validation_errors = indirect(
@@ -138,7 +138,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         collect_impls,
         emit_method_validation_rows,
         emit_method_param_validation_rows,
-        validate_method_type_arg_rows,
+        validate_imported_methods,
         reduce_method_validation_errors,
         _obligation_pair_dispatch_params: obligation_pair_dispatch_params,
         count_obligation_pairs,

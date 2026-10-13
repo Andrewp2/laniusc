@@ -1,0 +1,4 @@
+trait Mark {} impl Mark for i32 {}
+fn keep<T>(v:T)->T where T:Mark {return v;}
+fn relay<T>(v:T)->T where T:Mark {return keep(v);}
+fn main()->i32 {return relay(42)-42;}

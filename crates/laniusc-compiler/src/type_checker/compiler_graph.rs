@@ -1,7 +1,10 @@
 use super::{
     semantic_interface::{
         DECLARATION_WORDS,
+        IMPLEMENTATION_WORDS,
+        IMPLEMENTATION_METHOD_BINDING_WORDS,
         MEMBER_WORDS,
+        PREDICATE_WORDS,
         MODULE_SEGMENT_WORDS,
         MODULE_WORDS,
         TYPE_WORDS,
@@ -169,25 +172,6 @@ pub(super) const AGGREGATE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
     };
 pub(super) const AGGREGATE_FINAL_DISPATCH_PASS: &str =
     "type_check.aggregate_requests.final.dispatch";
-pub(super) const TYPE_SUBTREE_CALL_SCAN_PASSES: PrefixScanGraphPasses =
-    prefix_scan_graph_passes!("type_check.type_subtree.calls.scan");
-pub(super) const TYPE_SUBTREE_CALL_DISPATCH_PASS: &str = "type_check.type_subtree.calls.dispatch";
-pub(super) const TYPE_SUBTREE_CALL_INDIRECT_PASS: &str = "type_check.type_subtree.calls.indirect";
-pub(super) const TYPE_SUBTREE_FINAL_SCAN_PASSES: PrefixScanGraphPasses =
-    prefix_scan_graph_passes!("type_check.type_subtree.final.scan");
-pub(super) const TYPE_SUBTREE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
-    PrefixScanResources {
-        count: "aggregate_compare_count_out",
-        input: "type_subtree_compare_scan_input",
-        output_prefix: "type_subtree_compare_prefix",
-        total: "type_subtree_compare_count_out",
-        dispatch_args: "aggregate_compare_dispatch_args",
-        local_prefix: "aggregate_compare_scan_local_prefix",
-        block_sum: "aggregate_compare_scan_block_sum",
-        block_prefix: "aggregate_compare_scan_prefix_a",
-    };
-pub(super) const TYPE_SUBTREE_FINAL_DISPATCH_PASS: &str = "type_check.type_subtree.final.dispatch";
-pub(super) const TYPE_SUBTREE_FINAL_INDIRECT_PASS: &str = "type_check.type_subtree.final.indirect";
 pub(super) const TYPE_SEMANTIC_CLEAR_PASS: &str = "type_check.type_semantic.clear";
 pub(super) const TYPE_SEMANTIC_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
@@ -274,10 +258,49 @@ pub(super) const TYPE_INSTANCES_DECL_GENERIC_PARAMS_PASS: &str =
 pub(super) const TYPE_INSTANCES_GENERIC_PARAM_USE_SLOTS_PASS: &str =
     "type_check.type_instances.generic_params.use_slots";
 pub(super) const GENERIC_PARAM_EMPTY_PASS: &str = "type_check.generic_params.empty";
-pub(super) const TYPE_INSTANCE_ARG_HASH_ROWS_PASS: &str = "type_check.type_instance_arg_rows.hash";
 pub(super) const CONDITIONS_AGGREGATE_ARGS_FINAL_PASS: &str =
     "type_check.conditions.aggregate_args.final";
 pub(super) const SEMANTIC_CALLS_PROJECT_PASS: &str = "type_check.semantic_artifact.calls";
+pub(super) const RETAINED_CALLABLE_SCAN: PrefixScanSpec = PrefixScanSpec {
+    phase: CompilerPhase::TypeCheck,
+    dispatch_domain: ResourceDomain::HirNodes,
+    passes: prefix_scan_graph_passes!("type_check.semantic_artifact.callable_scan"),
+    resources: PrefixScanResources {
+        count: "compact_hir_count",
+        input: "retained_callable_flag",
+        output_prefix: "retained_callable_prefix",
+        total: "retained_callable_count",
+        dispatch_args: "hir_active_dispatch_args",
+        local_prefix: "retained_callable_local_prefix",
+        block_sum: "retained_callable_block_sum",
+        block_prefix: "retained_callable_block_prefix",
+    },
+};
+pub(super) const RETAINED_CALLABLE_COMPACTION: crate::gpu::compiler_graph::CompactionSpec =
+    crate::gpu::compiler_graph::CompactionSpec {
+        mark: crate::gpu::compiler_graph::ReflectedComputeSpec::new(
+            "type_check.semantic_artifact.callable_mark",
+            "type_checker/semantic/artifact/02_mark_callable_rows",
+            CompilerPhase::TypeCheck,
+            ResourceDomain::HirNodes,
+        )
+        .with_modes(&[("retained_callable_flag", AccessMode::Write)])
+        .with_indirect_dispatch("hir_active_dispatch_args"),
+        scan: RETAINED_CALLABLE_SCAN,
+        scatter: crate::gpu::compiler_graph::ReflectedComputeSpec::new(
+            "type_check.semantic_artifact.callable_scatter",
+            "type_checker/semantic/artifact/03_scatter_callable_rows",
+            CompilerPhase::TypeCheck,
+            ResourceDomain::HirNodes,
+        )
+        .with_modes(&[
+            ("retained_callable_records", AccessMode::Write),
+            ("compact_hir_core", AccessMode::Read),
+            ("token_words", AccessMode::Read),
+            ("token_count", AccessMode::Read),
+        ])
+        .with_indirect_dispatch("hir_active_dispatch_args"),
+    };
 pub(super) const SEMANTIC_EXPRESSION_REFS_PROJECT_PASS: &str =
     "type_check.semantic_artifact.expression_refs";
 pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_PROJECT_PASS: &str =
@@ -294,10 +317,61 @@ pub(super) const TYPE_INSTANCES_STRUCT_INIT_CLEAR_PASS: &str =
     "type_check.type_instances.struct_init.clear";
 pub(super) const TYPE_INSTANCES_STRUCT_INIT_CONTEXTS_PASS: &str =
     "type_check.type_instances.struct_init.contexts";
+pub(super) const TYPE_INSTANCES_NESTED_STRUCT_INIT_CONTEXTS_PASS: &str =
+    "type_check.type_instances.struct_init.nested_contexts";
 pub(super) const TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS: &str =
     "type_check.type_instances.struct_init.substitute";
 pub(super) const TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS: &str =
     "type_check.type_instances.validate_aggregate_access";
+pub(super) const TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS: &str =
+    "type_check.type_instances.index_closed_applications";
+pub(super) const TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS: &str =
+    "type_check.type_instances.materialize_applications";
+pub(super) const TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS: &str =
+    "type_check.type_instances.index_generated_applications";
+pub(super) const TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS: &str =
+    "type_check.type_instances.project_imported_fields";
+pub(super) const CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS: &str =
+    "type_check.calls.bind_method_receiver_environment";
+pub(super) const CALLS_MATERIALIZE_RETURN_TYPES_PASS: &str =
+    "type_check.calls.materialize_return_types";
+pub(super) const CALLS_EXPAND_APPLICATION_FIELDS_PASS: &str =
+    "type_check.calls.expand_application_fields";
+pub(super) const CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS: &str = "type_check.calls.argument_contexts";
+pub(super) const CALLS_PROJECT_LITERAL_CONTEXTS_PASS: &str = "type_check.calls.literal_contexts";
+pub(super) const CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS: &str =
+    "type_check.calls.argument_context_type_index";
+pub(super) const CALLS_RECORD_CONTEXTS_PASS: &str = "type_check.calls.record_contexts";
+pub(super) const CALLS_RECORD_NESTED_CONTEXTS_PASS: &str =
+    "type_check.calls.record_nested_contexts";
+pub(super) const CALLS_RECORD_IMPORTED_FIELDS_PASS: &str =
+    "type_check.calls.record_imported_fields";
+pub(super) const CALLS_RECORD_FIELDS_PASS: &str = "type_check.calls.record_fields";
+pub(super) const CALLS_RECORD_REFS_PASS: &str = "type_check.calls.record_refs";
+
+pub(super) const CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS: &str =
+    "type_check.calls.match_payload_types";
+pub(super) const CALLS_RETURN_TYPE_INDEX_CLEAR_PASS: &str =
+    "type_check.calls.return_types.clear_index";
+pub(super) const CALLS_RETURN_TYPE_SOURCE_INDEX_PASS: &str =
+    "type_check.calls.return_types.index_sources";
+pub(super) const CALLS_RETURN_TYPE_INDEX_PASS: &str = "type_check.calls.return_types.index";
+pub(super) const CALLS_RETURN_IMPORTED_FIELDS_PASS: &str =
+    "type_check.calls.return_types.imported_fields";
+pub(super) const CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS: &str =
+    "type_check.calls.array_literal_elements";
+pub(super) const CALLS_MATERIALIZE_ARRAY_LITERALS_PASS: &str = "type_check.calls.array_literals";
+pub(super) const CALLS_VALIDATE_ARRAY_LITERALS_PASS: &str =
+    "type_check.calls.validate_array_literals";
+pub(super) const CALLS_PROJECT_EXPRESSION_TYPES_PASS: &str = "type_check.calls.expression_types";
+pub(super) const TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS: &str =
+    "type_check.type_instances.member_receivers_inference";
+pub(super) const TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS: &str =
+    "type_check.type_instances.member_results_inference";
+pub(super) const TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS: &str =
+    "type_check.type_instances.member_substitute_inference";
+pub(super) const CALLS_INFER_RETURN_BINDINGS_PASS: &str =
+    "type_check.calls.return_types.infer_bindings";
 pub(super) const TYPE_INSTANCES_MEMBER_RECEIVERS_PASS: &str =
     "type_check.type_instances.member_receivers";
 pub(super) const TYPE_INSTANCES_MEMBER_RESULTS_PASS: &str =
@@ -395,6 +469,86 @@ pub(super) const SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS: &str =
 pub(super) const SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS: &str =
     "type_check.semantic_artifact.local_const_references";
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
+pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
+pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
+
+pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
+    "type_checker/type/instances/00g_specialize_checked_references";
+// Accepted value facts and application edges share one lexical substitution.
+// Keep function/parameter signature columns symbolic: sibling calls have their
+// own accepted environments, even when they target the body being replayed.
+pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str)] = &[
+    (
+        "type_check.body_specialization.argument_edges",
+        "type_instance_arg_ref_tag",
+        "type_instance_arg_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.source_argument_edges",
+        "type_instance_arg_row_ref_tag",
+        "type_instance_arg_row_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.element_edges",
+        "type_instance_elem_ref_tag",
+        "type_instance_elem_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_declarations",
+        "decl_type_ref_tag",
+        "decl_type_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_expressions",
+        "call_inference_result_tag",
+        "call_inference_result_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_claims",
+        "call_generic_claim_ref_tag",
+        "call_generic_claim_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.explicit_bindings",
+        "call_explicit_binding_tag",
+        "call_explicit_binding_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_contexts",
+        "call_context_ref_tag",
+        "call_context_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.expected_arguments",
+        "argument_expected_ref_tag",
+        "argument_expected_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.imported_match_payloads",
+        "imported_match_payload_ref_tag",
+        "imported_match_payload_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_members",
+        "member_result_ref_tag",
+        "member_result_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_member_roots",
+        "member_chain_root_ref_tag",
+        "member_chain_root_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_imported_fields",
+        "imported_field_ref_tag",
+        "imported_field_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.accepted_literal_results",
+        "semantic_expr_ref_tag_by_hir",
+        "semantic_expr_ref_payload_by_hir",
+    ),
+];
 
 pub(super) const PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS: &str =
     "type_check.predicates.clear_bound_arg_facts";
@@ -412,8 +566,8 @@ pub(super) const PREDICATES_EMIT_METHOD_VALIDATION_ROWS_PASS: &str =
     "type_check.predicates.emit_method_validation_rows";
 pub(super) const PREDICATES_EMIT_METHOD_PARAM_VALIDATION_ROWS_PASS: &str =
     "type_check.predicates.emit_method_param_validation_rows";
-pub(super) const PREDICATES_VALIDATE_METHOD_TYPE_ARG_ROWS_PASS: &str =
-    "type_check.predicates.validate_method_type_arg_rows";
+pub(super) const PREDICATES_VALIDATE_IMPORTED_METHODS_PASS: &str =
+    "type_check.predicates.validate_imported_methods";
 pub(super) const PREDICATES_REDUCE_METHOD_VALIDATION_ERRORS_PASS: &str =
     "type_check.predicates.reduce_method_validation_errors";
 pub(super) const PREDICATES_COUNT_OBLIGATION_PAIRS_PASS: &str =
@@ -484,6 +638,21 @@ pub(super) const GENERIC_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
         local_prefix: "call_generic_claim_scan_local_prefix",
         block_sum: "call_generic_claim_scan_block_sum",
         block_prefix: "call_generic_claim_scan_prefix_a",
+    },
+};
+pub(super) const CONST_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
+    phase: CompilerPhase::TypeCheck,
+    dispatch_domain: ResourceDomain::CallArguments,
+    passes: prefix_scan_graph_passes!("type_check.calls.const_claims.scan"),
+    resources: PrefixScanResources {
+        count: "call_arg_row_count_out",
+        input: "call_const_claim_scan_input",
+        output_prefix: "call_const_claim_prefix",
+        total: "call_const_claim_count_out",
+        dispatch_args: "hir_active_dispatch_args",
+        local_prefix: "call_const_claim_scan_local_prefix",
+        block_sum: "call_const_claim_scan_block_sum",
+        block_prefix: "call_const_claim_scan_prefix_a",
     },
 };
 pub(super) const GENERIC_CLAIM_INDEX_PREPARE_PASS: &str =
@@ -773,19 +942,6 @@ pub(super) const DEPENDENCY_VISIBLE_SCAN_CALL_COLLECTION: PrefixScanSpec = Prefi
     passes: prefix_scan_graph_passes!("type_check.dependencies.call_collection.visible.scan"),
     ..DEPENDENCY_VISIBLE_SCAN
 };
-pub(super) const DEPENDENCY_CALL_COMPARE_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::HirNodes,
-    passes: prefix_scan_graph_passes!("type_check.dependencies.call_compare.scan"),
-    resources: module_compact_scan_resources(
-        "hir_active_count",
-        "dependency_call_compare_scan_input",
-        "dependency_call_compare_prefix",
-        "dependency_call_compare_total",
-        "hir_active_dispatch_args",
-        true,
-    ),
-};
 
 const fn module_compact_scan_resources(
     count: &'static str,
@@ -819,8 +975,6 @@ const fn module_compact_scan_resources(
         block_prefix,
     }
 }
-pub(super) const DEPENDENCY_CALL_COMPARE_CLEAR_PASS: &str =
-    "type_check.dependencies.call_compare.clear";
 pub(super) const DEPENDENCY_CALL_ARGS_VALIDATE_PASS: &str =
     "type_check.dependencies.validate_call_args";
 pub(super) const DEPENDENCY_CALL_RESULTS_SUBSTITUTE_PASS: &str =
@@ -829,11 +983,6 @@ pub(super) const DEPENDENCY_CALL_RESULTS_VALIDATE_PASS: &str =
     "type_check.dependencies.validate_call_results.validate";
 pub(super) const DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS: &str =
     "type_check.dependencies.resolve_generic_call_results";
-pub(super) const DEPENDENCY_CALL_COMPARE_DISPATCH_PASS: &str =
-    "type_check.dependencies.call_compare_dispatch_args";
-pub(super) const DEPENDENCY_CALL_TYPE_ARGS_VALIDATE_PASS: &str =
-    "type_check.dependencies.validate_call_type_args";
-pub(super) const DEPENDENCY_METHODS_PROJECT_PASS: &str = "type_check.dependencies.project_methods";
 
 /// Graph-owned storage and ownership contract for type checking. Logical
 /// resources are recovered from the graph by name; the workspace is their
@@ -848,10 +997,20 @@ pub(super) struct DependencyWorkspaceCapacity {
     visible_rows: u32,
     lookup_rows: u32,
     type_rows: u32,
+    constant_type_rows: u32,
     declaration_rows: u32,
 }
 
 impl DependencyWorkspaceCapacity {
+    pub(super) fn constant_storage_plan(
+        self, hir_capacity: u32, token_capacity: u32, parser_feature_flags: u32,
+    ) -> Result<ConstantStoragePlan, String> {
+        let enabled = generic_param_record_passes_required(parser_feature_flags)
+            || self.type_rows != 0 || array_passes_required(parser_feature_flags);
+        ConstantStoragePlan::new(hir_capacity, token_capacity, self.constant_type_rows, enabled)
+            .ok_or_else(|| "checked constant storage capacity exceeds u32".to_owned())
+    }
+
     pub(super) fn for_job(
         token_capacity: u32,
         dependency: Option<&GpuDependencyInterfaceState>,
@@ -867,7 +1026,8 @@ impl DependencyWorkspaceCapacity {
         Ok(Self {
             visible_rows,
             lookup_rows,
-            type_rows: dependency.type_count.max(1),
+            type_rows: dependency.type_count,
+            constant_type_rows: dependency.constant_type_rows,
             declaration_rows: dependency.declaration_count.max(1),
         })
     }
@@ -882,41 +1042,39 @@ pub(super) enum SemanticInterfaceScan {
     Members = 4,
     TypeOrder = 5,
     TypeEdges = 6,
+    Predicates = 7,
+    PredicateArguments = 8,
+    Implementations = 9,
+    ImplementationArguments = 10,
+    ImplementationMembers = 11,
+    ImplementationMethods = 12,
 }
 
-pub(super) const SEMANTIC_INTERFACE_ROOT_STEP_PASSES: [&str; 8] = [
-    "type_check.interface.type_topology.root_step.0",
-    "type_check.interface.type_topology.root_step.1",
-    "type_check.interface.type_topology.root_step.2",
-    "type_check.interface.type_topology.root_step.3",
-    "type_check.interface.type_topology.root_step.4",
-    "type_check.interface.type_topology.root_step.5",
-    "type_check.interface.type_topology.root_step.6",
-    "type_check.interface.type_topology.root_step.7",
-];
 const SEMANTIC_INTERFACE_ACTIVE_HIR_PASSES: &[&str] = &[
     "type_check.interface.type_topology.init",
+    "type_check.interface.implementations.init",
+    "type_check.interface.implementations.mark_methods",
+    "type_check.interface.implementations.classify",
+    "type_check.interface.implementations.map_seed",
+    "type_check.interface.implementations.methods",
+    "type_check.interface.implementations.scatter",
+    "type_check.interface.implementations.finish",
+    "type_check.interface.implementations.method_counts",
     "type_check.interface.type_topology.attach_unary",
     "type_check.interface.type_topology.seed_declarations",
     "type_check.interface.type_topology.seed_params",
     "type_check.interface.type_topology.seed_fields",
     "type_check.interface.type_topology.seed_variants",
-    "type_check.interface.type_topology.root_init",
     "type_check.interface.type_topology.mark_reverse",
     "type_check.interface.type_topology.scatter",
     "type_check.interface.type_topology.edge_counts",
-    "type_check.interface.type_topology.edge_scatter",
     "type_check.interface.type_topology.resolve_local_decl",
-    "type_check.interface.type_topology.classify_path",
     "type_check.interface.type_topology.type_records",
-    "type_check.interface.type_topology.array_lengths",
-    "type_check.interface.type_topology.validate",
     "type_check.interface.signature.param_edges",
     "type_check.interface.signature.variant_payload_edges",
     "type_check.interface.members.variant_counts",
     "type_check.interface.members.method_counts",
     "type_check.interface.members.scatter_hir",
-    "type_check.interface.members.normalize_types",
 ];
 pub(super) const SEMANTIC_INTERFACE_EDGE_WRITTEN_CLEAR_PASS: &str =
     "type_check.interface.type_topology.edge_written.clear";
@@ -930,6 +1088,14 @@ pub(super) const SEMANTIC_INTERFACE_GENERIC_CONST_COUNT_CLEAR_PASS: &str =
     "type_check.interface.members.generic_const_count.clear";
 pub(super) const SEMANTIC_INTERFACE_MEMBER_WRITTEN_CLEAR_PASS: &str =
     "type_check.interface.members.written.clear";
+pub(super) const SEMANTIC_INTERFACE_PREDICATE_WRITTEN_CLEAR_PASS: &str =
+    "type_check.interface.predicates.written.clear";
+pub(super) const SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_WRITTEN_CLEAR_PASS: &str =
+    "type_check.interface.predicate_arguments.written.clear";
+pub(super) const SEMANTIC_INTERFACE_PREDICATE_TOTAL_CLEAR_PASS: &str =
+    "type_check.interface.predicates.total.clear";
+pub(super) const SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_TOTAL_CLEAR_PASS: &str =
+    "type_check.interface.predicate_arguments.total.clear";
 pub(super) const SEMANTIC_INTERFACE_NAME_REF_CLEAR_PASS: &str =
     "type_check.interface.name_ref_len.clear";
 pub(super) const SEMANTIC_INTERFACE_NAME_BYTES_CLEAR_PASS: &str =
@@ -944,34 +1110,34 @@ struct SemanticInterfaceScanGraph {
     materialized: MaterializedCompilerGraph,
     bindings: CompilerGraphBindings,
     scratch: PrefixScanWorkspace<LaniusBuffer<u32>>,
-    resources: [PrefixScanResources<ResourceId>; 7],
-    passes: [PrefixScanGraphPasses; 7],
+    resources: [PrefixScanResources<ResourceId>; 13],
+    passes: [PrefixScanGraphPasses; 13],
 }
 
 struct SemanticInterfaceScanPlan {
     graph: CompilerGraph,
     scan_capacity: u64,
     scratch: PrefixScanWorkspace<ResourceId>,
-    resources: [PrefixScanResources<ResourceId>; 7],
-    passes: [PrefixScanGraphPasses; 7],
+    resources: [PrefixScanResources<ResourceId>; 13],
+    passes: [PrefixScanGraphPasses; 13],
 }
 
 impl SemanticInterfaceScanGraph {
-    fn root_step_count(&self) -> usize {
-        SEMANTIC_INTERFACE_ROOT_STEP_PASSES
-            .iter()
-            .take_while(|name| self.materialized.graph().pass_id(name).is_some())
-            .count()
-    }
-
     fn build(
         hir_capacity: u32,
         token_capacity: u32,
         source_file_capacity: u32,
         declaration_capacity: u32,
+        predicate_capacity: u32,
+        implementation_capacity: u32,
         kernels: &impl crate::gpu::kernels::KernelReflections,
         upstream_graph: &CompilerGraph,
     ) -> Result<SemanticInterfaceScanPlan> {
+        let predicate_rows = u64::from(predicate_capacity.min(hir_capacity).min(token_capacity).max(1));
+        let implementation_rows = u64::from(implementation_capacity.min(hir_capacity).min(token_capacity).max(1));
+        let implementation_argument_rows = u64::from(hir_capacity.min(token_capacity).max(1)).min(implementation_rows * 32);
+        let predicate_argument_rows = u64::from(hir_capacity.min(token_capacity).max(1))
+            .min(predicate_rows * 32);
         let capacities = [
             u64::from(token_capacity) * 2
                 + u64::from(hir_capacity) * 2
@@ -982,6 +1148,12 @@ impl SemanticInterfaceScanGraph {
             u64::from(declaration_capacity),
             u64::from(hir_capacity),
             u64::from(hir_capacity),
+            predicate_rows,
+            predicate_rows,
+            implementation_rows,
+            implementation_rows,
+            implementation_rows,
+            implementation_rows,
         ]
         .map(|capacity| capacity.max(1));
         let scan_capacity = capacities.into_iter().max().unwrap_or(1);
@@ -1014,11 +1186,14 @@ impl SemanticInterfaceScanGraph {
         let token_rows = u64::from(token_capacity.max(1));
         let module_rows = u64::from(source_file_capacity.max(1));
         let type_rows = semantic_hir_rows
-            .checked_add(declaration_rows)
-            .and_then(|rows| rows.checked_add(1))
+            .checked_mul(2)
+            .and_then(|rows| rows.checked_add(predicate_rows))
+            .and_then(|rows| rows.checked_add(declaration_rows))
+            .and_then(|rows| rows.checked_add(u64::from(crate::primitive_types::SCALAR_USIZE - crate::primitive_types::SCALAR_UNIT + 1)))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface type capacity overflows u64"))?;
         let edge_rows = semantic_hir_rows
-            .checked_add(declaration_rows)
+            .checked_mul(2)
+            .and_then(|rows| rows.checked_add(declaration_rows))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface edge capacity overflows u64"))?;
         let member_rows = semantic_hir_rows
             .checked_mul(2)
@@ -1043,6 +1218,28 @@ impl SemanticInterfaceScanGraph {
                 "semantic_interface.declarations",
                 declaration_rows * DECLARATION_WORDS as u64,
             ),
+            ("semantic_interface.implementations.flag", implementation_rows),
+            ("semantic_interface.implementations.argument_count", implementation_rows),
+            ("semantic_interface.implementations.index_by_hir", implementation_rows),
+            ("semantic_interface.implementations.member_count", implementation_rows),
+            ("semantic_interface.implementations.method_count", implementation_rows),
+            ("semantic_interface.implementations.first_method_row", implementation_rows),
+            ("semantic_interface.implementations.words", implementation_rows * IMPLEMENTATION_WORDS as u64),
+            ("semantic_interface.implementations.written", implementation_rows),
+            ("semantic_interface.implementations.arguments", implementation_argument_rows),
+            ("semantic_interface.implementations.argument_written", implementation_argument_rows),
+            ("semantic_interface.implementations.method_binding_words", implementation_rows * IMPLEMENTATION_METHOD_BINDING_WORDS as u64),
+            ("semantic_interface.implementations.method_binding_written", implementation_rows),
+            ("semantic_interface.complete_member_count", 1),
+            ("semantic_interface.predicates.flag", predicate_rows),
+            ("semantic_interface.predicates.argument_count", predicate_rows),
+            ("semantic_interface.predicates.owner", predicate_rows),
+            ("semantic_interface.predicates.scope", predicate_rows),
+            ("semantic_interface.predicates.subject_row", predicate_rows),
+            ("semantic_interface.predicates.words", predicate_rows * PREDICATE_WORDS as u64),
+            ("semantic_interface.predicates.written", predicate_rows),
+            ("semantic_interface.predicate_arguments.words", predicate_argument_rows),
+            ("semantic_interface.predicate_arguments.written", predicate_argument_rows),
             ("semantic_interface.type.parent", semantic_hir_rows),
             ("semantic_interface.type.seed_owner", semantic_hir_rows),
             ("semantic_interface.type.child_ordinal", semantic_hir_rows),
@@ -1051,22 +1248,13 @@ impl SemanticInterfaceScanGraph {
                 declaration_rows,
             ),
             ("semantic_interface.type.index_by_hir", semantic_hir_rows),
-            ("semantic_interface.type.root_link_a", semantic_hir_rows),
-            ("semantic_interface.type.root_link_b", semantic_hir_rows),
-            ("semantic_interface.type.root_owner_a", semantic_hir_rows),
-            ("semantic_interface.type.root_owner_b", semantic_hir_rows),
             ("semantic_interface.type.reverse_flag", semantic_hir_rows),
-            ("semantic_interface.type.hir_order", semantic_hir_rows),
             ("semantic_interface.type.edge_count", semantic_hir_rows),
             ("semantic_interface.type.edges", edge_rows),
             ("semantic_interface.type.edge_written", edge_rows),
             (
                 "semantic_interface.type.local_decl_by_hir",
                 semantic_hir_rows,
-            ),
-            (
-                "semantic_interface.type.path_classification",
-                semantic_hir_rows * 4,
             ),
             (
                 "semantic_interface.type.types",
@@ -1108,6 +1296,10 @@ impl SemanticInterfaceScanGraph {
                 token_rows,
             ),
             ("semantic_interface.members.written", member_rows),
+            (
+                "semantic_interface.members.scope_owner_by_hir",
+                semantic_hir_rows,
+            ),
         ] {
             builder
                 .add_resource(ResourceDesc {
@@ -1240,6 +1432,40 @@ impl SemanticInterfaceScanGraph {
                     .resource_id("semantic_interface.type.edge_count")
                     .expect("semantic-interface type edge counts")
             ),
+            scan_resources!(
+                "semantic_interface.predicates",
+                capacities[7],
+                ResourceDomain::Types,
+                builder.resource_id("semantic_interface.predicates.flag")
+                    .expect("semantic-interface predicate flags")
+            ),
+            scan_resources!(
+                "semantic_interface.predicate_arguments",
+                capacities[8],
+                ResourceDomain::Types,
+                builder.resource_id("semantic_interface.predicates.argument_count")
+                    .expect("semantic-interface predicate argument counts")
+            ),
+            scan_resources!(
+                "semantic_interface.implementations", capacities[9], ResourceDomain::Types,
+                builder.resource_id("semantic_interface.implementations.flag")
+                    .expect("semantic-interface implementation scan input")
+            ),
+            scan_resources!(
+                "semantic_interface.implementation_arguments", capacities[10], ResourceDomain::Types,
+                builder.resource_id("semantic_interface.implementations.argument_count")
+                    .expect("semantic-interface implementation scan input")
+            ),
+            scan_resources!(
+                "semantic_interface.implementation_members", capacities[11], ResourceDomain::Types,
+                builder.resource_id("semantic_interface.implementations.member_count")
+                    .expect("semantic-interface implementation scan input")
+            ),
+            scan_resources!(
+                "semantic_interface.implementation_methods", capacities[12], ResourceDomain::Types,
+                builder.resource_id("semantic_interface.implementations.method_count")
+                    .expect("semantic-interface implementation scan input")
+            ),
         ]
         .into_iter()
         .collect::<Result<Vec<_>, String>>()
@@ -1258,6 +1484,28 @@ impl SemanticInterfaceScanGraph {
                 "interface_declaration_words",
                 "semantic_interface.declarations",
             ),
+            ("interface_implementation_flag", "semantic_interface.implementations.flag"),
+            ("interface_implementation_argument_count", "semantic_interface.implementations.argument_count"),
+            ("interface_implementation_index_by_hir", "semantic_interface.implementations.index_by_hir"),
+            ("interface_implementation_member_count", "semantic_interface.implementations.member_count"),
+            ("interface_implementation_method_count", "semantic_interface.implementations.method_count"),
+            ("interface_implementation_first_method_row", "semantic_interface.implementations.first_method_row"),
+            ("interface_implementation_words", "semantic_interface.implementations.words"),
+            ("interface_implementation_written", "semantic_interface.implementations.written"),
+            ("interface_implementation_arguments", "semantic_interface.implementations.arguments"),
+            ("interface_implementation_argument_written", "semantic_interface.implementations.argument_written"),
+            ("interface_implementation_method_binding_words", "semantic_interface.implementations.method_binding_words"),
+            ("interface_implementation_method_binding_written", "semantic_interface.implementations.method_binding_written"),
+            ("interface_member_total", "semantic_interface.complete_member_count"),
+            ("interface_predicate_flag", "semantic_interface.predicates.flag"),
+            ("interface_predicate_argument_count", "semantic_interface.predicates.argument_count"),
+            ("interface_predicate_owner", "semantic_interface.predicates.owner"),
+            ("interface_predicate_scope", "semantic_interface.predicates.scope"),
+            ("interface_predicate_subject_row", "semantic_interface.predicates.subject_row"),
+            ("interface_predicate_words", "semantic_interface.predicates.words"),
+            ("interface_predicate_written", "semantic_interface.predicates.written"),
+            ("interface_predicate_arguments", "semantic_interface.predicate_arguments.words"),
+            ("interface_predicate_argument_written", "semantic_interface.predicate_arguments.written"),
             ("interface_type_parent", "semantic_interface.type.parent"),
             (
                 "interface_type_seed_owner",
@@ -1276,16 +1524,8 @@ impl SemanticInterfaceScanGraph {
                 "semantic_interface.type.index_by_hir",
             ),
             (
-                "interface_type_root_link",
-                "semantic_interface.type.root_link_a",
-            ),
-            (
                 "interface_type_reverse_flag",
                 "semantic_interface.type.reverse_flag",
-            ),
-            (
-                "interface_type_hir_order",
-                "semantic_interface.type.hir_order",
             ),
             (
                 "interface_type_edge_count",
@@ -1299,10 +1539,6 @@ impl SemanticInterfaceScanGraph {
             (
                 "interface_type_local_decl_by_hir",
                 "semantic_interface.type.local_decl_by_hir",
-            ),
-            (
-                "interface_type_path_classification",
-                "semantic_interface.type.path_classification",
             ),
             ("interface_types", "semantic_interface.type.types"),
             (
@@ -1365,6 +1601,10 @@ impl SemanticInterfaceScanGraph {
                 "interface_member_written",
                 "semantic_interface.members.written",
             ),
+            (
+                "interface_generic_scope_owner_by_hir",
+                "semantic_interface.members.scope_owner_by_hir",
+            ),
         ] {
             let resource = builder.resource_id(resource_name).ok_or_else(|| {
                 anyhow::anyhow!("missing semantic-interface graph resource {resource_name}")
@@ -1373,34 +1613,6 @@ impl SemanticInterfaceScanGraph {
                 .add_resource_alias(binding, resource)
                 .map_err(anyhow::Error::msg)?;
         }
-        let mut root_steps = 0u32;
-        let mut covered_depth = 1u64;
-        while covered_depth < semantic_hir_rows {
-            covered_depth = covered_depth.saturating_mul(16);
-            root_steps += 1;
-        }
-        let root_link_a = builder
-            .resource_id("semantic_interface.type.root_link_a")
-            .expect("semantic-interface root-link A");
-        let root_link_b = builder
-            .resource_id("semantic_interface.type.root_link_b")
-            .expect("semantic-interface root-link B");
-        let root_owner_a = builder
-            .resource_id("semantic_interface.type.root_owner_a")
-            .expect("semantic-interface root-owner A");
-        let root_owner_b = builder
-            .resource_id("semantic_interface.type.root_owner_b")
-            .expect("semantic-interface root-owner B");
-        builder
-            .add_resource_alias(
-                "interface_type_root_owner",
-                if root_steps & 1 == 0 {
-                    root_owner_a
-                } else {
-                    root_owner_b
-                },
-            )
-            .map_err(anyhow::Error::msg)?;
         for (binding, resource) in [
             (
                 "interface_name_ref_prefix",
@@ -1447,9 +1659,21 @@ impl SemanticInterfaceScanGraph {
                     .output_prefix,
             ),
             (
-                "interface_member_total",
+                "interface_declaration_member_total",
                 scans[SemanticInterfaceScan::Members as usize].0.total,
             ),
+            ("interface_implementation_prefix", scans[SemanticInterfaceScan::Implementations as usize].0.output_prefix),
+            ("interface_implementation_total", scans[SemanticInterfaceScan::Implementations as usize].0.total),
+            ("interface_implementation_argument_prefix", scans[SemanticInterfaceScan::ImplementationArguments as usize].0.output_prefix),
+            ("interface_implementation_argument_total", scans[SemanticInterfaceScan::ImplementationArguments as usize].0.total),
+            ("interface_implementation_member_prefix", scans[SemanticInterfaceScan::ImplementationMembers as usize].0.output_prefix),
+            ("interface_implementation_member_total", scans[SemanticInterfaceScan::ImplementationMembers as usize].0.total),
+            ("interface_implementation_method_prefix", scans[SemanticInterfaceScan::ImplementationMethods as usize].0.output_prefix),
+            ("interface_implementation_method_total", scans[SemanticInterfaceScan::ImplementationMethods as usize].0.total),
+            ("interface_predicate_prefix", scans[SemanticInterfaceScan::Predicates as usize].0.output_prefix),
+            ("interface_predicate_total", scans[SemanticInterfaceScan::Predicates as usize].0.total),
+            ("interface_predicate_argument_prefix", scans[SemanticInterfaceScan::PredicateArguments as usize].0.output_prefix),
+            ("interface_predicate_argument_total", scans[SemanticInterfaceScan::PredicateArguments as usize].0.total),
             (
                 "interface_type_reverse_prefix",
                 scans[SemanticInterfaceScan::TypeOrder as usize]
@@ -1535,6 +1759,14 @@ impl SemanticInterfaceScanGraph {
                 AccessMode::Read,
             )
             .map_err(anyhow::Error::msg)?;
+        builder
+            .import_resource_alias_from(
+                upstream_graph,
+                "predicate_compact_dispatch_args",
+                "predicate_compact_dispatch_args",
+                AccessMode::Read,
+            )
+            .map_err(anyhow::Error::msg)?;
         const IDENTITY_KERNELS: &[&str] = &[
             "type_checker/interface/00_identity_sizes",
             "type_checker/interface/01_identity_records",
@@ -1542,22 +1774,29 @@ impl SemanticInterfaceScanGraph {
             "type_checker/interface/artifact/materialize",
         ];
         const TOPOLOGY_KERNELS: &[&str] = &[
+            "type_checker/interface/implementations/00_init",
+            "type_checker/interface/implementations/00a_mark_methods",
+            "type_checker/interface/implementations/00_classify",
+            "type_checker/interface/implementations/02_map_seed",
+            "type_checker/interface/implementations/01_method_counts",
+            "type_checker/interface/implementations/03_methods",
+            "type_checker/interface/implementations/04_totals",
+            "type_checker/interface/implementations/05_scatter",
+            "type_checker/interface/implementations/06_finish",
             "type_checker/interface/type_topology/00_init",
             "type_checker/interface/type_topology/01_attach_unary",
             "type_checker/interface/type_topology/02_seed_declarations",
             "type_checker/interface/type_topology/02b_seed_params",
             "type_checker/interface/type_topology/02c_seed_fields",
             "type_checker/interface/type_topology/02d_seed_variants",
-            "type_checker/interface/type_topology/03_root_init",
+            "type_checker/interface/predicates/00_classify",
+            "type_checker/interface/type_topology/02e_seed_predicates",
+            "type_checker/interface/predicates/01_scatter",
             "type_checker/interface/type_topology/05_mark_reverse",
             "type_checker/interface/type_topology/06_scatter",
-            "type_checker/interface/type_topology/07_validate",
             "type_checker/interface/type_topology/08_edge_counts",
-            "type_checker/interface/type_topology/09_edge_scatter",
             "type_checker/interface/type_topology/10_resolve_local_decl",
-            "type_checker/interface/type_topology/11_classify_path",
             "type_checker/interface/type_topology/12_type_records",
-            "type_checker/interface/type_topology/13_array_lengths",
             "type_checker/interface/signature/00_flags",
             "type_checker/interface/signature/01_totals",
             "type_checker/interface/signature/01b_direct_types",
@@ -1571,7 +1810,6 @@ impl SemanticInterfaceScanGraph {
             "type_checker/interface/members/01_counts",
             "type_checker/interface/members/02_scatter_hir",
             "type_checker/interface/members/03_scatter_generic",
-            "type_checker/interface/members/04_normalize_types",
         ];
         builder
             .import_reflected_resources_from(upstream_graph, kernels, IDENTITY_KERNELS)
@@ -1697,6 +1935,35 @@ impl SemanticInterfaceScanGraph {
             "interface_member_written",
             "semantic_interface.members.written"
         );
+        // Empty compact dispatches execute no scan apply lane. Reset totals
+        // explicitly so a preceding unit's predicates cannot survive reuse.
+        add_clear!(
+            SEMANTIC_INTERFACE_PREDICATE_TOTAL_CLEAR_PASS,
+            "interface_predicate_total",
+            "semantic_interface.predicates.total"
+        );
+        add_clear!(
+            SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_TOTAL_CLEAR_PASS,
+            "interface_predicate_argument_total",
+            "semantic_interface.predicate_arguments.total"
+        );
+        add_clear!(
+            SEMANTIC_INTERFACE_PREDICATE_WRITTEN_CLEAR_PASS,
+            "interface_predicate_written",
+            "semantic_interface.predicates.written"
+        );
+        add_clear!(
+            SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_WRITTEN_CLEAR_PASS,
+            "interface_predicate_argument_written",
+            "semantic_interface.predicate_arguments.written"
+        );
+        add_clear!("type_check.interface.implementations.total.clear", "interface_implementation_total", "semantic_interface.implementations.total");
+        add_clear!("type_check.interface.implementation_arguments.total.clear", "interface_implementation_argument_total", "semantic_interface.implementation_arguments.total");
+        add_clear!("type_check.interface.implementation_members.total.clear", "interface_implementation_member_total", "semantic_interface.implementation_members.total");
+        add_clear!("type_check.interface.implementation_methods.total.clear", "interface_implementation_method_total", "semantic_interface.implementation_methods.total");
+        add_clear!("type_check.interface.implementations.written.clear", "interface_implementation_written", "semantic_interface.implementations.written");
+        add_clear!("type_check.interface.implementations.argument_written.clear", "interface_implementation_argument_written", "semantic_interface.implementations.argument_written");
+        add_clear!("type_check.interface.implementations.method_binding_written.clear", "interface_implementation_method_binding_written", "semantic_interface.implementations.method_binding_written");
         builder
             .add_kernel_initializer_by_name(
                 "type_check.interface.type_topology.init",
@@ -1710,6 +1977,18 @@ impl SemanticInterfaceScanGraph {
             "type_check.interface.type_topology.attach_unary",
             "type_checker/interface/type_topology/01_attach_unary"
         );
+        add_kernel_writes!("type_check.interface.implementations.init", "type_checker/interface/implementations/00_init",
+            "interface_implementation_flag" => "semantic_interface.implementations.flag",
+            "interface_implementation_index_by_hir" => "semantic_interface.implementations.index_by_hir",
+            "interface_implementation_member_count" => "semantic_interface.implementations.member_count",
+            "interface_implementation_method_count" => "semantic_interface.implementations.method_count",
+            "interface_implementation_first_method_row" => "semantic_interface.implementations.first_method_row");
+        add_kernel!("type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/00a_mark_methods");
+        add_kernel_writes!("type_check.interface.implementations.classify", "type_checker/interface/implementations/00_classify",
+            "interface_implementation_argument_count" => "semantic_interface.implementations.argument_count");
+        add_scan!(SemanticInterfaceScan::Implementations);
+        add_scan!(SemanticInterfaceScan::ImplementationArguments);
+        add_kernel!("type_check.interface.implementations.map_seed", "type_checker/interface/implementations/02_map_seed");
         let direct_type_hir = builder
             .resource_id("semantic_interface.type.direct_hir_by_decl")
             .expect("semantic-interface direct declaration type");
@@ -1752,70 +2031,21 @@ impl SemanticInterfaceScanGraph {
                 )
                 .map_err(anyhow::Error::msg)?;
         }
-        builder
-            .add_kernel_pass_by_name(
-                "type_check.interface.type_topology.root_init",
-                CompilerPhase::TypeCheck,
-                ResourceDomain::Types,
-                kernels,
-                "type_checker/interface/type_topology/03_root_init",
-                &[
-                    ReflectedResourceBinding {
-                        binding: "interface_type_root_link",
-                        resource: root_link_a,
-                        mode: Some(AccessMode::Write),
-                    },
-                    ReflectedResourceBinding {
-                        binding: "interface_type_root_owner",
-                        resource: root_owner_a,
-                        mode: Some(AccessMode::Write),
-                    },
-                ],
-            )
-            .map_err(anyhow::Error::msg)?;
-        for (step, &name) in SEMANTIC_INTERFACE_ROOT_STEP_PASSES
-            .iter()
-            .take(root_steps as usize)
-            .enumerate()
-        {
-            let (link_in, owner_in, link_out, owner_out) = if step & 1 == 0 {
-                (root_link_a, root_owner_a, root_link_b, root_owner_b)
-            } else {
-                (root_link_b, root_owner_b, root_link_a, root_owner_a)
-            };
-            builder
-                .add_kernel_pass_by_name(
-                    name,
-                    CompilerPhase::TypeCheck,
-                    ResourceDomain::Types,
-                    kernels,
-                    "type_checker/interface/type_topology/04_root_step",
-                    &[
-                        ReflectedResourceBinding {
-                            binding: "interface_type_root_link_in",
-                            resource: link_in,
-                            mode: None,
-                        },
-                        ReflectedResourceBinding {
-                            binding: "interface_type_root_owner_in",
-                            resource: owner_in,
-                            mode: None,
-                        },
-                        ReflectedResourceBinding {
-                            binding: "interface_type_root_link_out",
-                            resource: link_out,
-                            mode: Some(AccessMode::Write),
-                        },
-                        ReflectedResourceBinding {
-                            binding: "interface_type_root_owner_out",
-                            resource: owner_out,
-                            mode: Some(AccessMode::Write),
-                        },
-                    ],
-                )
-                .map_err(anyhow::Error::msg)?;
-        }
-
+        add_kernel_writes!(
+            "type_check.interface.predicates.classify",
+            "type_checker/interface/predicates/00_classify",
+            "interface_predicate_flag" => "semantic_interface.predicates.flag",
+            "interface_predicate_argument_count" => "semantic_interface.predicates.argument_count",
+            "interface_predicate_owner" => "semantic_interface.predicates.owner",
+            "interface_predicate_scope" => "semantic_interface.predicates.scope",
+            "interface_predicate_subject_row" => "semantic_interface.predicates.subject_row"
+        );
+        add_kernel!(
+            "type_check.interface.type_topology.seed_predicates",
+            "type_checker/interface/type_topology/02e_seed_predicates"
+        );
+        add_scan!(SemanticInterfaceScan::Predicates);
+        add_scan!(SemanticInterfaceScan::PredicateArguments);
         let reverse_flag = builder
             .resource_id("semantic_interface.type.reverse_flag")
             .expect("semantic-interface reverse flag");
@@ -1834,23 +2064,10 @@ impl SemanticInterfaceScanGraph {
             )
             .map_err(anyhow::Error::msg)?;
         add_scan!(SemanticInterfaceScan::TypeOrder);
-        let hir_order = builder
-            .resource_id("semantic_interface.type.hir_order")
-            .expect("semantic-interface HIR order");
-        builder
-            .add_kernel_pass_by_name(
-                "type_check.interface.type_topology.scatter",
-                CompilerPhase::TypeCheck,
-                ResourceDomain::Types,
-                kernels,
-                "type_checker/interface/type_topology/06_scatter",
-                &[ReflectedResourceBinding {
-                    binding: "interface_type_hir_order",
-                    resource: hir_order,
-                    mode: Some(AccessMode::Write),
-                }],
-            )
-            .map_err(anyhow::Error::msg)?;
+        add_kernel!(
+            "type_check.interface.type_topology.scatter",
+            "type_checker/interface/type_topology/06_scatter"
+        );
         add_kernel_writes!(
             "type_check.interface.type_topology.edge_counts",
             "type_checker/interface/type_topology/08_edge_counts",
@@ -1858,46 +2075,10 @@ impl SemanticInterfaceScanGraph {
         );
         add_scan!(SemanticInterfaceScan::TypeEdges);
         add_kernel_writes!(
-            "type_check.interface.type_topology.edge_scatter",
-            "type_checker/interface/type_topology/09_edge_scatter",
-            "interface_type_edges" => "semantic_interface.type.edges"
-        );
-        add_kernel_writes!(
             "type_check.interface.type_topology.resolve_local_decl",
             "type_checker/interface/type_topology/10_resolve_local_decl",
             "interface_type_local_decl_by_hir" => "semantic_interface.type.local_decl_by_hir"
         );
-        add_kernel_writes!(
-            "type_check.interface.type_topology.classify_path",
-            "type_checker/interface/type_topology/11_classify_path",
-            "interface_type_path_classification" => "semantic_interface.type.path_classification"
-        );
-        add_kernel_writes!(
-            "type_check.interface.type_topology.type_records",
-            "type_checker/interface/type_topology/12_type_records",
-            "interface_types" => "semantic_interface.type.types"
-        );
-        for (name, kernel) in [
-            (
-                "type_check.interface.type_topology.array_lengths",
-                "type_checker/interface/type_topology/13_array_lengths",
-            ),
-            (
-                "type_check.interface.type_topology.validate",
-                "type_checker/interface/type_topology/07_validate",
-            ),
-        ] {
-            builder
-                .add_kernel_pass_by_name(
-                    name,
-                    CompilerPhase::TypeCheck,
-                    ResourceDomain::Types,
-                    kernels,
-                    kernel,
-                    &[],
-                )
-                .map_err(anyhow::Error::msg)?;
-        }
         add_kernel_writes!(
             "type_check.interface.signature.flags",
             "type_checker/interface/signature/00_flags",
@@ -1910,18 +2091,20 @@ impl SemanticInterfaceScanGraph {
         add_kernel_writes!(
             "type_check.interface.signature.totals",
             "type_checker/interface/signature/01_totals",
+            "interface_types" => "semantic_interface.type.types",
             "interface_complete_type_count" => "semantic_interface.complete_type_count",
             "interface_complete_edge_total" => "semantic_interface.complete_edge_total"
         );
+        add_kernel!(
+            "type_check.interface.signature.direct_types",
+            "type_checker/interface/signature/01b_direct_types"
+        );
+        add_kernel_writes!(
+            "type_check.interface.signature.synthetic_types",
+            "type_checker/interface/signature/01c_synthetic_types",
+            "interface_type_edges" => "semantic_interface.type.edges"
+        );
         for (name, kernel) in [
-            (
-                "type_check.interface.signature.direct_types",
-                "type_checker/interface/signature/01b_direct_types",
-            ),
-            (
-                "type_check.interface.signature.synthetic_types",
-                "type_checker/interface/signature/01c_synthetic_types",
-            ),
             (
                 "type_check.interface.signature.param_edges",
                 "type_checker/interface/signature/02_param_edges",
@@ -1938,10 +2121,6 @@ impl SemanticInterfaceScanGraph {
                 "type_check.interface.members.variant_counts",
                 "type_checker/interface/members/00_variant_counts",
             ),
-            (
-                "type_check.interface.members.generic_counts",
-                "type_checker/interface/members/00b_generic_counts",
-            ),
         ] {
             builder
                 .add_kernel_pass_by_name(
@@ -1955,6 +2134,11 @@ impl SemanticInterfaceScanGraph {
                 .map_err(anyhow::Error::msg)?;
         }
         add_kernel_writes!(
+            "type_check.interface.members.generic_counts",
+            "type_checker/interface/members/00b_generic_counts",
+            "interface_member_index_by_generic_row" => "semantic_interface.members.index_by_generic_row"
+        );
+        add_kernel_writes!(
             "type_check.interface.members.counts",
             "type_checker/interface/members/01_counts",
             "interface_member_count" => "semantic_interface.members.row_count",
@@ -1964,7 +2148,12 @@ impl SemanticInterfaceScanGraph {
             "type_check.interface.members.method_counts",
             "type_checker/interface/members/00c_method_counts"
         );
+        add_kernel!("type_check.interface.implementations.method_counts", "type_checker/interface/implementations/01_method_counts");
         add_scan!(SemanticInterfaceScan::Members);
+        add_scan!(SemanticInterfaceScan::ImplementationMembers);
+        add_scan!(SemanticInterfaceScan::ImplementationMethods);
+        add_kernel_writes!("type_check.interface.implementations.totals", "type_checker/interface/implementations/04_totals",
+            "interface_member_total" => "semantic_interface.complete_member_count");
         add_kernel_writes!(
             "type_check.interface.members.scatter_hir",
             "type_checker/interface/members/02_scatter_hir",
@@ -1976,26 +2165,31 @@ impl SemanticInterfaceScanGraph {
             "type_checker/interface/members/03_scatter_generic",
             "interface_member_index_by_generic_row" => "semantic_interface.members.index_by_generic_row"
         );
-        for (name, kernel) in [(
-            "type_check.interface.members.normalize_types",
-            "type_checker/interface/members/04_normalize_types",
-        )] {
-            builder
-                .add_kernel_pass_by_name(
-                    name,
-                    CompilerPhase::TypeCheck,
-                    ResourceDomain::Types,
-                    kernels,
-                    kernel,
-                    &[],
-                )
+        add_kernel_writes!("type_check.interface.implementations.methods", "type_checker/interface/implementations/03_methods",
+            "interface_implementation_method_binding_words" => "semantic_interface.implementations.method_binding_words");
+        add_kernel!(
+            "type_check.interface.type_topology.type_records",
+            "type_checker/interface/type_topology/12_type_records"
+        );
+        add_kernel_writes!("type_check.interface.implementations.scatter", "type_checker/interface/implementations/05_scatter",
+            "interface_implementation_words" => "semantic_interface.implementations.words",
+            "interface_implementation_arguments" => "semantic_interface.implementations.arguments");
+        add_kernel_writes!(
+            "type_check.interface.predicates.scatter",
+            "type_checker/interface/predicates/01_scatter",
+            "interface_predicate_words" => "semantic_interface.predicates.words",
+            "interface_predicate_arguments" => "semantic_interface.predicate_arguments.words"
+        );
+        add_kernel!("type_check.interface.implementations.finish", "type_checker/interface/implementations/06_finish");
+        for name in [
+            "type_check.interface.predicates.classify",
+            "type_check.interface.type_topology.seed_predicates",
+            "type_check.interface.predicates.scatter",
+        ] {
+            builder.add_indirect_dispatch(name, "predicate_compact_dispatch_args")
                 .map_err(anyhow::Error::msg)?;
         }
-        for &name in SEMANTIC_INTERFACE_ACTIVE_HIR_PASSES.iter().chain(
-            SEMANTIC_INTERFACE_ROOT_STEP_PASSES
-                .iter()
-                .take(root_steps as usize),
-        ) {
+        for &name in SEMANTIC_INTERFACE_ACTIVE_HIR_PASSES {
             builder
                 .add_indirect_dispatch(name, "hir_active_dispatch_args")
                 .map_err(anyhow::Error::msg)?;
@@ -2071,7 +2265,13 @@ impl SemanticInterfaceScanGraph {
             )
             .map_err(anyhow::Error::msg)?;
         builder.add_registered_pass_arena_conflicts();
-        let graph = builder.build().map_err(anyhow::Error::msg)?;
+        let mut graph = builder.build().map_err(anyhow::Error::msg)?;
+        // Generic-call readback consumes the exporter-owned lexical scope
+        // table after all export/native work. Retain it at its actual producer
+        // boundary before workspace coloring, independently of checker inputs.
+        let generic_call_reader = super::generic_calls::interface_retention_graph(&graph)?;
+        graph.retain_resources_imported_by(&generic_call_reader)
+            .map_err(anyhow::Error::msg)?;
         let (resources, passes): (Vec<_>, Vec<_>) = scans.into_iter().unzip();
         Ok(SemanticInterfaceScanPlan {
             graph,
@@ -2289,6 +2489,7 @@ impl TypeCheckCompilerGraph {
             predicate_capacity,
             dependency_capacity,
             parser_feature_flags,
+            semantic_interface_required,
             passes,
         )
         .map_err(anyhow::Error::msg)?;
@@ -2300,11 +2501,19 @@ impl TypeCheckCompilerGraph {
                     token_capacity,
                     source_file_capacity,
                     module_record_capacity,
+                    predicate_capacity,
+                    implementation_capacity_for_features(hir_capacity, parser_feature_flags),
                     passes,
                     &graph,
                 )
             })
             .transpose()?;
+        if semantic_interface_required {
+            let generic_call_reader = super::generic_calls::retention_graph(&graph)?;
+            graph
+                .retain_resources_imported_by(&generic_call_reader)
+                .map_err(anyhow::Error::msg)?;
+        }
         stamp!("semantic_interface_build");
         if let Some(plan) = semantic_interface_plan.as_ref() {
             graph
@@ -2380,14 +2589,6 @@ impl TypeCheckCompilerGraph {
         scan: SemanticInterfaceScan,
     ) -> Result<PrefixScanGraphPasses> {
         Ok(self.semantic_interface_scans()?.passes[scan as usize])
-    }
-
-    /// Returns the root-walk schedule materialized for the resident graph
-    /// capacity. Recording must use this stable count even when the active job
-    /// is smaller: its parity selects which ping-pong buffer downstream graph
-    /// passes consume.
-    pub(super) fn semantic_interface_root_step_count(&self) -> Result<usize> {
-        Ok(self.semantic_interface_scans()?.root_step_count())
     }
 
     fn semantic_interface_scans(&self) -> Result<&SemanticInterfaceScanGraph> {
@@ -2507,11 +2708,13 @@ fn add_dependency_type_index_passes(
     jump_rounds: u32,
     roots_a: ResourceId,
     roots_b: ResourceId,
-    subtree_a: ResourceId,
-    subtree_b: ResourceId,
     declaration_generic_arity: ResourceId,
     declaration_field_count: ResourceId,
 ) -> Result<(), String> {
+    let constant_atoms = graph.resource_id("checked_constant_atoms")
+        .ok_or_else(|| "missing checked constant atom storage".to_owned())?;
+    let constant_refs = graph.resource_id("dependency_constant_ref_by_type")
+        .ok_or_else(|| "missing dependency constant reference storage".to_owned())?;
     graph.add_kernel_pass_by_name(
         names.initialize,
         CompilerPhase::TypeCheck,
@@ -2520,56 +2723,36 @@ fn add_dependency_type_index_passes(
         "type_checker/dependencies/09_init_canonical_type_roots",
         reflected_bindings![
             "canonical_type_roots" => roots_a: Write,
-            "canonical_type_subtree_start" => subtree_a: Write,
+            "checked_constant_atoms" => constant_atoms: Write,
+            "dependency_constant_ref_by_type_out" => constant_refs: Write,
         ],
     )?;
-    let add_jump =
-        |graph: &mut CompilerGraphBuilder, name, roots_in, roots_out, subtree_in, subtree_out| {
-            graph
-                .add_kernel_pass_by_name(
-                    name,
-                    CompilerPhase::TypeCheck,
-                    ResourceDomain::Declarations,
-                    kernels,
-                    "type_checker/dependencies/10_jump_canonical_type_roots",
-                    reflected_bindings![
-                        "canonical_type_roots_in" => roots_in: Read,
-                        "canonical_type_roots_out" => roots_out: Write,
-                        "canonical_type_subtree_start_in" => subtree_in: Read,
-                        "canonical_type_subtree_start_out" => subtree_out: Write,
-                    ],
-                )
-                .map(|_| ())
-        };
+    let add_jump = |graph: &mut CompilerGraphBuilder, name, roots_in, roots_out| {
+        graph
+            .add_kernel_pass_by_name(
+                name,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::Declarations,
+                kernels,
+                "type_checker/dependencies/10_jump_canonical_type_roots",
+                reflected_bindings![
+                    "canonical_type_roots_in" => roots_in: Read,
+                    "canonical_type_roots_out" => roots_out: Write,
+                ],
+            )
+            .map(|_| ())
+    };
     if jump_rounds >= 2 {
-        add_jump(
-            graph,
-            names.jump_a_to_b,
-            roots_a,
-            roots_b,
-            subtree_a,
-            subtree_b,
-        )?;
-        add_jump(
-            graph,
-            names.jump_b_to_a,
-            roots_b,
-            roots_a,
-            subtree_b,
-            subtree_a,
-        )?;
+        add_jump(graph, names.jump_a_to_b, roots_a, roots_b)?;
+        add_jump(graph, names.jump_b_to_a, roots_b, roots_a)?;
         graph.repeat_pass_range(jump_rounds / 2, names.jump_a_to_b, names.jump_b_to_a)?;
     }
     if jump_rounds % 2 != 0 {
-        add_jump(
-            graph,
-            names.jump_final_a_to_b,
-            roots_a,
-            roots_b,
-            subtree_a,
-            subtree_b,
-        )?;
+        add_jump(graph, names.jump_final_a_to_b, roots_a, roots_b)?;
     }
+    let declaration_constant_arity = graph
+        .resource_id("dependency_declaration_constant_arity")
+        .expect("dependency declaration constant arity resource");
     graph.add_kernel_pass_by_name(
         names.clear_generic_arity,
         CompilerPhase::TypeCheck,
@@ -2578,6 +2761,7 @@ fn add_dependency_type_index_passes(
         "type_checker/dependencies/12_clear_declaration_generic_arity",
         reflected_bindings![
             "declaration_generic_arity" => declaration_generic_arity: Write,
+            "dependency_declaration_constant_arity" => declaration_constant_arity: Write,
             "declaration_field_count" => declaration_field_count: Write,
         ],
     )?;
@@ -2605,16 +2789,9 @@ fn add_dependency_page_replay_passes(
     jump_rounds: u32,
     roots_a: ResourceId,
     roots_b: ResourceId,
-    subtree_a: ResourceId,
-    subtree_b: ResourceId,
-    final_roots: ResourceId,
     declaration_generic_arity: ResourceId,
     declaration_field_count: ResourceId,
-    resolved_type_decl: ResourceId,
 ) -> Result<(), String> {
-    let type_instance_aggregate_word_count = graph
-        .resource_id("type_instance_aggregate_word_count")
-        .ok_or_else(|| "missing type-instance aggregate layout workspace".to_owned())?;
     for operation in [
         DEPENDENCY_MODULE_LOOKUP_CLEAR.with_name(names.clear_module_lookup),
         DEPENDENCY_MODULE_LOOKUP_BUILD.with_name(names.build_module_lookup),
@@ -2640,77 +2817,9 @@ fn add_dependency_page_replay_passes(
         jump_rounds,
         roots_a,
         roots_b,
-        subtree_a,
-        subtree_b,
         declaration_generic_arity,
         declaration_field_count,
     )?;
-    graph.add_kernel_pass_by_name(
-        names.project_types,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Declarations,
-        kernels,
-        DEPENDENCY_TYPES_PROJECT.kernel,
-        reflected_bindings![
-            "resolved_dependency_decl" => resolved_type_decl: Read,
-            "canonical_type_roots" => final_roots: Read,
-            "declaration_generic_arity" => declaration_generic_arity: Read,
-            "declaration_field_count" => declaration_field_count: Read,
-            "type_instance_aggregate_word_count" => type_instance_aggregate_word_count: Write,
-        ],
-    )?;
-    graph.add_indirect_dispatch(names.project_types, "path_dispatch_args")?;
-    Ok(())
-}
-
-fn add_type_subtree_passes(
-    graph: &mut CompilerGraphBuilder,
-    kernels: &impl crate::gpu::kernels::KernelReflections,
-    scan_passes: PrefixScanGraphPasses,
-    dispatch_name: &'static str,
-    indirect_name: &'static str,
-    hierarchy_levels: u32,
-) -> Result<(), String> {
-    let type_subtree_compare_count_out = graph
-        .resource_id("type_subtree_compare_count_out")
-        .ok_or_else(|| {
-            "type-subtree operation requires graph resource `type_subtree_compare_count_out`"
-                .to_owned()
-        })?;
-    let type_subtree_compare_dispatch_args = graph
-        .resource_id("type_subtree_compare_dispatch_args")
-        .ok_or_else(|| {
-            "type-subtree operation requires graph resource `type_subtree_compare_dispatch_args`"
-                .to_owned()
-        })?;
-    let scan_resources = graph.resolve_prefix_scan_resources(TYPE_SUBTREE_SCAN_RESOURCES)?;
-    graph.add_fragment(PrefixScanGraph {
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::HirNodes,
-        hierarchy_levels,
-        passes: scan_passes,
-        resources: scan_resources,
-    })?;
-    graph.add_kernel_pass_by_name(
-        dispatch_name,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => type_subtree_compare_count_out,
-            "dispatch_args" => type_subtree_compare_dispatch_args: Write,
-        ],
-    )?;
-    graph.add_kernel_pass_by_name(
-        indirect_name,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::HirNodes,
-        kernels,
-        "type_checker/conditions/type_subtree",
-        &[],
-    )?;
-    graph.add_indirect_dispatch(indirect_name, "type_subtree_compare_dispatch_args")?;
     Ok(())
 }
 
@@ -2725,10 +2834,66 @@ fn build_graph(
     predicate_capacity: u32,
     dependency_capacity: DependencyWorkspaceCapacity,
     parser_feature_flags: u32,
+    retain_callable_owners: bool,
     kernels: &impl crate::gpu::kernels::KernelReflections,
 ) -> Result<CompilerGraph, String> {
     let hir_rows = u64::from(hir_capacity.max(1));
     let token_rows = u64::from(token_capacity.max(1));
+    let application_types_required = generic_param_record_passes_required(parser_feature_flags)
+        || dependency_capacity.type_rows != 0;
+    let generated_type_rows =
+        if application_types_required || array_passes_required(parser_feature_flags) {
+            token_rows.max(64)
+        } else {
+            0
+        };
+    let type_rows = token_rows + generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows;
+    let type_lookup_rows = if application_types_required {
+        type_rows
+    } else {
+        1
+    };
+    let context_call_rows = if application_types_required {
+        hir_rows
+    } else {
+        1
+    };
+    let context_token_rows = if application_types_required {
+        token_rows
+    } else {
+        1
+    };
+    let mut graph = CompilerGraphBuilder::new();
+    graph_resources!(graph, Workspace {
+        _type_instance_lookup_head as "type_instance_lookup_head" in Types => type_lookup_rows.next_power_of_two() * 8;
+        _type_instance_lookup_next as "type_instance_lookup_next" in Types => type_lookup_rows * 4;
+        _type_instance_lookup_present as "type_instance_lookup_present" in Types => type_lookup_rows * 4;
+        _type_application_count as "type_application_count" in Types => 4;
+        _imported_field_ref_start as "imported_field_ref_start" in Types => type_lookup_rows * 4;
+        _imported_field_ref_count as "imported_field_ref_count" in Types => type_lookup_rows * 4;
+        _imported_field_ref_tag as "imported_field_ref_tag" in Types => type_lookup_rows * 16;
+        _imported_field_ref_payload as "imported_field_ref_payload" in Types => type_lookup_rows * 16;
+        _imported_field_name_hash as "imported_field_name_hash" in Types => type_lookup_rows * 32;
+        _imported_field_ref_total as "imported_field_ref_total" in Types => 4;
+        _imported_layout_kind as "imported_layout_kind" in Types => type_lookup_rows * 4;
+        _imported_layout_group_start as "imported_layout_group_start" in Types => type_lookup_rows * 4;
+        _imported_layout_group_count as "imported_layout_group_count" in Types => type_lookup_rows * 4;
+        _imported_layout_groups as "imported_layout_groups" in Types => type_lookup_rows * 32;
+        _imported_layout_group_total as "imported_layout_group_total" in Types => 4;
+        _retained_callable_flag as "retained_callable_flag" in HirNodes => hir_rows * 4;
+        _retained_callable_prefix as "retained_callable_prefix" in HirNodes => hir_rows * 4;
+        _retained_callable_count as "retained_callable_count" in Calls => 4;
+        _retained_callable_records as "retained_callable_records" in Calls => hir_rows * 12;
+        _retained_callable_local_prefix as "retained_callable_local_prefix" in HirNodes => hir_rows * 4;
+        _retained_callable_block_sum as "retained_callable_block_sum" in HirNodes => hir_rows.div_ceil(256) * 4;
+        _retained_callable_block_prefix as "retained_callable_block_prefix" in HirNodes => hir_rows.div_ceil(256) * 4;
+    });
+    graph.add_storage(
+        "body_specialization_inputs",
+        ResourceDomain::Types,
+        ResourceClass::External,
+        (generic_body::BODY_SPECIALIZATION_WORDS * 4) as u64,
+    )?;
     let module_rows = u64::from(source_file_capacity.max(1));
     let record_rows = u64::from(module_record_capacity.max(1));
     let module_path_key_radix_rows = u64::from(
@@ -2742,31 +2907,35 @@ fn build_graph(
     let call_arg_rows = u64::from(call_arg_capacity.max(1));
     let call_param_rows = u64::from(call_param_capacity.max(1));
     let predicate_rows = u64::from(predicate_capacity.max(1));
+    let contract_rows = u64::from(implementation_capacity_for_features(hir_capacity, parser_feature_flags));
+    let callable_owner_rows = if retain_callable_owners {
+        hir_rows
+    } else {
+        contract_rows
+    };
     let hir_blocks = hir_rows.div_ceil(256);
     let token_blocks = token_rows.div_ceil(256);
     let call_arg_blocks = call_arg_rows.div_ceil(256);
     let predicate_blocks = predicate_rows.div_ceil(256);
     let claim_rows = u64::from(generic_claim_capacity.max(1));
-    let mut type_alias_root_jump_rounds = 0;
-    let mut covered_alias_declarations = 1u64;
-    while covered_alias_declarations < record_rows {
-        type_alias_root_jump_rounds += 1;
-        covered_alias_declarations = covered_alias_declarations.saturating_mul(16);
-    }
-    let alias_equivalence_rows = u64::from(token_capacity)
-        .saturating_add(u64::from(hir_capacity))
-        .max(1);
-    let mut type_alias_equivalence_rounds = 1;
-    let mut covered_alias_equivalence_rows = 16u64;
-    while covered_alias_equivalence_rows < alias_equivalence_rows {
-        type_alias_equivalence_rounds += 1;
-        covered_alias_equivalence_rows = covered_alias_equivalence_rows.saturating_mul(16);
-    }
     let dependency_visible_rows = u64::from(dependency_capacity.visible_rows.max(1));
     let dependency_lookup_rows = u64::from(dependency_capacity.lookup_rows.max(1));
     let dependency_type_rows = u64::from(dependency_capacity.type_rows.max(1));
+    // Exact values are retained beyond dependency page replacement. Each page
+    // owns a disjoint immutable span; generated requests have a bounded arena.
+    let constant_rows = u64::from(dependency_capacity.constant_storage_plan(
+        hir_capacity, token_capacity, parser_feature_flags)?.total_rows);
+    graph_resources!(graph, Output {
+        checked_constant_atoms in Types => constant_rows * 16;
+        checked_constant_projections in Types => constant_rows * 16;
+    });
+    graph_resources!(graph, Workspace {
+        checked_constant_storage_state in Types => 16;
+        dependency_constant_ref_by_type in Types => dependency_type_rows * 8;
+    });
+    graph.add_resource_alias("dependency_constant_ref_by_type_out", dependency_constant_ref_by_type)?;
+
     let dependency_declaration_rows = u64::from(dependency_capacity.declaration_rows.max(1));
-    let mut graph = CompilerGraphBuilder::new();
     graph.add_storage(
         "import_target_dependency_module_id",
         ResourceDomain::Declarations,
@@ -2834,7 +3003,7 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _fn_return_ref_tag as "fn_return_ref_tag" in Tokens => token_rows * 4;
         _fn_return_ref_payload as "fn_return_ref_payload" in Tokens => token_rows * 4;
-        _type_instance_kind as "type_instance_kind" in Tokens => token_rows * 4;
+        _type_instance_kind as "type_instance_kind" in Tokens => type_rows * 4;
     });
     graph_resources!(graph, Workspace {
         decl_type_ref_tag in Tokens => token_rows * 4;
@@ -2844,6 +3013,7 @@ fn build_graph(
         _call_dependency_unit_id as "call_dependency_unit_id" in Tokens => token_rows * 4;
         _call_dependency_local_index as "call_dependency_local_index" in Tokens => token_rows * 4;
         _call_dependency_host_service as "call_dependency_host_service" in Tokens => token_rows * 4;
+        _call_dependency_generic_requirements as "call_dependency_generic_requirements" in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Input {
         _token_count as "token_count" in Tokens => 4;
@@ -2877,8 +3047,10 @@ fn build_graph(
 
     graph_resources!(graph, Workspace {
         _module_value_path_status as "module_value_path_status" in Tokens => token_rows * 4;
-        _type_instance_decl_token as "type_instance_decl_token" in Types => token_rows * 4;
-        _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => token_rows * 4;
+        _type_instance_decl_token as "type_instance_decl_token" in Types => type_rows * 4;
+        _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => type_rows * 4;
+        _type_native_word_count as "type_native_word_count" in Types => type_rows * 4;
+        _type_native_scalar_identity as "type_native_scalar_identity" in Types => type_rows * 4;
         _module_file_id as "module_file_id" in Declarations => module_rows * 4;
         _module_path_id as "module_path_id" in Declarations => module_rows * 4;
         _module_owner_hir as "module_owner_hir" in Declarations => module_rows * 4;
@@ -2926,11 +3098,13 @@ fn build_graph(
         predicate_syntax_token in Tokens => predicate_rows * 4;
         _type_expr_ref_tag as "type_expr_ref_tag" in Tokens => token_rows * 4;
         _type_expr_ref_payload as "type_expr_ref_payload" in Tokens => token_rows * 4;
-        _external_type_library_id as "external_type_library_id" in Tokens => token_rows * 4;
-        _external_type_unit_id as "external_type_unit_id" in Tokens => token_rows * 4;
-        _external_type_local_index as "external_type_local_index" in Tokens => token_rows * 4;
+        _external_type_library_id as "external_type_library_id" in Tokens => type_rows * 4;
+        _external_type_unit_id as "external_type_unit_id" in Tokens => type_rows * 4;
+        _external_type_local_index as "external_type_local_index" in Tokens => type_rows * 4;
         _type_generic_param_slot_by_token as "type_generic_param_slot_by_token" in Tokens => token_rows * 4;
         _type_const_param_slot_by_token as "type_const_param_slot_by_token" in Tokens => token_rows * 4;
+        _type_const_param_value_by_token as "type_const_param_value_by_token" in Tokens => token_rows * 4;
+        _type_const_param_scalar_by_token as "type_const_param_scalar_by_token" in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Input {
         _compact_hir_scope_end as "compact_hir_scope_end" in HirNodes => hir_rows * 4;
@@ -2993,28 +3167,20 @@ fn build_graph(
         _path_prefix_base as "path_prefix_base" in Tokens => token_rows * 4;
         _path_prefix_id_a as "path_prefix_id_a" in Tokens => token_rows * 4;
     });
-    graph_resources!(graph, Workspace {
-        _alias_root_a as "alias_root_a" in Declarations => u64::from(module_record_capacity.max(1)) * 4;
-        _alias_root_b as "alias_root_b" in Declarations => u64::from(module_record_capacity.max(1)) * 4;
-        alias_forwarding in HirNodes => hir_rows * 4;
-        alias_forwarding_target_decl in HirNodes => hir_rows * 4;
-        alias_forwarding_valid_arg_count in HirNodes => hir_rows * 4;
-        alias_decl_by_target_hir in HirNodes => hir_rows * 4;
-        // Equivalence rows use two token-indexed partitions. The dispatch
-        // contract is `2 * token_capacity`, not HIR rows plus tokens; compact
-        // HIR can be smaller than the token domain.
-        _alias_equiv_parent_a as "alias_equiv_parent_a" in HirNodes => token_rows * 2 * 4;
-        _alias_equiv_parent_b as "alias_equiv_parent_b" in HirNodes => token_rows * 2 * 4;
-        _alias_equiv_component_source as "alias_equiv_component_source" in HirNodes => token_rows * 2 * 4;
-    });
-    for (alias, resource) in [
-        ("alias_equiv_edge_0", alias_forwarding),
-        ("alias_equiv_edge_1", alias_forwarding_target_decl),
-        ("alias_normalized_source", alias_forwarding_valid_arg_count),
-        ("alias_source_hir_by_target_hir", alias_decl_by_target_hir),
-    ] {
-        graph.add_resource_alias(alias, resource)?;
-    }
+    let imported_type_alias_target = graph.add_storage(
+        "imported_type_alias_target", ResourceDomain::Tokens,
+        ResourceClass::Workspace,
+        if dependency_capacity.type_rows != 0 { token_rows * 8 } else { 8 },
+    )?;
+    let type_alias_normalized_ref = if type_alias_passes_required(parser_feature_flags)
+        || dependency_capacity.type_rows != 0 {
+        Some(graph.add_storage(
+            "type_alias_normalized_ref", ResourceDomain::Tokens,
+            ResourceClass::Workspace, token_rows * 8,
+        )?)
+    } else {
+        None
+    };
 
     graph_resources!(graph, Workspace {
         _method_decl_method_row as "method_decl_method_row" in Declarations => token_rows * 4;
@@ -3090,19 +3256,22 @@ fn build_graph(
         predicate_method_contract_status in HirNodes => predicate_rows * 4;
         predicate_method_validation_first_error_row in HirNodes => predicate_rows * 4;
         predicate_method_validation_status in HirNodes => predicate_rows * 4;
+        predicate_method_validation_required_symbol in HirNodes => predicate_rows * 4;
+        semantic_function_native_symbol_by_hir in HirNodes => callable_owner_rows * 4;
+        semantic_predicate_subject_parameter_token_by_hir in HirNodes => contract_rows * 4;
         predicate_method_validation_detail_token in HirNodes => predicate_rows * 4;
     });
     graph_resources!(graph, Workspace {
         struct_lit_context_instance in HirNodes => hir_rows * 4;
         struct_lit_context_decl_token in HirNodes => hir_rows * 4;
-        _type_instance_arg_start as "type_instance_arg_start" in Types => token_rows * 4;
+        _type_instance_arg_start as "type_instance_arg_start" in Types => type_rows * 4;
         _type_instance_head_token as "type_instance_head_token" in Types => token_rows * 4;
-        _type_instance_state as "type_instance_state" in Types => token_rows * 4;
-        _type_instance_elem_ref_tag as "type_instance_elem_ref_tag" in Types => token_rows * 4;
-        _type_instance_elem_ref_payload as "type_instance_elem_ref_payload" in Types => token_rows * 4;
-        _type_instance_len_kind as "type_instance_len_kind" in Types => token_rows * 4;
-        _type_instance_len_payload as "type_instance_len_payload" in Types => token_rows * 4;
-        _type_instance_arg_count as "type_instance_arg_count" in Types => token_rows * 4;
+        _type_instance_state as "type_instance_state" in Types => type_rows * 4;
+        _type_instance_elem_ref_tag as "type_instance_elem_ref_tag" in Types => type_rows * 4;
+        _type_instance_elem_ref_payload as "type_instance_elem_ref_payload" in Types => type_rows * 4;
+        _type_instance_len_kind as "type_instance_len_kind" in Types => type_rows * 4;
+        _type_instance_len_payload as "type_instance_len_payload" in Types => type_rows * 4;
+        _type_instance_arg_count as "type_instance_arg_count" in Types => type_rows * 4;
     });
     graph_resources!(graph, Workspace {
         visible_type in Tokens => token_rows * 4;
@@ -3114,12 +3283,19 @@ fn build_graph(
         _call_return_generic_slot as "call_return_generic_slot" in Tokens => token_rows * 4;
         _call_return_aggregate_word_count as "call_return_aggregate_word_count" in Tokens => token_rows * 4;
         _call_fn_index as "call_fn_index" in Calls => token_rows * 4;
+        _method_candidate as "method_candidate" in Calls => token_rows * 40;
+        _method_call_source_ref_tag as "method_call_source_ref_tag" in Calls => token_rows * 4;
+        _method_call_source_ref_payload as "method_call_source_ref_payload" in Calls => token_rows * 4;
+        _method_call_selection_owned as "method_call_selection_owned" in Calls => token_rows * 4;
+        _method_call_parameter_ref_tag as "method_call_parameter_ref_tag" in Calls => token_rows * 4;
+        _method_call_parameter_ref_payload as "method_call_parameter_ref_payload" in Calls => token_rows * 4;
+        _method_call_receiver_hir as "method_call_receiver_hir" in Calls => token_rows * 4;
         _method_call_receiver_ref_tag as "method_call_receiver_ref_tag" in Calls => token_rows * 4;
         _method_call_receiver_ref_payload as "method_call_receiver_ref_payload" in Calls => token_rows * 4;
         _method_call_name_id as "method_call_name_id" in Calls => token_rows * 4;
         _method_call_site_module_id as "method_call_site_module_id" in Calls => token_rows * 4;
         _fn_entrypoint_tag as "fn_entrypoint_tag" in Tokens => token_rows.max(hir_rows) * 4;
-        _type_instance_arg_row_start as "type_instance_arg_row_start" in Types => token_rows * 4;
+        _type_instance_arg_row_start as "type_instance_arg_row_start" in Types => type_rows * 4;
         _type_instance_arg_row_count_out as "type_instance_arg_row_count_out" in Types => 4;
         _type_instance_arg_row_scan_local_prefix as "type_instance_arg_row_scan_local_prefix" in Types => token_rows * 4;
         _type_instance_arg_row_scan_block_sum as "type_instance_arg_row_scan_block_sum" in Types => token_rows.div_ceil(256) * 4;
@@ -3138,14 +3314,14 @@ fn build_graph(
         struct_init_field_context_instance in Tokens => token_rows * 4;
         struct_init_field_expected_ref_tag in Tokens => token_rows * 4;
         struct_init_field_expected_ref_payload in Tokens => token_rows * 4;
+        struct_init_field_expected_context_instance in Tokens => token_rows * 4;
         struct_init_field_ordinal in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Workspace {
         _type_instance_arg_row_ref_tag as "type_instance_arg_row_ref_tag" in Types => hir_rows * 4;
         _type_instance_arg_row_ref_payload as "type_instance_arg_row_ref_payload" in Types => hir_rows * 4;
-        type_instance_arg_hash in Types => token_rows * 4;
-        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16;
-        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16;
+        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
     });
     graph_resources!(graph, Output {
         struct_init_field_ordinal_by_row in Declarations => hir_rows * 4;
@@ -3198,6 +3374,7 @@ fn build_graph(
         _compact_generic_param_count as "compact_generic_param_count" in HirNodes => 4;
         _compact_generic_params as "compact_generic_params" in HirNodes =>
             token_rows * core::mem::size_of::<HirGenericParam>() as u64;
+        _compact_generic_param_types as "compact_generic_param_types" in HirNodes => token_rows * 4;
         compact_generic_param_ranges in HirNodes =>
             hir_rows * core::mem::size_of::<HirRange>() as u64;
         _compact_variant_count as "compact_variant_count" in HirNodes => 4;
@@ -3253,13 +3430,46 @@ fn build_graph(
             hir_rows * core::mem::size_of::<HirTypeArg>() as u64;
         _compact_type_arg_ranges as "compact_type_arg_ranges" in HirNodes =>
             hir_rows * core::mem::size_of::<HirRange>() as u64;
+        _compact_path_type_arg_ranges as "compact_path_type_arg_ranges" in Tokens =>
+            token_rows * core::mem::size_of::<HirRange>() as u64;
     });
+    graph_resources!(graph, Workspace {
+        call_explicit_arg_constant_kind in HirNodes => hir_rows * 4;
+        call_explicit_arg_constant_payload in HirNodes => hir_rows * 4;
+    });
+    graph.add_resource_alias("explicit_environment_constant_kind", call_explicit_arg_constant_kind)?;
+    graph.add_resource_alias("explicit_environment_constant_payload", call_explicit_arg_constant_payload)?;
+    graph.add_resource_alias("explicit_operand_argument_ranges", _compact_path_type_arg_ranges)?;
+    for (name, resource) in [
+        ("explicit_operand_hir_count", compact_hir_count),
+        ("explicit_operand_hir_core", compact_hir_core),
+        ("explicit_operand_hir_payload", _compact_hir_payload),
+        ("explicit_operand_hir_semantic_facts", compact_hir_semantic_facts),
+        ("explicit_operand_path_id", _path_id_by_owner_hir),
+        ("explicit_operand_path_count", _compact_path_count),
+        ("explicit_operand_paths", _compact_paths),
+        ("explicit_operand_path_segments", _compact_path_segments),
+        ("explicit_operand_generic_owner", generic_decl_owner_by_node_a),
+        ("explicit_operand_name_ids", name_id_by_token),
+        ("explicit_operand_parameter_count", generic_param_count_out),
+        ("explicit_operand_parameter_owner", generic_param_owner_token),
+        ("explicit_operand_parameter_name", generic_param_name_id),
+        ("explicit_operand_parameter_kind", generic_param_kind),
+        ("explicit_operand_parameter_token", generic_param_token),
+        ("explicit_operand_parameter_lookup", _generic_param_lookup_state),
+        ("explicit_operand_parameter_value", _type_const_param_value_by_token),
+    ] {
+        graph.add_resource_alias(name, resource)?;
+    }
+    graph.add_resource_alias("explicit_mapping_argument_count", _compact_type_arg_count)?;
+    graph.add_resource_alias("explicit_mapping_arguments", _compact_type_args)?;
+    graph.add_resource_alias("explicit_mapping_argument_ranges", _compact_path_type_arg_ranges)?;
     let predicate_trait_impl_trait_type_node = predicate_bound_list_by_node_b;
     graph_resources!(graph, Workspace {
         predicate_owner_node in HirNodes => predicate_rows * 4;
         predicate_subject_token in HirNodes => predicate_rows * 4;
         predicate_bound_token in HirNodes => predicate_rows * 4;
-        predicate_bound_decl_id in HirNodes => predicate_rows * 4;
+        predicate_bound_reference in HirNodes => predicate_rows * 4;
         predicate_bound_arg_count in HirNodes => predicate_rows * 4;
         predicate_method_contract_owner_hir in HirNodes => predicate_rows * 4;
         predicate_method_contract_name_token in HirNodes => predicate_rows * 4;
@@ -3295,6 +3505,8 @@ fn build_graph(
         _resolved_type_status as "resolved_type_status" in Declarations => record_rows * 4;
         _resolved_value_decl as "resolved_value_decl" in Declarations => record_rows * 4;
         _resolved_value_status as "resolved_value_status" in Declarations => record_rows * 4;
+        _resolved_value_type_qualifier_token as "resolved_value_type_qualifier_token" in Declarations => record_rows * 4;
+        _resolved_value_qualifier_binding as "resolved_value_qualifier_binding" in Declarations => record_rows * 16;
     });
     graph_resources!(graph, Workspace {
         _module_id_by_file_id as "module_id_by_file_id" in Declarations => u64::from(source_file_capacity.max(1)) * 4;
@@ -3328,37 +3540,6 @@ fn build_graph(
             u64::from(module_record_capacity.max(1)) * 4,
         ),
         ("dependency_visible_total", ResourceDomain::Declarations, 4),
-        (
-            "dependency_call_compare_scan_input",
-            ResourceDomain::HirNodes,
-            hir_rows * 4,
-        ),
-        (
-            "dependency_call_compare_prefix",
-            ResourceDomain::HirNodes,
-            hir_rows * 4,
-        ),
-        ("dependency_call_compare_total", ResourceDomain::HirNodes, 4),
-        (
-            "dependency_call_compare_expected_type",
-            ResourceDomain::HirNodes,
-            hir_rows * 4,
-        ),
-        (
-            "dependency_call_compare_actual_instance",
-            ResourceDomain::HirNodes,
-            hir_rows * 4,
-        ),
-        (
-            "dependency_call_compare_callee",
-            ResourceDomain::HirNodes,
-            hir_rows * 4,
-        ),
-        (
-            "dependency_call_compare_error_token",
-            ResourceDomain::HirNodes,
-            hir_rows * 4,
-        ),
     ] {
         graph.add_storage(name, domain, ResourceClass::Workspace, bytes)?;
     }
@@ -3372,14 +3553,13 @@ fn build_graph(
         ("dependency_visible_owner_module", dependency_visible_rows),
         ("dependency_visible_decl", dependency_visible_rows),
         ("dependency_visible_lookup", dependency_lookup_rows),
-        (
-            "dependency_resolved_type_decl",
-            u64::from(module_record_capacity.max(1)),
-        ),
         ("dependency_canonical_type_roots_a", dependency_type_rows),
-        ("dependency_canonical_type_subtree_a", dependency_type_rows),
         (
             "dependency_declaration_generic_arity",
+            dependency_declaration_rows,
+        ),
+        (
+            "dependency_declaration_constant_arity",
             dependency_declaration_rows,
         ),
     ] {
@@ -3390,68 +3570,37 @@ fn build_graph(
             rows * 4,
         )?;
     }
-    let dependency_resolved_type_decl = graph
-        .resource_id("dependency_resolved_type_decl")
-        .expect("dependency resolved type declaration resource");
     let dependency_canonical_type_roots_a = graph
         .resource_id("dependency_canonical_type_roots_a")
         .expect("dependency canonical root A resource");
-    let dependency_canonical_type_subtree_a = graph
-        .resource_id("dependency_canonical_type_subtree_a")
-        .expect("dependency canonical subtree A resource");
     // A zero-round dependency relation never reads or writes the second side
-    // of the ping-pong pair. Give the runtime-facing B names the A ownership
+    // of the ping-pong pair. Give the runtime-facing B name the A ownership
     // identity instead of allocating an unproduced workspace relation.
-    let (dependency_canonical_type_roots_b, dependency_canonical_type_subtree_b) =
-        if canonical_type_jump_rounds == 0 {
-            graph.add_resource_alias(
-                "dependency_canonical_type_roots_b",
-                dependency_canonical_type_roots_a,
-            )?;
-            graph.add_resource_alias(
-                "dependency_canonical_type_subtree_b",
-                dependency_canonical_type_subtree_a,
-            )?;
-            (
-                dependency_canonical_type_roots_a,
-                dependency_canonical_type_subtree_a,
-            )
-        } else {
-            (
-                graph.add_storage(
-                    "dependency_canonical_type_roots_b",
-                    ResourceDomain::Declarations,
-                    ResourceClass::Workspace,
-                    dependency_type_rows * 4,
-                )?,
-                graph.add_storage(
-                    "dependency_canonical_type_subtree_b",
-                    ResourceDomain::Declarations,
-                    ResourceClass::Workspace,
-                    dependency_type_rows * 4,
-                )?,
-            )
-        };
+    let dependency_canonical_type_roots_b = if canonical_type_jump_rounds == 0 {
+        graph.add_resource_alias(
+            "dependency_canonical_type_roots_b",
+            dependency_canonical_type_roots_a,
+        )?;
+        dependency_canonical_type_roots_a
+    } else {
+        graph.add_storage(
+            "dependency_canonical_type_roots_b",
+            ResourceDomain::Declarations,
+            ResourceClass::Workspace,
+            dependency_type_rows * 4,
+        )?
+    };
     let dependency_declaration_generic_arity = graph
         .resource_id("dependency_declaration_generic_arity")
         .expect("dependency declaration generic arity resource");
-    let (dependency_canonical_type_roots, dependency_canonical_type_subtree_start) =
-        if canonical_type_jump_rounds % 2 == 0 {
-            (
-                dependency_canonical_type_roots_a,
-                dependency_canonical_type_subtree_a,
-            )
-        } else {
-            (
-                dependency_canonical_type_roots_b,
-                dependency_canonical_type_subtree_b,
-            )
-        };
-    let _dependency_resolved_value_decl = graph.add_storage(
-        "dependency_resolved_value_decl",
-        ResourceDomain::Declarations,
-        ResourceClass::Workspace,
-        u64::from(module_record_capacity.max(1)) * 4,
+    let dependency_canonical_type_roots = if canonical_type_jump_rounds % 2 == 0 {
+        dependency_canonical_type_roots_a
+    } else {
+        dependency_canonical_type_roots_b
+    };
+    graph.add_resource_alias(
+        "call_parameter_canonical_type_roots",
+        dependency_canonical_type_roots,
     )?;
     let _dependency_words = graph.add_storage(
         "dependency_words",
@@ -3474,7 +3623,8 @@ fn build_graph(
             } else {
                 ResourceClass::Workspace
             },
-            u64::from(module_record_capacity.max(1)) * 4,
+            if dependency_capacity.visible_rows == 0 { 4 }
+            else { u64::from(module_record_capacity.max(1)) * 4 },
         )
     };
     let _resolved_dependency_library_id =
@@ -3483,12 +3633,49 @@ fn build_graph(
         dependency_identity(&mut graph, "resolved_dependency_unit_id")?;
     let _resolved_dependency_local_index =
         dependency_identity(&mut graph, "resolved_dependency_local_index")?;
+    let _resolved_dependency_value_library_id =
+        dependency_identity(&mut graph, "resolved_dependency_value_library_id")?;
+    let _resolved_dependency_value_unit_id =
+        dependency_identity(&mut graph, "resolved_dependency_value_unit_id")?;
+    let _resolved_dependency_value_local_index =
+        dependency_identity(&mut graph, "resolved_dependency_value_local_index")?;
+    // Trait headers are path-indexed predicate input. Match the predicate
+    // feature gate while preserving full path capacity whenever it can be used.
+    let trait_header_rows = u64::from(predicate_capacity_for_features(
+        module_record_capacity,
+        parser_feature_flags,
+    ));
+    let _resolved_dependency_trait_header = graph.add_storage(
+        "resolved_dependency_trait_header",
+        ResourceDomain::Declarations,
+        if dependency_capacity.visible_rows == 0 { ResourceClass::External }
+        else { ResourceClass::Workspace },
+        if dependency_capacity.visible_rows == 0 { 4 * 4 }
+        else { trait_header_rows * 4 * 4 },
+    )?;
     let resolved_dependency_value_metadata = graph.add_storage(
         "resolved_dependency_value_metadata",
         ResourceDomain::Declarations,
         ResourceClass::Workspace,
-        u64::from(module_record_capacity.max(1)) * 3 * 4,
+        u64::from(module_record_capacity.max(1)) * 4 * 4,
     )?;
+    for (alias, canonical) in [
+        ("type_const_param_scalar_by_token_out", "type_const_param_scalar_by_token"),
+        ("explicit_operand_resolved_value_decl", "resolved_value_decl"),
+        ("explicit_operand_resolved_value_status", "resolved_value_status"),
+        ("explicit_operand_dependency_value_metadata", "resolved_dependency_value_metadata"),
+        ("explicit_operand_decl_count", "decl_count_out"),
+        ("explicit_operand_decl_kind", "decl_kind"),
+        ("explicit_operand_decl_hir", "decl_hir_node"),
+        ("explicit_operand_const_type", "compact_const_type"),
+        ("explicit_operand_const_value", "compact_const_value"),
+        ("explicit_operand_type_ref_tag", "type_expr_ref_tag"),
+        ("explicit_operand_type_ref_payload", "type_expr_ref_payload"),
+    ] {
+        let resource = graph.resource_id(canonical).ok_or_else(||
+            format!("constant operand resource {canonical} is missing"))?;
+        graph.add_resource_alias(alias, resource)?;
+    }
     let resolved_dependency_variant_payload_records = graph.add_storage(
         "resolved_dependency_variant_payload_records",
         ResourceDomain::Declarations,
@@ -3505,10 +3692,19 @@ fn build_graph(
         hir_value_decl_name_present in Declarations => (token_rows + u64::from(LANGUAGE_SYMBOL_COUNT)) * 4;
     });
     graph_resources!(graph, Workspace {
-        dependency_call_compare_dispatch_args in DispatchArguments [StorageIndirect] => 12;
-    });
-    graph_resources!(graph, Workspace {
         _fn_start_token_by_decl_token as "fn_start_token_by_decl_token" in Tokens => token_rows * 4;
+        _fn_hir_by_decl_token as "fn_hir_by_decl_token" in Tokens => token_rows * 4;
+        _call_explicit_application_status as "call_explicit_application_status" in Tokens => token_rows * 4;
+        _call_explicit_application_owner_by_token as "call_explicit_application_owner_by_token" in Tokens => token_rows * 4;
+        _call_explicit_arg_slot as "call_explicit_arg_slot" in HirNodes => hir_rows * 4;
+        // Binding rows are compact across applying tokens. A bare qualified
+        // constructor has at least five tokens for at most 32 parent operands;
+        // written headers contribute their own source tokens. Eight rows per
+        // token bound storage without a dense 64-slot table on every token.
+        _call_explicit_environment as "call_explicit_environment" in Tokens => token_rows * 16;
+        _call_explicit_binding_tag as "call_explicit_binding_tag" in Tokens => token_rows * 8 * 4;
+        _call_explicit_binding_payload as "call_explicit_binding_payload" in Tokens => token_rows * 8 * 4;
+        _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 4;
         backend_call_fn_index in Tokens => token_rows * 4;
         _call_intrinsic_tag as "call_intrinsic_tag" in Tokens => token_rows * 4;
         _call_param_count as "call_param_count" in Tokens => token_rows * 4;
@@ -3517,7 +3713,6 @@ fn build_graph(
         _call_param_ref_payload as "call_param_ref_payload" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         call_generic_slot_type in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_generic_slot_ordinal as "call_generic_slot_ordinal" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
-        _call_const_slot_len as "call_const_slot_len" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_param_row_count_out as "call_param_row_count_out" in CallArguments => 4;
     });
     for name in [
@@ -3548,6 +3743,7 @@ fn build_graph(
         "call_arg_row_node",
         "call_arg_row_call_node",
         "call_arg_row_ordinal",
+        "call_arg_row_literal_context_mask",
     ] {
         graph.add_storage(
             name,
@@ -3663,11 +3859,14 @@ fn build_graph(
         _predicate_compact_dispatch_args as "predicate_compact_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _predicate_single_dispatch_args as "predicate_single_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _match_hir_dispatch_args as "match_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _explicit_application_dispatch_args as "explicit_application_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         scalar_a as "compact_expr_scalar_type.a" in HirNodes => hir_rows * 4;
     });
     graph_resources!(graph, External {
         _status as "status" in Bytes => 16;
         _status_readback as "status_readback" in Bytes => 16;
+        call_inference_state as "call_inference_state" in Calls => 8;
+        call_inference_readback as "call_inference_readback" in Calls => 8;
     });
     graph_resources!(graph, Workspace {
         _return_fn_flags as "return_fn_flags" in HirNodes => hir_rows * 4;
@@ -3682,6 +3881,8 @@ fn build_graph(
     });
     graph_resources!(graph, Workspace {
         member_next_node in HirNodes => hir_rows * 4;
+        member_chain_root_ref_tag in HirNodes => hir_rows * 4;
+        member_chain_root_ref_payload in HirNodes => hir_rows * 4;
     });
     let if_blocks = token_rows.div_ceil(256);
     graph_resources!(graph, Workspace {
@@ -3712,9 +3913,16 @@ fn build_graph(
         _call_arg_row_scan_prefix_a as "call_arg_row_scan_prefix_a" in HirNodes => hir_blocks * 4;
         _call_generic_claim_scan_local_prefix as "call_generic_claim_scan_local_prefix" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_scan_input as "call_generic_claim_scan_input" in CallArguments => call_arg_rows * 4;
+        _call_generic_claim_pattern_mask as "call_generic_claim_pattern_mask" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_prefix as "call_generic_claim_prefix" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_scan_block_sum as "call_generic_claim_scan_block_sum" in CallArguments => call_arg_blocks * 4;
         _call_generic_claim_scan_prefix_a as "call_generic_claim_scan_prefix_a" in CallArguments => call_arg_blocks * 4;
+        _call_const_claim_scan_local_prefix as "call_const_claim_scan_local_prefix" in CallArguments => call_arg_rows * 4;
+        _call_const_claim_scan_input as "call_const_claim_scan_input" in CallArguments => call_arg_rows * 4;
+        _call_const_claim_pattern_mask as "call_const_claim_pattern_mask" in CallArguments => call_arg_rows * 4;
+        _call_const_claim_prefix as "call_const_claim_prefix" in CallArguments => call_arg_rows * 4;
+        _call_const_claim_scan_block_sum as "call_const_claim_scan_block_sum" in CallArguments => call_arg_blocks * 4;
+        _call_const_claim_scan_prefix_a as "call_const_claim_scan_prefix_a" in CallArguments => call_arg_blocks * 4;
         _call_required_generic_scan_input as "call_required_generic_scan_input" in HirNodes => hir_rows * 4;
         _call_required_generic_prefix as "call_required_generic_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_local_prefix as "call_required_generic_scan_local_prefix" in HirNodes => hir_rows * 4;
@@ -3730,24 +3938,48 @@ fn build_graph(
         _call_generic_claim_arg_row as "call_generic_claim_arg_row" in CallArguments => claim_rows * 4;
         _call_generic_claim_lookup_head as "call_generic_claim_lookup_head" in CallArguments => claim_rows * 4;
         _call_generic_claim_lookup_next as "call_generic_claim_lookup_next" in CallArguments => claim_rows * 4;
+        _call_context_owner_by_token as "call_context_owner_by_token" in Calls => context_token_rows * 4;
+        _call_context_arg_mask as "call_context_arg_mask" in Calls => context_call_rows * 4;
+        _call_context_ref_tag as "call_context_ref_tag" in Calls => context_call_rows * 32 * 4;
+        _call_context_ref_payload as "call_context_ref_payload" in Calls => context_call_rows * 32 * 4;
+        _call_context_constant_mask as "call_context_constant_mask" in Calls => context_call_rows * 4;
+        _call_context_constant_kind as "call_context_constant_kind" in Calls => context_call_rows * 32 * 4;
+        _call_context_constant_payload as "call_context_constant_payload" in Calls => context_call_rows * 32 * 4;
+        _call_context_constant_identity_mode as "call_context_constant_identity_mode" in Calls => context_call_rows * 32 * 4;
+        _argument_expected_ref_tag as "argument_expected_ref_tag" in Calls => hir_rows * 4;
+        _argument_expected_ref_payload as "argument_expected_ref_payload" in Calls => hir_rows * 4;
+        _literal_context_type_by_hir as "literal_context_type_by_hir" in Calls => hir_rows * 4;
+        _imported_match_payload_ref_tag as "imported_match_payload_ref_tag" in Calls => hir_rows * 4;
+        _imported_match_payload_ref_payload as "imported_match_payload_ref_payload" in Calls => hir_rows * 4;
+        _array_literal_element_ref_tag as "array_literal_element_ref_tag" in Calls => hir_rows * 4;
+        _array_literal_element_ref_payload as "array_literal_element_ref_payload" in Calls => hir_rows * 4;
+        _call_inference_result_tag as "call_inference_result_tag" in Calls => hir_rows * 4;
+        _call_inference_result_payload as "call_inference_result_payload" in Calls => hir_rows * 4;
         generic_claim_index_dispatch_args as "call_generic_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _call_const_claim_callee as "call_const_claim_callee" in CallArguments => call_arg_rows * 4;
-        _call_const_claim_slot as "call_const_claim_slot" in CallArguments => call_arg_rows * 4;
-        _call_const_claim_len as "call_const_claim_len" in CallArguments => call_arg_rows * 4;
-        _call_const_claim_lookup_head as "call_const_claim_lookup_head" in CallArguments => call_arg_rows * 4;
-        _call_const_claim_lookup_next as "call_const_claim_lookup_next" in CallArguments => call_arg_rows * 4;
+        _call_const_claim_callee as "call_const_claim_callee" in CallArguments => claim_rows * 4;
+        _call_const_claim_slot as "call_const_claim_slot" in CallArguments => claim_rows * 4;
+        _call_const_claim_ref_kind as "call_const_claim_ref_kind" in CallArguments => claim_rows * 4;
+        _call_const_claim_ref_payload as "call_const_claim_ref_payload" in CallArguments => claim_rows * 4;
+        _call_const_claim_identity_mode as "call_const_claim_identity_mode" in CallArguments => claim_rows * 4;
+        _call_const_claim_selected as "call_const_claim_selected" in CallArguments => claim_rows * 4;
+        _call_const_claim_arg_row as "call_const_claim_arg_row" in CallArguments => claim_rows * 4;
+        _call_const_claim_lookup_head as "call_const_claim_lookup_head" in CallArguments => claim_rows * 4;
+        _call_const_claim_lookup_next as "call_const_claim_lookup_next" in CallArguments => claim_rows * 4;
         const_claim_index_dispatch_args as "call_const_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
-        call_arg_row_count_out in CallArguments => 4;
+        _call_arg_row_count_out as "call_arg_row_count_out" in CallArguments => 4;
         generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
+        const_claim_count_out as "call_const_claim_count_out" in CallArguments => 4;
     });
     graph_resources!(graph, Output {
         semantic_value_decl_by_hir in HirNodes => hir_rows * 4;
         semantic_value_type_by_hir in HirNodes => hir_rows * 4;
-        semantic_value_const_by_hir in HirNodes => hir_rows * 4;
+        semantic_value_const_by_hir in HirNodes => hir_rows * 8;
         semantic_value_const_present_by_hir in HirNodes => hir_rows * 4;
-        semantic_param_type_by_row in Declarations => hir_rows * 4;
+        semantic_param_ref_tag_by_row in Declarations => hir_rows * 4;
+        semantic_param_ref_payload_by_row in Declarations => hir_rows * 4;
+        _semantic_argument_mode_by_hir as "semantic_argument_mode_by_hir" in HirNodes => hir_rows * 4;
         semantic_enclosing_fn_by_hir in HirNodes => hir_rows * 4;
         semantic_function_return_type_by_hir in HirNodes => hir_rows * 4;
         semantic_function_entrypoint_by_hir in HirNodes => hir_rows * 4;
@@ -3767,6 +3999,8 @@ fn build_graph(
         semantic_aggregate_word_count_by_hir in HirNodes => hir_rows * 4;
         semantic_array_length_by_hir in HirNodes => hir_rows * 4;
         semantic_member_field_ordinal_by_hir in HirNodes => hir_rows * 4;
+        semantic_member_field_word_offset_by_hir in HirNodes => hir_rows * 4;
+        semantic_member_field_word_count_by_hir in HirNodes => hir_rows * 4;
         semantic_iterable_kind_by_hir in HirNodes => hir_rows * 4;
         semantic_function_result_word_count_by_hir in HirNodes => hir_rows * 4;
     });
@@ -3792,16 +4026,6 @@ fn build_graph(
         _type_semantic_prefix as "type_semantic_prefix" in HirNodes => hir_rows * 4;
         _type_semantic_count_out as "type_semantic_count_out" in HirNodes => 4;
         _type_semantic_row_by_ordinal as "type_semantic_row_by_ordinal" in HirNodes => hir_rows * 4;
-    });
-    graph_resources!(graph, Workspace {
-        type_subtree_compare_scan_input in HirNodes => hir_rows * 4;
-        _type_subtree_compare_prefix as "type_subtree_compare_prefix" in HirNodes => hir_rows * 4;
-        _type_subtree_compare_count_out as "type_subtree_compare_count_out" in HirNodes => 4;
-        type_subtree_compare_left_root in HirNodes => hir_rows * 4;
-        type_subtree_compare_right_root in HirNodes => hir_rows * 4;
-        type_subtree_compare_error_token in HirNodes => hir_rows * 4;
-        type_subtree_compare_error_detail in HirNodes => hir_rows * 4;
-        _type_subtree_compare_dispatch_args as "type_subtree_compare_dispatch_args" in HirNodes [StorageIndirect] => 12;
     });
     graph.add_kernel_initializer_by_name(
         HIR_ACTIVE_DISPATCH_PASS,
@@ -3988,6 +4212,7 @@ fn build_graph(
     // Record-family extraction reuses one flag, prefix, and hierarchy workspace
     // across the module, import, and declaration scans. Each scan is a semantic
     // graph operation; callers do not reproduce its internal access modes.
+    TYPE_CONSTANT_STORAGE_CLEAR.register_kernel(&mut graph, kernels)?;
     MODULE_RECORDS_MARK.register_kernel(&mut graph, kernels)?;
     PATH_STATE_CLEAR.register_kernel(&mut graph, kernels)?;
     PATHS_SCATTER.register_kernel(&mut graph, kernels)?;
@@ -4089,8 +4314,6 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
     )?;
@@ -4101,7 +4324,6 @@ fn build_graph(
         kernels,
         DEPENDENCY_TYPES_PROJECT.kernel,
         reflected_bindings![
-            "resolved_dependency_decl" => dependency_resolved_type_decl: Read,
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
             "declaration_field_count" => dependency_declaration_field_count: Read,
@@ -4133,8 +4355,6 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
     )?;
@@ -4145,7 +4365,6 @@ fn build_graph(
         kernels,
         DEPENDENCY_TYPES_PROJECT_AFTER_CLEAR.kernel,
         reflected_bindings![
-            "resolved_dependency_decl" => dependency_resolved_type_decl: Read,
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
             "declaration_field_count" => dependency_declaration_field_count: Read,
@@ -4259,61 +4478,22 @@ fn build_graph(
     }
     for operation in [
         TYPE_INSTANCES_COLLECT_INITIAL,
+        TYPE_CONSTANT_SCALARS_INITIAL,
         TYPE_INSTANCES_COLLECT_INITIAL_NAMED,
         TYPE_INSTANCES_COLLECT_INITIAL_AGGREGATE_REFS,
         TYPE_INSTANCES_COLLECT_INITIAL_AGGREGATE_DETAILS,
     ] {
         operation.register_kernel(&mut graph, kernels)?;
     }
-    for operation in [
-        TYPE_ALIAS_FORWARDING_CLEAR,
-        TYPE_ALIAS_FORWARDING_INITIALIZE,
-        TYPE_ALIAS_FORWARDING_VALIDATE,
-        TYPE_ALIAS_ROOT_INITIALIZE,
-    ] {
-        operation.register_kernel(&mut graph, kernels)?;
-    }
-    if type_alias_root_jump_rounds >= 2 {
-        TYPE_ALIAS_ROOT_JUMP_A_TO_B.register_kernel(&mut graph, kernels)?;
-        TYPE_ALIAS_ROOT_JUMP_B_TO_A.register_kernel(&mut graph, kernels)?;
-        graph.repeat_pass_range(
-            type_alias_root_jump_rounds / 2,
-            TYPE_ALIAS_ROOT_JUMP_A_TO_B.name,
-            TYPE_ALIAS_ROOT_JUMP_B_TO_A.name,
-        )?;
-    }
-    if type_alias_root_jump_rounds % 2 != 0 {
-        TYPE_ALIAS_ROOT_JUMP_FINAL_A_TO_B.register_kernel(&mut graph, kernels)?;
-    }
-    let final_alias_root = if type_alias_root_jump_rounds % 2 == 0 {
-        _alias_root_a
-    } else {
-        _alias_root_b
-    };
-    let register_type_alias_projection =
-        |graph: &mut CompilerGraphBuilder, name: &'static str| -> Result<(), String> {
-            graph.add_kernel_pass_by_name(
-                name,
-                CompilerPhase::TypeCheck,
-                ResourceDomain::Declarations,
-                kernels,
-                "type_checker/modules/10e2_project_type_aliases",
-                reflected_bindings!["alias_root_decl" => final_alias_root: Read],
-            )?;
-            graph.add_indirect_dispatch(name, "decl_key_radix_dispatch_args")?;
-            Ok(())
-        };
-    register_type_alias_projection(&mut graph, TYPE_ALIAS_PROJECT_PASS)?;
     TYPE_PATHS_PROJECT_AFTER_ALIASES.register_kernel(&mut graph, kernels)?;
     for operation in [
         TYPE_INSTANCES_COLLECT_PROJECTED,
+        TYPE_CONSTANT_SCALARS_PROJECTED,
         TYPE_INSTANCES_COLLECT_PROJECTED_NAMED,
         TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_REFS,
-        TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS,
     ] {
         operation.register_kernel(&mut graph, kernels)?;
     }
-    register_type_alias_projection(&mut graph, TYPE_ALIAS_PROJECT_AFTER_PROJECTED_REFS_PASS)?;
     TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
@@ -4323,8 +4503,6 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
     )?;
@@ -4341,66 +4519,11 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_TYPE_INSTANCES_PROJECT.name, "path_dispatch_args")?;
-    for operation in [
-        TYPE_ALIAS_EQUIVALENCE_CLEAR,
-        TYPE_ALIAS_EQUIVALENCE_DECL_EDGES_INITIALIZE,
-        TYPE_ALIAS_EQUIVALENCE_ARG_EDGES_INITIALIZE,
-    ] {
-        operation.register_kernel(&mut graph, kernels)?;
-    }
-    if type_alias_equivalence_rounds >= 2 {
-        for operation in [
-            TYPE_ALIAS_EQUIVALENCE_HOOK_A,
-            TYPE_ALIAS_EQUIVALENCE_JUMP_A_TO_B,
-            TYPE_ALIAS_EQUIVALENCE_HOOK_B,
-            TYPE_ALIAS_EQUIVALENCE_JUMP_B_TO_A,
-        ] {
-            operation.register_kernel(&mut graph, kernels)?;
-        }
-        graph.repeat_pass_range(
-            type_alias_equivalence_rounds / 2,
-            TYPE_ALIAS_EQUIVALENCE_HOOK_A.name,
-            TYPE_ALIAS_EQUIVALENCE_JUMP_B_TO_A.name,
-        )?;
-    }
-    if type_alias_equivalence_rounds % 2 != 0 {
-        TYPE_ALIAS_EQUIVALENCE_FINAL_HOOK_A.register_kernel(&mut graph, kernels)?;
-        TYPE_ALIAS_EQUIVALENCE_FINAL_JUMP_A_TO_B.register_kernel(&mut graph, kernels)?;
-    }
-    let final_alias_equivalence_parent = if type_alias_equivalence_rounds % 2 == 0 {
-        _alias_equiv_parent_a
-    } else {
-        _alias_equiv_parent_b
-    };
-    for (name, kernel) in [
-        (
-            TYPE_ALIAS_GENERIC_SOURCES_SELECT_PASS,
-            "type_checker/modules/10e0h_select_type_alias_generic_sources",
-        ),
-        (
-            TYPE_ALIAS_CONCRETE_SOURCES_SELECT_PASS,
-            "type_checker/modules/10e0i_select_type_alias_concrete_sources",
-        ),
-        (
-            TYPE_ALIAS_EQUIVALENCE_FINALIZE_PASS,
-            "type_checker/modules/10e0j_finalize_type_alias_equivalence",
-        ),
-    ] {
-        graph.add_kernel_pass_by_name(
-            name,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            kernel,
-            reflected_bindings![
-                "alias_equiv_parent" => final_alias_equivalence_parent: Read
-            ],
-        )?;
-        if name == TYPE_ALIAS_EQUIVALENCE_FINALIZE_PASS {
-            graph.add_indirect_dispatch(name, "decl_key_radix_dispatch_args")?;
-        }
-    }
     TYPE_PATHS_PROJECT_AFTER_ALIAS_EQUIVALENCE.register_kernel(&mut graph, kernels)?;
+    TYPE_CONSTANT_SCALARS_AFTER_ALIASES.register_kernel(&mut graph, kernels)?;
+    // Match resident recording: child edges consume persistent local/imported
+    // nominal refs after dependency projection, before alias normalization.
+    TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS.register_kernel(&mut graph, kernels)?;
     // Expression typing executes after call argument matching has published
     // per-call generic and aggregate result dependencies. Keep the graph in
     // the same order as command recording so ownership validation describes
@@ -4408,11 +4531,28 @@ fn build_graph(
     // Preserve the precise producer contract so workspace liveness starts at
     // the receiver projection rather than requiring hidden preinitialization.
     let member_receiver_overrides = reflected_bindings![
+        "member_chain_root_ref_tag" => member_chain_root_ref_tag: Write,
+        "member_chain_root_ref_payload" => member_chain_root_ref_payload: Write,
         "member_result_context_instance" => member_result_context_instance: Write,
         "member_result_ref_tag" => member_result_ref_tag: Write,
         "member_result_ref_payload" => member_result_ref_payload: Write,
         "member_result_field_ordinal" => member_result_field_ordinal: Write,
         "member_result_field_node" => member_result_field_node: Write,
+    ];
+    let member_result_overrides = reflected_bindings![
+        "canonical_type_roots" => dependency_canonical_type_roots: Read,
+    ];
+    let imported_field_overrides = reflected_bindings![
+        "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        "imported_field_ref_tag" => _imported_field_ref_tag: Write,
+        "imported_field_ref_payload" => _imported_field_ref_payload: Write,
+        "imported_field_name_hash" => _imported_field_name_hash: Write,
+        "imported_layout_groups" => _imported_layout_groups: Write,
+    ];
+    let application_bindings = reflected_bindings![
+        "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        "type_native_word_count" => _type_native_word_count: Write,
+        "type_native_scalar_identity" => _type_native_scalar_identity: Write,
     ];
     let final_scalar = scalar_a;
     let add_expression_type_passes =
@@ -4444,7 +4584,7 @@ fn build_graph(
                     "semantic_aggregate_word_count_by_hir" => semantic_aggregate_word_count_by_hir: ReadWrite,
                     "semantic_array_length_by_hir" => semantic_array_length_by_hir: Write,
                     "semantic_member_field_ordinal_by_hir" => semantic_member_field_ordinal_by_hir: Write,
-                    "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: Write,
+                    "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: ReadWrite,
                     "semantic_function_result_word_count_by_hir" => semantic_function_result_word_count_by_hir: Write,
                 ],
             )?;
@@ -4464,7 +4604,7 @@ fn build_graph(
                 "type_checker/semantic/artifact/01b_array_index_refs",
                 reflected_bindings![
                     "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: ReadWrite,
-                    "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: Write,
+                    "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: ReadWrite,
                     "semantic_function_result_word_count_by_hir" => semantic_function_result_word_count_by_hir: Write,
                 ],
             )?;
@@ -4520,24 +4660,11 @@ fn build_graph(
                 "type_checker/conditions/aggregate_args",
                 reflected_bindings![
                     "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
-                    "type_subtree_compare_scan_input" => type_subtree_compare_scan_input: Write,
-                    "type_subtree_compare_left_root" => type_subtree_compare_left_root: Write,
-                    "type_subtree_compare_right_root" => type_subtree_compare_right_root: Write,
-                    "type_subtree_compare_error_token" => type_subtree_compare_error_token: Write,
-                    "type_subtree_compare_error_detail" => type_subtree_compare_error_detail: Write,
                 ],
             )?;
             graph.add_indirect_dispatch(
                 CONDITIONS_AGGREGATE_ARGS_FINAL_PASS,
                 "aggregate_compare_dispatch_args",
-            )?;
-            add_type_subtree_passes(
-                graph,
-                kernels,
-                TYPE_SUBTREE_FINAL_SCAN_PASSES,
-                TYPE_SUBTREE_FINAL_DISPATCH_PASS,
-                TYPE_SUBTREE_FINAL_INDIRECT_PASS,
-                prefix_scan_hierarchy_levels(hir_blocks),
             )?;
             METHODS_MARK_CALL_KEYS_CONDITION_FINALIZATION.register_kernel(graph, kernels)?;
             ConditionFinalizationOperation::register(graph, kernels)?;
@@ -4545,15 +4672,38 @@ fn build_graph(
         };
     TYPE_INSTANCE_ARG_ROW_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(token_blocks))?;
     TYPE_INSTANCES_COLLECT_NAMED_ARG_REFS.register_kernel(&mut graph, kernels)?;
-    TYPE_ALIAS_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
-    graph.add_kernel_pass_by_name(
-        TYPE_INSTANCE_ARG_HASH_ROWS_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Types,
-        kernels,
-        "type_checker/type/instances/01g_hash_arg_rows",
-        reflected_bindings!["type_instance_arg_hash" => type_instance_arg_hash: Write],
+    add_dependency_type_index_passes(
+        &mut graph, kernels, DEPENDENCY_TYPE_INDEX_ALIAS_TARGETS,
+        canonical_type_jump_rounds, dependency_canonical_type_roots_a,
+        dependency_canonical_type_roots_b, dependency_declaration_generic_arity,
+        dependency_declaration_field_count,
     )?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens, kernels, DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+            "imported_type_alias_target" => imported_type_alias_target: ReadWrite,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, "path_dispatch_args")?;
+    if let Some(type_alias_normalized_ref) = type_alias_normalized_ref {
+        graph.add_kernel_pass_by_name(
+            TYPE_ALIASES_NORMALIZE.name, CompilerPhase::TypeCheck, ResourceDomain::Tokens,
+            kernels, TYPE_ALIASES_NORMALIZE.kernel,
+            reflected_bindings![
+                "canonical_type_roots" => dependency_canonical_type_roots: Read,
+                "type_native_word_count" => _type_native_word_count: Write,
+                "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+                "type_alias_normalized_ref" => type_alias_normalized_ref: Write,
+            ],
+        )?;
+        graph.add_indirect_dispatch(TYPE_ALIASES_NORMALIZE.name, "token_active_dispatch_args")?;
+        TYPE_ALIAS_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
+        NORMALIZED_VALUE_MEMBERS_RESOLVE.register_kernel(&mut graph, kernels)?;
+    }
     graph.add_kernel_pass_by_name(
         TYPE_SEMANTIC_CLEAR_PASS,
         CompilerPhase::TypeCheck,
@@ -4651,13 +4801,25 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
-        dependency_canonical_type_roots,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
-        dependency_resolved_type_decl,
     )?;
+    DEPENDENCY_NORMALIZED_MEMBER_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    DEPENDENCY_NORMALIZED_MEMBER_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
+    DEPENDENCY_NORMALIZED_MEMBERS_RESOLVE.register_kernel(&mut graph, kernels)?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_NORMALIZED_VALUES_PROJECT.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Declarations,
+        kernels,
+        DEPENDENCY_NORMALIZED_VALUES_PROJECT.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_NORMALIZED_VALUES_PROJECT.name, "path_dispatch_args")?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_CALLS_PROJECT.name,
         CompilerPhase::TypeCheck,
@@ -4667,6 +4829,7 @@ fn build_graph(
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_field_count" => dependency_declaration_field_count: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_CALLS_PROJECT.name, "hir_active_dispatch_args")?;
@@ -4680,8 +4843,6 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
     )?;
@@ -4732,7 +4893,9 @@ fn build_graph(
                 ResourceDomain::HirNodes,
                 kernels,
                 "type_checker/type/instances/03_member_results",
-                &[],
+                reflected_bindings![
+                    "canonical_type_roots" => dependency_canonical_type_roots: Read,
+                ],
             )?;
             graph.add_kernel_pass_by_name(
                 TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS,
@@ -4752,6 +4915,7 @@ fn build_graph(
             "struct_init_field_context_instance" => struct_init_field_context_instance: Write,
             "struct_init_field_expected_ref_tag" => struct_init_field_expected_ref_tag: Write,
             "struct_init_field_expected_ref_payload" => struct_init_field_expected_ref_payload: Write,
+            "struct_init_field_expected_context_instance" => struct_init_field_expected_context_instance: Write,
             "struct_init_field_ordinal" => struct_init_field_ordinal: Write,
             "struct_lit_context_decl_token" => struct_lit_context_decl_token: Write,
             "struct_lit_context_instance" => struct_lit_context_instance: Write,
@@ -4765,6 +4929,28 @@ fn build_graph(
                 kernels,
                 "type_checker/type/instances/04a2_struct_init_contexts",
                 &[],
+            )?;
+            graph.add_kernel_pass_by_name(
+                TYPE_INSTANCES_NESTED_STRUCT_INIT_CONTEXTS_PASS,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                "type_checker/type/instances/04a3_nested_struct_contexts",
+                member_result_overrides,
+            )?;
+            graph.add_kernel_pass_by_name(
+                DEPENDENCY_STRUCT_LITERALS_PROJECT.name,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                DEPENDENCY_STRUCT_LITERALS_PROJECT.kernel,
+                reflected_bindings![
+                    "canonical_type_roots" => dependency_canonical_type_roots: Read,
+                ],
+            )?;
+            graph.add_indirect_dispatch(
+                DEPENDENCY_STRUCT_LITERALS_PROJECT.name,
+                "hir_active_dispatch_args",
             )?;
             graph.add_kernel_pass_by_name(
                 TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS,
@@ -4804,7 +4990,22 @@ fn build_graph(
                     PassAccess::read("struct_lit_context_instance", struct_lit_context_instance),
                     PassAccess::read("decl_type_ref_tag", decl_type_ref_tag),
                     PassAccess::read("decl_type_ref_payload", decl_type_ref_payload),
+                    PassAccess::read("visible_decl", visible_decl),
+                    PassAccess::read("path_id_by_owner_hir", _path_id_by_owner_hir),
+                    PassAccess::read("path_count_out", _path_count_out),
+                    PassAccess::read("resolved_type_decl", _resolved_type_decl),
+                    PassAccess::read("decl_name_token", decl_name_token),
+                    PassAccess::read("type_expr_ref_tag", _type_expr_ref_tag),
+                    PassAccess::read("type_expr_ref_payload", _type_expr_ref_payload),
+                    PassAccess::read(
+                        "type_decl_generic_param_count_by_owner_token",
+                        _type_decl_generic_param_count_by_owner_token,
+                    ),
+                    PassAccess::read("type_decl_hir_node_by_token", _type_decl_hir_node_by_token),
                     PassAccess::read("type_instance_decl_token", _type_instance_decl_token),
+                    PassAccess::read("external_type_library_id", _external_type_library_id),
+                    PassAccess::read("external_type_unit_id", _external_type_unit_id),
+                    PassAccess::read("external_type_local_index", _external_type_local_index),
                     PassAccess::read("member_result_field_ordinal", member_result_field_ordinal),
                     PassAccess::read_write(
                         "semantic_expr_ref_tag_by_hir",
@@ -4897,6 +5098,60 @@ fn build_graph(
     TYPE_INSTANCES_DECL_REFS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
+    if generic_param_record_passes_required(parser_feature_flags) {
+        graph.add_kernel_pass_by_name(
+            TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Tokens,
+            kernels,
+            "type_checker/type/instances/02c_index_closed_applications",
+            &[],
+        )?;
+        graph.add_indirect_dispatch(
+            TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
+            "token_active_dispatch_args",
+        )?;
+        graph.add_kernel_pass_by_name(
+            TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Tokens,
+            kernels,
+            "type_checker/type/instances/02d_materialize_applications",
+            reflected_bindings![
+                "canonical_type_roots" => dependency_canonical_type_roots: Read,
+                "type_native_word_count" => _type_native_word_count: Write,
+                "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+            ],
+        )?;
+        graph.add_indirect_dispatch(
+            TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
+            "token_active_dispatch_args",
+        )?;
+        graph.add_kernel_pass_by_name(
+            TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Tokens,
+            kernels,
+            "type_checker/type/instances/02c_index_closed_applications",
+            &[],
+        )?;
+        graph.add_indirect_dispatch(
+            TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS,
+            "token_active_dispatch_args",
+        )?;
+        graph.add_kernel_pass_by_name(
+            TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Tokens,
+            kernels,
+            "type_checker/type/instances/02e_project_imported_fields",
+            imported_field_overrides,
+        )?;
+        graph.add_indirect_dispatch(
+            TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
+            "token_active_dispatch_args",
+        )?;
+    }
     add_method_and_field_passes(&mut graph)?;
     MATCH_PATTERNS_BIND.register_kernel(&mut graph, kernels)?;
     MATCH_PAYLOADS_TYPE.register_kernel(&mut graph, kernels)?;
@@ -4914,7 +5169,9 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/03_member_results",
-        &[],
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
@@ -4936,7 +5193,13 @@ fn build_graph(
     CALLS_ARGUMENT_MATCH_INITIALIZE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_CONSUME.register_kernel(&mut graph, kernels)?;
     CALLS_APPLY_ARGUMENTS.register_kernel(&mut graph, kernels)?;
+    METHODS_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    METHODS_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
+    METHODS_VALIDATE_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS.register_kernel(&mut graph, kernels)?;
+    METHODS_MARK_CALL_RETURN_KEYS_DIRECT.register_kernel(&mut graph, kernels)?;
+    METHODS_RESET_CANDIDATES_DIRECT.register_kernel(&mut graph, kernels)?;
+    METHODS_RESOLVE_TABLE_DIRECT.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -4944,39 +5207,105 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
     )?;
     graph.add_kernel_pass_by_name(
-        DEPENDENCY_METHODS_PROJECT_PASS,
+        DEPENDENCY_METHODS_COLLECT.name,
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/15_project_methods",
+        DEPENDENCY_METHODS_COLLECT.kernel,
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_field_count" => dependency_declaration_field_count: Read,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_PASS, "hir_active_dispatch_args")?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT.name, "hir_active_dispatch_args")?;
+    METHODS_FINALIZE_CANDIDATES_DIRECT.register_kernel(&mut graph, kernels)?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHODS_PROJECT.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        DEPENDENCY_METHODS_PROJECT.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT.name, "hir_active_dispatch_args")?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHOD_PARAMS_SCATTER.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::CallArguments,
+        kernels,
+        DEPENDENCY_METHOD_PARAMS_SCATTER.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER.name, "hir_active_dispatch_args")?;
     VALUE_CALLS_CONSUME.register_kernel(&mut graph, kernels)?;
     VALUE_CALL_LEAF_MIRROR.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_MODULE_INITIALIZE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_MODULE_CONSUME.register_kernel(&mut graph, kernels)?;
     CALLS_APPLY_MODULE_ARGUMENTS.register_kernel(&mut graph, kernels)?;
     VALUE_CALL_LEAF_MIRROR_AFTER_ROW_ARGS.register_kernel(&mut graph, kernels)?;
-    METHODS_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
-    METHODS_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
-    METHODS_VALIDATE_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS_LOOKUP.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
+    METHODS_RESET_CANDIDATES.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE.register_kernel(&mut graph, kernels)?;
+    add_dependency_type_index_passes(
+        &mut graph,
+        kernels,
+        DEPENDENCY_TYPE_INDEX_METHOD_LOOKUP,
+        canonical_type_jump_rounds,
+        dependency_canonical_type_roots_a,
+        dependency_canonical_type_roots_b,
+        dependency_declaration_generic_arity,
+        dependency_declaration_field_count,
+    )?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        DEPENDENCY_METHODS_COLLECT_LOOKUP.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_LOOKUP.name, "hir_active_dispatch_args")?;
+    METHODS_FINALIZE_CANDIDATES.register_kernel(&mut graph, kernels)?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        DEPENDENCY_METHODS_PROJECT_LOOKUP.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_LOOKUP.name, "hir_active_dispatch_args")?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::CallArguments,
+        kernels,
+        DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name, "hir_active_dispatch_args")?;
     graph.repeat_pass_range(
         8,
-        METHODS_MARK_CALL_RETURN_KEYS.name,
-        METHODS_RESOLVE_TABLE.name,
+        METHODS_MARK_CALL_KEYS_LOOKUP.name,
+        DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name,
     )?;
     CALLS_RESULT_INSTANCE_PROJECT.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_METHOD_RESULT_INITIALIZE.register_kernel(&mut graph, kernels)?;
@@ -4990,25 +5319,96 @@ fn build_graph(
     VALUE_CALL_LEAF_MIRROR_AFTER_METHOD_ROW_ARGS.register_kernel(&mut graph, kernels)?;
     CALLS_INFER_ARRAY_GENERICS.register_kernel(&mut graph, kernels)?;
     CALLS_ARRAY_STATE_PUBLISH.register_kernel(&mut graph, kernels)?;
-    CALLS_ARRAY_STATE_CONSUME.register_kernel(&mut graph, kernels)?;
     CALLS_GENERIC_PARAMS_ERASE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_CALLS_CONSUME.register_kernel(&mut graph, kernels)?;
-    VALUE_ENUM_CALL_PAYLOADS_VALIDATE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_CALLS_FINALIZE.register_kernel(&mut graph, kernels)?;
     MATCH_EXPRS_TYPE.register_kernel(&mut graph, kernels)?;
     VALUE_CONSTS_CONSUME.register_kernel(&mut graph, kernels)?;
-    MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_UNITS_CONSUME.register_kernel(&mut graph, kernels)?;
+    VALUE_ENUM_UNITS_CONSUME_INFERENCE.register_kernel(&mut graph, kernels)?;
+    VALUE_ENUM_UNITS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE.register_kernel(&mut graph, kernels)?;
+    for (name, kernel) in [
+        (
+            CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
+            "type_checker/type/instances/02b_clear_application_index",
+        ),
+        (
+            CALLS_RETURN_TYPE_SOURCE_INDEX_PASS,
+            "type_checker/type/instances/02c_index_closed_applications",
+        ),
+    ] {
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Tokens,
+            kernels,
+            kernel,
+            &[],
+        )?;
+        graph.add_indirect_dispatch(name, "token_active_dispatch_args")?;
+    }
+    METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
+    METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
+    METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
+    METHODS_RESOLVE_TABLE_INFERENCE.register_kernel(&mut graph, kernels)?;
+    add_dependency_type_index_passes(
+        &mut graph,
+        kernels,
+        DEPENDENCY_TYPE_INDEX_RETURN_MATERIALIZATION,
+        canonical_type_jump_rounds,
+        dependency_canonical_type_roots_a,
+        dependency_canonical_type_roots_b,
+        dependency_declaration_generic_arity,
+        dependency_declaration_field_count,
+    )?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        DEPENDENCY_METHODS_COLLECT_INFERENCE.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_INFERENCE.name, "hir_active_dispatch_args")?;
+    METHODS_FINALIZE_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        DEPENDENCY_METHODS_PROJECT_INFERENCE.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_INFERENCE.name, "hir_active_dispatch_args")?;
+    graph.add_kernel_pass_by_name(
+        DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::CallArguments,
+        kernels,
+        DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.kernel,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name, "hir_active_dispatch_args")?;
+    CALLS_EXPLICIT_APPLICATIONS_BIND.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_CONSUME.register_kernel(&mut graph, kernels)?;
-    // The recorder validates and resolves the claims produced by final
-    // argument matching before publishing those arguments to call state.
+    // The recorder collects and indexes provisional claims before publishing
+    // arguments to call state. Strict type conflicts are checked after closure.
     // Keep that semantic interval in the graph's real execution order so
     // neither the claim inputs nor the delayed apply inputs can be colored
     // onto scratch used by the intervening operations.
     CALLS_GENERIC_CLAIM_CLEAR.register_kernel(&mut graph, kernels)?;
     GENERIC_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
+    CONST_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
     CALLS_GENERIC_CLAIM_EMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         GENERIC_CLAIM_INDEX_PREPARE_PASS,
@@ -5023,7 +5423,6 @@ fn build_graph(
     )?;
     CALLS_GENERIC_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
-    CALLS_GENERIC_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
     REQUIRED_GENERIC_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(hir_blocks))?;
     graph.add_kernel_pass_by_name(
@@ -5044,13 +5443,12 @@ fn build_graph(
         kernels,
         "type_checker/count/dispatch_args",
         reflected_bindings![
-            "count_in" => call_arg_row_count_out,
+            "count_in" => const_claim_count_out,
             "dispatch_args" => const_claim_index_dispatch_args: Write,
         ],
     )?;
     CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
-    CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_CONTEXTUAL_RESULT_REQUESTS.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS,
@@ -5060,7 +5458,6 @@ fn build_graph(
         "type_checker/dependencies/08a_validate_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
-            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
             "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Write,
             "call_result_instance" => _call_result_instance: Write,
@@ -5097,27 +5494,228 @@ fn build_graph(
         "type_checker/conditions/aggregate_args",
         reflected_bindings![
             "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
-            "type_subtree_compare_scan_input" => type_subtree_compare_scan_input: Write,
-            "type_subtree_compare_left_root" => type_subtree_compare_left_root: Write,
-            "type_subtree_compare_right_root" => type_subtree_compare_right_root: Write,
-            "type_subtree_compare_error_token" => type_subtree_compare_error_token: Write,
-            "type_subtree_compare_error_detail" => type_subtree_compare_error_detail: Write,
         ],
     )?;
     graph.add_indirect_dispatch(
         CONDITIONS_AGGREGATE_ARGS_CALLS_PASS,
         "aggregate_compare_dispatch_args",
     )?;
-    add_type_subtree_passes(
-        &mut graph,
-        kernels,
-        TYPE_SUBTREE_CALL_SCAN_PASSES,
-        TYPE_SUBTREE_CALL_DISPATCH_PASS,
-        TYPE_SUBTREE_CALL_INDIRECT_PASS,
-        prefix_scan_hierarchy_levels(hir_blocks),
-    )?;
-    CALLS_REQUIRED_GENERIC_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_APPLY_FINAL_ARGUMENTS.register_kernel(&mut graph, kernels)?;
+    for (name, kernel, domain, bindings) in [
+        (
+            CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
+            "type_checker/calls/03d_bind_method_receiver_environment",
+            ResourceDomain::HirNodes,
+            &application_bindings[..],
+        ),
+        (
+            CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
+            "type_checker/calls/03k_project_argument_contexts",
+            ResourceDomain::HirNodes,
+            &application_bindings[..],
+        ),
+        (
+            CALLS_MATERIALIZE_RETURN_TYPES_PASS,
+            "type_checker/calls/03e_materialize_return_types",
+            ResourceDomain::HirNodes,
+            &application_bindings[..],
+        ),
+        (
+            CALLS_EXPAND_APPLICATION_FIELDS_PASS,
+            "type_checker/calls/03e1_expand_application_fields",
+            ResourceDomain::HirNodes,
+            &application_bindings[..],
+        ),
+        (
+            CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
+            "type_checker/calls/03k2_materialize_match_payloads",
+            ResourceDomain::HirNodes,
+            &application_bindings[..],
+        ),
+        (
+            CALLS_RETURN_TYPE_INDEX_PASS,
+            "type_checker/type/instances/02c_index_closed_applications",
+            ResourceDomain::Tokens,
+            &[][..],
+        ),
+        (
+            CALLS_RETURN_IMPORTED_FIELDS_PASS,
+            "type_checker/type/instances/02e_project_imported_fields",
+            ResourceDomain::Tokens,
+            imported_field_overrides,
+        ),
+        (
+            TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
+            "type_checker/type/instances/03a_member_receivers",
+            ResourceDomain::HirNodes,
+            member_receiver_overrides,
+        ),
+        (
+            TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
+            "type_checker/type/instances/03_member_results",
+            ResourceDomain::HirNodes,
+            member_result_overrides,
+        ),
+        (
+            TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
+            "type_checker/type/instances/03b_member_substitute",
+            ResourceDomain::Tokens,
+            &[][..],
+        ),
+        (
+            MATCH_PAYLOADS_TYPE_INFERENCE.name,
+            "type_checker/modules/10m2_type_match_payloads",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+        (
+            MATCH_EXPRS_TYPE_INFERENCE.name,
+            "type_checker/modules/10n_type_match_exprs",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+        (
+            CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
+            "type_checker/calls/03k1_project_literal_contexts",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+        (
+            CALLS_PROJECT_EXPRESSION_TYPES_PASS,
+            "type_checker/calls/03g_project_expression_types",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+        (
+            CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
+            "type_checker/calls/03h_project_array_literal_elements",
+            ResourceDomain::HirNodes,
+            reflected_bindings![
+                "array_literal_element_ref_tag" => _array_literal_element_ref_tag: Write,
+                "array_literal_element_ref_payload" => _array_literal_element_ref_payload: Write,
+            ],
+        ),
+        (
+            CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
+            "type_checker/calls/03i_materialize_array_literals",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+        (
+            CALLS_VALIDATE_ARRAY_LITERALS_PASS,
+            "type_checker/calls/03j_validate_array_literals",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+        (
+            CALLS_INFER_RETURN_BINDINGS_PASS,
+            "type_checker/calls/03f_infer_return_bindings",
+            ResourceDomain::HirNodes,
+            &[][..],
+        ),
+    ] {
+        if name == CALLS_MATERIALIZE_RETURN_TYPES_PASS && struct_init_passes_required(parser_feature_flags) {
+            graph.add_kernel_pass_by_name(
+                CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::Tokens,
+                kernels,
+                "type_checker/type/instances/02c_index_closed_applications",
+                &[],
+            )?;
+            graph.add_indirect_dispatch(CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS, "token_active_dispatch_args")?;
+            graph.add_kernel_pass_by_name(
+                CALLS_RECORD_CONTEXTS_PASS,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                "type_checker/calls/03k3_project_record_contexts",
+                reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
+            )?;
+            graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "hir_active_dispatch_args")?;
+        }
+        if name == CALLS_PROJECT_LITERAL_CONTEXTS_PASS
+            && struct_init_passes_required(parser_feature_flags)
+        {
+            for (record_name, record_kernel, record_bindings) in [
+                (
+                    CALLS_RECORD_NESTED_CONTEXTS_PASS,
+                    "type_checker/type/instances/04a3_nested_struct_contexts",
+                    &member_result_overrides[..],
+                ),
+                (
+                    CALLS_RECORD_IMPORTED_FIELDS_PASS,
+                    "type_checker/dependencies/16_project_struct_literals",
+                    reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
+                ),
+                (
+                    CALLS_RECORD_FIELDS_PASS,
+                    "type_checker/type/instances/04_struct_init_fields",
+                    &[][..],
+                ),
+                (
+                    CALLS_RECORD_REFS_PASS,
+                    "type_checker/semantic/artifact/01a_struct_literal_refs",
+                    &[][..],
+                ),
+            ] {
+                graph.add_kernel_pass_by_name(
+                    record_name,
+                    CompilerPhase::TypeCheck,
+                    ResourceDomain::HirNodes,
+                    kernels,
+                    record_kernel,
+                    record_bindings,
+                )?;
+                graph.add_indirect_dispatch(record_name, "hir_active_dispatch_args")?;
+            }
+        }
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            domain,
+            kernels,
+            kernel,
+            bindings,
+        )?;
+        graph.add_indirect_dispatch(
+            name,
+            if name == MATCH_PAYLOADS_TYPE_INFERENCE.name {
+                "match_hir_dispatch_args"
+            } else if domain == ResourceDomain::HirNodes {
+                "hir_active_dispatch_args"
+            } else {
+                "token_active_dispatch_args"
+            },
+        )?;
+    }
+    METHODS_RESOLVE_INFERENCE.register_kernel(&mut graph, kernels)?;
+    graph.add_buffer_copy_pass(
+        CALLS_INFERENCE_READBACK_PASS,
+        CompilerPhase::TypeCheck,
+        "call_inference_state",
+        call_inference_state,
+        "call_inference_readback",
+        call_inference_readback,
+    )?;
+    // Ordinary and generic calls both use convergence. Keep every relation
+    // live across the repeated region, including late method lookup facts.
+    CALLS_CONTEXTUAL_RESULTS_FINAL.register_kernel(&mut graph, kernels)?;
+    graph.repeat_pass_range(
+        hir_capacity
+            .max(1)
+            .saturating_mul(CALL_INFERENCE_ROUND_FACTOR)
+            .saturating_add(1),
+        METHODS_MARK_CALL_KEYS_INFERENCE.name,
+        CALLS_CONTEXTUAL_RESULTS_FINAL.name,
+    )?;
+    VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
+    VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
+    CALLS_GENERIC_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
+    CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
+    CALLS_REQUIRED_GENERIC_VALIDATE.register_kernel(&mut graph, kernels)?;
+    CALLS_ARRAY_STATE_CONSUME.register_kernel(&mut graph, kernels)?;
+    MATCH_PAYLOADS_TYPE_AFTER_CALLS.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_ARRAY_PASS,
         CompilerPhase::TypeCheck,
@@ -5132,7 +5730,9 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/03_member_results",
-        &[],
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
@@ -5152,6 +5752,7 @@ fn build_graph(
         "type_checker/type/instances/04b_struct_init_substitute",
         &[],
     )?;
+    MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS_AGGREGATE_VALIDATION.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS,
@@ -5167,7 +5768,7 @@ fn build_graph(
             "predicate_owner_node" => predicate_owner_node: Write,
             "predicate_subject_token" => predicate_subject_token: Write,
             "predicate_bound_token" => predicate_bound_token: Write,
-            "predicate_bound_decl_id" => predicate_bound_decl_id: Write,
+            "predicate_bound_reference" => predicate_bound_reference: Write,
             "predicate_bound_arg_count" => predicate_bound_arg_count: Write,
             "predicate_bound_first_arg_token" => predicate_bound_first_arg_token: Write,
             "predicate_bound_second_arg_token" => predicate_bound_second_arg_token: Write,
@@ -5175,6 +5776,7 @@ fn build_graph(
             "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
             "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
             "predicate_method_validation_status" => predicate_method_validation_status: Write,
+            "predicate_method_validation_required_symbol" => predicate_method_validation_required_symbol: Write,
             "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
             "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
             "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
@@ -5260,13 +5862,21 @@ fn build_graph(
             "type_checker/predicates/01f1_emit_method_param_validation_rows",
             &[],
         )?;
+        add_dependency_type_index_passes(
+            &mut graph, kernels, DEPENDENCY_TYPE_INDEX_TRAIT_CONTRACTS,
+            canonical_type_jump_rounds,
+            dependency_canonical_type_roots_a, dependency_canonical_type_roots_b,
+            dependency_declaration_generic_arity, dependency_declaration_field_count,
+        )?;
         graph.add_kernel_pass_by_name(
-            PREDICATES_VALIDATE_METHOD_TYPE_ARG_ROWS_PASS,
+            PREDICATES_VALIDATE_IMPORTED_METHODS_PASS,
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f2_validate_method_type_arg_rows",
-            &[],
+            "type_checker/predicates/01f2_validate_imported_methods",
+            reflected_bindings![
+                "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            ],
         )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_REDUCE_METHOD_VALIDATION_ERRORS_PASS,
@@ -5325,7 +5935,7 @@ fn build_graph(
             PREDICATES_COLLECT_IMPLS_PASS,
             PREDICATES_EMIT_METHOD_VALIDATION_ROWS_PASS,
             PREDICATES_EMIT_METHOD_PARAM_VALIDATION_ROWS_PASS,
-            PREDICATES_VALIDATE_METHOD_TYPE_ARG_ROWS_PASS,
+            PREDICATES_VALIDATE_IMPORTED_METHODS_PASS,
             PREDICATES_REDUCE_METHOD_VALIDATION_ERRORS_PASS,
             PREDICATES_COUNT_OBLIGATION_PAIRS_PASS,
         ] {
@@ -5357,6 +5967,7 @@ fn build_graph(
         TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_ARRAY_PASS,
         TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS,
         TYPE_INSTANCES_STRUCT_INIT_CONTEXTS_PASS,
+        TYPE_INSTANCES_NESTED_STRUCT_INIT_CONTEXTS_PASS,
         TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS,
         TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS,
     ] {
@@ -5367,7 +5978,6 @@ fn build_graph(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
         TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS,
-        TYPE_INSTANCE_ARG_HASH_ROWS_PASS,
         SCOPE_HIR_PASS,
     ] {
         graph.add_indirect_dispatch(pass, "token_active_dispatch_args")?;
@@ -5380,26 +5990,12 @@ fn build_graph(
         canonical_type_jump_rounds,
         dependency_canonical_type_roots_a,
         dependency_canonical_type_roots_b,
-        dependency_canonical_type_subtree_a,
-        dependency_canonical_type_subtree_b,
         dependency_declaration_generic_arity,
         dependency_declaration_field_count,
     )?;
-    let dependency_call_compare_scan_input = graph
-        .resource_id("dependency_call_compare_scan_input")
-        .ok_or("dependency call comparison requires its scan input")?;
     let call_result_instance = graph
         .resource_id("call_result_instance")
         .ok_or("dependency call results require call result instances")?;
-    graph.add_pass(PassDesc {
-        name: DEPENDENCY_CALL_COMPARE_CLEAR_PASS,
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![PassAccess::write(
-            "dependency_call_compare_scan_input",
-            dependency_call_compare_scan_input,
-        )],
-    })?;
     DEPENDENCY_CALL_ARITY_VALIDATE.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_CALL_ARGS_VALIDATE_PASS,
@@ -5409,7 +6005,6 @@ fn build_graph(
         "type_checker/dependencies/08_validate_call_args",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
-            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5420,7 +6015,6 @@ fn build_graph(
         "type_checker/dependencies/08a_validate_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
-            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
             "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Write,
             "call_result_instance" => call_result_instance: Write,
@@ -5434,36 +6028,9 @@ fn build_graph(
         "type_checker/dependencies/08a_validate_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
-            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
             "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Write,
             "call_result_instance" => call_result_instance: Write,
-        ],
-    )?;
-    DEPENDENCY_CALL_COMPARE_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(hir_blocks))?;
-    let dependency_call_compare_total = graph
-        .resource_id("dependency_call_compare_total")
-        .ok_or("dependency call comparison requires its total")?;
-    graph.add_kernel_pass_by_name(
-        DEPENDENCY_CALL_COMPARE_DISPATCH_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => dependency_call_compare_total,
-            "dispatch_args" => dependency_call_compare_dispatch_args: Write,
-        ],
-    )?;
-    graph.add_kernel_pass_by_name(
-        DEPENDENCY_CALL_TYPE_ARGS_VALIDATE_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::HirNodes,
-        kernels,
-        "type_checker/dependencies/08b_validate_call_type_args",
-        reflected_bindings![
-            "canonical_type_roots" => dependency_canonical_type_roots: Read,
-            "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
         ],
     )?;
     for pass in [
@@ -5473,10 +6040,6 @@ fn build_graph(
     ] {
         graph.add_indirect_dispatch(pass, "hir_active_dispatch_args")?;
     }
-    graph.add_indirect_dispatch(
-        DEPENDENCY_CALL_TYPE_ARGS_VALIDATE_PASS,
-        "dependency_call_compare_dispatch_args",
-    )?;
     graph.add_kernel_pass_by_name(
         CALLS_BACKEND_TARGETS_PASS,
         CompilerPhase::TypeCheck,
@@ -5488,6 +6051,174 @@ fn build_graph(
             "backend_call_fn_index" => backend_call_fn_index: Write,
         ],
     )?;
+    // Call checking retains the symbolic signature. Only the native body
+    // environment is rebound here, after all call and return validation.
+    graph.add_kernel_pass_by_name(
+        "type_check.body_specialization.graph",
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/00e_seed_body_type_graph",
+        reflected_bindings![
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        "type_check.body_specialization.apply",
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/00f_apply_body_specialization",
+        &[],
+    )?;
+    for &(name, tag_column, payload_column) in BODY_REFERENCE_SPECIALIZATION_PASSES {
+        let tag = graph
+            .resource_id(tag_column)
+            .expect("accepted type tag column");
+        let payload = graph
+            .resource_id(payload_column)
+            .expect("accepted type payload column");
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Types,
+            kernels,
+            BODY_REFERENCE_SPECIALIZATION_KERNEL,
+            reflected_bindings![
+                "reference_tag" => tag: ReadWrite,
+                "reference_payload" => payload: ReadWrite,
+            ],
+        )?;
+    }
+    for (name, kernel, domain) in [
+        (
+            "type_check.body_specialization.aggregates",
+            "type_checker/type/instances/01d_collect_aggregate_details",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.constants",
+            "type_checker/type/instances/00g_apply_body_constants",
+            ResourceDomain::Types,
+        ),
+        (
+            "type_check.body_specialization.arguments",
+            "type_checker/type/instances/01e_collect_named_arg_refs",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.declarations",
+            "type_checker/type/instances/01f_decl_refs",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.bindings",
+            "type_checker/type/instances/01f_decl_refs",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.clear_application_index",
+            "type_checker/type/instances/02b_clear_application_index",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.index_applications",
+            "type_checker/type/instances/02c_index_closed_applications",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.materialize_applications",
+            "type_checker/type/instances/02d_materialize_applications",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.index_generated_applications",
+            "type_checker/type/instances/02c_index_closed_applications",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.imported_fields",
+            "type_checker/type/instances/02e_project_imported_fields",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.member_receivers",
+            "type_checker/type/instances/03a_member_receivers",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.member_results",
+            "type_checker/type/instances/03_member_results",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.member_substitute",
+            "type_checker/type/instances/03b_member_substitute",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.literal_contexts",
+            "type_checker/type/instances/04a2_struct_init_contexts",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.nested_literal_contexts",
+            "type_checker/type/instances/04a3_nested_struct_contexts",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.literal_fields",
+            "type_checker/type/instances/04_struct_init_fields",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.literal_substitute",
+            "type_checker/type/instances/04b_struct_init_substitute",
+            ResourceDomain::Tokens,
+        ),
+        (
+            "type_check.body_specialization.array_literal_refs",
+            "type_checker/type/instances/05b_array_literal_return_refs",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.payloads",
+            "type_checker/modules/10m2_type_match_payloads",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.matches",
+            "type_checker/modules/10n_type_match_exprs",
+            ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.predicates",
+            "type_checker/predicates/03_validate_body_obligations",
+            ResourceDomain::HirNodes,
+        ),
+    ] {
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            domain,
+            kernels,
+            kernel,
+            if kernel == "type_checker/type/instances/02d_materialize_applications" {
+                application_bindings
+            } else if kernel == "type_checker/type/instances/02e_project_imported_fields" {
+                imported_field_overrides
+            } else if kernel == "type_checker/type/instances/03a_member_receivers" {
+                member_receiver_overrides
+            } else if kernel == "type_checker/type/instances/03_member_results"
+                || kernel == "type_checker/type/instances/04a3_nested_struct_contexts"
+            {
+                member_result_overrides
+            } else {
+                &[]
+            },
+        )?;
+    }
     graph.add_kernel_pass_by_name(
         SEMANTIC_CALLS_PROJECT_PASS,
         CompilerPhase::TypeCheck,
@@ -5522,7 +6253,52 @@ fn build_graph(
             "semantic_aggregate_word_count_by_hir" => semantic_aggregate_word_count_by_hir: Write,
         ],
     )?;
+    graph.add_kernel_pass_by_name(
+        "type_check.semantic_artifact.generic_call_results",
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00c_generic_call_results",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        "type_check.semantic_artifact.generic_native_words",
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens,
+        kernels,
+        "type_checker/semantic/artifact/01c_generic_native_words",
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        "type_check.body_specialization.native_layout_admission",
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/01c2_validate_body_native_layout",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        "type_check.semantic_artifact.member_layout",
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/01d_member_layout",
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "semantic_member_field_word_offset_by_hir" => semantic_member_field_word_offset_by_hir: Write,
+            "semantic_member_field_word_count_by_hir" => semantic_member_field_word_count_by_hir: Write,
+        ],
+    )?;
     add_expression_type_passes(&mut graph)?;
+    RETAINED_CALLABLE_COMPACTION.register(
+        &mut graph,
+        kernels,
+        prefix_scan_hierarchy_levels(hir_blocks),
+    )?;
     graph.add_kernel_pass_by_name(
         SEMANTIC_ARTIFACT_PROJECT_PASS,
         CompilerPhase::TypeCheck,
@@ -5536,11 +6312,15 @@ fn build_graph(
             "semantic_value_type_by_hir" => semantic_value_type_by_hir: Write,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: Write,
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: Write,
-            "semantic_param_type_by_row" => semantic_param_type_by_row: Write,
+            "semantic_param_ref_tag_by_row" => semantic_param_ref_tag_by_row: Write,
+            "semantic_param_ref_payload_by_row" => semantic_param_ref_payload_by_row: Write,
             "semantic_enclosing_fn_by_hir" => semantic_enclosing_fn_by_hir: Write,
             "semantic_function_return_type_by_hir" => semantic_function_return_type_by_hir: Write,
             "semantic_function_entrypoint_by_hir" => semantic_function_entrypoint_by_hir: Write,
             "semantic_function_host_service_by_hir" => semantic_function_host_service_by_hir: Write,
+            "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Write,
+            "semantic_predicate_subject_parameter_token_by_hir" => semantic_predicate_subject_parameter_token_by_hir: Write,
+            "public_decl_index_by_hir" => _interface_public_decl_index_by_hir: Read,
             "semantic_control_depth_by_hir" => semantic_control_depth_by_hir: Write,
             "compact_expr_scalar_type" => final_scalar: Read,
             "semantic_expr_scalar_type_by_hir" => semantic_expr_scalar_type_by_hir: Write,
@@ -5586,6 +6366,7 @@ fn build_graph(
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
         ],
     )?;
+    CALLS_EXPLICIT_APPLICATIONS_VALIDATE.register_kernel(&mut graph, kernels)?;
     graph.add_buffer_copy_pass(
         STATUS_READBACK_PASS,
         CompilerPhase::TypeCheck,
@@ -5605,6 +6386,10 @@ fn build_graph(
         "type_expr_ref_payload",
         "type_generic_param_slot_by_token",
         "type_const_param_slot_by_token",
+        "type_const_param_scalar_by_token",
+        "type_const_param_value_by_token",
+        "checked_constant_atoms",
+        "checked_constant_projections",
         "generic_param_count_out",
         "generic_param_owner_token",
         "generic_param_name_id",
@@ -5613,6 +6398,9 @@ fn build_graph(
         "type_decl_generic_param_count_by_owner_token",
         "type_decl_const_param_count_by_owner_token",
         "type_instance_kind",
+        "type_instance_lookup_head",
+        "type_instance_lookup_next",
+        "type_native_word_count",
         "type_instance_arg_start",
         "type_instance_arg_count",
         "type_instance_arg_ref_tag",
@@ -5653,39 +6441,29 @@ mod tests {
                 visible_rows: 16,
                 lookup_rows: 32,
                 type_rows: 2,
+                constant_type_rows: 2,
                 declaration_rows: 16,
             },
             u32::MAX,
+            false,
             &kernels,
         )
         .unwrap();
         graph.validate_assigned_pass_reflections(&kernels).unwrap();
 
-        let validate_results = graph
-            .pass(
-                graph
-                    .pass_id(DEPENDENCY_CALL_RESULTS_VALIDATE_PASS)
-                    .unwrap(),
-            )
+        let validate_arguments = graph
+            .pass(graph.pass_id(DEPENDENCY_CALL_ARGS_VALIDATE_PASS).unwrap())
             .unwrap();
-        for (binding, expected_resource) in [
-            ("canonical_type_roots", "dependency_canonical_type_roots_b"),
-            (
-                "canonical_type_subtree_start",
-                "dependency_canonical_type_subtree_b",
-            ),
-        ] {
-            let access = validate_results
-                .accesses
-                .iter()
-                .find(|access| access.binding == binding)
-                .unwrap_or_else(|| panic!("missing reflected binding `{binding}`"));
-            assert_eq!(
-                access.resource,
-                graph.resource_id(expected_resource).unwrap(),
-                "one 16-link jump round leaves the canonical dependency relation in buffer B",
-            );
-        }
+        let canonical_roots = validate_arguments
+            .accesses
+            .iter()
+            .find(|access| access.binding == "canonical_type_roots")
+            .expect("missing canonical roots reflected binding");
+        assert_eq!(
+            canonical_roots.resource,
+            graph.resource_id("dependency_canonical_type_roots_b").unwrap(),
+            "one 16-link jump round leaves the canonical dependency relation in buffer B",
+        );
 
         let arena_layout = graph
             .workspace_arena_layout(&wgpu::Limits::default())
@@ -5705,21 +6483,17 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing arena placement for `{name}`"))
                 .arena
         };
-        let writable_call_arena = physical_arena("call_result_instance");
-        for name in [
-            "dependency_canonical_type_roots_a",
-            "dependency_canonical_type_roots_b",
-            "dependency_canonical_type_subtree_a",
-            "dependency_canonical_type_subtree_b",
-        ] {
-            assert_ne!(
-                physical_arena(name),
-                writable_call_arena,
-                "read-only dependency canonical relation `{name}` must not share a physical buffer with writable call results",
-            );
-        }
+        // Argument validation reads canonical roots while publishing the
+        // checked argument mode. Those bindings require distinct arenas.
+        assert_ne!(
+            physical_arena("dependency_canonical_type_roots_b"),
+            physical_arena("semantic_argument_mode_by_hir"),
+            "read-only canonical roots must not share a physical buffer with writable argument modes",
+        );
         assert!(graph.resource_id("canonical_type_roots").is_none());
         assert!(graph.resource_id("canonical_type_subtree_start").is_none());
+        assert!(graph.resource_id("dependency_canonical_type_subtree_a").is_none());
+        assert!(graph.resource_id("dependency_canonical_type_subtree_b").is_none());
     }
 
     #[test]
@@ -5738,6 +6512,7 @@ mod tests {
             10_000,
             DependencyWorkspaceCapacity::default(),
             u32::MAX,
+            false,
             &kernels,
         )
         .unwrap();
@@ -5747,12 +6522,26 @@ mod tests {
                 .resource_id(name)
                 .unwrap_or_else(|| panic!("missing graph resource `{name}`"))
         };
+        let iterable_kind = resource("semantic_iterable_kind_by_hir");
+        assert_eq!(graph.resource(iterable_kind).unwrap().bytes, 1024 * 4);
+        assert_eq!(
+            graph.lifetime(iterable_kind).unwrap().first_pass,
+            graph.pass_id(TYPE_INSTANCES_CLEAR.name).unwrap(),
+            "retained iteration kinds must be initialized before inference on every job",
+        );
+        for pass_name in [TYPE_INSTANCES_CLEAR.name, CALLS_INFER_RETURN_BINDINGS_PASS] {
+            let pass = graph.pass(graph.pass_id(pass_name).unwrap()).unwrap();
+            assert!(
+                pass.accesses.iter().any(|access| access.binding == "semantic_iterable_kind_by_hir"
+                    && access.resource == iterable_kind && access.mode != AccessMode::Read),
+                "iteration kind initialization/publication must participate in reflected lifetimes",
+            );
+        }
         for operation in [
             MATCH_PATTERNS_BIND,
             MATCH_PAYLOADS_TYPE,
             MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE,
             VALUE_ENUM_CALLS_CONSUME,
-            VALUE_ENUM_CALL_PAYLOADS_VALIDATE,
             VALUE_ENUM_CALLS_FINALIZE,
             MATCH_EXPRS_TYPE,
         ] {
@@ -5772,6 +6561,20 @@ mod tests {
                 < graph.pass_id(MATCH_EXPRS_TYPE.name).unwrap(),
             "enum-call finalization executes before match-expression typing",
         );
+        assert!(
+            graph
+                .pass_id(TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS)
+                .unwrap()
+                < graph
+                    .pass_id(MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE.name)
+                    .unwrap(),
+            "imported pattern validation consumes the final member-result relation",
+        );
+        assert!(
+            graph.pass_id(CALLS_INFERENCE_READBACK_PASS).unwrap()
+                < graph.pass_id(CALLS_CONTEXTUAL_RESULTS_FINAL.name).unwrap(),
+            "result-context rejection waits for inference closure",
+        );
         let arena_layout = graph
             .workspace_arena_layout(&wgpu::Limits::default())
             .unwrap();
@@ -5790,21 +6593,18 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing arena placement for `{name}`"))
                 .arena
         };
-        let alias_root_initialize = graph
-            .pass(graph.pass_id(TYPE_ALIAS_ROOT_INITIALIZE.name).unwrap())
+        let alias_normalize = graph
+            .pass(graph.pass_id(TYPE_ALIASES_NORMALIZE.name).unwrap())
             .unwrap();
-        assert!(alias_root_initialize.accesses.iter().any(|access| {
-            access.binding == "alias_root_decl"
-                && access.resource == resource("alias_root_a")
+        assert!(alias_normalize.accesses.iter().any(|access| {
+            access.binding == "type_alias_normalized_ref"
+                && access.resource == resource("type_alias_normalized_ref")
                 && access.mode == AccessMode::Write
         }));
-        assert!(alias_root_initialize.accesses.iter().any(|access| {
-            access.binding == "decl_kind" && access.resource == resource("decl_kind")
-        }));
         assert_ne!(
-            physical_arena("alias_root_a"),
-            physical_arena("decl_kind"),
-            "resources co-bound by alias-root initialization must use different physical buffers",
+            physical_arena("type_alias_normalized_ref"),
+            physical_arena("type_expr_ref_tag"),
+            "alias normalization reads immutable source refs while producing separate results",
         );
         assert_ne!(
             physical_arena("module_type_path_type"),
@@ -5900,6 +6700,60 @@ mod tests {
             .unwrap();
         let generic_claim_emit = graph.pass_id(CALLS_GENERIC_CLAIM_EMIT.name).unwrap();
         assert!(early_struct_refs.index() < generic_claim_emit.index());
+        let record_contexts = graph.pass_id(CALLS_RECORD_CONTEXTS_PASS).unwrap();
+        let record_fields = graph.pass_id(CALLS_RECORD_FIELDS_PASS).unwrap();
+        let record_refs = graph.pass_id(CALLS_RECORD_REFS_PASS).unwrap();
+        let argument_contexts = graph.pass_id(CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS).unwrap();
+        let closed_index = graph.pass_id(CALLS_RETURN_TYPE_INDEX_PASS).unwrap();
+        let argument_index = graph.pass_id(CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS).unwrap();
+        let materialize_results = graph.pass_id(CALLS_MATERIALIZE_RETURN_TYPES_PASS).unwrap();
+        assert!(argument_contexts < argument_index && argument_index < record_contexts);
+        assert!(record_contexts < materialize_results && materialize_results < closed_index);
+        assert!(record_contexts < graph.pass_id(CALLS_RECORD_NESTED_CONTEXTS_PASS).unwrap());
+        assert!(
+            graph.pass_id(CALLS_RECORD_NESTED_CONTEXTS_PASS).unwrap()
+                < graph.pass_id(CALLS_RECORD_IMPORTED_FIELDS_PASS).unwrap()
+        );
+        assert!(graph.pass_id(CALLS_RECORD_IMPORTED_FIELDS_PASS).unwrap() < record_fields);
+        assert!(record_fields < record_refs);
+        assert!(record_refs < graph.pass_id(CALLS_PROJECT_LITERAL_CONTEXTS_PASS).unwrap());
+        assert!(record_refs < graph.pass_id(CALLS_INFERENCE_READBACK_PASS).unwrap());
+        for (pass, binding, mode) in [
+            (
+                record_contexts,
+                "argument_expected_ref_tag",
+                AccessMode::Read,
+            ),
+            (
+                record_contexts,
+                "struct_lit_context_instance",
+                AccessMode::ReadWrite,
+            ),
+            (
+                record_fields,
+                "struct_lit_context_instance",
+                AccessMode::Read,
+            ),
+            (record_refs, "struct_lit_context_instance", AccessMode::Read),
+        ] {
+            assert!(
+                graph.pass(pass).unwrap().accesses.iter().any(|access| {
+                    access.binding == binding
+                        && access.resource == resource(binding)
+                        && access.mode == mode
+                }),
+                "record receiving-context access must participate in workspace lifetime planning: {binding}"
+            );
+        }
+        for pass in [record_contexts, record_fields, record_refs] {
+            assert!(
+                graph.repeated_regions().iter().any(|region| {
+                    pass.index() >= region.first_pass.index()
+                        && pass.index() < region.first_pass.index() + region.pass_count as usize
+                }),
+                "record receiving contexts must participate in convergence lifetimes"
+            );
+        }
         let aggregate_validation = graph
             .pass_id(TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS)
             .unwrap();
@@ -6205,7 +7059,7 @@ mod tests {
             resource("predicate_owner_node"),
             resource("predicate_subject_token"),
             resource("predicate_bound_token"),
-            resource("predicate_bound_decl_id"),
+            resource("predicate_bound_reference"),
             resource("predicate_bound_arg_count"),
             resource("predicate_bound_first_arg_token"),
             resource("predicate_bound_second_arg_token"),
@@ -6509,6 +7363,7 @@ mod tests {
             resource("struct_init_field_context_instance"),
             resource("struct_init_field_expected_ref_tag"),
             resource("struct_init_field_expected_ref_payload"),
+            resource("struct_init_field_expected_context_instance"),
             resource("struct_init_field_ordinal"),
             resource("struct_lit_context_decl_token"),
             resource("struct_lit_context_instance"),
@@ -6604,7 +7459,6 @@ mod tests {
             resource("type_instance_arg_row_scan_prefix_a"),
             resource("type_instance_arg_row_ref_tag"),
             resource("type_instance_arg_row_ref_payload"),
-            resource("type_instance_arg_hash"),
         ] {
             assert!(
                 matches!(
@@ -6623,7 +7477,6 @@ mod tests {
             slot(resource("type_instance_arg_row_count_out")),
             slot(resource("type_instance_arg_row_ref_tag")),
             slot(resource("type_instance_arg_row_ref_payload")),
-            slot(resource("type_instance_arg_hash")),
         ];
         clear_slots.sort_unstable();
         assert!(
@@ -6675,6 +7528,14 @@ mod tests {
             "projected collection follows the initial unresolved collection",
         );
         assert!(
+            graph.pass_id(DEPENDENCY_TYPE_INSTANCES_PROJECT.name).unwrap().index()
+                < graph
+                    .pass_id(TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS.name)
+                    .unwrap()
+                    .index(),
+            "structural child edges must consume persistent imported nominal instances",
+        );
+        assert!(
             graph
                 .pass_id(TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS.name)
                 .unwrap()
@@ -6717,7 +7578,6 @@ mod tests {
                 < graph.pass_id(TYPE_SEMANTIC_CLEAR_PASS).unwrap().index(),
             "sparse argument references must be populated before semantic consumers",
         );
-        let hash_rows = graph.pass_id(TYPE_INSTANCE_ARG_HASH_ROWS_PASS).unwrap();
         let mark_call_keys = graph.pass_id(METHODS_MARK_CALL_KEYS.name).unwrap();
         let method_lookup_clear = graph.pass_id(METHODS_LOOKUP_CLEAR.name).unwrap();
         let method_lookup_build = graph.pass_id(METHODS_LOOKUP_BUILD.name).unwrap();
@@ -6738,16 +7598,6 @@ mod tests {
             );
         }
         assert_ne!(
-            slot(resource("type_instance_arg_hash")),
-            slot(resource("method_lookup_head")),
-            "method-index construction reads argument hashes while writing bucket heads",
-        );
-        assert_ne!(
-            slot(resource("type_instance_arg_hash")),
-            slot(resource("method_lookup_next")),
-            "method-index construction reads argument hashes while writing bucket links",
-        );
-        assert_ne!(
             slot(resource("method_lookup_head")),
             slot(resource("method_lookup_next")),
             "bucket heads and links are written together",
@@ -6758,6 +7608,7 @@ mod tests {
             "method validation reads bucket heads while writing status",
         );
         for old_resource in [
+            "type_instance_arg_hash",
             "method_key_to_fn_token",
             "method_key_order_tmp",
             "method_key_radix_block_histogram",
@@ -6775,15 +7626,82 @@ mod tests {
                 .pass_id(TYPE_INSTANCES_COLLECT_NAMED_ARG_REFS.name)
                 .unwrap()
                 .index()
-                < hash_rows.index()
+                < mark_call_keys.index()
         );
-        assert!(hash_rows.index() < mark_call_keys.index());
-        assert!(mark_call_keys.index() < method_lookup_clear.index());
+        assert!(method_key_validation.index() < mark_call_keys.index());
         assert!(method_lookup_clear.index() < method_lookup_build.index());
         assert!(method_lookup_build.index() < method_key_validation.index());
         assert!(method_key_validation.index() < mark_call_return_keys.index());
         assert!(mark_call_return_keys.index() < resolve_table.index());
         assert!(resolve_table.index() < resolve.index());
+        for ordered in [
+            [METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name, METHODS_RESET_CANDIDATES_DIRECT.name,
+             METHODS_RESOLVE_TABLE_DIRECT.name, DEPENDENCY_METHODS_COLLECT.name,
+             METHODS_FINALIZE_CANDIDATES_DIRECT.name, DEPENDENCY_METHODS_PROJECT.name,
+             DEPENDENCY_METHOD_PARAMS_SCATTER.name],
+            [METHODS_MARK_CALL_RETURN_KEYS.name, METHODS_RESET_CANDIDATES.name,
+             METHODS_RESOLVE_TABLE.name, DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+             METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
+             DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name],
+            [METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.name, METHODS_RESET_CANDIDATES_INFERENCE.name,
+             METHODS_RESOLVE_TABLE_INFERENCE.name, DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
+             METHODS_FINALIZE_CANDIDATES_INFERENCE.name, DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
+             DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name],
+        ] {
+            for pair in ordered.windows(2) {
+                assert!(graph.pass_id(pair[0]).unwrap() < graph.pass_id(pair[1]).unwrap(),
+                    "method transaction requires {} before {}", pair[0], pair[1]);
+            }
+        }
+        assert!(graph.pass_id(DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name).unwrap()
+            < graph.pass_id(CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE.name).unwrap());
+        assert!(graph.pass_id(CALLS_APPLY_FINAL_ARGUMENTS.name).unwrap()
+            < graph.pass_id(CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS).unwrap());
+        // Inferred call receivers can resolve methods in any later round.
+        // Their tables must survive scratch reuse through the whole loop.
+        let inference_end = graph.pass_id(CALLS_INFERENCE_READBACK_PASS).unwrap();
+        for name in [
+            "method_lookup_head",
+            "method_lookup_next",
+            "method_decl_receiver_ref_tag",
+            "method_decl_receiver_ref_payload",
+            "method_candidate",
+            "method_call_source_ref_tag",
+            "method_call_source_ref_payload",
+            "method_call_selection_owned",
+            "method_call_parameter_ref_tag",
+            "method_call_parameter_ref_payload",
+            "method_call_receiver_hir",
+        ] {
+            assert!(
+                graph.lifetime(resource(name)).unwrap().last_pass.index() >= inference_end.index(),
+                "{name} must survive call convergence"
+            );
+        }
+        for spec in [
+            METHODS_MARK_CALL_KEYS_INFERENCE,
+            METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
+            METHODS_RESET_CANDIDATES_INFERENCE,
+            METHODS_RESOLVE_TABLE_INFERENCE,
+            DEPENDENCY_METHODS_COLLECT_INFERENCE,
+            METHODS_FINALIZE_CANDIDATES_INFERENCE,
+            DEPENDENCY_METHODS_PROJECT_INFERENCE,
+            DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
+            CALLS_EXPLICIT_APPLICATIONS_BIND,
+            METHODS_RESOLVE_INFERENCE,
+        ] {
+            let pass = graph.pass_id(spec.name).unwrap().index();
+            assert!(
+                graph
+                    .repeated_regions()
+                    .iter()
+                    .any(|region| pass >= region.first_pass.index()
+                        && pass < region.first_pass.index() + region.pass_count as usize),
+                "{} must participate in convergence lifetimes",
+                spec.name
+            );
+        }
+
         for resource in [
             resource("type_semantic_row_by_token"),
             resource("type_semantic_scan_input"),
@@ -7065,7 +7983,8 @@ mod tests {
             resource("semantic_value_type_by_hir"),
             resource("semantic_value_const_by_hir"),
             resource("semantic_value_const_present_by_hir"),
-            resource("semantic_param_type_by_row"),
+            resource("semantic_param_ref_tag_by_row"),
+            resource("semantic_param_ref_payload_by_row"),
             resource("semantic_enclosing_fn_by_hir"),
             resource("semantic_function_return_type_by_hir"),
             resource("semantic_function_entrypoint_by_hir"),
@@ -7186,11 +8105,19 @@ mod tests {
                 < aggregate_publish.index()
         );
         assert!(
-            aggregate_publish.index()
-                < graph
-                    .pass_id(CALLS_REQUIRED_GENERIC_MARK.name)
-                    .unwrap()
-                    .index()
+            graph
+                .pass_id(CALLS_REQUIRED_GENERIC_MARK.name)
+                .unwrap()
+                .index()
+                < aggregate_publish.index()
+        );
+        assert!(
+            graph
+                .pass_id(CALLS_INFERENCE_READBACK_PASS)
+                .unwrap()
+                .index()
+                < aggregate_publish.index(),
+            "strict generic claim validation consumes closed inference facts",
         );
         assert!(
             graph
@@ -7204,7 +8131,7 @@ mod tests {
         );
         assert!(
             graph
-                .pass_id(TYPE_SUBTREE_CALL_INDIRECT_PASS)
+                .pass_id(CONDITIONS_AGGREGATE_ARGS_CALLS_PASS)
                 .unwrap()
                 .index()
                 < graph
@@ -7214,12 +8141,20 @@ mod tests {
             "required-generic validation consumes aggregate comparison results",
         );
         assert!(
-            graph
-                .pass_id(CALLS_REQUIRED_GENERIC_VALIDATE.name)
-                .unwrap()
-                .index()
-                < final_argument_apply.index(),
-            "final call arguments are published only after generic validation",
+            final_argument_apply.index()
+                < graph
+                    .pass_id(CALLS_INFER_RETURN_BINDINGS_PASS)
+                    .unwrap()
+                    .index()
+                && graph
+                    .pass_id(CALLS_INFER_RETURN_BINDINGS_PASS)
+                    .unwrap()
+                    .index()
+                    < graph
+                        .pass_id(CALLS_REQUIRED_GENERIC_VALIDATE.name)
+                        .unwrap()
+                        .index(),
+            "required-generic validation consumes inferred complete call results",
         );
         assert_ne!(
             slot(resource("call_generic_claim_lookup_head")),
@@ -7248,6 +8183,52 @@ mod tests {
                     .index(),
             "array-result validation still consumes the matched argument relation",
         );
+        let required_validation = graph.pass_id(CALLS_REQUIRED_GENERIC_VALIDATE.name).unwrap();
+        let imported_requirements = resource("call_dependency_generic_requirements");
+        assert!(
+            graph
+                .lifetime(imported_requirements)
+                .unwrap()
+                .last_pass
+                .index()
+                >= required_validation.index(),
+            "imported declared requirements must survive inference and required-binding validation"
+        );
+        assert!(
+            graph
+                .pass(required_validation)
+                .unwrap()
+                .accesses
+                .iter()
+                .any(|access| access.resource == imported_requirements
+                    && access.mode.reads()
+                    && !access.mode.writes()),
+            "required-binding validation consumes immutable retained declaration requirements"
+        );
+        for projection in [
+            DEPENDENCY_CALLS_PROJECT.name,
+            DEPENDENCY_METHODS_PROJECT.name,
+        ] {
+            assert!(
+                graph
+                    .pass(graph.pass_id(projection).unwrap())
+                    .unwrap()
+                    .accesses
+                    .iter()
+                    .any(|access| access.resource == imported_requirements && access.mode.writes()),
+                "free and method call projection must publish imported declaration requirements"
+            );
+        }
+        assert_ne!(
+            slot(imported_requirements),
+            slot(resource("call_dependency_library_id")),
+            "requirements and imported callable identity are simultaneously live"
+        );
+        assert_ne!(
+            slot(resource("dependency_declaration_constant_arity")),
+            slot(resource("dependency_declaration_generic_arity")),
+            "total arity and constant arity are independent page metadata"
+        );
         assert_ne!(
             slot(resource("call_required_generic_scan_input")),
             slot(resource("call_required_generic_prefix")),
@@ -7271,6 +8252,7 @@ mod tests {
             512,
             DependencyWorkspaceCapacity::default(),
             u32::MAX,
+            false,
             &kernels,
         )
         .unwrap();

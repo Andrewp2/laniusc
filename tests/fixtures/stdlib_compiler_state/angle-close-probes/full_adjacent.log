@@ -1,0 +1,2 @@
+sample=0 ms=204.173
+entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/full_adjacent.lani rebuild_entry=true warmups=1 iters=1 output_bytes=18746 min_ms=204.173 median_ms=204.173 avg_ms=204.173 max_ms=204.173 output_verified=true

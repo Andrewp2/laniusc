@@ -1,0 +1,1 @@
+fn next(v: i32) -> i32 { return v + 1; } fn flag(v: bool) -> bool { return v; } fn amount() -> f32 { return 2.5; } fn main() -> i32 { let first = next(-7); let second = next(first); let stopped = flag(false); let value = amount(); if (stopped || value != 2.5) { return 1; } if (second != -5) { return 2; } return 0; }

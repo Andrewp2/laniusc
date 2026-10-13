@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -16,9 +17,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> opt_ir_total;
-StructuredBuffer<uint> opt_ir_block_total;
 StructuredBuffer<uint> opt_ir_access_total;
-StructuredBuffer<OptIrNodeControl> opt_ir_control;
 StructuredBuffer<uint> opt_ir_position_by_node;
 StructuredBuffer<OptIrBlock> opt_ir_blocks;
 StructuredBuffer<uint> semantic_function_total;
@@ -81,7 +80,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         kind <= OPT_IR_ACCESS_MEMORY_WRITE)
     {
         diagnostic_node = source_row;
-        valid = valid && source_row < node_total &&
+        valid = valid && opt_ir_node_is_executable(source_row, node_total) &&
             access.block_id < block_total &&
             opt_ir_control[source_row].block_id == access.block_id &&
             opt_ir_position_by_node[source_row] == position;

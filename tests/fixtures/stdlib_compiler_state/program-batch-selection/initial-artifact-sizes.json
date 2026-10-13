@@ -1,0 +1,47 @@
+[
+  {
+    "file": "12_initialize_batch.spv",
+    "bytes": 209660,
+    "sha256": "8f40a3088f10814d44062484535fef08d29d084ed64c4d0ad27fe4ca92390621"
+  },
+  {
+    "file": "13_validate_retained_evidence.spv",
+    "bytes": 104100,
+    "sha256": "b1d2351bbc56000a7039a3acff9fcbc7006c7bc500283728606406b4f21362e3"
+  },
+  {
+    "file": "14_validate_contexts.spv",
+    "bytes": 11496164,
+    "sha256": "15c01bc27ce692f199d662e43be6fb8174d5c7c99ca194a55eb2f2a2d008933b"
+  },
+  {
+    "file": "15_build_assumption_index.spv",
+    "bytes": 2624544,
+    "sha256": "916ecbe6505be348990e51e79031e15878696a1cbc96bab664962cd7dd2165f4"
+  },
+  {
+    "file": "16_cache_obligation_goals.spv",
+    "bytes": 2688060,
+    "sha256": "4f9a4b7c76c1df59806e41270c6bd38e0bae67edc14ae80bf455f84c1dfade64"
+  },
+  {
+    "file": "17_select_obligations.spv",
+    "bytes": 6761740,
+    "sha256": "376e23c7226595b5bebe09ba2e6c0383ceedd5823165246775699abd089797ac"
+  },
+  {
+    "file": "18_reduce_calls.spv",
+    "bytes": 950048,
+    "sha256": "fc0700f8fdf2158bb38e987cc286e610dc44a177b0b7f16afe7d72026f8ab24f"
+  },
+  {
+    "file": "19_finish_batch.spv",
+    "bytes": 58012,
+    "sha256": "b391712406969cca800b17a01e7d4671f7f1f71133db9df8aaca4583999215b4"
+  },
+  {
+    "file": "32_admit_batch_rows.spv",
+    "bytes": 8258908,
+    "sha256": "2b1ddcb4e4ffc5bc3c8c634e2de9df6df0eb94c49855deeece650442815c65ba"
+  }
+]

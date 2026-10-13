@@ -1,10 +1,14 @@
-// HIR-driven array/slice details and reference forwarding.
+import primitive_types;
+// HIR-driven array, slice, and reference children.
 //
 // This pass runs after scalar/path refs, named instances, and aggregate headers
-// are present. It attaches element refs and array length records, and forwards
-// reference type nodes to their child type refs.
+// are present. References retain their own identity and point to a checked
+// referent; they must never collapse to an owned value of that type.
 
 import hir_records;
+import type_checker.calls.explicit_constant_operand;
+import type_checker.checked_array_counts;
+import type_checker.constant_publication;
 
 struct Params
 {
@@ -53,9 +57,7 @@ static const uint TYPE_INSTANCE_UNSUPPORTED = 3u;
 
 static const uint TY_UNKNOWN = 0u;
 
-static const uint TYPE_LEN_CONST_PARAM = 2u;
-static const uint TYPE_LEN_UNSUPPORTED = 3u;
-static const uint TYPE_LEN_LITERAL = 1u;
+static const uint TYPE_LEN_UNSUPPORTED = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -137,26 +139,31 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
     if (!is_array)
         return;
 
-    uint len_token = type.c;
-    if (!valid_token(len_token))
+    uint2 length = uint2(0u, INVALID);
+    uint operand = type.d; // A dense ordinary HIR operand, never a raw extent.
+    uint3 literal;
+    bool accepted = valid_token(type.c) && operand < active_compact_hir_count();
+    if (accepted && checked_source_literal_value(operand, SCALAR_U32, literal))
+        accepted = publish_checked_constant_atom_at(operand, literal, length);
+    else if (accepted)
+        accepted = checked_named_constant_operand(operand, 0u, length.x, length.y);
+    if (accepted)
+        accepted = checked_source_array_length_valid(length.x, length.y, gParams.n_tokens);
+    uint count;
+    if (accepted && !checked_source_array_count(length.x, length.y, gParams.n_tokens, count))
     {
-        type_instance_len_kind[token] = TYPE_LEN_UNSUPPORTED;
-        type_instance_len_payload[token] = token;
+        // Keep the exact integer declaration under its explicit pending count
+        // proof. No parameter receives a new scalar identity from array use.
+        uint row = gParams.n_hir_nodes + node;
+        uint2 projected;
+        accepted = row >= gParams.n_hir_nodes && (length.x != 3u || length.y != row) &&
+            publish_checked_constant_projection_at(row, SCALAR_U32, length, projected);
+        if (accepted) length = projected;
     }
-    else
-    {
-        uint len_value = type.d;
-        if (len_value != INVALID)
-        {
-            type_instance_len_kind[token] = TYPE_LEN_LITERAL;
-            type_instance_len_payload[token] = len_value;
-        }
-        else
-        {
-            type_instance_len_kind[token] = TYPE_LEN_CONST_PARAM;
-            type_instance_len_payload[token] = len_token;
-        }
-    }
+    type_instance_len_kind[token] = accepted ? length.x : TYPE_LEN_UNSUPPORTED;
+    type_instance_len_payload[token] = accepted ? length.y : type.c;
+    if (!accepted) type_instance_state[token] = TYPE_INSTANCE_UNSUPPORTED;
+
 }
 
 [shader("compute")]
@@ -175,25 +182,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     HirPayload type = compact_hir_payload[node];
     uint form = type.a;
-    if (form == HIR_TYPE_FORM_ARRAY || form == HIR_TYPE_FORM_SLICE)
+    if (form == HIR_TYPE_FORM_ARRAY || form == HIR_TYPE_FORM_SLICE ||
+        form == HIR_TYPE_FORM_REF)
     {
         publish_array_or_slice_details(node, token, form == HIR_TYPE_FORM_ARRAY);
         return;
     }
 
-    if (form == HIR_TYPE_FORM_REF)
-    {
-        uint tag = TYPE_REF_INVALID;
-        uint payload = INVALID;
-        if (child_ref(type.b, tag, payload))
-        {
-            type_expr_ref_tag[token] = tag;
-            type_expr_ref_payload[token] = payload;
-        }
-        else
-        {
-            type_expr_ref_tag[token] = TYPE_REF_ERROR;
-            type_expr_ref_payload[token] = token;
-        }
-    }
 }

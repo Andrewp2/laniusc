@@ -1,0 +1,3 @@
+type Fixed<const N: usize> = [i32; N];
+const TOTAL: i32 = 42;
+fn main() -> i32 { let value: Fixed<2> = [19, 23]; return value[0] + value[1] - TOTAL; }

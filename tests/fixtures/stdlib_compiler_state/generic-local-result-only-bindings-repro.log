@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=93 code=AssignMismatch detail=2097664
+stdlib_gpu_perf: tests/fixtures/stdlib_foundation/repro_generic_local_result_only_bindings.lani: error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_foundation/repro_generic_local_result_only_bindings.lani:4:56
+  |
+4 |     let value: Many<i32, str, [str; 2], [i32], bool> = absent();
+  |                                                        ^^^^^^ value type is unknown type but this context expects generic parameter 2
+     = note: expected generic parameter 2, found unknown type; change the expression or the annotation so they agree

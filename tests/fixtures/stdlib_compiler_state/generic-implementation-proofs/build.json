@@ -1,0 +1,20 @@
+{
+  "command": [
+    "timeout",
+    "110s",
+    "cargo",
+    "test",
+    "--release",
+    "-p",
+    "laniusc",
+    "-p",
+    "laniusc-compiler",
+    "--lib",
+    "--test",
+    "compiler_generic_types_execution",
+    "--no-run"
+  ],
+  "CARGO_TARGET_DIR": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build",
+  "exit_code": 0,
+  "seconds": 81.09747102399706
+}

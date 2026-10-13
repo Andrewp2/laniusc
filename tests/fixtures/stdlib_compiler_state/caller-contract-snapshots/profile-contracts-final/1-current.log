@@ -1,0 +1,1094 @@
+[gpu_compile_host_timer] pipeline_cache.create.path: 0.014ms
+[gpu_compile_host_timer] pipeline_cache.create.prune: 0.031ms
+[gpu_compile_host_timer] pipeline_cache.create.read: 87.927ms
+[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 98912100 bytes
+[gpu_compile_host_timer] pipeline_cache.create.decode: 22.027ms
+[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 98912060 bytes
+[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 67.263ms
+[gpu_compile_host_timer] pipeline_cache.create.total: 198.213ms
+[gpu_compile_host_timer] compiler.init.lexer: 6.567ms (total 6.567ms)
+[gpu_compile_host_timer] compiler.init.parse_tables: 1.365ms (total 7.932ms)
+[gpu_compile_host_timer] compiler.init.parser: 75.019ms (total 82.951ms)
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 61.313ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 98912060 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 16.681ms
+[gpu_compile_host_timer] pipeline_cache.persist.skipped.unchanged: 78.077ms
+[gpu_compile_host_timer] compiler.init.parallel.type_checker: 337.703ms
+[gpu_compile_host_timer] compiler.init.parallel_pipeline_families: 339.050ms (total 422.001ms)
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 62.196ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 98912060 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 16.994ms
+[gpu_compile_host_timer] pipeline_cache.persist.skipped.unchanged: 79.286ms
+[laniusc][gpu-progress] submit.start :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] submit.done :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] map.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] map.queued :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.done :: lex.source-pack.resident.count
+[gpu_compile_host_timer] lex.source-pack.count_boundary: 1.569ms (total 1.569ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=true reason=empty wanted_tokens=425 wanted_tree=1 wanted_features=0xffffffff wanted_debug=false
+[laniusc][gpu-progress] submit.start :: parser.partial-parse-tree-capacity
+[laniusc][gpu-progress] submit.done :: parser.partial-parse-tree-capacity
+[laniusc][gpu-progress] map.start :: parser.partial_parse_tree_capacity.status
+[laniusc][gpu-progress] map.queued :: parser.partial_parse_tree_capacity.status
+[laniusc][gpu-progress] map.done :: parser.partial_parse_tree_capacity.status elapsed_ms=1
+[gpu_compile_host_timer] compile.source-pack.record.parser_capacity_measured: 15.013ms (total 15.013ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=true reason=empty wanted_tokens=425 wanted_tree=1060 wanted_features=0x00000433 wanted_debug=false
+[gpu_compile_host_timer] typecheck.graph.build: 22.203ms (total 22.203ms)
+[gpu_compile_host_timer] typecheck.graph.semantic_interface_build: 2.223ms (total 24.425ms)
+[gpu_compile_host_timer] typecheck.graph.retain_imports: 0.574ms (total 24.999ms)
+[gpu_compile_host_timer] typecheck.graph.validate_reflection: 2.638ms (total 27.638ms)
+[gpu_compile_host_timer] typecheck.graph.materialize: 45.818ms (total 73.455ms)
+[gpu_compile_host_timer] typecheck.graph.semantic_interface_materialize: 1.302ms (total 74.758ms)
+[gpu_compile_host_timer] typecheck.resident.buffers: 75.034ms (total 75.034ms)
+[gpu_compile_host_timer] typecheck.resident.resources: 0.902ms (total 75.937ms)
+[gpu_compile_host_timer] typecheck.resident.core_and_name_bind_groups: 1.122ms (total 77.059ms)
+[gpu_compile_host_timer] typecheck.resident.module_path: 20.572ms (total 97.631ms)
+[gpu_compile_host_timer] typecheck.resident.conditions_and_calls: 17.209ms (total 114.840ms)
+[gpu_compile_host_timer] typecheck.resident.predicates: 2.591ms (total 117.431ms)
+[gpu_compile_host_timer] typecheck.resident.type_instances: 4.052ms (total 121.483ms)
+[gpu_compile_host_timer] typecheck.resident.methods: 1.419ms (total 122.902ms)
+[gpu_compile_host_timer] typecheck.resident.control_and_visible: 4.060ms (total 126.962ms)
+[gpu_compile_host_timer] compile.source-pack.record.downstream_prepared: 139.117ms (total 154.130ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=1060 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] parser.optional_capacities: flags=0x00000433 tree=4096 arrays=4096 enum_match=1 structs=4096
+[gpu_compile_host_timer] parser.workspace_clear: allocations=137 active_bytes=4432788 resident_bytes=4432788
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.0 active_bytes=410176
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.1 active_bytes=393732
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.2 active_bytes=377348
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.3 active_bytes=266520
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.23 active_bytes=98820
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.4 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.5 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.28 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.6 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.22 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.7 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.8 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.9 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.31 active_bytes=65792
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.29 active_bytes=65540
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.10 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.11 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.12 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.13 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.14 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.15 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.16 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.17 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.18 active_bytes=65536
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=21 elapsed_ms=0.010
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=34 elapsed_ms=0.006
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=12 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.005
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.record.params: 0.001ms (total 0.001ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] typecheck.record.resident_workspace_reused: 0.046ms (total 0.046ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=1 elapsed_ms=0.002
+[gpu_compile_host_timer] typecheck.record.loop_names_language_decls: 0.165ms (total 0.212ms compute_passes=1 total_compute_passes=1)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.mark_records.done total_compute_passes=116
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.paths.done total_compute_passes=116
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_lookup.done total_compute_passes=116
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_maps.done total_compute_passes=116
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.record_scans_and_import_decl_records.done total_compute_passes=116
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.sort_decl_keys.done total_compute_passes=116
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=86 elapsed_ms=0.023
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.decl_namespace_keys.done total_compute_passes=120
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visibility_scatter.done total_compute_passes=122
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visible_tables.done total_compute_passes=124
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=18 elapsed_ms=0.005
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.resolve_paths.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.record.module_paths: 0.329ms (total 0.541ms compute_passes=13 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.mark.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.decl_generic_params.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.index.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_param_use_slots.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_scalar.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_named.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_refs.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_details.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_scalar.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_named.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_aggregate_refs.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.record.type_instances_collect: 0.182ms (total 0.723ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.clear.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_hir_decl_names.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_match_payload_decls.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.decl_scan.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.scatter_decl_records.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.sort_hir_decl_keys.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_decl_scope_tree.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_names.done total_compute_passes=129
+[gpu_compile_host_timer] typecheck.record.fn_context_calls_visible: 0.146ms (total 0.869ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.struct_field_lookup.done total_compute_passes=129
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=125 elapsed_ms=0.033
+[gpu_compile_host_timer] typecheck.record.methods_member_struct_fields: 0.106ms (total 0.975ms compute_passes=1 total_compute_passes=15)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=127 elapsed_ms=0.029
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=5
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=55 elapsed_ms=0.019
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=1
+[gpu_compile_host_timer] typecheck.record.late_value_consumers: 17.403ms (total 18.378ms compute_passes=2 total_compute_passes=17)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=54 elapsed_ms=0.016
+[gpu_compile_host_timer] typecheck.record.aggregate_conditions_control: 0.097ms (total 18.475ms compute_passes=1 total_compute_passes=18)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=45 elapsed_ms=0.021
+[gpu_compile_host_timer] typecheck.record.status_readback_recorded: 0.084ms (total 18.559ms compute_passes=1 total_compute_passes=19)
+[gpu_compile_host_timer] compile.source-pack.record.downstream.typecheck: 18.671ms (total 18.671ms)
+[gpu_compile_host_timer] compute_batch.flush: label=semantic_interface.batch commands=67 elapsed_ms=0.023
+[gpu_compile_host_timer] semantic_interface.capacity: tokens=425 modules=64 module_segments=4096 declarations=425 types=5372 edges=1275 members=1275 names=2131 artifact_bytes=843263
+[gpu_compile_host_timer] compute_batch.flush: label=semantic_interface.batch commands=10 elapsed_ms=0.003
+[gpu_compile_host_timer] compile.source-pack.record.downstream.semantic_interface: 3.983ms (total 22.654ms)
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=295 elapsed_ms=0.040
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=125 elapsed_ms=0.035
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=29 elapsed_ms=0.009
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=27 elapsed_ms=0.005
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=85 elapsed_ms=0.024
+[gpu_compile_host_timer] compile.source-pack.record.downstream.lowering: 40.272ms (total 62.926ms)
+[gpu_compile_host_timer] compile.source-pack.record.parser_and_downstream_recorded: 70.865ms (total 224.995ms)
+[gpu_compile_host_timer] compile.source-pack.record_more: 225.061ms (total 226.630ms)
+[gpu_compile_host_timer] compile.source-pack.encoder_finish: 3.119ms (total 229.750ms)
+[laniusc][gpu-progress] submit.start :: compile.source-pack.after-token-count
+[laniusc][gpu-progress] submit.done :: compile.source-pack.after-token-count
+[gpu_compile_host_timer] compile.source-pack.submit: 0.356ms (total 230.106ms)
+[gpu_compile_host_timer] lex.source-pack.resident.retained: 0.027ms (total 230.133ms)
+[laniusc][gpu-progress] map.start :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.queued :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.done :: parser.recorded-ll1-hir.status elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.parser_status: 0.043ms (total 0.043ms)
+[laniusc][gpu-progress] map.start :: type_check.status
+[laniusc][gpu-progress] map.queued :: type_check.status
+[laniusc][gpu-progress] map.done :: type_check.status elapsed_ms=4
+[gpu_compile_host_timer] compile.source-pack.finish.typecheck_status: 4.376ms (total 4.419ms)
+[laniusc][gpu-progress] map.start :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.done :: semantic-interface artifact metadata elapsed_ms=0
+[gpu_compile_host_timer] semantic_interface.artifact: bytes=116 capacity_bytes=843263 amplification=7269.509
+[laniusc][gpu-progress] map.start :: semantic-interface artifact
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact
+[laniusc][gpu-progress] map.done :: semantic-interface artifact elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.semantic_interface: 0.187ms (total 4.606ms)
+[gpu_compile_host_timer] compile.source-pack.finish.target_artifact: 0.032ms (total 4.638ms)
+[laniusc][gpu-progress] map.start :: lowering status readback
+[laniusc][gpu-progress] map.queued :: lowering status readback
+[laniusc][gpu-progress] map.done :: lowering status readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object metadata readback
+[laniusc][gpu-progress] map.queued :: x86 object metadata readback
+[laniusc][gpu-progress] map.done :: x86 object metadata readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object payload readback
+[laniusc][gpu-progress] map.queued :: x86 object payload readback
+[laniusc][gpu-progress] map.done :: x86 object payload readback elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.x86_object: 0.166ms (total 4.804ms)
+[gpu_compile_host_timer] compile.source-pack.finish.wasm_object: 0.029ms (total 4.834ms)
+[laniusc][gpu-progress] map.start :: generic call counts
+[laniusc][gpu-progress] map.queued :: generic call counts
+[laniusc][gpu-progress] map.done :: generic call counts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call claims
+[laniusc][gpu-progress] map.queued :: generic call claims
+[laniusc][gpu-progress] map.done :: generic call claims elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: result context masks and binder links
+[laniusc][gpu-progress] map.queued :: result context masks and binder links
+[laniusc][gpu-progress] map.done :: result context masks and binder links elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked contract facts
+[laniusc][gpu-progress] map.queued :: checked contract facts
+[laniusc][gpu-progress] map.done :: checked contract facts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked type frontier
+[laniusc][gpu-progress] map.queued :: checked type frontier
+[laniusc][gpu-progress] map.done :: checked type frontier elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked nominal frontier
+[laniusc][gpu-progress] map.queued :: checked nominal frontier
+[laniusc][gpu-progress] map.done :: checked nominal frontier elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked type frontier
+[laniusc][gpu-progress] map.queued :: checked type frontier
+[laniusc][gpu-progress] map.done :: checked type frontier elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked nominal frontier
+[laniusc][gpu-progress] map.queued :: checked nominal frontier
+[laniusc][gpu-progress] map.done :: checked nominal frontier elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish: 8.166ms (total 238.299ms)
+[gpu_compile_host_timer] compile.source-pack.timer_readback: 0.031ms (total 238.330ms)
+[laniusc][gpu-progress] submit.start :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] submit.done :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] map.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] map.queued :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.done :: lex.source-pack.resident.count
+[gpu_compile_host_timer] lex.source-pack.count_boundary: 0.323ms (total 0.323ms)
+[gpu_compile_host_timer] compile.source-pack.record.parser_capacity_reused: 0.002ms (total 0.002ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=4096 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] typecheck.resident_cache_miss: input_fingerprint=0xcd770ff40be1c199->0xa26f54542b082500 token_capacity=4096->4096 hir_capacity=4096->4096 module_capacity=4096->4096 call_param_capacity=4096->4096 call_arg_capacity=4096->4096 features=0x00000433->0x00000433 semantic_interface=true->true
+[gpu_compile_host_timer] typecheck.graph.build: 20.178ms (total 20.178ms)
+[gpu_compile_host_timer] typecheck.graph.semantic_interface_build: 1.965ms (total 22.143ms)
+[gpu_compile_host_timer] typecheck.graph.retain_imports: 0.506ms (total 22.650ms)
+[gpu_compile_host_timer] typecheck.graph.validate_reflection: 2.790ms (total 25.440ms)
+[gpu_compile_host_timer] typecheck.graph.materialize: 38.854ms (total 64.293ms)
+[gpu_compile_host_timer] typecheck.graph.semantic_interface_materialize: 1.182ms (total 65.475ms)
+[gpu_compile_host_timer] typecheck.resident.buffers: 65.739ms (total 65.739ms)
+[gpu_compile_host_timer] typecheck.resident.resources: 0.889ms (total 66.628ms)
+[gpu_compile_host_timer] typecheck.resident.core_and_name_bind_groups: 1.271ms (total 67.899ms)
+[gpu_compile_host_timer] typecheck.resident.module_path: 16.990ms (total 84.888ms)
+[gpu_compile_host_timer] typecheck.resident.conditions_and_calls: 16.016ms (total 100.904ms)
+[gpu_compile_host_timer] typecheck.resident.predicates: 2.448ms (total 103.353ms)
+[gpu_compile_host_timer] typecheck.resident.type_instances: 4.160ms (total 107.513ms)
+[gpu_compile_host_timer] typecheck.resident.methods: 1.458ms (total 108.971ms)
+[gpu_compile_host_timer] typecheck.resident.control_and_visible: 3.763ms (total 112.733ms)
+[gpu_compile_host_timer] compile.source-pack.record.downstream_prepared: 116.227ms (total 116.228ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=4096 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] parser.optional_capacities: flags=0x00000433 tree=4096 arrays=4096 enum_match=1 structs=4096
+[gpu_compile_host_timer] parser.workspace_clear: allocations=137 active_bytes=4432788 resident_bytes=4432788
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.0 active_bytes=410176
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.1 active_bytes=393732
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.2 active_bytes=377348
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.3 active_bytes=266520
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.23 active_bytes=98820
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.4 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.5 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.28 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.6 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.22 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.7 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.8 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.9 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.31 active_bytes=65792
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.29 active_bytes=65540
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.10 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.11 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.12 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.13 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.14 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.15 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.16 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.17 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.18 active_bytes=65536
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=21 elapsed_ms=0.007
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=34 elapsed_ms=0.007
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=12 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.000
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] typecheck.record.params: 0.001ms (total 0.001ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] typecheck.record.resident_workspace_reused: 0.044ms (total 0.045ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] typecheck.record.loop_names_language_decls: 0.168ms (total 0.212ms compute_passes=1 total_compute_passes=1)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.mark_records.done total_compute_passes=222
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.paths.done total_compute_passes=222
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_lookup.done total_compute_passes=222
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_maps.done total_compute_passes=222
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.record_scans_and_import_decl_records.done total_compute_passes=222
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.sort_decl_keys.done total_compute_passes=222
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=86 elapsed_ms=0.025
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.decl_namespace_keys.done total_compute_passes=226
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visibility_scatter.done total_compute_passes=228
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visible_tables.done total_compute_passes=230
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=18 elapsed_ms=0.006
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.resolve_paths.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.record.module_paths: 0.343ms (total 0.555ms compute_passes=13 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.mark.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.decl_generic_params.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.index.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_param_use_slots.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_scalar.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_named.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_refs.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_details.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_scalar.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_named.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_aggregate_refs.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.record.type_instances_collect: 0.186ms (total 0.740ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.clear.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_hir_decl_names.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_match_payload_decls.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.decl_scan.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.scatter_decl_records.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.sort_hir_decl_keys.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_decl_scope_tree.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_names.done total_compute_passes=235
+[gpu_compile_host_timer] typecheck.record.fn_context_calls_visible: 0.153ms (total 0.893ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.struct_field_lookup.done total_compute_passes=235
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=125 elapsed_ms=0.026
+[gpu_compile_host_timer] typecheck.record.methods_member_struct_fields: 0.102ms (total 0.995ms compute_passes=1 total_compute_passes=15)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=127 elapsed_ms=0.022
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=7
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=55 elapsed_ms=0.023
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=1
+[gpu_compile_host_timer] typecheck.record.late_value_consumers: 14.173ms (total 15.168ms compute_passes=2 total_compute_passes=17)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=54 elapsed_ms=0.015
+[gpu_compile_host_timer] typecheck.record.aggregate_conditions_control: 0.128ms (total 15.295ms compute_passes=1 total_compute_passes=18)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=82 elapsed_ms=0.023
+[gpu_compile_host_timer] typecheck.record.status_readback_recorded: 0.106ms (total 15.402ms compute_passes=1 total_compute_passes=19)
+[gpu_compile_host_timer] compile.source-pack.record.downstream.typecheck: 15.505ms (total 15.505ms)
+[gpu_compile_host_timer] compile.source-pack.record.downstream.semantic_interface: 0.040ms (total 15.545ms)
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=295 elapsed_ms=0.037
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=125 elapsed_ms=0.026
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=29 elapsed_ms=0.008
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=5 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=27 elapsed_ms=0.006
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=85 elapsed_ms=0.017
+[gpu_compile_host_timer] compile.source-pack.record.downstream.lowering: 48.774ms (total 64.319ms)
+[gpu_compile_host_timer] compile.source-pack.record.parser_and_downstream_recorded: 66.852ms (total 183.080ms)
+[gpu_compile_host_timer] compile.source-pack.record_more: 183.149ms (total 183.472ms)
+[gpu_compile_host_timer] compile.source-pack.encoder_finish: 2.929ms (total 186.400ms)
+[laniusc][gpu-progress] submit.start :: compile.source-pack.after-token-count
+[laniusc][gpu-progress] submit.done :: compile.source-pack.after-token-count
+[gpu_compile_host_timer] compile.source-pack.submit: 0.300ms (total 186.701ms)
+[gpu_compile_host_timer] lex.source-pack.resident.retained: 0.034ms (total 186.735ms)
+[laniusc][gpu-progress] map.start :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.queued :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.done :: parser.recorded-ll1-hir.status elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.parser_status: 0.053ms (total 0.053ms)
+[laniusc][gpu-progress] map.start :: type_check.status
+[laniusc][gpu-progress] map.queued :: type_check.status
+[laniusc][gpu-progress] map.done :: type_check.status elapsed_ms=4
+[gpu_compile_host_timer] compile.source-pack.finish.typecheck_status: 4.424ms (total 4.477ms)
+[gpu_compile_host_timer] compile.source-pack.finish.semantic_interface: 0.031ms (total 4.508ms)
+[gpu_compile_host_timer] compile.source-pack.finish.target_artifact: 0.049ms (total 4.557ms)
+[laniusc][gpu-progress] map.start :: lowering status readback
+[laniusc][gpu-progress] map.queued :: lowering status readback
+[laniusc][gpu-progress] map.done :: lowering status readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object metadata readback
+[laniusc][gpu-progress] map.queued :: x86 object metadata readback
+[laniusc][gpu-progress] map.done :: x86 object metadata readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object payload readback
+[laniusc][gpu-progress] map.queued :: x86 object payload readback
+[laniusc][gpu-progress] map.done :: x86 object payload readback elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.x86_object: 0.238ms (total 4.795ms)
+[gpu_compile_host_timer] compile.source-pack.finish.wasm_object: 0.035ms (total 4.830ms)
+[laniusc][gpu-progress] map.start :: generic call counts
+[laniusc][gpu-progress] map.queued :: generic call counts
+[laniusc][gpu-progress] map.done :: generic call counts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call claims
+[laniusc][gpu-progress] map.queued :: generic call claims
+[laniusc][gpu-progress] map.done :: generic call claims elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: result context masks and binder links
+[laniusc][gpu-progress] map.queued :: result context masks and binder links
+[laniusc][gpu-progress] map.done :: result context masks and binder links elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish: 8.158ms (total 194.893ms)
+[gpu_compile_host_timer] compile.source-pack.timer_readback: 0.034ms (total 194.927ms)
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.symbol_partition
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.symbol_partition
+[laniusc][gpu-progress] map.start :: codegen.x86.link.symbol_partition.status
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.symbol_partition.status
+[laniusc][gpu-progress] map.done :: codegen.x86.link.symbol_partition.status elapsed_ms=1
+[laniusc][gpu-progress] map.start :: codegen.x86.link.symbol_partition.values
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.symbol_partition.values
+[laniusc][gpu-progress] map.done :: codegen.x86.link.symbol_partition.values elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] map.start :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] map.done :: codegen.x86.link.layout_chunk elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.page.initialize
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.page.initialize
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.page.relocation_batch
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.page.relocation_batch
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.page
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.page
+[laniusc][gpu-progress] map.start :: codegen.x86.link.page
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.page
+[laniusc][gpu-progress] map.done :: codegen.x86.link.page elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: lex.source-pack.resident-without-count-wait
+[laniusc][gpu-progress] submit.done :: lex.source-pack.resident-without-count-wait
+[gpu_compile_host_timer] compile.source-pack.record.parser_capacity_retry: 0.001ms (total 0.001ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=1060 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] compile.source-pack.record.downstream_prepared: 0.205ms (total 0.206ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=1060 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] parser.optional_capacities: flags=0x00000433 tree=4096 arrays=4096 enum_match=1 structs=4096
+[gpu_compile_host_timer] parser.workspace_clear: allocations=137 active_bytes=4432788 resident_bytes=4432788
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.0 active_bytes=410176
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.1 active_bytes=393732
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.2 active_bytes=377348
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.3 active_bytes=266520
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.23 active_bytes=98820
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.4 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.5 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.28 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.6 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.22 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.7 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.8 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.9 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.31 active_bytes=65792
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.29 active_bytes=65540
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.10 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.11 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.12 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.13 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.14 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.15 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.16 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.17 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.18 active_bytes=65536
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=21 elapsed_ms=0.007
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=34 elapsed_ms=0.007
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.012
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=12 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compile.source-pack.record.parser_and_downstream_recorded: 3.103ms (total 3.308ms)
+[gpu_compile_host_timer] compile.source-pack.parser.recorded: 3.351ms (total 3.351ms)
+[gpu_compile_host_timer] compile.source-pack.parser.encoder_finished: 4.368ms (total 7.719ms)
+[laniusc][gpu-progress] submit.start :: compile.source-pack.parser-from-retained-shape
+[laniusc][gpu-progress] submit.done :: compile.source-pack.parser-from-retained-shape
+[gpu_compile_host_timer] compile.source-pack.parser.submitted: 0.221ms (total 7.940ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=1060 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] typecheck.record.params: 0.001ms (total 0.001ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] typecheck.record.resident_workspace_reused: 0.060ms (total 0.060ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=1 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.record.loop_names_language_decls: 0.220ms (total 0.280ms compute_passes=1 total_compute_passes=1)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.mark_records.done total_compute_passes=336
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.paths.done total_compute_passes=336
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_lookup.done total_compute_passes=336
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_maps.done total_compute_passes=336
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.record_scans_and_import_decl_records.done total_compute_passes=336
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.sort_decl_keys.done total_compute_passes=336
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=86 elapsed_ms=0.033
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.decl_namespace_keys.done total_compute_passes=340
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visibility_scatter.done total_compute_passes=342
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visible_tables.done total_compute_passes=344
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=2 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=18 elapsed_ms=0.008
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.resolve_paths.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.record.module_paths: 0.434ms (total 0.713ms compute_passes=13 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.mark.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.decl_generic_params.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.index.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_param_use_slots.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_scalar.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_named.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_refs.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_details.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_scalar.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_named.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_aggregate_refs.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.record.type_instances_collect: 0.255ms (total 0.968ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.clear.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_hir_decl_names.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_match_payload_decls.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.decl_scan.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.scatter_decl_records.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.sort_hir_decl_keys.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_decl_scope_tree.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_names.done total_compute_passes=349
+[gpu_compile_host_timer] typecheck.record.fn_context_calls_visible: 0.203ms (total 1.171ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.struct_field_lookup.done total_compute_passes=349
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=125 elapsed_ms=0.036
+[gpu_compile_host_timer] typecheck.record.methods_member_struct_fields: 0.154ms (total 1.325ms compute_passes=1 total_compute_passes=15)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=127 elapsed_ms=0.028
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=3
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=55 elapsed_ms=0.019
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=1
+[gpu_compile_host_timer] typecheck.record.late_value_consumers: 8.526ms (total 9.851ms compute_passes=2 total_compute_passes=17)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=54 elapsed_ms=0.016
+[gpu_compile_host_timer] typecheck.record.aggregate_conditions_control: 0.095ms (total 9.946ms compute_passes=1 total_compute_passes=18)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=45 elapsed_ms=0.015
+[gpu_compile_host_timer] typecheck.record.status_readback_recorded: 0.074ms (total 10.019ms compute_passes=1 total_compute_passes=19)
+[gpu_compile_host_timer] compile.source-pack.record.downstream.typecheck: 10.115ms (total 10.115ms)
+[gpu_compile_host_timer] compute_batch.flush: label=semantic_interface.batch commands=67 elapsed_ms=0.045
+[gpu_compile_host_timer] semantic_interface.capacity: tokens=425 modules=64 module_segments=4096 declarations=425 types=5372 edges=1275 members=1275 names=2131 artifact_bytes=843263
+[gpu_compile_host_timer] compute_batch.flush: label=semantic_interface.batch commands=10 elapsed_ms=0.005
+[gpu_compile_host_timer] compile.source-pack.record.downstream.semantic_interface: 5.351ms (total 15.466ms)
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=295 elapsed_ms=0.044
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=125 elapsed_ms=0.043
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=29 elapsed_ms=0.013
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=2 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=5 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=27 elapsed_ms=0.006
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=85 elapsed_ms=0.025
+[gpu_compile_host_timer] compile.source-pack.record.downstream.lowering: 0.799ms (total 16.265ms)
+[gpu_compile_host_timer] compile.source-pack.after-parser.recorded: 16.483ms (total 24.423ms)
+[gpu_compile_host_timer] compile.source-pack.after-parser.timer_resolved: 0.039ms (total 24.462ms)
+[gpu_compile_host_timer] compile.source-pack.after-parser.encoder_finished: 3.408ms (total 27.869ms)
+[laniusc][gpu-progress] submit.start :: compile.source-pack.after-parser
+[laniusc][gpu-progress] submit.done :: compile.source-pack.after-parser
+[gpu_compile_host_timer] compile.source-pack.after-parser.submitted: 0.251ms (total 28.121ms)
+[laniusc][gpu-progress] map.start :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] map.queued :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] poll.start :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] poll.done :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] map.start :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.queued :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.done :: parser.recorded-ll1-hir.status elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.parser_status: 0.044ms (total 0.044ms)
+[laniusc][gpu-progress] map.start :: type_check.status
+[laniusc][gpu-progress] map.queued :: type_check.status
+[laniusc][gpu-progress] map.done :: type_check.status elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.typecheck_status: 0.080ms (total 0.124ms)
+[laniusc][gpu-progress] map.start :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.done :: semantic-interface artifact metadata elapsed_ms=0
+[gpu_compile_host_timer] semantic_interface.artifact: bytes=116 capacity_bytes=843263 amplification=7269.509
+[laniusc][gpu-progress] map.start :: semantic-interface artifact
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact
+[laniusc][gpu-progress] map.done :: semantic-interface artifact elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.semantic_interface: 0.196ms (total 0.320ms)
+[gpu_compile_host_timer] compile.source-pack.finish.target_artifact: 0.032ms (total 0.351ms)
+[laniusc][gpu-progress] map.start :: lowering status readback
+[laniusc][gpu-progress] map.queued :: lowering status readback
+[laniusc][gpu-progress] map.done :: lowering status readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object metadata readback
+[laniusc][gpu-progress] map.queued :: x86 object metadata readback
+[laniusc][gpu-progress] map.done :: x86 object metadata readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object payload readback
+[laniusc][gpu-progress] map.queued :: x86 object payload readback
+[laniusc][gpu-progress] map.done :: x86 object payload readback elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.x86_object: 0.188ms (total 0.540ms)
+[gpu_compile_host_timer] compile.source-pack.finish.wasm_object: 0.033ms (total 0.572ms)
+[laniusc][gpu-progress] map.start :: generic call counts
+[laniusc][gpu-progress] map.queued :: generic call counts
+[laniusc][gpu-progress] map.done :: generic call counts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call claims
+[laniusc][gpu-progress] map.queued :: generic call claims
+[laniusc][gpu-progress] map.done :: generic call claims elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: result context masks and binder links
+[laniusc][gpu-progress] map.queued :: result context masks and binder links
+[laniusc][gpu-progress] map.done :: result context masks and binder links elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked contract facts
+[laniusc][gpu-progress] map.queued :: checked contract facts
+[laniusc][gpu-progress] map.done :: checked contract facts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked type frontier
+[laniusc][gpu-progress] map.queued :: checked type frontier
+[laniusc][gpu-progress] map.done :: checked type frontier elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked nominal frontier
+[laniusc][gpu-progress] map.queued :: checked nominal frontier
+[laniusc][gpu-progress] map.done :: checked nominal frontier elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked type frontier
+[laniusc][gpu-progress] map.queued :: checked type frontier
+[laniusc][gpu-progress] map.done :: checked type frontier elapsed_ms=0
+[laniusc][gpu-progress] map.start :: checked nominal frontier
+[laniusc][gpu-progress] map.queued :: checked nominal frontier
+[laniusc][gpu-progress] map.done :: checked nominal frontier elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: lex.source-pack.resident-without-count-wait
+[laniusc][gpu-progress] submit.done :: lex.source-pack.resident-without-count-wait
+[gpu_compile_host_timer] compile.source-pack.record.parser_capacity_retry: 0.000ms (total 0.000ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=4096 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] compile.source-pack.record.downstream_prepared: 0.186ms (total 0.187ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=4096 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] parser.optional_capacities: flags=0x00000433 tree=4096 arrays=4096 enum_match=1 structs=4096
+[gpu_compile_host_timer] parser.workspace_clear: allocations=137 active_bytes=4432788 resident_bytes=4432788
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.0 active_bytes=410176
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.1 active_bytes=393732
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.2 active_bytes=377348
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.3 active_bytes=266520
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.23 active_bytes=98820
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.4 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.5 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.28 active_bytes=98308
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.6 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.22 active_bytes=98304
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.7 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.8 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.9 active_bytes=81920
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.31 active_bytes=65792
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.29 active_bytes=65540
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.10 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.11 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.12 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.13 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.14 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.15 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.16 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.17 active_bytes=65536
+[gpu_compile_host_timer] parser.workspace_clear.allocation: label=parser.frontend.arena.18 active_bytes=65536
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=21 elapsed_ms=0.007
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=34 elapsed_ms=0.008
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=12 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.004
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=6 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=10 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=9 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=8 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=5 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=3 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=parser.resident.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compile.source-pack.record.parser_and_downstream_recorded: 3.037ms (total 3.223ms)
+[gpu_compile_host_timer] compile.source-pack.parser.recorded: 3.264ms (total 3.264ms)
+[gpu_compile_host_timer] compile.source-pack.parser.encoder_finished: 4.879ms (total 8.143ms)
+[laniusc][gpu-progress] submit.start :: compile.source-pack.parser-from-retained-shape
+[laniusc][gpu-progress] submit.done :: compile.source-pack.parser-from-retained-shape
+[gpu_compile_host_timer] compile.source-pack.parser.submitted: 0.248ms (total 8.391ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=false wanted_tokens=425 cached_tokens=4096 wanted_tree=4096 cached_tree=4096 wanted_features=0x00000433 cached_features=0x00000433 wanted_debug=false cached_debug=false
+[gpu_compile_host_timer] typecheck.record.params: 0.001ms (total 0.001ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] typecheck.record.resident_workspace_reused: 0.056ms (total 0.057ms compute_passes=0 total_compute_passes=0)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=1 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.record.loop_names_language_decls: 0.203ms (total 0.260ms compute_passes=1 total_compute_passes=1)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.mark_records.done total_compute_passes=442
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.paths.done total_compute_passes=442
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_lookup.done total_compute_passes=442
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.module_maps.done total_compute_passes=442
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.record_scans_and_import_decl_records.done total_compute_passes=442
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.sort_decl_keys.done total_compute_passes=442
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=86 elapsed_ms=0.034
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.decl_namespace_keys.done total_compute_passes=446
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=7 elapsed_ms=0.003
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visibility_scatter.done total_compute_passes=448
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.import_visible_tables.done total_compute_passes=450
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=18 elapsed_ms=0.008
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.modules.resolve_paths.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.record.module_paths: 0.463ms (total 0.723ms compute_passes=13 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.mark.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.decl_generic_params.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_params.index.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.generic_param_use_slots.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_scalar.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_named.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_refs.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.initial.collect_aggregate_details.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_scalar.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_named.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.projected.collect_aggregate_refs.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.record.type_instances_collect: 0.250ms (total 0.974ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.clear.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_hir_decl_names.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.mark_match_payload_decls.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.decl_scan.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.scatter_decl_records.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.sort_hir_decl_keys.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_decl_scope_tree.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.visible.hir_names.done total_compute_passes=455
+[gpu_compile_host_timer] typecheck.record.fn_context_calls_visible: 0.204ms (total 1.178ms compute_passes=0 total_compute_passes=14)
+[gpu_compile_host_timer] typecheck.pass_checkpoint: label=typecheck.type_instances.struct_field_lookup.done total_compute_passes=455
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=125 elapsed_ms=0.037
+[gpu_compile_host_timer] typecheck.record.methods_member_struct_fields: 0.138ms (total 1.316ms compute_passes=1 total_compute_passes=15)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=127 elapsed_ms=0.038
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=4
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=55 elapsed_ms=0.014
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=1
+[gpu_compile_host_timer] typecheck.record.late_value_consumers: 9.453ms (total 10.770ms compute_passes=2 total_compute_passes=17)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=54 elapsed_ms=0.015
+[gpu_compile_host_timer] typecheck.record.aggregate_conditions_control: 0.118ms (total 10.887ms compute_passes=1 total_compute_passes=18)
+[gpu_compile_host_timer] compute_batch.flush: label=type_check.resident.batch commands=82 elapsed_ms=0.020
+[gpu_compile_host_timer] typecheck.record.status_readback_recorded: 0.099ms (total 10.986ms compute_passes=1 total_compute_passes=19)
+[gpu_compile_host_timer] compile.source-pack.record.downstream.typecheck: 11.097ms (total 11.097ms)
+[gpu_compile_host_timer] compile.source-pack.record.downstream.semantic_interface: 0.042ms (total 11.139ms)
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=295 elapsed_ms=0.050
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=125 elapsed_ms=0.025
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=29 elapsed_ms=0.008
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=2 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=4 elapsed_ms=0.002
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=1 elapsed_ms=0.001
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=5 elapsed_ms=0.003
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=27 elapsed_ms=0.006
+[gpu_compile_host_timer] compute_batch.flush: label=lowering.object.batch commands=85 elapsed_ms=0.021
+[gpu_compile_host_timer] compile.source-pack.record.downstream.lowering: 0.703ms (total 11.842ms)
+[gpu_compile_host_timer] compile.source-pack.after-parser.recorded: 12.056ms (total 20.447ms)
+[gpu_compile_host_timer] compile.source-pack.after-parser.timer_resolved: 0.038ms (total 20.485ms)
+[gpu_compile_host_timer] compile.source-pack.after-parser.encoder_finished: 2.777ms (total 23.262ms)
+[laniusc][gpu-progress] submit.start :: compile.source-pack.after-parser
+[laniusc][gpu-progress] submit.done :: compile.source-pack.after-parser
+[gpu_compile_host_timer] compile.source-pack.after-parser.submitted: 0.182ms (total 23.444ms)
+[laniusc][gpu-progress] map.start :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] map.queued :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] poll.start :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] poll.done :: lexer.source-pack.fused.metadata
+[laniusc][gpu-progress] map.start :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.queued :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.done :: parser.recorded-ll1-hir.status elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.parser_status: 0.044ms (total 0.044ms)
+[laniusc][gpu-progress] map.start :: type_check.status
+[laniusc][gpu-progress] map.queued :: type_check.status
+[laniusc][gpu-progress] map.done :: type_check.status elapsed_ms=0
+[gpu_compile_host_timer] compile.source-pack.finish.typecheck_status: 0.072ms (total 0.115ms)
+[gpu_compile_host_timer] compile.source-pack.finish.semantic_interface: 0.030ms (total 0.145ms)
+[gpu_compile_host_timer] compile.source-pack.finish.target_artifact: 0.030ms (total 0.175ms)
+[laniusc][gpu-progress] map.start :: lowering status readback
+[laniusc][gpu-progress] map.queued :: lowering status readback
+[laniusc][gpu-progress] map.done :: lowering status readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object metadata readback
+[laniusc][gpu-progress] map.queued :: x86 object metadata readback
+[laniusc][gpu-progress] map.done :: x86 object metadata readback elapsed_ms=0
+[laniusc][gpu-progress] map.start :: x86 object payload readback
+[laniusc][gpu-progress] map.queued :: x86 object payload readback
+[laniusc][gpu-progress] map.done :: x86 object payload readback elapsed_ms=1
+[gpu_compile_host_timer] compile.source-pack.finish.x86_object: 1.300ms (total 1.475ms)
+[gpu_compile_host_timer] compile.source-pack.finish.wasm_object: 0.033ms (total 1.509ms)
+[laniusc][gpu-progress] map.start :: generic call counts
+[laniusc][gpu-progress] map.queued :: generic call counts
+[laniusc][gpu-progress] map.done :: generic call counts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call claims
+[laniusc][gpu-progress] map.queued :: generic call claims
+[laniusc][gpu-progress] map.done :: generic call claims elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: result context masks and binder links
+[laniusc][gpu-progress] map.queued :: result context masks and binder links
+[laniusc][gpu-progress] map.done :: result context masks and binder links elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.symbol_partition
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.symbol_partition
+[laniusc][gpu-progress] map.start :: codegen.x86.link.symbol_partition.status
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.symbol_partition.status
+[laniusc][gpu-progress] map.done :: codegen.x86.link.symbol_partition.status elapsed_ms=0
+[laniusc][gpu-progress] map.start :: codegen.x86.link.symbol_partition.values
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.symbol_partition.values
+[laniusc][gpu-progress] map.done :: codegen.x86.link.symbol_partition.values elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] map.start :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.layout_chunk
+[laniusc][gpu-progress] map.done :: codegen.x86.link.layout_chunk elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.page.initialize
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.page.initialize
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.page.relocation_batch
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.page.relocation_batch
+[laniusc][gpu-progress] submit.start :: codegen.x86.link.page
+[laniusc][gpu-progress] submit.done :: codegen.x86.link.page
+[laniusc][gpu-progress] map.start :: codegen.x86.link.page
+[laniusc][gpu-progress] map.queued :: codegen.x86.link.page
+[laniusc][gpu-progress] map.done :: codegen.x86.link.page elapsed_ms=0
+sample=0 ms=68.343
+entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=68.343 median_ms=68.343 avg_ms=68.343 max_ms=68.343 output_verified=true

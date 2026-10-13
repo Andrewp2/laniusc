@@ -1,0 +1,30 @@
+module app::main;
+import core::mem;
+
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn inspect(values: [[[i32; 2]; 2]]) -> i32 {
+    let copied: [[[i32; 2]; 2]] = core::mem::identity(values);
+    let forwarded: [[[i32; 2]; 2]] = keep(copied);
+    if (keep(copied)[0][1][1] != -11) { return 5; }
+    if (forwarded[0][0][0] != -7 || forwarded[0][0][1] != 42 ||
+        forwarded[0][1][0] != 99 || forwarded[0][1][1] != -11 ||
+        forwarded[1][0][0] != -7 || forwarded[1][1][1] != -11) { return 1; }
+    forwarded[1][0][1] = 123;
+    if (values[1][0][1] != 123 || copied[1][0][1] != 123 ||
+        copied[0][0][1] != 42 || copied[1][1][0] != 99) { return 2; }
+    let count: i32 = 0;
+    for plane in forwarded { count += 1; }
+    if (count != 2) { return 3; }
+    return 0;
+}
+fn main() -> i32 {
+    let first: [i32; 2] = [-7, 42];
+    let second: [i32; 2] = [99, -11];
+    let plane: [[i32; 2]; 2] = [first, second];
+    let planes: [[[i32; 2]; 2]; 2] = [plane, plane];
+    let status: i32 = inspect(planes);
+    if (status != 0) { return status; }
+    if (planes[1][0][1] != 123 || planes[0][0][1] != 42 ||
+        plane[0][1] != 42 || first[1] != 42 || second[0] != 99) { return 4; }
+    return 0;
+}

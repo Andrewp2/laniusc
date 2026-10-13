@@ -29,6 +29,8 @@ static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
 static const uint TK_PARAM_COMMA = 84u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
+static const uint TK_TYPE_SEMICOLON = 87u;
+static const uint TK_ARRAY_LENGTH_IDENT = 194u;
 static const uint TK_IMPL = 98u;
 static const uint TK_TRAIT = 99u;
 static const uint TK_FOR = 100u;
@@ -106,10 +108,10 @@ bool impl_type_context_before(uint parser_i, uint count)
 
 uint type_context_identifier_kind(uint prev, bool impl_context)
 {
-    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS ||
-        prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA)
+    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS)
         return TK_BOUND_TYPE_IDENT;
-    if (prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
+    if (prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA ||
+        prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
         prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
         prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||
         prev == TK_PATH_TYPE_ARG_LT || prev == TK_PATH_TYPE_ARG_COMMA ||
@@ -143,6 +145,10 @@ uint identifier_kind_for(uint parser_i, uint count)
         return TK_WHERE_IDENT;
 
     uint prev = previous_symbol_kind(parser_i, count);
+    // Count paths have their own grammar role and cannot contain type
+    // applications. The qualified-path scan carries this role to every segment.
+    if (prev == TK_TYPE_SEMICOLON)
+        return TK_ARRAY_LENGTH_IDENT;
     if (prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA)
         return TK_GENERIC_PARAM_IDENT;
     if (prev == TK_WHERE_COMMA)

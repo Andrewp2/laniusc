@@ -1,0 +1,31 @@
+module app::main;
+fn swap<T>(values: [T], left: i32, right: i32) {
+    let previous: T = values[left];
+    values[left] = values[right];
+    values[right] = previous;
+}
+fn view(values: [i32]) -> [i32] { return values; }
+fn count(values: [i32]) -> i32 {
+    let length: i32 = 0;
+    for value in values { length += 1; }
+    return length;
+}
+fn inspect(rows: [[i32]]) -> i32 {
+    swap(rows, 0, 1);
+    if (count(rows[0]) != 0) { return 1; }
+    if (count(rows[1]) != 2) { return 2; }
+    if (rows[1][0] != -7 || rows[1][1] != 42) { return 3; }
+    rows[1][1] = 123;
+    return 0;
+}
+fn main() -> i32 {
+    let values: [i32; 2] = [-7, 42];
+    let no_values: [i32; 0] = [];
+    let populated: [i32] = view(values);
+    let empty: [i32] = view(no_values);
+    let rows: [[i32]; 2] = [populated, empty];
+    let status: i32 = inspect(rows);
+    if (status != 0) { return status; }
+    if (values[1] != 123) { return 4; }
+    return 0;
+}

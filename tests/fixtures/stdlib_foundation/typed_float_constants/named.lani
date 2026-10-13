@@ -1,0 +1,19 @@
+module app::floating;
+const LARGE: f64 = 1.0e300;
+const PRECISE: f64 = 1.0000000000000002;
+const NEGATIVE_ZERO: f64 = -0.0;
+const NARROW: f32 = 1.000000059604644775390626;
+fn wide<const V: f64>() -> f64 { return V; }
+fn narrow<const V: f32>() -> f32 { return V; }
+fn forward<const V: f64>() -> f64 { return wide<V>(); }
+fn main() -> i32 {
+    let one64: f64 = 1.0;
+    let one32: f32 = 1.0;
+    let large: f64 = wide<app::floating::LARGE>();
+    if (!(large > 1.0e299 && large < 1.1e300)) { return 1; }
+    if (forward<app::floating::PRECISE>() - one64 != 2.220446049250313e-16) { return 2; }
+    let negative: f64 = forward<app::floating::NEGATIVE_ZERO>();
+    if (negative != 0.0 || one64 / negative >= 0.0) { return 3; }
+    if (narrow<app::floating::NARROW>() - one32 != 1.1920928955078125e-7) { return 4; }
+    return 0;
+}

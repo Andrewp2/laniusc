@@ -71,7 +71,10 @@ bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i
     module_i = 0u;
     segment_i = 0u;
     uint module_count = active_module_count();
-    uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+    // The synthesized anonymous root has no path segments. Scan scratch may
+    // contain another relation when this job had no declared module to scan.
+    uint segment_count = module_count_out[0u] == 0u ? 0u
+        : min(module_segment_total[0u], gParams.module_segment_capacity);
     if (slot >= segment_count || module_count == 0u)
         return false;
 

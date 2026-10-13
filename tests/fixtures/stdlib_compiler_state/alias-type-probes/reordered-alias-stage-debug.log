@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=78 code=AssignMismatch detail=2097411
+error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_compiler_state/alias-type-probes/reordered-alias.lani:3:125
+  |
+3 | fn first<A, B>(value: Swap<A, B>) -> B { return value.first; } fn main() -> i32 { let pair: Swap<bool, i32> = Pair { first: 42, second: true }; if (!pair.second) { return 1; } return first(pair) - 42; }
+  |                                                                                                                             ^^ value type is i32 but this context expects generic parameter 1
+     = note: expected generic parameter 1, found i32; change the expression or the annotation so they agree

@@ -6,6 +6,10 @@
 import dependency_interface;
 import dependency_return_layout;
 import gpu_index;
+import type_checker.calls.explicit_dependency_binding;
+import type_checker.calls.explicit_application_owner;
+import type_checker.calls.explicit_binding_metadata;
+import hir_records;
 
 struct Params
 {
@@ -27,17 +31,24 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
-StructuredBuffer<uint> resolved_dependency_library_id;
-StructuredBuffer<uint> resolved_dependency_unit_id;
-StructuredBuffer<uint> resolved_dependency_local_index;
+StructuredBuffer<uint> resolved_value_type_qualifier_token;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<HirRange> compact_path_type_arg_ranges;
+StructuredBuffer<uint> resolved_dependency_value_library_id;
+StructuredBuffer<uint> resolved_dependency_value_unit_id;
+StructuredBuffer<uint> resolved_dependency_value_local_index;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> declaration_field_count;
+StructuredBuffer<uint> declaration_generic_arity;
+StructuredBuffer<uint> dependency_declaration_constant_arity;
 StructuredBuffer<uint> module_value_path_call_open;
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_dependency_host_service;
 RWStructuredBuffer<uint> call_fn_index;
+RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
@@ -47,6 +58,18 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> external_type_library_id;
 RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
+RWStructuredBuffer<uint> type_instance_kind;
+RWStructuredBuffer<uint> type_instance_head_token;
+RWStructuredBuffer<uint> type_instance_state;
+RWStructuredBuffer<uint> type_instance_decl_token;
+RWStructuredBuffer<uint> type_instance_arg_start;
+RWStructuredBuffer<uint> type_instance_arg_count;
+RWStructuredBuffer<uint> type_instance_len_kind;
+RWStructuredBuffer<uint> type_instance_len_payload;
+RWStructuredBuffer<uint> type_instance_arg_row_start;
+RWStructuredBuffer<uint> type_instance_arg_ref_tag;
+RWStructuredBuffer<uint> type_instance_arg_ref_payload;
+RWStructuredBuffer<uint> type_instance_aggregate_word_count;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
@@ -55,6 +78,11 @@ static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_INSTANCE_NAMED = 1u;
+static const uint TYPE_INSTANCE_RESOLVED = 1u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -73,6 +101,52 @@ uint scalar_type(uint type_i)
         : 0u;
 }
 
+bool retain_concrete_return_instance(uint token, uint return_root, uint words)
+{
+    uint base = return_root * TYPE_WORDS;
+    if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION)
+        return false;
+    uint count = dependency_type_word(base + 4u);
+    uint start = dependency_type_word(base + 3u);
+    uint edge_count = dependency_count(5u);
+    if (count == 0u || count > TYPE_INSTANCE_ARG_REF_STRIDE ||
+        start > edge_count || count > edge_count - start)
+        return false;
+
+    // Copy concrete scalar arguments while the exporting page is resident.
+    // Page-local canonical type indices cannot describe a receiver after the
+    // interface slot has been reused. Wider or compound argument lists keep
+    // their canonical ref and require a structural projection implementation.
+    uint scalars[TYPE_INSTANCE_ARG_REF_STRIDE];
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        uint child = dependency_type_edge_word(start + ordinal);
+        if (child >= dependency_type_count()) return false;
+        uint root = canonical_type_roots[child];
+        if (root >= dependency_type_count() ||
+            dependency_type_word(root * TYPE_WORDS) != INTERFACE_TYPE_SCALAR)
+            return false;
+        scalars[ordinal] = dependency_type_word(root * TYPE_WORDS + 1u);
+    }
+    uint arg_start = token * TYPE_INSTANCE_ARG_REF_STRIDE;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        type_instance_arg_ref_tag[arg_start + ordinal] = TYPE_REF_SCALAR;
+        type_instance_arg_ref_payload[arg_start + ordinal] = scalars[ordinal];
+    }
+    type_instance_kind[token] = TYPE_INSTANCE_NAMED;
+    type_instance_head_token[token] = token;
+    type_instance_state[token] = TYPE_INSTANCE_RESOLVED;
+    type_instance_decl_token[token] = INVALID;
+    type_instance_arg_start[token] = arg_start;
+    type_instance_arg_count[token] = count;
+    type_instance_len_kind[token] = count;
+    type_instance_len_payload[token] = 0u;
+    type_instance_arg_row_start[token] = INVALID;
+    type_instance_aggregate_word_count[token] = words;
+    return true;
+}
+
 void publish_call(
     uint token,
     uint declaration_i,
@@ -89,6 +163,15 @@ void publish_call(
         dependency_declaration_local_index(declaration_i);
     call_dependency_host_service[token] = dependency_declaration_word(
         declaration_i * DECL_WORDS + 12u);
+    // Total declaration arity includes both domains; preserve the separate
+    // counts even when an unused slot does not appear in the callable signature.
+    uint header = declaration_i;
+    if (dependency_declaration_word(declaration_i * DECL_WORDS + 6u) == 9u)
+        header = dependency_declaration_word(declaration_i * DECL_WORDS + 10u);
+    if (header >= dependency_declaration_count()) return;
+    uint constants = dependency_declaration_constant_arity[header];
+    uint types = declaration_generic_arity[header] - constants;
+    call_dependency_generic_requirements[token] = types | (constants << 16u);
     call_fn_index[token] = token;
     call_param_count[token] = edge_count - 1u;
     call_return_type[token] = return_type;
@@ -96,8 +179,11 @@ void publish_call(
         return_root, canonical_type_roots, declaration_field_count);
     if (return_type == 0u)
     {
-        decl_type_ref_tag[token] = TYPE_REF_EXTERNAL_CANONICAL;
-        decl_type_ref_payload[token] = return_root;
+        bool concrete_instance = retain_concrete_return_instance(
+            token, return_root, call_return_aggregate_word_count[token]);
+        decl_type_ref_tag[token] = concrete_instance
+            ? TYPE_REF_INSTANCE : TYPE_REF_EXTERNAL_CANONICAL;
+        decl_type_ref_payload[token] = concrete_instance ? token : return_root;
         uint return_base = return_root * TYPE_WORDS;
         if (dependency_type_word(return_base) == INTERFACE_TYPE_DECLARATION)
         {
@@ -106,11 +192,32 @@ void publish_call(
             external_type_local_index[token] = dependency_type_word(return_base + 2u);
         }
         call_return_type_token[token] = token;
+        // Keep the nominal reference for semantic validation. The separate
+        // concrete machine type uses unit for a proven zero-word struct result.
+        if (dependency_empty_struct_result(return_root, canonical_type_roots))
+            call_return_type[token] = 1u;
     }
     else
     {
         call_return_type_token[token] = INVALID;
     }
+}
+
+bool checked_variant_parent(uint token, uint declaration)
+{
+    if (token >= gParams.visible_capacity || type_expr_ref_tag[token] != TYPE_REF_INSTANCE ||
+        dependency_declaration_word(declaration * DECL_WORDS + 6u) != 9u) return false;
+    uint parent = dependency_declaration_word(declaration * DECL_WORDS + 10u);
+    uint instance = type_expr_ref_payload[token];
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return parent < dependency_declaration_count() && instance < capacity &&
+        type_instance_kind[instance] == TYPE_INSTANCE_NAMED &&
+        type_instance_state[instance] == TYPE_INSTANCE_RESOLVED &&
+        type_instance_decl_token[instance] == INVALID &&
+        external_type_library_id[instance] == dependency_declaration_library_id(parent) &&
+        external_type_unit_id[instance] == dependency_declaration_unit_id(parent) &&
+        external_type_local_index[instance] == dependency_declaration_local_index(parent);
 }
 
 [shader("compute")]
@@ -124,9 +231,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint token = path_owner_token[path_i];
     uint declaration_i = dependency_find_declaration(
-        resolved_dependency_library_id[path_i],
-        resolved_dependency_unit_id[path_i],
-        resolved_dependency_local_index[path_i]);
+        resolved_dependency_value_library_id[path_i],
+        resolved_dependency_value_unit_id[path_i],
+        resolved_dependency_value_local_index[path_i]);
     if (token >= gParams.visible_capacity ||
         module_value_path_call_open[token] == INVALID ||
         declaration_i >= dependency_declaration_count())
@@ -150,6 +257,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (call_token != token)
         publish_call(
             call_token, declaration_i, edge_count, return_root, return_type);
+    uint application_token = token;
     uint segment_count = path_segment_count[path_i];
     if (segment_count > 1u)
     {
@@ -157,8 +265,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint leaf_token = leaf_row < gParams.visible_capacity
             ? path_segment_token[leaf_row]
             : INVALID;
+        application_token = leaf_token;
         if (leaf_token != token)
             publish_call(
                 leaf_token, declaration_i, edge_count, return_root, return_type);
     }
+    bool repeated;
+    application_token = explicit_variant_application_token(application_token,
+        resolved_value_type_qualifier_token[path_i], gParams.visible_capacity,
+        compact_path_type_arg_ranges, repeated);
+    if (repeated) { call_explicit_application_status[application_token] = 2u; return; }
+    if (application_token == resolved_value_type_qualifier_token[path_i] &&
+        checked_variant_parent(application_token, declaration_i))
+    {
+        // Normalization checked the qualifier's own header. Its complete target
+        // application, including reordered or injected operands, owns the call.
+        call_explicit_application_status[application_token] = 1u;
+        return;
+    }
+    bind_dependency_explicit_application(application_token, declaration_i, 0u);
 }

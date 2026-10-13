@@ -1,0 +1,37 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00000000004017c4 in ?? ()
+rip            0x4017c4            0x4017c4
+rsp            0x7fffffffb710      0x7fffffffb710
+rbp            0x7fffffffcba0      0x7fffffffcba0
+rax            0x0                 0
+rcx            0x63                99
+rdx            0x63                99
+rdi            0x7fffffffc960      140737488341344
+rsi            0x0                 0
+   0x4017b0:	pop    %rax
+   0x4017b1:	(bad)
+   0x4017b2:	(bad)
+   0x4017b3:	decl   -0xaf73(%rbx)
+   0x4017b9:	(bad)
+   0x4017ba:	cmp    %ecx,%eax
+   0x4017bc:	setne  %r10b
+   0x4017c0:	movzbl %r10b,%r10d
+=> 0x4017c4:	out    %al,(%dx)
+   0x4017c5:	(bad)
+   0x4017c6:	decl   -0x118f7b(%rbx)
+   0x4017cc:	incl   0xe840fc0(%rbp)
+   0x4017d2:	add    %al,(%rax)
+   0x4017d4:	add    %bh,0x7(%rax)
+   0x4017da:	mov    -0x1490(%rbp),%r12
+   0x4017e1:	leave
+0x7fffffffb710:	0x0000000000000000	0x0000000000000000
+0x7fffffffb720:	0x0000000000000000	0x0000000000000000
+0x7fffffffb730:	0x0000000000000000	0x0000000000000000
+0x7fffffffb740:	0x0000000000000000	0x0000000000000000

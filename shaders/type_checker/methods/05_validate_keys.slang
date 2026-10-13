@@ -1,9 +1,10 @@
+import type_checker.constant_parameter_slots;
 // GPU hash-indexed method-key validation.
 //
 // Scheduling contract:
-// - Dispatch after compact method rows have been inserted into the exact
-//   method index.
-// - Equal valid keys in one hash bucket are duplicate inherent methods in the
+// - Dispatch after compact method rows have been inserted into the structural-head/name
+//   candidate index.
+// - Alpha-equivalent complete receiver patterns are duplicate inherent methods in the
 //   same module for the same receiver type-ref, receiver type arguments, and
 //   interned method name.
 // - This pass writes per-method validation results and reduces invalid or
@@ -11,11 +12,22 @@
 //   does not resolve calls, inspect source bytes, hash token text, perform CPU
 //   lookup, or apply same-source shortcuts.
 
-import fixed.key;
 import hir_records;
 import status;
 import type_checker.methods.lookup;
+import type_checker.scoped_type_equality;
+import type_checker.methods.receiver_pattern;
+import type_checker.instance_arguments;
 
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
+StructuredBuffer<uint> external_type_library_id;
+StructuredBuffer<uint> external_type_unit_id;
+StructuredBuffer<uint> external_type_local_index;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 struct Params
 {
     uint method_capacity;
@@ -37,13 +49,11 @@ StructuredBuffer<uint> method_decl_module_id;
 StructuredBuffer<uint> method_decl_name_token;
 StructuredBuffer<uint> method_decl_name_id;
 StructuredBuffer<uint> method_decl_visibility;
-StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_hash;
 StructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
@@ -57,12 +67,6 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
-static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_REF_INSTANCE = 3u;
-static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 6144u;
-static const uint TY_GENERIC_BASE = 8192u;
-static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -75,6 +79,10 @@ static const uint METHOD_KEY_STATUS_PUBLIC_OK = 5u;
 static const uint METHOD_KEY_STATUS_INVALID_RECEIVER_ARG = 6u;
 static const uint METHOD_VIS_PUBLIC = 1u;
 static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_CALL_MISMATCH = 10u;
+static const uint CALL_MISMATCH_DUPLICATE_METHOD = 0xffffff07u;
+
+#include "receiver_graph.slang"
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -101,130 +109,19 @@ bool is_method_decl(uint fn_i)
     return fn_i < active_token_count() && method_decl_method_row[fn_i] != INVALID;
 }
 
-uint decl_token_from_type_code(uint ty)
+bool receiver_head(uint fn_i, out MethodReceiverHead head)
 {
-    if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
-        return ty - TY_STRUCT_BASE;
-    if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
-        return ty - TY_ENUM_BASE;
-    return INVALID;
+    return method_receiver_head<MethodReceiverGraph>(
+        method_decl_receiver_ref_tag[fn_i], method_decl_receiver_ref_payload[fn_i],
+        method_receiver_type_capacity(), active_token_count(), head);
 }
 
-uint resolved_nominal_decl_token(uint token_i)
+bool receiver_graph_valid(uint fn_i)
 {
-    if (token_i >= active_token_count())
-        return INVALID;
-    return decl_token_from_type_code(module_type_path_type[token_i]);
-}
-
-uint type_ref_payload_key(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_GENERIC_PARAM)
-        return INVALID;
-
-    if (tag == TYPE_REF_INSTANCE && payload < gParams.method_capacity)
-    {
-        uint decl_token = type_instance_decl_token[payload];
-        if (decl_token != INVALID)
-            return decl_token;
-        decl_token = resolved_nominal_decl_token(payload);
-        if (decl_token != INVALID)
-            return decl_token;
-    }
-    return payload;
-}
-
-uint receiver_payload_key(uint fn_i)
-{
-    return type_ref_payload_key(
-        method_decl_receiver_ref_tag[fn_i],
-        method_decl_receiver_ref_payload[fn_i]);
-}
-
-uint receiver_arg_count(uint fn_i)
-{
-    uint tag = method_decl_receiver_ref_tag[fn_i];
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    if (tag != TYPE_REF_INSTANCE || payload >= active_token_count())
-        return 0u;
-    return type_instance_arg_count[payload];
-}
-
-uint receiver_arg_hash(uint fn_i)
-{
-    uint tag = method_decl_receiver_ref_tag[fn_i];
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    if (tag != TYPE_REF_INSTANCE || payload >= active_token_count())
-        return 0u;
-    return type_instance_arg_hash[payload];
-}
-
-uint instance_arg_ref_index(uint instance_i, uint slot)
-{
-    uint start = type_instance_arg_start[instance_i];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint instance_arg_row_ref_index(uint instance_i, uint ordinal)
-{
-    uint start = type_instance_arg_row_start[instance_i];
-    uint ref_i = start == INVALID ? INVALID : start + ordinal;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool instance_arg_ref(uint instance_i, uint ordinal, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (instance_i >= active_token_count() || ordinal >= type_instance_arg_count[instance_i])
-        return false;
-
-    uint row_ref_i = instance_arg_row_ref_index(instance_i, ordinal);
-    if (row_ref_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_ref_i];
-        payload = type_instance_arg_row_ref_payload[row_ref_i];
-        if (tag != TYPE_REF_INVALID)
-            return true;
-    }
-
-    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
-        return false;
-
-    uint fixed_ref_i = instance_arg_ref_index(instance_i, ordinal);
-    if (fixed_ref_i == INVALID)
-        return false;
-
-    tag = type_instance_arg_ref_tag[fixed_ref_i];
-    payload = type_instance_arg_ref_payload[fixed_ref_i];
-    return tag != TYPE_REF_INVALID;
-}
-
-bool receiver_args_valid(uint fn_i)
-{
-    uint tag = method_decl_receiver_ref_tag[fn_i];
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    if (tag != TYPE_REF_INSTANCE)
-        return true;
-    if (payload >= active_token_count())
-        return false;
-    if (type_instance_decl_token[payload] == INVALID)
-        return false;
-
-    uint arg_count = type_instance_arg_count[payload];
-    if (arg_count == 0u)
-        return true;
-
-    for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
-    {
-        uint tag_i;
-        uint payload_i;
-        if (!instance_arg_ref(payload, ordinal, tag_i, payload_i))
-            return false;
-    }
-    return true;
+    MethodReceiverHead head;
+    return receiver_head(fn_i, head) && receiver_pattern_valid<MethodReceiverGraph>(
+        method_decl_receiver_ref_tag[fn_i], method_decl_receiver_ref_payload[fn_i],
+        method_receiver_type_capacity(), active_token_count());
 }
 
 uint invalid_method_status(uint fn_i)
@@ -238,7 +135,7 @@ uint invalid_method_status(uint fn_i)
     if (method_decl_receiver_ref_tag[fn_i] == TYPE_REF_INVALID ||
         method_decl_receiver_ref_payload[fn_i] == INVALID)
         return METHOD_KEY_STATUS_INVALID_RECEIVER;
-    if (!receiver_args_valid(fn_i))
+    if (!receiver_graph_valid(fn_i))
         return METHOD_KEY_STATUS_INVALID_RECEIVER_ARG;
     if (method_decl_name_id[fn_i] == INVALID)
         return METHOD_KEY_STATUS_INVALID_NAME;
@@ -246,100 +143,42 @@ uint invalid_method_status(uint fn_i)
     return METHOD_KEY_STATUS_PRIVATE_OK;
 }
 
-public struct MethodValidationFixedKey : IFixedU32RowKey<uint>
-{
-    public static uint row_lane(uint fn_i, uint lane)
-    {
-        if (lane == 0u)
-            return fixed_key_encode_nullable_u32(
-                method_decl_receiver_ref_tag[fn_i],
-                TYPE_REF_INVALID);
-        if (lane == 1u)
-            return fixed_key_encode_nullable_u32(receiver_payload_key(fn_i), INVALID);
-        if (lane == 2u)
-            return receiver_arg_count(fn_i) + 1u;
-        if (lane == 3u)
-            return receiver_arg_hash(fn_i);
-        if (lane == 4u)
-            return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
-        return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
-    }
-
-    public static uint key_lane(uint fn_i, uint lane)
-    {
-        return row_lane(fn_i, lane);
-    }
-}
-
-bool same_receiver_arg_ref(uint left_tag, uint left_payload, uint right_tag, uint right_payload)
-{
-    if (left_tag != right_tag)
-        return false;
-    return type_ref_payload_key(left_tag, left_payload) ==
-           type_ref_payload_key(right_tag, right_payload);
-}
-
 bool receiver_arg_rows_equal(uint left_fn_i, uint right_fn_i)
 {
-    uint left_tag = method_decl_receiver_ref_tag[left_fn_i];
-    uint left_payload = method_decl_receiver_ref_payload[left_fn_i];
-    uint right_tag = method_decl_receiver_ref_tag[right_fn_i];
-    uint right_payload = method_decl_receiver_ref_payload[right_fn_i];
-    if (left_tag != TYPE_REF_INSTANCE || right_tag != TYPE_REF_INSTANCE)
-        return true;
-    if (left_payload >= active_token_count() || right_payload >= active_token_count())
-        return false;
-
-    uint count = type_instance_arg_count[left_payload];
-    if (count != type_instance_arg_count[right_payload])
-        return false;
-
-    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
-    {
-        uint left_arg_tag;
-        uint left_arg_payload;
-        uint right_arg_tag;
-        uint right_arg_payload;
-        if (!instance_arg_ref(left_payload, ordinal, left_arg_tag, left_arg_payload) ||
-            !instance_arg_ref(right_payload, ordinal, right_arg_tag, right_arg_payload) ||
-            !same_receiver_arg_ref(
-                left_arg_tag,
-                left_arg_payload,
-                right_arg_tag,
-                right_arg_payload))
-            return false;
-    }
-    return true;
+    return receiver_patterns_equivalent<MethodReceiverGraph>(
+        method_decl_receiver_ref_tag[left_fn_i], method_decl_receiver_ref_payload[left_fn_i],
+        method_decl_receiver_ref_tag[right_fn_i], method_decl_receiver_ref_payload[right_fn_i],
+        method_receiver_type_capacity(), active_token_count());
 }
 
 bool method_keys_equal(uint left_fn_i, uint right_fn_i)
 {
-    if (invalid_method_status(left_fn_i) != METHOD_KEY_STATUS_PRIVATE_OK ||
-        invalid_method_status(right_fn_i) != METHOD_KEY_STATUS_PRIVATE_OK)
-        return false;
-
-    return fixed_u32_row_key_equal<uint, MethodValidationFixedKey>(
-        left_fn_i,
-        right_fn_i,
-        6u) && receiver_arg_rows_equal(left_fn_i, right_fn_i);
+    // Each root receives one full validation in its owning invocation. Do
+    // not inline another full graph hash per bucket candidate; the complete
+    // bidirectional constraints below reject incompatible/malformed graphs.
+    // Read immutable inputs here, never another invocation's output status.
+    if (!is_method_decl(left_fn_i) || !is_method_decl(right_fn_i)) return false;
+    MethodReceiverHead left_head; MethodReceiverHead right_head;
+    return method_decl_module_id[left_fn_i] == method_decl_module_id[right_fn_i] &&
+        method_decl_name_id[left_fn_i] == method_decl_name_id[right_fn_i] &&
+        receiver_head(left_fn_i, left_head) && receiver_head(right_fn_i, right_head) &&
+        method_receiver_heads_equal(left_head, right_head) &&
+        receiver_arg_rows_equal(left_fn_i, right_fn_i);
 }
 
 uint method_lookup_bucket_for_fn(uint fn_i, uint method_count)
 {
-    uint tag = method_decl_receiver_ref_tag[fn_i];
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    return method_lookup_bucket(
-        tag,
-        receiver_payload_key(fn_i),
-        receiver_arg_count(fn_i),
-        receiver_arg_hash(fn_i),
-        method_decl_name_id[fn_i],
-        method_count);
+    MethodReceiverHead head;
+    // Called only after receiver_graph_valid has admitted the entire root.
+    if (!receiver_head(fn_i, head)) return INVALID;
+    return method_lookup_bucket(head, method_decl_name_id[fn_i], method_count);
 }
 
 uint previous_duplicate(uint fn_i, uint method_count)
 {
-    uint encoded_row = method_lookup_head[method_lookup_bucket_for_fn(fn_i, method_count)];
+    uint bucket = method_lookup_bucket_for_fn(fn_i, method_count);
+    if (bucket == INVALID) return INVALID;
+    uint encoded_row = method_lookup_head[bucket];
     uint duplicate = INVALID;
     for (uint visited = 0u; encoded_row != 0u && visited < method_count; visited += 1u)
     {
@@ -413,5 +252,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     method_key_status[fn_i] = METHOD_KEY_STATUS_DUPLICATE;
     method_key_duplicate_of[fn_i] = prev_fn_i;
-    record_error(error_token_for_method(fn_i), ERR_BAD_HIR, METHOD_KEY_STATUS_DUPLICATE);
+    record_error(error_token_for_method(fn_i), ERR_CALL_MISMATCH, CALL_MISMATCH_DUPLICATE_METHOD);
 }

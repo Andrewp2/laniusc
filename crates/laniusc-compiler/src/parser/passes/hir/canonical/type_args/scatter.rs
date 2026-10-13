@@ -23,6 +23,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalType
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
+            ("hir_type_arg_application_owner".into(), b.hir_type_arg_application_owner.as_entire_binding()),
+            ("hir_type_arg_application_token".into(), b.hir_type_arg_application_token.as_entire_binding()),
+            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
+            ("path_type_arg_ranges".into(), b.hir_path_type_arg_ranges.as_entire_binding()),
+
             (
                 "gCanonical".into(),
                 b.hir_canonical_params.as_entire_binding(),

@@ -50,8 +50,8 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
-StructuredBuffer<HirRange> compact_type_arg_ranges;
-StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> path_count_out;
@@ -74,10 +74,13 @@ StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_by_canonical_id;
 StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint4> resolved_value_qualifier_binding;
+StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> decl_lookup_state;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_kind;
@@ -95,9 +98,11 @@ StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_decl_generic_param_count;
+StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 
-RWStructuredBuffer<uint> method_call_receiver_ref_tag;
-RWStructuredBuffer<uint> method_call_receiver_ref_payload;
+RWStructuredBuffer<uint> method_call_source_ref_tag;
+RWStructuredBuffer<uint> method_call_source_ref_payload;
+RWStructuredBuffer<uint> method_call_receiver_hir;
 RWStructuredBuffer<uint> method_call_name_id;
 RWStructuredBuffer<uint> method_call_site_module_id;
 RWStructuredBuffer<uint> module_value_path_status;
@@ -107,12 +112,16 @@ RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_arg_ref_tag;
 RWStructuredBuffer<uint> type_instance_arg_ref_payload;
-RWStructuredBuffer<uint> type_instance_arg_hash;
 StructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 RWStructuredBuffer<uint> type_instance_state;
+
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+
+#include "receiver_reference.slang"
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
@@ -286,6 +295,10 @@ void publish_compact_direct_method_call(uint call_hir)
     HirPayload member_payload = compact_hir_payload[member];
     uint method_i = member_payload.c;
     uint receiver = member_payload.b;
+    // A call's leading token can name its inner function rather than its
+    // value. The call-result pass owns these receivers and their substitutions.
+    if (valid_dense(receiver) && compact_hir_core[receiver].kind == HIR_CALL_EXPR)
+        return;
     uint raw_receiver_i = valid_token(member_payload.d)
                               ? member_payload.d
                               : compact_receiver_token(receiver);
@@ -293,24 +306,25 @@ void publish_compact_direct_method_call(uint call_hir)
                               compact_hir_core[receiver].kind == HIR_MEMBER_EXPR
                           ? compact_hir_payload[receiver].c
                           : raw_receiver_i;
-    if (!valid_token(method_i) || !valid_token(raw_receiver_i) || !valid_token(receiver_i))
-        return;
+    if (!valid_token(method_i) || !valid_dense(receiver)) return;
 
     method_call_name_id[method_i] = name_id_by_token[method_i];
     method_call_site_module_id[method_i] = module_for_compact_hir(member);
 
-    uint decl_i = visible_decl[raw_receiver_i];
-    uint call_site_module = module_for_decl_token(decl_i);
-    method_call_site_module_id[method_i] =
-        call_site_module == INVALID ? module_for_compact_hir(member) : call_site_module;
+    method_call_receiver_hir[method_i] = receiver;
+    method_call_source_ref_tag[method_i] = TYPE_REF_INVALID;
+    method_call_source_ref_payload[method_i] = INVALID;
 
-    uint tag;
-    uint payload;
-    if (!receiver_decl_type_ref(receiver_i, tag, payload))
+    uint tag = call_inference_result_tag[receiver];
+    uint payload = call_inference_result_payload[receiver];
+    // Expression facts cover fields, indexes and inferred values without
+    // reinterpreting the leading token as the receiver's declaration.
+    if (!method_lookup_receiver(tag, payload) &&
+        (!receiver_decl_type_ref(receiver_i, tag, payload) || !method_lookup_receiver(tag, payload)))
         return;
 
-    method_call_receiver_ref_tag[method_i] = tag;
-    method_call_receiver_ref_payload[method_i] = payload;
+    method_call_source_ref_tag[method_i] = tag;
+    method_call_source_ref_payload[method_i] = payload;
 }
 
 uint module_for_path(uint path_i)
@@ -347,11 +361,11 @@ uint find_local_type_decl(uint module_id, uint name_id)
     if (module_id == INVALID || name_id == INVALID)
         return INVALID;
 
-    return decl_lookup_find(
-        module_id, HIR_ITEM_NAMESPACE_TYPE, name_id,
+    return decl_lookup_query(
+        module_id, HIR_ITEM_NAMESPACE_TYPE, name_id, DECL_LOOKUP_INVALID,
         active_decl_count(),
         decl_module_id, decl_namespace, decl_name_id,
-        decl_lookup_state);
+        decl_parent_type_decl, decl_lookup_state).unique();
 }
 
 uint find_imported_type_decl(uint module_id, uint name_id)
@@ -491,6 +505,11 @@ uint associated_receiver_decl(uint path_i, uint receiver_segment_count)
     if (!valid_path(path_i) || receiver_segment_count == 0u)
         return INVALID;
 
+    // Qualified parent binding already resolves local shadowing, imports,
+    // full prefixes, and ambiguity. A dependency parent cannot fall back to
+    // a same-named local declaration merely because its module is not local.
+    uint4 binding = resolved_value_qualifier_binding[path_i];
+    if (binding.x != 0u) return binding.x == 1u ? binding.y : INVALID;
     uint count = path_segment_count[path_i];
     if (receiver_segment_count == count)
     {
@@ -526,25 +545,6 @@ uint associated_receiver_decl(uint path_i, uint receiver_segment_count)
 uint arg_ref_index(uint instance_i, uint slot)
 {
     return instance_i * TYPE_INSTANCE_ARG_REF_STRIDE + slot;
-}
-
-void clear_instance_arg_refs(uint instance_i)
-{
-    type_instance_arg_start[instance_i] = INVALID;
-    type_instance_arg_count[instance_i] = 0u;
-
-    uint out_0 = arg_ref_index(instance_i, 0u);
-    uint out_1 = arg_ref_index(instance_i, 1u);
-    uint out_2 = arg_ref_index(instance_i, 2u);
-    uint out_3 = arg_ref_index(instance_i, 3u);
-    type_instance_arg_ref_tag[out_0] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_0] = INVALID;
-    type_instance_arg_ref_tag[out_1] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_1] = INVALID;
-    type_instance_arg_ref_tag[out_2] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_2] = INVALID;
-    type_instance_arg_ref_tag[out_3] = TYPE_REF_INVALID;
-    type_instance_arg_ref_payload[out_3] = INVALID;
 }
 
 uint language_type_code_for_token(uint token)
@@ -612,82 +612,6 @@ uint fallback_type_code_for_arg_token(uint arg_token)
     return nominal_type_code(decl_i, decl_token);
 }
 
-bool publish_type_arg_ref(uint instance_i, uint slot, uint arg_token)
-{
-    if (slot >= TYPE_INSTANCE_ARG_REF_STRIDE || !valid_token(arg_token))
-        return false;
-
-    uint out_i = arg_ref_index(instance_i, slot);
-    uint tag = type_expr_ref_tag[arg_token];
-    uint payload = type_expr_ref_payload[arg_token];
-    if (tag == TYPE_REF_INVALID)
-    {
-        uint ty = fallback_type_code_for_arg_token(arg_token);
-        if (ty != TY_UNKNOWN)
-        {
-            type_instance_arg_ref_tag[out_i] = TYPE_REF_SCALAR;
-            type_instance_arg_ref_payload[out_i] = ty;
-            return true;
-        }
-
-        type_instance_arg_ref_tag[out_i] = TYPE_REF_ERROR;
-        type_instance_arg_ref_payload[out_i] = instance_i;
-        return false;
-    }
-
-    type_instance_arg_ref_tag[out_i] = tag;
-    type_instance_arg_ref_payload[out_i] = payload;
-    return true;
-}
-
-uint type_node_for_instance_token(uint instance_i)
-{
-    uint path_i = path_id_for_owner_token(instance_i);
-    if (!valid_path(path_i))
-        path_i = path_id_for_call_open(instance_i);
-    if (!valid_path(path_i))
-        return INVALID;
-    uint node = path_owner_hir[path_i];
-    return valid_node(node) && compact_hir_core[node].kind == HIR_TYPE ? node : INVALID;
-}
-
-bool publish_type_arg_node_ref(uint instance_i, uint slot, uint type_node, uint ordinal)
-{
-    if (!valid_node(type_node))
-        return false;
-    HirRange range = compact_type_arg_ranges[type_node];
-    if (range.start == INVALID || ordinal >= range.count)
-        return false;
-    uint row = range.start + ordinal;
-    if (row >= gParams.n_hir_nodes)
-        return false;
-    uint value = compact_type_args[row].value;
-    if (!valid_node(value))
-        return false;
-    return publish_type_arg_ref(instance_i, slot, compact_hir_core[value].token_start);
-}
-
-bool compact_type_arg_rows_valid(uint instance_i, uint arg_count)
-{
-    if (arg_count == 0u)
-        return true;
-
-    uint row_start = type_instance_arg_row_start[instance_i];
-    if (row_start == INVALID)
-        return false;
-
-    uint total_rows = type_instance_arg_row_count_out[0u];
-    for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
-    {
-        uint row_i = row_start + ordinal;
-        if (row_i >= total_rows ||
-            type_instance_arg_row_ref_tag[row_i] == TYPE_REF_INVALID ||
-            type_instance_arg_row_ref_payload[row_i] == INVALID)
-            return false;
-    }
-    return true;
-}
-
 bool publish_compact_type_arg_refs(uint instance_i, uint arg_count)
 {
     if (!valid_token(instance_i))
@@ -721,224 +645,19 @@ bool publish_compact_type_arg_refs(uint instance_i, uint arg_count)
     return true;
 }
 
-uint decl_token_from_type_code(uint ty)
-{
-    if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
-        return ty - TY_STRUCT_BASE;
-    if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
-        return ty - TY_ENUM_BASE;
-    return INVALID;
-}
-
-uint type_ref_payload_key(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-    {
-        uint decl_token = type_instance_decl_token[payload];
-        if (decl_token != INVALID)
-            return decl_token;
-
-        decl_token = decl_token_from_type_code(module_type_path_type[payload]);
-        if (decl_token != INVALID)
-            return decl_token;
-    }
-    return payload;
-}
-
-uint encoded_hash_value(uint value, uint invalid)
-{
-    return value == invalid ? 0u : value + 1u;
-}
-
-uint mix_hash(uint hash, uint value)
-{
-    hash ^= value;
-    hash *= 16777619u;
-    hash ^= hash >> 16u;
-    return hash;
-}
-
-uint instance_arg_row_ref_index(uint instance_i, uint ordinal)
-{
-    uint start = type_instance_arg_row_start[instance_i];
-    uint ref_i = start == INVALID ? INVALID : start + ordinal;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool instance_arg_ref(uint instance_i, uint ordinal, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(instance_i) || ordinal >= type_instance_arg_count[instance_i])
-        return false;
-
-    uint row_ref_i = instance_arg_row_ref_index(instance_i, ordinal);
-    if (row_ref_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_ref_i];
-        payload = type_instance_arg_row_ref_payload[row_ref_i];
-        if (tag != TYPE_REF_INVALID)
-            return true;
-    }
-
-    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
-        return false;
-
-    uint start = type_instance_arg_start[instance_i];
-    uint fixed_ref_i = start == INVALID ? INVALID : start + ordinal;
-    if (fixed_ref_i == INVALID)
-        return false;
-
-    tag = type_instance_arg_ref_tag[fixed_ref_i];
-    payload = type_instance_arg_ref_payload[fixed_ref_i];
-    return tag != TYPE_REF_INVALID;
-}
-
-uint type_instance_arg_ref_hash(uint instance_i)
-{
-    uint count = type_instance_arg_count[instance_i];
-    uint hash = mix_hash(2166136261u, count);
-    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
-    {
-        uint tag;
-        uint payload;
-        if (!instance_arg_ref(instance_i, ordinal, tag, payload))
-            return 0u;
-
-        hash = mix_hash(hash, encoded_hash_value(tag, TYPE_REF_INVALID));
-        hash = mix_hash(hash, encoded_hash_value(type_ref_payload_key(tag, payload), INVALID));
-    }
-    return hash;
-}
-
-void refresh_type_instance_arg_hash(uint instance_i)
-{
-    if (valid_token(instance_i))
-        type_instance_arg_hash[instance_i] = type_instance_arg_ref_hash(instance_i);
-}
-
-bool publish_token_type_arg_refs(uint instance_i, out uint arg_count)
-{
-    arg_count = 0u;
-    if (!valid_token(instance_i))
-        return false;
-    if (!valid_token(instance_i + 1u) || !type_arg_open(token_kind(instance_i + 1u)))
-        return true;
-
-    uint depth = 0u;
-    bool expect_arg = false;
-    for (uint step = 1u; step < 128u; step += 1u)
-    {
-        uint token = instance_i + step;
-        if (!valid_token(token))
-            return false;
-
-        uint kind = token_kind(token);
-        if (type_arg_open(kind))
-        {
-            depth += 1u;
-            if (depth == 1u)
-                expect_arg = true;
-        }
-        else if (type_arg_close(kind))
-        {
-            if (depth == 1u)
-                return arg_count > 0u;
-            if (depth == 0u)
-                return false;
-            depth -= 1u;
-        }
-        else if (type_arg_comma(kind) && depth == 1u)
-        {
-            expect_arg = true;
-        }
-        else if (expect_arg && depth == 1u)
-        {
-            if (arg_count >= TYPE_INSTANCE_ARG_REF_STRIDE)
-                return false;
-            if (!publish_type_arg_ref(instance_i, arg_count, token))
-                return false;
-            arg_count += 1u;
-            expect_arg = false;
-        }
-    }
-
-    return false;
-}
-
 uint publish_path_type_args(uint instance_i, uint compact_owner)
 {
-    uint compact_arg_count =
-        valid_token(instance_i) ? type_instance_arg_count[instance_i] : 0u;
-    clear_instance_arg_refs(instance_i);
-    if (!valid_token(instance_i))
-        return 0u;
-
-    uint type_node = valid_node(compact_owner)
-        ? compact_owner
-        : type_node_for_instance_token(instance_i);
-    uint method_i = module_value_path_associated_method_token[instance_i];
-    if (!valid_node(type_node))
-    {
-        bool has_token_args =
-            valid_token(method_i) &&
-            valid_token(instance_i + 1u) &&
-            type_arg_open(token_kind(instance_i + 1u));
-        if (has_token_args)
-        {
-            uint token_arg_count = 0u;
-            if (!publish_token_type_arg_refs(instance_i, token_arg_count))
-            {
-                type_instance_state[instance_i] = TYPE_INSTANCE_UNSUPPORTED;
-                return INVALID;
-            }
-
-            type_instance_arg_count[instance_i] = token_arg_count;
-            type_instance_arg_start[instance_i] =
-                token_arg_count == 0u ? INVALID : arg_ref_index(instance_i, 0u);
-            refresh_type_instance_arg_hash(instance_i);
-            return token_arg_count;
-        }
-
-        if (valid_token(method_i) &&
-            (compact_arg_count == 0u ||
-             !publish_compact_type_arg_refs(instance_i, compact_arg_count)))
-        {
-            type_instance_state[instance_i] = TYPE_INSTANCE_UNSUPPORTED;
-            return INVALID;
-        }
-
-        type_instance_arg_count[instance_i] = compact_arg_count;
-        type_instance_arg_start[instance_i] =
-            compact_arg_count == 0u ? INVALID : arg_ref_index(instance_i, 0u);
-        refresh_type_instance_arg_hash(instance_i);
-        return compact_arg_count;
-    }
-
-    uint arg_count = compact_type_arg_ranges[type_node].count;
-
-    bool unsupported = false;
-    uint slot = min(arg_count, TYPE_INSTANCE_ARG_REF_STRIDE);
-    for (uint ordinal = 0u; ordinal < TYPE_INSTANCE_ARG_REF_STRIDE; ordinal += 1u)
-    {
-        if (ordinal < arg_count)
-            unsupported = unsupported ||
-                !publish_type_arg_node_ref(instance_i, ordinal, type_node, ordinal);
-    }
-
-    bool short_list_mismatch = arg_count <= TYPE_INSTANCE_ARG_REF_STRIDE && slot != arg_count;
-    if (unsupported || short_list_mismatch || !compact_type_arg_rows_valid(instance_i, arg_count))
-    {
-        type_instance_state[instance_i] = TYPE_INSTANCE_UNSUPPORTED;
+    if (!valid_token(instance_i)) return INVALID;
+    // Named-application collection owns the complete receiver argument rows.
+    // Method lookup consumes those checked facts and refreshes only the small
+    // legacy cache. It must not clear the receiver or reconstruct its types
+    // from a whole value-path range or token scan.
+    uint count = type_instance_arg_count[instance_i];
+    if (count > 32u || !publish_compact_type_arg_refs(instance_i, count))
         return INVALID;
-    }
-
-    type_instance_arg_count[instance_i] = arg_count;
-    type_instance_arg_start[instance_i] = arg_count == 0u ? INVALID : arg_ref_index(instance_i, 0u);
-    refresh_type_instance_arg_hash(instance_i);
-    return arg_count;
+    type_instance_arg_start[instance_i] = count == 0u
+        ? INVALID : arg_ref_index(instance_i, 0u);
+    return count;
 }
 
 uint nominal_type_code(uint decl_i, uint decl_token)
@@ -971,6 +690,15 @@ bool associated_receiver_ref(
     if (!valid_token(receiver_token))
         return false;
 
+    // Normalization owns complete alias and qualified parent roots, including
+    // scalar, array, slice and reference aliases. A nominal declaration lookup
+    // is only a fallback for an as-yet unpublished local application.
+    receiver_tag = type_expr_ref_tag[receiver_token];
+    receiver_payload = type_expr_ref_payload[receiver_token];
+    if (method_lookup_receiver(receiver_tag, receiver_payload)) return true;
+    receiver_tag = TYPE_REF_INVALID;
+    receiver_payload = INVALID;
+
     // Built-in scalar type names have language type codes but no declaration
     // row in the module type namespace. They can still own impl methods.
     if (!valid_token(decl_token))
@@ -983,15 +711,17 @@ bool associated_receiver_ref(
         return true;
     }
 
-    uint expected_count = type_decl_generic_param_count[decl_token];
+    uint expected_count = type_decl_generic_param_count[decl_token] +
+        type_decl_const_param_count_by_owner_token[decl_token];
     if (expected_count == 0u)
     {
-        uint ty = nominal_type_code(decl_i, decl_token);
-        if (ty == TY_UNKNOWN)
-            return false;
-        receiver_tag = TYPE_REF_SCALAR;
-        receiver_payload = ty;
-        return true;
+        // A declaration with no operands still owns a complete checked type.
+        // Its method-call key must match the declaration-side receiver key;
+        // encoding a nominal as a scalar here splits those two identities.
+        receiver_tag = type_expr_ref_tag[decl_token];
+        receiver_payload = type_expr_ref_payload[decl_token];
+        return (receiver_tag == TYPE_REF_SCALAR || receiver_tag == TYPE_REF_INSTANCE) &&
+            method_lookup_receiver(receiver_tag, receiver_payload);
     }
 
     uint arg_count = publish_path_type_args(receiver_token, compact_owner);
@@ -1021,6 +751,10 @@ void publish_compact_associated_method_call(uint call_hir)
     bool has_path = valid_path(path_i) &&
                     (path_kind[path_i] == PATH_RECORD_KIND_HIR_PATH_EXPR ||
                      path_kind[path_i] == PATH_RECORD_KIND_HIR_TYPE_EXPR);
+    // Resolved value paths already have a declaration owner. In particular,
+    // an enum constructor must not be reinterpreted as an associated method
+    // merely because its spelling contains a type qualifier.
+    if (has_path && resolved_value_status[path_i] == 0u) return;
     uint call_token = compact_hir_core[call_hir].token_start;
     if (!has_path && !valid_token(call_token))
         return;
@@ -1058,8 +792,9 @@ void publish_compact_associated_method_call(uint call_hir)
     method_call_site_module_id[method_i] = has_path ? module_for_path(path_i) : INVALID;
     if (method_call_site_module_id[method_i] == INVALID)
         method_call_site_module_id[method_i] = module_for_compact_hir(callee_hir);
-    method_call_receiver_ref_tag[method_i] = receiver_tag;
-    method_call_receiver_ref_payload[method_i] = receiver_payload;
+    method_call_receiver_hir[method_i] = INVALID;
+    method_call_source_ref_tag[method_i] = receiver_tag;
+    method_call_source_ref_payload[method_i] = receiver_payload;
     module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_INVALID;
 }
 
@@ -1068,6 +803,8 @@ void publish_associated_method_call_for_method_token(uint method_i)
     if (!valid_token(method_i))
         return;
 
+    uint path = module_value_path_call_path_id[method_i];
+    if (valid_path(path) && resolved_value_status[path] == 0u) return;
     uint receiver_token = module_value_path_associated_receiver_token[method_i];
     if (!valid_token(receiver_token) || method_i == receiver_token)
         return;
@@ -1088,8 +825,9 @@ void publish_associated_method_call_for_method_token(uint method_i)
 
     method_call_name_id[method_i] = name_id_by_token[method_i];
     method_call_site_module_id[method_i] = module_for_token(method_i);
-    method_call_receiver_ref_tag[method_i] = receiver_tag;
-    method_call_receiver_ref_payload[method_i] = receiver_payload;
+    method_call_receiver_hir[method_i] = INVALID;
+    method_call_source_ref_tag[method_i] = receiver_tag;
+    method_call_source_ref_payload[method_i] = receiver_payload;
     module_value_path_status[receiver_token] = PATH_RESOLVE_STATUS_INVALID;
 }
 

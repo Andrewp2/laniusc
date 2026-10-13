@@ -1,0 +1,16 @@
+import std::io;
+
+fn keep<T, const N: usize>(values: [[T; N]; 2]) -> [[T; N]; 2] { return values; }
+
+fn main() -> i32 {
+    let words: [[str; 3]; 2] = [["a", "b λ", "c"], ["d", "e", "f"]];
+    let copy: [[str; 3]; 2] = keep(words);
+    copy[0][0] = "changed";
+    std::io::println(words[0][0]);
+    std::io::println(copy[0][0]);
+    std::io::println(copy[0][1]);
+    std::io::println(copy[1][2]);
+    let empty: [[bool; 0]; 2] = [[], []];
+    let zero: [[bool; 0]; 2] = keep(empty);
+    return 0;
+}

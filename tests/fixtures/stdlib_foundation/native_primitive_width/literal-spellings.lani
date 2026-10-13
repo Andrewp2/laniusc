@@ -1,0 +1,15 @@
+fn main() -> i32 {
+    let hexadecimal: u64 = 0xffff_ffff_ffff_ffff;
+    let upper_hexadecimal: u64 = 0X8000_0000_0000_0007;
+    let binary: u64 = 0B1_00000000_00000000_00000000_00000000;
+    let octal: u64 = 0o100_000_000_000;
+    let decimal: u64 = 10_000_000_000;
+    let minimum: i64 = -0x8000_0000_0000_0000;
+    if ((hexadecimal >> 32) != 4294967295 || (hexadecimal & 4294967295) != 4294967295) { return 1; }
+    if ((upper_hexadecimal >> 32) != 2147483648 || (upper_hexadecimal & 4294967295) != 7) { return 2; }
+    if ((binary >> 32) != 1 || (binary & 4294967295) != 0) { return 3; }
+    if ((octal >> 32) != 2 || (octal & 4294967295) != 0) { return 4; }
+    if ((decimal >> 32) != 2 || (decimal & 4294967295) != 1410065408) { return 5; }
+    if ((minimum >> 63) != -1 || (minimum & 4294967295) != 0) { return 6; }
+    return 0;
+}

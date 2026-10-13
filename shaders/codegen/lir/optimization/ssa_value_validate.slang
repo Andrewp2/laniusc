@@ -3,6 +3,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -53,7 +54,7 @@ bool valid_definition(uint value, uint parameter_total, uint node_total,
     if (kind == OPT_IR_VALUE_DEFINITION_PARAMETER)
         return payload < parameter_total && value == payload;
     if (kind == OPT_IR_VALUE_DEFINITION_NODE)
-        return payload < node_total &&
+        return opt_ir_node_is_executable(payload, node_total) &&
             opt_ir_results[payload].value_out == value;
     if (kind == OPT_IR_VALUE_DEFINITION_BLOCK_ARGUMENT)
         return payload < argument_total &&
@@ -80,12 +81,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (row < node_total)
     {
+        valid = valid && opt_ir_node_has_cfg_owner(row, node_total);
         uint prefix = opt_ir_ssa_node_value_flag[row];
         uint end = row + 1u < node_total
             ? opt_ir_ssa_node_value_flag[row + 1u]
             : node_value_total;
         uint op = opt_ir_op(opt_ir_core[row]);
-        bool owns_definition = semantic_lir_produces_value(op) &&
+        bool owns_definition = opt_ir_node_is_executable(row, node_total) &&
+            semantic_lir_produces_value(op) &&
             op != SEMANTIC_LIR_OP_VALUE_GET;
         valid = valid && prefix <= end && end - prefix <= 1u &&
             owns_definition == (end != prefix);

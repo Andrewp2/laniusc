@@ -1,0 +1,1 @@
+enum Packet<T> { Data([T; 2]), Missing } fn main() -> i32 { return 0; }

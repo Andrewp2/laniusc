@@ -1,0 +1,27 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 52.35s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test generic_inferred_compound_returns_execute ... FAILED
+
+failures:
+
+---- generic_inferred_compound_returns_execute stdout ----
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=0
+
+thread 'generic_inferred_compound_returns_execute' (466644) panicked at tests/compiler_generic_types_execution.rs:100:29:
+inferred compound generic return: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_inferred_compound_generic_return_466643_0.lani", line: 4, column: 18, length: 9, byte_start: Some(176), byte_end: Some(185), source_line: Some("    let values = duplicate(42);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    generic_inferred_compound_returns_execute
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 44 filtered out; finished in 1.08s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

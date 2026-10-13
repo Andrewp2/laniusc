@@ -1,0 +1,7 @@
+
+running 2 tests
+test generic_nested_result_monomorphic_fields_preserve_widths_and_copies ... ok
+test generic_void_function_preserves_final_imported_call ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 189 filtered out; finished in 3.44s
+

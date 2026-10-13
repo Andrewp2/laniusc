@@ -1,0 +1,7 @@
+{
+  "index": 12,
+  "shader": "type_checker/calls/03i_materialize_array_literals.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 0.8650571889993444,
+  "sha256": "6fe5f2919944e08476aa2dd7c859dcddc592b39b12d59d4e7b9820d52a9c4104"
+}

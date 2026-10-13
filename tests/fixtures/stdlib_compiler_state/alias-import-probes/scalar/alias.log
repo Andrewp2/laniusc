@@ -1,0 +1,2 @@
+sample=0 ms=180.913
+entry=tests/fixtures/stdlib_compiler_state/alias-import-probes/scalar/alias.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=180.913 median_ms=180.913 avg_ms=180.913 max_ms=180.913 output_verified=true

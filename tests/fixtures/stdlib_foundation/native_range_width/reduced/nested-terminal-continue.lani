@@ -1,0 +1,13 @@
+fn main() -> i32 {
+    let nested: i32 = 0;
+    for outer in 0..2 {
+        for inner in 2147483647.. {
+            if (inner != 2147483647) { return 1; }
+            nested += 1;
+            if (nested > 2) { return 2; }
+            continue;
+        }
+    }
+    if (nested != 2) { return 3; }
+    return 0;
+}

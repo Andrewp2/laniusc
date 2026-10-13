@@ -1,0 +1,2 @@
+sample=0 ms=169.013
+entry=tests/fixtures/stdlib_compiler_state/alias-import-probes/qualifier/direct.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4393 min_ms=169.013 median_ms=169.013 avg_ms=169.013 max_ms=169.013 output_verified=true

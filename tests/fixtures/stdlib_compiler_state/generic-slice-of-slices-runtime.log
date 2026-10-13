@@ -1,0 +1,38 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.01s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 2 tests
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=209 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=128 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=140 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=117 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=149 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=150 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=130 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=111 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=111 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=173 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=125 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=226 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=193 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=218 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=239 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=145 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=108 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=108 code=AssignMismatch detail=1060393
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=178 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=98 code=AssignMismatch detail=770
+ok
+test generic_value_functions_preserve_slice_of_slice_descriptors ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 6.02s
+

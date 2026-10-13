@@ -1,0 +1,54 @@
+module app::main;
+import core::result;
+import core::mem;
+import std::io;
+
+fn capture(view: [i32], accept: bool) -> core::result::Result<[i32], str> {
+    if (accept) {
+        let success: core::result::Result<[i32], str> = core::result::Ok(view);
+        return success;
+    }
+    let failure: core::result::Result<[i32], str> = core::result::Err("rejected");
+    return failure;
+}
+
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 3);
+    let empty: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 0);
+    let success: core::result::Result<[i32], str> = capture(view, true);
+    let failure: core::result::Result<[i32], str> = capture(view, false);
+    let empty_success: core::result::Result<[i32], str> = capture(empty, true);
+    if (!success.is_ok() || success.is_err() || failure.is_ok() || !failure.is_err()) { return 1; }
+    if (!core::result::is_ok(empty_success) || core::result::is_err(empty_success)) { return 2; }
+    let recovered: [i32] = match (success) { core::result::Ok(cells) -> cells, core::result::Err(message) -> empty };
+    let recovered_empty: [i32] = match (empty_success) { core::result::Ok(cells) -> cells, core::result::Err(message) -> view };
+    let count: i32 = 0;
+    let total: i32 = 0;
+    for cell in recovered { count = count + 1; total = total + cell; }
+    if (count != 3 || total != 2) { return 3; }
+    let empty_count: i32 = 0;
+    for cell in recovered_empty { empty_count = empty_count + 1; }
+    if (empty_count != 0) { return 4; }
+    recovered[1] = 55;
+    if (backing[1] != 55 || view[1] != 55) { return 5; }
+    let scalar_success: core::result::Result<i32, [i32]> = core::result::Ok(-7);
+    let borrowed_error: core::result::Result<i32, [i32]> = core::result::Err(view);
+    if (!core::result::contains_i32(scalar_success, -7) || core::result::contains_i32(borrowed_error, -7)) { return 10; }
+    let borrowed_success: core::result::Result<[i32], i32> = core::result::Ok(view);
+    let scalar_error: core::result::Result<[i32], i32> = core::result::Err(-2147483648);
+    if (!core::result::contains_err_i32(scalar_error, -2147483648) || core::result::contains_err_i32(borrowed_success, -2147483648)) { return 11; }
+    let message: str = match (failure) { core::result::Ok(cells) -> "wrong", core::result::Err(text) -> text };
+    if (std::io::println(message) != 9) { return 6; }
+
+    let empty_text: core::result::Result<str, [i32]> = core::result::Ok("");
+    let empty_error: core::result::Result<str, [i32]> = core::result::Err(empty);
+    if (!empty_text.is_ok() || empty_text.is_err() || empty_error.is_ok() || !empty_error.is_err()) { return 7; }
+    let text: str = match (empty_text) { core::result::Ok(text) -> text, core::result::Err(cells) -> "wrong" };
+    if (std::io::println(text) != 1) { return 8; }
+    let error_view: [i32] = match (empty_error) { core::result::Ok(text) -> view, core::result::Err(cells) -> cells };
+    let error_count: i32 = 0;
+    for cell in error_view { error_count = error_count + 1; }
+    if (error_count != 0 || !success.is_ok() || !failure.is_err()) { return 9; }
+    return 0;
+}

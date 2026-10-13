@@ -1,0 +1,15 @@
+
+running 1 test
+test trait_methods_control::type_checker_accepts_reference_trait_impl_targets ... 
+thread 'trait_methods_control::type_checker_accepts_reference_trait_impl_targets' (221664) panicked at tests/type_checker_semantics.rs:8:49:
+source should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0007", title: "unknown type", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0007", message: "unknown type", primary_label: Some(DiagnosticLabel { path: "<source>", line: 5, column: 1, length: 4, byte_start: Some(19), byte_end: Some(23), source_line: Some("impl Marker for &i32 {"), message: "type not found" }), help: None, notes: ["declare the type before using it or import its defining module"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    trait_methods_control::type_checker_accepts_reference_trait_impl_targets
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 255 filtered out; finished in 32.84s
+

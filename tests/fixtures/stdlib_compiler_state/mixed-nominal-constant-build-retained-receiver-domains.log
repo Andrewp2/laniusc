@@ -1,0 +1,88 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0308]: mismatched types
+    --> crates/laniusc-compiler/src/type_checker/generic_calls.rs:1512:48
+     |
+1442 |               arguments_by_instance.insert(
+     |               --------------------- ... which causes `arguments_by_instance` to have type `std::collections::BTreeMap<u32, Vec<CheckedGenericType>>`
+1443 |                   instance,
+1444 | /                 vec![
+1445 | |                     CheckedGenericType::Unresolved {
+1446 | |                         reference_tag: 3,
+1447 | |                         instance_kind: 1,
+1448 | |                     };
+1449 | |                     count
+1450 | |                 ],
+     | |_________________- this argument has type `Vec<CheckedGenericType>`...
+...
+1502 |                   arguments.push(CheckedGenericApplicationArgument::Constant(value));
+     |                   ---------      -------------------------------------------------- this argument has type `CheckedGenericApplicationArgument`...
+     |                   |
+     |                   ... which causes `arguments` to have type `Vec<CheckedGenericApplicationArgument>`
+...
+1512 |           arguments_by_instance.insert(instance, arguments);
+     |                                 ------           ^^^^^^^^^ expected `Vec<CheckedGenericType>`, found `Vec<CheckedGenericApplicationArgument>`
+     |                                 |
+     |                                 arguments to this method are incorrect
+     |
+     = note: expected struct `Vec<CheckedGenericType>`
+                found struct `Vec<CheckedGenericApplicationArgument>`
+help: the return type of this call is `Vec<CheckedGenericApplicationArgument>` due to the type of the argument passed
+    --> crates/laniusc-compiler/src/type_checker/generic_calls.rs:1512:9
+     |
+1512 |         arguments_by_instance.insert(instance, arguments);
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------^
+     |                                                |
+     |                                                this argument influences the return type of `insert`
+note: method defined here
+    --> /home/andrew-peterson/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/collections/btree/map.rs:1045:12
+     |
+1045 |     pub fn insert(&mut self, key: K, value: V) -> Option<V>
+     |            ^^^^^^
+
+error[E0277]: a value of type `std::collections::BTreeMap<u32, Vec<CheckedGenericApplicationArgument>>` cannot be built from an iterator over elements of type `(u32, Vec<CheckedGenericType>)`
+    --> crates/laniusc-compiler/src/type_checker/generic_calls.rs:1517:10
+     |
+1517 |         .collect())
+     |          ^^^^^^^ value of type `std::collections::BTreeMap<u32, Vec<CheckedGenericApplicationArgument>>` cannot be built from `std::iter::Iterator<Item=(u32, Vec<CheckedGenericType>)>`
+     |
+help: the trait `FromIterator<(_, Vec<CheckedGenericType>)>` is not implemented for `std::collections::BTreeMap<u32, Vec<CheckedGenericApplicationArgument>>`
+      but trait `FromIterator<(_, Vec<CheckedGenericApplicationArgument>)>` is implemented for it
+    --> /home/andrew-peterson/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/collections/btree/map.rs:2539:1
+     |
+2539 | impl<K: Ord, V> FromIterator<(K, V)> for BTreeMap<K, V> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for that trait implementation, expected `CheckedGenericApplicationArgument`, found `CheckedGenericType`
+note: the method call chain might not have had the expected associated types
+    --> crates/laniusc-compiler/src/type_checker/generic_calls.rs:1516:10
+     |
+1369 |       let receiver_instances = receiver_ids
+     |                                ------------ this expression has type `&[u32]`
+1370 |           .iter()
+     |            ------ `Iterator::Item` is `&u32` here
+1371 |           .copied()
+     |            -------- `Iterator::Item` changed to `u32` here
+1372 |           .zip(receiver_rows.chunks_exact(2))
+     |            ---------------------------------- `Iterator::Item` changed to `(u32, &[Vec<u8>])` here
+1373 |           .filter_map(|(hir, row)| {
+     |  __________-
+1374 | |             let tag = words(&row[0])[0];
+1375 | |             let instance = words(&row[1])[0];
+1376 | |             (tag == 3 && instance != INVALID).then_some((hir, instance))
+1377 | |         })
+     | |__________- `Iterator::Item` changed to `(u32, u32)` here
+...
+1515 |           .into_iter()
+     |            ----------- `Iterator::Item` is `(u32, u32)` here
+1516 |           .map(|(hir, instance)| (hir, arguments_by_instance[&instance].clone()))
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Iterator::Item` changed to `(u32, Vec<CheckedGenericType>)` here
+note: required by a bound in `collect`
+    --> /home/andrew-peterson/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/iter/traits/iterator.rs:2077:19
+     |
+2077 |     fn collect<B: FromIterator<Self::Item>>(self) -> B
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Iterator::collect`
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `laniusc-compiler` (lib) due to 2 previous errors

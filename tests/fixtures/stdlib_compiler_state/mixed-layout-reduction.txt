@@ -1,0 +1,12 @@
+Current shader snapshot: 83a7f39db9e32d2a.
+The nine-line repro_generic_enum_mixed_layout.lani contains two generic enums and one annotated Quad constructor.
+Removing the first unused Maybe<T> declaration yields a source that compiles and emits an x86 executable.
+Keeping it reports LNC0017 at Item, first unsupported target LIR opcode 30.
+No imports or factory methods are needed to reproduce the constructor failure.
+The imported mixed-family fixture fails with the same native diagnostic under both previous and current shaders.
+Separate imported Maybe and Quad modules execute and check all scalar payloads in stdlib_option_bool_execution.
+
+Reproduction from the worktree root:
+timeout 110s target/release/laniusc --emit x86_64 -o target/stdlib-perf/mixed-layout.bin tests/fixtures/stdlib_foundation/repro_generic_enum_mixed_layout.lani
+
+Positive intended contract retained in mixed_generic_factories_execute_in_one_module (ignored dependency 74).

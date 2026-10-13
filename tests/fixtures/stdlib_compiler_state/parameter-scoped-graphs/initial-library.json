@@ -1,0 +1,16 @@
+{
+  "command": [
+    "target/scoped-graph-tests/stdlib_gpu_perf",
+    "physical_gpu_parameter_scoped_type_graph_preserves_identity_and_capacity",
+    "retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse",
+    "checked_unit_contracts_",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 124,
+  "elapsed_seconds": 90.30995904600059,
+  "binary_sha256": "f5f02d9f66087bcb7aa61c7935862545502885a14c343c285f4e024dc33b2082",
+  "passed": [],
+  "summaries": [],
+  "frozen_sources_unchanged": true
+}

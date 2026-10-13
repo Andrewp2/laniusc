@@ -1,0 +1,36 @@
+{
+  "previous_turn": "progress: imported alias member ownership fixed and verified with 68 checks plus existing performance workloads",
+  "status": "Qualified imported identity alias replay fixed and verified. Checkpoint complete; overall generics goal remains active.",
+  "evidence": [
+    "initial-results.json",
+    "context-results.json",
+    "symbolic-identity-results.json",
+    "symbolic-replay-before.log",
+    "symbolic-replay-after.log",
+    "symbolic-replay-focused.log",
+    "identity-slice-conversion-results.json",
+    "symbolic-identity-borrowed-slice.log",
+    "symbolic-replay-final-selection.json",
+    "symbolic-replay-final-generic.log",
+    "symbolic-replay-final-interface.log",
+    "symbolic-replay-final-contracts.log"
+  ],
+  "initial_contract": "Generic applications with adjacent closing brackets have the same parse and executable behavior as spaced closers; shift expressions retain their operator meaning. Classification must preserve full qualified and nested type context without serial source walks.",
+  "contract": "All anchors of a qualified type occurrence expose the same checked reference before and after concrete body replay; lexical parameter identity is exact and public template interfaces remain symbolic.",
+  "production_change": "Specialize both the qualified path head and final segment in the existing body replay producer. No new pass, buffer, ABI, or private format.",
+  "before": "body_replay_preserves_qualified_alias_parameter_identity checked its template and failed concrete replay at return v (LNC0006).",
+  "after": {
+    "integration_passed": 33,
+    "interface_passed": 9,
+    "native_page_template_passed": 5,
+    "resource_lowering_passed": 2,
+    "integration_inventory": 324,
+    "full_inventory_rerun": false,
+    "target": "GPU compiler producing Linux x86_64 ELF"
+  },
+  "adjacent_closers": "Original full adjacent and spaced programs both execute; eight spacing workarounds removed from regression; no parser source changed. Historical failure cause remains unknown.",
+  "remaining_reproduction": "Explicit generic keep<[i32]>(array) rejects both directly and through imported aliases. Forwarding an existing slice executes. Typed array-to-slice assignment also rejected in the compound probe.",
+  "next_contract": "An explicitly bound slice parameter should receive the same borrow conversion as an equivalent structural slice parameter, preserving backing identity and rejecting incompatible element types.",
+  "performance": "benchmark_artifacts/performance/stdlib-gpu-20261010-qualified-alias-replay/checkpoint-metadata.json",
+  "temporary_diagnostics_restored": true
+}

@@ -1,0 +1,9 @@
+
+running 4 tests
+test late_method_results_compose_through_local_and_imported_generic_calls ... ok
+test late_method_results_preserve_all_thirty_two_compound_arguments ... ok
+test late_method_results_preserve_types_without_receiver_or_result_annotations ... ok
+test late_method_results_reject_conflicting_complete_types ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 336 filtered out; finished in 5.19s
+

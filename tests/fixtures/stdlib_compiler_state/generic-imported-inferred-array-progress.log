@@ -1,0 +1,24 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1m 08s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test imported_generic_inferred_array_return_executes ... GPU source-pack type-check rejection: token=22 code=AssignMismatch detail=32899
+
+thread 'imported_generic_inferred_array_return_executes' (541474) panicked at tests/compiler_generic_types_execution.rs:648:6:
+compile imported generic array return without a result annotation: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 5, column: 18, length: 4, byte_start: Some(75), byte_end: Some(79), source_line: Some("    let values = core::relay::duplicate(42);"), message: "value type is array of i32 but this context expects array" }), help: None, notes: ["expected array, found array of i32; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_generic_inferred_array_return_executes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 47 filtered out; finished in 7.99s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

@@ -1,0 +1,24 @@
+module app::main;
+import core::slice;
+import core::mem;
+
+struct Extent { length: i32 }
+
+fn exercise(backing: [i32], extent: Extent) -> i32 {
+    let data: ptr = core::mem::i32_slice_data_ptr(backing);
+    let values: [i32] = core::mem::i32_slice_from_raw_parts(data, extent.length);
+    if (core::slice::reverse_in_place(values, extent.length) != 2) { return 1; }
+    if (core::slice::get_or(values, extent.length, 0, 42) != 99) { return 2; }
+    if (!core::slice::set(values, extent.length, 1, -2147483648)) { return 3; }
+    if (core::slice::fill(values, 1, 0) != 1) { return 4; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let backing: [i32; 4] = [-7, 0, 42, 99];
+    let extent: Extent = Extent { length: 4 };
+    let status: i32 = exercise(backing, extent);
+    if (status != 0) { return status; }
+    if (backing[0] != 0 || backing[1] != -2147483648 || backing[2] != 0 || backing[3] != -7) { return 5; }
+    return 0;
+}

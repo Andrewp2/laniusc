@@ -1,0 +1,1 @@
+phase=x86 emit=x86_64-elf source=call-graph lines=1175 bytes=32926 output_bytes=25576 warmups=3 iters=10 best_ms=14.179 avg_ms=15.311

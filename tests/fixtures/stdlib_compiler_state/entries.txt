@@ -1,0 +1,2 @@
+sample_programs/character_inventory.lani
+sample_programs/halfword_window_total.lani

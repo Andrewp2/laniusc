@@ -1,0 +1,14 @@
+import std::io;
+enum Packet<T> { Void, Payload(T) }
+fn packet<T>(value: T) -> Packet<T> { return Payload(value); }
+fn main() -> i32 {
+    let value: Packet<[[str; 2]; 2]> = packet([["α", "β"], ["γ", "δ"]]);
+    let values: [[str; 2]; 2] = match (value) {
+        Payload(v) => v, Void => [["x", "y"], ["z", "w"]]
+    };
+    if (std::io::println(values[0][0]) != 3) { return 10; }
+    if (std::io::println(values[0][1]) != 3) { return 11; }
+    if (std::io::println(values[1][0]) != 3) { return 12; }
+    if (std::io::println(values[1][1]) != 3) { return 13; }
+    return 0;
+}

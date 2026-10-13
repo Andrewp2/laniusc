@@ -1,0 +1,54 @@
+diff --git a/crates/laniusc-compiler/src/compiler/gpu_compiler.rs b/crates/laniusc-compiler/src/compiler/gpu_compiler.rs
+index 39b19ed..e4ddc72 100644
+--- a/crates/laniusc-compiler/src/compiler/gpu_compiler.rs
++++ b/crates/laniusc-compiler/src/compiler/gpu_compiler.rs
+@@ -531,6 +531,49 @@ mod tests {
+         },
+     };
+ 
++    #[test]
++    fn stdlib_generic_layout_probe() {
++        std::thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(|| {
++            let gpu = crate::gpu::device::global();
++            let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
++                gpu, GpuCompilerBackends::x86_only(),
++            )).unwrap();
++            let readback = crate::gpu::readback::PagedReadback::new(&gpu.device, "generic enum probe", 16384);
++            fn words<T>(r: &crate::gpu::readback::PagedReadback, gpu: &crate::gpu::device::GpuDevice, b: &crate::gpu::buffers::LaniusBuffer<T>, count: usize) -> Vec<u32> {
++                r.read_buffer(&gpu.device, &gpu.queue, b, 0, (count * 4).min(b.byte_size), "generic enum probe").unwrap()
++                    .chunks_exact(4).map(|v| u32::from_le_bytes(v.try_into().unwrap())).collect()
++            }
++            let generic = "module app; enum Maybe<T> { Some(T), None } fn is_some<T>(value: Maybe<T>) -> bool { return match (value) { Some(inner) -> true, None -> false }; } fn main() -> i32 { return 0; }";
++            let concrete = generic.replace("fn is_some<T>(value: Maybe<T>)", "fn is_some(value: Maybe<bool>)");
++            let wildcard = generic.replace("Some(inner)", "Some(_)");
++            for (label, source) in [("generic",generic),("concrete",concrete.as_str()),("wildcard",wildcard.as_str())] {
++                pollster::block_on(compiler.type_check_source(source)).unwrap();
++                let hir = compiler.parser.current_resident_hir().unwrap();
++                let artifact = compiler.type_checker.semantic_artifact().unwrap();
++                let sem = artifact.view();
++                let count = words(&readback,gpu,&hir.count,1)[0] as usize;
++                let core = words(&readback,gpu,&hir.core,count*4);
++                let payload = words(&readback,gpu,&hir.payload,count*4);
++                let declarations = words(&readback,gpu,sem.value_decl_by_hir,count);
++                let tags = words(&readback,gpu,sem.expr_ref_tag_by_hir,count);
++                let refs = words(&readback,gpu,sem.expr_ref_payload_by_hir,count);
++                let widths = words(&readback,gpu,sem.aggregate_word_count_by_hir,count);
++                println!("{label} HIR {count}");
++                for row in 0..count {
++                    println!("HIR {row}: core={:?} payload={:?} declaration={} ref=({}, {}) words={}", &core[row*4..row*4+4], &payload[row*4..row*4+4],declarations[row],tags[row],refs[row],widths[row]);
++                }
++                let capacities = crate::codegen::lowering_ir::LoweringCapacities::from_frontend_unit(source.len() as u32,source.len() as u32,hir.capacity,LoweringTarget::X86_64).unwrap();
++                let stage = crate::codegen::lowering::GpuSemanticLoweringStage::new(&gpu.device,capacities,(&hir).into(),sem).unwrap();
++                let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {label:Some("generic enum probe")});
++                stage.record(&mut encoder).unwrap();gpu.queue.submit(Some(encoder.finish()));
++                let lir=stage.output(); let count=words(&readback,gpu,lir.count,1)[0] as usize;
++                let cores=words(&readback,gpu,lir.core,count*4);let operands=words(&readback,gpu,lir.operands,count*4);
++                println!("{label} LIR {count}");
++                for row in 0..count {println!("LIR {row}: op={} core={:?} operands={:?}",(cores[row*4+2]>>24)&63,&cores[row*4..row*4+4],&operands[row*4..row*4+4]);}
++            }
++        }).unwrap().join().unwrap();
++    }
++
+     #[test]
+     fn physical_gpu_lowers_the_compilers_checked_compact_hir_for_both_targets() {
+         std::thread::Builder::new()

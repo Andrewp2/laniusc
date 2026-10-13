@@ -16,6 +16,7 @@ struct Params
     uint hir_capacity;
 };
 ConstantBuffer<Params> gParams;
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -79,19 +80,34 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_dependency_library_id[token],
         call_dependency_unit_id[token],
         call_dependency_local_index[token]);
-    if (declaration_i == INVALID) return;
+    uint method_i = declaration_i == INVALID ? dependency_find_method(
+        call_dependency_library_id[token],call_dependency_unit_id[token],call_dependency_local_index[token]) : INVALID;
+    if (declaration_i == INVALID && method_i == INVALID) return;
     uint count = call_param_count[token];
     uint start = call_param_row_start[token];
     uint row = start + arg.ordinal;
     if (start == INVALID || arg.ordinal >= count || row < start ||
         row >= call_param_row_count_out[0u] || row >= gParams.hir_capacity) return;
 
-    uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
-    uint signature_base = signature_i * TYPE_WORDS;
-    uint edge_start = dependency_type_word(signature_base + 3u);
-    uint type_i = canonical_type_roots[dependency_type_edge_word(edge_start + arg.ordinal)];
+    uint type_i;
+    if (declaration_i != INVALID)
+    {
+        uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
+        uint signature_base = signature_i * TYPE_WORDS;
+        uint edge_start = dependency_type_word(signature_base + 3u);
+        type_i = dependency_type_edge_word(edge_start + arg.ordinal);
+    }
+    else
+    {
+        uint callee = compact_hir_payload[arg.call].a;
+        bool dotted = valid_hir(callee) && compact_hir_core[callee].kind == HIR_MEMBER_EXPR;
+        type_i = dependency_method_parameter_type(method_i,arg.ordinal+(dotted?1u:0u));
+    }
+    if (type_i >= dependency_type_count()) return;
+    type_i = canonical_type_roots[type_i];
     uint type_base = type_i * TYPE_WORDS;
     uint kind = dependency_type_word(type_base);
+    semantic_argument_mode_by_hir[arg.value] = kind == 6u ? 3u : kind == 5u ? 2u : 1u;
     uint tag = TYPE_REF_EXTERNAL_CANONICAL;
     uint payload = type_i;
     uint type_code = TY_UNKNOWN;
@@ -104,7 +120,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)
     {
         tag = TYPE_REF_EXTERNAL_GENERIC;
-        payload = dependency_type_word(type_base + 1u);
+        payload = dependency_generic_type_slot(type_i);
         type_code = TY_GENERIC_BASE;
     }
     call_param_row_node[row] = arg.value;

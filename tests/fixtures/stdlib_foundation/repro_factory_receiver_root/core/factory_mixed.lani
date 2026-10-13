@@ -1,0 +1,55 @@
+module core::factory_mixed;
+
+pub enum Maybe<T> { Some(T), None }
+
+pub fn byte_value(value: u8) -> Maybe<u8> {
+    let result: Maybe<u8> = Some(value);
+    return result;
+}
+
+pub fn bool_value(value: bool) -> Maybe<bool> {
+    let result: Maybe<bool> = Some(value);
+    return result;
+}
+
+pub impl Maybe<u8> {
+    pub fn read(&self) -> u8 {
+        let zero: u8 = 0;
+        return match (self) { Some(value) -> value, None -> zero };
+    }
+}
+
+pub impl Maybe<bool> {
+    pub fn read(&self) -> bool {
+        return match (self) { Some(value) -> value, None -> true };
+    }
+}
+
+
+
+pub enum Quad<A, B, C, D> { Item(A, B, C, D), Empty }
+
+pub fn four_values() -> Quad<bool, u8, i32, u32> {
+    let byte: u8 = 255;
+    let signed: i32 = -7;
+    let unsigned: u32 = 9;
+    let result: Quad<bool, u8, i32, u32> = Item(false, byte, signed, unsigned);
+    return result;
+}
+
+pub impl Quad<bool, u8, i32, u32> {
+    pub fn checksum(&self) -> i32 {
+        let zero_byte: u8 = 0;
+        let zero_unsigned: u32 = 0;
+        let flag: bool = match (self) { Item(flag_value, flag_byte, flag_signed, flag_unsigned) -> flag_value, Empty -> true };
+        let byte: u8 = match (self) { Item(byte_flag, byte_value, byte_signed, byte_unsigned) -> byte_value, Empty -> zero_byte };
+        let signed: i32 = match (self) { Item(signed_flag, signed_byte, signed_value, signed_unsigned) -> signed_value, Empty -> 0 };
+        let unsigned: u32 = match (self) { Item(unsigned_flag, unsigned_byte, unsigned_signed, unsigned_value) -> unsigned_value, Empty -> zero_unsigned };
+        let byte_max: u8 = 255;
+        let expected_unsigned: u32 = 9;
+        if (flag) { return -1; }
+        if (byte != byte_max) { return -2; }
+        if (unsigned != expected_unsigned) { return -3; }
+        return signed + 264;
+    }
+}

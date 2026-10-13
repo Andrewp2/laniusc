@@ -1,0 +1,12 @@
+
+running 3 tests
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... ok
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test explicit_dotted_arguments_reject_conflicts_and_wrong_headers ... GPU source-pack type-check rejection: token=82 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=82 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=82 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=82 code=AssignMismatch detail=770
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 282 filtered out; finished in 4.53s
+

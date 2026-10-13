@@ -1,0 +1,14 @@
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+    Finished `release` profile [optimized] target(s) in 1m 02s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/stdlib-perf/build/release/deps/laniusc_compiler-2bd833ccf41b075f)
+
+running 4 tests
+test type_checker::generic_body::tests::checked_packets_keep_zero_layouts_distinct_from_missing_layouts ... ok
+test type_checker::generic_body::tests::nominal_packets_keep_ordered_children_and_distinct_equal_width_types ... ok
+test type_checker::generic_body::tests::nominal_packets_preserve_nested_structural_arguments_and_arity_limit ... ok
+test type_checker::generic_body::tests::replay_keeps_complete_arguments_and_scopes_local_declarations ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 616 filtered out; finished in 0.00s
+

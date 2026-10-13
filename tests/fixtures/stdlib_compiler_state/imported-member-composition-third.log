@@ -1,0 +1,19 @@
+
+running 6 tests
+test imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments ... ok
+test imported_alias_constructors_preserve_concrete_and_empty_unit_parents ... ok
+test imported_alias_constructors_preserve_reordered_compound_and_constant_arguments ... ok
+test imported_alias_constructors_reject_conflicting_and_invalid_applications ... GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=32 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=UnresolvedIdent detail=5
+ok
+test imported_alias_qualified_constructors_preserve_parent_arguments ... ok
+test reexported_alias_constructors_resolve_members_without_importing_the_target_module ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 314 filtered out; finished in 2.22s
+

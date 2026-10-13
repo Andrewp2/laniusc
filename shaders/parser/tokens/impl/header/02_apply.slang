@@ -21,6 +21,8 @@ struct TokenIn
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
 StructuredBuffer<uint> statement_event_block_prefix;
+StructuredBuffer<int> depth_bracket_inblock;
+StructuredBuffer<int> block_prefix_bracket;
 
 RWStructuredBuffer<uint> token_impl_header_kind;
 RWStructuredBuffer<uint> token_impl_context_event;
@@ -49,11 +51,6 @@ uint active_token_count()
     return min(lexer_token_count[0], gParams.n_tokens);
 }
 
-uint encode_impl_event(uint token_i, uint payload)
-{
-    return ((token_i + 1u) << 8u) | (payload & 0xffu);
-}
-
 uint event_payload(uint event)
 {
     return event & 0xffu;
@@ -65,14 +62,7 @@ uint event_token_index(uint event)
     return encoded == 0u ? 0xffffffffu : encoded - 1u;
 }
 
-uint impl_event_for(uint token_i, uint kind)
-{
-    if (kind == TK_IMPL)
-        return encode_impl_event(token_i, IMPL_HEADER_CONTEXT);
-    if (kind == TK_LBRACE || kind == TK_RBRACE || kind == TK_SEMICOLON)
-        return encode_impl_event(token_i, 0u);
-    return 0u;
-}
+#include "event.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

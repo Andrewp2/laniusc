@@ -1,0 +1,10 @@
+enum Length<T> { Known(usize), Values(T) }
+struct Bundle { empty: Length<[bool; 0]>, nested: Length<[[str; 0]; 2]> }
+fn length<T, const N: usize>() -> Length<[T; N]> { return Known(N); }
+fn main() -> i32 {
+    let item: Bundle = Bundle { nested: length(), empty: length() };
+    let a: usize = match (item.empty) { Known(n) => n, Values(v) => 99 };
+    let b: usize = match (item.nested) { Known(n) => n, Values(v) => 99 };
+    if (a != 0 || b != 2) { return 1; }
+    return 0;
+}

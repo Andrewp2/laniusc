@@ -10,6 +10,7 @@ use laniusc_compiler::{
             PARSER_FEATURE_MATCHES,
             PARSER_FEATURE_MEMBERS,
             PARSER_FEATURE_PREDICATES,
+            PARSER_FEATURE_REFERENCES,
             PARSER_FEATURE_STRING_EXPRS,
             PARSER_FEATURE_STRUCTS,
             PARSER_FEATURE_TYPE_ALIASES,
@@ -25,6 +26,13 @@ fn gpu_lexer_publishes_conservative_parser_family_flags() {
         let lexer = GpuLexer::new().await.expect("create GPU lexer");
         for (source, expected) in [
             ("fn main() -> i32 { return 0; }", 0),
+            ("fn read(value: &i32) -> i32 { return 0; }", PARSER_FEATURE_REFERENCES),
+            ("fn borrow(value: i32) -> &i32 { return &value; }", PARSER_FEATURE_REFERENCES),
+            ("trait Marker {} impl Marker for &i32 {}", PARSER_FEATURE_PREDICATES | PARSER_FEATURE_REFERENCES),
+            ("type Ref = &i32;", PARSER_FEATURE_TYPE_ALIASES | PARSER_FEATURE_REFERENCES),
+            ("fn bits(x: i32) -> i32 { return x & 7 & (3 & x); }", 0),
+            ("fn bits(x: bool) -> bool { return true & x & false; }", 0),
+            ("fn bits(x: i32) -> i32 { return bits(x) & x; }", 0),
             (
                 "fn id<T>(value: T) -> T { return value; } fn main() -> i32 { return id(7); }",
                 PARSER_FEATURE_TYPE_ARGS,
@@ -102,6 +110,9 @@ fn gpu_parser_type_arg_feature_ignores_comparisons_and_tracks_generics() {
         let parser = GpuParser::new().await.expect("create GPU parser");
 
         for (source, expected) in [
+            ("fn read(value: &i32) -> i32 { return 0; }", PARSER_FEATURE_REFERENCES),
+            ("trait Marker {} impl Marker for &i32 {}", PARSER_FEATURE_PREDICATES | PARSER_FEATURE_REFERENCES),
+            ("fn bits(x: i32) -> i32 { return x & 7 & (3 & x); }", 0),
             (
                 "fn main(x: i32) -> i32 { if (x < 7) { return x; } return 7; }",
                 0,

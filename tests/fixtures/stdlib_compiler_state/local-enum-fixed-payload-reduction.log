@@ -1,0 +1,30 @@
+=== plain-enum-array-bool 1 ===
+GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=0
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/plain-enum-array-bool.lani: error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_compiler_state/plain-enum-array-bool.lani:1:88
+  |
+1 | enum Decision { Accept(bool), Reject } fn main() -> i32 { let values: [Decision; 1] = [Accept(false)]; return match(values[0]) {Accept(v) -> 0, Reject -> 1}; }
+  |                                                                                        ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+
+=== plain-enum-array-empty 1 ===
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/plain-enum-array-empty.lani: error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_compiler_state/plain-enum-array-empty.lani:1:84
+  |
+1 | enum Decision { Vacant([i32; 0]) } fn main() -> i32 { let values: [Decision; 1] = [Vacant([])]; return 0; }
+  |                                                                                    ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+
+=== plain-enum-direct-empty 0 ===
+sample=0 ms=139.497
+entry=tests/fixtures/stdlib_compiler_state/plain-enum-direct-empty.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2177 min_ms=139.497 median_ms=139.497 avg_ms=139.497 max_ms=139.497 output_verified=true
+
+=== plain-enum-empty-struct 0 ===
+sample=0 ms=145.096
+entry=tests/fixtures/stdlib_compiler_state/plain-enum-empty-struct.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2177 min_ms=145.096 median_ms=145.096 avg_ms=145.096 max_ms=145.096 output_verified=true
+
+=== plain-enum-typed-empty 0 ===
+sample=0 ms=114.815
+entry=tests/fixtures/stdlib_compiler_state/plain-enum-typed-empty.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2196 min_ms=114.815 median_ms=114.815 avg_ms=114.815 max_ms=114.815 output_verified=true
+

@@ -1,0 +1,24 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.94s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test imported_generic_record_fields_execute_in_the_importing_module ... FAILED
+
+failures:
+
+---- imported_generic_record_fields_execute_in_the_importing_module stdout ----
+
+thread 'imported_generic_record_fields_execute_in_the_importing_module' (298248) panicked at tests/compiler_generic_types_execution.rs:529:10:
+compile minimal imported multiword field prefix: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 8, column: 66, length: 4, byte_start: Some(332), byte_end: Some(336), source_line: Some("        fifth: 99, fourth: view(data), third: [\"Ω\", \"\"], second: Pair { number: -7, text: \"Ω\" }, first: \"Ω\","), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    imported_generic_record_fields_execute_in_the_importing_module
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 36 filtered out; finished in 1.75s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

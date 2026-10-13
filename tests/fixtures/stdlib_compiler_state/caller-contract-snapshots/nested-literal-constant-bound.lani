@@ -1,0 +1,6 @@
+module checkpoint::constant_bound;
+pub struct Cell<T, const L:usize> { value:T }
+pub trait Rel<A> {}
+pub fn exposed<T,U,const N:usize>(v:T, values:[U;N])->T
+    where T:Rel<Cell<[U;N],2>> { return v; }
+fn main()->i32 { return 0; }

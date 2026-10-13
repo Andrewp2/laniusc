@@ -1,0 +1,6 @@
+error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_foundation/repro_generic_nested_length_inference.lani:1:66
+  |
+1 | fn keep<T, const N: usize>(values: [[T; N]; 2]) -> [[T; N]; 2] { return values; }
+  |                                                                  ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

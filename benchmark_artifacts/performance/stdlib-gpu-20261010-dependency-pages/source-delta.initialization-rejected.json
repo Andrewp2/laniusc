@@ -1,0 +1,127 @@
+{
+  "changed": {
+    "crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs": {
+      "before": "f3407bb8cfa7f9a8b1062a763275b8558ee690cf7b69768137506d5eb3320031",
+      "after": "6100b541fa7fe78879e88ac0e552468f6b8542e20050662dfbf997a2b913be7c"
+    },
+    "crates/laniusc-compiler/src/type_checker/compiler_graph.rs": {
+      "before": "00eab2a814e2d4dde01144189ea863f12ab5b0f413d22b5049544170720c6ff0",
+      "after": "90cb817cbbe5e6df15bd07d94c311464f5d272d85f7e2d22d92e7230de0cc3ca"
+    },
+    "crates/laniusc-compiler/src/type_checker/module_path/buffers.rs": {
+      "before": "93624b16aee575fb1c4693c86ffedd61e7a16d26b705673846e675daa5ad57d2",
+      "after": "5f24725c8140934d118dc30147f3ea8de01cbc1723df476a2d393ddf85ab5d18"
+    },
+    "crates/laniusc-compiler/src/type_checker/module_path/dependency_visibility.rs": {
+      "before": "7178e957a75196debcfc93840370da462412190b3cb3959e383f43778eee782f",
+      "after": "7d31290144beb9e272e0dae79761279aab90f880d6af727ff71ecd5b8ac97a0d"
+    },
+    "crates/laniusc-compiler/src/type_checker/operations/call_argument_matching.rs": {
+      "before": "8acf84c554b26aae4629577a5a97ed3cc7efdd24cfd3766c5fc2b174cea45e73",
+      "after": "afeaaa910735cda1bce302517765083041793fd11bee9026a9bf2306a40fd47d"
+    },
+    "crates/laniusc-compiler/src/type_checker/operations/call_generic_claim_validation.rs": {
+      "before": "fa932542071c3b2d40bbc5acd83e0b39a7c6a8db69977271e307bdcda94d8643",
+      "after": "acc502f5bea3d5ec33602ab2d38b1ae49eb517dd7c1473fdc6259caa2da870e5"
+    },
+    "crates/laniusc-compiler/src/type_checker/operations/dependencies.rs": {
+      "before": "741261cc37caf9fcf908458beb933c3aab6cd8f24e80c8cdfd8dba79d6c3384a",
+      "after": "582532fa8e9f10c8e638dca96e7871c5376f4d4dfbf384abe69b69c552de8433"
+    },
+    "crates/laniusc-compiler/src/type_checker/operations/module_paths.rs": {
+      "before": "2d4b9a357fb563d6c42897ed9757cac1bf4f2cee30c716b2764900b369218c44",
+      "after": "1d28a71044a44752d352769c9bf13228ca6996c9db0b8165f926d57b9cfa1b27"
+    },
+    "crates/laniusc-compiler/src/type_checker/record/dependency_page.rs": {
+      "before": "edbf2a6a46e55318f0eefdf23bfec2625f100855907fa86e8672986deefbe5bd",
+      "after": "603f702e0ddff5e8a33f82332dd48f2083e4efece9f87450240cd27051f52494"
+    },
+    "crates/laniusc-compiler/src/type_checker/resident.rs": {
+      "before": "bc3cac5674321206cadb3ce344bad06d20d4c05af3038c55aae03f7c00b8aa62",
+      "after": "3207d7f148ba22bcfc3aa881ae80caabe7a79a85106787c535b7c0fd4a80c987"
+    },
+    "shaders/parser/tokens/type/path/context/01_local.slang": {
+      "before": "1bca9e42cba82d270e43df756465d7e01ae93bff52c12cbfa68a2e06df7b6319",
+      "after": "37a8b89ae23481a3cd925a008fae85ddb6ff524063d9aa2bb72b35fd24642b24"
+    },
+    "shaders/parser/tokens/type/path/context/02_apply.slang": {
+      "before": "361fc58f65a75ade1e4b67ca3c4d75cf0e1f3576125adf0b018e651a4bcb0b2a",
+      "after": "5d41b1ce0f2f57b6050a859c724dd0e98b3c6b5970a69c1f3a1f9f342ff4b71b"
+    },
+    "shaders/type_checker/calls/03a0_match_arg_params_init.slang": {
+      "before": "914c258678c7bddc794d1cce8fa99046f3259a2869ff919e0850cb56acbe6115",
+      "after": "bc7c510af9224aa3b105755b70ec2ecf1d1abc418745a152647e7cacff5851a7"
+    },
+    "shaders/type_checker/calls/03a1_emit_generic_claims.slang": {
+      "before": "0a85512b82254a3e78f3fbcad75a77361ef30f4faa851b9bf17f46238c0b5fcb",
+      "after": "de8da1c8ab330666a52fcf63e7fa6cdcb5a648f1d023dced3b3145e86af25cc1"
+    },
+    "shaders/type_checker/calls/03a_collect_row_args.slang": {
+      "before": "d200f0959cca7ec913616014cc66bd40fe2368d611a06645965fe34973c0dd6e",
+      "after": "3a6439b1fb6dd38ed8b1b96049e854fcd862868f1d8754f07a733c6bcb7e164b"
+    },
+    "shaders/type_checker/dependencies/00_clear_workspace.slang": {
+      "before": "9fbcf41d0f2eeead50fe90c1a30bce698da4d648ac1373b1cc1859d94ed02dd8",
+      "after": "de1cc2f86a64485f6fc2335457f1e25c6dc8f21d0dd2ca79fd4e2cae6ff84072"
+    },
+    "shaders/type_checker/dependencies/06_resolve_paths.slang": {
+      "before": "3a876d33922ed6ad1755aee2d264c5909aeba0062c0301923e2143cb595e3503",
+      "after": "a93e81cd6eaf64a0439f129ea976b2c1b1f5bdaba47c6cd816f6a7be31bca84d"
+    },
+    "shaders/type_checker/dependencies/11_project_types.slang": {
+      "before": "a011645af88f143cd9c7055467f1dcd160ab86c7e3c165a19ec2584560a99c57",
+      "after": "a1d1dc31bfb93d151de843cbf64f041d67df90a62d322b0b7f9ebdbfdcc06ba0"
+    },
+    "shaders/type_checker/dependencies/record_fields.slang": {
+      "before": "2cab96046992fb9a1e973795004cf381d5066ca7fb1fdd555b2eba9c0ec1258a",
+      "after": "680a8cde4016b030d8f352d94eb29978cbf43544b158d5e2ef34843eedcd66f9"
+    },
+    "shaders/type_checker/modules/01a_clear_path_state.slang": {
+      "before": "0f14c4d38eca4bc3235a88f1e341f041696ddacf9b7f71662e17d2ab12222de6",
+      "after": "2a4613038f758b1b523a0abd5be4678f0a6d9726984796a72e71bd230431fe09"
+    },
+    "shaders/type_checker/modules/10c_resolve_qualified_paths.slang": {
+      "before": "faef0fd8e375ea3247d39250f0610a590dc0f1c5cc18bdefb722ea97aaf0fba8",
+      "after": "12d984b844e84399ffa9fc7246e9e996262272ceabd3bbd9f13968619978131d"
+    },
+    "shaders/type_checker/semantic/artifact/01c_generic_native_words.slang": {
+      "before": "4d4f01dce167543afa3bbaa8ba1be283beb74099a1b67c585ccc1b894e47e34f",
+      "after": "b675333f6ee181fc01d4977d882a76ee684a6201cda133911a870e8d93495cee"
+    },
+    "shaders/type_checker/type/instances/00_clear.slang": {
+      "before": "065b4fadbf0383b60117433b5851df62e09c2e61c3a625d44a0ec5d2a2447b19",
+      "after": "6d4a74ac9644aa11b198fd7ff653f7617f9d3129879d40b32dd3f415c2d8e214"
+    },
+    "shaders/type_checker/type/instances/02b_clear_application_index.slang": {
+      "before": "ae579dd7c52dde565bc0c6d7bfc5f8efdc06d5667cadf019d8347a1e37a3d771",
+      "after": "fbda9c992231ed63a1984eac224bfadaac7e7467bf84431f6d234dc7d1009826"
+    },
+    "shaders/type_checker/type/instances/02e_project_imported_fields.slang": {
+      "before": "2bf4c304f12715ba24f5f8eccaee8f914b3183736049314884e6964d03a8ff31",
+      "after": "092124c7f70f98e0c50fb2b222e7d723ddef828d9c059a4e47a6f04c892fb14a"
+    },
+    "tests/compiler_generic_types_execution.rs": {
+      "before": "502a62b6fe54af30addb5aad99bb9d176f27858aa99eecf861e4d837d7799ae5",
+      "after": "c9ef27cd4df87c6493c0316f79537cd61790f685ccde929359af1caae7b2215a"
+    },
+    "tests/parser_hir_records.rs": {
+      "before": "34bf8e44de92c4251ed1a9afb0eca6d803d93cb5c7c3fef46596a4e095b0ff8a",
+      "after": "0323e38b43d793a09ba7b203815ec5c7e59c5002e5dc3fd01cd151cfcb7aab9a"
+    }
+  },
+  "added": {
+    "shaders/type_checker/calls/parameter_pattern_page.slang": "828557eed2ec38dffa578ac61eb5f845a0ff777d73c796ab770db251036d3838",
+    "shaders/type_checker/dependencies/retained_value_layout.slang": "3d78baf9192e4dc69ea805ee16c43ddb6f3ab82d59bc8121289d2b506574f115",
+    "shaders/type_checker/modules/qualified_type_parent.slang": "efa5da545edf55673a554cb3fa3d1e7318384934a580c696e075b7a425ed672b",
+    "tests/fixtures/stdlib_compiler_state/page-layout-nested-match-before.lani": "a3d8db07bfa0c9eaa15ba38e2c976779a5335389fb9b5bb80586cf68da2bc6bc",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/ambiguous.lani": "6a359459cdf85eaf0757fd022c44bbe048a738f751f36b36e525b278321f973f",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/core/choices.lani": "ab29959a04aff888fa0fafd919b20a806e0ff2df51b3f43b52a4420ac115b0b0",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/core/left.lani": "7272bb0c083876d1dd01fa43ac24020139d97e35fc5b9a6b8ab90eea1b9a7df0",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/core/right.lani": "8025f00432f60360f42c96796c0a7d7ce8f7ee41c3e34c0dfb31ad29f4d1a4ac",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/native/core/left.lani": "0542df389fe2f89b8770c3007ee8ee6789578f664606398cde32930103aff803",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/native/core/right.lani": "f205f27fe99bdca903a59e8725011903425ea79f82942469d2c56234a79f1ae6",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/native/main.lani": "7fa6ad03ceb804725b327cd44034646cec20b60b735f65d7f72928cc31219da4",
+    "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/shadowed.lani": "a443a47dc5d191e947bef6882f0bd35cca3f7c17abeb2308f5422e30f971faa2"
+  },
+  "removed": {}
+}

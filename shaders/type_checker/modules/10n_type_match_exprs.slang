@@ -1,12 +1,14 @@
-// Publish match result types from compact match-arm and dense expression rows.
-
+import primitive_types;
+// Join immutable complete arm types. The first arm's lane owns each match;
+// pending arms defer publication, and complete mismatches are diagnosed.
 import hir_records;
-import atomics;
 import hir_expr_semantics;
 import status;
-
+import type_checker.checked_index_reference;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.scoped_type_equality;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -15,10 +17,17 @@ StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
-StructuredBuffer<uint> decl_type_ref_tag;
-StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
+StructuredBuffer<uint> call_result_instance;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> type_decl_generic_param_count;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
@@ -26,108 +35,20 @@ StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_parent_type_decl;
+StructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
-
 static const uint INVALID = 0xffffffffu;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
-static const uint ERR_ASSIGN_MISMATCH = 3u;
-static const uint ERR_BAD_HIR = 6u;
-static const uint HIR_CALL_EXPR = 19u;
-static const uint HIR_INDEX_EXPR = 20u;
-static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
-static const uint HIR_PATH_EXPR = 33u;
-static const uint HIR_MATCH_EXPR = 34u;
-static const uint HIR_EXPR_NONE = 0u;
-static const uint HIR_EXPR_NAME = 2u;
-static const uint HIR_EXPR_TRUE = 4u;
-static const uint HIR_EXPR_FALSE = 5u;
-static const uint HIR_EXPR_NOT = 6u;
-static const uint HIR_EXPR_EQ = 7u;
-static const uint HIR_EXPR_NE = 8u;
-static const uint HIR_EXPR_LT = 9u;
-static const uint HIR_EXPR_GT = 10u;
-static const uint HIR_EXPR_LE = 11u;
-static const uint HIR_EXPR_GE = 12u;
-static const uint HIR_EXPR_NEG = 13u;
-static const uint HIR_EXPR_ADD = 14u;
-static const uint HIR_EXPR_SUB = 15u;
-static const uint HIR_EXPR_MUL = 16u;
-static const uint HIR_EXPR_AND = 17u;
-static const uint HIR_EXPR_OR = 18u;
-static const uint HIR_EXPR_MOD = 19u;
-static const uint HIR_EXPR_DIV = 20u;
-static const uint HIR_EXPR_BIT_OR = 21u;
-static const uint HIR_EXPR_BIT_XOR = 22u;
-static const uint HIR_EXPR_BIT_AND = 23u;
-static const uint HIR_EXPR_SHL = 24u;
-static const uint HIR_EXPR_SHR = 25u;
 static const uint TY_UNKNOWN = 0u;
-static const uint TY_BOOL = 2u;
-static const uint TY_INT = 3u;
-static const uint TY_FLOAT = 5u;
 static const uint TY_ENUM_BASE = 6144u;
-static const uint TY_GENERIC_BASE = 8192u;
-static const uint TYPE_REF_SCALAR = 1u;
-static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_REF_INSTANCE = 3u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
-
-uint type_code_for_ref(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_SCALAR)
-        return payload;
-    if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload))
-    {
-        uint slot = type_generic_param_slot_by_token[payload];
-        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
-    }
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-    {
-        uint decl_token = type_instance_decl_token[payload];
-        return valid_token(decl_token) ? TY_ENUM_BASE + decl_token : TY_UNKNOWN;
-    }
-    return TY_UNKNOWN;
-}
-
-uint linear_thread_id(uint3 dtid)
-{
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
-}
-
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 uint active_arm_count() { return min(compact_match_arm_count[0u], gParams.n_hir_nodes); }
-bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
-bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
-
-uint visible_type_for_token(uint token)
-{
-    if (!valid_token(token))
-        return TY_UNKNOWN;
-    uint ty = visible_type[token];
-    if (ty != TY_UNKNOWN)
-        return ty;
-    uint decl = visible_decl[token];
-    if (valid_token(decl))
-    {
-        ty = visible_type[decl];
-        if (ty != TY_UNKNOWN)
-            return ty;
-        ty = type_code_for_ref(decl_type_ref_tag[decl], decl_type_ref_payload[decl]);
-        if (ty != TY_UNKNOWN)
-            return ty;
-    }
-    ty = type_code_for_ref(decl_type_ref_tag[token], decl_type_ref_payload[token]);
-    if (ty != TY_UNKNOWN)
-        return ty;
-    return call_return_type[token];
-}
-
+bool valid_hir(uint node) { return node < active_hir_count(); }
+bool valid_token(uint token) { return token < gParams.n_tokens; }
+#include "../inference_expression_reference.slang"
 uint enum_variant_type_for_node(uint node)
 {
     if (!valid_hir(node))
@@ -147,111 +68,96 @@ uint enum_variant_type_for_node(uint node)
     return valid_token(enum_token) ? TY_ENUM_BASE + enum_token : TY_UNKNOWN;
 }
 
-uint expression_token(uint node)
-{
-    if (!valid_hir(node))
-        return INVALID;
-    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
-    {
-        uint member = compact_hir_payload[node].c;
-        return valid_token(member) ? member : INVALID;
-    }
-    uint token = compact_hir_payload[node].d;
-    return valid_token(token) ? token : compact_hir_core[node].token_start;
-}
 
-uint direct_node_type(uint node)
+bool complete_arm_reference(uint node, out uint tag, out uint payload)
 {
-    if (!valid_hir(node))
-        return TY_UNKNOWN;
+    if (inference_value_reference(node, tag, payload, false)) return true;
+    if (!valid_hir(node)) return false;
     HirCore core = compact_hir_core[node];
-    HirPayload payload = compact_hir_payload[node];
-    uint literal = hir_scalar_type_for_hir(core.kind, payload.a);
-    if (literal != TY_UNKNOWN)
-        return literal;
-    if (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||
-        core.kind == HIR_MEMBER_EXPR)
+    HirPayload value = compact_hir_payload[node];
+    uint legacy = 0u;
+    // Unit variants and ordinary monomorphic leaves use existing nominal or
+    // primitive identities. Symbolic generic codes are never concrete leaves.
+    if (core.kind == 22u || core.kind == 33u)
     {
-        uint ty = visible_type_for_token(expression_token(node));
-        return ty != TY_UNKNOWN ? ty : enum_variant_type_for_node(node);
+        legacy = enum_variant_type_for_node(node);
+        if (legacy == 0u && call_inference_state[0u] == 0u)
+        {
+            uint token = value.d < gParams.n_tokens ? value.d : core.token_start;
+            if (valid_token(token)) legacy = visible_type[token];
+        }
     }
-    if (core.kind == HIR_STRUCT_LITERAL_EXPR)
-        return visible_type_for_token(core.token_start);
-    if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_MATCH_EXPR)
-        return valid_token(core.token_start) ? call_return_type[core.token_start] : TY_UNKNOWN;
-    if (core.kind == HIR_CALL_EXPR)
+    else if (core.kind == 28u && valid_token(core.token_start))
+        legacy = visible_type[core.token_start];
+    else if (core.kind == 19u && valid_hir(value.a))
     {
-        uint callee = payload.a;
-        uint callee_token = valid_hir(callee) ? expression_token(callee) : INVALID;
-        uint return_ty = valid_token(callee_token)
-            ? call_return_type[callee_token]
-            : TY_UNKNOWN;
-        if (return_ty != TY_UNKNOWN)
-            return return_ty;
-        return valid_token(core.token_start)
-            ? call_return_type[core.token_start]
-            : TY_UNKNOWN;
+        HirCore callee = compact_hir_core[value.a];
+        HirPayload callee_value = compact_hir_payload[value.a];
+        uint token = callee.kind == 21u ? callee_value.c : callee_value.d;
+        if (!valid_token(token)) token = callee.token_start;
+        if (!valid_token(token)) return false;
+        uint declaration = call_fn_index[token];
+        if (valid_token(declaration) && type_decl_generic_param_count[declaration] != 0u)
+            return false;
+        legacy = call_return_type[token];
+        if (!scalar_is_known(legacy)) return false;
     }
-    return TY_UNKNOWN;
+    if (legacy == 0u || legacy >= 8192u || (legacy >= 128u && legacy < 4096u)) return false;
+    tag = 1u; payload = legacy; return true;
 }
-
-uint expression_type(uint node)
+uint legacy_type_code(uint tag, uint payload)
 {
-    uint direct = direct_node_type(node);
-    if (direct != TY_UNKNOWN || !valid_hir(node))
-        return direct;
-    HirPayload payload = compact_hir_payload[node];
-    uint form = payload.a;
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE || form == HIR_EXPR_NOT ||
-        form == HIR_EXPR_EQ || form == HIR_EXPR_NE || form == HIR_EXPR_LT ||
-        form == HIR_EXPR_GT || form == HIR_EXPR_LE || form == HIR_EXPR_GE ||
-        form == HIR_EXPR_AND || form == HIR_EXPR_OR)
-        return TY_BOOL;
-    if (form == HIR_EXPR_NAME)
-        return visible_type_for_token(expression_token(node));
-    if (form == HIR_EXPR_NEG || form == HIR_EXPR_ADD || form == HIR_EXPR_SUB ||
-        form == HIR_EXPR_MUL || form == HIR_EXPR_DIV)
+    if (tag == 1u) return payload;
+    if (tag == 2u && valid_token(payload))
     {
-        uint left = direct_node_type(payload.b);
-        uint right = direct_node_type(payload.c);
-        return left == TY_FLOAT || right == TY_FLOAT ? TY_FLOAT : TY_INT;
+        uint slot = type_generic_param_slot_by_token[payload];
+        return slot < 32u ? 8192u + slot : 0u;
     }
-    if (form == HIR_EXPR_MOD || form == HIR_EXPR_BIT_OR || form == HIR_EXPR_BIT_XOR ||
-        form == HIR_EXPR_BIT_AND || form == HIR_EXPR_SHL || form == HIR_EXPR_SHR)
-        return TY_INT;
-    return TY_UNKNOWN;
+    if (tag != 3u || payload >= checked_type_capacity()) return 0u;
+    if ((type_instance_kind[payload] == 2u || type_instance_kind[payload] == 3u) &&
+        type_instance_elem_ref_tag[payload] == 1u && type_instance_elem_ref_payload[payload] < 128u)
+        return 128u + type_instance_elem_ref_payload[payload];
+    uint declaration = type_instance_decl_token[payload];
+    return valid_token(declaration) ? visible_type[declaration] : 0u;
 }
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint arm_i = linear_thread_id(dtid);
-    if (arm_i >= active_arm_count())
-        return;
-    HirMatchArm arm = compact_match_arms[arm_i];
-    if (!valid_hir(arm.owner) || compact_hir_core[arm.owner].kind != HIR_MATCH_EXPR ||
-        !valid_hir(arm.result))
+    uint first = dtid.x + dtid.y * 16776960u;
+    if (first >= active_arm_count()) return;
+    HirMatchArm initial = compact_match_arms[first];
+    if (!valid_hir(initial.owner) || compact_hir_core[initial.owner].kind != 34u) return;
+    HirPayload match_value = compact_hir_payload[initial.owner];
+    if (match_value.b != first) return;
+    uint match_token = compact_hir_core[initial.owner].token_start;
+    if (!valid_token(match_token) || match_value.c == 0u ||
+        match_value.c > active_arm_count() - first)
+    { record_min_token_error(status, valid_token(match_token) ? match_token : 0u, 6u, 34u); return; }
+    uint tag = 0u; uint payload = INVALID;
+    for (uint ordinal = 0u; ordinal < match_value.c; ordinal++)
     {
-        uint token = valid_hir(arm.owner) ? compact_hir_core[arm.owner].token_start : 0u;
-        record_min_token_error(status, valid_token(token) ? token : 0u, ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
+        HirMatchArm arm = compact_match_arms[first + ordinal];
+        uint next_tag; uint next_payload;
+        if (arm.owner != initial.owner || !valid_hir(arm.result))
+        { record_min_token_error(status, match_token, 6u, 34u); return; }
+        uint result_token = compact_hir_core[arm.result].token_start;
+        if (!complete_arm_reference(arm.result, next_tag, next_payload))
+        {
+            if (call_inference_state[0u] == 0u)
+                record_min_token_error(status, valid_token(result_token) ? result_token : match_token, 6u, 0x474e0003u);
+            return;
+        }
+        if (ordinal == 0u) { tag = next_tag; payload = next_payload; }
+        else if (!scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+            tag, payload, INVALID, next_tag, next_payload, INVALID,
+            checked_type_capacity(), gParams.n_tokens))
+        {
+            if (call_inference_state[0u] == 0u) record_min_token_error(status, result_token, 3u, 0u);
+            return;
+        }
     }
-    uint match_token = compact_hir_core[arm.owner].token_start;
-    uint result_token = compact_hir_core[arm.result].token_start;
-    if (!valid_token(match_token) || !valid_token(result_token))
-    {
-        record_min_token_error(status, valid_token(match_token) ? match_token : 0u,
-                               ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
-    }
-    uint arm_ty = expression_type(arm.result);
-    if (arm_ty == TY_UNKNOWN)
-    {
-        record_min_token_error(status, result_token, ERR_BAD_HIR, HIR_MATCH_EXPR);
-        return;
-    }
-    uint prior = atomic_u32_compare_exchange(call_return_type, match_token, TY_UNKNOWN, arm_ty);
-    if (prior != TY_UNKNOWN && prior != arm_ty)
-        record_min_token_error(status, result_token, ERR_ASSIGN_MISMATCH, arm_ty);
+    decl_type_ref_tag[match_token] = tag;
+    decl_type_ref_payload[match_token] = payload;
+    call_return_type[match_token] = legacy_type_code(tag, payload);
 }

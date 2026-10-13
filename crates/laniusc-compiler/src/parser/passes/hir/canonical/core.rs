@@ -95,8 +95,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 b.hir_type_len_token.as_entire_binding(),
             ),
             (
-                "hir_type_len_value".into(),
-                b.hir_type_len_value.as_entire_binding(),
+                "hir_type_len_operand".into(),
+                b.hir_type_len_operand.as_entire_binding(),
             ),
             (
                 "hir_fn_return_type_node".into(),

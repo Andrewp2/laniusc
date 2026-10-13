@@ -1,0 +1,5 @@
+module core::maybe_payload;
+pub enum Maybe<T> { Some(T), None }
+pub fn unwrap_or<T>(value: Maybe<T>, fallback: T) -> T {
+    return match (value) { Some(inner) -> inner, None -> fallback };
+}

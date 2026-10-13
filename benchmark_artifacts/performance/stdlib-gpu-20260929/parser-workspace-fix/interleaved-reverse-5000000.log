@@ -1,0 +1,20 @@
+fixed: primed all source shapes; b6e58733a44b8b7d
+previous: primed all source shapes; 42d86cd21a5a6cc0
+pair 00 seed 22: previous 186.412 ms, fixed 198.083 ms
+pair 01 seed 21: previous 200.483 ms, fixed 194.777 ms
+pair 02 seed 20: previous 196.708 ms, fixed 186.160 ms
+pair 03 seed 22: previous 218.449 ms, fixed 207.431 ms
+pair 04 seed 20: previous 200.043 ms, fixed 223.325 ms
+pair 05 seed 22: previous 192.017 ms, fixed 195.430 ms
+pair 06 seed 21: previous 204.005 ms, fixed 218.757 ms
+pair 07 seed 21: previous 204.651 ms, fixed 195.896 ms
+pair 08 seed 20: previous 196.163 ms, fixed 193.200 ms
+pair 09 seed 22: previous 199.434 ms, fixed 193.718 ms
+pair 10 seed 21: previous 201.469 ms, fixed 208.773 ms
+pair 11 seed 20: previous 197.424 ms, fixed 192.056 ms
+pair 12 seed 22: previous 234.918 ms, fixed 202.235 ms
+pair 13 seed 21: previous 221.619 ms, fixed 207.511 ms
+pair 14 seed 20: previous 195.030 ms, fixed 201.404 ms
+fixed median: 198.083 ms
+previous median: 200.043 ms
+Median paired change: -2.72%; all 30 executables passed

@@ -3,6 +3,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -73,7 +74,7 @@ bool matches_use(uint destination, uint value, uint user, uint total)
 bool active_call_argument(uint row, SemanticLirCallArg argument,
     uint node_total)
 {
-    if (argument.call_instruction >= node_total ||
+    if (!opt_ir_node_is_executable(argument.call_instruction, node_total) ||
         !semantic_lir_is_call(opt_ir_op(
             opt_ir_core[argument.call_instruction])))
         return false;
@@ -87,7 +88,9 @@ bool active_call_argument(uint row, SemanticLirCallArg argument,
 bool active_aggregate_element(SemanticLirAggregateElement element,
     uint node_total)
 {
-    return element.aggregate_instruction < node_total &&
+    return opt_ir_node_is_executable(element.aggregate_instruction, node_total) &&
+        opt_ir_op(opt_ir_core[element.aggregate_instruction]) ==
+            SEMANTIC_LIR_OP_AGGREGATE_NEW &&
         element.value_instruction < node_total;
 }
 
@@ -137,7 +140,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? opt_ir_ssa_node_use_prefix[row + 1u] : fixed_total;
         uint expected = 0u;
         bool valid = start <= end && end <= fixed_total;
-        if (!opt_ir_is_declaration_state_node(core))
+        if (opt_ir_node_is_executable(row, node_total) &&
+            !opt_ir_is_declaration_state_node(core))
         {
             for (uint ordinal = 0u; ordinal < 3u; ++ordinal)
             {

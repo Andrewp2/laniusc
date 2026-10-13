@@ -1,0 +1,26 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.49s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 2 tests
+test enum_constructor_literal_imported_payload_executes ... 
+thread 'enum_constructor_literal_imported_payload_executes' (842978) panicked at tests/compiler_generic_types_execution.rs:131:29:
+imported enum literal payload: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 3, column: 50, length: 4, byte_start: Some(89), byte_end: Some(93), source_line: Some("    let packet: core::option::Option<[i32; 2]> = core::option::Some([40, 2]);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test enum_constructor_literal_local_payload_executes ... 
+thread 'enum_constructor_literal_local_payload_executes' (843024) panicked at tests/compiler_generic_types_execution.rs:131:29:
+local enum literal payload: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0005", title: "unresolved identifier", category: "name resolution", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0005", message: "unresolved identifier", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_enum_literal_payload_842977_1.lani", line: 3, column: 36, length: 4, byte_start: Some(90), byte_end: Some(94), source_line: Some("    let packet: Packet<[i32; 2]> = Data([40, 2]);"), message: "not found in this scope" }), help: None, notes: ["declare the value before using it or import its defining module"] })
+FAILED
+
+failures:
+
+failures:
+    enum_constructor_literal_imported_payload_executes
+    enum_constructor_literal_local_payload_executes
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 141 filtered out; finished in 2.04s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

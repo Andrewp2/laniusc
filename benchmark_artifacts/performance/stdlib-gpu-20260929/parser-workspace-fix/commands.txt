@@ -1,0 +1,39 @@
+Run from /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc.
+Shared release compiler: target/stdlib-perf/build/release/laniusc.
+Shared shader link: target/stdlib-perf/build/laniusc-shader-artifacts/release/shaders.
+Preserve shader sets under target/stdlib-perf/results before measuring.
+
+Previous digest 42d86cd21a5a6cc0: pre-parser-shaders.
+Fixed digest b6e58733a44b8b7d: current-shaders.
+Both shader versions use the identical latest Rust binary with appended GPU-private uniform fields.
+Earlier shaders ignore those fields. No source or binary build runs during measurements.
+
+Sequential checks (select previous or fixed shader link before each command):
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/size-sweep/measure_lanius.py 4000000 pre-parser-control
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/size-sweep/measure_lanius.py 4000000 parser-fixed
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/size-sweep/measure_lanius.py 4000000 pre-parser-repeat
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/size-sweep/measure_lanius.py 4000000 parser-fixed-repeat
+
+Recorded interleaved checks before the driver gained named snapshot flags
+(driver selects, primes, and holds each version; restores current link):
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 4000000 interleaved
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 5000000 interleaved-reverse reverse
+
+Reproduce those checks with the updated driver and preserved parser snapshot:
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 4000000 interleaved --previous-shaders pre-parser-shaders --fixed-shaders parser-workspace-validated-shaders
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 5000000 interleaved-reverse --reverse --previous-shaders pre-parser-shaders --fixed-shaders parser-workspace-validated-shaders
+
+Each sequential invocation validates 15 native outputs; each paired invocation validates 30.
+All 120 measured outputs passed exact stdout and zero exit status. Native hashes match per seed.
+Project compiled-unit cache cleared before every timed request; resource creation checked as zero.
+Three distinct generated programs (seeds 20,21,22), five repetitions per version; primer seed 19.
+Profile mixed-function-sizes. Source generation, daemon startup, priming, and execution excluded from timing.
+Timed interval includes source loading, compilation, output writing, and daemon request round trip.
+
+Focused correctness (run before timing; same shared target and current shaders):
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test stdlib_foundation_execution -- --test-threads=1
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test lexer_parser_feature_flags --test parser_nonresident --test stdlib_generic_enum_declaration_execution --test stdlib_option_bool_execution -- --test-threads=1
+
+Negative control: the current stdlib_foundation_execution test binary with previous shaders fails
+stdlib_helpers_execute_after_parser_workspace_shrinks at halfword_window_total with LNC0016.
+Logs retained under tests/fixtures/stdlib_compiler_state/. Ignored dependencies 70 and 72 remain open.

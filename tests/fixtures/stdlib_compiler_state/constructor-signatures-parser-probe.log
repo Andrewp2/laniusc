@@ -1,0 +1,22 @@
+enum-nominal-payload-one exit=1
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/enum-nominal-payload-one.lani: error[LNC0016]: syntax error
+ --> tests/fixtures/stdlib_compiler_state/enum-nominal-payload-one.lani:1:55
+  |
+1 | struct Cell<T> { value: T } enum Packet<T> { Data(Cell<T>), Missing } fn main() -> i32 { return 0; }
+  |                                                       ^ expected one of `)`, `=`, `,`, `]`, `;`, keyword `where`, `:`, `{`, `}`, `<`, `>`, or keyword `for`, found `<`
+
+enum-nominal-payload-concrete exit=1
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/enum-nominal-payload-concrete.lani: error[LNC0016]: syntax error
+ --> tests/fixtures/stdlib_compiler_state/enum-nominal-payload-concrete.lani:1:52
+  |
+1 | struct Cell<T> { value: T } enum Packet { Data(Cell<i32>), Missing } fn main() -> i32 { return 0; }
+  |                                                    ^ expected one of `)`, `=`, `,`, `]`, `;`, keyword `where`, `:`, `{`, `}`, `<`, `>`, or keyword `for`, found `<`
+
+enum-nominal-payload-array exit=0
+sample=0 ms=127.193
+entry=tests/fixtures/stdlib_compiler_state/enum-nominal-payload-array.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2121 min_ms=127.193 median_ms=127.193 avg_ms=127.193 max_ms=127.193 output_verified=true
+
+enum-payload-array-control exit=0
+sample=0 ms=164.082
+entry=tests/fixtures/stdlib_compiler_state/enum-payload-array-control.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2121 min_ms=164.082 median_ms=164.082 avg_ms=164.082 max_ms=164.082 output_verified=true
+

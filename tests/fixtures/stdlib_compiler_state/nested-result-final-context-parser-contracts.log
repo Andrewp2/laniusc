@@ -1,0 +1,9 @@
+
+running 4 tests
+test parser_compact_hir_accepts_generic_enum_match_payload_expressions ... ok
+test parser_compact_hir_match_arms_use_dense_references_and_packed_payloads ... ok
+test parser_compact_imported_result_patterns_keep_payload_arity ... ok
+test parser_compact_nested_array_literals_keep_each_owner_range_contiguous ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 237 filtered out; finished in 0.94s
+

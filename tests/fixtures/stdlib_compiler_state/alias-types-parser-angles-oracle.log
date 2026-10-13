@@ -1,0 +1,16 @@
+
+running 1 test
+test parser_hir_nested_constant_alias_applications_preserve_closing_angles ... CPU oracle: Err(Ll1ParseError { pos: 47, code: NoPrediction, detail: 45 }); table stream depth: -11; spaced: Ll1AcceptResult { accepted: false, error_pos: 0, error_code: 4, detail: 4294967285, steps: 221, emit_len: 0 }
+
+thread 'parser_hir_nested_constant_alias_applications_preserve_closing_angles' (35946) panicked at tests/parser_hir_records.rs:6237:9:
+nested constant application: Ll1AcceptResult { accepted: false, error_pos: 0, error_code: 4, detail: 4294967285, steps: 221, emit_len: 0 }; semantic kinds: [0, 103, 153, 133, 155, 136, 92, 1, 108, 80, 134, 110, 85, 80, 87, 1, 86, 165, 103, 153, 133, 155, 134, 110, 144, 80, 165, 67, 1, 76, 79, 108, 80, 131, 80, 131, 80, 135, 2, 2151809156, 77, 112, 80, 149, 69, 29, 7, 1, 62, 30, 2, 65, 168, 150, 0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    parser_hir_nested_constant_alias_applications_preserve_closing_angles
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 255 filtered out; finished in 1.06s
+

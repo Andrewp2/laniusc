@@ -1,3 +1,7 @@
+import semantic_interface_layout;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.checked_index_reference;
 // HIR member field result projection.
 //
 // The preceding member-receiver pass records the initial receiver type for
@@ -8,7 +12,9 @@
 // depth without token rescans or fixed retry counts.
 
 import hir_records;
+import status;
 import type_checker.type.instances.struct_field_lookup;
+import type_checker.dependencies.record_fields;
 
 struct Params
 {
@@ -28,18 +34,10 @@ StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_field_lookup_state;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> name_hash_lo;
+StructuredBuffer<uint> name_hash_hi;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -47,12 +45,15 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> member_next_node;
+StructuredBuffer<uint> member_chain_root_ref_tag;
+StructuredBuffer<uint> member_chain_root_ref_payload;
 
 RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> member_result_field_node;
+RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -65,6 +66,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -121,7 +123,7 @@ uint scalar_struct_decl_token(uint payload)
 
 uint receiver_decl_token(uint tag, uint payload)
 {
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+    if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity())
     {
         uint decl_token = type_instance_decl_token[payload];
         return valid_token(decl_token) ? decl_token : INVALID;
@@ -187,45 +189,6 @@ uint type_head_token_for_compact_node(uint type_node)
     return valid_token(owner) ? owner : INVALID;
 }
 
-uint instance_arg_ref_index(uint instance, uint slot)
-{
-    uint start = type_instance_arg_start[instance];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint instance_arg_row_ref_index(uint instance, uint slot)
-{
-    uint start = type_instance_arg_row_start[instance];
-    uint ref_i = start == INVALID ? INVALID : start + slot;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool instance_arg_ref(uint instance, uint slot, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(instance) || slot >= type_instance_arg_count[instance])
-        return false;
-
-    uint row_i = instance_arg_row_ref_index(instance, slot);
-    if (row_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_i];
-        payload = type_instance_arg_row_ref_payload[row_i];
-        if (tag != TYPE_REF_INVALID)
-            return payload != INVALID;
-    }
-
-    uint ref_i = instance_arg_ref_index(instance, slot);
-    if (ref_i == INVALID)
-        return false;
-    tag = type_instance_arg_ref_tag[ref_i];
-    payload = type_instance_arg_ref_payload[ref_i];
-    return tag != TYPE_REF_INVALID && payload != INVALID;
-}
-
 bool member_expr_is_call_callee(uint node)
 {
     if (!valid_node(node) || compact_hir_core[node].kind != HIR_MEMBER_EXPR)
@@ -238,70 +201,124 @@ bool member_expr_is_call_callee(uint node)
 
 void publish_member_field_chain_for_root(uint member_node)
 {
-    if (!valid_node(member_node) || compact_hir_core[member_node].kind != HIR_MEMBER_EXPR)
+    if (!valid_node(member_node) || (compact_hir_core[member_node].kind != HIR_MEMBER_EXPR &&
+        compact_hir_core[member_node].kind != HIR_INDEX_EXPR))
         return;
     if (member_expr_is_call_callee(member_node))
         return;
 
     uint receiver_node = compact_hir_payload[member_node].b;
-    if (valid_node(receiver_node) && compact_hir_core[receiver_node].kind == HIR_MEMBER_EXPR)
+    if (valid_node(receiver_node) && (compact_hir_core[receiver_node].kind == HIR_MEMBER_EXPR ||
+        compact_hir_core[receiver_node].kind == HIR_INDEX_EXPR))
         return;
-
-    uint first_token = compact_hir_payload[member_node].c;
-    if (!valid_token(first_token))
-        return;
-    uint receiver_tag = member_result_ref_tag[first_token];
-    uint receiver_payload = member_result_ref_payload[first_token];
+    uint receiver_tag = member_chain_root_ref_tag[member_node];
+    uint receiver_payload = member_chain_root_ref_payload[member_node];
     if (receiver_tag == TYPE_REF_INVALID || receiver_payload == INVALID)
         return;
 
     uint steps = 0u;
     while (valid_node(member_node) &&
-           compact_hir_core[member_node].kind == HIR_MEMBER_EXPR &&
            steps < active_hir_node_count())
     {
+        uint kind = compact_hir_core[member_node].kind;
+        if (kind == HIR_INDEX_EXPR)
+        {
+            // Index lookup follows reference layers in the carried receiver,
+            // without replacing the source value's complete reference type.
+            uint instance;
+            if (!checked_index_container(receiver_tag, receiver_payload,
+                type_instance_kind, type_instance_elem_ref_tag,
+                type_instance_elem_ref_payload, instance)) return;
+            receiver_tag = type_instance_elem_ref_tag[instance];
+            receiver_payload = type_instance_elem_ref_payload[instance];
+            member_node = member_next_node[member_node];
+            steps += 1u;
+            continue;
+        }
+        if (kind != HIR_MEMBER_EXPR) return;
         uint member_token = compact_hir_payload[member_node].c;
         if (!valid_token(member_token) || member_expr_is_call_callee(member_node))
             return;
 
-        uint decl_token = receiver_decl_token(receiver_tag, receiver_payload);
-        if (!valid_token(decl_token))
-            return;
+        // Receiver initialization is a traversal input, not the field's
+        // result type. A failed lookup must not leave the receiver masquerading
+        // as a selected value in return or argument checking.
+        member_result_ref_tag[member_token] = TYPE_REF_INVALID;
+        member_result_ref_payload[member_token] = INVALID;
+        member_result_context_instance[member_token] = INVALID;
+        member_result_field_ordinal[member_token] = INVALID;
+        member_result_field_node[member_token] = INVALID;
 
-        uint struct_node = struct_node_for_decl_token(decl_token);
-        uint field_row = field_row_for_member(struct_node, member_token);
-        if (!valid_compact_field(field_row))
-            return;
-
-        HirField field = compact_fields[field_row];
-        uint type_token = type_head_token_for_compact_node(field.value);
-        if (!valid_token(type_token))
-            return;
-
-        uint tag = type_expr_ref_tag[type_token];
-        uint payload = type_expr_ref_payload[type_token];
-        if (tag == TYPE_REF_INVALID || payload == INVALID)
-            return;
-
-        uint context_instance = receiver_tag == TYPE_REF_INSTANCE && valid_token(receiver_payload)
+        // Member selection automatically dereferences references. The value
+        // still carries its reference type; only lookup uses the referent.
+        for (uint depth = 0u; depth < 64u && receiver_tag == TYPE_REF_INSTANCE &&
+             receiver_payload < checked_type_capacity() &&
+             type_instance_kind[receiver_payload] == 4u; depth++)
+        {
+            uint referent = receiver_payload;
+            receiver_tag = type_instance_elem_ref_tag[referent];
+            receiver_payload = type_instance_elem_ref_payload[referent];
+        }
+        uint context_instance = receiver_tag == TYPE_REF_INSTANCE && (receiver_payload < checked_type_capacity())
             ? receiver_payload
             : INVALID;
-        if (tag == TYPE_REF_GENERIC_PARAM)
+        uint tag = TYPE_REF_INVALID; uint payload = INVALID;
+        uint ordinal = INVALID; uint field_token = INVALID;
+        bool already_projected = false;
+        uint decl_token = receiver_decl_token(receiver_tag, receiver_payload);
+        if (valid_token(decl_token))
         {
-            if (!valid_token(payload))
+            uint struct_node = struct_node_for_decl_token(decl_token);
+            uint field_row = field_row_for_member(struct_node, member_token);
+            if (!valid_compact_field(field_row))
+            { record_min_token_error(status, member_token, 8u, 0u); return; }
+            HirField field = compact_fields[field_row];
+            uint type_token = type_head_token_for_compact_node(field.value);
+            if (!valid_token(type_token))
                 return;
-            uint slot = type_generic_param_slot_by_token[payload];
-            if (slot == INVALID || context_instance == INVALID ||
-                !instance_arg_ref(context_instance, slot, tag, payload))
+            tag = type_expr_ref_tag[type_token];
+            payload = type_expr_ref_payload[type_token];
+            if (tag == TYPE_REF_GENERIC_PARAM)
+            {
+                if (!valid_token(payload)) return;
+                uint slot = type_generic_param_slot_by_token[payload];
+                if (slot == INVALID || context_instance == INVALID ||
+                    !ScopedCheckedTypeGraph.environment_argument(context_instance, slot, tag, payload)) return;
+                already_projected = true;
+            }
+            ordinal = ordinal_for_field_row(struct_node, field_row);
+            field_token = field.name_token;
+        }
+        else
+        {
+            uint name = name_id_by_token[member_token];
+            if (context_instance == INVALID || name >= gParams.n_tokens) return;
+            ordinal = imported_record_field_ordinal(context_instance,
+                name_hash_lo[name], name_hash_hi[name]);
+            if (ordinal == INVALID)
+            {
+                if (imported_record_fields_available(context_instance))
+                    record_min_token_error(status, member_token, 8u, 0u);
                 return;
+            }
+            if (!imported_record_field_type(context_instance, ordinal, tag, payload)) return;
+            already_projected = true;
+        }
+
+        if (tag == TYPE_REF_INVALID || payload == INVALID) return;
+
+        if (tag == TYPE_REF_INSTANCE && !checked_scoped_reference(
+            tag, payload, already_projected ? INVALID : context_instance, gParams.n_tokens, tag, payload))
+        {
+            record_min_token_error(status, member_token, 3u, 0u);
+            return;
         }
 
         member_result_context_instance[member_token] = context_instance;
-        member_result_field_ordinal[member_token] =
-            ordinal_for_field_row(struct_node, field_row);
+        member_result_field_ordinal[member_token] = ordinal;
         // The backend-facing artifact carries a stable source-token identity,
         // never a raw parser row.
-        member_result_field_node[member_token] = field.name_token;
+        member_result_field_node[member_token] = field_token;
         member_result_ref_tag[member_token] = tag;
         member_result_ref_payload[member_token] = payload;
 

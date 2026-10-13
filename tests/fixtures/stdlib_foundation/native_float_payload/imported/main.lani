@@ -1,0 +1,25 @@
+module app::main;
+import core::float_relay;
+struct Packet<T> { first: i32, values: T, last: i32 }
+fn main() -> i32 {
+    let a: f64 = 1.0000000000000002;
+    let b: f64 = -1.0e300;
+    let c: f64 = 4.9406564584124654e-324;
+    let d: f32 = 1.00000011920928955078125;
+    let e: f32 = -3.5;
+    let seventh: f64 = core::float_relay::seventh(b, c, b, c, b, c, a, b);
+    let eighth: f64 = core::float_relay::eighth(a, c, a, c, a, c, a, b);
+    if (seventh != a || seventh == 1.0 || eighth != b) { return 1; }
+    if (core::float_relay::seventh(e, e, e, e, e, e, d, e) != d || core::float_relay::eighth(d, d, d, d, d, d, d, e) != e) { return 2; }
+    if (core::float_relay::scalar(b, d, c, e, b, d, a, e) != a || core::float_relay::small(b, d, c, d, b, d, a, e) != e) { return 3; }
+    let left_values: [f64; 2] = [a, -0.0];
+    let right_values: [f64; 2] = [b, c];
+    let left: Packet<[f64; 2]> = Packet { first: 17, values: left_values, last: 91 };
+    let right: Packet<[f64; 2]> = Packet { first: 23, values: right_values, last: 83 };
+    let copied: Packet<[f64; 2]> = core::float_relay::eighth(left, left, left, left, left, left, left, right);
+    right.values[0] = a;
+    if (copied.first != 23 || copied.last != 83 || copied.values[0] != b || copied.values[1] != c) { return 4; }
+    // All named values are live across the preceding calls and aggregate return.
+    if (a != 1.0000000000000002 || b != -1.0e300 || c <= 0.0 || d != 1.00000011920928955078125 || e != -3.5 || left.first != 17 || left.last != 91) { return 5; }
+    return 0;
+}

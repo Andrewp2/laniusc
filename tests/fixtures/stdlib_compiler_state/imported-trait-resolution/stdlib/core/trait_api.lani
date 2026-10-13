@@ -1,0 +1,17 @@
+module core::trait_api;
+pub struct Cell<T> { value: T }
+pub trait Rel<T> {}
+pub trait Echo<T> { pub fn echo(self, value: T) -> T; }
+pub trait Flow<A, B> {
+    pub fn copy(self, value: A) -> A;
+    pub fn pack(self, value: Cell<A>) -> Cell<B>;
+    pub fn inspect(&self, value: B) -> bool;
+    fn empty(self, value: [Cell<A>; 0]) -> [Cell<A>; 0];
+    pub fn view(self, value: [Cell<i32>]) -> [Cell<i32>];
+    pub fn borrow(self, value: &Cell<i32>) -> &Cell<i32>;
+}
+pub impl<T> Cell<T> {
+    pub fn reference(&self) -> &Cell<T> { return self; }
+}
+pub trait Sized<const N: usize> {}
+pub trait Wide<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31> {}

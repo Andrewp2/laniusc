@@ -1,0 +1,17 @@
+
+running 3 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order ... 
+thread 'compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order' (118099) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3608:31:
+reexported alias targets: GpuFrontend("semantic-interface readback failed: semantic-interface GPU export failed: status=0x00002000, detail=1, name_id=4294967295, name_len=4294967295")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+failures:
+
+failures:
+    compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 633 filtered out; finished in 62.76s
+

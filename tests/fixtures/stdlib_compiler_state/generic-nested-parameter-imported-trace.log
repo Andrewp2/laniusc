@@ -1,0 +1,25 @@
+    Finished `release` profile [optimized] target(s) in 0.21s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test imported_nested_parameter_inference_preserves_copies_and_aliases ... [typecheck.call_inference] round=0 changed=1
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=4
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=60 code=GenericInstantiationBoundary detail=4
+
+thread 'imported_nested_parameter_inference_preserves_copies_and_aliases' (601093) panicked at tests/compiler_generic_types_execution.rs:723:10:
+compile complete imported nested parameter constraints: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 9, column: 9, length: 4, byte_start: Some(183), byte_end: Some(187), source_line: Some("    if (core::relay::read_nested(core::relay::wrap(core::relay::wrap(42))) != 42) { return 1; }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_nested_parameter_inference_preserves_copies_and_aliases
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 1.74s
+
+error: test failed, to rerun pass `-p laniusc --test compiler_generic_types_execution`

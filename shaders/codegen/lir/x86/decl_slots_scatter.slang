@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
+import codegen.lir.x86.parameter_values;
 import gpu_index;
 
 struct Params { uint token_capacity; uint parameter_capacity; uint local_capacity; uint function_capacity; };
@@ -11,6 +12,9 @@ StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 RWStructuredBuffer<uint> x86_decl_location_by_token;
+RWStructuredBuffer<uint4> x86_place_storage_by_token;
+StructuredBuffer<uint> x86_place_words_by_local;
+StructuredBuffer<uint> x86_place_prefix_by_local;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 StructuredBuffer<X86FunctionRegisterAnalysis>
     x86_register_analysis_by_function;
@@ -77,7 +81,8 @@ uint assign_declaration(uint function_id, uint ordinal, uint type_id,
 {
     // Incoming stack arguments must not occupy a still-live ABI input
     // register while the prologue materializes register arguments.
-    uint location = stack_parameter ? X86_LOCATION_INVALID :
+    uint location = stack_parameter || semantic_place_storage_by_token[declaration_token].x != 0u
+        ? X86_LOCATION_INVALID :
         register_location(function_id, ordinal, type_id,
             declaration_token, incoming_register);
     if (location != X86_LOCATION_INVALID) return location;
@@ -86,15 +91,16 @@ uint assign_declaration(uint function_id, uint ordinal, uint type_id,
     // live declarations may still leave holes for earlier register-resident
     // declarations.
     uint slot = x86_stack_slot_count_by_function[function_id] +
-        ordinal * 2u;
+        x86_declaration_slot_offset(ordinal);
     uint ignored;
     InterlockedMax(x86_frame_slot_count_by_function[function_id],
-        slot + 2u, ignored);
+        slot + x86_declaration_slot_offset(1u), ignored);
     return slot;
 }
 
 bool local_needs_home(uint declaration_token)
 {
+    if (semantic_place_storage_by_token[declaration_token].x != 0u) return true;
     X86DeclarationAnalysis analysis =
         x86_decl_analysis_by_token[declaration_token];
     uint definition_live = 0u;
@@ -113,6 +119,37 @@ bool function_has_pair_parameter(SemanticLirFunction function)
     return false;
 }
 
+uint local_payload_words(SemanticLirFunction function)
+{
+    if (function.local_count == 0u) return 0u;
+    uint last = function.local_start + function.local_count - 1u;
+    return x86_place_prefix_by_local[last] + x86_place_words_by_local[last] -
+        x86_place_prefix_by_local[function.local_start];
+}
+
+uint payload_base(uint function_id, SemanticLirFunction function)
+{
+    return x86_stack_slot_count_by_function[function_id] +
+        x86_declaration_slot_count(function.param_count, function.local_count);
+}
+
+void publish_place(uint token, uint slot)
+{
+    uint4 storage = semantic_place_storage_by_token[token];
+    if (storage.x != 0u)
+    {
+        // All homes use at least native-word alignment, and machine frame
+        // displacements must fit signed 32 bits. Invalid geometry is retained
+        // as an invalid place and rejected by target validation.
+        bool valid = storage.x <= 3u && storage.z != 0u && storage.z <= 8u &&
+            (storage.z & (storage.z - 1u)) == 0u &&
+            (storage.x == 3u || (storage.y != 0u && storage.y <= 3u)) &&
+            slot < 0x0fffffffu && max(storage.y, 1u) <= 0x0fffffffu - slot;
+        x86_place_storage_by_token[token] = uint4(valid ? slot : X86_LOCATION_INVALID,
+            storage.y, storage.x, 0u);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -127,6 +164,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
             SemanticLirFunction function =
                 semantic_lir_functions[param.function_id];
             bool pair_parameters = function_has_pair_parameter(function);
+            uint copied_parameters = x86_parameter_storage_total(function, semantic_lir_params);
+            uint own_words = x86_parameter_storage_words(row, param.declaration_id);
+            uint copy_offset = 0u;
+            if (own_words != 0u)
+            {
+                for (uint prior = 0u; prior < param.ordinal; prior++)
+                    copy_offset += x86_parameter_storage_words(function.param_start + prior,
+                        semantic_lir_params[function.param_start + prior].declaration_id);
+                uint base = payload_base(param.function_id, function) + local_payload_words(function);
+                uint ignored;
+                InterlockedMax(x86_frame_slot_count_by_function[param.function_id],
+                    base + copy_offset + own_words, ignored);
+            }
             uint abi_ordinal = function.result_word_count > 2u ? 1u : 0u;
             for (uint prior = 0u; prior < param.ordinal; prior += 1u)
                 abi_ordinal += x86_abi_param_width(
@@ -139,7 +189,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     // sequence. Keep those parameters in stack homes until
                     // allocation supports a parallel prologue move schedule.
                     abi_ordinal >= 6u || function.result_word_count > 2u ||
-                    pair_parameters);
+                    // Parameter copies use RSI/RDI/RCX after every incoming
+                    // component is saved. Keep their parameter homes stable.
+                    pair_parameters || copied_parameters != 0u);
+            uint home = semantic_place_storage_by_token[param.declaration_id].x == 3u
+                ? payload_base(param.function_id, function) +
+                    local_payload_words(function) + copy_offset
+                : x86_decl_location_by_token[param.declaration_id];
+            publish_place(param.declaration_id, home);
         }
     }
 
@@ -157,6 +214,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 assign_declaration(local.function_id, ordinal,
                     local.type_id, local.declaration_id,
                     X86_LOCATION_INVALID, false);
+            uint4 storage = semantic_place_storage_by_token[local.declaration_id];
+            uint home = x86_decl_location_by_token[local.declaration_id];
+            if (storage.x == 3u)
+            {
+                home = payload_base(local.function_id, semantic_function) +
+                    x86_place_prefix_by_local[row] -
+                    x86_place_prefix_by_local[semantic_function.local_start];
+                uint ignored;
+                // Parameter invocations independently reserve their later
+                // copy region; this local only owns its prefix-scanned home.
+                InterlockedMax(x86_frame_slot_count_by_function[local.function_id],
+                    home + max(storage.y, 1u), ignored);
+            }
+            publish_place(local.declaration_id, home);
         }
     }
 }

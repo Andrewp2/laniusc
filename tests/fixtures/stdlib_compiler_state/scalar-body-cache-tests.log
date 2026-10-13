@@ -1,0 +1,16 @@
+
+running 11 tests
+test compiler::gpu_compiler::unit_cache::tests::cache_hint_is_disabled_without_reliable_modification_time ... ok
+test compiler::gpu_compiler::unit_cache::tests::cache_hint_tracks_path_length_and_modification_identity ... ok
+test compiler::gpu_compiler::unit_cache::tests::cache_key_uses_source_and_dependency_contents ... ok
+test compiler::gpu_compiler::unit_cache::tests::clearing_cache_preserves_counters_but_removes_resident_results ... ok
+test compiler::gpu_compiler::unit_cache::tests::filesystem_cache_key_reuses_the_complete_hint_identity ... ok
+test compiler::gpu_compiler::unit_cache::tests::generic_call_environments_are_charged_to_the_cache_budget ... ok
+test compiler::gpu_compiler::unit_cache::tests::generic_receiver_snapshots_are_charged_to_the_cache_budget ... ok
+test compiler::gpu_compiler::unit_cache::tests::native_call_hir_snapshots_are_charged_to_the_cache_budget ... ok
+test compiler::gpu_compiler::unit_cache::tests::project_cache_clear_retains_only_standard_library_results_and_hints ... ok
+test compiler::gpu_compiler::unit_cache::tests::template_dependency_snapshots_are_charged_to_the_cache_budget ... ok
+test compiler::gpu_compiler::unit_cache::tests::template_sources_are_charged_to_the_cache_budget_without_orphan_hints ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 603 filtered out; finished in 0.00s
+

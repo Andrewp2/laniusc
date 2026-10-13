@@ -1,0 +1,13 @@
+module core::aliases;
+pub struct Pair<A, B> { first: A, second: B }
+pub type Id<T> = T;
+pub type Fixed<T, const N: usize> = [T; N];
+pub type View<T> = [T];
+pub type Ref<T> = &T;
+pub type Swap<A, B> = Pair<B, A>;
+pub type Inject<T> = Pair<bool, T>;
+pub type Nested<X, Y> = Swap<Fixed<X, 2>, Y>;
+pub type Empty<T> = Fixed<T, 0>;
+pub type Constant<const N: usize> = [i32; N];
+pub type Flag<T> = bool;
+pub fn keep<T>(value: T) -> T { return value; }

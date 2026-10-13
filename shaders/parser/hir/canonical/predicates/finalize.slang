@@ -10,7 +10,6 @@ StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_to_raw;
 StructuredBuffer<uint> type_root_owner;
 StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> raw_to_item;
 StructuredBuffer<uint> canonical_count;
 StructuredBuffer<uint> canonical_dense_to_raw;
@@ -27,7 +26,6 @@ static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
-static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 bool valid_raw(uint raw) { return raw != INVALID && raw < gCanonical.raw_capacity; }
 bool valid_dense(uint dense) { return dense != INVALID && dense < gCanonical.canonical_capacity; }
@@ -39,23 +37,25 @@ bool generic_decl_item_kind(uint kind)
            kind == HIR_ITEM_KIND_STRUCT || kind == HIR_ITEM_KIND_ENUM ||
            kind == HIR_ITEM_KIND_TYPE_ALIAS || kind == HIR_ITEM_KIND_TRAIT;
 }
-bool generic_decl_node(uint raw)
+bool predicate_owner_node(uint raw)
 {
     if (!valid_raw(raw) || raw_to_hir[raw] == INVALID) return false;
     uint item_row = gCanonical.records_use_token_rows != 0u ? raw_to_item[raw] : raw;
     uint prod = node_kind[raw];
     if (prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB || prod == PROD_IMPL_FN)
-        return (hir_method_signature_flags[raw] & METHOD_SIGNATURE_HAS_GENERICS) != 0u;
+        // A method owns its predicates even when they mention only enclosing
+        // parameters and it declares no type or constant parameters of its own.
+        return true;
     return (item_row != INVALID && generic_decl_item_kind(hir_item_kind[item_row])) ||
            prod == PROD_IMPL_INHERENT || prod == PROD_IMPL_TRAIT;
 }
-uint nearest_generic_owner(uint raw)
+uint nearest_predicate_owner(uint raw)
 {
     uint ancestor = raw;
     for (uint hop = 0u; hop < gCanonical.raw_capacity; ++hop)
     {
         if (!valid_raw(ancestor)) return INVALID;
-        if (generic_decl_node(ancestor)) return ancestor;
+        if (predicate_owner_node(ancestor)) return ancestor;
         uint next = parent[ancestor];
         if (next == ancestor) return INVALID;
         ancestor = next;
@@ -106,7 +106,9 @@ bool trait_impl_bound(uint raw)
     uint target = valid_raw(raw) ? next_sibling[raw] : INVALID;
     return node_kind[raw] == PROD_TYPE_IDENT && valid_raw(owner) &&
            node_kind[owner] == PROD_IMPL_TRAIT && valid_raw(target) &&
-           parent[target] == owner && node_kind[target] == PROD_TYPE_IDENT &&
+           parent[target] == owner &&
+           (node_kind[target] == PROD_TYPE_IDENT || node_kind[target] == PROD_TYPE_ARRAY ||
+            node_kind[target] == PROD_TYPE_REF) &&
            valid_dense(raw_to_hir[raw]) && valid_dense(raw_to_hir[target]) &&
            valid_dense(raw_to_hir[owner]);
 }
@@ -126,7 +128,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint anchor = bound_candidate ? nearest_subject(raw) : INVALID;
     bool direct_bound = bound_candidate && direct_generic_bound(raw, anchor);
     bool impl_bound = valid_raw(raw) && trait_impl_bound(raw);
-    uint owner = direct_bound ? nearest_generic_owner(raw) : INVALID;
+    uint owner = direct_bound ? nearest_predicate_owner(raw) : INVALID;
     subject_anchor[dense] = anchor;
     owner_value[dense] = owner;
     family_flag[dense] = direct_bound || impl_bound ? 1u : 0u;

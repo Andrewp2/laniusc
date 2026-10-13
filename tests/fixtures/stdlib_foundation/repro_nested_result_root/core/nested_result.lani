@@ -1,0 +1,9 @@
+module core::nested_result;
+pub enum BoundLength<T> { Known(usize), Values(T) }
+pub struct Boxed<T> { value: T }
+pub fn length<T, const N: usize>() -> BoundLength<[T; N]> { return Known(N); }
+pub fn keep<T>(value: T) -> T { return value; }
+pub fn square<const N: usize>() -> BoundLength<[[i32; N]; N]> { return Known(N); }
+impl<T> Boxed<T> {
+    pub fn length<U, const N: usize>(&self) -> BoundLength<[U; N]> { return Known(N); }
+}

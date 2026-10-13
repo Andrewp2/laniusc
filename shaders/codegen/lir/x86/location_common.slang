@@ -1,5 +1,7 @@
+import primitive_types;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
+import codegen.lir.x86.storage_layout;
 
 bool x86_location_is_register(uint location)
 {
@@ -35,7 +37,7 @@ bool x86_alias_uses_64_bits(uint metadata)
 {
     return (metadata &
             (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u ||
-        (metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER ||
+        scalar_uses_64bit_gpr(metadata & 0xffu) ||
         ((metadata & X86_LIR_METADATA_STRING_PAIR) != 0u &&
          (metadata & X86_LIR_METADATA_STRING_LEN) == 0u) ||
         ((metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u &&
@@ -57,7 +59,7 @@ uint x86_signed_displacement_bytes(uint value)
 
 uint x86_packed_i32_displacement(uint base_slot, uint element)
 {
-    return 0u - 8u * (base_slot + 1u) + element * 4u;
+    return x86_native_word_displacement(base_slot + 1u) + x86_packed_i32_element_offset(element);
 }
 
 uint x86_packed_i32_stack_operand_bytes(uint base_slot, uint element,
@@ -89,7 +91,7 @@ uint x86_stack64_operand_bytes(uint slot)
     return 3u + x86_stack_displacement_bytes(slot);
 }
 
-uint x86_move_f32_to_xmm_bytes(uint location, uint destination_xmm)
+uint x86_move_float_to_xmm_bytes(uint location, uint destination_xmm, bool wide)
 {
     if (x86_location_is_xmm(location))
     {
@@ -98,13 +100,13 @@ uint x86_move_f32_to_xmm_bytes(uint location, uint destination_xmm)
             4u + (source_xmm >= 8u || destination_xmm >= 8u ? 1u : 0u);
     }
     if (x86_location_is_register(location))
-        return 4u + (x86_location_payload(location) >= 8u ||
+        return 4u + (wide || x86_location_payload(location) >= 8u ||
             destination_xmm >= 8u ? 1u : 0u);
     return x86_stack_xmm32_operand_bytes(x86_location_payload(location)) +
         (destination_xmm >= 8u ? 1u : 0u);
 }
 
-uint x86_move_f32_from_xmm_bytes(uint source_xmm, uint location)
+uint x86_move_float_from_xmm_bytes(uint source_xmm, uint location, bool wide)
 {
     if (x86_location_is_xmm(location))
     {
@@ -113,44 +115,47 @@ uint x86_move_f32_from_xmm_bytes(uint source_xmm, uint location)
             4u + (destination_xmm >= 8u || source_xmm >= 8u ? 1u : 0u);
     }
     if (x86_location_is_register(location))
-        return 4u + (x86_location_payload(location) >= 8u ||
+        return 4u + (wide || x86_location_payload(location) >= 8u ||
             source_xmm >= 8u ? 1u : 0u);
     return x86_stack_xmm32_operand_bytes(x86_location_payload(location)) +
         (source_xmm >= 8u ? 1u : 0u);
 }
 
-uint x86_move_f32_to_gpr_bytes(uint location, uint destination_gpr)
+uint x86_move_float_to_gpr_bytes(uint location, uint destination_gpr, bool wide)
 {
     if (!x86_location_is_xmm(location))
-        return x86_move32_to_fixed_bytes(location, destination_gpr);
-    return 4u + (x86_location_xmm(location) >= 8u ||
+        return wide ? x86_move64_to_fixed_bytes(location, destination_gpr)
+            : x86_move32_to_fixed_bytes(location, destination_gpr);
+    return 4u + (wide || x86_location_xmm(location) >= 8u ||
         destination_gpr >= 8u ? 1u : 0u);
 }
 
-uint x86_move_f32_from_gpr_bytes(uint source_gpr, uint location)
+uint x86_move_float_from_gpr_bytes(uint source_gpr, uint location, bool wide)
 {
     if (!x86_location_is_xmm(location))
-        return x86_move32_from_fixed_bytes(source_gpr, location);
-    return 4u + (x86_location_xmm(location) >= 8u ||
+        return wide ? x86_move64_from_fixed_bytes(source_gpr, location)
+            : x86_move32_from_fixed_bytes(source_gpr, location);
+    return 4u + (wide || x86_location_xmm(location) >= 8u ||
         source_gpr >= 8u ? 1u : 0u);
 }
 
-uint x86_move_f32_between_bytes(uint source, uint destination)
+uint x86_move_float_between_bytes(uint source, uint destination, bool wide)
 {
     if (source == destination && source != X86_LOCATION_INVALID) return 0u;
     if (x86_location_is_xmm(destination))
-        return x86_move_f32_to_xmm_bytes(
-            source, x86_location_xmm(destination));
+        return x86_move_float_to_xmm_bytes(
+            source, x86_location_xmm(destination), wide);
     if (x86_location_is_xmm(source))
-        return x86_move_f32_from_xmm_bytes(
-            x86_location_xmm(source), destination);
-    return x86_move32_between_bytes(source, destination);
+        return x86_move_float_from_xmm_bytes(
+            x86_location_xmm(source), destination, wide);
+    return wide ? x86_move64_between_bytes(source, destination)
+        : x86_move32_between_bytes(source, destination);
 }
 
 uint x86_imm_f32_to_location_bytes(uint value, uint destination)
 {
     return (value == 0u ? 2u : 5u) +
-        x86_move_f32_from_gpr_bytes(0u, destination);
+        x86_move_float_from_gpr_bytes(0u, destination, false);
 }
 
 uint x86_move32_to_fixed_bytes(uint location, uint fixed_register)
@@ -696,19 +701,82 @@ uint x86_saved_gpr_count(uint mask)
 uint x86_call_result_instruction_bytes(uint metadata, uint result_words,
                                        uint result_location)
 {
+    if ((metadata & 0xffu) == SEMANTIC_LIR_TY_STRING)
+        return 5u + x86_move64_from_fixed_bytes(0u, result_location) +
+            x86_move32_from_fixed_bytes(2u, result_location + 1u);
     if ((metadata & X86_LIR_METADATA_AGGREGATE) == 0u)
-        return 5u + ((metadata & 0xffu) == X86_LIR_TY_FLOAT
-            ? x86_move_f32_from_gpr_bytes(0u, result_location)
-            : (metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
+        return 5u + (x86_scalar_float(metadata)
+            ? x86_move_float_from_gpr_bytes(0u, result_location, x86_scalar_f64(metadata))
+            : scalar_uses_64bit_gpr(metadata & 0xffu)
             ? x86_move64_from_fixed_bytes(0u, result_location)
             : x86_move32_from_fixed_bytes(0u, result_location));
-    if (result_words == 0u) return 0u;
     uint storage_slot = x86_location_payload(result_location) + 1u;
     uint result_store = x86_move64_from_fixed_bytes(0u, result_location);
+    if (result_words == 0u)
+        return 5u + x86_stack64_operand_bytes(storage_slot) + result_store;
     if (result_words > 2u)
         return x86_stack64_operand_bytes(storage_slot) + 5u + result_store;
     uint bytes = 5u + x86_stack64_operand_bytes(storage_slot);
     if (result_words > 1u)
         bytes += x86_stack64_operand_bytes(storage_slot + 1u);
     return bytes + x86_stack64_operand_bytes(storage_slot) + result_store;
+}
+
+// Shared scalar floating body counts for the existing specialized count pass.
+uint float_binary_instruction_bytes(uint destination, uint right, bool wide)
+{
+    if (x86_location_is_xmm(right))
+        return 4u + (destination >= 8u ||
+            x86_location_xmm(right) >= 8u ? 1u : 0u);
+    if (x86_location_is_register(right))
+        return x86_move_float_to_xmm_bytes(right, 14u, wide) +
+            5u;
+    return x86_stack_xmm32_operand_bytes(x86_location_payload(right)) +
+        (destination >= 8u ? 1u : 0u);
+}
+
+uint float_binary_bytes(uint operation, uint left, uint right, uint result, bool wide)
+{
+    uint destination = x86_location_is_xmm(result)
+        ? x86_location_xmm(result) : 15u;
+    bool destination_is_right = x86_location_is_xmm(right) &&
+        x86_location_xmm(right) == destination;
+    bool destination_is_left = x86_location_is_xmm(left) &&
+        x86_location_xmm(left) == destination;
+    if (destination_is_right && !destination_is_left &&
+        float_binary_commutative(operation))
+    {
+        uint swap = left;
+        left = right;
+        right = swap;
+        destination_is_right = false;
+    }
+    uint compute = destination_is_right && !destination_is_left
+        ? 15u : destination;
+    return x86_move_float_to_xmm_bytes(left, compute, wide) +
+        float_binary_instruction_bytes(compute, right, wide) +
+        x86_move_float_from_xmm_bytes(compute, result, wide);
+}
+
+uint float_compare_instruction_bytes(uint left, uint right, bool wide)
+{
+    uint left_xmm = x86_location_is_xmm(left)
+        ? x86_location_xmm(left) : 15u;
+    uint bytes = x86_move_float_to_xmm_bytes(left, left_xmm, wide) + (wide ? 1u : 0u);
+    if (x86_location_is_xmm(right))
+        bytes += 3u + (left_xmm >= 8u ||
+            x86_location_xmm(right) >= 8u ? 1u : 0u);
+    else if (x86_location_is_register(right))
+        bytes += x86_move_float_to_xmm_bytes(right, 14u, wide) +
+            4u;
+    else
+        bytes += 3u + x86_stack_displacement_bytes(
+            x86_location_payload(right)) + (left_xmm >= 8u ? 1u : 0u);
+    return bytes;
+}
+
+uint float_compare_bytes(uint left, uint right, uint result, bool wide)
+{
+    return float_compare_instruction_bytes(left, right, wide) + 11u +
+        x86_move32_from_fixed_bytes(0u, result);
 }

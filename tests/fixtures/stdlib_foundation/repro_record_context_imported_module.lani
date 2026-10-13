@@ -1,0 +1,10 @@
+module core::record_context;
+import core::option;
+pub struct ImportedCell<T> { value: T }
+pub struct ImportedEnvelope<T> { child: ImportedCell<T> }
+pub fn flag(value: ImportedCell<bool>) -> bool { return value.value; }
+pub fn number(value: ImportedCell<u32>) -> u32 { return value.value; }
+pub fn envelope(value: ImportedEnvelope<str>) -> str { return value.child.value; }
+pub fn make<T>(value: T) -> core::option::Option<ImportedCell<T>> {
+    return core::option::Some(ImportedCell { value: value });
+}

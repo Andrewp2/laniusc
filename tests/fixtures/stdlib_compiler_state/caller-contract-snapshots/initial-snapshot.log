@@ -1,0 +1,16 @@
+
+running 2 tests
+test compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_keep_actual_callers_and_execute_after_workspace_reuse ... ok
+test compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse ... 
+thread 'compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse' (176588) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs:186:10:
+retain accepted contracts without generic calls: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0007", title: "unknown type", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0007", message: "unknown type", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 16, column: 28, length: 1, byte_start: Some(568), byte_end: Some(569), source_line: Some("    where T:Rel<Cell<[U;N],N>> { return v; }"), message: "type not found" }), help: None, notes: ["declare the type before using it or import its defining module"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 672 filtered out; finished in 2.26s
+

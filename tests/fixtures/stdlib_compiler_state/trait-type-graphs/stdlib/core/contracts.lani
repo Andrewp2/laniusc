@@ -1,0 +1,5 @@
+module core::contracts;
+pub struct Cell<T> {value:T}
+pub trait Rel<T> {}
+pub impl Rel<Cell<[i32;2]>> for bool {}
+pub fn keep<T,U,const N:usize>(v:T, values:[U;N])->T where T:Rel<Cell<[U;N]>> {return v;}

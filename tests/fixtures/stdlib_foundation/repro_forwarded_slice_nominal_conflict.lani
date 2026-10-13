@@ -1,0 +1,17 @@
+module app::main;
+import core::mem;
+struct Pair { left: i32, right: i32 }
+struct Other { left: i32, right: i32 }
+fn keep<T>(value: T) -> T { return value; }
+fn left_view(values: [Pair]) -> [Pair] { return values; }
+fn right_view(values: [Other]) -> [Other] { return values; }
+fn main() -> i32 {
+    let pair: Pair = Pair { left: -7, right: 42 };
+    let other: Other = Other { left: -7, right: 42 };
+    let left_values: [Pair; 1] = [pair];
+    let right_values: [Other; 1] = [other];
+    let left: [Pair] = left_view(left_values);
+    let right: [Other] = right_view(right_values);
+    core::mem::select(true, keep(left), right);
+    return 0;
+}

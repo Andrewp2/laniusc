@@ -1,3 +1,4 @@
+import primitive_types;
 // GPU HIR-qualified constant value consumer.
 //
 // Scheduling contract:
@@ -40,8 +41,8 @@ RWStructuredBuffer<uint> module_value_path_const_head;
 RWStructuredBuffer<uint> module_value_path_const_end;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> visible_type;
-RWStructuredBuffer<uint> decl_type_ref_tag;
-RWStructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> type_expr_ref_tag;
+RWStructuredBuffer<uint> type_expr_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -57,7 +58,6 @@ static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
 static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 
 static const uint TY_UNKNOWN = 0u;
-static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -110,20 +110,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
         return;
 
-    uint dependency_value_base = path_i * 3u;
+    uint dependency_value_base = path_i * 4u;
     uint imported_kind = resolved_dependency_value_metadata[dependency_value_base];
-    if ((imported_kind == IMPORTED_GENERIC_UNIT_VARIANT ||
-         imported_kind == IMPORTED_PAYLOAD_VARIANT) &&
-        visible_decl[owner_token] == owner_token)
-        return; // The pattern binder checked this use; bare values still fail.
+    // Enum value typing and pattern binding have their own complete-type
+    // owners. Constant projection must not replace either with a page-local
+    // canonical type or reject a generic value awaiting receiving context.
+    if (imported_kind == HIR_ITEM_KIND_ENUM_VARIANT ||
+        imported_kind == IMPORTED_GENERIC_UNIT_VARIANT ||
+        imported_kind == IMPORTED_PAYLOAD_VARIANT) return;
     if (resolved_dependency_value_metadata[dependency_value_base] == HIR_ITEM_KIND_CONST)
     {
         uint ty = resolved_dependency_value_metadata[dependency_value_base + 1u];
-        if (ty == TY_UNKNOWN)
+        if (!scalar_is_known(ty))
         {
             module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
             return;
         }
+        // Imported values have no local declaration token. Publish the same
+        // expression-owned checked reference used by resolved enum values;
+        // inference must not reconstruct a type from visible_type's cache.
+        visible_decl[owner_token] = owner_token;
+        type_expr_ref_tag[owner_token] = 1u;
+        type_expr_ref_payload[owner_token] = ty;
         visible_type[owner_token] = ty;
         module_value_path_const_head[owner_token] = 1u;
         module_value_path_const_end[owner_token] =
@@ -131,20 +139,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         module_value_path_status[owner_token] = INVALID;
         return;
     }
-    if (resolved_dependency_value_metadata[dependency_value_base] == HIR_ITEM_KIND_ENUM_VARIANT)
-    {
-        // The dependency projection checked that this is a payload-free
-        // variant of a concrete enum. Give the path head the enum's canonical
-        // type so a direct call argument can use it. The ordinal is
-        // materialized from the same stable metadata later.
-        visible_decl[owner_token] = owner_token;
-        decl_type_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
-        decl_type_ref_payload[owner_token] =
-            resolved_dependency_value_metadata[dependency_value_base + 1u];
-        module_value_path_status[owner_token] = INVALID;
-        return;
-    }
-
     uint decl_i = resolved_value_decl[path_i];
     uint visible = visible_decl[owner_token];
     uint resolved_decl_name =

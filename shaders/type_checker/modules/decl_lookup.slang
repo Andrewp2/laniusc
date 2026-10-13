@@ -1,12 +1,22 @@
-// Exact GPU declaration index keyed by `(module, namespace, name)`.
+// GPU declaration candidates keyed by `(module, namespace, name)`.
 //
-// A slot stores a declaration id plus one. Declaration columns contain the
-// complete immutable key, so collisions are resolved by exact comparison.
+// Every declaration retains a row, including equal names in different enum
+// scopes. Queries compare the complete immutable key and parent scope. A
+// module-visible query must reject multiple matches rather than choose an
+// arbitrary parent. The table still contains at most declaration_count rows.
 
 import atomics;
 
 public static const uint DECL_LOOKUP_EMPTY = 0u;
 public static const uint DECL_LOOKUP_INVALID = 0xffffffffu;
+public static const uint DECL_LOOKUP_ANY_PARENT = 0xfffffffeu;
+
+public struct DeclLookupResult
+{
+    public uint first;
+    public uint matches;
+    public uint unique() { return matches == 1u ? first : DECL_LOOKUP_INVALID; }
+}
 
 public uint decl_lookup_capacity(uint declaration_count)
 {
@@ -72,59 +82,46 @@ public void decl_lookup_insert(
     for (uint probe = 0u; probe < capacity; probe += 1u)
     {
         uint slot = (first + probe) % capacity;
-        uint state = table_state[slot];
-        if (state != DECL_LOOKUP_EMPTY)
-        {
-            uint representative = state - 1u;
-            if (decl_lookup_matches(
-                representative, declaration_count, module_id, namespace_id, name_id,
-                declaration_modules, declaration_namespaces, declaration_names))
-            {
-                atomic_u32_min(table_state, slot, declaration + 1u);
-                return;
-            }
-            continue;
-        }
-
         uint prior = atomic_u32_compare_exchange(
             table_state, slot, DECL_LOOKUP_EMPTY, declaration + 1u);
         if (prior == DECL_LOOKUP_EMPTY)
             return;
-        uint representative = prior - 1u;
-        if (decl_lookup_matches(
-            representative, declaration_count, module_id, namespace_id, name_id,
-            declaration_modules, declaration_namespaces, declaration_names))
-        {
-            atomic_u32_min(table_state, slot, declaration + 1u);
-            return;
-        }
     }
 }
 
-public uint decl_lookup_find(
+public DeclLookupResult decl_lookup_query(
     uint module_id,
     uint namespace_id,
     uint name_id,
+    uint parent,
     uint declaration_count,
     StructuredBuffer<uint> declaration_modules,
     StructuredBuffer<uint> declaration_namespaces,
     StructuredBuffer<uint> declaration_names,
+    StructuredBuffer<uint> declaration_parents,
     StructuredBuffer<uint> table_state)
 {
+    DeclLookupResult result;
+    result.first = DECL_LOOKUP_INVALID;
+    result.matches = 0u;
     if (module_id == DECL_LOOKUP_INVALID || name_id == DECL_LOOKUP_INVALID)
-        return DECL_LOOKUP_INVALID;
+        return result;
     uint capacity = decl_lookup_capacity(declaration_count);
     uint first = decl_lookup_first_slot(module_id, namespace_id, name_id, capacity);
     for (uint probe = 0u; probe < capacity; probe += 1u)
     {
         uint state = table_state[(first + probe) % capacity];
         if (state == DECL_LOOKUP_EMPTY)
-            return DECL_LOOKUP_INVALID;
+            break;
         uint declaration = state - 1u;
         if (decl_lookup_matches(
             declaration, declaration_count, module_id, namespace_id, name_id,
-            declaration_modules, declaration_namespaces, declaration_names))
-            return declaration;
+            declaration_modules, declaration_namespaces, declaration_names) &&
+            (parent == DECL_LOOKUP_ANY_PARENT || declaration_parents[declaration] == parent))
+        {
+            result.first = min(result.first, declaration);
+            result.matches = min(result.matches + 1u, 2u);
+        }
     }
-    return DECL_LOOKUP_INVALID;
+    return result;
 }

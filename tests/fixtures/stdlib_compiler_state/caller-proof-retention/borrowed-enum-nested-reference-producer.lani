@@ -1,0 +1,21 @@
+// Proposed probe: both creation of &&Flag and matching through it are unverified.
+// An ordinary repeated Flag::borrow() only yields &Flag and cannot cover this.
+enum Flag { Missing, Value(bool) }
+impl Flag {
+    fn borrow(&self) -> &Flag { return self; }
+}
+impl &Flag {
+    fn borrow_outer(&self) -> & &Flag { return self; }
+}
+fn read(value: & &Flag) -> bool {
+    return match (value) { Value(flag) -> flag, Missing -> false };
+}
+fn main() -> i32 {
+    let value: Flag = Value(true);
+    let borrowed: &Flag = value.borrow();
+    let outer: & &Flag = borrowed.borrow_outer();
+    if (!read(outer)) { return 1; }
+    value = Missing();
+    if (read(outer)) { return 2; }
+    return 0;
+}

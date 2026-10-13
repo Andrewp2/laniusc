@@ -1,3 +1,4 @@
+import native_value_layout;
 import hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
@@ -24,6 +25,7 @@ StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
+StructuredBuffer<uint> semantic_param_prefix;
 StructuredBuffer<uint> semantic_local_prefix;
 StructuredBuffer<uint> semantic_local_total;
 StructuredBuffer<uint> semantic_function_return_type_by_hir;
@@ -34,6 +36,7 @@ StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
 StructuredBuffer<uint> semantic_aggregate_word_count_by_hir;
 StructuredBuffer<uint> semantic_array_length_by_hir;
@@ -58,7 +61,7 @@ uint local_payload_word_count(uint type_node, uint hir_count, out bool supported
     supported = type_node < hir_count;
     if (!supported) return 0u;
     uint words = semantic_aggregate_word_count_by_hir[type_node];
-    if (words != 0u)
+    if (words != 0u || semantic_expr_ref_tag_by_hir[type_node] == 3u)
     {
         supported = words != LIR_INVALID;
         return supported ? words : 0u;
@@ -85,7 +88,7 @@ uint local_payload_word_count(uint type_node, uint hir_count, out bool supported
     if (compact_hir_core[declaration].kind == HIR_STRUCT_ITEM)
     {
         words = semantic_struct_word_count_by_hir[declaration];
-        supported = words != 0u && words != LIR_INVALID;
+        supported = words != LIR_INVALID;
         return supported ? words : 0u;
     }
     // The bounded aggregate-layout fixed point has already run before
@@ -94,7 +97,7 @@ uint local_payload_word_count(uint type_node, uint hir_count, out bool supported
     if (compact_hir_core[declaration].kind == HIR_ENUM_ITEM)
     {
         words = semantic_struct_word_count_by_hir[declaration];
-        supported = words != 0u && words != LIR_INVALID;
+        supported = words != LIR_INVALID;
         return supported ? words : 0u;
     }
     return 1u;
@@ -138,22 +141,7 @@ uint local_enum_word_count(uint enum_hir, uint hir_count)
     return 1u + maximum_payload_words;
 }
 
-uint public_impl_method_symbol(uint hir, uint hir_count)
-{
-    uint method_count = min(compact_method_count[0u], hir_count);
-    for (uint row = 0u; row < method_count; row += 1u)
-    {
-        HirMethodCore method = compact_method_cores[row];
-        HirMethodSignature signature = compact_method_signatures[row];
-        // Method symbols share the object identity namespace with public
-        // declarations, using a disjoint high-bit namespace.  Trait contracts
-        // have no implementation node and therefore produce no definition.
-        if (method.node == hir && method.impl_node != LIR_INVALID &&
-            (signature.metadata & 0xffffu) == 1u)
-            return 0x80000000u | hir;
-    }
-    return LIR_INVALID;
-}
+#include "function_method.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -171,7 +159,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     SemanticLirFunction result;
     result.hir_function = hir;
     result.name_token = payload.b;
-    result.param_start = range.count == 0u ? LIR_INVALID : range.start;
+    result.param_start = range.count == 0u ? LIR_INVALID : semantic_param_prefix[range.start];
     result.param_count = range.count;
     result.result_type = constant ? semantic_value_type_by_hir[hir]
         : semantic_function_return_type_by_hir[hir];
@@ -182,6 +170,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint ref_tag = semantic_expr_ref_tag_by_hir[return_type_node];
         uint ref_payload = semantic_expr_ref_payload_by_hir[return_type_node];
+        if (ref_tag == 1u && ref_payload >= 1u && ref_payload <= 7u)
+            result.result_type = ref_payload;
         result_decl_token = semantic_aggregate_decl_token_by_hir[return_type_node];
         if (!valid_token(result_decl_token))
         {
@@ -213,46 +203,66 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else if (ref_tag == 1u && ref_payload >= TY_STRUCT_BASE)
             result.result_type = ref_payload;
     }
-    result.result_word_count = semantic_function_result_word_count_by_hir[hir];
-    // The type checker has already followed aliases and published the
-    // canonical aggregate width on the return type node.  Prefer that source
-    // before reconstructing a declaration locally: the surface token may name
-    // a type alias rather than the struct/enum declaration that owns layout.
-    if (result.result_word_count == 0u && return_type_node < hir_count)
-        result.result_word_count =
-            semantic_aggregate_word_count_by_hir[return_type_node];
-    if (result.result_word_count == 0u && return_type_node < hir_count &&
-        compact_hir_core[return_type_node].kind == HIR_TYPE &&
-        compact_hir_payload[return_type_node].a == HIR_TYPE_FORM_SLICE)
-        result.result_word_count = 2u;
-    if (result.result_word_count == 0u && result_decl_hir < hir_count &&
-        compact_hir_core[result_decl_hir].kind == HIR_STRUCT_ITEM)
-        result.result_word_count = semantic_struct_word_count_by_hir[result_decl_hir];
-    if (result.result_word_count == 0u && result_decl_hir < hir_count &&
-        compact_hir_core[result_decl_hir].kind == HIR_ENUM_ITEM)
-        result.result_word_count = local_enum_word_count(result_decl_hir, hir_count);
-    if (result.result_word_count == 0u && result_decl_hir >= hir_count &&
-        result.result_type >= TY_STRUCT_BASE)
+    // An instantiated return type owns a complete layout, including zero.
+    // The generic declaration is a template and cannot supply a fallback
+    // width for an already checked concrete application.
+    bool checked_return_instance = return_type_node < hir_count &&
+        semantic_expr_ref_tag_by_hir[return_type_node] == 3u;
+    if (checked_return_instance)
+        result.result_word_count = semantic_aggregate_word_count_by_hir[return_type_node];
+    else
     {
-        // Legacy nominal codes are base + global token.  The historical
-        // struct/enum numeric windows overlap once a source pack has more than
-        // 2K tokens, so validate the candidate against the authoritative
-        // token-to-HIR relation instead of rejecting it by range.
-        uint name_token = result.result_type - TY_STRUCT_BASE;
-        uint struct_hir = valid_token(name_token)
-            ? semantic_aggregate_hir_by_name_token[name_token] : LIR_INVALID;
-        if (struct_hir < hir_count &&
-            compact_hir_core[struct_hir].kind == HIR_STRUCT_ITEM)
-            result.result_word_count = semantic_struct_word_count_by_hir[struct_hir];
+        result.result_word_count = semantic_function_result_word_count_by_hir[hir];
+        // The type checker has already followed aliases and published the
+        // canonical aggregate width on the return type node.  Prefer that source
+        // before reconstructing a declaration locally: the surface token may name
+        // a type alias rather than the struct/enum declaration that owns layout.
+        if (result.result_word_count == 0u && return_type_node < hir_count)
+            result.result_word_count =
+                semantic_aggregate_word_count_by_hir[return_type_node];
+        if (result.result_word_count == 0u && return_type_node < hir_count &&
+            compact_hir_core[return_type_node].kind == HIR_TYPE &&
+            compact_hir_payload[return_type_node].a == HIR_TYPE_FORM_SLICE)
+            result.result_word_count = NATIVE_SLICE_WORDS;
+        if (result.result_word_count == 0u && result_decl_hir < hir_count &&
+            compact_hir_core[result_decl_hir].kind == HIR_STRUCT_ITEM)
+            result.result_word_count = semantic_struct_word_count_by_hir[result_decl_hir];
+        if (result.result_word_count == 0u && result_decl_hir < hir_count &&
+            compact_hir_core[result_decl_hir].kind == HIR_ENUM_ITEM)
+            result.result_word_count = local_enum_word_count(result_decl_hir, hir_count);
+        if (result.result_word_count == 0u && result_decl_hir >= hir_count &&
+            result.result_type >= TY_STRUCT_BASE)
+        {
+            // Legacy nominal codes are base + global token.  The historical
+            // struct/enum numeric windows overlap once a source pack has more than
+            // 2K tokens, so validate the candidate against the authoritative
+            // token-to-HIR relation instead of rejecting it by range.
+            uint name_token = result.result_type - TY_STRUCT_BASE;
+            uint struct_hir = valid_token(name_token)
+                ? semantic_aggregate_hir_by_name_token[name_token] : LIR_INVALID;
+            if (struct_hir < hir_count &&
+                compact_hir_core[struct_hir].kind == HIR_STRUCT_ITEM)
+                result.result_word_count = semantic_struct_word_count_by_hir[struct_hir];
+        }
+        if (result.result_word_count == 0u && result_decl_hir >= hir_count &&
+            result.result_type >= TY_ENUM_BASE)
+        {
+            uint name_token = result.result_type - TY_ENUM_BASE;
+            uint enum_hir = valid_token(name_token)
+                ? semantic_aggregate_hir_by_name_token[name_token] : LIR_INVALID;
+            if (enum_hir < hir_count && compact_hir_core[enum_hir].kind == HIR_ENUM_ITEM)
+                result.result_word_count = local_enum_word_count(enum_hir, hir_count);
+        }
     }
-    if (result.result_word_count == 0u && result_decl_hir >= hir_count &&
-        result.result_type >= TY_ENUM_BASE)
+    uint type_capacity; uint type_stride;
+    type_instance_kind.GetDimensions(type_capacity, type_stride);
+    uint return_instance = return_type_node < hir_count
+        ? semantic_expr_ref_payload_by_hir[return_type_node] : LIR_INVALID;
+    if (checked_return_instance && return_instance < type_capacity &&
+        type_instance_kind[return_instance] == 4u)
     {
-        uint name_token = result.result_type - TY_ENUM_BASE;
-        uint enum_hir = valid_token(name_token)
-            ? semantic_aggregate_hir_by_name_token[name_token] : LIR_INVALID;
-        if (enum_hir < hir_count && compact_hir_core[enum_hir].kind == HIR_ENUM_ITEM)
-            result.result_word_count = local_enum_word_count(enum_hir, hir_count);
+        result.result_type = SEMANTIC_LIR_TY_POINTER;
+        result.result_word_count = 0u;
     }
     result.flags = !constant && semantic_function_entrypoint_by_hir[hir] != 0u
         ? SEMANTIC_FUNCTION_FLAG_ENTRYPOINT : 0u;
@@ -265,10 +275,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : semantic_local_total[0u];
     result.local_start = local_start;
     result.local_count = local_end - local_start;
-    uint symbol_local_index = constant ? LIR_INVALID : public_decl_index_by_hir[hir];
-    if (!constant && symbol_local_index == LIR_INVALID)
-        symbol_local_index = public_impl_method_symbol(hir, hir_count);
-    result.symbol_local_index = symbol_local_index;
+    result.symbol_local_index = constant ? LIR_INVALID : local_function_symbol(
+        hir, hir_count, public_decl_index_by_hir[hir], core.token_start);
     result.symbol_flags = 0u;
     result.host_service = semantic_function_host_service_by_hir[hir];
     semantic_lir_functions[function_id] = result;

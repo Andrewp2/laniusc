@@ -102,13 +102,15 @@ uint classify(uint prod)
         return HIR_IMPORT_ITEM;
     if (prod == PROD_MODULE)
         return HIR_MODULE_ITEM;
-    if (prod == PROD_PATH || prod == PROD_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH)
+    if (prod == PROD_PATH || prod == PROD_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH ||
+        prod == PROD_ARRAY_LENGTH_PATH)
         return HIR_PATH_EXPR;
     if (prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF ||
         prod == PROD_PARAM_SELF_REF)
         return HIR_PARAM;
     if (prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF ||
-        prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF)
+        prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF ||
+        prod == PROD_TYPE_ARRAY_LEN_NAME)
         return HIR_TYPE;
     if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK ||
         prod == PROD_BLOCK || prod == PROD_IF_BLOCK)
@@ -140,7 +142,8 @@ uint classify(uint prod)
         return HIR_ASSIGN_EXPR;
     if (prod >= PROD_OREXPR && prod <= PROD_MUL_END)
         return HIR_BINARY_EXPR;
-    if (prod >= PROD_POS && prod <= PROD_BASE)
+    if ((prod >= PROD_POS && prod <= PROD_BASE) ||
+        prod == PROD_GENERIC_ARGUMENT_NEGATIVE || prod == PROD_GENERIC_ARGUMENT_POSITIVE)
         return HIR_UNARY_EXPR;
     if (prod == PROD_POSTFIX || prod == PROD_POSTFIX_END)
         return HIR_POSTFIX_EXPR;
@@ -156,7 +159,11 @@ uint classify(uint prod)
         prod == PROD_SELF_VALUE ||
         prod == PROD_PATTERN_IDENT)
         return HIR_NAME_EXPR;
-    if (prod == PROD_INT || prod == PROD_RANGE_START_INT ||
+    if (prod == PROD_INT || prod == PROD_GENERIC_ARGUMENT_INTEGER ||
+        prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_INTEGER ||
+        prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_FLOAT ||
+        prod == PROD_GENERIC_ARGUMENT_TRUE || prod == PROD_GENERIC_ARGUMENT_FALSE ||
+        prod == PROD_GENERIC_ARGUMENT_CHAR || prod == PROD_GENERIC_ARGUMENT_FLOAT || prod == PROD_RANGE_START_INT ||
         prod == PROD_RANGE_BOUND_INT ||
         prod == PROD_FLOAT || prod == PROD_STRING ||
         prod == PROD_CHAR || prod == PROD_TRUE || prod == PROD_FALSE ||

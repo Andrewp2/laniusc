@@ -4,9 +4,8 @@ import status;
 // GPU HIR enum constructor call consumer.
 //
 // Inputs are resolver rows, parser-owned HIR call/variant/result records, and
-// type-reference tables. This pass only validates constructor shape and leaves
-// payload typing to the following one-thread-per-payload pass before finalizing
-// the call result.
+// type-reference tables. This pass validates constructor shape. Complete
+// parameter and result inference belongs to the shared callable binder.
 
 
 struct Params
@@ -21,7 +20,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
-StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> path_count_out;
@@ -34,12 +32,6 @@ StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> decl_type_ref_tag;
-StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> fn_return_ref_tag;
-StructuredBuffer<uint> fn_return_ref_payload;
-StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> module_value_path_call_head;
 
@@ -58,11 +50,11 @@ static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_KIND_VALUE = 3u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_RETURN_STMT = 9u;
 
-static const uint STMT_RECORD_KIND_LET = 1u;
-static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
-static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
 
@@ -86,79 +78,10 @@ bool valid_node(uint node)
     return node != INVALID && node < gParams.n_hir_nodes;
 }
 
-uint enclosing_function_decl_token(uint token)
-{
-    uint encoded_fn = valid_token(token) ? enclosing_fn[token] : 0u;
-    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (fn_node == INVALID || fn_node >= count)
-        return INVALID;
-    uint fn_token = compact_hir_payload[fn_node].b;
-    return valid_token(fn_token) ? fn_token : INVALID;
-}
 
 bool valid_variant(uint row)
 {
     return row != INVALID && row < min(compact_variant_count[0u], gParams.n_hir_nodes);
-}
-
-uint function_return_instance_for_token(uint token)
-{
-    if (!valid_token(token))
-        return INVALID;
-
-    uint fn_token = enclosing_function_decl_token(token);
-    if (valid_token(fn_token))
-    {
-        uint tag = fn_return_ref_tag[fn_token];
-        uint payload = fn_return_ref_payload[fn_token];
-        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-            return payload;
-    }
-    return INVALID;
-}
-
-uint function_return_instance_for_call(uint owner_token, uint call_node)
-{
-    uint instance = function_return_instance_for_token(owner_token);
-    if (instance != INVALID)
-        return instance;
-    return valid_node(call_node) ? function_return_instance_for_token(compact_hir_core[call_node].token_start)
-                                 : INVALID;
-}
-
-uint contextual_instance_for_call(uint owner_token, uint call_node)
-{
-    uint encoded_context = valid_node(call_node) ? compact_hir_payload[call_node].d
-                                                 : HIR_CALL_CONTEXT_ID_MASK;
-    uint context_node = (encoded_context & HIR_CALL_CONTEXT_ID_MASK) != HIR_CALL_CONTEXT_ID_MASK
-        ? encoded_context & HIR_CALL_CONTEXT_ID_MASK
-        : INVALID;
-    if (!valid_node(context_node))
-        return function_return_instance_for_call(owner_token, call_node);
-
-    HirPayload context = compact_hir_payload[context_node];
-    uint context_kind = context.a;
-    if (context_kind == STMT_RECORD_KIND_LET)
-    {
-        uint decl_token = context.b;
-        if (valid_token(decl_token))
-        {
-            uint tag = decl_type_ref_tag[decl_token];
-            uint payload = decl_type_ref_payload[decl_token];
-            if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-                return payload;
-        }
-    }
-
-    if (context_kind == STMT_RECORD_KIND_RETURN && valid_token(owner_token))
-    {
-        uint instance = function_return_instance_for_call(owner_token, call_node);
-        if (instance != INVALID)
-            return instance;
-    }
-
-    return function_return_instance_for_call(owner_token, call_node);
 }
 
 bool valid_enum_variant_decl(uint decl_i, out uint enum_decl_i, out uint enum_token, out uint variant)
@@ -209,9 +132,6 @@ bool prepare_enum_constructor_call(
     if (actual_count > PARAM_CACHE_STRIDE ||
         expected_count > VARIANT_PAYLOAD_SLOT_STRIDE)
         return false;
-    uint context_instance = contextual_instance_for_call(owner_token, dense_call);
-    if (context_instance != INVALID && type_instance_decl_token[context_instance] != enum_token)
-        return false;
     return true;
 }
 [shader("compute")]
@@ -257,5 +177,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
         return;
     }
+    // The shared callable binder owns result inference. Receiving contexts
+    // constrain that signature; this resolver must not replace an inferred
+    // value's type with its destination's type.
     module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
 }

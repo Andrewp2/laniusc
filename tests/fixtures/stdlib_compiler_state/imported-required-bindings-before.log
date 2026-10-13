@@ -1,0 +1,7 @@
+error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_foundation/repro_imported_missing_generic_root/main.lani:3:27
+  |
+3 | fn main() -> i32 { return core::requirements::unused_constant(); }
+  |                           ^^^^ a declared constant parameter could not be inferred
+     = note: provide an argument or a result type that determines every declared constant parameter
+check_exit=1

@@ -1,0 +1,8 @@
+struct Tag<const N:u64> { values:[i32;N] }
+fn narrow<const N:u8>(values:[i32;N])->[i32;N] { return values; }
+fn make<const N:u64>(values:[i32;N])->Tag<N> { return Tag { values:values }; }
+fn choose<const N:u64>(a:[i32;N],left:Tag<N>,right:Tag<N>)->[i32;N] { return a; }
+fn conflicting<const K:u64>(values:[i32;K],tag:Tag<K>)->[i32;K] {
+    return choose(values,tag,make(narrow(values)));
+}
+fn main()->i32 { return 0; }

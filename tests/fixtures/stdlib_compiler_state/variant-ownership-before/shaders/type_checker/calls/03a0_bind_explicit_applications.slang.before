@@ -1,0 +1,94 @@
+import type_checker.constant_parameter_slots;
+// Bind only the callable's own ordered header. Method lexical slots already
+// include the impl domain; the receiver producer owns those inherited bindings.
+import hir_records;
+import type_checker.calls.explicit_application_owner;
+import type_checker.calls.explicit_binding_metadata;
+
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<HirPathSegment> compact_path_segments;
+StructuredBuffer<uint> compact_generic_param_count;
+StructuredBuffer<HirGenericParam> compact_generic_params;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> fn_hir_by_decl_token;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+RWStructuredBuffer<uint> call_explicit_application_owner_by_token;
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint call = dtid.x + dtid.y * 65535u * 256u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (call >= count || compact_hir_core[call].kind != 19u) return;
+    uint callee = compact_hir_payload[call].a;
+    if (callee >= count) return;
+    uint token = explicit_callable_application_token(call, count, gParams.n_tokens,
+        compact_hir_core, compact_hir_links, compact_hir_payload, path_id_by_owner_hir,
+        compact_path_count, compact_paths, compact_path_segments);
+    if (token >= gParams.n_tokens) return;
+    // Record every checked call alias while preserving the applying segment.
+    bool member = compact_hir_core[callee].kind == 21u;
+    uint identity = member
+        ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
+    if (identity >= gParams.n_tokens) identity = compact_hir_core[callee].token_start;
+    call_explicit_application_owner_by_token[token] = token;
+    if (identity < gParams.n_tokens) call_explicit_application_owner_by_token[identity] = token;
+    // Chained member calls share the receiver span's start. That token cannot
+    // identify either application; publishing it would race between call lanes.
+    if (!member)
+    {
+        uint head = compact_hir_core[callee].token_start;
+        if (head < gParams.n_tokens) call_explicit_application_owner_by_token[head] = token;
+        head = compact_hir_core[call].token_start;
+        if (head < gParams.n_tokens) call_explicit_application_owner_by_token[head] = token;
+    }
+    HirRange arguments;
+    if (!explicit_application_range(token, arguments)) return;
+    if (call_dependency_library_id[token] != 0xffffffffu ||
+        (identity < gParams.n_tokens && call_dependency_library_id[identity] != 0xffffffffu)) return;
+    uint function = call_fn_index[token];
+    if (function >= gParams.n_tokens && identity < gParams.n_tokens) function = call_fn_index[identity];
+    if (function >= gParams.n_tokens) return; // Name resolution owns an unknown callable.
+    uint owner = fn_hir_by_decl_token[function];
+    if (owner >= count) { call_explicit_application_status[token] = 4u; return; }
+    HirRange parameters = compact_generic_param_ranges[owner];
+    if (parameters.count != arguments.count)
+    { call_explicit_application_status[token] = 2u; return; }
+    uint total = compact_generic_param_count[0u];
+    if (parameters.start > total || parameters.count > total - parameters.start)
+    { call_explicit_application_status[token] = 4u; return; }
+    uint seen = 0u; uint constant_seen = 0u;
+    for (uint ordinal = 0u; ordinal < parameters.count; ordinal++)
+    {
+        HirGenericParam parameter = compact_generic_params[parameters.start + ordinal];
+        if (parameter.owner != owner || parameter.name_token >= gParams.n_tokens)
+        { call_explicit_application_status[token] = 4u; return; }
+        if (parameter.kind != 1u && parameter.kind != 2u)
+        { call_explicit_application_status[token] = 3u; return; }
+        bool constant = parameter.kind == 2u;
+        uint slot = constant ? type_const_param_slot_by_token[parameter.name_token]
+            : type_generic_param_slot_by_token[parameter.name_token];
+        if (slot >= 32u || ((constant ? constant_seen : seen) & (1u << slot)) != 0u)
+        { call_explicit_application_status[token] = 4u; return; }
+        if (constant)
+        {
+            if (!bind_explicit_constant_operand(arguments.start + ordinal))
+            { call_explicit_application_status[token] = 3u; return; }
+            constant_seen |= 1u << slot;
+        }
+        else seen |= 1u << slot;
+        call_explicit_arg_slot[arguments.start + ordinal] = slot | (constant ? EXPLICIT_CONSTANT_SLOT : 0u);
+    }
+    call_explicit_application_status[token] = 1u;
+}

@@ -1,0 +1,40 @@
+
+running 30 tests
+test call_contract_nested_method_arguments_preserve_values_and_copies ... ok
+test call_contract_nested_method_arguments_reject_receiver_conflicts ... ok
+test explicit_callable_arguments_execute_32_ordered_unused_slots ... ok
+test explicit_callable_arguments_execute_32_used_structural_slots ... ok
+test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test explicit_callable_arguments_execute_imported_own_method_headers ... ok
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... ok
+test explicit_callable_arguments_execute_scalar_and_unused_bindings ... ok
+test explicit_callable_arguments_execute_string_reference_and_slice_forms ... ok
+test explicit_callable_arguments_reject_value_and_result_conflicts ... ok
+test explicit_callable_arguments_validate_own_headers ... ok
+test explicit_dotted_arguments_execute_compounds_constants_and_symbolic_scopes ... ok
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test explicit_dotted_arguments_reject_conflicts_and_wrong_headers ... ok
+test generic_method_lookup_uses_complete_inferred_call_results ... ok
+test lexical_method_environment_handles_reordered_impls_borrows_and_nested_calls ... ok
+test lexical_method_environment_imported_compounds_and_constants_execute ... ok
+test lexical_method_environment_imported_parameters_execute ... ok
+test lexical_method_environment_imported_rejects_missing_and_conflicting_bindings ... ok
+test lexical_method_environment_keeps_impl_and_method_arguments_distinct ... ok
+test lexical_method_environment_rejects_conflicts_and_missing_bindings ... ok
+test lexical_method_environment_supports_ordinary_owners_and_constant_results ... ok
+test structural_impl_receivers_execute_imported_compositions ... ok
+test structural_impl_receivers_execute_local_compositions ... ok
+test structural_impl_receivers_execute_nested_generic_array_patterns ... ok
+test structural_impl_receivers_execute_ordinary_array_patterns ... ok
+test structural_impl_receivers_execute_thirty_two_parameters_imported ... ok
+test structural_impl_receivers_execute_thirty_two_parameters_locally ... ok
+test structural_impl_receivers_reject_conflicts_and_ambiguous_patterns ... wrong nested nominal argument: LNC0027 call resolution failed
+repeated structural type parameter: LNC0027 call resolution failed
+repeated structural constant parameter: LNC0027 call resolution failed
+overlapping structural methods: LNC0027 call resolution failed
+alpha equivalent structural methods: LNC0027 call resolution failed
+ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 214 filtered out; finished in 16.38s
+

@@ -1,0 +1,5 @@
+module core::maybe_fn;
+pub enum Maybe<T> { Some(T), None }
+pub fn is_some<T>(value: Maybe<T>) -> bool {
+    return match (value) { Some(inner) -> true, None -> false };
+}

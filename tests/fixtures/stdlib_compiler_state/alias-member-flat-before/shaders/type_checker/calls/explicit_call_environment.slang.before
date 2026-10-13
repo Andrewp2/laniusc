@@ -1,0 +1,97 @@
+// Source-owned explicit bindings are immutable evidence in caller scope.
+// Declaration producers map the ordered application rows to lexical slots;
+// ordinary value claims and receiving contexts cannot rewrite that mapping.
+import hir_records;
+import type_checker.calls.claim_reference;
+
+public StructuredBuffer<uint> call_explicit_application_status;
+public StructuredBuffer<uint> call_explicit_application_owner_by_token;
+public StructuredBuffer<uint> call_explicit_arg_slot;
+StructuredBuffer<uint> explicit_environment_argument_count;
+StructuredBuffer<HirTypeArg> explicit_environment_arguments;
+StructuredBuffer<HirRange> explicit_environment_argument_ranges;
+StructuredBuffer<HirCore> explicit_environment_hir_core;
+StructuredBuffer<uint> explicit_environment_type_tag;
+StructuredBuffer<uint> explicit_environment_type_payload;
+StructuredBuffer<uint> explicit_environment_constant_kind;
+StructuredBuffer<uint> explicit_environment_constant_payload;
+
+// Declaration binding resolves ambiguous name operands to constants. This
+// checked operand role is distinct from acceptance of the entire header; call
+// readers below still require completed application status before consuming it.
+public bool checked_source_constant_operand(uint operand, out uint kind, out uint payload)
+{
+    kind = 0u; payload = 0xffffffffu;
+    uint capacity; uint stride;
+    explicit_environment_constant_kind.GetDimensions(capacity, stride);
+    if (operand >= capacity) return false;
+    kind = explicit_environment_constant_kind[operand];
+    payload = explicit_environment_constant_payload[operand];
+    return (kind == 1u || kind == 2u) && payload != 0xffffffffu;
+}
+
+// Metadata uses the applying name even when the accepted environment is keyed
+// by a projected head alias. Jobs without source applications retain that key.
+public uint checked_call_application_owner(uint token)
+{
+    uint capacity; uint stride;
+    call_explicit_application_owner_by_token.GetDimensions(capacity, stride);
+    if (token >= capacity) return token;
+    uint owner = call_explicit_application_owner_by_token[token];
+    return owner < capacity ? owner : token;
+}
+
+public bool checked_explicit_environment_argument(uint environment, uint slot,
+    out uint tag, out uint payload)
+{
+    tag = 0u; payload = 0xffffffffu;
+    if (environment == 0xffffffffu || (environment & 0x80000000u) == 0u || slot >= 32u) return false;
+    uint token = environment & 0x7fffffffu;
+    uint capacity; uint stride;
+    call_explicit_application_status.GetDimensions(capacity, stride);
+    if (token >= capacity) return false;
+    token = call_explicit_application_owner_by_token[token];
+    if (token >= capacity || call_explicit_application_status[token] != 1u) return false;
+    HirRange arguments = explicit_environment_argument_ranges[token];
+    uint count = explicit_environment_argument_count[0u];
+    if (arguments.count > 64u || arguments.start > count || arguments.count > count - arguments.start) return false;
+    for (uint i = 0u; i < arguments.count; i++)
+    {
+        uint row = arguments.start + i;
+        if (call_explicit_arg_slot[row] != slot) continue;
+        HirTypeArg argument = explicit_environment_arguments[row];
+        explicit_environment_hir_core.GetDimensions(capacity, stride);
+        if (argument.application_token != token || argument.value >= capacity ||
+            explicit_environment_hir_core[argument.value].kind != 5u) return false;
+        uint anchor = explicit_environment_hir_core[argument.value].token_start;
+        explicit_environment_type_tag.GetDimensions(capacity, stride);
+        if (anchor >= capacity) return false;
+        tag = explicit_environment_type_tag[anchor]; payload = explicit_environment_type_payload[anchor];
+        return checked_claim_reference(tag, payload);
+    }
+    return false;
+}
+
+public bool checked_explicit_environment_constant(uint environment, uint slot,
+    out uint kind, out uint payload)
+{
+    kind = 0u; payload = 0xffffffffu;
+    if (environment == 0xffffffffu || (environment & 0x80000000u) == 0u || slot >= 32u) return false;
+    uint token = environment & 0x7fffffffu;
+    uint capacity; uint stride;
+    call_explicit_application_status.GetDimensions(capacity, stride);
+    if (token >= capacity) return false;
+    token = call_explicit_application_owner_by_token[token];
+    if (token >= capacity || call_explicit_application_status[token] != 1u) return false;
+    HirRange arguments = explicit_environment_argument_ranges[token];
+    uint count = explicit_environment_argument_count[0u];
+    if (arguments.count > 64u || arguments.start > count || arguments.count > count - arguments.start) return false;
+    for (uint i = 0u; i < arguments.count; i++)
+    {
+        uint row = arguments.start + i;
+        if (call_explicit_arg_slot[row] != (0x80000000u | slot)) continue;
+        if (explicit_environment_arguments[row].application_token != token) return false;
+        return checked_source_constant_operand(explicit_environment_arguments[row].value, kind, payload);
+    }
+    return false;
+}

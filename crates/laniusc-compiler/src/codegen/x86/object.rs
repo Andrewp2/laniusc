@@ -6,7 +6,8 @@
 
 use crate::compiler::stable_name_hash;
 
-pub const GPU_X86_OBJECT_VERSION: u32 = 2;
+// Version 3 introduces (data, length, signed byte stride) slice values.
+pub const GPU_X86_OBJECT_VERSION: u32 = 3;
 const GPU_X86_OBJECT_MAGIC: [u8; 8] = *b"LNX86OBJ";
 const HEADER_U32S: usize = 9;
 const RELOCATION_U32S: usize = 8;
@@ -682,6 +683,19 @@ mod tests {
             GpuX86RelocatableObject::from_bytes(&bytes).expect("parse object"),
             object
         );
+    }
+
+    #[test]
+    fn x86_objects_reject_pre_stride_abi_versions() {
+        for version in [1u32, 2u32] {
+            let mut object = object_fixture();
+            let mut bytes = object.to_bytes().expect("current object");
+            bytes[8..12].copy_from_slice(&version.to_le_bytes());
+            let error = GpuX86RelocatableObject::from_bytes(&bytes).unwrap_err();
+            assert!(error.contains("unsupported"), "{error}");
+            object.version = version;
+            assert!(object.validate().unwrap_err().contains("unsupported"));
+        }
     }
 
     #[test]

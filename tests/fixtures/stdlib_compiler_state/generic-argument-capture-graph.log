@@ -1,0 +1,9 @@
+
+running 4 tests
+test codegen::lowering_ir::tests::optimizer_entrypoints_match_graph_access_contracts ... ok
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test codegen::lowering_ir::tests::wasm_target_entrypoints_match_graph_access_contracts ... ok
+test codegen::lowering_ir::tests::x86_target_lir_entrypoints_match_graph_access_contracts ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 616 filtered out; finished in 0.01s
+

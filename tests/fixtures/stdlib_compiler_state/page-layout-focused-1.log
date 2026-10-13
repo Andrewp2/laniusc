@@ -1,0 +1,26 @@
+
+running 4 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::qualified_variant_import_ambiguity_is_independent_of_source_pack_membership ... 
+thread 'compiler::gpu_compiler::typecheck::tests::qualified_variant_import_ambiguity_is_independent_of_source_pack_membership' (307230) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3627:13:
+left interface: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module lib::left; pub enum Choice<T> { Left(T) }"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay ... 
+thread 'compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay' (307300) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3550:13:
+left interface: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module lib::left; pub enum Choice<T> { Left(T), Missing }"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+FAILED
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... 
+thread 'type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes' (307312) panicked at crates/laniusc-compiler/src/type_checker/compiler_graph.rs:6654:10:
+called `Result::unwrap()` on an `Err` value: "compiler pass type_check.type_instances.project_imported_fields reads imported_layout_groups before it is initialized"
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::typecheck::tests::qualified_variant_import_ambiguity_is_independent_of_source_pack_membership
+    compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay
+    type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 629 filtered out; finished in 5.66s
+

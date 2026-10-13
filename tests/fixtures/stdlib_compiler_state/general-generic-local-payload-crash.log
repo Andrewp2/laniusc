@@ -1,0 +1,26 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.72s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 1 test
+test used_local_payload_templates_execute ... kept temp artifact /tmp/laniusc_sample_x86_generic_payload_templates_693852_0
+kept temp artifact /tmp/laniusc_sample_x86_generic_payload_templates_693852_1
+kept temp artifact /tmp/laniusc_sample_x86_generic_payload_templates_693852_2
+
+thread 'used_local_payload_templates_execute' (693853) panicked at tests/stdlib_generic_payload_templates_execution.rs:260:9:
+assertion `left == right` failed: prefer(present, absent); return 0;: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    used_local_payload_templates_execute
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 1.34s
+
+error: test failed, to rerun pass `--test stdlib_generic_payload_templates_execution`

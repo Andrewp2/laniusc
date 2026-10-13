@@ -70,7 +70,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // the root to its nearest semantic HIR owner instead of assuming it is the
     // raw first child of the type row.
     if (node_kind[node] != PROD_TYPE_PATH && node_kind[node] != PROD_PATH &&
-        node_kind[node] != PROD_BOUND_TYPE_PATH)
+        node_kind[node] != PROD_BOUND_TYPE_PATH && node_kind[node] != PROD_ARRAY_LENGTH_PATH)
         return;
     uint path_row = hir_node_dense_id[node];
     uint owner_row = path_row != INVALID && path_row < active_node_count()

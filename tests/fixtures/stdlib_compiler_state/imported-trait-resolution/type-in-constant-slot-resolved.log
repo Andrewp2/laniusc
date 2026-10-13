@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=37
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_62736.lani: error[LNC0021]: invalid trait implementation
+ --> <source pack file 0>:2:5
+  |
+2 | pub impl core::trait_api::Sized<i32> for bool {}
+  |     ^^^^ constant parameters in imported trait implementations are not supported yet
+     = note: the trait solver must preserve ordered type and constant operands before this contract can be used

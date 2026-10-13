@@ -1,0 +1,3 @@
+All-cached source order digest=bf594c3d1d422f3d
+Initial execution-gate digest=714ce3a95edfb4a5; cached artifacts first, compiled suffix=['parser/hir/type/arg/links']
+Both digests reconstructed from the identical current bytes of all 743 artifacts.

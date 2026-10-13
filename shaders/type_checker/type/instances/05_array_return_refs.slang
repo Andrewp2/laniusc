@@ -10,7 +10,10 @@
 // punctuation.
 
 import hir_records;
+import type_checker.checked_array_counts;
 import status;
+import type_checker.checked_type_graph;
+import type_checker.scoped_type_equality;
 
 struct Params
 {
@@ -33,13 +36,6 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_const_param_slot_by_token;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
 
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
@@ -58,8 +54,6 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
-static const uint TYPE_LEN_LITERAL = 1u;
-static const uint TYPE_LEN_CONST_PARAM = 2u;
 
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
@@ -113,64 +107,23 @@ uint name_token_for_expr(uint node)
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
 {
-    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+    if (tag != TYPE_REF_INSTANCE || payload >= checked_type_capacity())
         return INVALID;
     if (type_instance_kind[payload] != TYPE_INSTANCE_ARRAY)
         return INVALID;
-    uint len_kind = type_instance_len_kind[payload];
-    if (len_kind != TYPE_LEN_LITERAL && len_kind != TYPE_LEN_CONST_PARAM)
+    if (!checked_source_array_length_valid(type_instance_len_kind[payload],
+        type_instance_len_payload[payload], gParams.n_tokens))
         return INVALID;
     return payload;
 }
 
-bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
-{
-    if (lhs_tag == TYPE_REF_SCALAR || rhs_tag == TYPE_REF_SCALAR)
-        return lhs_tag == rhs_tag && lhs_payload == rhs_payload;
-    if (lhs_tag == TYPE_REF_GENERIC_PARAM && rhs_tag == TYPE_REF_GENERIC_PARAM)
-    {
-        uint lhs_slot = valid_token(lhs_payload) ? type_generic_param_slot_by_token[lhs_payload] : INVALID;
-        uint rhs_slot = valid_token(rhs_payload) ? type_generic_param_slot_by_token[rhs_payload] : INVALID;
-        return lhs_slot != INVALID && lhs_slot == rhs_slot;
-    }
-    return lhs_tag == rhs_tag && lhs_payload == rhs_payload;
-}
-
-bool same_array_len(uint lhs, uint rhs)
-{
-    uint lhs_kind = type_instance_len_kind[lhs];
-    uint rhs_kind = type_instance_len_kind[rhs];
-    if (lhs_kind != rhs_kind)
-        return false;
-    if (lhs_kind == TYPE_LEN_LITERAL)
-        return type_instance_len_payload[lhs] == type_instance_len_payload[rhs];
-    if (lhs_kind == TYPE_LEN_CONST_PARAM)
-    {
-        uint lhs_payload = type_instance_len_payload[lhs];
-        uint rhs_payload = type_instance_len_payload[rhs];
-        uint lhs_slot = valid_token(lhs_payload) ? type_const_param_slot_by_token[lhs_payload] : INVALID;
-        uint rhs_slot = valid_token(rhs_payload) ? type_const_param_slot_by_token[rhs_payload] : INVALID;
-        return lhs_slot != INVALID && lhs_slot == rhs_slot;
-    }
-    return false;
-}
-
 bool same_bounded_array_instance(uint lhs, uint rhs)
 {
-    lhs = valid_token(lhs) ? lhs : INVALID;
-    rhs = valid_token(rhs) ? rhs : INVALID;
-    if (lhs == INVALID || rhs == INVALID)
-        return false;
-    if (type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
-        type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY)
-        return false;
-    if (!same_array_len(lhs, rhs))
-        return false;
-    return same_type_ref(
-        type_instance_elem_ref_tag[lhs],
-        type_instance_elem_ref_payload[lhs],
-        type_instance_elem_ref_tag[rhs],
-        type_instance_elem_ref_payload[rhs]);
+    uint capacity = checked_type_capacity();
+    if (lhs >= capacity || rhs >= capacity || type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
+        type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY) return false;
+    return scoped_type_refs_equal<ScopedCheckedTypeGraph>(3u, lhs, INVALID, 3u, rhs, INVALID,
+        capacity, gParams.n_tokens);
 }
 
 uint function_return_array_instance(uint return_node)

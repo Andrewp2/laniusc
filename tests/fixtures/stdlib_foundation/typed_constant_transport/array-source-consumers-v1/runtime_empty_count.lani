@@ -1,0 +1,2 @@
+fn keep<const N:u64>(value:[i32;N])->[i32;N] { return value; }
+fn main()->i32 { let empty:[i32;0] = keep<0>([]); return 0; }

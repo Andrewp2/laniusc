@@ -1,0 +1,7 @@
+pub enum Maybe { Empty, Some(i32) }
+fn main() -> i32 {
+    let input: Maybe = Some(7);
+    let good: bool = match (input) { Some(value) -> value == 7, Empty -> false };
+    if (!good) { return 1; }
+    return 0;
+}

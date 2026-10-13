@@ -12,6 +12,8 @@ StructuredBuffer<HirMatchPayload> compact_match_payloads;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> semantic_value_id;
+StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
+StructuredBuffer<uint> semantic_function_flag;
 RWStructuredBuffer<uint> semantic_local_flag;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -54,6 +56,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (hir < hir_count)
     {
+        uint encoded_function = semantic_enclosing_fn_by_hir[hir];
+        if (encoded_function != 0u && encoded_function - 1u < hir_count &&
+            semantic_function_flag[encoded_function - 1u] == 0u)
+        {
+            semantic_local_flag[hir] = 0u;
+            return;
+        }
         HirCore core = compact_hir_core[hir];
         HirPayload payload = compact_hir_payload[hir];
         bool source_local = (core.kind == HIR_LET_STMT ||

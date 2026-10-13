@@ -1,0 +1,8 @@
+import core::members;
+fn main() -> i32 {
+    let value = core::members::Number::Both(42, false);
+    let number = match (value) { core::members::Pair::Both(number, flag) -> number, _ -> 0 };
+    let flag = match (value) { core::members::Pair::Both(number, flag) -> flag, _ -> true };
+    if (flag || number != 42) { return 1; }
+    return 0;
+}

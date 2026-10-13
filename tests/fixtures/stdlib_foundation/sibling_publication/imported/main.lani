@@ -1,0 +1,16 @@
+import core::ordinary;
+struct Cell<T> { value: T }
+impl<T> Cell<T> {
+    fn get(&self, fallback: T) -> T {
+        if (core::ordinary::helper(4) == 6) { return self.value; }
+        return fallback;
+    }
+    fn relay(&self, fallback: T) -> T { return self.get(fallback); }
+}
+fn main() -> i32 {
+    let integer: Cell<i32> = Cell { value: 42 };
+    let boolean: Cell<bool> = Cell { value: true };
+    if (integer.get(0) != 42 || integer.relay(0) != 42) { return 1; }
+    if (!boolean.get(false) || !boolean.relay(false)) { return 2; }
+    return 0;
+}

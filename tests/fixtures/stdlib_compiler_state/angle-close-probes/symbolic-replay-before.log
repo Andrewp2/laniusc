@@ -1,0 +1,16 @@
+
+running 1 test
+test compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity ... GPU source-pack type-check rejection: token=53 code=AssignMismatch detail=0
+
+thread 'compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity' (159486) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3735:18:
+complete qualified alias references specialize with their parameter: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 4, column: 90, length: 1, byte_start: Some(129), byte_end: Some(130), source_line: Some("pub fn keep<T>(v: lib::aliases::Id<T>) -> lib::aliases::Id<lib::aliases::Id<T>> { return v; }"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 638 filtered out; finished in 1.46s
+

@@ -1,0 +1,14 @@
+module app::main;
+import core::slice;
+import std::io;
+
+fn choose(values: [str]) -> str {
+    return core::slice::get_or(values, 3, 1, "fallback");
+}
+
+fn main() -> i32 {
+    let values: [str; 3] = ["left", "Ω", ""];
+    let found: str = choose(values);
+    if (std::io::println(found) != 3) { return 1; }
+    return 0;
+}

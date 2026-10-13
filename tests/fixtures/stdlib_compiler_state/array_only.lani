@@ -1,0 +1,5 @@
+import core::option;
+fn main()->i32 {
+    let values: [core::option::Option<i32>; 2] = [core::option::None(), core::option::None()];
+return 0;
+}

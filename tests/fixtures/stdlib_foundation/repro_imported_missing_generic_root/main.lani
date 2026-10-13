@@ -1,0 +1,3 @@
+module app::main;
+import core::requirements;
+fn main() -> i32 { return core::requirements::unused_constant(); }

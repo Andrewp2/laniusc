@@ -1,0 +1,18 @@
+[
+  {
+    "name": "compositions",
+    "exit": 0
+  },
+  {
+    "name": "enum_constructor",
+    "exit": 1
+  },
+  {
+    "name": "literal-ordinary",
+    "exit": 0
+  },
+  {
+    "name": "literal",
+    "exit": 0
+  }
+]

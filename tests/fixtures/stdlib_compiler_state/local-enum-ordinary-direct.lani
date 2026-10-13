@@ -1,0 +1,1 @@
+enum Decision { Accept(bool), Reject } fn reject() -> Decision { return Reject(); } fn main() -> i32 { let value: Decision = reject(); return match (value) { Accept(v) -> 1, Reject -> 0 }; }

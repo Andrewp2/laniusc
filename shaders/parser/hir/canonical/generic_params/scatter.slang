@@ -9,12 +9,14 @@ StructuredBuffer<uint> family_local_prefix;
 StructuredBuffer<uint> family_block_prefix;
 StructuredBuffer<uint> candidate_raw_by_anchor;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> owner_value;
 StructuredBuffer<uint> raw_to_hir;
 RWStructuredBuffer<uint> family_count;
 RWStructuredBuffer<HirGenericParam> hir_generic_params;
+RWStructuredBuffer<uint> hir_generic_param_types;
 RWStructuredBuffer<HirRange> generic_param_ranges;
 RWStructuredBuffer<uint> canonical_status;
 
@@ -72,6 +74,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     parameter.kind = prod == PROD_ENUM_CONST_PARAM ? GENERIC_PARAM_KIND_CONST : GENERIC_PARAM_KIND_TYPE;
     parameter.file_id = file_for_raw(raw);
     hir_generic_params[row] = parameter;
+    // Retain the parsed annotation as a separate relation. The fixed generic
+    // parameter record keeps its declaration identity and ownership contract.
+    uint type_raw = parameter.kind == GENERIC_PARAM_KIND_CONST ? first_child[raw] : INVALID;
+    hir_generic_param_types[row] = type_raw < gCanonical.raw_capacity
+        ? raw_to_hir[type_raw] : INVALID;
     if (parameter.owner < gCanonical.canonical_capacity)
     {
         uint ignored;

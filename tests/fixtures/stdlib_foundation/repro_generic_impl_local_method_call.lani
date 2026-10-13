@@ -1,0 +1,13 @@
+module app::main;
+enum Maybe<T> { Some(T), None }
+impl<T> Maybe<T> {
+    fn is_some(&self) -> bool {
+        return match (self) { Some(_) -> true, None -> false };
+    }
+    fn has_value(&self) -> bool { return self.is_some(); }
+}
+fn main() -> i32 {
+    let value: Maybe<bool> = Some(false);
+    if (value.has_value()) { return 0; }
+    return 1;
+}

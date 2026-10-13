@@ -1,0 +1,8 @@
+GPU type-check detail: Gpu(compiler pass type_check.calls.arg_match.direct.consume reads call_explicit_binding_payload before it is initialized)
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_172218.lani: error[LNC0047]: type-check execution failed
+ --> /tmp/laniusc_stdlib_perf_input_172218.lani:1:1
+  |
+1 | fn keep<T>(v: T) -> T { return v; }
+  | ^ type checker failed before it could report a language error
+     = note: source file count: 1
+     = note: try reducing the source pack; if this happens on a small package, report a compiler bug

@@ -39,6 +39,117 @@ impl TypeCheckRecordHostTimer {
     }
 }
 
+// Opt-in source fact dump only: no inference, normalization, or semantic writes.
+fn trace_range_inference(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    state: &ResidentTypeCheckWorkspace,
+    hir: &crate::parser::buffers::GpuHirView,
+) -> Result<()> {
+    let graph = &state.typecheck_graph;
+    let mut columns = vec![
+        ("count", hir.count.alias::<u32>(hir.count.byte_size / 4)),
+        ("core", hir.core.alias::<u32>(hir.core.byte_size / 4)),
+        ("payload", hir.payload.alias::<u32>(hir.payload.byte_size / 4)),
+        ("expr_parent", hir.expr_parent.alias::<u32>(hir.expr_parent.byte_size / 4)),
+    ];
+    for name in ["call_inference_result_tag", "call_inference_result_payload",
+        "literal_context_type_by_hir", "decl_type_ref_tag", "decl_type_ref_payload",
+        "call_fn_index", "call_return_type", "visible_decl", "visible_type",
+        "argument_expected_ref_tag", "argument_expected_ref_payload",
+        "call_arg_row_count_out", "call_arg_row_node", "call_arg_row_call_node",
+        "call_arg_row_ordinal", "call_arg_param_row", "call_param_row_ref_tag",
+        "call_param_row_ref_payload", "call_dependency_library_id"] {
+        columns.push((name, graph.u32_buffer(name)?));
+    }
+    let words = columns.iter().try_fold(0usize, |total, (_, buffer)| {
+        total.checked_add(buffer.byte_size / 4)
+            .ok_or_else(|| anyhow::anyhow!("range inference trace size overflow"))
+    })?;
+    let readback = readback_u32s(device, "rb.type_check.range_inference", words);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("type-check-range-inference-trace"),
+    });
+    let mut offsets = Vec::new();
+    let mut offset = 0usize;
+    for (_, source) in &columns {
+        offsets.push(offset);
+        source.copy_to(&mut encoder, 0, &readback, (offset * 4) as u64, source.byte_size as u64);
+        offset += source.byte_size / 4;
+    }
+    crate::gpu::passes_core::submit_with_progress(queue, "range inference trace", encoder.finish());
+    let slice = readback.slice(..);
+    crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.range_inference")?;
+    let mapped = slice.get_mapped_range();
+    let data = mapped.chunks_exact(4).map(|bytes|
+        u32::from_le_bytes(bytes.try_into().expect("four-byte trace word"))).collect::<Vec<_>>();
+    drop(mapped);
+    readback.unmap();
+    let get = |column: usize, row: u32| -> u32 {
+        let row = row as usize;
+        if row >= columns[column].1.byte_size / 4 { return u32::MAX; }
+        data[offsets[column] + row]
+    };
+    let count = get(0, 0).min(hir.capacity);
+    let dump = |label: &str, node: u32| {
+        if node >= count {
+            eprintln!("[typecheck.range_inference] {label} node={node} invalid");
+            return;
+        }
+        let core = [get(1,node*4),get(1,node*4+1),get(1,node*4+2),get(1,node*4+3)];
+        let value = [get(2,node*4),get(2,node*4+1),get(2,node*4+2),get(2,node*4+3)];
+        eprintln!("[typecheck.range_inference] {label} node={node} core={core:?} payload={value:?} expr_parent={} result=({}, {}) literal_context={} expected=({}, {})",
+            get(3,node),get(4,node),get(5,node),get(6,node),get(13,node),get(14,node));
+    };
+    let dump_forward_chain = |label: &str, mut node: u32| {
+        for _ in 0..count {
+            dump(label,node);
+            if node >= count { break; }
+            let kind=get(1,node*4); let form=get(2,node*4);
+            if !matches!(kind,14|16|17) || form != 1 { break; }
+            let next=get(2,node*4+1); if next == node { break; } node=next;
+        }
+        node
+    };
+    eprintln!("[typecheck.range_inference] converged hir_count={count}");
+    for node in 0..count {
+        let kind=get(1,node*4); let form=get(2,node*4);
+        if kind == 30 || (kind == 7 && form == 7) {
+            dump("for",node);
+            let binder=get(2,node*4+1);
+            eprintln!("[typecheck.range_inference] binder token={binder} ref=({}, {}) visible=({}, {})",
+                get(7,binder),get(8,binder),get(11,binder),get(12,binder));
+            let iterable=dump_forward_chain("iterable",get(2,node*4+2));
+            if iterable < count && matches!(get(1,iterable*4),14|16) &&
+                (30..=35).contains(&get(2,iterable*4)) {
+                dump_forward_chain("start",get(2,iterable*4+1));
+                dump_forward_chain("end",get(2,iterable*4+2));
+            }
+        }
+        // All calls are printed so a missing range edge cannot hide its actual
+        // endpoint call. Raw HIR/token identities permit exact source pairing.
+        if kind == 19 {
+            dump("call",node);
+            let callee=get(2,node*4); dump("callee",callee);
+            if callee < count {
+                let kind=get(1,callee*4);
+                let token=if kind==21 {get(2,callee*4+2)} else {get(2,callee*4+3)};
+                let token=if token < state.cache_key.token_capacity {token} else {get(1,callee*4+2)};
+                eprintln!("[typecheck.range_inference] callee_token={token} fn={} return={} visible=({}, {}) dependency={}",
+                    get(9,token),get(10,token),get(11,token),get(12,token),get(22,token));
+            }
+        }
+    }
+    let argument_count = get(15, 0).min(hir.capacity);
+    for row in 0..argument_count {
+        let node = get(16,row); let call = get(17,row); let parameter = get(19,row);
+        eprintln!("[typecheck.range_inference] argument row={row} call={call} ordinal={} parameter={parameter} parameter_ref=({}, {})",
+            get(18,row),get(20,parameter),get(21,parameter));
+        dump_forward_chain("argument",node);
+    }
+    Ok(())
+}
+
 impl GpuTypeChecker {
     /// Creates a type checker from the shared compiler GPU device wrapper.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
@@ -53,6 +164,11 @@ impl GpuTypeChecker {
             device,
             &["type_checker", "scan/counted", "scan/counted_pair", "radix"],
             |key| {
+                // Program catalogs own these pipelines separately and can outlive
+                // source-job workspaces. Source checking never dispatches them.
+                if key.starts_with("type_checker/program_evidence/") {
+                    return false;
+                }
                 (key != "type_checker/predicates/01b2_sort_keys_small"
                     || supports_large_workgroup_storage)
                     && (!key.starts_with("scan/counted_pair/")
@@ -60,6 +176,18 @@ impl GpuTypeChecker {
             },
         )?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
+        let body_specialization_inputs = storage_ro_from_u32s(
+            device,
+            "type_check.body_specialization_inputs",
+            &[0; generic_body::BODY_SPECIALIZATION_WORDS],
+        );
+        // An absent interface still has a valid, immutable zero-count page.
+        // It must never alias workspace columns written by the same shader.
+        let empty_dependency_words = storage_ro_from_u32s(
+            device,
+            "type_check.empty_dependency_words",
+            &[0; dependency_interface::HEADER_WORDS],
+        );
         let status_buf = typed_storage_u32_rw(
             device,
             "type_check.resident.status",
@@ -67,13 +195,24 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
         let status_readback = readback_u32s(device, "rb.type_check.resident.status", 4);
+        let call_inference_state = typed_storage_u32_rw(
+            device,
+            "type_check.calls.inference_state",
+            2,
+            wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        );
+        let call_inference_readback = readback_u32s(device, "rb.type_check.calls.inference", 2);
         let preflight_graph = preflight::TypeCheckPreflightGraph::new(device, &passes)?;
 
         Ok(Self {
             passes,
             params_buf,
+            body_specialization_inputs,
+            empty_dependency_words,
             status_buf,
             status_readback,
+            call_inference_state,
+            call_inference_readback,
             preflight_graph,
             resident_workspace: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
@@ -379,6 +518,15 @@ impl GpuTypeChecker {
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
         release_workspace_consumers: impl FnOnce(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
+        // Packed expression facts reserve the low 27-bit all-ones link as
+        // absent. Reject capacity overflow before creating or packing rows.
+        if hir_node_capacity >= crate::primitive_types::SCALAR_TYPE_LINK_MASK {
+            return Err(GpuTypeCheckError::Rejected {
+                token: 0,
+                code: GpuTypeCheckCode::BadHir,
+                detail: hir_node_capacity,
+            });
+        }
         let _operation_capture = timer
             .as_deref()
             .map(crate::gpu::timer::GpuTimer::capture_operations);
@@ -393,6 +541,10 @@ impl GpuTypeChecker {
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
             "type_check.resident.batch",
         );
+        // Every job and parser-capacity retry overwrites both policy words.
+        // Resident workspace reuse must not retain a previous replay's authority.
+        let (trait_obligation_mode, authorized_replay_callable) =
+            hir_items.frontend_trait_check.shader_words();
         let params = TypeCheckParams {
             n_tokens: token_capacity,
             source_len,
@@ -400,10 +552,33 @@ impl GpuTypeChecker {
             n_source_files: source_file_capacity,
             parser_feature_flags: hir_items.parser_feature_flags,
             dependency_interfaces_present: u32::from(dependency_pages.is_some()),
+            retain_callable_owners: u32::from(hir_items.semantic_interface_required),
+            trait_obligation_mode,
+            authorized_replay_callable,
         };
         self.params_buf
             .write(queue, 0, &type_check_params_bytes(&params));
         self.status_buf.write(queue, 0, &status_init_bytes());
+        let dependency_types_present =
+            dependency_pages.is_some_and(GpuDependencyInterfacePages::has_type_references);
+        let application_types_required =
+            generic_param_record_passes_required(hir_items.parser_feature_flags)
+                || dependency_types_present;
+        let defer_inference = 1u8;
+        self.call_inference_state
+            .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
+        let specialization = hir_items
+            .body_specialization
+            .map(CheckedBodySpecialization::packet)
+            .transpose()
+            .map_err(GpuTypeCheckError::Gpu)?
+            .unwrap_or([0; generic_body::BODY_SPECIALIZATION_WORDS]);
+        let specialization_bytes: Vec<u8> = specialization
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        self.body_specialization_inputs
+            .write(queue, 0, &specialization_bytes);
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
         let parser_feature_flags = hir_items.parser_feature_flags;
@@ -439,8 +614,20 @@ impl GpuTypeChecker {
                 .current_semantic_artifact
                 .lock()
                 .expect("GpuTypeChecker.current_semantic_artifact poisoned") =
-                Some(bind_groups.semantic_artifact()?);
+                Some(bind_groups.semantic_artifact(
+                    hir_items.hir,
+                    parser_feature_flags,
+                    dependency_interfaces.is_some(),
+                    hir_items.semantic_interface_required,
+                )?);
             let module_path = &bind_groups.module_path;
+            let pattern_pages = DependencyPatternReplay {
+                device,
+                queue,
+                pages: dependency_pages,
+                passes: &self.passes,
+                state: module_path,
+            };
             let predicates = &bind_groups.predicates;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.workspace_ready");
@@ -472,7 +659,7 @@ impl GpuTypeChecker {
             let enums_required = enum_passes_required(parser_feature_flags);
             let matches_required = match_passes_required(parser_feature_flags);
             let aggregates_required = aggregate_passes_required(parser_feature_flags);
-            let aliases_required = type_alias_passes_required(parser_feature_flags);
+            let aliases_required = module_path.bind_groups.type_aliases.is_some();
 
             // Parser scratch is reused physically by the resident type-check
             // graph. The job reset precedes parser execution, so reset those
@@ -512,6 +699,8 @@ impl GpuTypeChecker {
             }
             host_timer.stamp("loop_names_language_decls");
             predicates.clear_syntax_tokens.record(encoder)?;
+            // Initialize every constant partition before the first dependency page.
+            bind_groups.type_instances.clear_constants.record(encoder)?;
             record_module_path_state_with_passes(
                 device,
                 queue,
@@ -566,18 +755,6 @@ impl GpuTypeChecker {
                 &super::record::TYPE_INSTANCE_COLLECTION_INITIAL_LABELS,
                 timer.as_deref_mut(),
             )?;
-            if aliases_required {
-                let aliases = module_path
-                    .bind_groups
-                    .type_aliases
-                    .as_ref()
-                    .expect("alias operations exist when alias syntax is present");
-                aliases.record_roots(encoder)?;
-                aliases.record_projection(encoder, TypeAliasProjectStage::Initial)?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.modules.project_type_aliases.done");
-                }
-            }
             module_path
                 .bind_groups
                 .project_type_paths
@@ -598,20 +775,6 @@ impl GpuTypeChecker {
                 &super::record::TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS,
                 timer.as_deref_mut(),
             )?;
-            if aliases_required {
-                module_path
-                    .bind_groups
-                    .type_aliases
-                    .as_ref()
-                    .expect("alias operations exist when alias syntax is present")
-                    .record_projection(encoder, TypeAliasProjectStage::AfterProjectedRefs)?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(
-                        encoder,
-                        "typecheck.modules.project_type_aliases.after_projected_refs.done",
-                    );
-                }
-            }
             module_path
                 .bind_groups
                 .project_type_paths
@@ -654,14 +817,6 @@ impl GpuTypeChecker {
                         .record(encoder)?;
                 }
             }
-            if aliases_required {
-                module_path
-                    .bind_groups
-                    .type_aliases
-                    .as_ref()
-                    .expect("alias operations exist when alias syntax is present")
-                    .record_equivalence(encoder)?;
-            }
             module_path
                 .bind_groups
                 .project_type_paths
@@ -674,6 +829,26 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_project.done");
             }
+            bind_groups.type_instances.collection.constant_scalars.record_invocation(
+                encoder, &bind_groups.type_instances.collection.alias_constant_scalars,
+            )?;
+            if aggregates_required {
+                // Snapshot child refs only after every dependency page has
+                // replaced imported nominal roots with persistent instances.
+                // Alias normalization must never receive page-local tag 5
+                // through a cached array, slice, or reference child edge.
+                let collection = &bind_groups.type_instances.collection;
+                collection.aggregate_details.record_invocation(
+                    encoder,
+                    &collection.projected_aggregate_details,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(
+                        encoder,
+                        super::record::TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS.aggregate_details,
+                    );
+                }
+            }
             bind_groups
                 .type_instances
                 .type_instance_arg_row_scan
@@ -685,20 +860,29 @@ impl GpuTypeChecker {
                 .type_instances
                 .collect_named_arg_refs
                 .record(encoder)?;
+            if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                let materialize_alias_targets = |encoder: &mut wgpu::CommandEncoder| {
+                    record_dependency_type_index(
+                        &self.passes, encoder, module_path, DEPENDENCY_TYPE_INDEX_ALIAS_TARGETS,
+                    )?;
+                    dependency_visibility.materialize_alias_targets_group.record(encoder)
+                };
+                if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                    record_each_dependency_page(device, queue, encoder, pages, materialize_alias_targets)?;
+                } else {
+                    materialize_alias_targets(encoder)?;
+                }
+            }
             if aliases_required {
                 module_path
                     .bind_groups
                     .type_aliases
                     .as_ref()
-                    .expect("alias operations exist when alias syntax is present")
+                    .expect("alias operations exist for local syntax or imported types")
                     .record_instances(encoder)?;
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_named_arg_refs.done");
-            }
-            bind_groups.type_instances.hash_arg_rows.record(encoder)?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.type_instances_arg_hash.done");
             }
             if aggregates_required {
                 bind_groups
@@ -801,6 +985,18 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_decl_refs.done");
             }
+            if let Some(index) = &bind_groups.type_instances.index_closed_applications {
+                index.record(encoder)?;
+            }
+            if let Some(producer) = &bind_groups.type_instances.materialize_applications {
+                producer.record(encoder)?;
+            }
+            if let Some(index) = &bind_groups.type_instances.index_generated_applications {
+                index.record(encoder)?;
+            }
+            if let Some(project) = &bind_groups.type_instances.project_imported_fields {
+                project.record(encoder)?;
+            }
             bind_groups.methods.clear.record(encoder)?;
             if methods_required {
                 bind_groups.methods.record_declarations(encoder)?;
@@ -851,6 +1047,30 @@ impl GpuTypeChecker {
                     .record(encoder)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.struct_init_contexts.done");
+                }
+                bind_groups
+                    .type_instances
+                    .nested_struct_init_contexts
+                    .record(encoder)?;
+                if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                    let project = |encoder: &mut wgpu::CommandEncoder| {
+                        record_dependency_type_index(
+                            &self.passes,
+                            encoder,
+                            module_path,
+                            DEPENDENCY_TYPE_INDEX_TYPE_INSTANCE_PROJECTION,
+                        )?;
+                        dependency_visibility
+                            .project_struct_literals_group
+                            .record(encoder)
+                    };
+                    if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                        record_each_dependency_page(device, queue, encoder, pages, project)?;
+                    } else {
+                        dependency_visibility
+                            .project_struct_literals_group
+                            .record(encoder)?;
+                    }
                 }
                 bind_groups
                     .type_instances
@@ -919,7 +1139,7 @@ impl GpuTypeChecker {
             bind_groups
                 .calls
                 .argument_matching
-                .record(encoder, CallArgumentMatchStage::Direct)?;
+                .record(encoder, CallArgumentMatchStage::Direct, &pattern_pages)?;
             bind_groups
                 .calls
                 .apply_row_args
@@ -927,40 +1147,35 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.calls_row_args.done");
             }
-            if methods_required {
-                // An imported call result can supply the receiver type for
-                // a later method call through an unannotated let binding.
-                bind_groups
-                    .type_instances
-                    .infer_imported_decl_refs
-                    .record(encoder)?;
-                bind_groups
-                    .methods
-                    .mark_call_keys
-                    .record_as(encoder, METHODS_MARK_CALL_KEYS.name)?;
-                if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, |encoder| {
-                        record_dependency_type_index(
-                            &self.passes,
-                            encoder,
-                            module_path,
-                            DEPENDENCY_TYPE_INDEX_METHOD_PROJECTION,
-                        )?;
-                        record_dependency_methods(
-                            &self.passes,
-                            encoder,
-                            module_path,
-                            &bind_groups.hir_active_dispatch_args,
-                        )
-                    })?;
-                } else {
-                    record_dependency_methods(
-                        &self.passes,
-                        encoder,
-                        module_path,
-                        &bind_groups.hir_active_dispatch_args,
+            let record_method_pages = |encoder: &mut wgpu::CommandEncoder,
+                                       stage: MethodSelectionStage,
+                                       collect: bool| -> Result<()> {
+                let page = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+                    record_dependency_type_index(
+                        &self.passes, encoder, module_path,
+                        match stage {
+                            MethodSelectionStage::Direct => DEPENDENCY_TYPE_INDEX_METHOD_PROJECTION,
+                            MethodSelectionStage::Lookup => DEPENDENCY_TYPE_INDEX_METHOD_LOOKUP,
+                            MethodSelectionStage::Inference => DEPENDENCY_TYPE_INDEX_RETURN_MATERIALIZATION,
+                        },
                     )?;
+                    record_dependency_methods(encoder, module_path, stage, collect)
+                };
+                if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                    record_each_dependency_page(device, queue, encoder, pages, page)
+                } else {
+                    page(encoder)
                 }
+            };
+            if methods_required {
+                // Imported results can establish an unannotated receiver.
+                bind_groups.type_instances.infer_imported_decl_refs.record(encoder)?;
+                // Local and imported methods compete in the initial transaction.
+                bind_groups.methods.keys.record(encoder)?;
+                bind_groups.methods.record_call_selection(
+                    encoder, MethodSelectionStage::Direct,
+                    |encoder, collect| record_method_pages(encoder, MethodSelectionStage::Direct, collect),
+                )?;
             }
             module_path
                 .bind_groups
@@ -973,7 +1188,7 @@ impl GpuTypeChecker {
             bind_groups
                 .calls
                 .argument_matching
-                .record(encoder, CallArgumentMatchStage::ModuleValues)?;
+                .record(encoder, CallArgumentMatchStage::ModuleValues, &pattern_pages)?;
             bind_groups.calls.apply_row_args.record_as(
                 encoder,
                 CallArgumentMatchStage::ModuleValues.operation_names().2,
@@ -988,40 +1203,15 @@ impl GpuTypeChecker {
                         .mirror_value_call_leaf_after_row_args,
                 )?;
             if methods_required {
-                bind_groups.methods.keys.record(encoder)?;
-                bind_groups
-                    .methods
-                    .record_call_resolution(encoder, |encoder| {
-                        if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                            record_each_dependency_page(device, queue, encoder, pages, |encoder| {
-                                record_dependency_type_index(
-                                    &self.passes,
-                                    encoder,
-                                    module_path,
-                                    DEPENDENCY_TYPE_INDEX_METHOD_PROJECTION,
-                                )?;
-                                record_dependency_methods(
-                                    &self.passes,
-                                    encoder,
-                                    module_path,
-                                    &bind_groups.hir_active_dispatch_args,
-                                )
-                            })
-                        } else {
-                            record_dependency_methods(
-                                &self.passes,
-                                encoder,
-                                module_path,
-                                &bind_groups.hir_active_dispatch_args,
-                            )
-                        }
-                    })?;
+                bind_groups.methods.record_call_resolution(encoder, |encoder, collect| {
+                    record_method_pages(encoder, MethodSelectionStage::Lookup, collect)
+                })?;
             }
             bind_groups.calls.project_result_instances.record(encoder)?;
             bind_groups
                 .calls
                 .argument_matching
-                .record(encoder, CallArgumentMatchStage::MethodResults)?;
+                .record(encoder, CallArgumentMatchStage::MethodResults, &pattern_pages)?;
             bind_groups.calls.apply_row_args.record_as(
                 encoder,
                 CallArgumentMatchStage::MethodResults.operation_names().2,
@@ -1043,7 +1233,7 @@ impl GpuTypeChecker {
             bind_groups
                 .calls
                 .argument_matching
-                .record(encoder, CallArgumentMatchStage::MethodModules)?;
+                .record(encoder, CallArgumentMatchStage::MethodModules, &pattern_pages)?;
             bind_groups.calls.apply_row_args.record_as(
                 encoder,
                 CallArgumentMatchStage::MethodModules.operation_names().2,
@@ -1076,20 +1266,15 @@ impl GpuTypeChecker {
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.calls_mark_array_args.done");
                 }
-                bind_groups.calls.validate_array_results.record(encoder)?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.calls_validate_array_results.done");
-                }
             }
-            if generic_call_claim_passes_required(parser_feature_flags)
-                || dependency_interfaces.is_some()
+            if generic_call_claim_passes_required(parser_feature_flags) || dependency_types_present
             {
                 record_call_erase_generic_params_with_passes(encoder, &bind_groups.calls)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.calls_erased.done");
                 }
             }
-            if enums_required {
+            if enums_required || dependency_types_present {
                 // A unit variant may itself be an argument to a payload-bearing
                 // variant constructor. Publish its type before validating the
                 // outer constructor's payloads.
@@ -1097,13 +1282,11 @@ impl GpuTypeChecker {
                     .bind_groups
                     .consume_value_enum_units
                     .record(encoder)?;
+            }
+            if enums_required {
                 module_path
                     .bind_groups
                     .consume_value_enum_calls
-                    .record(encoder)?;
-                module_path
-                    .bind_groups
-                    .validate_value_enum_call_payloads
                     .record(encoder)?;
                 module_path
                     .bind_groups
@@ -1121,61 +1304,344 @@ impl GpuTypeChecker {
                 .type_instances
                 .infer_imported_decl_refs
                 .record(encoder)?;
-            // Imported unit patterns need the scrutinee's stable nominal
-            // identity. An unannotated local receives that identity only
-            // after imported-value inference.
-            if matches_required {
-                module_path
-                    .bind_groups
-                    .validate_imported_unit_patterns
-                    .record(encoder)?;
-            }
             if methods_required {
                 bind_groups.methods.resolve.record(encoder)?;
             }
-            bind_groups
-                .calls
-                .argument_matching
-                .record(encoder, CallArgumentMatchStage::Final)?;
-            if generic_call_claim_passes_required(parser_feature_flags)
-                || dependency_interfaces.is_some()
+            for operation in [
+                &bind_groups.calls.return_type_index_clear,
+                &bind_groups.calls.return_type_source_index,
+            ]
+            .into_iter()
+            .flatten()
             {
+                if application_types_required {
+                    operation.record(encoder)?;
+                }
+            }
+            // Every winner change invalidates the old impl environment. Rebuild
+            // explicit and inferred claims before materializing under the winner.
+            let regenerate_call_claims = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+                bind_groups.calls.explicit_application_binding.record(encoder)?;
+                bind_groups
+                    .calls
+                    .argument_matching
+                    .record(encoder, CallArgumentMatchStage::Final, &pattern_pages)?;
                 if aggregates_required {
                     bind_groups
                         .calls
                         .clear_generic_claim_type_args
                         .record(encoder)?;
                 }
-                bind_groups
-                    .calls
-                    .generic_claim_validation
-                    .record_claims(encoder)?;
-                if let Some(dependency_visibility) = module_path.dependency_visibility.as_ref() {
-                    dependency_visibility
-                        .validate_call_results_group
-                        .record_invocation(
-                            encoder,
-                            &dependency_visibility.generic_call_results_resolve,
-                        )?;
-                }
-                if aggregates_required {
+                if generic_call_claim_passes_required(parser_feature_flags)
+                    || dependency_types_present
+                {
                     bind_groups
                         .calls
-                        .contextual_result_requests
-                        .record(encoder)?;
+                        .generic_claim_validation
+                        .record_claims(encoder, &pattern_pages)?;
+                }
+                if aggregates_required {
+                    bind_groups.calls.contextual_result_requests.record(encoder)?;
+                }
+                if let Some(visibility) = module_path
+                    .dependency_visibility
+                    .as_ref()
+                    .filter(|_| dependency_types_present)
+                {
+                    let contextual_results =
+                        |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+                            record_dependency_type_index(
+                                &self.passes,
+                                encoder,
+                                module_path,
+                                DEPENDENCY_TYPE_INDEX_RETURN_MATERIALIZATION,
+                            )?;
+                            visibility.validate_call_results_group.record_invocation(
+                                encoder,
+                                &visibility.generic_call_results_resolve,
+                            )
+                        };
+                    if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                        record_each_dependency_page(
+                            device,
+                            queue,
+                            encoder,
+                            pages,
+                            contextual_results,
+                        )?;
+                    } else {
+                        contextual_results(encoder)?;
+                    }
+                }
+                if aggregates_required {
                     bind_groups
                         .aggregate_comparison
                         .record(encoder, AggregateComparisonStage::Calls)?;
                 }
+                bind_groups.calls.apply_row_args.record_as(
+                    encoder,
+                    CallArgumentMatchStage::Final.operation_names().2,
+                )?;
+                Ok(())
+            };
+            let materialize_returns = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+                if dependency_types_present {
+                    record_dependency_type_index(
+                        &self.passes,
+                        encoder,
+                        module_path,
+                        DEPENDENCY_TYPE_INDEX_RETURN_MATERIALIZATION,
+                    )?;
+                }
+                if methods_required {
+                    if let Some(operation) = &bind_groups.calls.bind_method_receiver_environment {
+                        operation.record(encoder)?;
+                    }
+                }
+                // Publish receiving parameter types before literal fields can
+                // choose a default type. Record and call results then consume
+                // the same immutable argument-context snapshot.
+                if let Some(contexts) = &bind_groups.calls.project_argument_contexts {
+                    contexts.record(encoder)?;
+                }
+                if let Some(records) = &bind_groups.calls.record_literal_inference {
+                    if let Some(index) = &bind_groups.calls.return_type_index {
+                        index.record_as(encoder, compiler_graph::CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS)?;
+                    }
+                    records.contexts.record(encoder)?;
+                }
+                for operation in [
+                    &bind_groups.calls.materialize_return_types,
+                    &bind_groups.calls.expand_application_fields,
+                    &bind_groups.calls.materialize_match_payloads,
+                    &bind_groups.calls.return_type_index,
+                    &bind_groups.calls.return_imported_fields,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    operation.record(encoder)?;
+                }
+                Ok(())
+            };
+            let record_returns = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+                if methods_required {
+                    bind_groups.methods.record_call_selection(
+                        encoder, MethodSelectionStage::Inference,
+                        |encoder, collect| record_method_pages(encoder, MethodSelectionStage::Inference, collect),
+                    )?;
+                }
+                regenerate_call_claims(encoder)?;
+                if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                    record_each_dependency_page(
+                        device,
+                        queue,
+                        encoder,
+                        pages,
+                        &materialize_returns,
+                    )?;
+                } else {
+                    materialize_returns(encoder)?;
+                }
+                if members_required {
+                    bind_groups
+                        .type_instances
+                        .member_receivers
+                        .record_invocation(
+                            encoder,
+                            &bind_groups.type_instances.member_receivers_inference,
+                        )?;
+                    bind_groups
+                        .type_instances
+                        .member_results
+                        .record_invocation(
+                            encoder,
+                            &bind_groups.type_instances.member_results_inference,
+                        )?;
+                    bind_groups
+                        .type_instances
+                        .member_substitute
+                        .record_invocation(
+                            encoder,
+                            &bind_groups.type_instances.member_substitute_inference,
+                        )?;
+                }
+                if matches_required {
+                    module_path
+                        .bind_groups
+                        .type_match_payloads
+                        .record_as(encoder, MATCH_PAYLOADS_TYPE_INFERENCE.name)?;
+                    module_path
+                        .bind_groups
+                        .type_match_exprs
+                        .record_as(encoder, MATCH_EXPRS_TYPE_INFERENCE.name)?;
+                }
+                if let Some(records) = &bind_groups.calls.record_literal_inference {
+                    records.nested_contexts.record(encoder)?;
+                    if let Some(visibility) = module_path.dependency_visibility.as_ref() {
+                        let project = |encoder: &mut wgpu::CommandEncoder| {
+                            record_dependency_type_index(
+                                &self.passes,
+                                encoder,
+                                module_path,
+                                DEPENDENCY_TYPE_INDEX_RETURN_MATERIALIZATION,
+                            )?;
+                            visibility.project_struct_literals_group.record_as(
+                                encoder,
+                                compiler_graph::CALLS_RECORD_IMPORTED_FIELDS_PASS,
+                            )
+                        };
+                        if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                            record_each_dependency_page(device, queue, encoder, pages, project)?;
+                        } else {
+                            project(encoder)?;
+                        }
+                    }
+                    records.fields.record(encoder)?;
+                    records.references.record(encoder)?;
+                }
+                if enums_required || dependency_types_present {
+                    module_path.bind_groups.consume_value_enum_units.record_as(
+                        encoder, VALUE_ENUM_UNITS_CONSUME_INFERENCE.name,
+                    )?;
+                }
+                if let Some(project) = &bind_groups.calls.project_literal_contexts {
+                    project.record(encoder)?;
+                }
+                if let Some(project) = &bind_groups.calls.project_expression_types {
+                    project.record(encoder)?;
+                }
+                if let Some(pass) = &bind_groups.calls.project_array_literal_elements {
+                    pass.record(encoder)?;
+                }
+                if let Some(pass) = &bind_groups.calls.materialize_array_literals {
+                    pass.record(encoder)?;
+                }
+                if let Some(pass) = &bind_groups.calls.validate_array_literals {
+                    pass.record(encoder)?;
+                }
+                if let Some(infer) = &bind_groups.calls.infer_return_bindings {
+                    // Named iteration contracts retain their stable kind and
+                    // exact element type while their declaration page is resident.
+                    // Nonresident pages do not clear another page's publication.
+                    if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                        record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                            infer.record(encoder)
+                        })?;
+                    } else {
+                        infer.record(encoder)?;
+                    }
+                }
+                if methods_required {
+                    bind_groups
+                        .methods
+                        .resolve
+                        .record_as(encoder, METHODS_RESOLVE_INFERENCE.name)?;
+                }
+                Ok(())
+            };
+            if bind_groups.calls.materialize_return_types.is_some() {
+                // A call can depend on an earlier inferred call result. Close
+                // the checked type facts before required-parameter validation;
+                // an arbitrary number of fixed sweeps cannot express this.
+                // Each round publishes accepted GPU facts only. The host reads
+                // a progress count and neither infers types nor guesses layouts.
+                let round_limit = hir_node_capacity
+                    .max(1)
+                    .saturating_mul(compiler_graph::CALL_INFERENCE_ROUND_FACTOR);
+                let trace_inference =
+                    crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CALL_INFERENCE", false);
+                for round in 0..round_limit {
+                    self.call_inference_state
+                        .write(queue, 0, &[1, 0, 0, 0, 0, 0, 0, 0]);
+                    record_returns(encoder)?;
+                    bind_groups.calls.inference_readback.record(encoder);
+                    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("type-check-call-inference-encoder"),
+                    });
+                    let recorded = std::mem::replace(encoder, next);
+                    crate::gpu::passes_core::submit_with_progress(
+                        queue,
+                        "type-check call inference",
+                        recorded.finish(),
+                    );
+                    let slice = self.call_inference_readback.slice(..);
+                    crate::gpu::passes_core::map_readback_blocking(
+                        device,
+                        &slice,
+                        "type_check.call_inference",
+                    )?;
+                    let mapped = slice.get_mapped_range();
+                    let changed = u32::from_le_bytes(
+                        mapped[4..8]
+                            .try_into()
+                            .expect("two-word inference readback"),
+                    );
+                    drop(mapped);
+                    self.call_inference_readback.unmap();
+                    if trace_inference {
+                        eprintln!("[typecheck.call_inference] round={round} changed={changed}");
+                    }
+                    if changed == 0 {
+                        if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
+                            trace_range_inference(device, queue, bind_groups, hir_items.hir)?;
+                        }
+                        break;
+                    }
+                    if round + 1 == round_limit {
+                        return Err(GpuTypeCheckError::Rejected {
+                            token: 0,
+                            code: GpuTypeCheckCode::GenericInstantiationBoundary,
+                            detail: 5,
+                        });
+                    }
+                }
+                // The same producer diagnoses missing or unsupported types
+                // after inference has stopped producing new facts.
+                self.call_inference_state.write(queue, 0, &[0; 8]);
+                if aggregates_required {
+                    bind_groups
+                        .calls
+                        .contextual_result_requests
+                        .record_as(encoder, CALLS_CONTEXTUAL_RESULTS_FINAL.name)?;
+                }
+                record_returns(encoder)?;
+            } else {
+                self.call_inference_state.write(queue, 0, &[0; 8]);
+                // Even jobs with no materializer require current argument
+                // claims and a final method selection before strict checks.
+                record_returns(encoder)?;
+            }
+            if enums_required || dependency_types_present {
+                module_path.bind_groups.consume_value_enum_units.record_as(
+                    encoder, VALUE_ENUM_UNITS_CONSUME_AFTER_INFERENCE.name,
+                )?;
+            }
+            if enums_required {
+                // Refresh derived name/type caches after shared call inference.
+                // Generic argument and result validation owns acceptance.
+                module_path
+                    .bind_groups
+                    .consume_value_enum_calls
+                    .record_as(encoder, VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.name)?;
+                module_path
+                    .bind_groups
+                    .finalize_value_enum_calls
+                    .record_as(encoder, VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.name)?;
+            }
+            if generic_call_claim_passes_required(parser_feature_flags) || dependency_types_present
+            {
                 bind_groups
                     .calls
                     .generic_claim_validation
                     .record_required(encoder)?;
             }
-            bind_groups
-                .calls
-                .apply_row_args
-                .record_as(encoder, CallArgumentMatchStage::Final.operation_names().2)?;
+            if arrays_required {
+                bind_groups.calls.validate_array_results.record(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.calls_validate_array_results.done");
+                }
+            }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(
                     encoder,
@@ -1185,6 +1651,15 @@ impl GpuTypeChecker {
                         "typecheck.calls_finalize.done"
                     },
                 );
+            }
+            // Call closure can infer an enum scrutinee's complete type. Its
+            // payload bindings must be available before final member checking,
+            // including when the declaration has no source annotation.
+            if matches_required {
+                module_path
+                    .bind_groups
+                    .type_match_payloads
+                    .record_as(encoder, MATCH_PAYLOADS_TYPE_AFTER_CALLS.name)?;
             }
             if members_required {
                 bind_groups
@@ -1235,6 +1710,15 @@ impl GpuTypeChecker {
                     .struct_init_substitute
                     .record(encoder)?;
             }
+            // Pattern validation consumes closed actual references, including
+            // member/index results. Provisional declaration caches cannot
+            // establish the nominal family of a compound scrutinee.
+            if matches_required {
+                module_path
+                    .bind_groups
+                    .validate_imported_unit_patterns
+                    .record(encoder)?;
+            }
             if methods_required {
                 bind_groups
                     .methods
@@ -1266,7 +1750,18 @@ impl GpuTypeChecker {
             predicates
                 .emit_method_param_validation_rows
                 .record(encoder)?;
-            predicates.validate_method_type_arg_rows.record(encoder)?;
+            if methods_required && module_path.dependency_visibility.is_some() {
+                let validate = |encoder: &mut wgpu::CommandEncoder| {
+                    record_dependency_type_index(&self.passes, encoder, module_path,
+                        DEPENDENCY_TYPE_INDEX_TRAIT_CONTRACTS)?;
+                    predicates.validate_imported_methods.record(encoder)
+                };
+                if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                    record_each_dependency_page(device, queue, encoder, pages, validate)?;
+                } else {
+                    validate(encoder)?;
+                }
+            }
             predicates.reduce_method_validation_errors.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_method_validation_rows.done");
@@ -1312,7 +1807,40 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
+            if hir_items.body_specialization.is_some() {
+                for (required_feature, operation) in
+                    &bind_groups.semantic_projection.body_specialization
+                {
+                    if *required_feature != 0 && parser_feature_flags & required_feature == 0 {
+                        continue;
+                    }
+                    operation.record(encoder)?;
+                }
+            }
             bind_groups.semantic_projection.calls.record(encoder)?;
+            bind_groups
+                .semantic_projection
+                .generic_call_results
+                .record(encoder)?;
+            bind_groups
+                .semantic_projection
+                .generic_native_words
+                .record(encoder)?;
+            if hir_items.body_specialization.is_some() {
+                bind_groups.semantic_projection.body_native_layout_admission.record(encoder)?;
+            }
+            if members_required {
+                bind_groups
+                    .semantic_projection
+                    .member_layout
+                    .record(encoder)?;
+            }
+            if hir_items.semantic_interface_required {
+                bind_groups
+                    .semantic_projection
+                    .retained_callables
+                    .record(encoder)?;
+            }
             bind_groups
                 .semantic_projection
                 .expression_types_init
@@ -1373,6 +1901,7 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }
             host_timer.stamp("aggregate_conditions_control");
+            bind_groups.calls.explicit_application_validation.record(encoder)?;
             bind_groups.status_readback.record(encoder);
         }
         host_timer.stamp("status_readback_recorded");
@@ -1395,6 +1924,13 @@ impl GpuTypeChecker {
 
         if words[0] != 0 {
             return Ok(());
+        }
+        if words[2] == 6 && words[3] & 0xffff_0000 == 0x474e_0000 {
+            return Err(GpuTypeCheckError::Rejected {
+                token: words[1],
+                code: GpuTypeCheckCode::GenericInstantiationBoundary,
+                detail: words[3] & 0xffff,
+            });
         }
         Err(GpuTypeCheckError::Rejected {
             token: words[1],
@@ -1573,6 +2109,19 @@ impl GpuTypeChecker {
             .typecheck_graph
             .u32_buffer("semantic_type_external_local_index_by_hir")
             .ok()?;
+        let generic_param_lookup_state = state
+            .typecheck_graph
+            .u32_buffer("generic_param_lookup_state")
+            .ok()?;
+        let generic_decl_owner_by_node_a = state
+            .typecheck_graph
+            .u32_buffer("generic_decl_owner_by_node_a")
+            .ok()?;
+        let resolved_dependency_trait_header = if module_path.dependency_visibility.is_some() {
+            state.typecheck_graph.u32_buffer("resolved_dependency_trait_header").ok()?
+        } else {
+            self.empty_dependency_words.clone()
+        };
         Some(consume(GpuSemanticInterfaceIdentityBuffers {
             name_capacity: state.name_capacity,
             module_capacity: u32::try_from(module_path.module_key_segment_count.count)
@@ -1629,17 +2178,18 @@ impl GpuTypeChecker {
                 .dependency_visibility
                 .as_deref()
                 .map(|visibility| (&visibility.resolved_dependency_library_id).into())
-                .unwrap_or_else(|| (&external_type_library_id).into()),
+                .unwrap_or_else(|| (&self.empty_dependency_words).into()),
             resolved_dependency_unit_id: module_path
                 .dependency_visibility
                 .as_deref()
                 .map(|visibility| (&visibility.resolved_dependency_unit_id).into())
-                .unwrap_or_else(|| (&external_type_library_id).into()),
+                .unwrap_or_else(|| (&self.empty_dependency_words).into()),
             resolved_dependency_local_index: module_path
                 .dependency_visibility
                 .as_deref()
                 .map(|visibility| (&visibility.resolved_dependency_local_index).into())
-                .unwrap_or_else(|| (&external_type_library_id).into()),
+                .unwrap_or_else(|| (&self.empty_dependency_words).into()),
+            resolved_dependency_trait_header: (&resolved_dependency_trait_header).into(),
             path_id_by_owner_hir: (&module_path.path_id_by_owner_hir).into(),
             path_id_by_owner_token: (&module_path.path_id_by_owner_token).into(),
             resolved_type_decl: (&module_path.resolved_type_decl).into(),
@@ -1649,6 +2199,8 @@ impl GpuTypeChecker {
             generic_param_name_id: (&generic_param_name_id).into(),
             generic_param_token: (&generic_param_token).into(),
             generic_param_kind: (&generic_param_kind).into(),
+            generic_param_lookup_state: (&generic_param_lookup_state).into(),
+            generic_decl_owner_by_node_a: (&generic_decl_owner_by_node_a).into(),
             type_decl_generic_param_count_by_owner_token:
                 (&type_decl_generic_param_count_by_owner_token).into(),
             type_decl_const_param_count_by_owner_token:

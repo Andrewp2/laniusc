@@ -1,0 +1,42 @@
+
+running 2 tests
+[typecheck.call_inference] round=0 changed=139
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=27
+[typecheck.call_inference] round=1 changed=8
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=3
+[typecheck.call_inference] round=4 changed=3
+[typecheck.call_inference] round=5 changed=1
+[typecheck.call_inference] round=6 changed=0
+GPU source-pack type-check rejection: token=187 code=AssignMismatch detail=0
+
+thread 'generic_method_lookup_uses_complete_inferred_call_results' (650970) panicked at tests/compiler_generic_types_execution.rs:115:29:
+generic call result method receivers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 16, column: 17, length: 4, byte_start: Some(561), byte_end: Some(565), source_line: Some("    let words = make([\"one\", \"two λ\"]).get();"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test generic_method_lookup_uses_complete_inferred_call_results ... FAILED
+[typecheck.call_inference] round=0 changed=177
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=51
+[typecheck.call_inference] round=1 changed=3
+[typecheck.call_inference] round=2 changed=12
+[typecheck.call_inference] round=3 changed=19
+[typecheck.call_inference] round=4 changed=4
+[typecheck.call_inference] round=5 changed=0
+[typecheck.call_inference] round=0 changed=177
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=177
+[typecheck.call_inference] round=1 changed=0
+
+thread 'imported_generic_reference_methods_preserve_all_receiver_arguments' (650971) panicked at tests/compiler_generic_types_execution.rs:115:29:
+imported generic reference methods: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "generic method body requires receiver-owned type arguments", primary_label: None, help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: [] })
+test imported_generic_reference_methods_preserve_all_receiver_arguments ... FAILED
+
+failures:
+
+failures:
+    generic_method_lookup_uses_complete_inferred_call_results
+    imported_generic_reference_methods_preserve_all_receiver_arguments
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 119 filtered out; finished in 2.44s
+

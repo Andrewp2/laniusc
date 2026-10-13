@@ -1,0 +1,11 @@
+
+running 6 tests
+test compiler::gpu_compiler::program_evidence::packet::tests::arena_growth_preserves_old_graph_references_after_physical_moves ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::every_empty_submission_resets_and_requires_its_own_receipt ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::every_original_unit_and_source_occurrence_is_required ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::foreign_packet_submissions_and_evidence_cannot_authorize_replay ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_inherits_every_origin_binding_and_reuses_only_admitted_siblings ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_routing_and_provenance_are_checked_before_call_iteration ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 686 filtered out; finished in 0.00s
+

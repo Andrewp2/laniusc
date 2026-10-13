@@ -1,0 +1,65 @@
+module app::main;
+import std::io;
+pub struct Cell<T> { value: T }
+pub struct Mine<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31> { f0: A0, f1: A1, f2: A2, f3: A3, f4: A4, f5: A5, f6: A6, f7: A7, f8: A8, f9: A9, f10: A10, f11: A11, f12: A12, f13: A13, f14: A14, f15: A15, f16: A16, f17: A17, f18: A18, f19: A19, f20: A20, f21: A21, f22: A22, f23: A23, f24: A24, f25: A25, f26: A26, f27: A27, f28: A28, f29: A29, f30: A30, f31: A31 }
+impl<T31, T30, T29, T28, T27, T26, T25, T24, T23, T22, T21, T20, T19, T18, T17, T16, T15, T14, T13, T12, T11, T10, T9, T8, T7, T6, T5, T4, T3, T2, T1, T0> Mine<Cell<T0>, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31> {
+    pub fn first(&self) -> T0 { return self.f0.value; }
+    pub fn last(&self) -> T31 { return self.f31; }
+    pub fn copy(self) -> Mine<Cell<T0>, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31> { return self; }
+}
+
+struct Item { value: i32 }
+impl Item { fn borrow(&self) -> &Item { return self; } }
+fn length<T, const N: usize>(values: [T; N]) -> usize { return N; }
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let item: Item = Item { value: 9 };
+    let backing: [i32; 3] = [1, 2, 3];
+    let view: [i32] = view(backing);
+    let original: Mine<Cell<[str; 2]>, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32]> = Mine<Cell<[str; 2]>, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32]> { f0: Cell<[str; 2]> { value: ["Ω", "λ"] }, f1: 4294967295, f2: "Ω", f3: Cell<i32> { value: 7 }, f4: [40, 2], f5: [[], []], f6: item.borrow(), f7: view, f8: false, f9: 4294967295, f10: "Ω", f11: Cell<i32> { value: 7 }, f12: [40, 2], f13: [[], []], f14: item.borrow(), f15: view, f16: false, f17: 4294967295, f18: "Ω", f19: Cell<i32> { value: 7 }, f20: [40, 2], f21: [[], []], f22: item.borrow(), f23: view, f24: false, f25: 4294967295, f26: "Ω", f27: Cell<i32> { value: 7 }, f28: [40, 2], f29: [[], []], f30: item.borrow(), f31: view };
+    let first: [str; 2] = original.first();
+    let last: [i32] = original.last();
+    let value: Mine<Cell<[str; 2]>, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32], bool, u32, str, Cell<i32>, [i32; 2], [[str; 0]; 2], &Item, [i32]> = original.copy();
+    original.f0.value[0] = "changed";
+    original.f4[0] = -1;
+    std::io::println(first[0]);
+    std::io::println(first[1]);
+    std::io::println(value.f0.value[0]);
+    std::io::println(value.f0.value[1]);
+    if (value.f1 != 4294967295) { return 2; }
+    if (std::io::println(value.f2) != 3) { return 3; }
+    if (value.f3.value != 7) { return 4; }
+    if (value.f4[0] != 40 || value.f4[1] != 2) { return 5; }
+    if (length(value.f5) != 2) { return 6; }
+    if (value.f6.value != 9) { return 7; }
+    if (value.f7[0] != 1 || value.f7[1] != 2) { return 8; }
+    if (value.f8) { return 9; }
+    if (value.f9 != 4294967295) { return 10; }
+    if (std::io::println(value.f10) != 3) { return 11; }
+    if (value.f11.value != 7) { return 12; }
+    if (value.f12[0] != 40 || value.f12[1] != 2) { return 13; }
+    if (length(value.f13) != 2) { return 14; }
+    if (value.f14.value != 9) { return 15; }
+    if (value.f15[0] != 1 || value.f15[1] != 2) { return 16; }
+    if (value.f16) { return 17; }
+    if (value.f17 != 4294967295) { return 18; }
+    if (std::io::println(value.f18) != 3) { return 19; }
+    if (value.f19.value != 7) { return 20; }
+    if (value.f20[0] != 40 || value.f20[1] != 2) { return 21; }
+    if (length(value.f21) != 2) { return 22; }
+    if (value.f22.value != 9) { return 23; }
+    if (value.f23[0] != 1 || value.f23[1] != 2) { return 24; }
+    if (value.f24) { return 25; }
+    if (value.f25 != 4294967295) { return 26; }
+    if (std::io::println(value.f26) != 3) { return 27; }
+    if (value.f27.value != 7) { return 28; }
+    if (value.f28[0] != 40 || value.f28[1] != 2) { return 29; }
+    if (length(value.f29) != 2) { return 30; }
+    if (value.f30.value != 9) { return 31; }
+    if (value.f31[0] != 1 || value.f31[1] != 2) { return 32; }
+    last[1] = 12;
+    if (backing[1] != 12 || original.f7[1] != 12 || value.f31[1] != 12) { return 40; }
+    item.value = 19;
+    if (value.f6.value != 19 || value.f30.value != 19) { return 41; }
+    return 0;
+}

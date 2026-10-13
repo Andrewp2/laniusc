@@ -524,12 +524,12 @@ pub fn validate_hir_type_argument_records(
                     "parser HIR type argument owner row {owner} points at itself as an argument"
                 ));
             }
-            if kinds[arg] != HIR_NODE_TYPE {
+            if kinds[arg] != HIR_NODE_TYPE && kinds[arg] != HIR_NODE_LITERAL_EXPR {
                 return Err(anyhow!(
-                    "parser HIR type argument row {arg} is not a type HIR row"
+                    "parser HIR generic argument row {arg} is neither a type nor a literal HIR row"
                 ));
             }
-            if type_forms[arg] == HIR_TYPE_FORM_NONE {
+            if kinds[arg] == HIR_NODE_TYPE && type_forms[arg] == HIR_TYPE_FORM_NONE {
                 return Err(anyhow!(
                     "parser HIR type argument row {arg} has no concrete type record"
                 ));

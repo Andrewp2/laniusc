@@ -1,11 +1,13 @@
 // Emit dense-HIR method and impl-owner validation rows from compact contracts.
 
 #include "method_validation_common.slang"
+import callable_identity;
 
 RWStructuredBuffer<uint> predicate_method_validation_owner_node;
 RWStructuredBuffer<uint> predicate_method_validation_peer_node;
 RWStructuredBuffer<uint> predicate_method_validation_status;
 RWStructuredBuffer<uint> predicate_method_validation_detail_token;
+RWStructuredBuffer<uint> predicate_method_validation_required_symbol;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -32,6 +34,16 @@ void publish_validation(uint row, uint owner, uint peer, uint status, uint detai
     predicate_method_validation_peer_node[row] = peer;
     predicate_method_validation_status[row] = status;
     predicate_method_validation_detail_token[row] = detail;
+    if (status != PREDICATE_STATUS_OK)
+    {
+        // Revalidation must revoke an earlier accepted correspondence. Use
+        // canonical method membership, independent of a valid name/signature;
+        // owner and type-peer rows never write the method evidence table.
+        uint method_row = compact_method_row_for_hir(
+            compact_method_cores, active_method_count(), row);
+        if (method_row < active_method_count())
+            predicate_method_validation_required_symbol[row] = INVALID;
+    }
 }
 
 void publish_type_peer(uint impl_type, uint trait_type, uint owner, uint method)
@@ -49,9 +61,11 @@ void validate_impl_owner_method_counts(uint owner)
 {
     uint owner_status = predicate_method_validation_status[owner];
     if (owner_status != INVALID && owner_status != PREDICATE_STATUS_OK) return;
+    uint reference = predicate_bound_reference[owner];
     uint trait_hir = trait_decl_for_impl(owner);
-    if (!valid_hir(trait_hir)) return;
-    uint trait_count = method_contract_count_for_owner(trait_hir);
+    if (!trait_reference_is_dependency(reference) && !valid_hir(trait_hir)) return;
+    uint trait_count = trait_reference_is_dependency(reference)
+        ? trait_reference_header(reference, 3u) : method_contract_count_for_owner(trait_hir);
     uint impl_count = method_contract_count_for_owner(owner);
     if (trait_count <= impl_count) return;
     uint token = compact_hir_core[owner].token_start;
@@ -67,30 +81,13 @@ void validate_trait_impl_target(uint owner)
 {
     uint target = compact_hir_payload[owner].c;
     if (!valid_hir(target)) return;
-    uint token = compact_hir_core[owner].token_start;
-    if (type_node_form(target) != HIR_TYPE_FORM_PATH)
-    {
-        publish_validation(
-            owner,
-            owner,
-            INVALID,
-            PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE,
-            valid_token(token) ? token : INVALID);
-        return;
-    }
-
-    uint path = path_id_by_owner_hir[target];
-    if (path < gParams.n_hir_nodes && resolved_type_status[path] == 0u)
-        return;
     uint tag;
     uint payload;
-    if (type_node_ref(target, tag, payload) && tag == TYPE_REF_SCALAR)
-        return;
-    publish_validation(
-        owner,
-        owner,
-        INVALID,
-        PREDICATE_STATUS_INVALID_TARGET,
+    // The header collector validates the complete graph and parameter ownership.
+    // This late check owns only the diagnostic for an unresolved target root.
+    if (type_node_ref(target, tag, payload)) return;
+    uint token = compact_hir_core[owner].token_start;
+    publish_validation(owner, owner, INVALID, PREDICATE_STATUS_INVALID_TARGET,
         valid_token(token) ? token : INVALID);
 }
 
@@ -135,6 +132,13 @@ void validate_trait_method(uint method, uint owner, uint name_id, uint detail)
 
 void validate_trait_impl_method(uint method, uint owner, uint name_id, uint detail)
 {
+    if (trait_reference_is_dependency(predicate_bound_reference[owner]))
+    {
+        // Fail closed until the defining interface page supplies and validates
+        // this required signature. No page-local member index is retained.
+        publish_validation(method, owner, INVALID, PREDICATE_STATUS_EXTRA_IMPL_METHOD, detail);
+        return;
+    }
     uint trait_hir = trait_decl_for_impl(owner);
     uint trait_method = valid_hir(trait_hir)
         ? first_method_contract_for_owner_name(trait_hir, name_id)
@@ -200,6 +204,9 @@ void validate_trait_impl_method(uint method, uint owner, uint name_id, uint deta
         return;
     }
     publish_validation(method, owner, trait_method, PREDICATE_STATUS_OK, detail);
+    // This is the trait's interface member identity, including for private
+    // requirements. Parameter validation can still invalidate this method.
+    predicate_method_validation_required_symbol[method] = interface_method_symbol(trait_method);
 }
 
 [shader("compute")]

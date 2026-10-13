@@ -1,0 +1,32 @@
+fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let end: u64 = 18446744073709551615;
+    let count: i32 = 0;
+    let last: u64 = 0;
+    for value in 18446744073709551614..=end {
+        count += 1;
+        last = keep(value);
+        if (count > 2) { return 1; }
+        if (value == 18446744073709551615) { continue; }
+    }
+    if (count != 2 || last != 18446744073709551615) { return 2; }
+    let signed_end: i64 = 9223372036854775807;
+    let signed_count: i32 = 0;
+    let signed_last: i64 = 0;
+    for value in 9223372036854775806..=signed_end {
+        signed_count += 1;
+        signed_last = value;
+        if (signed_count > 2) { return 3; }
+    }
+    if (signed_count != 2 || signed_last != signed_end) { return 4; }
+    let pointer_end: usize = 18446744073709551615;
+    let pointer_count: i32 = 0;
+    for value in 18446744073709551614..pointer_end {
+        let copied: usize = keep(value);
+        if (copied != 18446744073709551614) { return 5; }
+        pointer_count += 1;
+        if (pointer_count > 1) { return 6; }
+    }
+    if (pointer_count != 1) { return 7; }
+    return 0;
+}

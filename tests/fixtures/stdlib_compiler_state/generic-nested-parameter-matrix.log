@@ -1,0 +1,72 @@
+    Finished `release` profile [optimized] target(s) in 0.19s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 11 tests
+test generic_bodies_construct_nested_applications ... ok
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=209 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=128 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=140 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=117 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=149 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=150 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=130 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=111 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=111 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=173 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=125 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=226 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=193 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=218 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=239 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=145 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=108 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=108 code=AssignMismatch detail=1060393
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=178 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=98 code=AssignMismatch detail=770
+ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... ok
+test imported_nested_parameter_inference_preserves_copies_and_aliases ... GPU source-pack type-check rejection: token=60 code=GenericInstantiationBoundary detail=4
+
+thread 'imported_nested_parameter_inference_preserves_copies_and_aliases' (599703) panicked at tests/compiler_generic_types_execution.rs:723:10:
+compile complete imported nested parameter constraints: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 9, column: 9, length: 4, byte_start: Some(183), byte_end: Some(187), source_line: Some("    if (core::relay::read_nested(core::relay::wrap(core::relay::wrap(42))) != 42) { return 1; }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test local_generic_enums_substitute_nested_payload_types ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test nested_generic_applications_are_created_without_source_annotations ... ok
+test nested_generic_declaration_fields_substitute_in_the_enclosing_scope ... ok
+test nested_generic_parameter_constraints_infer_complete_types ... GPU source-pack type-check rejection: token=351 code=InvalidMemberAccess detail=0
+
+thread 'nested_generic_parameter_constraints_infer_complete_types' (599843) panicked at tests/compiler_generic_types_execution.rs:105:29:
+nested parameter values copies and aliases: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0042", title: "invalid member access", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0042", message: "invalid member access", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 25, column: 18, length: 4, byte_start: Some(1120), byte_end: Some(1124), source_line: Some("    generic_copy.last = 91;"), message: "this value does not have the requested field" }), help: None, notes: ["field access is only valid for structs that declare a field with this name"] })
+FAILED
+test nested_parameter_constraints_reject_conflicts_and_missing_bindings ... GPU source-pack type-check rejection: token=92 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=116 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=119 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=2097408
+ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... GPU source-pack type-check rejection: token=812 code=UnresolvedIdent detail=5
+
+thread 'nested_parameter_inference_preserves_thirty_two_bindings' (599855) panicked at tests/compiler_generic_types_execution.rs:105:29:
+nested thirty-two parameter inference: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0005", title: "unresolved identifier", category: "name resolution", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0005", message: "unresolved identifier", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 23, column: 5, length: 3, byte_start: Some(2085), byte_end: Some(2088), source_line: Some("    std::io::str_print_line(wrapped.value.v29);"), message: "not found in this scope" }), help: None, notes: ["declare the value before using it or import its defining module"] })
+FAILED
+
+failures:
+
+failures:
+    imported_nested_parameter_inference_preserves_copies_and_aliases
+    nested_generic_parameter_constraints_infer_complete_types
+    nested_parameter_inference_preserves_thirty_two_bindings
+
+test result: FAILED. 8 passed; 3 failed; 0 ignored; 0 measured; 48 filtered out; finished in 9.07s
+
+error: test failed, to rerun pass `-p laniusc --test compiler_generic_types_execution`

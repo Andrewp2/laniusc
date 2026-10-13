@@ -43,7 +43,7 @@ impl GpuTypeChecker {
                 }
             };
         }
-        if hir_node_capacity >= 0x0fff_ffff {
+        if hir_node_capacity >= crate::primitive_types::SCALAR_TYPE_LINK_MASK {
             anyhow::bail!(
                 "compact HIR capacity {hir_node_capacity} exceeds scalar-type link encoding"
             );
@@ -60,7 +60,7 @@ impl GpuTypeChecker {
         let call_generic_claim_capacity = generic_claim_capacity_for_job(
             token_capacity,
             parser_feature_flags,
-            dependency_interfaces.is_some(),
+            dependency_interfaces.is_some_and(|dependency| dependency.type_count != 0),
         );
         let predicate_capacity =
             predicate_capacity_for_features(hir_node_capacity, parser_feature_flags);
@@ -92,6 +92,12 @@ impl GpuTypeChecker {
             passes,
             hir_items.upstream_workspace,
         )?;
+        let constant_storage_plan = uniform_from_val(
+            device, "type_check.constant_storage.plan",
+            &dependency_capacity.constant_storage_plan(
+                hir_node_capacity, token_capacity, parser_feature_flags)
+                .map_err(anyhow::Error::msg)?,
+        );
         let compact_expr_scalar_type_a =
             typecheck_graph.u32_buffer("compact_expr_scalar_type.a")?;
         let visible_decl = typecheck_graph.u32_buffer("visible_decl")?;
@@ -257,26 +263,6 @@ impl GpuTypeChecker {
                 reserved1: 0,
             },
         );
-        let type_subtree_compare_buffers = Box::new(TypeSubtreeCompareBuffers {
-            scan_input: typecheck_graph.u32_buffer("type_subtree_compare_scan_input")?,
-            prefix: typecheck_graph.u32_buffer("type_subtree_compare_prefix")?,
-            count_out: typecheck_graph.u32_buffer("type_subtree_compare_count_out")?,
-            left_root: typecheck_graph.u32_buffer("type_subtree_compare_left_root")?,
-            right_root: typecheck_graph.u32_buffer("type_subtree_compare_right_root")?,
-            error_token: typecheck_graph.u32_buffer("type_subtree_compare_error_token")?,
-            error_detail: typecheck_graph.u32_buffer("type_subtree_compare_error_detail")?,
-            dispatch_args: typecheck_graph.u32_buffer("type_subtree_compare_dispatch_args")?,
-            dispatch_params: uniform_from_val(
-                device,
-                "type_check.resident.type_subtree_compare_dispatch.params",
-                &CountDispatchParams {
-                    capacity: hir_node_capacity.max(1),
-                    multiplier: 1,
-                    reserved0: 0,
-                    reserved1: 0,
-                },
-            ),
-        });
         // Declaration refs survive name/type-instance construction and feed
         // late semantic projection. They cannot alias radix rows that later
         // type-family sorts overwrite; the compiler graph may recolor them
@@ -298,14 +284,15 @@ impl GpuTypeChecker {
             typecheck_graph.u32_buffer("method_token_hir_dispatch_args")?;
         allocation_stamp!("buffers");
         let graph_bindings = typecheck_graph.bindings()?;
-        let dependency_words_fallback = if dependency_interfaces.is_none() {
-            Some(typecheck_graph.u32_buffer("external_type_library_id")?)
-        } else {
-            None
-        };
         let mut resources = ResourceMap::new();
         typecheck_graph.register_bindings(&graph_bindings, &mut resources);
         resources.buffer("gParams", &self.params_buf);
+        resources.buffer("gExplicitOperandParams", &self.params_buf);
+        resources.buffer("gConstantStoragePlan", &constant_storage_plan);
+        resources.buffer(
+            "body_specialization_inputs",
+            &self.body_specialization_inputs,
+        );
         resources.buffer("token_words", token_buf);
         resources.buffer("token_count", token_count_buf);
         resources.buffer("token_file_id", token_file_id_buf);
@@ -320,6 +307,8 @@ impl GpuTypeChecker {
         register_hir_resources(&mut resources, hir_items);
         resources.buffer("status", &self.status_buf);
         resources.buffer("status_readback", &self.status_readback);
+        resources.buffer("call_inference_state", &self.call_inference_state);
+        resources.buffer("call_inference_readback", &self.call_inference_readback);
         resources.buffer("visible_decl", &visible_decl);
         resources.buffer("visible_type", &visible_type);
         resources.buffer("hir_value_decl_name_present", &hir_value_decl_name_present);
@@ -418,42 +407,14 @@ impl GpuTypeChecker {
             "type_semantic_row_by_ordinal",
             &type_semantic_buffers.row_by_ordinal,
         );
-        resources.buffer(
-            "type_subtree_compare_scan_input",
-            &type_subtree_compare_buffers.scan_input,
-        );
-        resources.buffer(
-            "type_subtree_compare_prefix",
-            &type_subtree_compare_buffers.prefix,
-        );
-        resources.buffer(
-            "type_subtree_compare_count_out",
-            &type_subtree_compare_buffers.count_out,
-        );
-        resources.buffer(
-            "type_subtree_compare_left_root",
-            &type_subtree_compare_buffers.left_root,
-        );
-        resources.buffer(
-            "type_subtree_compare_right_root",
-            &type_subtree_compare_buffers.right_root,
-        );
-        resources.buffer(
-            "type_subtree_compare_error_token",
-            &type_subtree_compare_buffers.error_token,
-        );
-        resources.buffer(
-            "type_subtree_compare_error_detail",
-            &type_subtree_compare_buffers.error_detail,
-        );
         resources.buffer("decl_type_ref_tag", &decl_type_ref_tag);
         resources.buffer("decl_type_ref_payload", &decl_type_ref_payload);
         if let Some(dependencies) = dependency_interfaces {
             resources.buffer("dependency_words", &dependencies.words);
             resources.buffer("dependency_module_lookup", &dependencies.module_lookup);
-        } else if let Some(fallback) = &dependency_words_fallback {
-            resources.buffer("dependency_words", fallback);
-            resources.buffer("dependency_module_lookup", fallback);
+        } else {
+            resources.buffer("dependency_words", &self.empty_dependency_words);
+            resources.buffer("dependency_module_lookup", &self.empty_dependency_words);
         }
         allocation_stamp!("resources");
         let hir_active_dispatch = ComputeOperation::direct(
@@ -540,7 +501,7 @@ impl GpuTypeChecker {
             &resources,
         )?;
         allocation_stamp!("module_path");
-        register_module_path_resources(&mut resources, &module_path)?;
+        register_module_path_resources(&mut resources, &module_path, &self.empty_dependency_words)?;
         resources.buffer("module_value_path_call_open", &module_value_path_call_open);
         resources.buffer(
             "module_value_path_call_path_id",
@@ -580,8 +541,6 @@ impl GpuTypeChecker {
             passes,
             &aggregate_compare_dispatch_params,
             &aggregate_compare_dispatch_args,
-            &type_subtree_compare_buffers.dispatch_params,
-            &type_subtree_compare_buffers.dispatch_args,
         )?;
         let calls = create_call_bind_groups(
             device,
@@ -594,13 +553,13 @@ impl GpuTypeChecker {
             call_param_row_capacity,
             call_arg_row_capacity,
             call_generic_claim_capacity,
+            parser_feature_flags,
+            dependency_interfaces.is_some_and(|dependency| dependency.type_count != 0),
         )?;
         resources.validate_graph_passes_if_present(
             [
                 compiler_graph::AGGREGATE_CALL_SCAN_PASSES,
                 compiler_graph::AGGREGATE_FINAL_SCAN_PASSES,
-                compiler_graph::TYPE_SUBTREE_CALL_SCAN_PASSES,
-                compiler_graph::TYPE_SUBTREE_FINAL_SCAN_PASSES,
             ]
             .into_iter()
             .flat_map(|passes| passes.names()),
@@ -693,6 +652,7 @@ impl GpuTypeChecker {
         drop(resources);
 
         Ok(ResidentTypeCheckWorkspace {
+            _constant_storage_plan: constant_storage_plan,
             resettable_buffers: Vec::new(),
             upstream_workspace,
             cache_key: allocation,

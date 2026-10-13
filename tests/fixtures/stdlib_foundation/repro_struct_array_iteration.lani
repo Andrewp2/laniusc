@@ -1,0 +1,14 @@
+// Regression: fixed-array iteration must preserve every record payload word.
+struct Pair { first: i32, second: i32 }
+fn sum(values: [Pair; 3]) -> i32 {
+    let total: i32 = 0;
+    for pair in values { total = total + pair.first * 10 + pair.second; }
+    return total;
+}
+fn main() -> i32 {
+    let values: [Pair; 3] = [
+        Pair { first: 1, second: 2 }, Pair { first: 3, second: 4 }, Pair { first: 5, second: 6 },
+    ];
+    if (sum(values) != 102) { return 1; }
+    return 0;
+}

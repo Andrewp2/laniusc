@@ -1,0 +1,19 @@
+pub struct Wrap<A> { value: A }
+pub struct Cell<T> { value: T }
+impl<T> Wrap<[T; 2]> {
+    pub fn first(&self) -> T { return self.value[0]; }
+    pub fn relay<U>(&self, other: U) -> U { return other; }
+}
+impl<T, const N: usize> Wrap<[T; N]> {
+    pub fn length(&self) -> usize { return N; }
+    pub fn copy(&self) -> [T; N] { return self.value; }
+}
+impl<T> Wrap<Cell<T>> {
+    pub fn inner(&self) -> T { return self.value.value; }
+}
+impl<T> Wrap<[T]> {
+    pub fn first_slice(&self) -> T { return self.value[0]; }
+}
+impl Wrap<[i32; 2]> {
+    pub fn number(&self) -> i32 { return self.value[1]; }
+}

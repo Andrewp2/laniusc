@@ -1,0 +1,32 @@
+// Install the selected body's checked constant values after generic signature
+// validation and aggregate rebuilding. Constants retain declaration identity:
+// 00f publishes a value only for a parameter owned by the selected body.
+// Generated array nodes (including normalized aliases) use the same contract
+// as source arrays; their identity is not a source token or HIR row.
+
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint4> body_specialization_inputs;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_const_param_value_by_token;
+RWStructuredBuffer<uint> type_instance_len_kind;
+RWStructuredBuffer<uint> type_instance_len_payload;
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid : SV_DispatchThreadID)
+{
+    uint count = min(body_specialization_inputs[705u].x, 32u);
+    if (count == 0u) return;
+    uint instance = dtid.x + dtid.y * 65535u * 256u;
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    if (instance >= capacity || type_instance_kind[instance] != 2u ||
+        type_instance_len_kind[instance] != 2u) return;
+    uint parameter = type_instance_len_payload[instance];
+    if (parameter >= gParams.n_tokens) return;
+    uint value = type_const_param_value_by_token[parameter];
+    if (value == 0xffffffffu) return;
+    type_instance_len_kind[instance] = 1u;
+    type_instance_len_payload[instance] = value;
+}

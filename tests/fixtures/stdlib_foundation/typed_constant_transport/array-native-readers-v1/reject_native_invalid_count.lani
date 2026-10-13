@@ -1,0 +1,4 @@
+module app::marker;
+const INVALID_MARKER:u64 = 4294967295;
+fn invalid(value:[i32;app::marker::INVALID_MARKER])->i32 { return value[0]; }
+fn main()->i32 { return 0; }

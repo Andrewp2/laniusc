@@ -21,9 +21,9 @@ fn main() {
     let positive: core::option::Option<i64> = core::i64::checked_abs(7);
     let negative: core::option::Option<i64> = checked_abs(-7);
     let min_value: core::option::Option<i64> = core::i64::checked_abs(core::i64::MIN);
-    let positive_value: i64 = core::option::unwrap_or(positive, 0);
-    let negative_value: i64 = unwrap_or(negative, 0);
-    let min_is_none: bool = core::option::is_none(min_value);
+    let positive_value: i64 = match (positive) { core::option::Some(positive_inner) -> positive_inner, core::option::None -> 0 };
+    let negative_value: i64 = match (negative) { core::option::Some(negative_inner) -> negative_inner, core::option::None -> 0 };
+    let min_is_none: bool = match (min_value) { core::option::Some(min_inner) -> false, core::option::None -> true };
     if (positive_value != 7 || negative_value != 7 || !min_is_none) {
         return 1;
     }
@@ -34,7 +34,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core i64 and option imports");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
         assert!(
             manifest
                 .files
@@ -78,12 +78,12 @@ fn main() {
     let low_sub_overflow: core::option::Option<i64> =
         core::i64::checked_sub(core::i64::MIN, 1);
 
-    let sum_value: i64 = core::option::unwrap_or(sum, 0);
-    let diff_value: i64 = core::option::unwrap_or(diff, 0);
-    let high_add_is_none: bool = core::option::is_none(high_overflow);
-    let low_add_is_none: bool = is_none(low_overflow);
-    let high_sub_is_none: bool = core::option::is_none(high_sub_overflow);
-    let low_sub_is_none: bool = is_none(low_sub_overflow);
+    let sum_value: i64 = match (sum) { core::option::Some(sum_inner) -> sum_inner, core::option::None -> 0 };
+    let diff_value: i64 = match (diff) { core::option::Some(diff_inner) -> diff_inner, core::option::None -> 0 };
+    let high_add_is_none: bool = match (high_overflow) { core::option::Some(high_add_inner) -> false, core::option::None -> true };
+    let low_add_is_none: bool = match (low_overflow) { core::option::Some(low_add_inner) -> false, core::option::None -> true };
+    let high_sub_is_none: bool = match (high_sub_overflow) { core::option::Some(high_sub_inner) -> false, core::option::None -> true };
+    let low_sub_is_none: bool = match (low_sub_overflow) { core::option::Some(low_sub_inner) -> false, core::option::None -> true };
 
     if (sum_value != 42 || diff_value != 38) {
         return 1;
@@ -98,7 +98,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core i64 and option imports");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
         assert!(
             manifest
                 .files

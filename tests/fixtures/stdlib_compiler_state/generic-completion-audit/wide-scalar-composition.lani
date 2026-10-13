@@ -1,0 +1,16 @@
+// Candidate only; no compile or execution was performed by the audit.
+// Expect exit 0. Exit 1 identifies the ordinary scalar path before generics.
+// Based on the retained repro_u64_literal_prefix.lani, not a new scalar syntax.
+struct Mine<T> { value: T }
+fn keep<T>(value: T) -> T { return value; }
+fn ordinary(value: u64) -> u64 { return value; }
+fn main() -> i32 {
+    let wide: u64 = 10000000000;
+    if (ordinary(wide) == 1000000000) { return 1; }
+    let wrapped: Mine<u64> = Mine { value: wide };
+    let copied: Mine<u64> = keep(wrapped);
+    if (copied.value != wide || copied.value == 1000000000) { return 2; }
+    wrapped.value = 7;
+    if (copied.value == 7) { return 3; }
+    return 0;
+}

@@ -1,0 +1,8 @@
+// Distinct occurrences of N in one body denote the same constant parameter.
+fn keep<T, const N: usize>(values: [T; N]) -> [T; N] {
+    return values;
+}
+
+fn main() -> i32 {
+    return 0;
+}

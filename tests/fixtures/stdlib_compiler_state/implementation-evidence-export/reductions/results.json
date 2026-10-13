@@ -1,0 +1,22 @@
+[
+  {
+    "name": "full",
+    "code": 1,
+    "output": "stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/full.lani: error[LNC0021]: invalid trait implementation\n --> tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/full.lani:18:19\n   |\n18 | pub impl Rel<Cell<&[i32;2]>> for char {}\n   |                   ^ trait impl header uses an unsupported trait argument shape\n     = note: use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name\n"
+  },
+  {
+    "name": "contracts_only",
+    "code": 0,
+    "output": "sample=0 ms=171.876\nentry=tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/contracts_only.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2227 min_ms=171.876 median_ms=171.876 avg_ms=171.876 max_ms=171.876 output_verified=true\n"
+  },
+  {
+    "name": "helpers_only",
+    "code": 0,
+    "output": "sample=0 ms=173.417\nentry=tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/helpers_only.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2227 min_ms=173.417 median_ms=173.417 avg_ms=173.417 max_ms=173.417 output_verified=true\n"
+  },
+  {
+    "name": "without_nested_rel",
+    "code": 1,
+    "output": "stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/without_nested_rel.lani: error[LNC0016]: syntax error\n --> tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/without_nested_rel.lani:30:22\n   |\n30 |     let cell:Cell<i32>=Cell{value:7}; let pointer=keep(cell.borrow()); pointer.value=9;\n   |                      ^^ expected one of `)`, `=`, `,`, `]`, `;`, keyword `where`, `:`, `{`, `}`, `<`, `>`, or keyword `for`, found `>=`\n"
+  }
+]

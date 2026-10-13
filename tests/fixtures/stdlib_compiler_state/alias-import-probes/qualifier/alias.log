@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=16 code=UnresolvedIdent detail=5
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_34213.lani: error[LNC0005]: unresolved identifier
+ --> <source pack file 0>:2:32
+  |
+2 | fn main() -> i32 { let value = core::aliases::Maybe<i32>::Some(42); return match (value) { core::aliases::Choice::Some(inner) -> inner - 42, _ -> 1 }; }
+  |                                ^^^^ not found in this scope
+     = note: declare the value before using it or import its defining module

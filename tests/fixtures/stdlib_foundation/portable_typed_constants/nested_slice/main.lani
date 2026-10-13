@@ -1,0 +1,23 @@
+import core::nested_views;
+
+fn main() -> i32 {
+    let first: [i32; 2] = [11, 13];
+    let second: [i32; 2] = [17, 19];
+    let rows: [[i32; 2]; 2] = [first, second];
+    let view: [[i32; 2]] = core::nested_views::forward<i32, 2>(rows);
+    if (view[0][0] != 11 || view[0][1] != 13 ||
+        view[1][0] != 17 || view[1][1] != 19) { return 1; }
+    view[1][0] = 23;
+    rows[0][1] = 29;
+    if (rows[1][0] != 23 || view[0][1] != 29 ||
+        first[1] != 13 || second[0] != 17) { return 2; }
+    let count: i32 = 0;
+    for row in view { count += 1; }
+    if (count != 2) { return 3; }
+
+    let empty: [[i32; 2]; 0] = [];
+    let empty_view: [[i32; 2]] = core::nested_views::forward<i32, 2>(empty);
+    for row in empty_view { count += 1; }
+    if (count != 2) { return 4; }
+    return 0;
+}

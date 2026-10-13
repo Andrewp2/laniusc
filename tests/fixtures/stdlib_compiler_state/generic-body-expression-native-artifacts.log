@@ -1,0 +1,19 @@
+
+running 1 test
+kept temp artifact /tmp/laniusc_sample_x86_generic_types_64336_1
+
+thread 'specialized_body_expression_chains_preserve_complete_types' (64337) panicked at tests/compiler_generic_types_execution.rs:112:5:
+assertion `left == right` failed: specialized body expression closure at field: Output { status: ExitStatus(unix_wait_status(1280)), stdout: "", stderr: "" }
+  left: Some(5)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_specialized_body_expression_closure_at_field_64336_0.lani
+test specialized_body_expression_chains_preserve_complete_types ... FAILED
+
+failures:
+
+failures:
+    specialized_body_expression_chains_preserve_complete_types
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 2.45s
+

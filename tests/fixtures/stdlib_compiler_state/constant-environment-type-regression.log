@@ -1,0 +1,16 @@
+
+running 1 test
+test literal_argument_inference_preserves_array_and_nested_types ... GPU source-pack type-check rejection: token=505 code=AssignMismatch detail=0
+
+thread 'literal_argument_inference_preserves_array_and_nested_types' (147409) panicked at tests/compiler_generic_types_execution.rs:131:29:
+imported array argument literal inference: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 53, column: 5, length: 6, byte_start: Some(1588), byte_end: Some(1594), source_line: Some("    return value;"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    literal_argument_inference_preserves_array_and_nested_types
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 161 filtered out; finished in 2.10s
+

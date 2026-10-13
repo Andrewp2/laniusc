@@ -1,0 +1,8 @@
+error[LNC0017]: operation is not implemented by the x86 backend
+ --> <source pack file 0>:4:19
+  |
+4 |     return match (value) { Some(inner) -> true, None -> false };
+  |                   ^^^^^ not supported by the native x86 backend yet
+     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
+     = note: the native x86 backend rejected this program before emitting an artifact
+     = note: first unsupported target LIR opcode: 8

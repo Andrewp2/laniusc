@@ -1,0 +1,17 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 51.32s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_slice_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_slice_generic_execution-e40555ee32eecc54)
+
+running 5 tests
+test generic_slice_access_and_copying_execute_for_supported_scalar_types ... ok
+test generic_slice_access_preserves_native_physical_bounds ... ok
+test generic_slice_arguments_preserve_element_type_relations ... ok
+test generic_slice_raw_storage_keeps_checked_element_types ... ok
+test generic_slice_summary_program_executes_with_option_ranges_and_arithmetic ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.20s
+

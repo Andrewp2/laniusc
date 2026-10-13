@@ -1,0 +1,26 @@
+// Candidate only; no compile or execution was performed by the audit.
+// Expect exit 0. Tests full pointer words in an aliased slice nested inside T.
+module app::main;
+import core::mem;
+struct Cell<T> { value: T, sentinel: i32 }
+fn keep<T>(value: T) -> T { return value; }
+fn change(values: [ptr], replacement: ptr) -> i32 {
+    let original: Cell<[ptr]> = Cell { value: values, sentinel: 91 };
+    let copied: Cell<[ptr]> = keep(core::mem::identity(original));
+    copied.value[0] = replacement;
+    copied.sentinel = 12;
+    if (original.value[0] != replacement || original.sentinel != 91) { return 1; }
+    return 0;
+}
+fn main() -> i32 {
+    let first: [i32; 2] = [19, 23];
+    let second: [i32; 2] = [20, 22];
+    let left: ptr = core::mem::i32_array_data_ptr(first);
+    let right: ptr = core::mem::i32_array_data_ptr(second);
+    let pointers: [ptr; 2] = [left, right];
+    if (change(pointers, right) != 0 || pointers[0] != right) { return 2; }
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(pointers[0], 2);
+    view[0] = 42;
+    if (second[0] != 42 || first[0] != 19) { return 3; }
+    return 0;
+}

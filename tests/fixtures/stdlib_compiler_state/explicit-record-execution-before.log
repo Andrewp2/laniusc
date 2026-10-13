@@ -1,0 +1,21 @@
+
+running 3 tests
+test explicit_record_constructor_actual_arguments_reject_context_conflicts ... 
+thread 'explicit_record_constructor_actual_arguments_reject_context_conflicts' (147669) panicked at tests/compiler_generic_types_execution.rs:6762:36:
+call: conflicting explicit constructor emitted an ELF
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test explicit_record_constructor_composed_types_execute ... 
+thread 'explicit_record_constructor_composed_types_execute' (147705) panicked at tests/compiler_generic_types_execution.rs:136:29:
+explicit record constructors across type compositions: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 10, column: 22, length: 1, byte_start: Some(345), byte_end: Some(346), source_line: Some("    let words = Cell<[str; 2]> { value: [\"Ω\", \"\"] };"), message: "expected one of identifier, `[`, or `&`, found `[`" }), help: None, notes: [] })
+FAILED
+test explicit_record_constructor_imported_five_arguments_execute ... ok
+
+failures:
+
+failures:
+    explicit_record_constructor_actual_arguments_reject_context_conflicts
+    explicit_record_constructor_composed_types_execute
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 199 filtered out; finished in 5.76s
+

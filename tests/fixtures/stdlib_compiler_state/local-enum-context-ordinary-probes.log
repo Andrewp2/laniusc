@@ -1,0 +1,21 @@
+=== local-enum-ordinary-contexts.lani exit 1 seconds 1.99 ===
+
+GPU source-pack type-check rejection: token=32 code=AssignMismatch detail=0
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/local-enum-ordinary-contexts.lani: error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_compiler_state/local-enum-ordinary-contexts.lani:3:34
+  |
+3 | fn reject() -> Decision { return Reject(); }
+  |                                  ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+
+=== local-enum-no-context.lani exit 1 seconds 1.88 ===
+
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/local-enum-no-context.lani: error[LNC0017]: x86 callee function lost its checked aggregate result layout
+ --> tests/fixtures/stdlib_compiler_state/local-enum-no-context.lani:2:20
+  |
+2 | fn main() -> i32 { let value = Missing(); return 0; }
+  |                    ^^^ not supported by the native x86 backend yet
+     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
+     = note: the native x86 backend rejected this program before emitting an artifact
+     = note: first unsupported target LIR opcode: 30
+

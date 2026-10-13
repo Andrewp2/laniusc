@@ -1,0 +1,454 @@
+--- a/crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs
++++ b/crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs
+@@ -8,10 +8,20 @@
+ use crate::gpu::passes_core::{self, PassData};
+ 
+ // Ordinary literals are required by laniusc-shaders/build.rs artifact discovery.
+-const CATALOG_KEYS: [&str; 12] = [
++const CATALOG_KEYS: [&str; 22] = [
+     "type_checker/program_evidence/entries/00_initialize",
+     "type_checker/program_evidence/entries/01_clear_atom_index",
+-    "type_checker/program_evidence/entries/02_admit_catalog_rows",
++    "type_checker/program_evidence/entries/02_00_admit_snapshots",
++    "type_checker/program_evidence/entries/02_01_admit_atoms",
++    "type_checker/program_evidence/entries/02_02_admit_owners",
++    "type_checker/program_evidence/entries/02_03_admit_parameters",
++    "type_checker/program_evidence/entries/02_04_admit_callables",
++    "type_checker/program_evidence/entries/02_05_admit_nodes",
++    "type_checker/program_evidence/entries/02_06_admit_edges",
++    "type_checker/program_evidence/entries/02_07_admit_roots",
++    "type_checker/program_evidence/entries/02_08_admit_predicates",
++    "type_checker/program_evidence/entries/02_09_admit_implementations",
++    "type_checker/program_evidence/entries/02_10_admit_methods",
+     "type_checker/program_evidence/entries/03_build_atom_index",
+     "type_checker/program_evidence/entries/04_check_atom_identity",
+     "type_checker/program_evidence/entries/05_map_callables",
+@@ -47,27 +57,43 @@
+         let work_rows = count(1).max(count(9));
+         let buckets = super::super::abi::buckets(work_rows)?;
+         let clear_count = work_rows.max(buckets); // >=1, even for empty catalog.
+-        let counts = [
+-            1,
+-            clear_count,
+-            (0..=10).map(count).max().unwrap_or(0),
+-            count(1),
+-            count(1),
+-            count(4),
+-            count(2).max(count(8)).max(count(9)),
+-            count(10),
+-            clear_count,
+-            count(9),
+-            count(9),
+-            1,
++        // Phase02 is one typed shader per catalog table. Keep explicit phase
++        // numbers: shader array index11 is an admission, not singleton freeze.
++        let schedule: [(u32, u32); 22] = [
++            (0, 1),
++            (1, clear_count),
++            (2, count(0)),
++            (2, count(1)),
++            (2, count(2)),
++            (2, count(3)),
++            (2, count(4)),
++            (2, count(5)),
++            (2, count(6)),
++            (2, count(7)),
++            (2, count(8)),
++            (2, count(9)),
++            (2, count(10)),
++            (3, count(1)),
++            (4, count(1)),
++            (5, count(4)),
++            (6, count(2).max(count(8)).max(count(9))),
++            (7, count(10)),
++            (8, clear_count),
++            (9, count(9)),
++            (10, count(9)),
++            (11, 1),
+         ];
+-        for (phase, (pass, count)) in self.passes.iter().zip(counts).enumerate() {
++        ensure!(
++            self.passes.len() == schedule.len(),
++            "catalog kernel/schedule inventory differs"
++        );
++        for (pass, (phase, count)) in self.passes.iter().zip(schedule) {
+             let threads = if matches!(phase, 0 | 11) { 1 } else { 256 };
+             record_phase(
+                 device,
+                 encoder,
+                 pass,
+-                phase as u32,
++                phase,
+                 Span::new(0, count)?,
+                 threads,
+                 storage,
+--- a/crates/laniusc-shaders/build.rs
++++ b/crates/laniusc-shaders/build.rs
+@@ -261,7 +261,17 @@
+             | "type_checker/calls/03k2_materialize_match_payloads"
+             | "type_checker/semantic/artifact/01b_array_index_refs"
+             | "type_checker/semantic/artifact/01c_generic_native_words"
+-            | "type_checker/program_evidence/entries/02_admit_catalog_rows"
++            | "type_checker/program_evidence/entries/02_00_admit_snapshots"
++            | "type_checker/program_evidence/entries/02_01_admit_atoms"
++            | "type_checker/program_evidence/entries/02_02_admit_owners"
++            | "type_checker/program_evidence/entries/02_03_admit_parameters"
++            | "type_checker/program_evidence/entries/02_04_admit_callables"
++            | "type_checker/program_evidence/entries/02_05_admit_nodes"
++            | "type_checker/program_evidence/entries/02_06_admit_edges"
++            | "type_checker/program_evidence/entries/02_07_admit_roots"
++            | "type_checker/program_evidence/entries/02_08_admit_predicates"
++            | "type_checker/program_evidence/entries/02_09_admit_implementations"
++            | "type_checker/program_evidence/entries/02_10_admit_methods"
+             | "type_checker/program_evidence/entries/03_build_atom_index"
+             | "type_checker/program_evidence/entries/09_build_implementation_index"
+             | "type_checker/program_evidence/entries/10_check_coherence"
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/catalog_admission_dispatch.slang
+@@ -0,0 +1,16 @@
++// Shared dispatch guards only. Each phase02 entry calls its table's typed
++// admission helper directly, so unrelated admission bodies are not reachable.
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++
++public bool pev_catalog_admission_row(uint table, uint local, out uint row)
++{
++    row = PEV_INVALID;
++    if (!pev_catalog_is_building()) return false;
++    uint count;
++    if (!pev_catalog_count(table, count))
++    {
++        pev_catalog_failure(pev_invalid(1u, table, PEV_INVALID)); return false;
++    }
++    return pev_dispatch_row(local, count, row);
++}
+--- a/shaders/type_checker/program_evidence/catalog_row_admission.slang
++++ b/shaders/type_checker/program_evidence/catalog_row_admission.slang
+@@ -228,29 +228,25 @@
+     return pev_ok();
+ }
+ 
+-public EvidenceStatus pev_admit_catalog_row(uint table, uint row)
+-{
+-    if (table > 10u || !pev_catalog_row(table, row)) return pev_invalid(1u, row, table);
+-    switch (table)
+-    {
+-    case 0u:
+-        if (!pev_snapshot_is_valid(row)) return pev_invalid(2u, row, table);
+-        return pev_ok();
+-    case 1u: return pev_admit_catalog_atom(row);
+-    case 2u: return pev_admit_catalog_owner(row);
+-    case 3u: return pev_admit_catalog_parameter(row);
+-    case 4u: return pev_admit_catalog_callable(row);
+-    case 5u: return pev_admit_catalog_node(row);
+-    case 6u: case 7u:
+-    {
+-        uint2 reference;
+-        if (!pev_read2(table, row, 0u, reference) || !pev_catalog_ref(reference))
+-            return pev_invalid(4u, row, table);
+-        return pev_ok();
+-    }
+-    case 8u: return pev_admit_catalog_predicate(row);
+-    case 9u: return pev_admit_catalog_implementation(row);
+-    case 10u: return pev_admit_catalog_method(row);
+-    default: return pev_invalid(1u, row, table);
+-    }
+-}
++public EvidenceStatus pev_admit_catalog_snapshot(uint row)
++{
++    if (!pev_catalog_row(0u, row)) return pev_invalid(1u, row, 0u);
++    if (!pev_snapshot_is_valid(row)) return pev_invalid(2u, row, 0u);
++    return pev_ok();
++}
++public EvidenceStatus pev_admit_catalog_edge(uint row)
++{
++    if (!pev_catalog_row(6u, row)) return pev_invalid(1u, row, 6u);
++    uint2 reference;
++    if (!pev_read2(6u, row, 0u, reference) || !pev_catalog_ref(reference))
++        return pev_invalid(4u, row, 6u);
++    return pev_ok();
++}
++public EvidenceStatus pev_admit_catalog_root(uint row)
++{
++    if (!pev_catalog_row(7u, row)) return pev_invalid(1u, row, 7u);
++    uint2 reference;
++    if (!pev_read2(7u, row, 0u, reference) || !pev_catalog_ref(reference))
++        return pev_invalid(4u, row, 7u);
++    return pev_ok();
++}
+--- a/shaders/type_checker/program_evidence/catalog_stages.slang
++++ b/shaders/type_checker/program_evidence/catalog_stages.slang
+@@ -1,7 +1,6 @@
+ import type_checker.program_evidence.abi;
+ import type_checker.program_evidence.catalog_io;
+ import type_checker.program_evidence.catalog_index;
+-import type_checker.program_evidence.catalog_row_admission;
+ 
+ public void pev_catalog_initialize()
+ {
+@@ -27,27 +26,6 @@
+             pev_output_write(6u, row, 2u, PEV_INVALID); pev_output_write(6u, row, 3u, 0u);
+         }
+         if (row < buckets) pev_output_write(7u, row, 0u, PEV_INVALID);
+-    }
+-}
+-public void pev_catalog_admit_rows(uint local)
+-{
+-    if (!pev_catalog_is_building()) return;
+-    uint count = 0u;
+-    for (uint table = 0u; table <= 10u; table++)
+-    {
+-        uint rows;
+-        if (!pev_catalog_count(table, rows)) { pev_catalog_failure(pev_invalid(1u, table, PEV_INVALID)); return; }
+-        count = max(count, rows);
+-    }
+-    uint row;
+-    if (!pev_dispatch_row(local, count, row)) return;
+-    for (uint table = 0u; table <= 10u; table++)
+-    {
+-        uint rows; pev_catalog_count(table, rows);
+-        if (row >= rows) continue;
+-        EvidenceStatus status = pev_admit_catalog_row(table, row);
+-        if (table == 9u) pev_write_status(1u, row, status);
+-        if (status.state != PEV_VALID) { pev_catalog_failure(status); return; }
+     }
+ }
+ public void pev_catalog_build_atoms(uint local)
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_00_admit_snapshots.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(0u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_snapshot(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_01_admit_atoms.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(1u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_atom(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_02_admit_owners.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(2u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_owner(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_03_admit_parameters.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(3u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_parameter(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_04_admit_callables.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(4u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_callable(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_05_admit_nodes.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(5u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_node(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_06_admit_edges.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(6u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_edge(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_07_admit_roots.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(7u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_root(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_08_admit_predicates.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(8u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_predicate(row);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_09_admit_implementations.slang
+@@ -0,0 +1,18 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(9u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_implementation(row);
++    pev_write_status(1u, row, status);
++    pev_catalog_failure(status);
++}
+--- /dev/null
++++ b/shaders/type_checker/program_evidence/entries/02_10_admit_methods.slang
+@@ -0,0 +1,17 @@
++import type_checker.program_evidence.abi;
++import type_checker.program_evidence.catalog_io;
++import type_checker.program_evidence.catalog_admission_dispatch;
++import type_checker.program_evidence.catalog_row_admission;
++import gpu_index;
++
++[shader("compute")]
++[numthreads(256, 1, 1)]
++void main(uint3 dtid : SV_DispatchThreadID)
++{
++    if (program_evidence_params.phase != 2u || dtid.z != 0u) return;
++    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
++    uint row;
++    if (!pev_catalog_admission_row(10u, local, row)) return;
++    EvidenceStatus status = pev_admit_catalog_method(row);
++    pev_catalog_failure(status);
++}
+--- a/shaders/type_checker/program_evidence/entries/02_admit_catalog_rows.slang
++++ /dev/null
+@@ -1,14 +0,0 @@
+-import type_checker.program_evidence.abi;
+-import type_checker.program_evidence.catalog_stages;
+-import gpu_index;
+-
+-[shader("compute")]
+-[numthreads(256, 1, 1)]
+-void main(uint3 dtid : SV_DispatchThreadID)
+-{
+-    if (program_evidence_params.phase != 2u) return;
+-    if (dtid.z != 0u) return;
+-    uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
+-    pev_catalog_admit_rows(local);
+-}
+-

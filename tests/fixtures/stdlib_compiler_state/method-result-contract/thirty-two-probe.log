@@ -1,0 +1,2 @@
+sample=0 ms=281.539
+entry=tests/fixtures/stdlib_compiler_state/method-result-contract/thirty-two.lani rebuild_entry=true warmups=1 iters=1 output_bytes=26815 min_ms=281.539 median_ms=281.539 avg_ms=281.539 max_ms=281.539 output_verified=true

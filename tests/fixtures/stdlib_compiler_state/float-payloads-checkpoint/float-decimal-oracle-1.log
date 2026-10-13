@@ -1,0 +1,7 @@
+
+running 1 test
+test gpu::float_decimal_tests::physical_gpu_float_decimal_matches_native_rounding_and_bounds ... float decimal probe: 841 cases, one dispatch, seed=0xdec10a1776800053
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 751 filtered out; finished in 0.87s
+

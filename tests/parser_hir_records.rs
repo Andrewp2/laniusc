@@ -1113,6 +1113,82 @@ fn parser_semantic_tokens_match_type_argument_close_across_token_blocks() {
 }
 
 #[test]
+fn parser_semantic_tokens_keep_structural_impl_receiver_arrays_as_types() {
+    for (header, arrays) in [
+        ("impl Wrap<[i32; 2]>", 1),
+        ("impl<T> Wrap<[[T; 2]; 3]>", 2),
+        ("impl<T> Wrap<&[T; 2]>", 1),
+        ("impl<T> Marker<[T; 2]> for Wrap<[[T; 2]; 3]>", 3),
+        ("impl<T, const N: usize> Wrap<[T; N]>", 1),
+        ("impl<T, const N: usize> Marker<[T; N]> for Wrap<[[T; N]; N]>", 3),
+    ] {
+        let source = format!("{header} {{ fn run() {{ let values = [1, 2]; }} }}");
+        let kinds = parser_semantic_token_kinds_for_source(&source);
+        for kind in [TokenKind::TypeArrayLBracket, TokenKind::TypeArrayRBracket] {
+            assert_eq!(
+                kinds.iter().filter(|&&value| value == kind as u32).count(),
+                arrays,
+                "{source}: {:?}",
+                token_kind_names(&kinds),
+            );
+        }
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|&&kind| kind == TokenKind::ArrayLBracket as u32)
+                .count(),
+            1,
+            "the impl body must retain its array expression: {source}",
+        );
+        if header.contains("; N") {
+            assert!(
+                kinds.windows(2).any(|pair| pair == [
+                    TokenKind::TypeSemicolon as u32,
+                    TokenKind::Ident as u32,
+                ]),
+                "array lengths must retain their value role: {source}: {:?}",
+                token_kind_names(&kinds),
+            );
+        }
+        assert!(parse_resident_source(&source).ll1.accepted, "{source}");
+    }
+}
+
+#[test]
+fn parser_structural_impl_receiver_context_crosses_token_blocks() {
+    let header = format!("impl<T, const N: usize> {}Wrap<[[T; N]; N]>", "scope::".repeat(130));
+    let source = format!("{header} {{ fn run() {{ let values = [1, 2]; }} }}");
+    let kinds = parser_semantic_token_kinds_for_source(&source);
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::TypeArrayLBracket as u32)
+            .count(),
+        2,
+        "the header context must reach both nested arrays across GPU blocks",
+    );
+    assert!(parse_resident_source(&source).ll1.accepted, "{source}");
+}
+
+#[test]
+fn parser_structural_impl_receiver_qualified_compositions_keep_child_type_roles() {
+    for close in ["> >", ">>"] {
+        let source = format!(
+            "fn main() -> i32 {{ let nested: core::shapes::Wrap<core::shapes::Cell<[i32; 2]{close} = core::shapes::Wrap<core::shapes::Cell<[i32; 2]{close} {{ value: core::shapes::Cell<[i32; 2]> {{ value: [13, 17] }} }}; return 0; }}"
+        );
+        let kinds = parser_semantic_token_kinds_for_source(&source);
+        let parsed = parse_resident_source(&source);
+        assert!(parsed.ll1.accepted, "{source}: {:?}: {:?}", parsed.ll1, token_kind_names(&kinds));
+        assert_eq!(
+            kinds.iter().filter(|&&kind| kind == TokenKind::PathTypeArgLt as u32).count(),
+            2,
+            "only the two constructors own value applications: {source}: {:?}",
+            token_kind_names(&kinds),
+        );
+    }
+}
+
+#[test]
 fn parser_matches_else_block_across_token_block_boundary() {
     let mut source = String::from("fn choose(value: i32) -> i32 {\n");
     // Each typed declaration contributes seven raw tokens. The final inferred
@@ -1584,6 +1660,91 @@ fn make_world() {
     ];
 
     assert_eq!(kinds, expected);
+}
+
+#[test]
+fn parser_semantic_tokens_qualified_declaration_applications_are_types() {
+    let source = "struct Holder<T> { child: core::five::Five<i32, bool, char, u32, T> }\n\
+         enum Choice<T> { Some(core::five::Five<i32, bool, char, u32, T>), None }\n\
+         fn main() -> i32 { return core::five::last<i32>(0); }";
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    let opens = kinds
+        .iter()
+        .copied()
+        .filter(|&kind| {
+            matches!(
+                TokenKind::try_from(kind),
+                Ok(TokenKind::GenericParamLt | TokenKind::TypeArgLt | TokenKind::PathTypeArgLt)
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        opens,
+        [
+            TokenKind::GenericParamLt as u32,
+            TokenKind::TypeArgLt as u32,
+            TokenKind::GenericParamLt as u32,
+            TokenKind::TypeArgLt as u32,
+            TokenKind::PathTypeArgLt as u32,
+        ],
+        "declaration applications and explicit value calls need distinct grammar terminals"
+    );
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "qualified declaration types must parse: {:?}", parsed.ll1);
+
+    // Both delimiters start a complete type path. A path crossing a prefix
+    // block must preserve its role just as a short one does.
+    let deep_path = (0..90).map(|i| format!("m{i}::")).collect::<String>();
+    for source in [
+        "enum E<T> { Pair(lib::inner::Packet<T>, lib::inner::Boxed<T>), Empty }".to_owned(),
+        format!("enum E<T> {{ Value({deep_path}Packet<T>), Empty }}"),
+    ] {
+        let parsed = parse_resident_source(&source);
+        assert!(parsed.ll1.accepted, "qualified enum payload must parse: {source}; {:?}", parsed.ll1);
+    }
+}
+
+#[test]
+fn parser_qualified_type_applications_inside_structural_types() {
+    for source in [
+        "fn main() -> i32 { let values: [core::option::Option<i32>; 2] = [core::option::None(), core::option::None()]; return 0; }",
+        "fn use_values(values: [core::option::Option<i32>]) {}",
+        "fn use_values(values: &[core::option::Option<i32>; 2]) {}",
+        "struct Holder { values: [[core::option::Option<i32>; 2]; 3] }",
+        "type Values = [core::option::Option<i32>; 2];",
+    ] {
+        let kinds = parser_semantic_token_kinds_for_source(source);
+        assert_eq!(
+            kinds.iter().filter(|&&kind| kind == TokenKind::TypeArgLt as u32).count(),
+            1,
+            "qualified array element must retain its type-argument role: {source}\n{:?}",
+            token_kind_names(&kinds)
+        );
+        assert!(
+            !kinds.contains(&(TokenKind::PathTypeArgLt as u32)),
+            "a structural type cannot contain a value application: {source}"
+        );
+        let parsed = parse_resident_source(source);
+        assert!(
+            parsed.ll1.accepted,
+            "structural type must parse: {source}; status={:?}", parsed.ll1
+        );
+    }
+
+    let composed = parse_resident_source(include_str!(
+        "fixtures/stdlib_foundation/generic_assignment_contexts.lani"
+    ));
+    assert!(composed.ll1.accepted, "composed generic types must parse: {:?}", composed.ll1);
+
+    let values = "fn main() -> i32 { let values = [core::identity<i32>(1), core::identity<i32>(2)]; return values[0]; }";
+    let kinds = parser_semantic_token_kinds_for_source(values);
+    assert_eq!(
+        kinds.iter().filter(|&&kind| kind == TokenKind::PathTypeArgLt as u32).count(),
+        2,
+        "calls in an array value retain their value-argument role"
+    );
+    let parsed = parse_resident_source(values);
+    assert!(parsed.ll1.accepted, "array value calls must parse: {:?}", parsed.ll1);
 }
 
 #[test]
@@ -4462,6 +4623,7 @@ fn parser_source_pack_keeps_nested_stdlib_call_callees() {
     let parsed = parse_resident_source_pack(&[
         include_str!("../stdlib/core/i32.lani"),
         include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result_bool.lani"),
         include_str!("../stdlib/core/result.lani"),
     ]);
     let mut calls = 0usize;
@@ -4478,8 +4640,11 @@ fn parser_source_pack_keeps_nested_stdlib_call_callees() {
         );
         let callee_kind = parsed.hir_canonical_core_words[callee * 4];
         assert!(
-            matches!(callee_kind, HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR),
-            "call {dense} callee {callee} must retain a name or path, got kind {callee_kind}"
+            matches!(
+                callee_kind,
+                HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR | HIR_NODE_MEMBER_EXPR
+            ),
+            "call {dense} callee {callee} must retain a callable expression, got kind {callee_kind}"
         );
     }
     for (raw_call, kind) in parsed.hir_kind.iter().enumerate() {
@@ -4489,9 +4654,9 @@ fn parser_source_pack_keeps_nested_stdlib_call_callees() {
                 assert!(
                     matches!(
                         parsed.hir_kind[raw_callee],
-                        HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR
+                        HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR | HIR_NODE_MEMBER_EXPR
                     ),
-                    "raw call {raw_call} must point at a callable name/path row, got kind {}",
+                    "raw call {raw_call} must point at a callable expression row, got kind {}",
                     parsed.hir_kind[raw_callee],
                 );
                 raw_callee_tokens.push(parsed.hir_token_pos[raw_callee]);
@@ -4721,6 +4886,163 @@ fn main(values: [i32; 2], slot: i32) -> i32 {
         "the projected base identity must remain a semantic name/path expression, got kind {}",
         parsed.hir_kind[canonical_base]
     );
+}
+
+#[test]
+fn parser_compact_hir_nested_index_preserves_each_base_operand() {
+    for (source, first_kind, depth) in [
+        (
+            "fn get(rows: [[i32; 2]]) -> i32 { return rows[0][1]; }",
+            HIR_NODE_PATH_EXPR,
+            2,
+        ),
+        (
+            "type Row = [i32; 2]; type Plane = [Row; 2]; fn get(rows: [Plane]) -> i32 { return rows[0][1][0]; }",
+            HIR_NODE_PATH_EXPR,
+            3,
+        ),
+        (
+            "fn get(rows: [[[i32; 2]; 2]]) -> i32 { return rows[0][1][0]; }",
+            HIR_NODE_PATH_EXPR,
+            3,
+        ),
+        (
+            "struct Box { rows: [[i32; 2]] } fn get(value: Box) -> i32 { return value.rows[0][1]; }",
+            HIR_NODE_MEMBER_EXPR,
+            2,
+        ),
+        (
+            "fn rows(value: i32) -> [[i32; 2]] { return rows(value); } fn get() -> i32 { return rows(7)[0][1]; }",
+            HIR_NODE_CALL_EXPR,
+            2,
+        ),
+        (
+            "fn rows() -> [[i32; 2]] { return rows(); } fn get() -> i32 { return rows()[0][1]; }",
+            HIR_NODE_CALL_EXPR,
+            2,
+        ),
+        (
+            "struct Box { rows: [[i32; 2]] } fn boxed() -> Box { return boxed(); } fn get() -> i32 { return boxed().rows[0][1]; }",
+            HIR_NODE_MEMBER_EXPR,
+            2,
+        ),
+    ] {
+        let parsed = parse_resident_source_pack(&[source]);
+        assert_ne!(
+            parsed.ll1_status[0], 0,
+            "nested index fixture should parse: {source}; status={:?}",
+            parsed.ll1_status
+        );
+        let indices: Vec<_> = parsed
+            .hir_canonical_core_words
+            .chunks_exact(4)
+            .enumerate()
+            .filter_map(|(dense, core)| (core[0] == HIR_NODE_INDEX_EXPR).then_some(dense))
+            .collect();
+        assert_eq!(
+            indices.len(),
+            depth,
+            "all index operations must survive: {source}"
+        );
+        for (ordinal, &dense) in indices.iter().enumerate() {
+            let payload = &parsed.hir_canonical_payload_words[dense * 4..dense * 4 + 4];
+            let base = payload[1] as usize;
+            assert_ne!(dense, base, "an index cannot name itself as its base");
+            let base_kind = parsed.hir_canonical_core_words[base * 4];
+            if ordinal == 0 {
+                assert_eq!(base_kind, first_kind, "first base: {source}");
+            } else {
+                assert_eq!(
+                    base,
+                    indices[ordinal - 1],
+                    "each index consumes the preceding result: {source}"
+                );
+                assert_eq!(base_kind, HIR_NODE_INDEX_EXPR);
+            }
+        }
+    }
+}
+
+#[test]
+fn parser_compact_nested_literals_keep_each_owners_field_range_contiguous() {
+    let parsed = parse_resident_source(
+        r#"
+struct Cell<T> { value: T, sentinel: i32 }
+struct Holder<T> { child: Cell<T>, sentinel: i32 }
+struct Outer<T> { child: Holder<T>, sentinel: i32 }
+fn main() -> i32 {
+    let value: Outer<i32> = Outer { child: Holder { child: Cell { value: -7, sentinel: 42 }, sentinel: 99 }, sentinel: 777 };
+    return value.child.child.value;
+}
+"#,
+    );
+    assert!(parsed.ll1.accepted, "{:?}", parsed.ll1);
+    let mut owners = std::collections::BTreeMap::<u32, Vec<usize>>::new();
+    for (row, &owner) in parsed.hir_field_owner.iter().enumerate() {
+        let raw = parsed.hir_canonical_dense_to_raw[owner as usize] as usize;
+        if parsed.hir_kind[raw] == HIR_NODE_STRUCT_LITERAL_EXPR {
+            owners.entry(owner).or_default().push(row);
+        }
+    }
+    assert_eq!(owners.len(), 3);
+    for (owner, rows) in owners {
+        assert_eq!(rows.len(), 2);
+        for (ordinal, &row) in rows.iter().enumerate() {
+            assert_eq!(
+                row,
+                rows[0] + ordinal,
+                "owner {owner}'s fields must be contiguous"
+            );
+            assert_eq!(parsed.hir_field_ordinal[row], ordinal as u32);
+            assert!(parsed.hir_field_value[row] < parsed.hir_canonical_count);
+        }
+    }
+}
+
+#[test]
+fn parser_compact_hir_nested_array_types_preserve_delimiters() {
+    for depth in [3, 9, 32] {
+        let mut ty = "i32".to_owned();
+        for _ in 0..depth {
+            ty = format!("[{ty}; 2]");
+        }
+        for source in [
+            format!("fn get(rows: [{ty}]) -> i32 {{ return 0; }}"),
+            format!(
+                "struct Cell<T> {{ value: T }} fn get(rows: Cell<[{ty}]>) -> i32 {{ return 0; }}"
+            ),
+            format!("type Rows = [{ty}]; fn get(rows: Rows) -> i32 {{ return 0; }}"),
+        ] {
+            let parsed = parse_resident_source_pack(&[&source]);
+            assert_ne!(
+                parsed.ll1_status[0], 0,
+                "nested type must parse: {source}; status={:?}",
+                parsed.ll1_status
+            );
+            let mut arrays = 0;
+            let mut slices = 0;
+            for (core, payload) in parsed
+                .hir_canonical_core_words
+                .chunks_exact(4)
+                .zip(parsed.hir_canonical_payload_words.chunks_exact(4))
+            {
+                if core[0] != HIR_NODE_TYPE {
+                    continue;
+                }
+                if payload[0] == 2 {
+                    arrays += 1;
+                }
+                if payload[0] == 3 {
+                    slices += 1;
+                }
+            }
+            assert_eq!(
+                arrays, depth,
+                "every fixed array layer must survive: {source}"
+            );
+            assert_eq!(slices, 1, "the borrowed outer view must survive: {source}");
+        }
+    }
 }
 
 #[test]
@@ -5381,6 +5703,19 @@ fn main() {
 }
 
 #[test]
+fn parser_compact_imported_result_patterns_keep_payload_arity() {
+    let parsed = parse_resident_source(include_str!(
+        "fixtures/stdlib_foundation/repro_generic_nested_result_imported.lani"
+    ));
+    assert!(parsed.ll1.accepted, "imported result fixture must parse");
+    assert_eq!(
+        parsed.hir_compact_match_payload_count,
+        vec![1, 1, 0, 0, 1, 1, 1, 1],
+        "each qualified enum pattern has one payload; Boolean patterns have none"
+    );
+}
+
+#[test]
 fn parser_compact_hir_flattens_nested_patterns_with_parent_and_local_ordinal() {
     let parsed = parse_resident_source(
         r#"
@@ -5700,6 +6035,34 @@ impl Range {
 }
 
 #[test]
+fn parser_trait_arguments_keep_complete_qualified_paths_and_reference_targets() {
+    let parsed = parse_resident_source(include_str!(
+        "fixtures/stdlib_compiler_state/trait-type-graphs/parser-contracts.lani"
+    ));
+    assert!(parsed.ll1.accepted);
+    let qualified = parsed.hir_path_segment_count.iter().enumerate()
+        .filter(|(_, count)| **count > 1).collect::<Vec<_>>();
+    assert_eq!(qualified.len(), 2);
+    for (path, count) in qualified {
+        assert_eq!(*count, 3);
+        let owner = parsed.hir_path_owner[path] as usize;
+        let raw = parsed.hir_canonical_dense_to_raw[owner] as usize;
+        let start = parsed.hir_path_segment_start[path] as usize;
+        assert_eq!(parsed.hir_path_segment_name_token[start], parsed.hir_token_pos[raw]);
+        for ordinal in 0..3 {
+            assert_eq!(parsed.hir_path_segment_path[start + ordinal], path as u32);
+            assert_eq!(parsed.hir_path_segment_ordinal[start + ordinal], ordinal as u32);
+        }
+    }
+    for row in 0..2 {
+        let subject = parsed.hir_compact_predicate_subject[row] as usize;
+        let raw = parsed.hir_canonical_dense_to_raw[subject] as usize;
+        assert_eq!(parsed.hir_kind[raw], HIR_NODE_TYPE);
+        assert_eq!(parsed.hir_type_form[raw], 4);
+    }
+}
+
+#[test]
 fn parser_compact_hir_predicates_exclude_nested_bound_arguments_and_use_dense_types() {
     let parsed = parse_resident_source(
         r#"
@@ -5881,6 +6244,27 @@ fn take(value: Pair<i32, bool>) -> i32 {
 }
 
 #[test]
+fn parser_hir_constant_alias_headers_do_not_replace_the_target() {
+    for (source, forms) in [
+        ("type Fixed<const N: usize> = [i32; N];", &[HIR_TYPE_FORM_ARRAY][..]),
+        (include_str!("fixtures/stdlib_compiler_state/alias-type-probes/mixed-composition-alias.lani"),
+            &[HIR_TYPE_FORM_ARRAY, HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_REF, HIR_TYPE_FORM_SLICE][..]),
+    ] {
+        let parsed = parse_resident_source(source);
+        assert!(parsed.ll1.accepted, "constant alias headers: {:?}", parsed.ll1);
+        let targets: Vec<_> = parsed.hir_item_kind.iter().enumerate()
+            .filter(|&(_, &kind)| kind == HIR_ITEM_KIND_TYPE_ALIAS)
+            .map(|(owner, _)| {
+                let target = parsed.hir_type_alias_target_node[owner] as usize;
+                assert!(target < parsed.hir_kind.len());
+                assert_eq!(parsed.hir_kind[target], HIR_NODE_TYPE);
+                parsed.hir_type_form[target]
+            }).collect();
+        assert_eq!(targets, forms, "alias targets retain their complete outer type");
+    }
+}
+
+#[test]
 fn parser_hir_nested_generic_type_arguments_split_shift_token() {
     let parsed = parse_resident_source(
         r#"
@@ -5909,6 +6293,17 @@ fn take(value: Pair<Pair<i32, bool>, i32>) -> i32 {
             >= 2,
         "the outer and nested Pair types should both retain two type arguments"
     );
+}
+
+#[test]
+fn parser_match_array_results_keep_value_bracket_roles() {
+    for arrow in ["->", "=>"] {
+        let source = format!("fn select(flag: bool) -> [[i32; 2]; 2] {{ return match (flag) {{ true {arrow} [[1, 2], [3, 4]], false {arrow} [[5, 6], [7, 8]] }}; }} fn empty(flag: bool) -> [i32; 0] {{ return match (flag) {{ true {arrow} [], false {arrow} [] }}; }}");
+        let kinds = parser_semantic_token_kinds_for_source(&source);
+        assert_eq!(kinds.iter().filter(|&&kind| kind == TokenKind::ArrayLBracket as u32).count(), 8);
+        assert_eq!(kinds.iter().filter(|&&kind| kind == TokenKind::TypeArrayLBracket as u32).count(), 3);
+        assert!(parse_resident_source(&source).ll1.accepted, "array match results with {arrow}");
+    }
 }
 
 #[test]
@@ -14223,22 +14618,17 @@ fn parser_hir_member_readback_rejects_receiver_outside_member_span() {
 }
 
 #[test]
-fn parser_hir_member_readback_rejects_member_span_past_name_token() {
-    let err = validate_hir_member_records(
+fn parser_hir_member_readback_accepts_application_after_name_token() {
+    validate_hir_member_records(
         &[HIR_NODE_MEMBER_EXPR, HIR_NODE_NAME_EXPR],
         &[0, 0],
-        &[5, 2],
+        &[7, 2],
         &[0, 0],
         &[1, INVALID],
         &[0, INVALID],
         &[3, INVALID],
     )
-    .expect_err("member expression rows must end at the parser-owned member name token");
-    assert!(
-        err.to_string()
-            .contains("does not end at the member-name token"),
-        "error should describe the parser-owned member expression span end contract"
-    );
+    .expect("a member expression includes its explicit argument list after the name");
 }
 
 #[test]
@@ -16648,5 +17038,325 @@ fn assert_source_pack_semantic_file_rows_partition_sources(
             parsed.hir_semantic_child_index[row] + 1,
             "semantic row {row}'s next sibling {sibling} should advance child index"
         );
+    }
+}
+
+#[test]
+fn parser_compact_nested_array_literals_keep_each_owner_range_contiguous() {
+    let parsed = parse_resident_source(
+        "fn main() -> i32 { let values = [[\"a\", \"b\"], [\"c\", \"d\"]]; return 0; }",
+    );
+    assert!(parsed.ll1.accepted);
+    let mut arrays = 0;
+    for (owner, &count) in parsed.hir_compact_array_element_count.iter().enumerate() {
+        if count == 0 {
+            continue;
+        }
+        arrays += 1;
+        let start = parsed.hir_compact_array_element_start[owner] as usize;
+        for ordinal in 0..count as usize {
+            let row = start + ordinal;
+            assert_eq!(
+                parsed.hir_compact_array_element_array[row] as usize, owner,
+                "nested literal owner {owner} element {ordinal} must be in its owner's range"
+            );
+            assert_eq!(
+                parsed.hir_compact_array_element_ordinal[row] as usize,
+                ordinal
+            );
+        }
+    }
+    assert_eq!(arrays, 3);
+}
+
+#[test]
+fn parser_nested_condition_headers_keep_structural_brace_owners() {
+    let source = "fn main() -> i32 { if ((match (true) { true -> true, false -> false })) { return 0; } while ((match (false) { true -> true, false -> false })) { return 1; } let value: [i32; 1] = [(match ((match (true) { true -> true, false -> false })) { true -> 2, false -> 3 })]; return value[0]; }";
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::IfLBrace as u32)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::MatchLBrace as u32)
+            .count(),
+        4
+    );
+    assert!(
+        !kinds.contains(&(TokenKind::StructLitLBrace as u32)),
+        "condition bodies must retain their own header roles"
+    );
+    assert!(parse_resident_source(source).ll1.accepted);
+}
+
+#[test]
+fn parser_nested_condition_header_matching_crosses_token_blocks() {
+    // Keep the outer opening condition parenthesis several blocks away from its
+    // close, after an inner header overwrites the prefix owner. This exercises
+    // the published hierarchy rather than only the local/adjacent block paths.
+    let padding = " && true".repeat(180);
+    let source = format!(
+        "fn main() -> i32 {{ if ((match (true) {{ true -> true, false -> false }}){padding}) {{ return 0; }} return 1; }}"
+    );
+    let kinds = parser_semantic_token_kinds_for_source(&source);
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::IfLBrace as u32)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::MatchLBrace as u32)
+            .count(),
+        1
+    );
+    assert!(!kinds.contains(&(TokenKind::StructLitLBrace as u32)));
+    assert!(parse_resident_source(&source).ll1.accepted);
+}
+
+#[test]
+fn parser_explicit_record_constructor_paths_preserve_type_arguments() {
+    for close in ["> >", ">>"] {
+        let source = format!(
+            "struct Cell<T> {{ value: T }} fn main() -> i32 {{ let one = Cell<i32> {{ value: 7 }}; let words = Cell<[str; 2]> {{ value: [\"Ω\", \"\"] }}; let two = core::Cell<Cell<[str; 2]{close} {{ value: Cell<[str; 2]> {{ value: [\"Ω\", \"\"] }} }}; return one.value; }}"
+        );
+        let kinds = parser_semantic_token_kinds_for_source(&source);
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|&&kind| kind == TokenKind::StructLitLBrace as u32)
+                .count(),
+            4
+        );
+        let parsed = parse_resident_source(&source);
+        assert!(
+            parsed.ll1.accepted,
+            "explicit constructors must parse: {:?}",
+            parsed.ll1
+        );
+        let literals = parsed
+            .hir_kind
+            .iter()
+            .enumerate()
+            .filter(|(_, kind)| **kind == HIR_NODE_STRUCT_LITERAL_EXPR)
+            .collect::<Vec<_>>();
+        assert_eq!(literals.len(), 4);
+        for (literal, _) in literals {
+            let head = parsed.hir_struct_lit_head_node[literal] as usize;
+            assert_eq!(
+                parsed.hir_type_arg_count[head], 1,
+                "each constructor retains its own argument list"
+            );
+            assert_eq!(
+                parsed.hir_canonical_raw_to_dense[head],
+                parsed.hir_canonical_raw_to_dense[literal]
+            );
+        }
+    }
+}
+
+#[test]
+fn parser_explicit_record_constructor_argument_order_scales_to_thirty_two() {
+    let shapes = [
+        "i32",
+        "bool",
+        "str",
+        "[i32; 2]",
+        "Cell<bool>",
+        "[[str; 0]; 2]",
+        "&Cell<i32>",
+        "[i32]",
+    ];
+    for count in [5, 32] {
+        for head in ["Mine", "core::records::Mine"] {
+            let arguments = (0..count)
+                .map(|slot| shapes[slot % shapes.len()])
+                .collect::<Vec<_>>()
+                .join(", ");
+            let source = format!(
+                "fn main() -> i32 {{ let v = {head}<{arguments}> {{ value: 0 }}; return 0; }}"
+            );
+            let parsed = parse_resident_source(&source);
+            assert!(
+                parsed.ll1.accepted,
+                "all constructor arguments must parse: {:?}",
+                parsed.ll1
+            );
+            let literal = parsed
+                .hir_kind
+                .iter()
+                .position(|&kind| kind == HIR_NODE_STRUCT_LITERAL_EXPR)
+                .unwrap();
+            let owner = parsed.hir_struct_lit_head_node[literal] as usize;
+            assert_eq!(parsed.hir_type_arg_count[owner], count as u32);
+            let mut argument = parsed.hir_type_arg_start[owner];
+            let mut previous_token = 0;
+            for _ in 0..count {
+                assert_ne!(argument, INVALID);
+                let token = parsed.hir_token_pos[argument as usize];
+                assert!(token > previous_token, "arguments retain source order");
+                previous_token = token;
+                argument = parsed.hir_type_arg_next[argument as usize];
+            }
+            assert_eq!(argument, INVALID);
+        }
+    }
+}
+
+#[test]
+fn parser_explicit_callable_arguments_belong_to_each_path_segment() {
+    let shapes = ["i32", "bool", "str", "[i32; 2]", "&Cell<bool>", "[[str; 0]; 2]", "[i32]"];
+    for count in [5, 32] {
+        for close in ["> >", ">>"] {
+            let arguments = (0..count).map(|i| shapes[i % shapes.len()])
+                .collect::<Vec<_>>().join(", ");
+            let source = format!(
+                "fn main() -> i32 {{ let a = core::Wrap<{arguments}>::make /* head */ <{arguments}>(7); let b = keep<Cell<[i32; 2]{close}(8); return a; }}"
+            );
+            let parsed = parse_resident_source(&source);
+            assert!(parsed.ll1.accepted, "callable applications must parse: {:?}", parsed.ll1);
+            let calls = parsed.hir_kind.iter().enumerate()
+                .filter(|(_, kind)| **kind == HIR_NODE_CALL_EXPR).map(|(call, _)| call)
+                .collect::<Vec<_>>();
+            assert_eq!(calls.len(), 2);
+            for (call_index, call) in calls.into_iter().enumerate() {
+                let raw_path = parsed.hir_call_callee_path_node[call] as usize;
+                let owner = parsed.hir_canonical_raw_to_dense[raw_path];
+                let path = parsed.hir_path_owner.iter().position(|&p| p == owner).unwrap();
+                let segment_start = parsed.hir_path_segment_start[path] as usize;
+                let segments = parsed.hir_path_segment_count[path] as usize;
+                let expected = if call_index == 0 { vec![0, count, count] } else { vec![1] };
+                assert_eq!(segments, expected.len());
+                // Whole-path ownership cannot merge receiver and method headers.
+                assert_eq!(parsed.hir_type_arg_range_count[owner as usize], 0);
+                for (segment, argument_count) in expected.into_iter().enumerate() {
+                    let token = parsed.hir_path_segment_name_token[segment_start + segment] as usize;
+                    assert_eq!(parsed.hir_path_type_arg_range_count[token], argument_count as u32);
+                    if argument_count == 0 { continue; }
+                    let start = parsed.hir_path_type_arg_range_start[token] as usize;
+                    let args = &parsed.hir_compact_type_args[start..start + argument_count];
+                    for (ordinal, arg) in args.iter().enumerate() {
+                        assert_eq!(arg.owner, owner);
+                        assert_eq!(arg.application_token, token as u32);
+                        assert_eq!(arg.ordinal, ordinal as u32);
+                        assert_eq!(arg.file_id, 0);
+                        let value_raw = parsed.hir_canonical_dense_to_raw[arg.value as usize] as usize;
+                        assert_eq!(parsed.hir_kind[value_raw], HIR_NODE_TYPE);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn parser_explicit_dotted_arguments_belong_to_the_member_application() {
+    let shapes = ["Cell<[i32; 2]>", "0", "&Cell<bool>", "[[str; 0]; 2]", "[i32]"];
+    for count in [5, 32] {
+        let arguments = (0..count).map(|i| shapes[i % shapes.len()])
+            .collect::<Vec<_>>().join(", ");
+        let source = format!(
+            "fn main() -> i32 {{ let a = factory<str>().keep<{arguments}>(7).tail<Cell<i32>>(8); return 0; }}"
+        );
+        let parsed = parse_resident_source(&source);
+        assert!(parsed.ll1.accepted, "member applications must parse: {:?}", parsed.ll1);
+        let members = parsed.hir_kind.iter().enumerate()
+            .filter(|(_, kind)| **kind == HIR_NODE_MEMBER_EXPR)
+            .map(|(member, _)| member).collect::<Vec<_>>();
+        assert_eq!(members.len(), 2);
+        for (member, expected_count) in members.into_iter().zip([count, 1]) {
+            let owner = parsed.hir_canonical_raw_to_dense[member];
+            let token = parsed.hir_member_name_token[member] as usize;
+            assert_eq!(parsed.hir_path_type_arg_range_count[token], expected_count as u32);
+            let start = parsed.hir_path_type_arg_range_start[token] as usize;
+            for (ordinal, arg) in parsed.hir_compact_type_args[start..start + expected_count].iter().enumerate() {
+                assert_eq!(arg.owner, owner, "the receiver and each called method have separate arguments");
+                assert_eq!(arg.application_token, token as u32);
+                assert_eq!(arg.ordinal, ordinal as u32);
+                let raw = parsed.hir_canonical_dense_to_raw[arg.value as usize] as usize;
+                assert!(parsed.hir_token_pos[raw] > token as u32);
+                // The virtual closing delimiters in `>>` share one source token.
+                assert!(parsed.hir_token_end[raw] <= parsed.hir_token_end[member],
+                    "the member contains its complete argument: member={member} span={}..{}, argument={ordinal} span={}..{}",
+                    parsed.hir_token_pos[member], parsed.hir_token_end[member],
+                    parsed.hir_token_pos[raw], parsed.hir_token_end[raw]);
+            }
+            let call = parsed.hir_kind.iter().enumerate().find(|(call, kind)|
+                **kind == HIR_NODE_CALL_EXPR && parsed.hir_call_callee_node[*call] == member as u32)
+                .map(|(call, _)| call).unwrap();
+            let first_argument = parsed.hir_call_arg_start[call] as usize;
+            assert!(parsed.hir_token_end[member] <= parsed.hir_token_pos[first_argument],
+                "the member span excludes its call arguments and following member");
+        }
+    }
+}
+
+#[test]
+fn parser_explicit_callable_angles_preserve_comparison_and_shift_roles() {
+    let source = "fn main() -> i32 { let x = keep<i32>(7); let b = value.keep<i32>(x); if (value.field > (3)) { let y = value.field >> (1); return keep<[i32; 0]>(y); } return 0; }";
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    assert!(kinds.contains(&(TokenKind::Gt as u32)));
+    assert!(kinds.contains(&(TokenKind::Shr as u32)));
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "explicit calls must compose with operators: {:?}", parsed.ll1);
+    assert_eq!(parsed.hir_kind.iter().filter(|&&k| k == HIR_NODE_CALL_EXPR).count(), 3);
+}
+
+
+#[test]
+fn parser_explicit_constant_arguments_preserve_mixed_order_and_value_nodes() {
+    for count in [5, 64] {
+        let arguments = (0..count).map(|i| if i % 2 == 0 { "Cell<[i32; 2]>".to_string() } else { i.to_string() }).collect::<Vec<_>>().join(", ");
+        let source = format!("fn main() -> i32 {{ let result = core::Box<[bool; 2]>::make<{arguments}>(42); return result; }}");
+        let parsed = parse_resident_source(&source);
+        assert!(parsed.ll1.accepted, "mixed application operands must parse: {:?}", parsed.ll1);
+        let method_token = parsed.hir_path_segment_name_token.iter().copied().find(|&token| token != INVALID && parsed.hir_path_type_arg_range_count[token as usize] == count).unwrap();
+        let start = parsed.hir_path_type_arg_range_start[method_token as usize] as usize;
+        let rows = &parsed.hir_compact_type_args[start..start + count as usize];
+        for (ordinal, arg) in rows.iter().enumerate() {
+            assert_eq!(arg.ordinal, ordinal as u32);
+            assert_eq!(arg.application_token, method_token);
+            let raw = parsed.hir_canonical_dense_to_raw[arg.value as usize] as usize;
+            if ordinal % 2 == 0 {
+                assert_eq!(parsed.hir_kind[raw], HIR_NODE_TYPE);
+            } else {
+                assert_eq!(parsed.hir_kind[raw], HIR_NODE_LITERAL_EXPR);
+                assert_eq!(parsed.hir_token_end[raw], parsed.hir_token_pos[raw] + 1);
+            }
+        }
+        // Generic operands are not ordinary call arguments.
+        let call = parsed.hir_kind.iter().position(|&kind| kind == HIR_NODE_CALL_EXPR).unwrap();
+        assert_eq!(parsed.hir_call_arg_count[call], 1);
+    }
+}
+
+#[test]
+fn parser_value_path_angles_stay_inside_their_statement_and_container() {
+    for padding in [String::new(), " && true".repeat(140)] {
+        for expression in [
+            format!("(value < left.low{padding}) && (value > (left.low))"),
+            format!("[value < left.low{padding}][0] && [value > (left.low)][0]"),
+        ] {
+            let source = format!("fn main() -> i32 {{ let answer = {expression}; return keep<Cell<[i32; 2]>>(7); }}");
+            let kinds = parser_semantic_token_kinds_for_source(&source);
+            assert!(kinds.contains(&(TokenKind::Lt as u32)), "comparison must remain an operator: {source}");
+            assert!(kinds.contains(&(TokenKind::Gt as u32)), "comparison must remain an operator: {source}");
+            let parsed = parse_resident_source(&source);
+            assert!(parsed.ll1.accepted, "independent expression containers: {:?}", parsed.ll1);
+        }
+    }
+    for source in [
+        include_str!("fixtures/stdlib_compiler_state/member-comparison-shift.lani"),
+        include_str!("fixtures/stdlib_compiler_state/member-comparison-close.lani"),
+    ] {
+        assert!(parse_resident_source(source).ll1.accepted, "separate statements and functions");
     }
 }

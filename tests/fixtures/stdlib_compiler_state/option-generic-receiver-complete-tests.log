@@ -1,0 +1,49 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 51.36s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+
+running 18 tests
+test boolean_programs_use_option_bool_enum_on_x86 ... ok
+test concrete_generic_enum_return_executes_on_x86 ... ok
+test enum_match_later_payload_comparison_executes_on_x86 ... ok
+test enum_match_payload_short_circuit_executes_on_x86 ... ok
+test enum_match_result_consumers_execute_on_x86 ... ok
+test four_argument_generic_factory_receiver_executes_on_x86 ... ok
+test imported_empty_struct_results_execute_without_erasing_nominal_checks ... ok
+test imported_generic_factories_preserve_receiver_specializations ... ok
+test imported_generic_factory_methods_reject_wrong_result_types ... ok
+test imported_methods_validate_multiple_scalar_and_nominal_parameters ... ok
+test imported_option_bool_factory_result_supports_method_calls ... ok
+test imported_option_bool_methods_reject_wrong_argument_types ... ok
+test later_generic_enums_preserve_payloads_and_empty_variants ... ok
+test mixed_generic_factories_execute_in_one_module ... ok
+test option_bool_enum_methods_execute_on_x86 ... ok
+test option_bool_method_results_pass_directly_to_imported_functions ... ok
+test option_bool_rejects_wrong_payload_and_receiver ... ok
+test unused_generic_enum_does_not_prevent_later_construction ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.26s
+
+     Running tests/stdlib_option_generic_payload_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_generic_payload_execution-eeaa609c017fb174)
+
+running 3 tests
+test actual_option_generic_payload_functions_execute_scalar_and_string_instances ... ok
+test option_string_payload_methods_execute_all_state_pairs ... ok
+test option_string_payload_methods_reject_inconsistent_arguments ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.56s
+
+     Running tests/stdlib_option_scalar_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_scalar_execution-ad3ec1f71a2e4849)
+
+running 4 tests
+test option_float_methods_preserve_nan_payloads_and_ieee_membership ... ok
+test option_scalar_choice_program_executes ... ok
+test option_scalar_methods_reject_wrong_payload_arguments ... ok
+test option_scalar_payload_methods_execute_all_state_pairs ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.57s
+

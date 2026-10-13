@@ -3,6 +3,8 @@
 //! This deliberately does not dispatch the shader. It isolates driver pipeline
 //! compilation from compiler initialization so Slang optimization variants can
 //! be compared without constructing every Lanius pipeline.
+//! Completed preparation is saved to the driver cache after the measured span,
+//! allowing bounded probes to prepare expensive pipelines for executable tests.
 
 use std::{env, fs, process::ExitCode, time::Instant};
 
@@ -48,6 +50,7 @@ fn run() -> Result<()> {
     );
     let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
     drop(pipeline);
+    gpu.persist_pipeline_cache();
 
     println!(
         "{}",

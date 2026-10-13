@@ -1,0 +1,27 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 57.44s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 2 tests
+test direct_record_literal_arguments_execute_through_ordinary_and_generic_calls ... FAILED
+test direct_record_literal_generic_arguments_reject_type_and_field_conflicts ... ok
+
+failures:
+
+---- direct_record_literal_arguments_execute_through_ordinary_and_generic_calls stdout ----
+
+thread 'direct_record_literal_arguments_execute_through_ordinary_and_generic_calls' (743504) panicked at tests/compiler_generic_types_execution.rs:105:29:
+imported generic literal arguments: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0011", title: "unsupported import form", category: "module resolution", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0011", message: "unsupported import form", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_imported_generic_literal_arguments_743503_4.lani", line: 8, column: 1, length: 6, byte_start: None, byte_end: None, source_line: Some("import core::mem;"), message: "imports must appear before other items" }), help: Some("use module-path imports such as `import app::module;`; quoted imports are not supported in this edition"), notes: ["source-root/package discovery only loads leading module-path imports so package replay metadata stays complete", "move imports directly after the module declaration"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    direct_record_literal_arguments_execute_through_ordinary_and_generic_calls
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 2.76s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

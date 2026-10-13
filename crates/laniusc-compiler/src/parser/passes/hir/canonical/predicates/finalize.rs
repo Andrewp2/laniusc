@@ -44,10 +44,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPred
             ),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
-                "hir_method_signature_flags".into(),
-                b.hir_method_signature_flags.as_entire_binding(),
-            ),
-            (
                 "raw_to_item".into(),
                 b.hir_canonical_raw_to_dense.as_entire_binding(),
             ),

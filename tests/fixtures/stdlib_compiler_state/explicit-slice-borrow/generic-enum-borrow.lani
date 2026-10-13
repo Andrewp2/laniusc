@@ -1,0 +1,10 @@
+enum View<T> { Present(T, i32) }
+fn first<T, const N: usize>(values: [T; N]) -> T {
+    let wrapped = View<[T]>::Present(values, 7);
+    let view = match (wrapped) { View::Present(items, tail) -> items };
+    return view[0];
+}
+fn main() -> i32 {
+    if (first<i32, 2>([19, 23]) != 19 || first<bool, 2>([false, true])) { return 1; }
+    return 0;
+}

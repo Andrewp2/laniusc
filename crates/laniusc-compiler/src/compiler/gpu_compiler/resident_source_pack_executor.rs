@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use super::{
     source_pack_executor::validate_gpu_source_pack_descriptor_job_source_file_records,
-    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit},
+    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
     *,
 };
 
-/// Executes a dependency-ordered source-pack build while retaining only its
-/// compact semantic interfaces and backend objects in host memory.
+/// Executes a dependency-ordered source-pack build retaining its interfaces,
+/// backend objects, and original source and dependency snapshots in host memory.
 ///
 /// This is the ordinary daemon path for a multi-library project that fits the
 /// resident source-unit capacity. Larger projects use the durable file-backed
@@ -15,10 +15,31 @@ use super::{
 pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     compiler: &'compiler GpuCompiler<'gpu>,
     target: SourcePackArtifactTarget,
+    // Native originals stay owned here until complete program admission. Their
+    // cloneable build handles expose facts and an exact slot, never object bytes.
+    pending_originals: Vec<PendingOriginalUnit>,
 }
 
 #[derive(Clone)]
-pub(super) struct ResidentSourcePackArtifact(Arc<CompiledSourcePackUnit>);
+pub(super) enum ResidentSourcePackArtifact {
+    PendingNative(PendingNativeArtifact),
+    StrictPublished(Arc<CompiledSourcePackUnit>),
+}
+
+#[derive(Clone)]
+pub(super) struct PendingNativeArtifact {
+    slot: usize,
+    facts: OriginalUnitFacts,
+}
+
+impl ResidentSourcePackArtifact {
+    fn interface(&self) -> &GpuSemanticInterfaceArtifact {
+        match self {
+            Self::PendingNative(handle) => handle.facts.interface(),
+            Self::StrictPublished(unit) => &unit.interface,
+        }
+    }
+}
 
 pub(super) struct ResidentLibraryBuildHandle {
     job: SourcePackJob,
@@ -41,11 +62,11 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
-        Self { compiler, target }
+        Self { compiler, target, pending_originals: Vec::new() }
     }
 
     async fn compile_unit(
-        &self,
+        &mut self,
         handle: ResidentLibraryBuildHandle,
     ) -> Result<ResidentSourcePackArtifact, CompileError> {
         validate_gpu_source_pack_descriptor_job_source_file_records(
@@ -58,36 +79,61 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             .iter()
             .map(|page| {
                 page.iter()
-                    .map(|artifact| artifact.0.interface.clone())
+                    .map(|artifact| artifact.interface().clone())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        self.compiler
-            .compile_cached_path_source_pack_unit(
-                self.target,
-                &handle.job,
-                &handle.source_files,
-                &dependency_pages,
-            )
-            .await
-            .map(|compiled| ResidentSourcePackArtifact(compiled.value))
+        if self.target == SourcePackArtifactTarget::X86_64 {
+            let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
+                source_pack_artifact_store_error("pending native source-unit index exceeds u32")
+            })?;
+            let sources = read_explicit_source_path_files(
+                "pending native library-interface job", &handle.source_files)?;
+            let source_paths = handle.source_files.iter()
+                .map(|file| Some(file.path.clone())).collect::<Vec<_>>();
+            let pending = self.compiler.compile_pending_original_source_pack_unit(
+                sources.into(), handle.job.library_id, unit_id, dependency_pages.into(),
+                Some(&source_paths),
+            ).await?;
+            let artifact = PendingNativeArtifact {
+                slot: self.pending_originals.len(), facts: pending.facts().clone(),
+            };
+            self.pending_originals.push(pending);
+            Ok(ResidentSourcePackArtifact::PendingNative(artifact))
+        } else {
+            self.compiler
+                .compile_cached_path_source_pack_unit(
+                    self.target, &handle.job, &handle.source_files, dependency_pages.into(),
+                ).await.map(|compiled| ResidentSourcePackArtifact::StrictPublished(compiled.value))
+        }
     }
 
-    async fn link(&self, handle: ResidentLinkHandle) -> Result<Vec<u8>, CompileError> {
+    async fn link(&mut self, handle: ResidentLinkHandle) -> Result<Vec<u8>, CompileError> {
         match self.target {
             SourcePackArtifactTarget::X86_64 => {
-                let objects = handle
-                    .objects
-                    .iter()
-                    .map(|artifact| match &artifact.0.object {
-                        CompiledSourcePackObject::X86_64(object) => Ok(object),
-                        CompiledSourcePackObject::Wasm(_) => {
-                            Err("resident x86_64 source-pack link received a Wasm object")
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(source_pack_artifact_store_error)?;
-                let input = x86::GpuX86LinkInput::for_executable_refs(objects)
+                // Require the exact complete pending inventory before moving
+                // any wrapper into the session's private publication boundary.
+                let mut present = vec![false; self.pending_originals.len()];
+                for artifact in &handle.objects {
+                    let ResidentSourcePackArtifact::PendingNative(artifact) = artifact else {
+                        return Err(source_pack_artifact_store_error(
+                            "pending native link received a published object"));
+                    };
+                    let pending = self.pending_originals.get(artifact.slot).ok_or_else(||
+                        source_pack_artifact_store_error("pending native link has a foreign unit slot"))?;
+                    if !pending.facts().same_snapshot(&artifact.facts) {
+                        return Err(source_pack_artifact_store_error(
+                            "pending native link has a foreign source snapshot"));
+                    }
+                    present[artifact.slot] = true;
+                }
+                if present.iter().any(|included| !included) {
+                    return Err(source_pack_artifact_store_error(
+                        "pending native link omitted an original source unit"));
+                }
+                let pending = std::mem::take(&mut self.pending_originals);
+                let objects = self.compiler.specialize_pending_x86_source_pack_objects(pending).await?;
+                let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
                     .map_err(source_pack_artifact_store_error)?;
                 let linker = self.compiler.x86_linker().map_err(|reason| {
                     source_pack_artifact_store_error(format!(
@@ -98,20 +144,24 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                 linker
                     .link_executable(&self.compiler.gpu.device, &self.compiler.gpu.queue, &input)
                     .map_err(|err| {
-                        source_pack_artifact_store_error(format!(
-                            "execute resident x86_64 source-pack linker: {err}"
-                        ))
+                        super::x86_codegen::x86_source_pack_link_error(
+                            "execute resident x86_64 source-pack linker",
+                            err,
+                        )
                     })
             }
             SourcePackArtifactTarget::Wasm => {
                 let objects = handle
                     .objects
                     .iter()
-                    .map(|artifact| match &artifact.0.object {
-                        CompiledSourcePackObject::Wasm(object) => Ok(object),
-                        CompiledSourcePackObject::X86_64(_) => {
-                            Err("resident Wasm source-pack link received an x86_64 object")
-                        }
+                    .map(|artifact| match artifact {
+                        ResidentSourcePackArtifact::StrictPublished(unit) => match &unit.object {
+                            CompiledSourcePackObject::Wasm(object) => Ok(object),
+                            CompiledSourcePackObject::X86_64(_) =>
+                                Err("resident Wasm source-pack link received an x86_64 object"),
+                        },
+                        ResidentSourcePackArtifact::PendingNative(_) =>
+                            Err("resident Wasm source-pack link received a pending native unit"),
                     })
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(source_pack_artifact_store_error)?;

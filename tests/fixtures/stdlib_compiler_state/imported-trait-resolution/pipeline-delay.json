@@ -1,0 +1,9 @@
+{
+  "first_probe_exit": 124,
+  "timed_probe_exit": 124,
+  "timed_probe_limit_seconds": 95,
+  "trace_pending_pipeline": "type_checker/calls/03e1_expand_application_fields",
+  "shader_bytes": 165936,
+  "shader_sha256": "1d232af885df6e3fe04415801d8930311d2633f3ecb97f506a3d36f6d052888b",
+  "classification": "pipeline initialization timeout; no source or runtime result established"
+}

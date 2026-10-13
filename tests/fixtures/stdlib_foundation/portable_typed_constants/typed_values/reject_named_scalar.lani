@@ -1,0 +1,6 @@
+import core::portable_values;
+
+fn main() -> i32 {
+    let value = core::portable_values::wide<core::portable_values::U32_MAXIMUM>();
+    return 0;
+}

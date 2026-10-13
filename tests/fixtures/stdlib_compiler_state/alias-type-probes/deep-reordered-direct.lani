@@ -1,0 +1,9 @@
+struct Pair<A, B> { first: A, second: B }
+fn first<A, B>(value: Pair<A, B>) -> A { return value.first; }
+fn main() -> i32 {
+    let source: Pair<[i32; 2], bool> = Pair { first: [19, 23], second: false };
+    let copied = first(source);
+    source.first[0] = 0;
+    if (copied[0] != 19 || copied[1] != 23 || source.second) { return 1; }
+    return 0;
+}

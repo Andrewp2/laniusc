@@ -501,6 +501,12 @@ uint postfix_value_node(uint postfix)
 
 uint index_base_node(uint index_node)
 {
+    uint p = parent_node(index_node);
+    // Postfix operators contain their continuation after their arguments.
+    // In `rows[0][1]`, the previous sibling is the first subscript, while
+    // the enclosing index is the value being indexed by the continuation.
+    if (valid_node(p) && is_value_postfix_production(node_kind[p]))
+        return p;
     uint previous = previous_sibling_node(index_node);
     uint previous_kind = valid_node(previous) ? hir_kind[previous] : 0u;
     bool previous_is_expression =
@@ -511,7 +517,6 @@ uint index_base_node(uint index_node)
     if (previous_is_expression)
         return previous;
 
-    uint p = parent_node(index_node);
     uint parent_kind = valid_node(p) ? hir_kind[p] : 0u;
     bool parent_is_expression =
         (parent_kind >= HIR_EXPR && parent_kind <= HIR_ARRAY_EXPR) ||
@@ -561,14 +566,16 @@ void publish_expr(uint i)
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_INT || prod == PROD_RANGE_START_INT ||
+    if (prod == PROD_INT || prod == PROD_GENERIC_ARGUMENT_INTEGER ||
+        prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_INTEGER || prod == PROD_RANGE_START_INT ||
         prod == PROD_RANGE_BOUND_INT || prod == PROD_PATTERN_INT)
     {
         write_expr_record(i, HIR_EXPR_INT, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_FLOAT)
+    if (prod == PROD_FLOAT || prod == PROD_GENERIC_ARGUMENT_FLOAT ||
+        prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_FLOAT)
     {
         write_expr_record(i, HIR_EXPR_FLOAT, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
@@ -580,19 +587,19 @@ void publish_expr(uint i)
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_CHAR)
+    if (prod == PROD_CHAR || prod == PROD_GENERIC_ARGUMENT_CHAR)
     {
         write_expr_record(i, HIR_EXPR_CHAR, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_TRUE || prod == PROD_PATTERN_TRUE)
+    if (prod == PROD_TRUE || prod == PROD_GENERIC_ARGUMENT_TRUE || prod == PROD_PATTERN_TRUE)
     {
         write_expr_record(i, HIR_EXPR_TRUE, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_FALSE || prod == PROD_PATTERN_FALSE)
+    if (prod == PROD_FALSE || prod == PROD_GENERIC_ARGUMENT_FALSE || prod == PROD_PATTERN_FALSE)
     {
         write_expr_record(i, HIR_EXPR_FALSE, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
@@ -604,12 +611,12 @@ void publish_expr(uint i)
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_POS)
+    if (prod == PROD_POS || prod == PROD_GENERIC_ARGUMENT_POSITIVE)
     {
         publish_forward(i, child);
         return;
     }
-    if (prod == PROD_NEG)
+    if (prod == PROD_NEG || prod == PROD_GENERIC_ARGUMENT_NEGATIVE)
     {
         write_expr_record(i, HIR_EXPR_NEG, child, INVALID, INVALID);
         publish_expr_result(i, i);

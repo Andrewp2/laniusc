@@ -1,0 +1,14 @@
+{
+  "command": [
+    "target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+    "tests/fixtures/stdlib_compiler_state/caller-proof-retention/borrowed-enum-nested-reference-producer.lani",
+    "stdlib",
+    "-",
+    "1",
+    "1"
+  ],
+  "exit_code": 1,
+  "elapsed_seconds": 1.6661174619985104,
+  "binary_sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
+  "frozen_sources_unchanged": true
+}

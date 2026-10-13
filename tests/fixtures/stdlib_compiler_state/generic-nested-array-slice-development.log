@@ -1,0 +1,39 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 52.65s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 2 tests
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=209 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=128 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=140 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=117 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=173 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=125 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=239 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=145 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=178 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=98 code=AssignMismatch detail=770
+ok
+test generic_value_functions_preserve_compound_slice_elements ... GPU source-pack type-check rejection: token=96 code=AssignMismatch detail=3
+
+thread 'generic_value_functions_preserve_compound_slice_elements' (160187) panicked at tests/compiler_generic_types_execution.rs:53:29:
+nested array slice values: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 8, column: 19, length: 1, byte_start: Some(264), byte_end: Some(265), source_line: Some("    if (forwarded[0][0] != -7 || forwarded[0][1] != 42 || forwarded[1][0] != 99 || forwarded[1][1] != -11) { return 1; }"), message: "value type is i32, which is not accepted here" }), help: None, notes: ["found i32, but this context requires another type; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_value_functions_preserve_compound_slice_elements
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 3.30s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

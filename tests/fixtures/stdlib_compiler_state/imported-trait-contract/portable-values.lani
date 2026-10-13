@@ -1,0 +1,20 @@
+import core::portable;
+
+fn main() -> i32 {
+    let original = core::portable::hold(core::portable::Cell { value: [19, 23] });
+    let copy = core::portable::hold(original);
+    copy.value[0] = 41;
+    if (original.value[0] != 19 || copy.value[0] != 41 || copy.value[1] != 23) { return 1; }
+    let flags = core::portable::hold(core::portable::Cell { value: [false, true] });
+    if (flags.value[0] || !flags.value[1]) { return 2; }
+    let values: [i32; 0] = [];
+    let empty = core::portable::hold(core::portable::Cell { value: values });
+    let again = core::portable::hold(empty);
+    let reference = core::portable::hold(original.borrow());
+    if (reference.value[0] + reference.value[1] != 42) { return 3; }
+    let sliced = core::portable::view(original.value);
+    let view = core::portable::hold(sliced);
+    view[1] = 24;
+    if (original.value[1] != 24 || copy.value[1] != 23) { return 4; }
+    return 0;
+}

@@ -1,0 +1,4 @@
+type Id<T> = T;
+type Fixed<T, const N: usize> = [T; N];
+type Local<T> = Id<Fixed<T, 2>>;
+fn main() -> i32 { let values: Local<i32> = [19, 23]; return values[0] + values[1] - 42; }

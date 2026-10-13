@@ -1,0 +1,18 @@
+{
+  "command": [
+    "target/program-catalog-tests/stdlib_gpu_perf",
+    "gpu_catalog_distinguishes_nested_lengths_and_deduplicates_retained_units",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 20.24837900199782,
+  "binary_sha256": "df722da95a7feb2fdd06fe23ef6d0ba43c9b1176843d32ba9edbd3cdad888f32",
+  "sources_unchanged": true,
+  "passed": [
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_distinguishes_nested_lengths_and_deduplicates_retained_units"
+  ],
+  "summaries": [
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 691 filtered out; finished in 19.95s"
+  ]
+}

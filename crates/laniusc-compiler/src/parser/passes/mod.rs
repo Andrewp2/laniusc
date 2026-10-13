@@ -388,6 +388,7 @@ pub struct ParserPasses {
     pub hir_stmt_fields: hir::stmt_fields::HirStmtFieldsPass,
     pub hir_stmt_scope: hir::stmt_scope::HirStmtScopePass,
     pub hir_literal_values: hir::literal_values::HirLiteralValuesPass,
+    pub hir_float_values: hir::float_values::HirFloatValuesPass,
     pub hir_string_compact_local: hir::string::compact_local::HirStringCompactLocalPass,
     pub hir_string_compact_scatter: hir::string::compact_scatter::HirStringCompactScatterPass,
     pub hir_string_offset_local: hir::string::offset_local::HirStringOffsetLocalPass,
@@ -646,6 +647,7 @@ impl ParserPasses {
             hir_stmt_fields: hir::stmt_fields::HirStmtFieldsPass::new(device)?,
             hir_stmt_scope: hir::stmt_scope::HirStmtScopePass::new(device)?,
             hir_literal_values: hir::literal_values::HirLiteralValuesPass::new(device)?,
+            hir_float_values: hir::float_values::HirFloatValuesPass::new(device)?,
             hir_string_compact_local: hir::string::compact_local::HirStringCompactLocalPass::new(
                 device,
             )?,

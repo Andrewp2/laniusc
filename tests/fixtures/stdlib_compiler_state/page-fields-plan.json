@@ -1,0 +1,35 @@
+{
+  "contract": "Page grouping and order must not change nested imported record field reads, writes, copies, or the behavior of ordinary/local-generic/imported-generic functions. Body replay uses the original complete dependency context.",
+  "boundary": "Retained checked field references and page-owned field-name/signature readers; production changes require a reproduced failure.",
+  "state_space": [
+    "flat dependencies",
+    "inner-first pages",
+    "outer-first pages",
+    "ordinary concrete extraction",
+    "local generic extraction",
+    "imported generic extraction",
+    "owned array copies and nested field stores"
+  ],
+  "verification": "One table-driven executable comparison, followed only by tests affected by a demonstrated change.",
+  "before_images": {
+    "crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs": "aa1dbbab2332b297961f8df2d3290dbfbda0b58dbf2b58552f00f9484db7534a",
+    "shaders/type_checker/dependencies/retained_payload_refs.slang": "2ee84624a660173a4db5141cb3d5f91f2dabe6bf0318b26bfd58780c5077fd6d",
+    "shaders/type_checker/dependencies/retained_value_layout.slang": "69c462996eec175c5d8f0313ee50e0b63e6f447cc9a2c47d161993ec0524fb4b",
+    "shaders/type_checker/dependencies/record_fields.slang": "d160415e9fd4f81c696fe97fbea78c46528931d07889b8f47cfca0dc97ee525d",
+    "shaders/type_checker/dependencies/16_project_struct_literals.slang": "8f35a5eee4213648f8acbbbe29b8a06d61b88e5d14f84f1004dcaa5f385d39ef",
+    "shaders/type_checker/type/instances/00_clear.slang": "5bb789b2bdf99dd400ac50410a8ae899a18970fcfbb5548922fd15c87265637a",
+    "shaders/type_checker/type/instances/02e_project_imported_fields.slang": "092124c7f70f98e0c50fb2b222e7d723ddef828d9c059a4e47a6f04c892fb14a",
+    "shaders/type_checker/type/instances/03_member_results.slang": "f6bf4e87353b4b2eb746f1f74a2583d7ff36376b77d792f929aa4c9852ea1007",
+    "shaders/type_checker/type/instances/04a3_nested_struct_contexts.slang": "abdd3f84161a7c3b128c998cafacb00997f28b8ebe829393ae6040d45bc5cff7",
+    "shaders/type_checker/semantic/artifact/01d_member_layout.slang": "8486695dac7d8d2623a5fba174ab96ba227eb3be38ea1bd87a94fef46c1e48fb",
+    "crates/laniusc-compiler/src/type_checker/compiler_graph.rs": "90cb817cbbe5e6df15bd07d94c311464f5d272d85f7e2d22d92e7230de0cc3ca"
+  },
+  "prior_checkpoint": "page-manifest.json",
+  "evidence": "page-fields-before.log: flat ordinary/local/imported cases execute; split inner-first rejects a valid nested field while compiling the extraction template.",
+  "implementation": [
+    "Retain field name hashes beside checked payload references in the existing bounded arena.",
+    "Distinguish known nominal kind and field metadata from complete native layout inputs.",
+    "Field readers and member-layout projection consume stable ordinals and checked references only.",
+    "Unresolved field types defer to closure; malformed metadata or exhausted storage still reject explicitly."
+  ]
+}

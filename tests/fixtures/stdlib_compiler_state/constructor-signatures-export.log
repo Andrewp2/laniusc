@@ -1,0 +1,13 @@
+
+running 8 tests
+test exported_generic_headers_preserve_interleaved_order_and_lexical_scopes ... ok
+test exported_method_generics_keep_lexical_scope_and_declared_requirements ... ok
+test generic_option_and_result_variant_payloads_refer_to_their_enum_parameters ... ok
+test generic_vec_public_methods_remain_exported_as_associated_members ... ok
+test imported_generic_slice_parameters_refer_to_their_function_parameters ... ok
+test non_generic_public_methods_are_exported_as_associated_members ... ok
+test public_option_methods_export_their_explicit_parameter_types ... ok
+test public_static_and_receiver_methods_export_multiple_parameter_types ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.16s
+

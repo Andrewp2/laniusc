@@ -1,0 +1,71 @@
+// Acceptance candidate; not compiled or executed by this author. Expected exit 0.
+// Requires structural reference-root impls and stable caller-owned places.
+enum Item { Empty, Value(i32) }
+struct Link { item: &Item, guard: i32 }
+impl Item {
+    fn borrow(&self) -> &Item { return self; }
+    fn level(self) -> i32 { return 1; }
+}
+impl &Item {
+    fn borrow_outer(&self) -> & &Item { return self; }
+    fn level(self) -> i32 { return 2; }
+}
+impl & &Item { fn level(self) -> i32 { return 3; } }
+fn keep<T>(value: T) -> T { return value; }
+fn forward<T>(value: & &T) -> & &T { return value; }
+fn ordinary(value: & &Item) -> & &Item { return value; }
+fn read(value: & &Item) -> i32 {
+    return match (value) { Empty => -1, Value(number) => number };
+}
+fn parameter_cell(value: &Item, replacement: &Item) -> i32 {
+    let outer: & &Item = value.borrow_outer();
+    value = replacement;
+    return read(outer);
+}
+fn reference_view(values: [&Item], calls: [i32]) -> [&Item] {
+    calls[0] = calls[0] + 1;
+    return values;
+}
+fn next_index(calls: [i32]) -> i32 {
+    let result: i32 = calls[0];
+    calls[0] = calls[0] + 1;
+    return result;
+}
+fn main() -> i32 {
+    let first: Item = Value(11);
+    let second: Item = Value(22);
+    let third: Item = Value(33);
+    let left: &Item = first.borrow();
+    let right: &Item = first.borrow();
+    let outer_left: & &Item = forward(keep(left.borrow_outer()));
+    let outer_right: & &Item = ordinary(right.borrow_outer());
+    if (first.level() != 1 || left.level() != 2 || outer_left.level() != 3) { return 1; }
+    if (read(outer_left) != 11 || read(outer_right) != 11) { return 2; }
+
+    left = second.borrow();
+    if (read(outer_left) != 22 || read(outer_right) != 11) { return 3; }
+    right = third.borrow();
+    if (read(outer_left) != 22 || read(outer_right) != 33) { return 4; }
+    if (parameter_cell(left, right) != 33 || read(outer_left) != 22) { return 5; }
+
+    let link: Link = Link { item: first.borrow(), guard: 71 };
+    let outer_field: & &Item = link.item.borrow_outer();
+    link.item = second.borrow();
+    if (read(outer_field) != 22 || link.guard != 71) { return 6; }
+
+    let references: [&Item; 2] = [first.borrow(), first.borrow()];
+    let outer_array_element: & &Item = references[1].borrow_outer();
+    let base_calls: [i32; 1] = [0];
+    let index_calls: [i32; 1] = [0];
+    let outer_slice_element: & &Item =
+        reference_view(references, base_calls)[next_index(index_calls)].borrow_outer();
+    if (base_calls[0] != 1 || index_calls[0] != 1) { return 7; }
+    references[0] = second.borrow();
+    references[1] = third.borrow();
+    if (read(outer_array_element) != 33 || read(outer_slice_element) != 22) { return 8; }
+
+    second = Value(55);
+    if (read(outer_left) != 55 || read(outer_field) != 55 || read(outer_slice_element) != 55) { return 9; }
+    if (read(outer_right) != 33 || read(outer_array_element) != 33) { return 10; }
+    return 0;
+}

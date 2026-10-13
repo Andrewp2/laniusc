@@ -1,0 +1,4 @@
+module core::requirements;
+pub fn missing_type<T>() -> i32 { return 7; }
+pub fn missing_constant<const N: usize>() -> usize { return N; }
+pub fn unused_constant<const N: usize>() -> i32 { return 7; }

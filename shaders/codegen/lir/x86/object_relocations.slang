@@ -2,10 +2,13 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
+import codegen.lir.x86.frame_layout;
 import gpu_index;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
+struct ObjectIdentity { uint library_id; uint unit_id; uint reserved0; uint reserved1; };
 ConstantBuffer<Params> gParams;
+ConstantBuffer<ObjectIdentity> gIdentity;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<OptIrNodeCore> opt_ir_core;
 StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
@@ -20,6 +23,8 @@ StructuredBuffer<X86LirLocations> target_lir_locations;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
 StructuredBuffer<uint> target_function_index_by_semantic;
+StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 StructuredBuffer<uint> target_byte_length;
 StructuredBuffer<uint> target_byte_offset;
 StructuredBuffer<X86ArtifactLayout> x86_artifact_layout;
@@ -30,6 +35,8 @@ StructuredBuffer<uint> x86_object_relocation_prefix;
 StructuredBuffer<uint> x86_object_symbol_prefix;
 RWStructuredBuffer<X86ObjectRelocationRow> x86_object_relocations;
 RWStructuredBuffer<X86ObjectUndefinedRow> x86_object_undefined_symbols;
+// Private resident metadata; the durable object and IR rows are unchanged.
+RWStructuredBuffer<uint> x86_object_call_hir_by_symbol;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -78,7 +85,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // the movabs immediate rather than overwriting saved-register stores.
         : 10u + x86_move64_from_fixed_bytes(0u, locations.result);
     uint footer_bytes = target_row + 1u == function.instruction_start + function.instruction_count
-        ? 4u : 0u;
+        ? implicit_footer_bytes(function, semantic_lir_functions[function_id],
+            x86_saved_gpr_mask_by_function[function_id]) : 0u;
     uint row_bytes = target_byte_length[target_row];
     uint prefix_bytes = row_bytes >= instruction_bytes + footer_bytes
         ? row_bytes - instruction_bytes - footer_bytes : 0u;
@@ -105,11 +113,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         relocation.target_index = symbol_index;
         relocation.target_offset = 0u;
         X86ObjectUndefinedRow symbol;
-        symbol.library_id = operands.a;
-        symbol.unit_id = operands.b;
+        bool local = operands.a == INVALID && operands.b == INVALID;
+        symbol.library_id = local ? gIdentity.library_id : operands.a;
+        symbol.unit_id = local ? gIdentity.unit_id : operands.b;
         symbol.local_index = operands.c;
         symbol.reserved = 0u;
         x86_object_undefined_symbols[symbol_index] = symbol;
+        x86_object_call_hir_by_symbol[symbol_index] = opt_ir_source_hir[semantic_row];
     }
     else
     {

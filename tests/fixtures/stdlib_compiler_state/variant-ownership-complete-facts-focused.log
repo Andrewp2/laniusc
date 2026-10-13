@@ -1,0 +1,94 @@
+
+running 3 tests
+test qualified_enum_variant_parent_forms_execute_independently ... qualified constructor form: called concrete unit
+[typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=1
+[typecheck.call_inference] round=2 changed=0
+qualified constructor form: bare concrete unit
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=1
+[typecheck.call_inference] round=2 changed=0
+qualified constructor form: called explicit unit
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=1
+[typecheck.call_inference] round=2 changed=0
+qualified constructor form: bare explicit unit
+[typecheck.call_inference] round=0 changed=7
+[typecheck.call_inference] round=1 changed=1
+[typecheck.call_inference] round=2 changed=0
+qualified constructor form: called explicit array
+[typecheck.call_inference] round=0 changed=14
+[typecheck.call_inference] round=1 changed=10
+[typecheck.call_inference] round=2 changed=0
+qualified constructor form: called mixed header
+[typecheck.call_inference] round=0 changed=17
+[typecheck.call_inference] round=1 changed=12
+[typecheck.call_inference] round=2 changed=0
+qualified constructor form: bare mixed header
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=1
+[typecheck.call_inference] round=2 changed=0
+ok
+test qualified_enum_variants_bind_parent_applications ... [typecheck.call_inference] round=0 changed=82
+[typecheck.call_inference] round=1 changed=20
+[typecheck.call_inference] round=2 changed=11
+[typecheck.call_inference] round=3 changed=1
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=82
+[typecheck.call_inference] round=1 changed=20
+[typecheck.call_inference] round=2 changed=11
+[typecheck.call_inference] round=3 changed=1
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=84
+[typecheck.call_inference] round=1 changed=11
+[typecheck.call_inference] round=2 changed=22
+[typecheck.call_inference] round=3 changed=2
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=84
+[typecheck.call_inference] round=1 changed=11
+[typecheck.call_inference] round=2 changed=22
+[typecheck.call_inference] round=3 changed=2
+[typecheck.call_inference] round=4 changed=0
+
+thread 'qualified_enum_variants_bind_parent_applications' (268986) panicked at tests/compiler_generic_types_execution.rs:141:29:
+qualified parent applications imported=true: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 7; relocation 0)"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test qualified_enum_variants_reject_conflicting_parent_applications ... [typecheck.call_inference] round=0 changed=7
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=67 code=AssignMismatch detail=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=7
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+[typecheck.call_inference] round=0 changed=2
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=2
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+[typecheck.call_inference] round=0 changed=16
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=71 code=AssignMismatch detail=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=16
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+ok
+
+failures:
+
+failures:
+    qualified_enum_variants_bind_parent_applications
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 280 filtered out; finished in 3.74s
+

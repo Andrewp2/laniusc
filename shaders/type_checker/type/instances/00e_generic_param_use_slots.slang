@@ -1,9 +1,8 @@
 // HIR-derived generic parameter use slots.
 //
-// Declaration parameters are compacted and sorted before this pass. Use sites
-// resolve their nearest generic declaration owner, then perform a bounded
-// binary search over the sorted compact rows keyed by (owner declaration,
-// interned name id). This avoids scanning declaration subtrees for every use.
+// Declaration identity and lexical slot composition are shared with body
+// replay. Each scope uses the exact (owner, name) parameter index; enclosing
+// scopes supply earlier slots in separate type and constant domains.
 
 import hir_records;
 import status;
@@ -40,6 +39,7 @@ StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> generic_param_lookup_state;
 StructuredBuffer<uint> generic_type_param_prefix;
 StructuredBuffer<uint> generic_const_param_prefix;
+StructuredBuffer<uint> interface_public_decl_index_by_hir;
 
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
@@ -58,6 +58,7 @@ static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 static const uint GENERIC_PARAM_KIND_CONST = 2u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint GENERIC_STATUS_DUPLICATE_PARAM = 21u;
 
@@ -91,35 +92,7 @@ bool valid_row(uint row)
     return row != INVALID && row < active_generic_param_count();
 }
 
-uint generic_owner_token(uint decl_node)
-{
-    if (!valid_node(decl_node))
-        return INVALID;
-    uint name_token = compact_hir_payload[decl_node].b;
-    return valid_token(name_token) ? name_token : compact_hir_core[decl_node].token_start;
-}
-
-bool owner_has_generic_params(uint owner_token)
-{
-    return valid_token(owner_token) &&
-           (type_decl_generic_param_count_by_owner_token[owner_token] != 0u ||
-            type_decl_const_param_count_by_owner_token[owner_token] != 0u);
-}
-
-uint generic_decl_scope_token_for_type_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    return generic_owner_token(generic_decl_owner_by_node_a[node]);
-}
-
-bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
-{
-    return row < active_generic_param_count() &&
-           generic_param_owner_token[row] == owner &&
-           generic_param_name_id[row] == name_id &&
-           generic_param_kind[row] == kind;
-}
+#include "lexical_parameter_slots.slang"
 
 void validate_duplicate_generic_param_key(uint row)
 {
@@ -140,40 +113,13 @@ void validate_duplicate_generic_param_key(uint row)
         record_min_token_error(status, token, ERR_BAD_HIR, GENERIC_STATUS_DUPLICATE_PARAM);
 }
 
-uint slot_for_row(uint row)
+void publish_type_parameter_reference(uint row, uint slot, uint use_token)
 {
-    if (!valid_row(row))
-        return INVALID;
-    HirGenericParam parameter = compact_generic_params[row];
-    if (!valid_node(parameter.owner))
-        return INVALID;
-    HirRange range = compact_generic_param_ranges[parameter.owner];
-    if (range.count == 0u || range.start == INVALID ||
-        row < range.start || row >= range.start + range.count)
-        return INVALID;
-    uint kind = generic_param_kind[row];
-    return kind == GENERIC_PARAM_KIND_CONST
-        ? generic_const_param_prefix[row] - generic_const_param_prefix[range.start]
-        : generic_type_param_prefix[row] - generic_type_param_prefix[range.start];
-}
-
-void publish_generic_type_use_for_owner(uint owner_token, uint use_token)
-{
-    if (!valid_token(owner_token) || !valid_token(use_token) ||
-        !owner_has_generic_params(owner_token))
-        return;
-
-    uint row = generic_param_row_for_name(
-        owner_token,
-        use_token,
-        GENERIC_PARAM_KIND_TYPE);
-    uint slot = slot_for_row(row);
-    if (slot != INVALID)
-    {
-        type_generic_param_slot_by_token[use_token] = slot;
-        type_expr_ref_tag[use_token] = TYPE_REF_GENERIC_PARAM;
-        type_expr_ref_payload[use_token] = generic_param_token[row];
-    }
+    type_generic_param_slot_by_token[use_token] = slot;
+    uint tag = TYPE_REF_GENERIC_PARAM;
+    uint payload = generic_param_token[row];
+    type_expr_ref_tag[use_token] = tag;
+    type_expr_ref_payload[use_token] = payload;
 }
 
 void publish_compact_variant_payload_use_slot(uint row)
@@ -192,9 +138,10 @@ void publish_compact_variant_payload_use_slot(uint row)
     if (variant.owner >= hir_count || payload.type_node >= hir_count)
         return;
 
-    uint owner_token = compact_hir_payload[variant.owner].b;
     uint use_token = compact_hir_core[payload.type_node].token_start;
-    publish_generic_type_use_for_owner(owner_token, use_token);
+    uint parameter = lexical_parameter_row(variant.owner, use_token, GENERIC_PARAM_KIND_TYPE);
+    uint slot = lexical_parameter_slot(parameter);
+    if (slot != INVALID) publish_type_parameter_reference(parameter, slot, use_token);
 }
 
 void publish_decl_generic_param_slot(uint row)
@@ -206,32 +153,23 @@ void publish_decl_generic_param_slot(uint row)
     if (!valid_token(token))
         return;
 
-    uint slot = slot_for_row(row);
+    uint slot = lexical_parameter_slot(row);
     if (slot == INVALID)
         return;
+    // Declaration publication owns the domain bound. Reject here before a
+    // later structural reader can misclassify an out-of-range parameter as
+    // an unknown type, including parameters not used by any call.
+    if (slot >= 32u)
+    {
+        record_min_token_error(status, token, ERR_BAD_HIR, 0x474e0002u);
+        return;
+    }
 
     uint kind = generic_param_kind[row];
     if (kind == GENERIC_PARAM_KIND_TYPE)
         type_generic_param_slot_by_token[token] = slot;
     else if (kind == GENERIC_PARAM_KIND_CONST)
         type_const_param_slot_by_token[token] = slot;
-}
-
-uint generic_param_row_for_name(uint owner_token, uint name_token, uint kind)
-{
-    if (!valid_token(owner_token) || !valid_token(name_token))
-        return INVALID;
-
-    uint name_id = name_id_by_token[name_token];
-    if (name_id == INVALID)
-        return INVALID;
-
-    uint count = active_generic_param_count();
-    uint row = generic_param_lookup_find(
-        owner_token, name_id, count, gParams.n_tokens,
-        generic_param_owner_token, generic_param_name_id,
-        generic_param_lookup_state);
-    return generic_param_key_matches(row, owner_token, name_id, kind) ? row : INVALID;
 }
 
 void publish_const_len_use_slot(uint node)
@@ -248,16 +186,11 @@ void publish_const_len_use_slot(uint node)
     if (!valid_token(token))
         return;
 
-    uint owner_token = generic_decl_scope_token_for_type_node(node);
-    if (!owner_has_generic_params(owner_token) ||
-        type_decl_const_param_count_by_owner_token[owner_token] == 0u)
-        return;
-
-    uint row = generic_param_row_for_name(owner_token, token, GENERIC_PARAM_KIND_CONST);
+    uint row = lexical_parameter_row(node, token, GENERIC_PARAM_KIND_CONST);
     if (row == INVALID)
         return;
 
-    uint slot = slot_for_row(row);
+    uint slot = lexical_parameter_slot(row);
     if (slot != INVALID)
         type_const_param_slot_by_token[token] = slot;
 }
@@ -284,20 +217,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(token))
         return;
 
-    uint owner_token = generic_decl_scope_token_for_type_node(node);
-    if (!owner_has_generic_params(owner_token) ||
-        type_decl_generic_param_count_by_owner_token[owner_token] == 0u)
-        return;
-
-    uint row = generic_param_row_for_name(owner_token, token, GENERIC_PARAM_KIND_TYPE);
+    uint row = lexical_parameter_row(node, token, GENERIC_PARAM_KIND_TYPE);
     if (row == INVALID)
         return;
 
-    uint slot = slot_for_row(row);
+    uint slot = lexical_parameter_slot(row);
     if (slot != INVALID)
     {
-        type_generic_param_slot_by_token[token] = slot;
-        type_expr_ref_tag[token] = TYPE_REF_GENERIC_PARAM;
-        type_expr_ref_payload[token] = generic_param_token[row];
+        publish_type_parameter_reference(row, slot, token);
     }
 }

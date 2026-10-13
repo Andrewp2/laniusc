@@ -1,0 +1,14 @@
+module app::main;
+import core::five;
+fn main() -> i32 {
+    let value: core::five::ArrayField<i32> = core::five::ArrayField { items: [-7, 42] };
+    let copy: [i32; 2] = value.items;
+    if (copy[0] != -7 || copy[1] != 42) { return 1; }
+    copy[0] = 9;
+    if (value.items[0] != -7) { return 2; }
+    value.items = [42, -7];
+    if (value.items[0] != 42) { return 3; }
+    if (value.items[1] != -7) { return 4; }
+    if (copy[0] != 9) { return 5; }
+    return 0;
+}

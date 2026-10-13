@@ -1,0 +1,60 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 57.82s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 18 tests
+test direct_record_descriptor_fields_have_exact_types ... ok
+test direct_string_slice_access_preserves_descriptors ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... ok
+test generic_slice_operations_preserve_record_element_layouts ... ok
+test generic_slice_operations_preserve_string_element_descriptors ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... ok
+test imported_generic_functions_preserve_fixed_array_values ... ok
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_functions_preserve_fixed_array_values ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test local_generic_match_results_preserve_float_and_string_representations ... ok
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.19s
+
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 9 tests
+test deferred_template_interfaces_still_check_payload_arguments ... ok
+test imported_generic_slice_payloads_execute_reads_writes_and_swaps ... ok
+test imported_receiver_payload_templates_execute_distinct_scalar_instances ... ok
+test imported_scalar_payload_templates_execute_both_branches ... ok
+test qualified_generic_scalar_returns_execute_after_substitution ... ok
+test unresolved_payload_templates_do_not_poison_imported_executable_functions ... ok
+test unused_local_payload_templates_preserve_executable_predicates ... ok
+test used_local_payload_templates_execute ... ok
+test used_local_slice_element_templates_execute ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.41s
+
+     Running tests/stdlib_result_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_result_generic_execution-82a33b04090f5a93)
+
+running 9 tests
+test actual_result_module_predicates_and_membership_execute ... ok
+test result_membership_rejects_wrong_scalar_argument_types ... ok
+test result_payload_functions_preserve_float_char_unsigned_and_string_values ... ok
+test result_predicates_and_matches_preserve_borrowed_descriptors ... ok
+test result_reading_total_program_executes_both_concrete_return_variants ... ok
+test result_scalar_payload_functions_execute_both_variants ... ok
+test result_slice_arguments_preserve_generic_and_concrete_type_relations ... ok
+test result_slice_payload_functions_execute_both_branches_and_preserve_aliases ... ok
+test result_slice_payloads_keep_native_bounds ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.82s
+

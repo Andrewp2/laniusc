@@ -1,0 +1,45 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 55.24s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 1 test
+test used_local_payload_templates_execute ... gpu relocation diagnostics [GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 675, target_kind: Symbol, target_index: 0, target_offset: 23, addend: -4 }]
+object relocation GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 675, target_kind: Symbol, target_index: 0, target_offset: 0, addend: -4 } bytes Some([139, 189, 88, 255, 255, 255, 190, 99, 0, 0, 0, 232, 0, 0, 0, 0, 65, 137, 194, 65, 187, 7, 0, 0, 0, 65, 184, 249, 255, 255, 255, 69])
+body replay call=CheckedGenericCall { call_hir: 150, target: Local { function_start_token: 73, generic_parameter_count: 1, native_symbol: 3 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0]
+gpu relocation diagnostics [GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 891, target_kind: Symbol, target_index: 0, target_offset: 23, addend: -4 }]
+replayed symbols [([0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], 0, 0), ([0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0], 17, 158), ([0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], 175, 216), ([0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0], 391, 202), ([0, 0, 0, 0, 0, 0, 0, 0, 36, 1, 0, 64], 593, 348)]
+body replay call=CheckedGenericCall { call_hir: 150, target: Local { function_start_token: 73, generic_parameter_count: 1, native_symbol: 3 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0]
+gpu relocation diagnostics [GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 675, target_kind: Symbol, target_index: 0, target_offset: 23, addend: -4 }]
+object relocation GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 675, target_kind: Symbol, target_index: 0, target_offset: 0, addend: -4 } bytes Some([139, 189, 88, 255, 255, 255, 190, 99, 0, 0, 0, 232, 0, 0, 0, 0, 65, 137, 194, 65, 187, 99, 0, 0, 0, 65, 131, 250, 99, 65, 15, 149])
+body replay call=CheckedGenericCall { call_hir: 150, target: Local { function_start_token: 73, generic_parameter_count: 1, native_symbol: 3 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0]
+gpu relocation diagnostics [GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 891, target_kind: Symbol, target_index: 0, target_offset: 23, addend: -4 }]
+replayed symbols [([0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], 0, 0), ([0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0], 17, 158), ([0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], 175, 216), ([0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0], 391, 202), ([0, 0, 0, 0, 0, 0, 0, 0, 36, 1, 0, 64], 593, 343)]
+body replay call=CheckedGenericCall { call_hir: 150, target: Local { function_start_token: 73, generic_parameter_count: 1, native_symbol: 3 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0]
+gpu relocation diagnostics [GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 694, target_kind: Symbol, target_index: 0, target_offset: 8, addend: -4 }]
+object relocation GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 694, target_kind: Symbol, target_index: 0, target_offset: 0, addend: -4 } bytes Some([248, 254, 255, 255, 72, 137, 133, 72, 255, 255, 255, 72, 141, 133, 56, 255, 255, 255, 72, 137, 133, 200, 254, 255, 255, 72, 139, 133, 72, 255, 255, 255])
+body replay call=CheckedGenericCall { call_hir: 152, target: Local { function_start_token: 150, generic_parameter_count: 1, native_symbol: 5 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0]
+gpu relocation diagnostics [GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 409, target_kind: Symbol, target_index: 0, target_offset: 23, addend: -4 }, GpuX86RelocationRecord { kind: CallRel32, site_section: Text, site_offset: 776, target_kind: Symbol, target_index: 1, target_offset: 535, addend: -4 }]
+replayed symbols [([0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0], 0, 0), ([0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0], 0, 0), ([0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0], 17, 158), ([0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0], 175, 202), ([0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0], 377, 96), ([0, 0, 0, 0, 0, 0, 0, 0, 36, 1, 0, 64], 473, 657)]
+body replay call=CheckedGenericCall { call_hir: 76, target: Local { function_start_token: 37, generic_parameter_count: 1, native_symbol: 2 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]
+body already defined
+body replay call=CheckedGenericCall { call_hir: 152, target: Local { function_start_token: 150, generic_parameter_count: 1, native_symbol: 5 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3), source_reference: [1, 3] }], receiver_arguments: [], required_generic_parameters: Some(1) } identity=[0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0]
+
+thread 'used_local_payload_templates_execute' (701211) panicked at tests/stdlib_generic_payload_templates_execution.rs:261:9:
+assertion `left == right` failed: let selected: Maybe<i32> = prefer(present, absent); let recovered: i32 = match (selected) { Some(inner) -> inner, None -> 99 }; if (recovered != -7) { return 1; } return 0;: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    used_local_payload_templates_execute
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 1.31s
+
+error: test failed, to rerun pass `--test stdlib_generic_payload_templates_execution`

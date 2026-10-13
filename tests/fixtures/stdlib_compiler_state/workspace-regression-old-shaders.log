@@ -1,0 +1,19 @@
+
+running 1 test
+
+thread 'stdlib_helpers_execute_after_parser_workspace_shrinks' (539803) panicked at tests/stdlib_foundation_execution.rs:106:33:
+compile halfword_window_total in a reused parser workspace: error[LNC0016]: syntax error
+ --> <source pack file 4>:102:1
+    |
+102 | }
+    | ^ expected one of keyword `fn`, `}`, or keyword `pub`, found `}`
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test stdlib_helpers_execute_after_parser_workspace_shrinks ... FAILED
+
+failures:
+
+failures:
+    stdlib_helpers_execute_after_parser_workspace_shrinks
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1.20s
+

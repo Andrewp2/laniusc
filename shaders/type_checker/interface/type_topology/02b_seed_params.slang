@@ -2,13 +2,19 @@
 
 import hir_records;
 import atomics;
+import type_checker.interface.method_parameters;
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
+StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> public_decl_index_by_hir;
+StructuredBuffer<uint> interface_implementation_index_by_hir;
 StructuredBuffer<uint> interface_type_parent;
 RWStructuredBuffer<uint> interface_type_seed_owner;
 RWStructuredBuffer<uint> interface_status;
@@ -36,5 +42,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= min(compact_param_count[0u], gParams.hir_capacity)) return;
     HirParam param = compact_params[row];
     uint owner = param.owner < active_hir_count() ? public_decl_index_by_hir[param.owner] : INVALID;
-    if (owner < gParams.decl_capacity) seed(param.type_node, owner, row);
+    if (owner == INVALID)
+    {
+        uint method = interface_method_for_function(param.owner,
+            min(compact_method_count[0u], gParams.hir_capacity), compact_method_cores);
+        if (method == INVALID) return;
+        HirMethodSignature signature = compact_method_signatures[method];
+        if (interface_method_parameter_ordinal(signature, param.ordinal) == INVALID) return;
+        owner = interface_trait_method_owner(compact_method_cores[method], active_hir_count(),
+            compact_hir_core, compact_hir_payload, public_decl_index_by_hir);
+        if (((signature.metadata >> 16u) & 4u) != 0u && !interface_public_inherent_method(signature)) return;
+        uint implementation_rows; uint stride;
+        interface_implementation_index_by_hir.GetDimensions(implementation_rows, stride);
+        uint implementation_hir = compact_method_cores[method].impl_node;
+        if (owner == INVALID && implementation_hir < min(active_hir_count(), implementation_rows))
+        {
+            uint implementation = interface_implementation_index_by_hir[implementation_hir];
+            if (implementation != 0u) owner = 0x80000000u | (implementation - 1u);
+        }
+
+    }
+    if (owner != INVALID) seed(param.type_node, owner, row);
 }

@@ -1,0 +1,18 @@
+
+running 4 tests
+test semantic_interface_exports_callable_predicate_graphs_and_scopes ... ok
+test semantic_interface_exports_public_generic_traits ... ok
+test semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands ... 
+thread 'semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands' (89411) panicked at tests/type_checker_modules.rs:305:10:
+all thirty-two bound operands, including empty arrays: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 226, length: 4, byte_start: Some(225), byte_end: Some(229), source_line: Some("module contracts::wide_bound; pub struct Cell<T>{value:T} pub trait Wide<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,T18,T19,T20,T21,T22,T23,T24,T25,T26,T27,T28,T29,T30,T31>{} pub fn keep<T>(v:T)->T where T:Wide<Cell<[i32;0]>,Cell<[i32;1]>,Cell<[i32;2]>,Cell<[i32;3]>,Cell<[i32;4]>,Cell<[i32;5]>,Cell<[i32;6]>,Cell<[i32;7]>,Cell<[i32;8]>,Cell<[i32;9]>,Cell<[i32;10]>,Cell<[i32;11]>,Cell<[i32;12]>,Cell<[i32;13]>,Cell<[i32;14]>,Cell<[i32;15]>,Cell<[i32;16]>,Cell<[i32;17]>,Cell<[i32;18]>,Cell<[i32;19]>,Cell<[i32;20]>,Cell<[i32;21]>,Cell<[i32;22]>,Cell<[i32;23]>,Cell<[i32;24]>,Cell<[i32;25]>,Cell<[i32;26]>,Cell<[i32;27]>,Cell<[i32;28]>,Cell<[i32;29]>,Cell<[i32;30]>,Cell<[i32;31]>>{return v;}"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["the checked application exceeds 32 type parameters, 32 constant parameters, 32 type arguments per node, 64 traversal levels, or 64 generated or expanded nodes per root"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test semantic_interface_rejects_public_predicate_with_unexported_trait ... ok
+
+failures:
+
+failures:
+    semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 101 filtered out; finished in 1.87s
+

@@ -1,0 +1,22 @@
+// Compiler input for generic function checking. This fixture does not claim
+// native execution; general enum function specialization remains unsupported.
+module core::option;
+
+pub enum Option<T> { Some(T), None }
+
+pub fn is_some<T>(value: Option<T>) -> bool {
+    return match (value) { Some(inner) -> true, None -> false };
+}
+
+pub fn is_none<T>(value: Option<T>) -> bool {
+    return match (value) { Some(inner) -> false, None -> true };
+}
+
+pub fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
+    return match (value) { Some(inner) -> inner, None -> fallback };
+}
+
+pub fn or<T>(value: Option<T>, fallback: Option<T>) -> Option<T> {
+    if (is_some(value)) { return value; }
+    return fallback;
+}

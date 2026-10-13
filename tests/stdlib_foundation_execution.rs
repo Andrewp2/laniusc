@@ -24,6 +24,21 @@ fn imported_generic_slice_claims_execute_and_reject_inconsistent_types() {
     let _ = bytes;
 
     let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_signed.lani");
+    let bytes = common::run_gpu_codegen_with_timeout("generic_slice_signed", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("specialize the original signed slice stride reproduction");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("generic_slice_signed", "generic_slice_signed", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_two_valid.lani");
     let bytes = common::run_gpu_codegen_with_timeout("generic_slice_two_views", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
@@ -86,6 +101,32 @@ fn imported_bool_constructor_rejects_integer_argument() {
     })
     .expect_err("an i32 argument must not satisfy an imported bool parameter");
     assert!(error.to_string().contains("type mismatch"), "{error}");
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+#[test]
+fn stdlib_helpers_execute_after_parser_workspace_shrinks() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (entry, expected) in [
+        ("character_inventory", "3\n"),
+        ("halfword_window_total", "32786\n"),
+        ("character_inventory", "3\n"),
+        ("halfword_window_total", "32786\n"),
+    ] {
+        let entry_path = root.join(format!("sample_programs/{entry}.lani"));
+        let stdlib_root = root.join("stdlib");
+        let bytes = common::run_gpu_codegen_with_timeout(entry, move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(
+                &entry_path,
+                &stdlib_root,
+            ))
+        })
+        .unwrap_or_else(|error| panic!("compile {entry} in a reused parser workspace: {error}"));
+        let output = common::run_x86_64_elf_output(entry, entry, &bytes);
+        assert_eq!(output.status.code(), Some(0), "{entry}: {output:?}");
+        assert_eq!(output.stdout, expected.as_bytes(), "{entry}: {output:?}");
+        assert!(output.stderr.is_empty(), "{entry}: {output:?}");
+    }
 }
 
 // Each fixture returns its first failing assertion number. The bounds fixture
@@ -308,6 +349,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
         (
             "option_result_bool",
             "tests/fixtures/stdlib_foundation/option_result_bool.lani",
+            0,
+            b"",
+        ),
+        (
+            "option_generic_scalar_predicates",
+            "tests/fixtures/stdlib_foundation/option_generic_scalar_predicates.lani",
             0,
             b"",
         ),
@@ -931,7 +978,7 @@ fn portable_stdlib_helpers_execute_on_x86() {
         let bytes = common::run_gpu_codegen_with_timeout(name, move || {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
         })
-        .unwrap_or_else(|err| panic!("{name}: compile: {err}"));
+        .unwrap_or_else(|err| panic!("{name}: compile: {err:?}"));
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -1387,6 +1434,12 @@ fn executable_core_function_surface_has_runtime_cases() {
     let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
     let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");
     let bool_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_bool.lani");
+    let generic_option_fixture = format!(
+        "{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/option_bool.lani"),
+        include_str!("fixtures/stdlib_foundation/option_generic_scalar_predicates.lani"),
+        include_str!("fixtures/stdlib_foundation/option_generic_scalar_payload_functions.lani"),
+    );
     let char_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_char.lani");
     let f32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_f32.lani");
     let i8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i8.lani");
@@ -1419,10 +1472,10 @@ fn executable_core_function_surface_has_runtime_cases() {
             10,
         ),
         (
-            "option_bool",
-            include_str!("../stdlib/core/option_bool.lani"),
-            bool_result_fixture,
-            12,
+            "option",
+            include_str!("../stdlib/core/option.lani"),
+            generic_option_fixture.as_str(),
+            11,
         ),
         (
             "result_bool",

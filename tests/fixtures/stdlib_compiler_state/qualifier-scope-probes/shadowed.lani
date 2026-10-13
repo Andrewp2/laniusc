@@ -1,0 +1,3 @@
+import core::choices;
+enum Choice<T> { Local(T) }
+fn main() -> i32 { let wrong = Choice<i32>::Imported(42); return 0; }

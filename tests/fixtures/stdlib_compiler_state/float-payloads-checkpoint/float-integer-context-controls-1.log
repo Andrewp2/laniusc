@@ -1,0 +1,9 @@
+
+running 4 tests
+test native_primitive_width_contextual_arithmetic ... ok
+test native_primitive_width_imported_values_and_stack_arguments ... ok
+test native_primitive_width_reject_deep_named_arithmetic_coercion ... ok
+test native_primitive_width_reject_imported_named_scalar_coercion ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 448 filtered out; finished in 4.19s
+

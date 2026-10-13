@@ -1,0 +1,12 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "compiler::gpu_compiler::program_evidence::packet::tests"
+  ],
+  "exit_code": 0,
+  "seconds": 0.007633229000020947,
+  "binary_sha256": "8d63b21cf86f6449c9ebfbf1663d5c5b881e7de8ff07ef66502abbce289f0ba3",
+  "sources_unchanged": true
+}

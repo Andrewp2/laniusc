@@ -1,0 +1,9 @@
+{
+  "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248": "cc5fba2ce110f423700ebe6461b86283712d2839a05b3621edb4598af42b52bc",
+  "target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66": "ec6e1447f8e61a064734817ab98812cd4f6189c827ff7374644403b5ffce5921",
+  "target/stdlib-perf/build/release/deps/parser_hir_records-6a4a7d077edcca4f": "0439866551dd67368a22493dc123d499f45c29264fad47844371d3d950def95e",
+  "target/stdlib-perf/build/release/deps/stdlib_generic_enum_declaration_execution-0c999e2ce290d60f": "51d1b612881ffcfeee6287a5692715125b1ee9a41c92d868fbb2faab25a078e1",
+  "target/stdlib-perf/build/release/deps/type_checker_modules-2fa27f7cc330361d": "b79c6aa1740af73de7e667213377d3274bef635bb090db2d3c73102936bfae4a",
+  "target/stdlib-perf/build/release/examples/stdlib_gpu_perf": "6c53dd3137ac07ec73df15dd8a6f1d305b5d32fd8f98446c3b484a8d5b02b693",
+  "target/stdlib-perf/build/release/laniusc": "f07ddbfcf1956f7d6cbb8db73f8ba115dd07d558db7e1ea6cca52eebe780e994"
+}

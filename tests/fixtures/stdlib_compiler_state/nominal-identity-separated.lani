@@ -1,0 +1,203 @@
+enum Decision { Owned ( i32 ) , Vacant }
+fn padding0 ( ) -> i32 { return - 0 ; }
+fn padding1 ( ) -> i32 { return 0 ; }
+fn padding2 ( ) -> i32 { return 0 ; }
+fn padding3 ( ) -> i32 { return 0 ; }
+fn padding4 ( ) -> i32 { return 0 ; }
+fn padding5 ( ) -> i32 { return 0 ; }
+fn padding6 ( ) -> i32 { return 0 ; }
+fn padding7 ( ) -> i32 { return 0 ; }
+fn padding8 ( ) -> i32 { return 0 ; }
+fn padding9 ( ) -> i32 { return 0 ; }
+fn padding10 ( ) -> i32 { return 0 ; }
+fn padding11 ( ) -> i32 { return 0 ; }
+fn padding12 ( ) -> i32 { return 0 ; }
+fn padding13 ( ) -> i32 { return 0 ; }
+fn padding14 ( ) -> i32 { return 0 ; }
+fn padding15 ( ) -> i32 { return 0 ; }
+fn padding16 ( ) -> i32 { return 0 ; }
+fn padding17 ( ) -> i32 { return 0 ; }
+fn padding18 ( ) -> i32 { return 0 ; }
+fn padding19 ( ) -> i32 { return 0 ; }
+fn padding20 ( ) -> i32 { return 0 ; }
+fn padding21 ( ) -> i32 { return 0 ; }
+fn padding22 ( ) -> i32 { return 0 ; }
+fn padding23 ( ) -> i32 { return 0 ; }
+fn padding24 ( ) -> i32 { return 0 ; }
+fn padding25 ( ) -> i32 { return 0 ; }
+fn padding26 ( ) -> i32 { return 0 ; }
+fn padding27 ( ) -> i32 { return 0 ; }
+fn padding28 ( ) -> i32 { return 0 ; }
+fn padding29 ( ) -> i32 { return 0 ; }
+fn padding30 ( ) -> i32 { return 0 ; }
+fn padding31 ( ) -> i32 { return 0 ; }
+fn padding32 ( ) -> i32 { return 0 ; }
+fn padding33 ( ) -> i32 { return 0 ; }
+fn padding34 ( ) -> i32 { return 0 ; }
+fn padding35 ( ) -> i32 { return 0 ; }
+fn padding36 ( ) -> i32 { return 0 ; }
+fn padding37 ( ) -> i32 { return 0 ; }
+fn padding38 ( ) -> i32 { return 0 ; }
+fn padding39 ( ) -> i32 { return 0 ; }
+fn padding40 ( ) -> i32 { return 0 ; }
+fn padding41 ( ) -> i32 { return 0 ; }
+fn padding42 ( ) -> i32 { return 0 ; }
+fn padding43 ( ) -> i32 { return 0 ; }
+fn padding44 ( ) -> i32 { return 0 ; }
+fn padding45 ( ) -> i32 { return 0 ; }
+fn padding46 ( ) -> i32 { return 0 ; }
+fn padding47 ( ) -> i32 { return 0 ; }
+fn padding48 ( ) -> i32 { return 0 ; }
+fn padding49 ( ) -> i32 { return 0 ; }
+fn padding50 ( ) -> i32 { return 0 ; }
+fn padding51 ( ) -> i32 { return 0 ; }
+fn padding52 ( ) -> i32 { return 0 ; }
+fn padding53 ( ) -> i32 { return 0 ; }
+fn padding54 ( ) -> i32 { return 0 ; }
+fn padding55 ( ) -> i32 { return 0 ; }
+fn padding56 ( ) -> i32 { return 0 ; }
+fn padding57 ( ) -> i32 { return 0 ; }
+fn padding58 ( ) -> i32 { return 0 ; }
+fn padding59 ( ) -> i32 { return 0 ; }
+fn padding60 ( ) -> i32 { return 0 ; }
+fn padding61 ( ) -> i32 { return 0 ; }
+fn padding62 ( ) -> i32 { return 0 ; }
+fn padding63 ( ) -> i32 { return 0 ; }
+fn padding64 ( ) -> i32 { return 0 ; }
+fn padding65 ( ) -> i32 { return 0 ; }
+fn padding66 ( ) -> i32 { return 0 ; }
+fn padding67 ( ) -> i32 { return 0 ; }
+fn padding68 ( ) -> i32 { return 0 ; }
+fn padding69 ( ) -> i32 { return 0 ; }
+fn padding70 ( ) -> i32 { return 0 ; }
+fn padding71 ( ) -> i32 { return 0 ; }
+fn padding72 ( ) -> i32 { return 0 ; }
+fn padding73 ( ) -> i32 { return 0 ; }
+fn padding74 ( ) -> i32 { return 0 ; }
+fn padding75 ( ) -> i32 { return 0 ; }
+fn padding76 ( ) -> i32 { return 0 ; }
+fn padding77 ( ) -> i32 { return 0 ; }
+fn padding78 ( ) -> i32 { return 0 ; }
+fn padding79 ( ) -> i32 { return 0 ; }
+fn padding80 ( ) -> i32 { return 0 ; }
+fn padding81 ( ) -> i32 { return 0 ; }
+fn padding82 ( ) -> i32 { return 0 ; }
+fn padding83 ( ) -> i32 { return 0 ; }
+fn padding84 ( ) -> i32 { return 0 ; }
+fn padding85 ( ) -> i32 { return 0 ; }
+fn padding86 ( ) -> i32 { return 0 ; }
+fn padding87 ( ) -> i32 { return 0 ; }
+fn padding88 ( ) -> i32 { return 0 ; }
+fn padding89 ( ) -> i32 { return 0 ; }
+fn padding90 ( ) -> i32 { return 0 ; }
+fn padding91 ( ) -> i32 { return 0 ; }
+fn padding92 ( ) -> i32 { return 0 ; }
+fn padding93 ( ) -> i32 { return 0 ; }
+fn padding94 ( ) -> i32 { return 0 ; }
+fn padding95 ( ) -> i32 { return 0 ; }
+fn padding96 ( ) -> i32 { return 0 ; }
+fn padding97 ( ) -> i32 { return 0 ; }
+fn padding98 ( ) -> i32 { return 0 ; }
+fn padding99 ( ) -> i32 { return 0 ; }
+fn padding100 ( ) -> i32 { return 0 ; }
+fn padding101 ( ) -> i32 { return 0 ; }
+fn padding102 ( ) -> i32 { return 0 ; }
+fn padding103 ( ) -> i32 { return 0 ; }
+fn padding104 ( ) -> i32 { return 0 ; }
+fn padding105 ( ) -> i32 { return 0 ; }
+fn padding106 ( ) -> i32 { return 0 ; }
+fn padding107 ( ) -> i32 { return 0 ; }
+fn padding108 ( ) -> i32 { return 0 ; }
+fn padding109 ( ) -> i32 { return 0 ; }
+fn padding110 ( ) -> i32 { return 0 ; }
+fn padding111 ( ) -> i32 { return 0 ; }
+fn padding112 ( ) -> i32 { return 0 ; }
+fn padding113 ( ) -> i32 { return 0 ; }
+fn padding114 ( ) -> i32 { return 0 ; }
+fn padding115 ( ) -> i32 { return 0 ; }
+fn padding116 ( ) -> i32 { return 0 ; }
+fn padding117 ( ) -> i32 { return 0 ; }
+fn padding118 ( ) -> i32 { return 0 ; }
+fn padding119 ( ) -> i32 { return 0 ; }
+fn padding120 ( ) -> i32 { return 0 ; }
+fn padding121 ( ) -> i32 { return 0 ; }
+fn padding122 ( ) -> i32 { return 0 ; }
+fn padding123 ( ) -> i32 { return 0 ; }
+fn padding124 ( ) -> i32 { return 0 ; }
+fn padding125 ( ) -> i32 { return 0 ; }
+fn padding126 ( ) -> i32 { return 0 ; }
+fn padding127 ( ) -> i32 { return 0 ; }
+fn padding128 ( ) -> i32 { return 0 ; }
+fn padding129 ( ) -> i32 { return 0 ; }
+fn padding130 ( ) -> i32 { return 0 ; }
+fn padding131 ( ) -> i32 { return 0 ; }
+fn padding132 ( ) -> i32 { return 0 ; }
+fn padding133 ( ) -> i32 { return 0 ; }
+fn padding134 ( ) -> i32 { return 0 ; }
+fn padding135 ( ) -> i32 { return 0 ; }
+fn padding136 ( ) -> i32 { return 0 ; }
+fn padding137 ( ) -> i32 { return 0 ; }
+fn padding138 ( ) -> i32 { return 0 ; }
+fn padding139 ( ) -> i32 { return 0 ; }
+fn padding140 ( ) -> i32 { return 0 ; }
+fn padding141 ( ) -> i32 { return 0 ; }
+fn padding142 ( ) -> i32 { return 0 ; }
+fn padding143 ( ) -> i32 { return 0 ; }
+fn padding144 ( ) -> i32 { return 0 ; }
+fn padding145 ( ) -> i32 { return 0 ; }
+fn padding146 ( ) -> i32 { return 0 ; }
+fn padding147 ( ) -> i32 { return 0 ; }
+fn padding148 ( ) -> i32 { return 0 ; }
+fn padding149 ( ) -> i32 { return 0 ; }
+fn padding150 ( ) -> i32 { return 0 ; }
+fn padding151 ( ) -> i32 { return 0 ; }
+fn padding152 ( ) -> i32 { return 0 ; }
+fn padding153 ( ) -> i32 { return 0 ; }
+fn padding154 ( ) -> i32 { return 0 ; }
+fn padding155 ( ) -> i32 { return 0 ; }
+fn padding156 ( ) -> i32 { return 0 ; }
+fn padding157 ( ) -> i32 { return 0 ; }
+fn padding158 ( ) -> i32 { return 0 ; }
+fn padding159 ( ) -> i32 { return 0 ; }
+fn padding160 ( ) -> i32 { return 0 ; }
+fn padding161 ( ) -> i32 { return 0 ; }
+fn padding162 ( ) -> i32 { return 0 ; }
+fn padding163 ( ) -> i32 { return 0 ; }
+fn padding164 ( ) -> i32 { return 0 ; }
+fn padding165 ( ) -> i32 { return 0 ; }
+fn padding166 ( ) -> i32 { return 0 ; }
+fn padding167 ( ) -> i32 { return 0 ; }
+fn padding168 ( ) -> i32 { return 0 ; }
+fn padding169 ( ) -> i32 { return 0 ; }
+fn padding170 ( ) -> i32 { return 0 ; }
+fn padding171 ( ) -> i32 { return 0 ; }
+fn padding172 ( ) -> i32 { return 0 ; }
+fn padding173 ( ) -> i32 { return 0 ; }
+fn padding174 ( ) -> i32 { return 0 ; }
+fn padding175 ( ) -> i32 { return 0 ; }
+fn padding176 ( ) -> i32 { return 0 ; }
+fn padding177 ( ) -> i32 { return 0 ; }
+fn padding178 ( ) -> i32 { return 0 ; }
+fn padding179 ( ) -> i32 { return 0 ; }
+fn padding180 ( ) -> i32 { return 0 ; }
+fn padding181 ( ) -> i32 { return 0 ; }
+struct Empty0 { }
+struct Empty1 { }
+struct Empty2 { }
+struct Empty3 { }
+struct Empty4 { }
+struct Empty5 { }
+struct Empty6 { }
+struct Empty7 { }
+struct Empty8 { }
+struct Record { value : i32 , sentinel : i32 }
+fn keep<T>(value:T)->T { return value; }
+fn main()->i32 {
+ let original:Decision = Owned(42);
+ let copied:Decision = keep(original);
+ let record:Record = Record{value:13,sentinel:97};
+ let other:Record = keep(record);
+ let got:i32 = match(copied) {Owned(value)->value, _->0};
+ if(got!=42 || other.value!=13 || other.sentinel!=97) {return 1;}
+ return 0;
+}

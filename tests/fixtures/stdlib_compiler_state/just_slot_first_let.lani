@@ -1,0 +1,6 @@
+import core::option;
+struct Slot<T> { value: T, sentinel: i32 }
+fn main()->i32 {
+    let slot: Slot<core::option::Option<i32>> = Slot { value: core::option::None(), sentinel: 97 };
+return 0;
+}

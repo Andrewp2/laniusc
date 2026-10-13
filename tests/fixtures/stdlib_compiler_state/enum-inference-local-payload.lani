@@ -1,0 +1,1 @@
+enum Maybe<T>{Value(T),Missing} fn main()->i32 {let value=Value(42); let got:i32=match(value){Value(v)->v,Missing->0}; if(got!=42){return 1;} return 0;}

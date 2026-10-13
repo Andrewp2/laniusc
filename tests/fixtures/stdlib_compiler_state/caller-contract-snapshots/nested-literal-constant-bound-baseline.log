@@ -1,0 +1,2 @@
+sample=0 ms=170.430
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/caller-contract-snapshots/nested-literal-constant-bound.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2121 min_ms=170.430 median_ms=170.430 avg_ms=170.430 max_ms=170.430 output_verified=true

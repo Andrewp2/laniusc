@@ -1,0 +1,34 @@
+module core::portable_values;
+
+pub const U32_MAXIMUM: u32 = 4294967295;
+pub const HIGH_LIMB: u64 = 4294967296;
+pub const U64_MAXIMUM: u64 = 18446744073709551615;
+pub const I64_MINIMUM: i64 = -9223372036854775808;
+pub const ENABLED: bool = true;
+pub const LETTER: char = 'Ω';
+
+pub struct Stamp<const N: u64> { value: u64 }
+pub struct Packet<const U: u32, const H: u64, const W: u64,
+    const S: i64, const B: bool, const C: char> {
+    small: u32,
+    wide: u64,
+    signed: i64,
+    flag: bool,
+    letter: char,
+    nested: Stamp<H>
+}
+
+pub fn make<const U: u32, const H: u64, const W: u64,
+    const S: i64, const B: bool, const C: char>() -> Packet<U, H, W, S, B, C> {
+    let nested: Stamp<H> = Stamp<H> { value: H };
+    return Packet<U, H, W, S, B, C> {
+        small: U, wide: W, signed: S, flag: B, letter: C, nested: nested
+    };
+}
+
+pub fn forward<const U: u32, const H: u64, const W: u64,
+    const S: i64, const B: bool, const C: char>() -> Packet<U, H, W, S, B, C> {
+    return make<U, H, W, S, B, C>();
+}
+
+pub fn wide<const N: u64>() -> u64 { return N; }

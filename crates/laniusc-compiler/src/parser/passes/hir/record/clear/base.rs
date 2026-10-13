@@ -88,8 +88,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_fn_return_type_node.as_entire_binding(),
             ),
             (
-                "hir_type_len_value".into(),
-                b.hir_type_len_value.as_entire_binding(),
+                "hir_type_len_operand".into(),
+                b.hir_type_len_operand.as_entire_binding(),
             ),
             (
                 "hir_method_owner_node".into(),

@@ -1,0 +1,7 @@
+{
+  "index": 0,
+  "shader": "codegen/lir/semantic/aggregate_elements.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.6164676829976088,
+  "sha256": "bb5525e115b2ec8017332cc9bf9b1e9f6c1f79d41cc73023732270379dfbb20e"
+}

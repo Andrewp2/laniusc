@@ -7,6 +7,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> semantic_type_ref_tag_by_hir;
 StructuredBuffer<uint> compact_type_arg_count;
 StructuredBuffer<HirTypeArg> compact_type_args;
 RWStructuredBuffer<uint> interface_type_parent;
@@ -23,9 +24,15 @@ static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.hir_capacity); }
 bool type_node(uint node) { return node < active_hir_count() && compact_hir_core[node].kind == HIR_TYPE; }
+bool argument_node(uint node)
+{
+    if (node >= active_hir_count()) return false;
+    uint tag = semantic_type_ref_tag_by_hir[node];
+    return type_node(node) || tag == 0x80000001u || tag == 0x80000002u || tag == 0x80000003u;
+}
 void attach(uint child, uint parent, uint ordinal, uint detail)
 {
-    if (!type_node(parent) || !type_node(child))
+    if (!type_node(parent) || !argument_node(child))
     {
         atomic_u32_or(interface_status, 0u, 128u);
         atomic_u32_min(interface_status, 1u, detail);

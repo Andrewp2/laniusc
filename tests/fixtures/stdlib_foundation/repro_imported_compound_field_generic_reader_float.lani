@@ -1,0 +1,10 @@
+module app::main;
+import core::five;
+
+fn first<T>(value: core::five::ArrayField<T>) -> T { return value.items[0]; }
+fn main() -> i32 {
+    let value: core::five::ArrayField<f32> = core::five::ArrayField { items: [2.5, -0.0] };
+    if (first(value) != 2.5 || value.items[1] != 0.0) { return 1; }
+    if (value.items[0] + 0.5 != 3.0 || value.items[1] - 0.5 != -0.5) { return 2; }
+    return 0;
+}

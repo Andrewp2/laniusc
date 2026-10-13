@@ -1,6 +1,129 @@
 use super::*;
 
 #[test]
+fn imported_trait_contracts_survive_page_order_and_workspace_reuse() {
+    pollster::block_on(async {
+        let compiler = GpuCompiler::new().await.expect("GPU compiler");
+        let definition = "module contracts::api; pub struct Cell<T>{value:T} pub trait Echo<T>{pub fn echo(self,value:Cell<T>)->Cell<T>; fn hidden(self,value:T)->T;} pub fn plain(value:i32)->i32{return value;}";
+        let first = compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            7, 0, &[definition], &[]).await.expect("first trait interface");
+        let second = compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            7, 1, &[definition.replace("contracts::api", "contracts::peer")], &[])
+            .await.expect("second unit's distinct trait interface");
+        let first = GpuSemanticInterfaceArtifact::from_bytes(&first.to_bytes().unwrap()).unwrap();
+        let second = GpuSemanticInterfaceArtifact::from_bytes(&second.to_bytes().unwrap()).unwrap();
+        // Start the consuming workspace without the exporter's predicate features.
+        compiler.release_resident_job_buffers().await;
+        let accepted = r#"import contracts::api; import contracts::peer;
+pub impl contracts::api::Echo<[i32;2]> for bool {
+    pub fn echo(self,value:contracts::api::Cell<[i32;2]>)->contracts::api::Cell<[i32;2]>{return value;}
+    fn hidden(self,value:[i32;2])->[i32;2]{return value;}
+}
+pub fn keep<T>(value:T)->T where T:contracts::api::Echo<[i32;2]>{return value;}
+fn main()->i32 {if(keep(false)){return 1;}return 0;}
+"#;
+        let bad_method = accepted.replace("Cell<[i32;2]>", "Cell<[i32;3]>");
+        let wrong_unit = accepted.replace("T:contracts::api::Echo", "T:contracts::peer::Echo");
+        let without_predicates = "import contracts::api; fn main()->i32{return plain(0);}";
+        for pages in [
+            vec![vec![first.clone()], vec![second.clone()]],
+            vec![vec![second.clone()], vec![first.clone()]],
+            vec![vec![], vec![first.clone(), second.clone()], vec![]],
+        ] {
+            for (source, expected) in [
+                (without_predicates, None),
+                (accepted, None),
+                (bad_method.as_str(), Some("LNC0021")),
+                (wrong_unit.as_str(), Some("LNC0008")),
+                (without_predicates, None),
+                (accepted, None),
+            ] {
+                let result = compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    9, 0, &[source], &pages).await;
+                if let Some(code) = expected {
+                    let error = result.expect_err("invalid imported trait contract must reject");
+                    assert_eq!(error.to_public_diagnostic().code, code, "{error:?}");
+                } else {
+                    let artifact = result.expect("imported contracts must survive page replacement and prior failures");
+                    if source == accepted {
+                        assert_eq!(artifact.predicates.len(), 1);
+                        let predicate = artifact.predicates[0];
+                        assert_eq!((predicate.trait_library_id, predicate.trait_unit_id), (7, 0));
+                        assert_eq!(first.declarations[predicate.trait_declaration_index as usize].kind, 10);
+                        assert_eq!(artifact.implementations.len(), 1);
+                        let implementation = artifact.implementations[0];
+                        assert_eq!(implementation.kind, GpuSemanticInterfaceImplementationKind::Trait as u32);
+                        assert_eq!((implementation.trait_library_id, implementation.trait_unit_id,
+                            implementation.trait_declaration_index),
+                            (predicate.trait_library_id, predicate.trait_unit_id, predicate.trait_declaration_index));
+                        assert_eq!(artifact.implementation_method_bindings.len(), 2);
+                        for binding in &artifact.implementation_method_bindings {
+                            assert_eq!(binding.implementation_index, 0);
+                            assert_eq!((binding.target_library_id, binding.target_unit_id), (9, 0));
+                            assert!(first.members.iter().any(|member|
+                                member.owner_ref == implementation.trait_declaration_index
+                                && member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
+                                && member.value_hi == binding.required_method_symbol));
+                            assert_eq!(artifact.members[binding.implementation_method_member as usize].owner_ref,
+                                0x8000_0000);
+                        }
+                        assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&artifact.to_bytes().unwrap()).unwrap(), artifact);
+                    } else {
+                        assert!(artifact.predicates.is_empty());
+                        assert!(artifact.implementations.is_empty());
+                        assert!(artifact.implementation_arguments.is_empty());
+                        assert!(artifact.implementation_method_bindings.is_empty());
+                    }
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn imported_inherent_ambiguity_is_independent_of_dependency_page_order() {
+    pollster::block_on(async {
+        let compiler = GpuCompiler::new().await.expect("GPU compiler");
+        let left_source = "module receiver::left; pub impl i32 { pub fn pick(self)->i32{return 11;} }";
+        let right_source = "module receiver::right; pub impl i32 { pub fn pick(self)->i32{return 22;} }";
+        let left = compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            71, 0, &[left_source], &[]).await.expect("export left inherent implementation");
+        let right = compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            71, 1, &[right_source], &[]).await.expect("export right inherent implementation");
+        // Restore only portable records, after both exporting workspaces have
+        // been replaced. Distinct pages cannot decide equal-rank precedence.
+        let left = GpuSemanticInterfaceArtifact::from_bytes(&left.to_bytes().unwrap()).unwrap();
+        let right = GpuSemanticInterfaceArtifact::from_bytes(&right.to_bytes().unwrap()).unwrap();
+        for artifact in [&left, &right] {
+            assert_eq!(artifact.implementations.len(), 1);
+            assert_eq!(artifact.implementations[0].kind,
+                GpuSemanticInterfaceImplementationKind::Inherent as u32);
+        }
+        let control = "import receiver::left; fn main()->i32{let value:i32=0;return value.pick();}";
+        let ambiguous = "import receiver::left; import receiver::right; fn main()->i32{let value:i32=0;return value.pick();}";
+        compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            72, 0, &[control], &[vec![left.clone()]]).await
+            .expect("one admitted implementation is an applicable control");
+        for pages in [
+            vec![vec![left.clone()], vec![right.clone()]],
+            vec![vec![right.clone()], vec![left.clone()]],
+        ] {
+            let error = compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                72, 0, &[ambiguous], &pages).await
+                .expect_err("two visible methods at the same receiver depth must be ambiguous");
+            let diagnostic = error.to_public_diagnostic();
+            assert_eq!(diagnostic.code, "LNC0027", "{error:?}");
+            assert!(diagnostic.primary_label.as_ref().is_some_and(|label|
+                label.message.contains("same preferred depth")),
+                "reject ambiguity, not invalid receiver adjustment or unresolved names: {error:?}");
+        }
+        compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            72, 0, &[control], &[vec![left]]).await
+            .expect("removed competing page must clear prior ambiguity");
+    });
+}
+
+#[test]
 fn compile_error_fallback_display_uses_public_diagnostic() {
     let cases = [
         (

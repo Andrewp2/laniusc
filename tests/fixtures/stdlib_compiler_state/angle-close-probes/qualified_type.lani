@@ -1,0 +1,1 @@
+import core::closes; type Local<T> = core::closes::Id<core::closes::Id<T>>; fn main() -> i32 { let v: Local<i32> = 42; return v - 42; }

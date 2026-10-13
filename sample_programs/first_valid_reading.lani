@@ -1,0 +1,36 @@
+// Prefer a valid primary reading, then a backup, then an explicit default.
+module app::main;
+import core::option;
+import core::range;
+import core::number_i32;
+
+fn first_valid(values: [i32]) -> core::option::Option<i32> {
+    let allowed: core::range::Range<i32> = core::range::range_i32(-100, 101);
+    for value in values {
+        if (core::range::contains_i32(allowed, value)) {
+            let found: core::option::Option<i32> = core::option::Some(value);
+            return found;
+        }
+    }
+    let absent: core::option::Option<i32> = core::option::None();
+    return absent;
+}
+
+fn main() -> i32 {
+    let primary_readings: [i32; 4] = [-101, -2, 11, 4];
+    let backup_readings: [i32; 3] = [101, 9, 102];
+    let invalid_readings: [i32; 2] = [-101, 101];
+    let primary: core::option::Option<i32> = first_valid(primary_readings);
+    let backup: core::option::Option<i32> = first_valid(backup_readings);
+    let invalid: core::option::Option<i32> = first_valid(invalid_readings);
+    let chosen: i32 = primary.or(backup).unwrap_or(0);
+    let fallback_choice: i32 = invalid.or(backup).unwrap_or(0);
+    let default_choice: i32 = invalid.or(invalid).unwrap_or(0);
+    let zero: core::option::Option<i32> = core::option::Some(0);
+    if (chosen != -2 || fallback_choice != 9 || default_choice != 0) { return 1; }
+    if (zero.or(backup).unwrap_or(7) != 0) { return 2; }
+    let calibrated: i32 = core::number_i32::saturating_add(chosen, 7);
+    print(chosen);
+    print(calibrated);
+    return 0;
+}

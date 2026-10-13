@@ -1,0 +1,26 @@
+module app::main;
+import std::io;
+
+struct Pair { first: i32, text: str, last: i32 }
+enum Maybe<T> { None, Some(T) }
+fn maybe<T>(value: T, present: bool) -> Maybe<T> {
+    if (present) { return Some(value); }
+    return None();
+}
+fn keep<T>(value: T) -> T { return value; }
+
+fn main() -> i32 {
+    let original: Pair = Pair { first: -7, text: "Ω", last: 42 };
+    let backup: Pair = Pair { first: 19, text: "", last: 71 };
+    let wrapped = maybe(original, true);
+    let chosen = match (wrapped) { None -> backup, Some(value) -> value };
+    let selected = keep(chosen);
+    let absent = match (maybe(backup, false)) { None -> original, Some(value) -> value };
+    let direct = keep(absent);
+    selected.last = 91;
+    if (selected.first != -7 || selected.last != 91 || direct.last != 42 ||
+        original.last != 42 || backup.last != 71) { return 1; }
+    std::io::println(selected.text);
+    std::io::println(direct.text);
+    return 0;
+}

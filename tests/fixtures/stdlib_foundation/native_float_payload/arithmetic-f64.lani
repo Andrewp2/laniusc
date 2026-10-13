@@ -1,0 +1,37 @@
+fn keep(value: f64) -> f64 { return value; }
+fn main() -> i32 {
+    let zero: f64 = keep(0.0);
+    let one: f64 = keep(1.0);
+    let adjacent: f64 = keep(1.0000000000000002);
+    let delta: f64 = adjacent - one;
+    if (delta != 2.220446049250313e-16 || adjacent == one) { return 1; }
+    let value: f64 = ((keep(1.25) + keep(2.5)) * keep(4.0) - keep(3.0)) / keep(2.0);
+    if (value != 6.0 || -value != -6.0) { return 2; }
+    let huge: f64 = keep(1.0e300);
+    let tiny: f64 = keep(4.9406564584124654e-324);
+    if (huge / huge != one || tiny <= zero || tiny + tiny <= tiny) { return 3; }
+    if (tiny / keep(2.0) != zero) { return 4; }
+    let negative_zero: f64 = -zero;
+    let positive_infinity: f64 = one / zero;
+    let negative_infinity: f64 = one / negative_zero;
+    if (negative_zero != zero || positive_infinity <= huge || negative_infinity >= -huge) { return 5; }
+    if (one / (-negative_zero) != positive_infinity) { return 6; }
+    if (huge * huge != positive_infinity) { return 16; }
+    let nan: f64 = zero / zero;
+    let eq: bool = nan == nan;
+    let ne: bool = nan != nan;
+    let lt: bool = nan < one;
+    let le: bool = nan <= one;
+    let gt: bool = nan > one;
+    let ge: bool = nan >= one;
+    if (eq || !ne || lt || le || gt || ge) { return 7; }
+    if (nan == one) { return 8; }
+    if (nan < one) { return 9; }
+    if (nan <= one) { return 10; }
+    if (nan > one) { return 11; }
+    if (nan >= one) { return 12; }
+    if (!(nan != one)) { return 13; }
+    if ((-nan) == nan || positive_infinity - positive_infinity == zero) { return 14; }
+    if (!(negative_infinity < one && one <= adjacent && adjacent > one && zero >= negative_zero)) { return 15; }
+    return 0;
+}

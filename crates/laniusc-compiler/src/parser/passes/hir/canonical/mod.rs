@@ -96,7 +96,7 @@ mod tests {
         assert_eq!(core::mem::size_of::<HirPayload>(), 16);
         assert_eq!(core::mem::size_of::<HirRange>(), 8);
         assert_eq!(core::mem::size_of::<HirParam>(), 16);
-        assert_eq!(core::mem::size_of::<HirTypeArg>(), 16);
+        assert_eq!(core::mem::size_of::<HirTypeArg>(), 20);
         assert_eq!(core::mem::size_of::<HirGenericParam>(), 16);
         assert_eq!(core::mem::size_of::<HirPath>(), 16);
         assert_eq!(core::mem::size_of::<HirPathSegment>(), 16);
@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(core::mem::size_of::<HirMethodCore>(), 16);
         assert_eq!(core::mem::size_of::<HirMethodSignature>(), 16);
         assert_eq!(core::mem::size_of::<HirPredicate>(), 16);
-        assert_eq!(core::mem::size_of::<HirSemanticFacts>(), 28);
+        assert_eq!(core::mem::size_of::<HirSemanticFacts>(), 32);
     }
 
     #[test]

@@ -1,0 +1,88 @@
+module app::main;
+import core::five;
+import std::io;
+
+struct Pair { number: i32, text: str }
+struct Holder<T> { child: core::five::Five<str, bool, char, u32, T>, guard: i32 }
+fn read<T>(value: core::five::Five<str, bool, char, u32, T>) -> T { return value.fifth; }
+fn view(values: [i32]) -> [i32] { return values; }
+
+fn main() -> i32 {
+    let number: Holder<i32> = Holder {
+        child: core::five::Five { first: "head", second: false, third: 'Ω', fourth: 4294967295, fifth: -7 }, guard: 99,
+    };
+    if (number.child.fifth != -7 || read(number.child) != -7 || number.guard != 99) { return 1; }
+    if (number.child.second || number.child.third != 'Ω' || number.child.fourth != 4294967295) { return 2; }
+    if (std::io::println(number.child.first) != 5) { return 3; }
+    number.child.fifth = 42;
+    if (read(number.child) != 42 || number.guard != 99) { return 4; }
+
+    let flag: Holder<bool> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: false }, guard: 98,
+    };
+    if (flag.child.fifth || read(flag.child) || flag.guard != 98) { return 5; }
+    let unsigned: Holder<u32> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: 4294967295 }, guard: 97,
+    };
+    if (unsigned.child.fifth != 4294967295 || read(unsigned.child) != 4294967295 || unsigned.guard != 97) { return 6; }
+    let floating: Holder<f32> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: 2.5 }, guard: 96,
+    };
+    if (floating.child.fifth != 2.5 || read(floating.child) != 2.5 || floating.guard != 96) { return 7; }
+    let character: Holder<char> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: 'Ω' }, guard: 95,
+    };
+    if (character.child.fifth != 'Ω' || read(character.child) != 'Ω' || character.guard != 95) { return 8; }
+
+    let text: Holder<str> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: "Ω" }, guard: 94,
+    };
+    if (std::io::println(text.child.fifth) != 3 || std::io::println(read(text.child)) != 3) { return 9; }
+    text.child.fifth = "";
+    if (std::io::println(text.child.fifth) != 1 || text.guard != 94) { return 10; }
+
+    let record: Holder<Pair> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: Pair { number: -7, text: "Ω" } }, guard: 93,
+    };
+    if (record.child.fifth.number != -7 || std::io::println(record.child.fifth.text) != 3) { return 11; }
+    let record_copy: Pair = read(record.child);
+    record_copy.number = 42;
+    record_copy.text = "changed";
+    if (record.child.fifth.number != -7 || std::io::println(record.child.fifth.text) != 3 || record.guard != 93) { return 12; }
+
+    let array: Holder<[str; 2]> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: ["Ω", ""] }, guard: 92,
+    };
+    let array_copy: [str; 2] = read(array.child);
+    array_copy[0] = "changed";
+    if (std::io::println(array.child.fifth[0]) != 3 || std::io::println(array.child.fifth[1]) != 1 || array.guard != 92) { return 13; }
+
+    let data: [i32; 2] = [-7, 42];
+    let slices: Holder<[i32]> = Holder {
+        child: core::five::Five { first: "", second: false, third: 'Ω', fourth: 4294967295, fifth: view(data) }, guard: 91,
+    };
+    let selected: [i32] = read(slices.child);
+    selected[0] = 9;
+    if (slices.child.fifth[0] != 9 || data[0] != 9 || slices.child.fifth[1] != 42 || slices.guard != 91) { return 14; }
+    let empty: [i32; 0] = [];
+    slices.child.fifth = view(empty);
+    if (slices.guard != 91) { return 15; }
+
+    // Every preceding field is multiword. The last field's offset is not its ordinal.
+    let wide: core::five::Five<str, Pair, [str; 2], [i32], i32> = core::five::Five {
+        fifth: 99, fourth: view(data), third: ["Ω", ""], second: Pair { number: -7, text: "Ω" }, first: "Ω",
+    };
+    let original: core::five::Five<str, Pair, [str; 2], [i32], i32> = wide;
+    if (std::io::println(wide.first) != 3 || wide.second.number != -7 || std::io::println(wide.second.text) != 3) { return 16; }
+    if (std::io::println(wide.third[0]) != 3 || std::io::println(wide.third[1]) != 1 || wide.fourth[1] != 42 || wide.fifth != 99) { return 17; }
+    wide.first = "";
+    wide.second = Pair { number: 42, text: "changed" };
+    wide.third = ["", "Ω"];
+    wide.fourth = view(empty);
+    wide.fifth = -11;
+    if (std::io::println(wide.first) != 1 || wide.second.number != 42 || std::io::println(wide.second.text) != 8) { return 18; }
+    if (std::io::println(wide.third[0]) != 1 || std::io::println(wide.third[1]) != 3 || wide.fifth != -11) { return 19; }
+    if (std::io::println(original.first) != 3 || original.second.number != -7 || std::io::println(original.second.text) != 3) { return 20; }
+    if (std::io::println(original.third[0]) != 3 || std::io::println(original.third[1]) != 1 || original.fourth[1] != 42 || original.fifth != 99) { return 21; }
+    return 0;
+}

@@ -12,6 +12,7 @@ StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirRange> compact_param_ranges;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<uint> compact_variant_payload_count;
 RWStructuredBuffer<uint> interface_signature_type_flag;
@@ -69,8 +70,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         interface_signature_edge_count[persisted] = compact_param_ranges[hir].count + 1u;
     }
     else if (kind == HIR_ITEM_KIND_STRUCT || kind == HIR_ITEM_KIND_ENUM ||
-             kind == HIR_ITEM_KIND_TRAIT)
-        interface_signature_type_flag[persisted] = 1u;
+        kind == HIR_ITEM_KIND_TRAIT)
+    {
+        uint hir = decl_hir_node[local];
+        if (hir >= min(compact_hir_count[0u], gParams.hir_capacity)) { fail(persisted); return; }
+        uint parameters = compact_generic_param_ranges[hir].count;
+        if (parameters > 32u) { fail(persisted); return; }
+        // Symbolic leaves precede the declaration's complete application.
+        interface_signature_type_flag[persisted] = parameters + 1u;
+        interface_signature_edge_count[persisted] = parameters;
+    }
     else if (kind == HIR_ITEM_KIND_ENUM_VARIANT)
     {
         uint hir = decl_hir_node[local];

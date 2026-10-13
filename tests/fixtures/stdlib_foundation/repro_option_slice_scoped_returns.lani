@@ -1,0 +1,24 @@
+module app::main;
+import core::option;
+fn choose(view: [i32], early: bool, late: bool) -> core::option::Option<[i32]> {
+    if (early) {
+        let absent: core::option::Option<[i32]> = core::option::None();
+        return absent;
+    }
+    if (late) {
+        let absent: core::option::Option<[i32]> = core::option::None();
+        return absent;
+    }
+    let present: core::option::Option<[i32]> = core::option::Some(view);
+    return present;
+}
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let early: core::option::Option<[i32]> = choose(backing, true, false);
+    let late: core::option::Option<[i32]> = choose(backing, false, true);
+    let present: core::option::Option<[i32]> = choose(backing, false, false);
+    if (!early.is_none()) { return 1; }
+    if (!late.is_none()) { return 2; }
+    if (!present.is_some()) { return 3; }
+    return 0;
+}

@@ -7,12 +7,25 @@ pub(in crate::type_checker) const TYPE_INSTANCES_CLEAR: ReflectedComputeSpec = t
 )
 .initializer();
 
+pub(in crate::type_checker) const TYPE_CONSTANT_STORAGE_CLEAR: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.constant_storage.clear",
+    Tokens,
+    "type_checker/type/instances/00a_constant_storage"
+).initializer();
+
 const fn type_instance_collection(
     name: &'static str,
     kernel: &'static str,
 ) -> ReflectedComputeSpec {
     typecheck_pass!(name, HirNodes, kernel).with_indirect_dispatch("hir_active_dispatch_args")
 }
+
+pub(in crate::type_checker) const TYPE_CONSTANT_SCALARS_INITIAL: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.constant_scalars.initial", Tokens, "type_checker/type/instances/01d2_const_parameter_scalars");
+pub(in crate::type_checker) const TYPE_CONSTANT_SCALARS_PROJECTED: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.constant_scalars.projected", Tokens, "type_checker/type/instances/01d2_const_parameter_scalars");
+pub(in crate::type_checker) const TYPE_CONSTANT_SCALARS_AFTER_ALIASES: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.constant_scalars.after_aliases", Tokens, "type_checker/type/instances/01d2_const_parameter_scalars");
 
 pub(in crate::type_checker) const TYPE_INSTANCES_COLLECT_INITIAL: ReflectedComputeSpec =
     type_instance_collection(

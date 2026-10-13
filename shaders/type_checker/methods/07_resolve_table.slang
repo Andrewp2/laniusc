@@ -1,18 +1,28 @@
-// GPU hash-indexed method-table resolver.
+import type_checker.constant_constraints;
+import type_checker.constant_parameter_slots;
+// Collect local candidates into the common cross-inventory transaction.
 //
-// Scheduling contract:
-// - Dispatch after method-call keys are marked and the exact method index is
-//   built and validated.
-// - This pass selects a hash bucket by receiver identity, argument count/hash,
-//   and method name, then verifies exact receiver arguments and module
-//   visibility while traversing compact method rows in that bucket.
-// - It does not inspect source bytes, hash token text, compare names by
-//   spelling, or perform CPU lookup.
+// Source refs are frozen before reset. This pass never writes callable or
+// return facts; imported contributors can replace any deeper local candidate.
+// Full patterns decide applicability after the shape/name bucket probe.
 
 import gpu_index;
 import hir_records;
 import type_checker.methods.lookup;
+import type_checker.methods.candidate;
+import type_checker.instance_arguments;
+import type_checker.scoped_type_equality;
+import type_checker.scoped_type_constraints;
+import type_checker.methods.receiver_pattern;
 
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
+StructuredBuffer<uint> external_type_library_id;
+StructuredBuffer<uint> external_type_unit_id;
+StructuredBuffer<uint> external_type_local_index;
 struct Params
 {
     uint n_tokens;
@@ -25,12 +35,13 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
-StructuredBuffer<uint> method_call_receiver_ref_tag;
-StructuredBuffer<uint> method_call_receiver_ref_payload;
+StructuredBuffer<uint> method_call_source_ref_tag;
+StructuredBuffer<uint> method_call_receiver_hir;
+StructuredBuffer<uint> method_call_selection_owned;
+RWStructuredBuffer<MethodCandidate> method_candidate;
+StructuredBuffer<uint> method_call_source_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> method_call_site_module_id;
-StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> method_key_status;
 StructuredBuffer<uint> method_lookup_head;
 StructuredBuffer<uint> method_lookup_next;
@@ -38,25 +49,25 @@ StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_module_id;
 StructuredBuffer<uint> method_decl_name_id;
-StructuredBuffer<uint> module_type_path_type;
-StructuredBuffer<uint> fn_return_ref_tag;
-StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> method_decl_receiver_mode;
+StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> call_param_row_start;
+StructuredBuffer<uint> call_param_row_count_out;
+StructuredBuffer<uint> call_param_row_ref_tag;
+StructuredBuffer<uint> call_param_row_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_start;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_hash;
 StructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> call_dependency_library_id;
 
-RWStructuredBuffer<uint> call_fn_index;
-RWStructuredBuffer<uint> call_return_type;
-RWStructuredBuffer<uint> call_return_type_token;
+
+
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -65,10 +76,12 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint METHOD_KEY_STATUS_PRIVATE_OK = 0u;
 static const uint METHOD_KEY_STATUS_PUBLIC_OK = 5u;
 static const uint TY_UNKNOWN = 0u;
+
+#include "receiver_graph.slang"
+
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -82,729 +95,132 @@ uint active_token_count()
     return min(token_count[0], gParams.n_tokens);
 }
 
+uint instance_capacity()
+{
+    uint capacity; uint stride;
+    type_instance_arg_count.GetDimensions(capacity, stride);
+    return capacity;
+}
+
 uint active_method_count()
 {
     return min(compact_method_count[0u], gParams.n_hir_nodes);
 }
 
-uint active_module_count()
+bool visible_method(uint token, uint fn_token)
 {
-    return max(1u, min(module_count_out[0], gParams.n_hir_nodes));
+    if (fn_token >= active_token_count()) return false;
+    uint status = method_key_status[fn_token];
+    return status == METHOD_KEY_STATUS_PUBLIC_OK ||
+        (status == METHOD_KEY_STATUS_PRIVATE_OK &&
+         method_call_site_module_id[token] != INVALID &&
+         method_decl_module_id[fn_token] == method_call_site_module_id[token]);
 }
 
-uint decl_token_from_type_code(uint ty)
+bool local_receiver_matches(uint fn_token, uint mode, bool dotted, uint tag, uint payload)
 {
-    if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
-        return ty - TY_STRUCT_BASE;
-    if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
-        return ty - TY_ENUM_BASE;
-    return INVALID;
-}
-
-uint resolved_nominal_decl_token(uint token_i)
-{
-    if (token_i >= active_token_count())
-        return INVALID;
-    return decl_token_from_type_code(module_type_path_type[token_i]);
-}
-
-uint type_ref_payload_key(uint receiver_tag, uint receiver_payload)
-{
-    if (receiver_tag == TYPE_REF_GENERIC_PARAM)
-        return INVALID;
-
-    if (receiver_tag == TYPE_REF_INSTANCE && receiver_payload < active_token_count())
+    if (!dotted || mode != 3u)
+        return receiver_pattern_matches<MethodReceiverGraph>(
+            method_decl_receiver_ref_tag[fn_token], method_decl_receiver_ref_payload[fn_token],
+            tag, payload, method_receiver_type_capacity(), active_token_count());
+    uint2 impl_types[32]; uint impl_mask;
+    InferredConstant impl_constants[32]; uint impl_constant_mask;
+    if (!scoped_type_and_constant_constraints<MethodReceiverGraph>(
+        method_decl_receiver_ref_tag[fn_token], method_decl_receiver_ref_payload[fn_token], INVALID,
+        tag, payload, method_receiver_type_capacity(), active_token_count(),
+        impl_types, impl_mask, impl_constants, impl_constant_mask, true)) return false;
+    uint row = call_param_row_start[fn_token];
+    if (row >= call_param_row_count_out[0u]) return false;
+    uint2 parameter_types[32]; uint parameter_mask;
+    InferredConstant parameter_constants[32]; uint parameter_constant_mask;
+    if (!scoped_type_and_constant_constraints<MethodReceiverGraph>(
+        call_param_row_ref_tag[row], call_param_row_ref_payload[row], INVALID,
+        tag, payload, method_receiver_type_capacity(), active_token_count(),
+        parameter_types, parameter_mask, parameter_constants, parameter_constant_mask, true)) return false;
+    for (uint slot = 0u; slot < 32u; slot++)
     {
-        uint decl_token = type_instance_decl_token[receiver_payload];
-        if (decl_token != INVALID)
-            return decl_token;
-        decl_token = resolved_nominal_decl_token(receiver_payload);
-        if (decl_token != INVALID)
-            return decl_token;
-    }
-    return receiver_payload;
-}
-
-uint receiver_payload_key(uint receiver_tag, uint receiver_payload)
-{
-    return type_ref_payload_key(receiver_tag, receiver_payload);
-}
-
-uint receiver_arg_count(uint receiver_tag, uint receiver_payload)
-{
-    if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count())
-        return 0u;
-    return type_instance_arg_count[receiver_payload];
-}
-
-bool receiver_instance_resolved(uint receiver_tag, uint receiver_payload)
-{
-    if (receiver_tag != TYPE_REF_INSTANCE)
-        return receiver_tag == TYPE_REF_SCALAR && receiver_payload != INVALID;
-    if (receiver_payload >= active_token_count())
-        return false;
-    return type_instance_decl_token[receiver_payload] != INVALID;
-}
-
-uint receiver_arg_ref_index(uint receiver_tag, uint receiver_payload, uint slot)
-{
-    if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count())
-        return INVALID;
-    if (slot >= receiver_arg_count(receiver_tag, receiver_payload))
-        return INVALID;
-    uint start = type_instance_arg_start[receiver_payload];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint receiver_arg_row_ref_index(uint receiver_payload, uint ordinal)
-{
-    uint start = type_instance_arg_row_start[receiver_payload];
-    uint ref_i = start == INVALID ? INVALID : start + ordinal;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool receiver_arg_ref(uint receiver_tag, uint receiver_payload, uint ordinal, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count() ||
-        ordinal >= type_instance_arg_count[receiver_payload])
-        return false;
-
-    uint row_ref_i = receiver_arg_row_ref_index(receiver_payload, ordinal);
-    if (row_ref_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_ref_i];
-        payload = type_instance_arg_row_ref_payload[row_ref_i];
-        if (tag != TYPE_REF_INVALID)
-            return true;
-    }
-
-    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
-        return false;
-
-    uint arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, ordinal);
-    if (arg_i == INVALID)
-        return false;
-
-    tag = type_instance_arg_ref_tag[arg_i];
-    payload = type_instance_arg_ref_payload[arg_i];
-    return tag != TYPE_REF_INVALID;
-}
-
-uint type_code_for_ref(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_SCALAR)
-        return payload;
-    if (tag == TYPE_REF_INSTANCE && payload < active_token_count())
-    {
-        uint decl_token = type_instance_decl_token[payload];
-        if (decl_token != INVALID && decl_token < active_token_count())
-        {
-            uint ty = module_type_path_type[payload];
-            if (ty != TY_UNKNOWN)
-                return ty;
-            ty = module_type_path_type[decl_token];
-            if (ty != TY_UNKNOWN)
-                return ty;
-            return TY_STRUCT_BASE + decl_token;
-        }
-    }
-    return TY_UNKNOWN;
-}
-
-uint generic_param_slot_for_payload(uint payload)
-{
-    return payload < active_token_count() ? type_generic_param_slot_by_token[payload] : payload;
-}
-
-uint generic_param_name_for_payload(uint payload)
-{
-    return payload < active_token_count() ? name_id_by_token[payload] : INVALID;
-}
-
-bool same_generic_param_payload(uint left_payload, uint right_payload)
-{
-    uint left_slot = generic_param_slot_for_payload(left_payload);
-    uint right_slot = generic_param_slot_for_payload(right_payload);
-    if (left_slot != INVALID && right_slot != INVALID)
-        return left_slot == right_slot;
-
-    uint left_name = generic_param_name_for_payload(left_payload);
-    uint right_name = generic_param_name_for_payload(right_payload);
-    return left_name != INVALID && left_name == right_name;
-}
-
-bool same_receiver_projection_arg(
-    uint ret_arg_tag,
-    uint ret_arg_payload,
-    uint decl_arg_tag,
-    uint decl_arg_payload)
-{
-    if (ret_arg_tag != decl_arg_tag)
-        return false;
-    if (ret_arg_tag == TYPE_REF_GENERIC_PARAM)
-        return same_generic_param_payload(ret_arg_payload, decl_arg_payload);
-    if (ret_arg_tag == TYPE_REF_SCALAR)
-        return ret_arg_payload == decl_arg_payload;
-    return false;
-}
-
-bool return_instance_is_receiver_projection(
-    uint receiver_tag,
-    uint receiver_payload,
-    uint fn_i,
-    uint ret_payload)
-{
-    if (receiver_tag != TYPE_REF_INSTANCE ||
-        receiver_payload >= active_token_count() ||
-        fn_i >= active_token_count() ||
-        ret_payload >= active_token_count())
-    {
-        return false;
-    }
-
-    uint decl_receiver_tag = method_decl_receiver_ref_tag[fn_i];
-    uint decl_receiver_payload = method_decl_receiver_ref_payload[fn_i];
-    if (decl_receiver_tag != TYPE_REF_INSTANCE || decl_receiver_payload >= active_token_count())
-        return false;
-
-    if (receiver_payload_key(decl_receiver_tag, decl_receiver_payload) !=
-        receiver_payload_key(TYPE_REF_INSTANCE, ret_payload))
-    {
-        return false;
-    }
-
-    uint decl_arg_count = receiver_arg_count(decl_receiver_tag, decl_receiver_payload);
-    if (receiver_arg_count(TYPE_REF_INSTANCE, ret_payload) != decl_arg_count ||
-        receiver_arg_count(receiver_tag, receiver_payload) != decl_arg_count)
-    {
-        return false;
-    }
-
-    for (uint slot_i = 0u; slot_i < decl_arg_count; slot_i += 1u)
-    {
-        uint ret_arg_tag;
-        uint ret_arg_payload;
-        uint decl_arg_tag;
-        uint decl_arg_payload;
-        if (!receiver_arg_ref(
-                TYPE_REF_INSTANCE,
-                ret_payload,
-                slot_i,
-                ret_arg_tag,
-                ret_arg_payload) ||
-            !receiver_arg_ref(
-                decl_receiver_tag,
-                decl_receiver_payload,
-                slot_i,
-                decl_arg_tag,
-                decl_arg_payload) ||
-            !same_receiver_projection_arg(
-                ret_arg_tag,
-                ret_arg_payload,
-                decl_arg_tag,
-                decl_arg_payload))
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool return_instance_is_call_receiver_slot_projection(
-    uint receiver_tag,
-    uint receiver_payload,
-    uint ret_payload)
-{
-    if (receiver_tag != TYPE_REF_INSTANCE ||
-        receiver_payload >= active_token_count() ||
-        ret_payload >= active_token_count())
-    {
-        return false;
-    }
-
-    if (receiver_payload_key(receiver_tag, receiver_payload) !=
-        receiver_payload_key(TYPE_REF_INSTANCE, ret_payload))
-    {
-        return false;
-    }
-
-    uint arg_count = receiver_arg_count(receiver_tag, receiver_payload);
-    if (arg_count == 0u || receiver_arg_count(TYPE_REF_INSTANCE, ret_payload) != arg_count)
-        return false;
-
-    for (uint slot_i = 0u; slot_i < arg_count; slot_i += 1u)
-    {
-        uint ret_arg_tag;
-        uint ret_arg_payload;
-        if (!receiver_arg_ref(
-                TYPE_REF_INSTANCE,
-                ret_payload,
-                slot_i,
-                ret_arg_tag,
-                ret_arg_payload) ||
-            ret_arg_tag != TYPE_REF_GENERIC_PARAM ||
-            generic_param_slot_for_payload(ret_arg_payload) != slot_i)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool return_instance_projects_to_call_receiver(
-    uint receiver_tag,
-    uint receiver_payload,
-    uint fn_i,
-    uint ret_payload)
-{
-    return return_instance_is_receiver_projection(receiver_tag, receiver_payload, fn_i, ret_payload) ||
-           return_instance_is_call_receiver_slot_projection(receiver_tag, receiver_payload, ret_payload);
-}
-
-bool substituted_receiver_return_type_slot(
-    uint receiver_tag,
-    uint receiver_payload,
-    uint decl_receiver_tag,
-    uint decl_receiver_payload,
-    uint decl_arg_count,
-    uint ret_payload,
-    uint fallback_ty,
-    uint slot,
-    out uint ty)
-{
-    ty = TY_UNKNOWN;
-    if (slot >= decl_arg_count)
-        return false;
-
-    uint decl_arg_tag;
-    uint decl_arg_payload;
-    if (!receiver_arg_ref(
-            decl_receiver_tag,
-            decl_receiver_payload,
-            slot,
-            decl_arg_tag,
-            decl_arg_payload))
-        return false;
-    if (decl_arg_tag != TYPE_REF_GENERIC_PARAM)
-        return false;
-
-    if (!same_generic_param_payload(decl_arg_payload, ret_payload))
-        return false;
-
-    uint call_arg_tag;
-    uint call_arg_payload;
-    if (!receiver_arg_ref(receiver_tag, receiver_payload, slot, call_arg_tag, call_arg_payload))
-    {
-        ty = fallback_ty;
-        return true;
-    }
-
-    uint resolved_ty = type_code_for_ref(call_arg_tag, call_arg_payload);
-    ty = resolved_ty == TY_UNKNOWN ? fallback_ty : resolved_ty;
-    return true;
-}
-
-uint substituted_receiver_return_type(
-    uint receiver_tag,
-    uint receiver_payload,
-    uint fn_i,
-    uint fallback_ty)
-{
-    if (fn_i < active_token_count())
-    {
-        uint ret_tag = fn_return_ref_tag[fn_i];
-        uint ret_payload = fn_return_ref_payload[fn_i];
-        if (ret_tag == TYPE_REF_INSTANCE &&
-            return_instance_projects_to_call_receiver(
-                receiver_tag,
-                receiver_payload,
-                fn_i,
-                ret_payload))
-        {
-            uint ty = type_code_for_ref(receiver_tag, receiver_payload);
-            if (ty != TY_UNKNOWN)
-                return ty;
-        }
-
-        if (ret_tag == TYPE_REF_GENERIC_PARAM && ret_payload != INVALID)
-        {
-            uint decl_receiver_tag = method_decl_receiver_ref_tag[fn_i];
-            uint decl_receiver_payload = method_decl_receiver_ref_payload[fn_i];
-            uint decl_arg_count = receiver_arg_count(decl_receiver_tag, decl_receiver_payload);
-            uint ty = TY_UNKNOWN;
-            for (uint slot_i = 0u; slot_i < decl_arg_count; slot_i += 1u)
-            {
-                if (substituted_receiver_return_type_slot(
-                        receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
-                        decl_arg_count, ret_payload, fallback_ty, slot_i, ty))
-                    return ty;
-            }
-        }
-    }
-
-    if (fallback_ty < TY_GENERIC_BASE)
-        return fallback_ty;
-
-    uint slot = fallback_ty - TY_GENERIC_BASE;
-    uint arg_tag;
-    uint arg_payload;
-    if (!receiver_arg_ref(receiver_tag, receiver_payload, slot, arg_tag, arg_payload))
-        return fallback_ty;
-
-    uint ty = type_code_for_ref(arg_tag, arg_payload);
-    return ty == TY_UNKNOWN ? fallback_ty : ty;
-}
-
-uint substituted_receiver_return_token(
-    uint receiver_tag,
-    uint receiver_payload,
-    uint fn_i,
-    uint fallback_token)
-{
-    if (fn_i >= active_token_count())
-        return fallback_token;
-
-    uint ret_tag = fn_return_ref_tag[fn_i];
-    uint ret_payload = fn_return_ref_payload[fn_i];
-    if (ret_tag == TYPE_REF_INSTANCE &&
-        return_instance_projects_to_call_receiver(receiver_tag, receiver_payload, fn_i, ret_payload))
-    {
-        return receiver_payload;
-    }
-
-    return fallback_token;
-}
-
-public struct MethodLookupKey
-{
-    uint module_id;
-    uint receiver_tag;
-    uint receiver_payload;
-    uint receiver_arg_hash;
-    uint name_id;
-    uint generic_receiver_args;
-}
-
-uint mix_hash(uint hash, uint value)
-{
-    hash ^= value;
-    hash *= 16777619u;
-    hash ^= hash >> 16u;
-    return hash;
-}
-
-uint encoded_hash_value(uint value, uint invalid)
-{
-    return value == invalid ? 0u : value + 1u;
-}
-
-uint generic_receiver_arg_hash(uint count)
-{
-    uint hash = mix_hash(2166136261u, count);
-    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
-    {
-        hash = mix_hash(hash, encoded_hash_value(TYPE_REF_GENERIC_PARAM, TYPE_REF_INVALID));
-        hash = mix_hash(hash, 0u);
-    }
-    return hash;
-}
-
-uint receiver_arg_hash_key(uint receiver_tag, uint receiver_payload, uint generic_receiver_args)
-{
-    uint count = receiver_arg_count(receiver_tag, receiver_payload);
-    if (generic_receiver_args != 0u && count != 0u)
-        return generic_receiver_arg_hash(count);
-    if (receiver_tag != TYPE_REF_INSTANCE || receiver_payload >= active_token_count())
-        return 0u;
-    return type_instance_arg_hash[receiver_payload];
-}
-
-bool method_key_identity_matches(uint fn_i, MethodLookupKey key)
-{
-    if (fn_i >= active_token_count())
-        return false;
-    if (method_decl_name_id[fn_i] != key.name_id)
-        return false;
-    return key.module_id == INVALID || method_decl_module_id[fn_i] == key.module_id;
-}
-
-bool same_receiver_arg_ref(uint left_tag, uint left_payload, uint right_tag, uint right_payload)
-{
-    if (left_tag != right_tag)
-        return false;
-    return type_ref_payload_key(left_tag, left_payload) ==
-           type_ref_payload_key(right_tag, right_payload);
-}
-
-bool method_receiver_args_match(uint fn_i, MethodLookupKey key)
-{
-    uint decl_tag = method_decl_receiver_ref_tag[fn_i];
-    uint decl_payload = method_decl_receiver_ref_payload[fn_i];
-    if (decl_tag != key.receiver_tag)
-        return false;
-    if (receiver_payload_key(decl_tag, decl_payload) !=
-        receiver_payload_key(key.receiver_tag, key.receiver_payload))
-        return false;
-
-    uint count = receiver_arg_count(key.receiver_tag, key.receiver_payload);
-    if (receiver_arg_count(decl_tag, decl_payload) != count)
-        return false;
-
-    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
-    {
-        uint decl_arg_tag;
-        uint decl_arg_payload;
-        if (!receiver_arg_ref(decl_tag, decl_payload, ordinal, decl_arg_tag, decl_arg_payload))
-            return false;
-
-        if (key.generic_receiver_args != 0u)
-        {
-            if (decl_arg_tag != TYPE_REF_GENERIC_PARAM)
-                return false;
-            continue;
-        }
-
-        uint call_arg_tag;
-        uint call_arg_payload;
-        if (!receiver_arg_ref(
-                key.receiver_tag,
-                key.receiver_payload,
-                ordinal,
-                call_arg_tag,
-                call_arg_payload) ||
-            !same_receiver_arg_ref(
-                decl_arg_tag,
-                decl_arg_payload,
-                call_arg_tag,
-                call_arg_payload))
-            return false;
-    }
-
-    return true;
-}
-
-bool method_status_resolvable(uint fn_i)
-{
-    if (fn_i >= active_token_count())
-        return false;
-    uint status = method_key_status[fn_i];
-    return status == METHOD_KEY_STATUS_PUBLIC_OK || status == METHOD_KEY_STATUS_PRIVATE_OK;
-}
-
-uint method_lookup_bucket_for_key(MethodLookupKey key)
-{
-    return method_lookup_bucket(
-        key.receiver_tag,
-        receiver_payload_key(key.receiver_tag, key.receiver_payload),
-        receiver_arg_count(key.receiver_tag, key.receiver_payload),
-        key.receiver_arg_hash,
-        key.name_id,
-        active_method_count());
-}
-
-uint matching_method_in_bucket(MethodLookupKey key)
-{
-    uint method_count = active_method_count();
-    uint encoded_row = method_lookup_head[method_lookup_bucket_for_key(key)];
-    uint found_fn_i = INVALID;
-    for (uint visited = 0u; encoded_row != 0u && visited < method_count; visited += 1u)
-    {
-        uint row = encoded_row - 1u;
-        if (row >= method_count)
-            return INVALID;
-        encoded_row = method_lookup_next[row];
-        uint fn_i = compact_method_cores[row].name_token;
-        if (!method_status_resolvable(fn_i) ||
-            !method_key_identity_matches(fn_i, key) ||
-            !method_receiver_args_match(fn_i, key))
-            continue;
-        if (found_fn_i != INVALID)
-            return INVALID;
-        found_fn_i = fn_i;
-    }
-    return found_fn_i;
-}
-
-uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint name_id)
-{
-    if (module_id == INVALID || receiver_tag == TYPE_REF_INVALID || receiver_payload == INVALID ||
-        name_id == INVALID)
-        return INVALID;
-    if (!receiver_instance_resolved(receiver_tag, receiver_payload))
-        return INVALID;
-
-    MethodLookupKey key;
-    key.module_id = module_id;
-    key.receiver_tag = receiver_tag;
-    key.receiver_payload = receiver_payload;
-    key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 0u);
-    key.name_id = name_id;
-    key.generic_receiver_args = 0u;
-
-    uint exact_fn_i = matching_method_in_bucket(key);
-    uint generic_fn_i = INVALID;
-    if (receiver_arg_count(receiver_tag, receiver_payload) != 0u)
-    {
-        key.generic_receiver_args = 1u;
-        key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 1u);
-        generic_fn_i = matching_method_in_bucket(key);
-    }
-
-    // Specialization is not a proven relation yet; overlapping exact/generic
-    // receiver keys must fail closed instead of picking one method locally.
-    if (exact_fn_i != INVALID && generic_fn_i != INVALID)
-        return INVALID;
-
-    return exact_fn_i != INVALID ? exact_fn_i : generic_fn_i;
-}
-
-bool unique_visible_method_in_bucket(
-    uint method_i,
-    MethodLookupKey key,
-    out uint visible_fn_i)
-{
-    visible_fn_i = INVALID;
-    uint method_count = active_method_count();
-    uint encoded_row = method_lookup_head[method_lookup_bucket_for_key(key)];
-    for (uint visited = 0u; encoded_row != 0u && visited < method_count; visited += 1u)
-    {
-        uint row = encoded_row - 1u;
-        if (row >= method_count)
-            return false;
-        encoded_row = method_lookup_next[row];
-        uint fn_i = compact_method_cores[row].name_token;
-        uint candidate = method_key_identity_matches(fn_i, key) &&
-                         method_receiver_args_match(fn_i, key)
-            ? visibility_checked_method(method_i, fn_i)
-            : INVALID;
-        if (candidate == INVALID)
-            continue;
-        if (visible_fn_i != INVALID)
-            return false;
-        visible_fn_i = candidate;
+        if (((impl_mask & parameter_mask) & (1u << slot)) != 0u &&
+            !scoped_type_refs_equal<MethodReceiverGraph>(impl_types[slot].x, impl_types[slot].y, INVALID,
+                parameter_types[slot].x, parameter_types[slot].y, INVALID,
+                method_receiver_type_capacity(), active_token_count())) return false;
+        if (((impl_constant_mask & parameter_constant_mask) & (1u << slot)) != 0u &&
+            !inferred_constant_claims_compatible<MethodReceiverGraph>(impl_constants[slot], parameter_constants[slot], active_token_count())) return false;
     }
     return true;
 }
 
-uint find_visible_method_for_receiver(uint method_i, uint receiver_tag, uint receiver_payload, uint name_id)
+void collect_bucket(uint token, uint bucket, uint tag, uint payload,
+    uint deref_count, bool dotted, inout MethodCandidate summary)
 {
-    if (!receiver_instance_resolved(receiver_tag, receiver_payload))
-        return INVALID;
-
-    uint call_site_module = method_i < active_token_count() ? method_call_site_module_id[method_i]
-                                                            : INVALID;
-    uint local_fn_i = visibility_checked_method(
-        method_i,
-        find_method(call_site_module, receiver_tag, receiver_payload, name_id));
-    if (local_fn_i != INVALID)
-        return local_fn_i;
-
-    uint exact_fn_i = INVALID;
-    MethodLookupKey key;
-    key.module_id = INVALID;
-    key.receiver_tag = receiver_tag;
-    key.receiver_payload = receiver_payload;
-    key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 0u);
-    key.name_id = name_id;
-    key.generic_receiver_args = 0u;
-    if (!unique_visible_method_in_bucket(method_i, key, exact_fn_i))
-        return INVALID;
-
-    if (receiver_arg_count(receiver_tag, receiver_payload) == 0u)
-        return exact_fn_i;
-
-    uint generic_fn_i = INVALID;
-    key.generic_receiver_args = 1u;
-    key.receiver_arg_hash = receiver_arg_hash_key(receiver_tag, receiver_payload, 1u);
-    if (!unique_visible_method_in_bucket(method_i, key, generic_fn_i))
-        return INVALID;
-
-    if (exact_fn_i != INVALID && generic_fn_i != INVALID)
-        return INVALID;
-
-    return exact_fn_i != INVALID ? exact_fn_i : generic_fn_i;
-}
-
-uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload, uint name_id)
-{
-    uint fn_i = find_visible_method_for_receiver(method_i, receiver_tag, receiver_payload, name_id);
-    if (fn_i != INVALID)
-        return fn_i;
-
-    if (receiver_tag != TYPE_REF_INSTANCE)
-        return INVALID;
-
-    uint scalar_ty = type_code_for_ref(receiver_tag, receiver_payload);
-    if (scalar_ty == TY_UNKNOWN)
-        return INVALID;
-
-    return find_visible_method_for_receiver(method_i, TYPE_REF_SCALAR, scalar_ty, name_id);
-}
-
-uint visibility_checked_method(uint method_i, uint fn_i)
-{
-    if (fn_i >= active_token_count())
-        return INVALID;
-
-    uint status = method_key_status[fn_i];
-    if (status == METHOD_KEY_STATUS_PUBLIC_OK)
-        return fn_i;
-    uint call_site_module = method_i < active_token_count() ? method_call_site_module_id[method_i]
-                                                            : INVALID;
-    uint decl_module = fn_i < active_token_count() ? method_decl_module_id[fn_i] : INVALID;
-    if (status == METHOD_KEY_STATUS_PRIVATE_OK && call_site_module != INVALID &&
-        call_site_module == decl_module)
-        return fn_i;
-    return INVALID;
+    uint count = active_method_count();
+    // Empty inventories dispatch no lookup initializer, so no bucket storage
+    // belongs to this table. In particular, never read the capacity-one sentinel.
+    if (count == 0u) return;
+    uint link = method_lookup_head[bucket];
+    for (uint visited = 0u; link != 0u && visited < count; visited++)
+    {
+        uint row = link - 1u;
+        if (row >= count) { summary.state = METHOD_CANDIDATE_INVALID; return; }
+        link = method_lookup_next[row];
+        uint fn_token = compact_method_cores[row].name_token;
+        if (!visible_method(token, fn_token) ||
+            method_decl_name_id[fn_token] != method_call_name_id[token]) continue;
+        uint mode = method_decl_receiver_mode[fn_token];
+        if (dotted ? (mode == 0u || (mode == 3u && call_param_count[fn_token] == 0u)) :
+            (mode == 1u || mode == 2u)) continue;
+        if (!local_receiver_matches(fn_token, mode, dotted, tag, payload)) continue;
+        MethodCandidate candidate = method_candidate_empty();
+        candidate.state = METHOD_CANDIDATE_UNIQUE;
+        candidate.deref_count = deref_count;
+        candidate.module_preference = method_decl_module_id[fn_token] ==
+            method_call_site_module_id[token] ? 0u : 1u;
+        candidate.callable_kind = METHOD_CALLABLE_LOCAL;
+        candidate.local_index = fn_token;
+        candidate.matched_ref_tag = tag;
+        candidate.matched_ref_payload = payload;
+        candidate.receiver_mode = dotted ? (mode == 2u ? 2u : 1u) : 0u;
+        method_candidate_offer(summary, candidate);
+    }
+    if (link != 0u) summary.state = METHOD_CANDIDATE_INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= active_token_count())
+    uint token = linear_thread_id(dtid);
+    if (token >= active_token_count() || method_call_selection_owned[token] == 0u ||
+        method_call_name_id[token] == INVALID) return;
+    uint tag = method_call_source_ref_tag[token];
+    uint payload = method_call_source_ref_payload[token];
+    if (tag == 0u || payload == INVALID) return;
+    MethodCandidate summary = method_candidate[token];
+    if (!receiver_pattern_valid<MethodReceiverGraph>(tag, payload,
+        method_receiver_type_capacity(), active_token_count()))
+    {
+        summary.state = METHOD_CANDIDATE_INVALID;
+        method_candidate[token] = summary;
         return;
-
-    if (method_call_name_id[i] == INVALID)
-        return;
-
-    // Direct-call resolution runs first. Method lookup fills unresolved member
-    // and associated calls; it must not erase an already resolved free or
-    // module-qualified function if another path projection also mentioned the
-    // same token.
-    if (call_fn_index[i] != INVALID || call_dependency_library_id[i] != INVALID)
-        return;
-
-    call_fn_index[i] = INVALID;
-    call_return_type[i] = TY_UNKNOWN;
-    call_return_type_token[i] = INVALID;
-
-    uint fn_i = find_visible_method(i,
-                                    method_call_receiver_ref_tag[i],
-                                    method_call_receiver_ref_payload[i],
-                                    method_call_name_id[i]);
-    if (fn_i == INVALID)
-        return;
-
-    uint ret_ty = substituted_receiver_return_type(
-        method_call_receiver_ref_tag[i],
-        method_call_receiver_ref_payload[i],
-        fn_i,
-        call_return_type[fn_i]);
-    if (ret_ty == TY_UNKNOWN)
-        return;
-    call_fn_index[i] = fn_i;
-    call_return_type[i] = ret_ty;
-    call_return_type_token[i] = substituted_receiver_return_token(
-        method_call_receiver_ref_tag[i],
-        method_call_receiver_ref_payload[i],
-        fn_i,
-        call_return_type_token[fn_i]);
+    }
+    bool dotted = method_call_receiver_hir[token] != INVALID;
+    uint wildcard = method_lookup_bucket(method_receiver_wildcard_head(),
+        method_call_name_id[token], active_method_count());
+    for (uint depth = 0u; depth < 64u; depth++)
+    {
+        MethodReceiverHead head;
+        if (!method_receiver_head<MethodReceiverGraph>(tag, payload,
+            method_receiver_type_capacity(), active_token_count(), head))
+        { summary.state = METHOD_CANDIDATE_INVALID; break; }
+        uint bucket = method_lookup_bucket(head, method_call_name_id[token], active_method_count());
+        collect_bucket(token, bucket, tag, payload, depth, dotted, summary);
+        if (wildcard != bucket)
+            collect_bucket(token, wildcard, tag, payload, depth, dotted, summary);
+        if (summary.state == METHOD_CANDIDATE_INVALID || !dotted || tag != 3u ||
+            type_instance_kind[payload] != 4u) break;
+        if (depth == 63u) { summary.state = METHOD_CANDIDATE_INVALID; break; }
+        uint source = payload;
+        tag = type_instance_elem_ref_tag[source];
+        payload = type_instance_elem_ref_payload[source];
+    }
+    method_candidate[token] = summary;
 }

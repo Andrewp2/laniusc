@@ -1,0 +1,31 @@
+struct Cell<T> { value: T }
+struct Pair { first: i32, last: i32 }
+enum Maybe<T> { None, Some(T) }
+fn wrap<T>(value: T) -> Cell<T> { return Cell { value: value }; }
+fn duplicate<T>(value: T) -> [T; 2] { return [value, value]; }
+fn maybe<T>(value: T) -> Maybe<T> { return Some(value); }
+fn keep<T>(value: T) -> T { return value; }
+fn roundtrip<T>(value: T) -> T {
+    let cell = wrap(value);
+    let field = keep(cell.value);
+    let elements = duplicate(field);
+    let element = keep(elements[1]);
+    let optional = maybe(element);
+    let joined = match (optional) { None -> value, Some(found) -> found };
+    return keep(joined);
+}
+fn main() -> i32 {
+    let original: Pair = Pair { first: -7, last: 42 };
+    let copied = roundtrip(original);
+    copied.last = 91;
+    if (copied.first != -7 || copied.last != 91 || original.last != 42) { return 1; }
+    if (roundtrip(false) || roundtrip(-7) != -7 || roundtrip(2.5) != 2.5) { return 2; }
+    let values: [i32; 2] = [11, 22];
+    let copied_values = roundtrip(values);
+    if (copied_values[0] != 11) { return 4; }
+    if (copied_values[1] != 22) { return 5; }
+    copied_values[0] = 99;
+    if (values[0] != 11) { return 3; }
+    if (copied_values[1] != 22) { return 6; }
+    return 0;
+}

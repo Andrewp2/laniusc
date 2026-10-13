@@ -41,9 +41,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= active_method_count()) return;
 
     uint flags = compact_method_signatures[row].metadata >> 16u;
-    uint detail = (flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u
+    uint detail = (flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u && (flags & 4u) == 0u
                       ? PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC
-                      : ((flags & METHOD_SIGNATURE_HAS_WHERE) != 0u
+                      : ((flags & METHOD_SIGNATURE_HAS_WHERE) != 0u && (flags & 4u) == 0u
                              ? PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE
                              : 0u);
     if (detail == 0u) return;

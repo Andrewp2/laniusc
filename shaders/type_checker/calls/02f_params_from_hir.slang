@@ -23,8 +23,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> compact_param_count;
-StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> generic_param_count_out;
@@ -98,6 +96,8 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+#include "hir_callable_parameters.slang"
+
 bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID;
@@ -130,8 +130,8 @@ uint generic_owner_token(uint decl_node)
 {
     if (!valid_node(decl_node))
         return INVALID;
-    uint name_token = compact_hir_payload[decl_node].b;
-    return valid_token(name_token) ? name_token : compact_hir_core[decl_node].token_start;
+    return hir_generic_owner_token(compact_hir_core[decl_node], compact_hir_payload[decl_node],
+        gParams.n_tokens);
 }
 
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
@@ -304,6 +304,7 @@ uint semantic_type_code_for_ref(uint tag, uint payload)
             return TY_UNKNOWN;
 
         uint kind = type_instance_kind[payload];
+        if (kind == 4u) return 8u;
         if (kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE)
         {
             uint elem_tag = type_instance_elem_ref_tag[payload];
@@ -388,25 +389,15 @@ void publish_param(uint param_row)
     call_param_row_node_ref_tag[param_row] = TYPE_REF_INVALID;
     call_param_row_node_ref_payload[param_row] = INVALID;
 
-    if (param_row >= min(compact_param_count[0u], gParams.n_tokens))
-        return;
-
-    HirParam parameter = compact_params[param_row];
-    uint fn_node = parameter.owner;
-    uint ordinal = parameter.ordinal;
-    if (!valid_node(fn_node))
-        return;
-
-    uint fn_token = compact_hir_payload[fn_node].b;
-    if (!valid_token(fn_token))
-        return;
+    uint fn_token; uint fn_node; uint type_node; uint ordinal; uint source_parameter;
+    if (!hir_callable_parameter(param_row, fn_token, fn_node, type_node, ordinal, source_parameter)) return;
 
     atomic_u32_max(call_param_count, fn_token, ordinal + 1u);
 
     uint tag;
     uint payload;
-    param_type_ref(parameter.type_node, fn_node, tag, payload);
-    uint type_code = param_type_code(parameter.type_node, fn_node);
+    param_type_ref(type_node, fn_node, tag, payload);
+    uint type_code = param_type_code(type_node, fn_node);
     call_param_row_flag[param_row] = 1u;
     call_param_row_node_type[param_row] = type_code;
     call_param_row_node_ref_tag[param_row] = tag;
@@ -440,7 +431,8 @@ void publish_param(uint param_row)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
-    if (row >= min(compact_param_count[0u], gParams.n_tokens))
+    if (row >= min(compact_param_count[0u], gParams.n_tokens) +
+        min(compact_variant_payload_row_count[0u], gParams.n_hir_nodes))
         return;
 
     publish_param(row);

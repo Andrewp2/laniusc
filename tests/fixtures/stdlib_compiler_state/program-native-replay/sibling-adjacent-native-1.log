@@ -1,0 +1,13 @@
+
+running 8 tests
+test caller_selected_bounds_forward_through_nested_bodies_and_existing_bodies ... ok
+test explicit_constant_arguments_execute_independent_method_domains ... ok
+test imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments ... ok
+test imported_generic_bodies_enforce_their_concrete_trait_contracts ... ok
+test imported_generic_bodies_execute_with_caller_selected_implementations ... ok
+test imported_trait_contract_records_preserve_ordinary_generic_execution ... ok
+test ordinary_trait_methods_execute_alongside_generic_value_calls ... ok
+test reused_native_bodies_still_reject_missing_bounds_at_the_actual_call ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 4.51s
+

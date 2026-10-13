@@ -1,0 +1,15 @@
+
+running 1 test
+test compiler::gpu_compiler::x86_codegen::tests::dependency_pages_preserve_record_fields_and_generic_body_replay ... 
+thread 'compiler::gpu_compiler::x86_codegen::tests::dependency_pages_preserve_record_fields_and_generic_body_replay' (334551) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs:488:39:
+inner-first: compile extraction template: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0042", title: "invalid member access", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0042", message: "invalid member access", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 5, column: 70, length: 5, byte_start: Some(129), byte_end: Some(134), source_line: Some("pub fn take<T>(value: lib::outer::Wrap<T>) -> T { return value.child.value; }"), message: "this value does not have the requested field" }), help: None, notes: ["field access is only valid for structs that declare a field with this name"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::x86_codegen::tests::dependency_pages_preserve_record_fields_and_generic_body_replay
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 634 filtered out; finished in 5.67s
+

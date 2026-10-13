@@ -1,0 +1,2 @@
+import core::aliases;
+fn main() -> i32 { let value = core::aliases::Maybe<i32>::Some(42); return match (value) { core::aliases::Choice::Some(inner) -> inner - 42, _ -> 1 }; }

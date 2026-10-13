@@ -1,0 +1,1 @@
+{"pipeline_create_ms":46833.23182,"reflected_parameters":61,"reflection":"target/stdlib-perf/results/current-shaders/type_checker/calls/03k2_materialize_match_payloads.reflect.json","schema":"lanius.shader-pipeline-probe.v1","spv":"target/stdlib-perf/results/current-shaders/type_checker/calls/03k2_materialize_match_payloads.spv","spv_bytes":140272}

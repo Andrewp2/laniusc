@@ -1,0 +1,39 @@
+pub enum Maybe { Empty, Some(i32) }
+
+fn local(input: Maybe) -> bool {
+    let good: bool = match (input) { Empty -> false, Some(value) -> value == 7 };
+    return good;
+}
+
+fn direct(input: Maybe) -> bool {
+    return match (input) { Empty -> false, Some(value) -> value == 7 };
+}
+
+fn assigned(input: Maybe) -> bool {
+    let good: bool = true;
+    good = match (input) { Empty -> false, Some(value) -> value == 7 };
+    return good;
+}
+
+fn arithmetic(input: Maybe) -> i32 {
+    return match (input) { Empty -> 0, Some(value) -> value + 1 };
+}
+
+fn main() -> i32 {
+    let empty: Maybe = Empty;
+    let seven: Maybe = Some(7);
+    let eight: Maybe = Some(8);
+    if (local(empty)) { return 1; }
+    if (!local(seven)) { return 2; }
+    if (local(eight)) { return 3; }
+    if (direct(empty)) { return 4; }
+    if (!direct(seven)) { return 5; }
+    if (direct(eight)) { return 6; }
+    if (assigned(empty)) { return 7; }
+    if (!assigned(seven)) { return 8; }
+    if (assigned(eight)) { return 9; }
+    if (arithmetic(empty) != 0) { return 10; }
+    if (arithmetic(seven) != 8) { return 11; }
+    if (arithmetic(eight) != 9) { return 12; }
+    return 0;
+}

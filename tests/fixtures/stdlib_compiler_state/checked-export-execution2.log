@@ -1,0 +1,26 @@
+
+running 6 tests
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test imported_generic_aliases_preserve_nested_local_and_imported_compositions ... GPU parser rejection: error_pos=0 code=4 detail=4294967271 steps=2063 emit_len=0 semantic_kinds=Some([0, 96, 1, 114, 114])
+
+thread 'imported_generic_aliases_preserve_nested_local_and_imported_compositions' (126098) panicked at tests/compiler_generic_types_execution.rs:161:29:
+nested imported alias compositions: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 17, column: 44, length: 1, byte_start: Some(828), byte_end: Some(829), source_line: Some("    let pointer: core::aliases::Ref<i32> = &data[1];"), message: "expected one of identifier, integer literal, `!`, `(`, `[`, string literal, float literal, character literal, `+`, `-`, keyword `true`, keyword `false`, keyword `match`, or keyword `self`, found `&`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test imported_generic_aliases_preserve_symbolic_type_and_constant_environments ... GPU source-pack type-check rejection: token=133 code=AssignMismatch detail=0
+
+thread 'imported_generic_aliases_preserve_symbolic_type_and_constant_environments' (126100) panicked at tests/compiler_generic_types_execution.rs:161:29:
+imported aliases in generic bodies: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 9, column: 58, length: 1, byte_start: Some(354), byte_end: Some(355), source_line: Some("    let data: core::aliases::Constant<2> = relay<i32, 2>([19, 23]);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+FAILED
+test reexported_generic_aliases_preserve_constant_array_targets ... ok
+test reexported_generic_aliases_preserve_identity_targets ... ok
+test reexported_generic_aliases_preserve_reordered_nominal_targets ... ok
+
+failures:
+
+failures:
+    imported_generic_aliases_preserve_nested_local_and_imported_compositions
+    imported_generic_aliases_preserve_symbolic_type_and_constant_environments
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 309 filtered out; finished in 2.89s
+

@@ -1,0 +1,1 @@
+struct Cell<T>{value:T} enum Pair<A,B>{Have(A,B),Empty} fn main()->i32 {let value=Have(Cell{value:[41,43]},true); let fallback:Cell<[i32;2]>=Cell{value:[0,0]}; let got:Cell<[i32;2]>=match(value){Have(v,flag)->v,Empty->fallback}; if(got.value[0]!=41 || got.value[1]!=43){return 1;} return 0;}

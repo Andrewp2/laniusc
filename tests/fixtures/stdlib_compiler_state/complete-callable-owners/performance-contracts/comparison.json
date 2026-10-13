@@ -1,0 +1,147 @@
+{
+  "runs": [
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/parameter-scoped-graph-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.569187064997095,
+      "binary_sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
+      "samples_ms": [
+        80.402,
+        80.074,
+        74.509,
+        73.726,
+        77.989,
+        74.777,
+        73.094,
+        72.73,
+        79.779,
+        76.776
+      ],
+      "median_ms": 75.7765,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.568860053001117,
+      "binary_sha256": "cf61d16daa200d18827447cdac7c51f3b26a36cafcfd1aae5bdb60d4796496e7",
+      "samples_ms": [
+        79.842,
+        82.661,
+        79.146,
+        81.346,
+        76.649,
+        73.664,
+        77.079,
+        75.691,
+        76.849,
+        72.656
+      ],
+      "median_ms": 76.964,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.518676741998206,
+      "binary_sha256": "cf61d16daa200d18827447cdac7c51f3b26a36cafcfd1aae5bdb60d4796496e7",
+      "samples_ms": [
+        76.017,
+        80.768,
+        75.876,
+        77.4,
+        78.105,
+        77.725,
+        79.071,
+        77.219,
+        77.861,
+        76.51
+      ],
+      "median_ms": 77.5625,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/parameter-scoped-graph-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.418345443002181,
+      "binary_sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
+      "samples_ms": [
+        73.733,
+        72.138,
+        73.283,
+        72.865,
+        72.0,
+        71.87,
+        70.041,
+        70.421,
+        71.915,
+        76.69
+      ],
+      "median_ms": 72.069,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    }
+  ],
+  "pooled_median_ms": {
+    "baseline": 73.50450000000001,
+    "current": 77.3095
+  },
+  "change_percent": 5.176553816433005,
+  "method": "Existing stdlib_gpu_perf; exact previous checkpoint binary/shaders vs frozen current binary/shaders; ABBA; 3 warmups and 10 measured entry rebuilds per run; output verification after every run.",
+  "limits": [
+    "Two focused workloads; no cross-compiler or canonical 1MB claim.",
+    "Cold driver preparation excluded from warm measurements.",
+    "Observed changes do not establish causality without further investigation."
+  ]
+}

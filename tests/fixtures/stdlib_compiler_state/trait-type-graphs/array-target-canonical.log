@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=4 code=InvalidTraitImplementation detail=14
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_196743.lani: error[LNC0021]: invalid trait implementation
+ --> /tmp/laniusc_stdlib_perf_input_196743.lani:1:14
+  |
+1 | trait Mark{} impl Mark for [i32;2]{} fn keep<T>(v:T)->T where T:Mark{return v;} fn main()->i32{let v=keep([19,23]); return v[0]+v[1]-42;}
+  |              ^^^^ trait impl target type is not supported here
+     = note: this compiler currently supports trait impls for scalar and non-generic nominal targets here; generic instance targets are rejected

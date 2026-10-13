@@ -1,0 +1,33 @@
+module app::main;
+import core::option;
+fn float_or(value: core::option::Option<f32>, fallback: f32) -> f32 {
+    return match (value) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> fallback,
+    };
+}
+fn main() -> i32 {
+    let signed: core::option::Option<i32> = core::option::Some(-2147483648);
+    let recovered_signed: i32 = match (signed) { core::option::Some(signed_payload) -> signed_payload, core::option::None -> 0 };
+    if (recovered_signed != -2147483648) { return 1; }
+    let maximum: u32 = 4294967295;
+    let unsigned_zero: u32 = 0;
+    let unsigned: core::option::Option<u32> = core::option::Some(maximum);
+    let recovered_unsigned: u32 = match (unsigned) { core::option::Some(unsigned_payload) -> unsigned_payload, core::option::None -> unsigned_zero };
+    if (recovered_unsigned != maximum) { return 2; }
+    let maximum_byte: u8 = 255;
+    let byte_zero: u8 = 0;
+    let byte: core::option::Option<u8> = core::option::Some(maximum_byte);
+    let recovered_byte: u8 = match (byte) { core::option::Some(byte_payload) -> byte_payload, core::option::None -> byte_zero };
+    if (recovered_byte != maximum_byte) { return 3; }
+    let stored_false: core::option::Option<bool> = core::option::Some(false);
+    let recovered_bool: bool = match (stored_false) { core::option::Some(bool_payload) -> bool_payload, core::option::None -> true };
+    if (recovered_bool || !stored_false.is_some()) { return 4; }
+    let floating: core::option::Option<f32> = core::option::Some(-2.5);
+    let absent: core::option::Option<f32> = core::option::None();
+    if (float_or(floating, 99.0) != -2.5) { return 5; }
+    if (float_or(absent, 99.0) != 99.0) { return 6; }
+    let zero: core::option::Option<f32> = core::option::Some(0.0);
+    if (float_or(zero, 99.0) != 0.0 || zero.is_none()) { return 7; }
+    return 0;
+}

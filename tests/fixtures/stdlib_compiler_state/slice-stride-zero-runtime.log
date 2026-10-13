@@ -1,0 +1,16 @@
+
+running 2 tests
+test zero_sized_slices_enforce_logical_bounds ... ok
+test zero_sized_slices_preserve_effects_and_neighbors ... 
+thread 'zero_sized_slices_preserve_effects_and_neighbors' (118296) panicked at tests/compiler_generic_types_execution.rs:141:29:
+zero-sized slice values and raw views: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 25; relocation 0)"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    zero_sized_slices_preserve_effects_and_neighbors
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 246 filtered out; finished in 2.68s
+

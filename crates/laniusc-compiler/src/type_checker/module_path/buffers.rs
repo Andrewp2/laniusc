@@ -142,6 +142,8 @@ module_path_buffers! {
     pub(super) resolved_value_decl: LaniusBuffer<u32>,
     pub(super) resolved_type_status: LaniusBuffer<u32>,
     pub(super) resolved_value_status: LaniusBuffer<u32>,
+    pub(super) resolved_value_type_qualifier_token: LaniusBuffer<u32>,
+    pub(super) resolved_value_qualifier_binding: LaniusBuffer<u32>,
     pub(super) path_record_prefix: LaniusBuffer<u32>,
     pub(super) path_scan_local_prefix: LaniusBuffer<u32>,
     pub(super) path_scan_block_sum: LaniusBuffer<u32>,
@@ -358,6 +360,8 @@ impl Buffers {
         let resolved_value_decl = graph.u32_buffer("resolved_value_decl")?;
         let resolved_type_status = graph.u32_buffer("resolved_type_status")?;
         let resolved_value_status = graph.u32_buffer("resolved_value_status")?;
+        let resolved_value_type_qualifier_token = graph.u32_buffer("resolved_value_type_qualifier_token")?;
+        let resolved_value_qualifier_binding = graph.u32_buffer("resolved_value_qualifier_binding")?;
         // Path prefixes are only needed until path records have been scattered.
         // Later module/import scatters read the retained path_id_by_owner_hir table,
         // so this prefix can share the module/import/decl prefix scratch.
@@ -497,6 +501,8 @@ impl Buffers {
             resolved_value_decl,
             resolved_type_status,
             resolved_value_status,
+            resolved_value_type_qualifier_token,
+            resolved_value_qualifier_binding,
             path_record_prefix,
             path_scan_local_prefix,
             path_scan_block_sum,

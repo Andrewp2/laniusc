@@ -1,0 +1,9 @@
+pub enum Maybe<T> { Some(T), None }
+pub enum Quad<A, B, C, D> { Item(A, B, C, D), Empty }
+fn main() -> i32 {
+    let byte: u8 = 255;
+    let signed: i32 = -7;
+    let unsigned: u32 = 9;
+    let value: Quad<bool, u8, i32, u32> = Item(false, byte, signed, unsigned);
+    return 0;
+}

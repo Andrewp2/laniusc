@@ -1,0 +1,57 @@
+module app::main;
+import core::result;
+
+struct Pair { first: i32, second: i32 }
+struct Quad { first: i32, second: i32, third: i32, fourth: i32 }
+
+fn main() -> i32 {
+    let signed_ok: core::result::Result<i32, bool> = core::result::Ok(-2147483648);
+    let bool_error: core::result::Result<i32, bool> = core::result::Err(false);
+    if (!core::result::is_ok(signed_ok) || core::result::is_err(signed_ok)) { return 1; }
+    if (core::result::is_ok(bool_error) || !core::result::is_err(bool_error)) { return 2; }
+    if (!signed_ok.is_ok() || signed_ok.is_err() || bool_error.is_ok() || !bool_error.is_err()) { return 24; }
+    if (!core::result::contains_i32(signed_ok, -2147483648)) { return 3; }
+    if (core::result::contains_i32(signed_ok, 0) || core::result::contains_i32(bool_error, 0)) { return 4; }
+    if (!core::result::contains_err_bool(bool_error, false)) { return 5; }
+    if (core::result::contains_err_bool(bool_error, true) || core::result::contains_err_bool(signed_ok, false)) { return 6; }
+
+    let false_ok: core::result::Result<bool, i32> = core::result::Ok(false);
+    let signed_error: core::result::Result<bool, i32> = core::result::Err(2147483647);
+    if (!false_ok.is_ok() || false_ok.is_err() || signed_error.is_ok() || !signed_error.is_err()) { return 25; }
+    if (!core::result::contains_bool(false_ok, false)) { return 7; }
+    if (core::result::contains_bool(false_ok, true) || core::result::contains_bool(signed_error, false)) { return 8; }
+    if (!core::result::contains_err_i32(signed_error, 2147483647)) { return 9; }
+    if (core::result::contains_err_i32(signed_error, 0) || core::result::contains_err_i32(false_ok, 0)) { return 10; }
+
+    let high: u32 = 2147483648; let maximum: u32 = 4294967295; let zero: u32 = 0;
+    let unsigned_ok: core::result::Result<u32, u32> = core::result::Ok(maximum);
+    let unsigned_error: core::result::Result<u32, u32> = core::result::Err(high);
+    if (!unsigned_ok.is_ok() || unsigned_ok.is_err() || unsigned_error.is_ok() || !unsigned_error.is_err()) { return 26; }
+    if (!core::result::contains_u32(unsigned_ok, maximum)) { return 11; }
+    if (core::result::contains_u32(unsigned_ok, zero) || core::result::contains_u32(unsigned_error, high)) { return 12; }
+    if (!core::result::contains_err_u32(unsigned_error, high)) { return 13; }
+    if (core::result::contains_err_u32(unsigned_error, zero) || core::result::contains_err_u32(unsigned_ok, maximum)) { return 14; }
+
+    let byte: u8 = 255; let byte_zero: u8 = 0; let byte_other: u8 = 128;
+    let byte_ok: core::result::Result<u8, u8> = core::result::Ok(byte);
+    let byte_error: core::result::Result<u8, u8> = core::result::Err(byte_zero);
+    if (!byte_ok.is_ok() || byte_ok.is_err() || byte_error.is_ok() || !byte_error.is_err()) { return 27; }
+    if (!core::result::contains_u8(byte_ok, byte)) { return 15; }
+    if (core::result::contains_u8(byte_ok, byte_other) || core::result::contains_u8(byte_error, byte_zero)) { return 16; }
+    if (!core::result::contains_err_u8(byte_error, byte_zero)) { return 17; }
+    if (core::result::contains_err_u8(byte_error, byte_other) || core::result::contains_err_u8(byte_ok, byte)) { return 18; }
+
+    let pair: Pair = Pair { first: -19, second: 999 };
+    let quad: Quad = Quad { first: 0, second: 9, third: -7, fourth: 999 };
+    let record_ok: core::result::Result<Pair, Quad> = core::result::Ok(pair);
+    let record_error: core::result::Result<Pair, Quad> = core::result::Err(quad);
+    if (!core::result::is_ok(record_ok) || core::result::is_err(record_ok)) { return 19; }
+    if (core::result::is_ok(record_error) || !core::result::is_err(record_error)) { return 20; }
+    if (!record_ok.is_ok() || record_ok.is_err() || record_error.is_ok() || !record_error.is_err()) { return 28; }
+    let recovered_pair: Pair = match (record_ok) { core::result::Ok(inner) -> inner, core::result::Err(error) -> pair };
+    let recovered_quad: Quad = match (record_error) { core::result::Ok(inner) -> quad, core::result::Err(error) -> error };
+    if (recovered_pair.first != -19 || recovered_pair.second != 999) { return 21; }
+    if (recovered_quad.first != 0 || recovered_quad.second != 9 || recovered_quad.third != -7 || recovered_quad.fourth != 999) { return 22; }
+    if (!core::result::contains_i32(signed_ok, -2147483648) || !core::result::contains_err_bool(bool_error, false)) { return 23; }
+    return 0;
+}

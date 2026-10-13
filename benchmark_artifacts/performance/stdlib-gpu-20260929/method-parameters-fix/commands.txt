@@ -1,0 +1,47 @@
+Run from /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc.
+Both revisions use identical compiler binaries and Rust production code.
+Previous: match-arm-schedule-validated-shaders, digest 801026615965cd3d.
+Fixed: method-parameters-validated-shaders, digest 1398ae75ba780012.
+Seven SPIR-V binaries change; 713 total; maximum 522600 bytes.
+Shader size guard remains enforced at 524288 bytes.
+No compiler IR record, extractor, proof, or x86 ABI changes.
+
+Build and runtime checks:
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo build --locked --release --bin laniusc --example stdlib_gpu_perf
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test stdlib_foundation_execution --test stdlib_option_bool_execution --test stdlib_option_result_methods_execution --test stdlib_generic_interface --test stdlib_generic_enum_declaration_execution --test stdlib_generic_vec_flat_execution -- --test-threads=1
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test stdlib_option_bool_execution imported_empty_struct_results_execute_without_erasing_nominal_checks -- --exact --nocapture
+The combined adjacent run passes 81 tests; the subsequently added empty-result
+regression passes separately on the same shaders, giving 82 passed tests.
+The foundation runtime gate executes 138 entry fixtures.
+Logs are retained under tests/fixtures/stdlib_compiler_state/.
+The two method rejection tests and the empty-result test all fail under the
+previous shaders on the identical test binary. Method arguments compiled
+without rejection there; the empty-result reproduction failed LNC0017.
+
+Large interleaved comparison using existing lanius_perf helpers:
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 5000000 method-parameters --previous-shaders match-arm-schedule-validated-shaders --fixed-shaders method-parameters-validated-shaders
+Fifteen full recompiles per revision across seeds 20, 21, and 22.
+Compiled project results cleared before every timed request. Every measured
+job creates zero new buffers, bind groups, and compute pipelines.
+All thirty emitted executables exit zero and match their exact expected stdout:
+seed 20: 2547 newline; seed 21: 599 newline; seed 22: 1769 newline.
+All fifteen paired native hashes match. The median paired change is -1.344157%.
+Separate pooled medians are 232.548326 ms previous and 229.418779 ms fixed.
+
+Imported program: target/stdlib-perf/method-parameters-perf contains
+baseline/current shader symlinks and identical copies of the existing harness.
+Harness SHA256: 9a3416001d5c690173106832405cdd6b227cce7c65391a6776e1e7ef31d4d135.
+LANIUS_PERF_REBUILD_ENTRY=1 LANIUS_PERF_SHADER_ROOT="$PWD/target/stdlib-perf/build/laniusc-shader-artifacts/release/shaders" timeout 110s tools/run_stdlib_gpu_perf.sh target/stdlib-perf/method-parameters-perf boolean-window-rebuild entry "$PWD/sample_programs/boolean_window_checksum.lani" "$PWD/stdlib" "$PWD/target/stdlib-perf/method-parameters-perf/boolean-window.stdout"
+Four alternating process pairs, three warmups and ten measured rebuilds each.
+Dependencies remain cached. All eighty timed compiles succeed; the eight
+final process outputs print exactly 3 newline, exit zero, and have empty stderr.
+Intermediate outputs are not executed. This harness does not instrument
+per-job GPU resource creation. Baseline pooled median 21.5365 ms; fixed 20.911 ms;
+change -2.904372%. Raw timing precision is three decimal places.
+
+Both comparisons check GPU compilation and native execution on Linux x86_64.
+They provide no fresh cross-compiler ratios or GPU device execution claims.
+The shared shader root was restored to current-shaders after comparisons.
+Canonical results are validated by the existing performance catalog:
+timeout 110s python3 tools/lanius_perf.py catalog
+Result: 238 canonical result files cataloged, zero invalid.

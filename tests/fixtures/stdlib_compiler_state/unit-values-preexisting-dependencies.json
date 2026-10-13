@@ -1,0 +1,20 @@
+{
+  "binary_sha256": "ebf331c90402694acdd1fb362c8780b1a3eb292edf73c4783f4ebc36bf224403",
+  "cases": [
+    {
+      "label": "member-comparison",
+      "compile_status": 0,
+      "stderr": "",
+      "runtime": {
+        "status": 42,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "label": "concrete-enum-call",
+      "compile_status": 1,
+      "stderr": "error[LNC0047]: type-check execution failed\n --> <source pack file 0>:10:27\n   |\n10 |     if (present) { return Some(value); }\n   |                           ^^^^ generic type instantiation reached a compiler boundary\n     = note: the private checked type application arena is exhausted\n"
+    }
+  ]
+}

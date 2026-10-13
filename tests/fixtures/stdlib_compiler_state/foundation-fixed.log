@@ -1,0 +1,16 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_foundation_execution.rs (target/stdlib-perf/build/release/deps/stdlib_foundation_execution-9857bf2b3426914a)
+
+running 7 tests
+test executable_core_function_surface_has_runtime_cases ... ok
+test imported_bool_constructor_rejects_integer_argument ... ok
+test imported_generic_slice_claims_execute_and_reject_inconsistent_types ... ok
+test legacy_i32x4_functions_execute_on_x86 ... ok
+test legacy_scalar_functions_execute_on_x86 ... ok
+test portable_stdlib_helpers_execute_on_x86 ... ok
+test stdlib_helpers_execute_after_parser_workspace_shrinks ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.98s
+

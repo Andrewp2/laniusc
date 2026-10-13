@@ -1,0 +1,4 @@
+5 MB previous median=188.252542 ms
+5 MB fixed median=185.529961 ms
+Median paired change=-0.889817756%
+All 30 outputs pass; all 15 native hash pairs match.

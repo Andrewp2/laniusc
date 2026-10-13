@@ -18,6 +18,12 @@ from perf_model import (
 
 
 class PerfModelTests(unittest.TestCase):
+    def test_non_object_documents_are_rejected_as_invalid_results(self):
+        for document in ([], [{"exit_status": 0}], None, 7, "result", True):
+            with self.subTest(document=document):
+                with self.assertRaisesRegex(ValueError, "JSON object"):
+                    validate_document(document)
+
     def test_gpu_memory_timeline_requires_monotonic_physical_points(self):
         timeline = {
             "physical_residency": {

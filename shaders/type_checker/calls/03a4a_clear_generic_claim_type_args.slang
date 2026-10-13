@@ -17,11 +17,6 @@ RWStructuredBuffer<uint> aggregate_compare_expected_instance;
 RWStructuredBuffer<uint> aggregate_compare_actual_instance;
 RWStructuredBuffer<uint> aggregate_compare_error_token;
 RWStructuredBuffer<uint> aggregate_compare_error_detail;
-RWStructuredBuffer<uint> type_subtree_compare_scan_input;
-RWStructuredBuffer<uint> type_subtree_compare_left_root;
-RWStructuredBuffer<uint> type_subtree_compare_right_root;
-RWStructuredBuffer<uint> type_subtree_compare_error_token;
-RWStructuredBuffer<uint> type_subtree_compare_error_detail;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -45,9 +40,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
     aggregate_compare_actual_instance[node] = INVALID;
     aggregate_compare_error_token[node] = INVALID;
     aggregate_compare_error_detail[node] = 0u;
-    type_subtree_compare_scan_input[node] = 0u;
-    type_subtree_compare_left_root[node] = INVALID;
-    type_subtree_compare_right_root[node] = INVALID;
-    type_subtree_compare_error_token[node] = INVALID;
-    type_subtree_compare_error_detail[node] = 0u;
 }

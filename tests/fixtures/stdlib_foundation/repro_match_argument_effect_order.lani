@@ -1,0 +1,26 @@
+import std::io;
+fn mark(value: i32) -> i32 { std::io::print_i32(value); return value; }
+fn join(a: i32, b: i32, c: i32) -> i32 { return a * 100 + b * 10 + c; }
+fn identity<T>(value: T) -> T { return value; }
+struct Holder { value: i32 }
+fn main() -> i32 {
+    let joined: i32 = join(mark(1),
+        (match (false) { true -> mark(2), false -> mark(3) }), mark(4));
+    if (joined != 134) { return 1; }
+    let nested: i32 = identity((match (false) {
+        true -> 11, false -> (match (true) { true -> 13, false -> 17 })
+    })) + 2;
+    if (nested != 15) { return 2; }
+    let holder: Holder = Holder {
+        value: identity((match (true) { true -> 19, false -> 23 }))
+    };
+    if (holder.value != 19) { return 3; }
+    let flag: bool = identity((match (false) { true -> true, false -> false }));
+    if (flag || mark(5) != 5) {
+        return 4;
+    }
+    if (true || mark(99) == 99) {
+        if (false && mark(98) == 98) { return 5; }
+    }
+    return 0;
+}

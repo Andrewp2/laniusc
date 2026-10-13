@@ -1,0 +1,12 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "generic_impl_sibling_replay_"
+  ],
+  "exit_code": 0,
+  "seconds": 4.173381294999672,
+  "binary_sha256": "32fded2ac5dcfd17171f3eb12f76415c0bcd7f3efb0d10450e29de069655f06b",
+  "sources_unchanged": true
+}

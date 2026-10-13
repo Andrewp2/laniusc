@@ -1,0 +1,28 @@
+{
+  "status": "checkpoint verified; broader generics goal active",
+  "previous_turn": "progress; 34 checks and complete trait interface export verified",
+  "goal": "active; general GPU compiler generics",
+  "contract": "Checked trait references distinguish local declaration handles from imported stable declaration identities. Equality and implementation keys use complete identities and ordered type graphs. Imported implementation methods are checked against the portable contract on the owning dependency page; no page-local row survives a page replacement.",
+  "stages": [
+    "Resolve imported trait headers and compare implementation keys by identity.",
+    "Validate every imported required method: names, counts, receiver mode, visibility, complete parameter and return graphs.",
+    "Execute local generic bounds against caller implementations of imported traits; reject wrong identities and malformed implementations.",
+    "Subsequent work: portable implementation evidence and caller evidence in cross-unit body replay."
+  ],
+  "performance": "Retain compact references, reuse existing type graph comparison, no source concatenation or per-type patches. Measure after behavior is verified.",
+  "bounds": "Each command under two minutes. No formal IR/extractor/proof edits; user permits ABI changes.",
+  "verified_so_far": [
+    "Imported trait references resolve both ordinary type paths and bound paths.",
+    "Complete method contracts execute with arrays, nominal types, references, slices, empty values and private required methods.",
+    "All 32 ordered imported trait arguments execute; changed final operand rejects.",
+    "Local statement context no longer crosses call boundaries into nested record literal arguments; original native repro and 18 adjacent regressions pass.",
+    "Absent dependency identities use immutable empty-page storage; 99 semantic regressions pass.",
+    "170 initial selected checks pass; after header sizing, five runtime and five resource/page/reuse checks pass. Both performance workloads produce correct outputs."
+  ],
+  "remaining_general_goal": [
+    "Export callable predicates and validated implementation facts using complete ordered type/constant graphs.",
+    "Retain selected caller evidence and method bindings at accepted call boundary; replay uses immutable proof input and includes it in specialization identity.",
+    "Implement ordered constant trait operands and mixed-domain substitutions; current imported constant trait headers reject explicitly with detail37.",
+    "Blanket implementations, generic trait methods/where clauses and additional general goal dependencies remain open."
+  ]
+}

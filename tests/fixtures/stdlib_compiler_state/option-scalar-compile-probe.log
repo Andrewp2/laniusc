@@ -1,0 +1,6 @@
+GPU source-pack type-check rejection: token=1868 code=BadHir detail=1
+error[LNC0016]: syntax error
+ --> <source pack file 1>:196:12
+    |
+196 |     pub fn contains(&self, expected: u8) -> bool {
+    |            ^^^^^^^^ expected function name, found `contains`

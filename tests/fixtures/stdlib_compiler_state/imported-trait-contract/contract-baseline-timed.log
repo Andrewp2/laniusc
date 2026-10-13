@@ -1,0 +1,15 @@
+
+running 1 test
+[gpu_compile_host_timer] pipeline_cache.create.path: 0.026ms
+[gpu_compile_host_timer] pipeline_cache.create.prune: 0.029ms
+[gpu_compile_host_timer] pipeline_cache.create.read: 71.629ms
+[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 93741882 bytes
+[gpu_compile_host_timer] pipeline_cache.create.decode: 16.730ms
+[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 93741842 bytes
+[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 56.474ms
+[gpu_compile_host_timer] pipeline_cache.create.total: 161.736ms
+[gpu_compile_host_timer] compiler.init.lexer: 394.781ms (total 394.781ms)
+[gpu_compile_host_timer] compiler.init.parse_tables: 1.135ms (total 395.916ms)
+[gpu_compile_host_timer] compiler.init.parser: 33471.824ms (total 33867.740ms)
+test semantic_interface_exports_public_generic_traits has been running for over 60 seconds
+GPU semantic-interface export timed out after 95000 ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker; waited 0 ms for the GPU test lock before starting the timeout; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang

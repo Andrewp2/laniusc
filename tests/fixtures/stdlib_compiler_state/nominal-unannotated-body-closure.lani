@@ -1,0 +1,30 @@
+module app::main;
+import core::mem;
+struct Empty {}
+struct Payload { values: [i32; 2], marker: i32 }
+enum Decision { Owned(Payload), Borrow([i32]), Vacant([Empty; 0]) }
+struct Holder<T> { value: T, sentinel: i32 }
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn view(values: [i32]) -> [i32] { return values; }
+fn wrap<T>(value: T) -> Holder<T> { return core::mem::identity(Holder { value: value, sentinel: 83 }); }
+fn tower<T>(value: T) -> Holder<Holder<T>> { return wrap(wrap(value)); }
+fn main() -> i32 {
+ let original: Holder<Decision> = Holder { value: Owned(Payload { values: [11, 22], marker: 97 }), sentinel: 89 };
+ let nested = tower(keep(original));
+ let copied = core::mem::identity(nested.value.value);
+ if (nested.sentinel != 83 || nested.value.sentinel != 83) { return 3; }
+ let fallback: Payload = Payload { values: [0, 0], marker: 0 };
+ let extracted: Payload = match (copied.value) { Owned(value) -> value, _ -> fallback };
+ extracted.values[0] = 33;
+ let retained: Payload = match (original.value) { Owned(value) -> value, _ -> fallback };
+ if (retained.values[0] != 11 || retained.values[1] != 22 || retained.marker != 97 || copied.sentinel != 89) { return 1; }
+ let data: [i32; 2] = [41, 43];
+ original.value = Borrow(view(data));
+ let variants: [Decision; 2] = [Vacant([]), keep(original.value)];
+ let forwarded: [Decision; 2] = keep(variants);
+ let slice: [i32] = match (forwarded[1]) { Borrow(value) -> value, _ -> view(data) };
+ slice[1] = 47;
+ let empty: bool = match (forwarded[0]) { Vacant(value) -> true, _ -> false };
+ if (!empty || data[0] != 41 || data[1] != 47 || original.sentinel != 89) { return 2; }
+ return 0;
+}

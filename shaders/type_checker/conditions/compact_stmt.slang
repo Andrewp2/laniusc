@@ -1,3 +1,5 @@
+import primitive_types;
+import type_checker.constant_parameter_slots;
 // Validate declaration initializers, assignments, and returns from dense
 // compact HIR. Scalar compatibility is checked here. Aggregate structure stays
 // in the type-instance passes, while this boundary rejects a definite
@@ -13,6 +15,7 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_expr_scalar_type;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
@@ -33,6 +36,11 @@ static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
@@ -53,7 +61,7 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
-static const uint SCALAR_TYPE_SHIFT = 28u;
+static const uint ERR_INVALID_ASSIGNMENT_TARGET = 21u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
@@ -63,7 +71,7 @@ uint scalar_type(uint node)
 {
     return valid_hir(node) ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : TY_UNKNOWN;
 }
-bool known_scalar(uint ty) { return ty != TY_UNKNOWN && ty <= TY_POINTER; }
+bool known_scalar(uint ty) { return scalar_is_known(ty); }
 bool legacy_aggregate_type(uint ty)
 {
     return ty >= TY_ARRAY_BASE && ty < TY_GENERIC_BASE;
@@ -136,7 +144,7 @@ bool expression_type_ref(uint node, out uint tag, out uint payload)
 bool null_pointer_constant(uint node)
 {
     return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
-        compact_hir_payload[node].b == 0u;
+        compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
 }
 
 bool assignable(uint dst, uint src, uint source_node)
@@ -144,10 +152,6 @@ bool assignable(uint dst, uint src, uint source_node)
     if (dst == src) return true;
     if (dst == TY_POINTER)
         return src == TY_INT && null_pointer_constant(source_node);
-    if (dst == TY_INT) return src == TY_UINT || src == TY_CHAR;
-    if (dst == TY_UINT) return src == TY_INT || src == TY_CHAR;
-    if (dst == TY_CHAR) return src == TY_INT || src == TY_UINT;
-    if (dst == TY_FLOAT) return src == TY_INT || src == TY_UINT || src == TY_CHAR;
     return false;
 }
 
@@ -186,15 +190,15 @@ void validate_decl(HirPayload stmt)
     uint actual_legacy_type = valid_token(actual_token)
                                   ? visible_type[actual_token]
                                   : TY_UNKNOWN;
-    bool actual_instance = !known_scalar(actual_scalar) &&
-                           (actual_ref_tag == TYPE_REF_INSTANCE ||
+    bool actual_instance = actual_ref_tag == TYPE_REF_INSTANCE ||
+                           (!known_scalar(actual_scalar) && (
                             legacy_aggregate_type(actual_scalar) ||
                             legacy_aggregate_type(actual_legacy_type) ||
                             (actual_ref_tag == TYPE_REF_SCALAR &&
-                             legacy_aggregate_type(actual_ref_payload)));
+                             legacy_aggregate_type(actual_ref_payload))));
     uint expected_scalar = scalar_decl_type(stmt.b);
-    if ((known_scalar(expected_scalar) && actual_instance) ||
-        (expected_ref_known && expected_instance && known_scalar(actual_scalar)))
+    if ((!expected_instance && known_scalar(expected_scalar) && actual_instance) ||
+        (expected_ref_known && expected_instance && !actual_instance && known_scalar(actual_scalar)))
     {
         record_min_token_error(
             status,
@@ -209,14 +213,39 @@ void validate_decl(HirPayload stmt)
 
 void validate_assignment(HirPayload stmt)
 {
+    uint target = stmt.b;
+    for (uint depth = 0u; depth < 64u && valid_hir(target); depth += 1u)
+    {
+        HirCore core = compact_hir_core[target];
+        HirPayload payload = compact_hir_payload[target];
+        if (core.kind == HIR_EXPR && payload.a == HIR_EXPR_FORWARD)
+        {
+            target = payload.b;
+            continue;
+        }
+        if (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||
+            (core.kind == HIR_EXPR && payload.a == HIR_EXPR_NAME))
+        {
+            uint token = valid_token(payload.d) ? payload.d : core.token_start;
+            uint decl = declaration_token(token);
+            if (valid_token(decl) && type_const_param_slot_by_token[decl] < 32u)
+            {
+                record_min_token_error(status, token, ERR_INVALID_ASSIGNMENT_TARGET, decl);
+                return;
+            }
+        }
+        break;
+    }
     uint expected_ref_tag = TYPE_REF_INVALID;
     uint expected_ref_payload = INVALID;
+    uint actual_ref_tag; uint actual_ref_payload;
+    expression_type_ref(stmt.c, actual_ref_tag, actual_ref_payload);
     if (expression_type_ref(stmt.b, expected_ref_tag,
                             expected_ref_payload) &&
         (expected_ref_tag == TYPE_REF_INSTANCE ||
          (expected_ref_tag == TYPE_REF_SCALAR &&
           legacy_aggregate_type(expected_ref_payload))) &&
-        known_scalar(scalar_type(stmt.c)))
+        actual_ref_tag != TYPE_REF_INSTANCE && known_scalar(scalar_type(stmt.c)))
     {
         record_min_token_error(
             status,
@@ -226,6 +255,15 @@ void validate_assignment(HirPayload stmt)
         return;
     }
     uint target_token = expression_token(stmt.b);
+    // A member expression starts at its receiver's token. That receiver can
+    // be an aggregate while the selected field is scalar. Its accepted field
+    // reference is authoritative; the receiver's declaration cannot exempt
+    // this store from scalar compatibility checking.
+    if (expected_ref_tag == TYPE_REF_SCALAR && known_scalar(expected_ref_payload))
+    {
+        validate_pair(expected_ref_payload, scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
+        return;
+    }
     if (aggregate_decl_ref(target_token)) return;
     validate_pair(scalar_type(stmt.b), scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
 }
@@ -239,21 +277,27 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
     if (!valid_token(fn_token)) return;
     uint expected_ref_tag = fn_return_ref_tag[fn_token];
     uint expected = call_return_type[fn_token];
+    uint return_tag;
+    uint return_payload;
+    if (expression_type_ref(compact_fn_return_type[fn], return_tag, return_payload))
+    {
+        expected_ref_tag = return_tag;
+        if (return_tag == TYPE_REF_SCALAR && known_scalar(return_payload))
+            expected = return_payload;
+    }
     if (valid_hir(stmt.b))
     {
         uint actual_scalar = scalar_type(stmt.b);
         uint actual_ref_tag = TYPE_REF_INVALID;
         uint actual_ref_payload = INVALID;
-        bool actual_ref_known = known_scalar(actual_scalar) ||
-                                expression_type_ref(
-                                    stmt.b, actual_ref_tag, actual_ref_payload);
+        bool actual_ref_known = expression_type_ref(
+            stmt.b, actual_ref_tag, actual_ref_payload) || known_scalar(actual_scalar);
         if (actual_ref_tag == TYPE_REF_EXTERNAL_CANONICAL &&
             resolved_dependency_call(stmt.b))
             return;
         bool expected_ref_known = expected_ref_tag != TYPE_REF_INVALID ||
                                   known_scalar(expected);
-        bool actual_is_instance = !known_scalar(actual_scalar) &&
-                                  actual_ref_tag == TYPE_REF_INSTANCE;
+        bool actual_is_instance = actual_ref_tag == TYPE_REF_INSTANCE;
         if (expected_ref_known && actual_ref_known &&
             ((expected_ref_tag == TYPE_REF_INSTANCE) != actual_is_instance))
         {

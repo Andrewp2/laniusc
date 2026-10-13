@@ -1,0 +1,7 @@
+
+running 2 tests
+test compiler::gpu_compiler::program_evidence::native_layout::tests::nominal_recipe_transport_normalizes_empty_regions_and_rejects_size_overflow ... ok
+test compiler::gpu_compiler::program_evidence::native_layout::tests::nominal_recipe_transport_preserves_owned_rows_and_resets_gpu_outputs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 743 filtered out; finished in 0.00s
+

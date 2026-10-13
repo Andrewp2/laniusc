@@ -1,0 +1,18 @@
+
+running 4 tests
+test lexical_method_environment_rejects_conflicts_and_missing_bindings ... ok
+test lexical_method_environment_handles_reordered_impls_borrows_and_nested_calls ... ok
+test lexical_method_environment_keeps_impl_and_method_arguments_distinct ... ok
+
+thread 'lexical_method_environment_supports_ordinary_owners_and_constant_results' (785567) panicked at tests/compiler_generic_types_execution.rs:125:29:
+method type and constant environments: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "unsupported x86 dynamic array index", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_method_type_and_constant_environments_785563_2.lani", line: 23, column: 14, length: 1, byte_start: Some(779), byte_end: Some(780), source_line: Some("    if (kept[0] != 23 || kept[1] != -4) { return 2; }"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test lexical_method_environment_supports_ordinary_owners_and_constant_results ... FAILED
+
+failures:
+
+failures:
+    lexical_method_environment_supports_ordinary_owners_and_constant_results
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 133 filtered out; finished in 4.65s
+

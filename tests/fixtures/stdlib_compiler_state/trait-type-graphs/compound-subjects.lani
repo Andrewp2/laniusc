@@ -1,0 +1,25 @@
+struct Cell<T> {value:T}
+enum Choice<T>{Some(T),None}
+struct Empty{}
+trait Mark {}
+impl Mark for [i32;2] {}
+impl Mark for [bool;0] {}
+impl Mark for Empty {}
+impl Mark for Choice<[i32;2]> {}
+impl Mark for [i32] {}
+impl Mark for &Cell<i32> {}
+impl<T> Cell<T> { fn borrow(&self)->&Cell<T>{return self;} }
+impl Mark for Cell<[i32;2]> {}
+fn keep<T>(v:T)->T where T:Mark {return v;}
+fn main()->i32 {
+ let a=[19,23]; let copy=keep(a); copy[0]=20;
+ if(a[0]!=19 || copy[0]!=20){return 1;}
+ let view=keep<[i32]>(a); view[1]=25; if(a[1]!=25){return 2;}
+ let n:Cell<i32> = Cell{value:7}; let p=keep(n.borrow()); p.value=9; if(n.value!=9){return 3;}
+ let c:Cell<[i32;2]> = Cell{value:a}; let r=keep(c);
+ if(r.value[0]+r.value[1]!=44){return 4;}
+ let zero:[bool;0]=[]; let copied=keep(zero); let empty:Empty=Empty{}; let e=keep(empty);
+ let choice:Choice<[i32;2]> = Some([19,23]);
+ let payload=match(keep(choice)){Some(v)=>v,None=>[0,0]};
+ if(payload[0]+payload[1]!=42){return 5;} return 0;
+}

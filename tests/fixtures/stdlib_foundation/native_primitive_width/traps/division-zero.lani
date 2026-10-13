@@ -1,0 +1,1 @@
+fn main() -> i32 { let value: u64 = 18446744073709551615; let zero: u64 = 0; let result: u64 = value / zero; if (result == 0) { return 1; } return 2; }

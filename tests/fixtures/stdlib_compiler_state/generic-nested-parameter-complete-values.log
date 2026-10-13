@@ -1,0 +1,28 @@
+    Finished `release` profile [optimized] target(s) in 0.20s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test nested_generic_parameter_constraints_infer_complete_types ... [typecheck.call_inference] round=0 changed=1
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=1
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=12
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=351 code=InvalidMemberAccess detail=0
+
+thread 'nested_generic_parameter_constraints_infer_complete_types' (600581) panicked at tests/compiler_generic_types_execution.rs:105:29:
+nested parameter values copies and aliases: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0042", title: "invalid member access", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0042", message: "invalid member access", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 25, column: 18, length: 4, byte_start: Some(1120), byte_end: Some(1124), source_line: Some("    generic_copy.last = 91;"), message: "this value does not have the requested field" }), help: None, notes: ["field access is only valid for structs that declare a field with this name"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    nested_generic_parameter_constraints_infer_complete_types
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 2.09s
+
+error: test failed, to rerun pass `-p laniusc --test compiler_generic_types_execution`

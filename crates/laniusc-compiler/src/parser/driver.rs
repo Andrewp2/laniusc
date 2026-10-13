@@ -189,7 +189,7 @@ impl GpuParser {
             "parser.resident-ll1.status",
         )?;
         let mapped = slice.get_mapped_range();
-        let words = read_u32_words(&mapped, 6)?;
+        let words = read_u32_words(&mapped, 11)?;
         drop(mapped);
         status_readback.unmap();
 
@@ -985,7 +985,7 @@ impl GpuParser {
                 hir_type_form: Vec::new(),
                 hir_type_value_node: Vec::new(),
                 hir_type_len_token: Vec::new(),
-                hir_type_len_value: Vec::new(),
+                hir_type_len_operand: Vec::new(),
                 hir_type_file_id: Vec::new(),
                 hir_type_path_leaf_node: Vec::new(),
                 hir_type_arg_start: Vec::new(),
@@ -1122,7 +1122,7 @@ impl GpuParser {
             hir_type_form: decoded.hir_type_form,
             hir_type_value_node: decoded.hir_type_value_node,
             hir_type_len_token: decoded.hir_type_len_token,
-            hir_type_len_value: decoded.hir_type_len_value,
+            hir_type_len_operand: decoded.hir_type_len_operand,
             hir_type_file_id: decoded.hir_type_file_id,
             hir_type_path_leaf_node: decoded.hir_type_path_leaf_node,
             hir_type_arg_start: decoded.hir_type_arg_start,

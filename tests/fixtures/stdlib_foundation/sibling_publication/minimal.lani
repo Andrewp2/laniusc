@@ -1,0 +1,9 @@
+struct Cell<T> { value: T }
+impl<T> Cell<T> {
+    fn get(&self) -> T { return self.value; }
+    fn relay(&self) -> T { return self.get(); }
+}
+fn main() -> i32 {
+    let cell: Cell<i32> = Cell { value: 42 };
+    return cell.get() - 42;
+}

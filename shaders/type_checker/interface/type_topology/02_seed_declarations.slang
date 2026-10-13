@@ -5,10 +5,12 @@
 
 import hir_records;
 import atomics;
+import type_checker.interface.method_parameters;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_hir_node;
@@ -26,6 +28,8 @@ StructuredBuffer<uint> path_id_by_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> public_decl_index_by_local;
+StructuredBuffer<uint> public_decl_index_by_hir;
+StructuredBuffer<uint> interface_implementation_index_by_hir;
 RWStructuredBuffer<uint> interface_type_parent;
 RWStructuredBuffer<uint> interface_type_seed_owner;
 RWStructuredBuffer<uint> interface_decl_direct_type_hir;
@@ -38,8 +42,6 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_TYPE = 5u;
 static const uint TYPE_REF_INSTANCE = 3u;
-static const uint METHOD_VIS_PUBLIC = 1u;
-static const uint METHOD_SIGNATURE_INHERENT_IMPL = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
@@ -68,28 +70,18 @@ uint method_owner(uint row)
         return INVALID;
     HirMethodCore core = compact_method_cores[row];
     HirMethodSignature signature = compact_method_signatures[row];
-    if (((signature.metadata >> 16u) & METHOD_SIGNATURE_INHERENT_IMPL) == 0u ||
-        (signature.metadata & 0xffffu) != METHOD_VIS_PUBLIC)
-        return INVALID;
-    uint receiver = signature.impl_receiver_type;
-    if (receiver >= active_hir_count())
-        return INVALID;
-    uint receiver_token = compact_hir_core[receiver].token_start;
-    if (receiver_token >= gParams.token_capacity)
-        return INVALID;
-    // Plain nominal receivers resolve through the module path table. Generic
-    // receivers also carry an instance binding, retained as a fallback.
-    uint path = path_id_by_owner_token[receiver_token];
-    uint local = path < gParams.hir_capacity ? resolved_type_decl[path] : INVALID;
-    if (local >= gParams.decl_capacity && type_expr_ref_tag[receiver_token] == TYPE_REF_INSTANCE)
+    uint trait_owner = interface_trait_method_owner(core, active_hir_count(),
+        compact_hir_core, compact_hir_payload, public_decl_index_by_hir);
+    if (trait_owner != INVALID) return trait_owner;
+    if (((signature.metadata >> 16u) & 4u) != 0u && !interface_public_inherent_method(signature)) return INVALID;
+    uint implementation_rows; uint stride;
+    interface_implementation_index_by_hir.GetDimensions(implementation_rows, stride);
+    if (core.impl_node < min(active_hir_count(), implementation_rows))
     {
-        uint instance = type_expr_ref_payload[receiver_token];
-        uint declaration_token = instance < gParams.token_capacity
-            ? type_instance_decl_token[instance] : INVALID;
-        local = declaration_token < gParams.token_capacity
-            ? decl_id_by_name_token[declaration_token] : INVALID;
+        uint implementation = interface_implementation_index_by_hir[core.impl_node];
+        if (implementation != 0u) return 0x80000000u | (implementation - 1u);
     }
-    return local < gParams.decl_capacity ? public_decl_index_by_local[local] : INVALID;
+    return INVALID;
 }
 
 [shader("compute")]
@@ -126,17 +118,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
     }
 
-    // Public inherent methods are represented as associated members.  Seed
-    // their receiver and return types under the owning public declaration so
-    // imported calls can distinguish concrete generic receiver impls.
+    // Method signatures belong to their exported nominal or trait owner.
+    // Trait receivers are described by receiver mode, without an impl type.
     if (row < min(compact_method_count[0u], gParams.hir_capacity))
     {
         uint method_owner_id = method_owner(row);
         uint method_node = compact_method_cores[row].node;
         if (method_owner_id != INVALID && method_node < active_hir_count())
         {
-            seed(compact_method_signatures[row].impl_receiver_type, method_owner_id);
-            seed(compact_fn_return_type[method_node], method_owner_id);
+            uint receiver = compact_method_signatures[row].impl_receiver_type;
+            uint result = compact_fn_return_type[method_node];
+            if (receiver != INVALID) seed(receiver, method_owner_id);
+            if (result != INVALID) seed(result, method_owner_id);
         }
     }
 }

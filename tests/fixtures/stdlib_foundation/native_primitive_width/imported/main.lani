@@ -1,0 +1,110 @@
+// Expected native exit 0 and no output. This source uses its adjacent stdlib.
+// Independent high/low checks prevent a truncated expected literal from making
+// a truncated imported value look correct. Every inspection stays in one type.
+import core::primitive_values;
+
+fn unsigned_halves(value: u64, high: u64, low: u64) -> bool {
+    let shift: u64 = 32;
+    let mask: u64 = 4294967295;
+    return (value >> shift) == high && (value & mask) == low;
+}
+
+fn signed_halves(value: i64, high: i64, low: i64) -> bool {
+    let shift: i64 = 32;
+    let mask: i64 = 4294967295;
+    return (value >> shift) == high && (value & mask) == low;
+}
+
+fn main() -> i32 {
+    // 1..10: portable constant values, width, sign and narrow normalization.
+    if (!unsigned_halves(core::primitive_values::UNSIGNED_MAX, 4294967295, 4294967295)) { return 1; }
+    if (!unsigned_halves(core::primitive_values::STEP, 1, 0)) { return 2; }
+    if (!unsigned_halves(core::primitive_values::TEN_BILLION, 2, 1410065408)) { return 3; }
+    if (!unsigned_halves(core::primitive_values::CARRY, 1, 0)) { return 4; }
+    if (!signed_halves(core::primitive_values::NEGATIVE_STEP, -1, 0)) { return 5; }
+    if (!signed_halves(core::primitive_values::SIGNED_MIN, -2147483648, 0)) { return 6; }
+    if (!signed_halves(core::primitive_values::SIGNED_MAX, 2147483647, 4294967295)) { return 7; }
+    let byte: i8 = core::primitive_values::NEGATIVE_BYTE;
+    let byte_shift: i8 = 7;
+    let byte_mask: i8 = 127;
+    if (byte != -37 || byte >= 0 || (byte >> byte_shift) != -1 || (byte & byte_mask) != 91) { return 8; }
+    let byte_min: i8 = core::primitive_values::BYTE_MIN;
+    if (byte_min != -128 || byte_min >= 0 || (byte_min >> byte_shift) != -1) { return 9; }
+    let short: i16 = core::primitive_values::NEGATIVE_SHORT;
+    let short_min: i16 = core::primitive_values::SHORT_MIN;
+    let short_shift: i16 = 15;
+    let short_mask: i16 = 32767;
+    if (short != -12345 || short >= 0 || (short & short_mask) != 20423 ||
+        (short >> short_shift) != -1 || short_min != -32768 ||
+        short_min >= 0 || (short_min >> short_shift) != -1) { return 10; }
+
+    // 11..20: ordinary and generic aggregate/array returns carry complete
+    // values. Mutating a returned copy must leave the source and other copies.
+    let source: core::primitive_values::Packet = core::primitive_values::make_packet();
+    let ordinary: core::primitive_values::Packet = core::primitive_values::copy_packet(source);
+    let generic: core::primitive_values::Packet = core::primitive_values::keep(source);
+    let words: [u64; 3] = core::primitive_values::copy_words(source.words);
+    let generic_words: [u64; 3] = core::primitive_values::keep(source.words);
+    let wrapped: core::primitive_values::Envelope<[u64; 3]> = core::primitive_values::wrap(source.words);
+    if (source.prefix != 17 || source.suffix != 29 || ordinary.prefix != 17 ||
+        ordinary.suffix != 29 || generic.prefix != 17 || generic.suffix != 29) { return 11; }
+    if (!signed_halves(source.signed, -1, 0) || !signed_halves(ordinary.signed, -1, 0) ||
+        !signed_halves(generic.signed, -1, 0)) { return 12; }
+    if (!unsigned_halves(ordinary.words[0], 1, 0) ||
+        !unsigned_halves(ordinary.words[1], 2, 1410065408) ||
+        !unsigned_halves(ordinary.words[2], 2147483648, 0)) { return 13; }
+    if (!unsigned_halves(generic.words[0], 1, 0) ||
+        !unsigned_halves(generic.words[1], 2, 1410065408) ||
+        !unsigned_halves(generic.words[2], 2147483648, 0)) { return 14; }
+    if (!unsigned_halves(words[0], 1, 0) || !unsigned_halves(words[1], 2, 1410065408) ||
+        !unsigned_halves(words[2], 2147483648, 0) ||
+        !unsigned_halves(generic_words[0], 1, 0) ||
+        !unsigned_halves(generic_words[1], 2, 1410065408) ||
+        !unsigned_halves(generic_words[2], 2147483648, 0)) { return 15; }
+    if (wrapped.prefix != 41 || wrapped.suffix != 53 ||
+        !unsigned_halves(wrapped.value[0], 1, 0) ||
+        !unsigned_halves(wrapped.value[1], 2, 1410065408) ||
+        !unsigned_halves(wrapped.value[2], 2147483648, 0)) { return 16; }
+    let previous: u64 = core::primitive_values::replace_middle(ordinary.words, core::primitive_values::UNSIGNED_MAX);
+    generic.words[0] = 10000000000;
+    words[2] = 4294967296;
+    generic_words[0] = 18446744073709551615;
+    wrapped.value[1] = 4294967296;
+    if (!unsigned_halves(previous, 2, 1410065408) ||
+        !unsigned_halves(ordinary.words[1], 4294967295, 4294967295) ||
+        !unsigned_halves(generic.words[0], 2, 1410065408) ||
+        !unsigned_halves(words[2], 1, 0) ||
+        !unsigned_halves(generic_words[0], 4294967295, 4294967295) ||
+        !unsigned_halves(wrapped.value[1], 1, 0)) { return 17; }
+    if (!unsigned_halves(source.words[0], 1, 0) ||
+        !unsigned_halves(source.words[1], 2, 1410065408) ||
+        !unsigned_halves(source.words[2], 2147483648, 0)) { return 18; }
+    if (!unsigned_halves(ordinary.words[0], 1, 0) ||
+        !unsigned_halves(ordinary.words[2], 2147483648, 0) ||
+        !unsigned_halves(generic.words[1], 2, 1410065408) ||
+        !unsigned_halves(generic.words[2], 2147483648, 0) ||
+        !unsigned_halves(words[0], 1, 0) || !unsigned_halves(words[1], 2, 1410065408) ||
+        !unsigned_halves(generic_words[1], 2, 1410065408) ||
+        !unsigned_halves(generic_words[2], 2147483648, 0)) { return 19; }
+    if (ordinary.prefix != 17 || ordinary.suffix != 29 ||
+        generic.prefix != 17 || generic.suffix != 29 ||
+        wrapped.prefix != 41 || wrapped.suffix != 53) { return 20; }
+
+    // 21..25: both stack slots survive imported calls and scalar returns,
+    // including generic specializations and signed narrow arguments.
+    let seventh: u64 = core::primitive_values::seventh_unsigned(1, 2, 3, 4, 5, 6,
+        core::primitive_values::TEN_BILLION, core::primitive_values::NEGATIVE_STEP);
+    if (!unsigned_halves(seventh, 2, 1410065408)) { return 21; }
+    let eighth: i64 = core::primitive_values::eighth_signed(1, 2, 3, 4, 5, 6,
+        core::primitive_values::UNSIGNED_MAX, core::primitive_values::SIGNED_MIN);
+    if (!signed_halves(eighth, -2147483648, 0)) { return 22; }
+    let generic_seventh: u64 = core::primitive_values::seventh_generic(1, 2, 3, 4, 5, 6,
+        core::primitive_values::STEP, core::primitive_values::TEN_BILLION);
+    if (!unsigned_halves(generic_seventh, 1, 0)) { return 23; }
+    let generic_eighth: i64 = core::primitive_values::eighth_generic(1, 2, 3, 4, 5, 6,
+        core::primitive_values::NEGATIVE_STEP, core::primitive_values::SIGNED_MIN);
+    if (!signed_halves(generic_eighth, -2147483648, 0)) { return 24; }
+    if (!core::primitive_values::narrow_stack(1, 2, 3, 4, 5, 6, byte, short)) { return 25; }
+    if (!unsigned_halves(core::primitive_values::ordinary((4294967296 + 7) * 3 - 2), 3, 19)) { return 26; }
+    return 0;
+}

@@ -1,0 +1,2 @@
+import core::aliases;
+fn main() -> i32 { let data: [i32; 2] = [19, 23]; let view: [i32] = data; view[0] = 20; return data[0] + view[1] - 43; }

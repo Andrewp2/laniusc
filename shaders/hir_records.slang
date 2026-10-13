@@ -25,6 +25,16 @@ public struct HirPayload
     public uint d;
 }
 
+// Generic lookup and declaration-owned arity use one source-token domain.
+// This helper is called only after the owner has been validated. Impl payload.b
+// is a dense trait-bound HIR row (or absent for inherent impls), never a name.
+public uint hir_generic_owner_token(HirCore core, HirPayload payload, uint token_capacity)
+{
+    uint token = core.kind == 35u ? core.token_start : payload.b;
+    if (core.kind != 35u && token >= token_capacity) token = core.token_start;
+    return token < token_capacity ? token : 0xffffffffu;
+}
+
 public struct HirRange
 {
     public uint start;
@@ -53,6 +63,7 @@ public struct HirTypeArg
     public uint value;
     public uint ordinal;
     public uint file_id;
+    public uint application_token;
 }
 
 public struct HirGenericParam
@@ -186,4 +197,7 @@ public struct HirSemanticFacts
     public uint struct_lit_head;
     public uint predicate_owner;
     public uint predicate_subject;
+    // Float literal decode status: binary32 in bits 0..7, binary64 in bits 8..15.
+    // Zero is success. This is separate from all candidate value bit patterns.
+    public uint literal_status;
 }

@@ -1,0 +1,5 @@
+module core::methods;
+pub struct Boxed<T> { value: T }
+impl<T> Boxed<T> {
+    pub fn keep<U>(self, value: U) -> U { return value; }
+}

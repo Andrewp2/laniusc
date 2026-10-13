@@ -1,0 +1,16 @@
+
+running 2 tests
+test generic_assignment_contexts_preserve_slice_descriptors_and_aliases ... ok
+test generic_assignment_destinations_supply_complete_result_contexts ... 
+thread 'generic_assignment_destinations_supply_complete_result_contexts' (144392) panicked at tests/compiler_generic_types_execution.rs:141:29:
+assignment receiving contexts: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0046", title: "source tokenization failed", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0046", message: "source tokenization failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 13, column: 1, length: 1, byte_start: Some(481), byte_end: Some(482), source_line: Some("#[test]"), message: "tokenization fails at this byte" }), help: None, notes: ["source file count: 1", "first lexical failure at source-pack byte 481"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_assignment_destinations_supply_complete_result_contexts
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 250 filtered out; finished in 2.26s
+

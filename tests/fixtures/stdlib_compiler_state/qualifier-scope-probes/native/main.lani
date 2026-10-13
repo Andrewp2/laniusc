@@ -1,0 +1,12 @@
+module app::main;
+import core::left;
+import core::right;
+enum Choice<T> { Local(T) }
+fn main() -> i32 {
+    let a = core::left::Choice<i32>::Left(19);
+    let b = core::right::Choice<i32>::Right(21);
+    let c = Choice<i32>::Local(2);
+    return (match (a) { core::left::Choice::Left(v) -> v, _ -> 0 }) +
+        (match (b) { core::right::Choice::Right(v) -> v, _ -> 0 }) +
+        (match (c) { Choice::Local(v) -> v });
+}

@@ -1,0 +1,4 @@
+/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/benchmark_artifacts/performance/stdlib-gpu-20261009-assignment-contexts/canonical-1mb.json
+canonical-1mb.json: executed and validated 20 artifacts
+daemon_warm_workspace: wall median 48.772 ms, compile median 45.824 ms
+shader-artifact-digest: caaa3abf58dc0753

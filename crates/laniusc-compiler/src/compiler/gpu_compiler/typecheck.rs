@@ -318,6 +318,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                     hir.capacity,
                     None,
                     false,
+                    None,
+                    gpu_type_checker::FrontendTraitCheck::Strict,
                     timer.as_deref_mut(),
                     |err| type_check_execution_failed_for_source(diagnostic_path, src, err),
                 )?;
@@ -439,7 +441,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: Option<u32>,
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest>,
+        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
@@ -457,6 +459,10 @@ impl<'gpu> GpuCompiler<'gpu> {
             hir.capacity,
             dependency_pages,
             emit_semantic_interface,
+            object_request.and_then(LoweringObjectRequest::body_specialization),
+            object_request
+                .map(LoweringObjectRequest::frontend_trait_check)
+                .unwrap_or_default(),
             timer.as_deref_mut(),
             |err| type_check_execution_failed_for_source_pack(diagnostic_files, err),
         )?;
@@ -466,34 +472,40 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
-        let semantic_interface = emit_semantic_interface
-            .then_some(library_id)
-            .flatten()
-            .map(|library_id| {
-                let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
-                    semantic_interface_batching,
-                    "semantic_interface.batch",
-                );
-                self.type_checker
-                    .record_semantic_interface(
-                        device,
-                        queue,
-                        encoder,
-                        library_id,
-                        unit_id,
-                        bufs.n,
-                        token_capacity,
-                        &bufs.in_bytes,
-                        buffers::semantic_interface_hir_buffers(&hir),
-                        timer,
-                    )
-                    .map_err(|err| {
-                        CompileError::GpuFrontend(format!(
-                            "semantic-interface identity recording failed: {err}"
-                        ))
-                    })
-            })
-            .transpose()?;
+        // Body replay keeps the template's public contract. Its checked graph
+        // is concrete for lowering and must not be re-exported as a generic
+        // declaration. Keep semantic retention enabled for nested body calls.
+        let semantic_interface = (emit_semantic_interface
+            && object_request
+                .and_then(LoweringObjectRequest::body_specialization)
+                .is_none())
+        .then_some(library_id)
+        .flatten()
+        .map(|library_id| {
+            let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+                semantic_interface_batching,
+                "semantic_interface.batch",
+            );
+            self.type_checker
+                .record_semantic_interface(
+                    device,
+                    queue,
+                    encoder,
+                    library_id,
+                    unit_id,
+                    bufs.n,
+                    token_capacity,
+                    &bufs.in_bytes,
+                    buffers::semantic_interface_hir_buffers(&hir),
+                    timer,
+                )
+                .map_err(|err| {
+                    CompileError::GpuFrontend(format!(
+                        "semantic-interface identity recording failed: {err}"
+                    ))
+                })
+        })
+        .transpose()?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "semantic_interface.done");
         }
@@ -538,8 +550,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
             let (library_id, unit_id) = request.ids();
+            let selected_replay_hir = match request.frontend_trait_check() {
+                gpu_type_checker::FrontendTraitCheck::AuthorizedReplay { selected_function_hir } =>
+                    Some(selected_function_hir),
+                gpu_type_checker::FrontendTraitCheck::Strict
+                | gpu_type_checker::FrontendTraitCheck::PendingOriginal => None,
+            };
             pipeline
-                .record_object(queue, encoder, library_id, unit_id, timer.as_deref_mut())
+                .record_object(queue, encoder, library_id, unit_id, selected_replay_hir,
+                    timer.as_deref_mut())
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         downstream_host_timer.stamp("lowering");
@@ -564,7 +583,14 @@ impl<'gpu> GpuCompiler<'gpu> {
         diagnostic_files: &[DiagnosticSourceFile],
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         emit_semantic_interface: bool,
+        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<DeferredParserRecord<()>, CompileError> {
+        let (emit_semantic_interface, _, _) = resolve_source_pack_lowering_request(
+            parser_feature_flags,
+            emit_semantic_interface,
+            None,
+            object_request,
+        );
         let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
         self.record_parser_with_deferred_status(
             device,
@@ -615,8 +641,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: Option<u32>,
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest>,
+        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
+        let (emit_semantic_interface, lowering_target, object_request) =
+            resolve_source_pack_lowering_request(
+                parser.parser_feature_flags,
+                emit_semantic_interface,
+                lowering_target,
+                object_request,
+            );
         self.parser
             .with_current_resident_buffers_with_tree_capacity_and_features(
                 parser.token_capacity,
@@ -661,8 +694,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: Option<u32>,
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest>,
+        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>, CompileError> {
+        let (emit_semantic_interface, lowering_target, object_request) =
+            resolve_source_pack_lowering_request(
+                parser_feature_flags,
+                emit_semantic_interface,
+                lowering_target,
+                object_request,
+            );
         let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
         self.record_parser_with_deferred_status(
             device,
@@ -723,8 +763,14 @@ impl<'gpu> GpuCompiler<'gpu> {
         deferred: DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>,
         diagnostic_files: &[DiagnosticSourceFile],
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest>,
+        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
+        let (_, lowering_target, object_request) = resolve_source_pack_lowering_request(
+            deferred.parser_feature_flags,
+            false,
+            lowering_target,
+            object_request,
+        );
         let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
         let ll1 = deferred
             .check
@@ -802,8 +848,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                 LoweringObjectRequest::X86_64 {
                     library_id,
                     unit_id,
+                }
+                | LoweringObjectRequest::X86_64PendingOriginal {
+                    library_id,
+                    unit_id,
+                }
+                | LoweringObjectRequest::X86_64Specialized {
+                    library_id,
+                    unit_id,
+                    ..
                 } => Some((library_id, unit_id)),
                 LoweringObjectRequest::Wasm { .. } => None,
+                LoweringObjectRequest::AutoX86_64 => unreachable!("request was resolved"),
             })
             .map(|(library_id, unit_id)| {
                 self.lowering_pipeline(LoweringTarget::X86_64)
@@ -822,27 +878,63 @@ impl<'gpu> GpuCompiler<'gpu> {
             })
             .transpose()?;
         finish_timer.stamp("x86_object");
+        let (x86_object, x86_call_hirs) = match x86_object {
+            Some((object, call_hirs)) => (Some(object), call_hirs),
+            None => (None, Vec::new()),
+        };
         let wasm_object = object_request
             .and_then(|request| match request {
                 LoweringObjectRequest::Wasm {
                     library_id,
                     unit_id,
                 } => Some((library_id, unit_id)),
-                LoweringObjectRequest::X86_64 { .. } => None,
+                LoweringObjectRequest::X86_64 { .. }
+                | LoweringObjectRequest::X86_64PendingOriginal { .. }
+                | LoweringObjectRequest::X86_64Specialized { .. } => None,
+                LoweringObjectRequest::AutoX86_64 => unreachable!("request was resolved"),
             })
             .map(|(library_id, unit_id)| {
                 self.lowering_pipeline(LoweringTarget::Wasm)
                     .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                     .finish_wasm_object(device, queue, library_id, unit_id)
-                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                    .map_err(lowering_error_to_compile_error_without_source)
             })
             .transpose()?;
         finish_timer.stamp("wasm_object");
+        // Concrete replay keeps its template definition contracts and does not
+        // export a fresh interface, but still owns new nested-call facts.
+        let unit_facts = if object_request.is_some() || semantic_interface.is_some() {
+            self.type_checker
+                .retained_unit_facts(
+                    device,
+                    queue,
+                    semantic_interface.is_some(),
+                    object_request.and_then(LoweringObjectRequest::template_contracts),
+                )
+                .map_err(|error| {
+                    CompileError::GpuFrontend(format!(
+                        "checked unit snapshot readback failed: {error}"
+                    ))
+                })?
+        } else {
+            Default::default()
+        };
+        let body_native_layouts = object_request
+            .and_then(LoweringObjectRequest::body_specialization)
+            .map(|specialization| self.type_checker.retained_body_native_layouts(device, queue, specialization))
+            .transpose()
+            .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
+            body_native_layouts,
             semantic_interface,
             target_artifact,
             x86_object,
             wasm_object,
+            generic_calls: unit_facts.generic_calls,
+            checked_contracts: unit_facts.contracts,
+            checked_call_owners: unit_facts.call_owners,
+            native_call_owners: unit_facts.native_call_owners,
+            x86_call_hirs,
         }))
     }
 
@@ -1314,14 +1406,30 @@ impl<'gpu> GpuCompiler<'gpu> {
         .map(|_| ())
     }
 
-    /// Compiles one already-bounded source-pack unit through the same compact
-    /// HIR and graph-owned lowering boundary used by a single source file.
+    /// Native entry compilation retains an opaque original until the complete
+    /// catalog and original-call batch admit it, including a zero-call program.
+    pub(super) async fn compile_x86_source_pack_auto<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<PendingOriginalUnit, CompileError> {
+        let template_sources = sources.iter().map(|source| source.as_ref().to_owned())
+            .collect::<Vec<_>>().into();
+        self.compile_pending_original_source_pack_unit(
+            template_sources, 0, 0, Vec::new().into(), source_paths).await
+    }
+
     pub(super) async fn compile_checked_source_pack_with_lowering<S: AsRef<str>>(
         &self,
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
         target: LoweringTarget,
     ) -> Result<Vec<u8>, CompileError> {
+        if target == LoweringTarget::X86_64 {
+            return self
+                .compile_x86_source_pack_with_specialization(sources, source_paths)
+                .await;
+        }
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
             source_paths,
@@ -1337,18 +1445,283 @@ impl<'gpu> GpuCompiler<'gpu> {
         .ok_or_else(|| CompileError::GpuCodegen("lowering produced no target artifact".into()))
     }
 
-    /// Compiles one bounded unit once, producing both artifacts needed by the
-    /// remaining project: its public semantic interface and its target object.
-    pub(in crate::compiler) async fn compile_source_pack_unit_with_dependency_pages<
-        S: AsRef<str>,
-    >(
+    /// Compiles one bounded unit and retains its ordered source snapshot.
+    /// Path-backed jobs transfer their already-loaded source allocations here.
+    /// The same source and dependency snapshots feed checking and remain
+    /// available for later body specialization. Their allocation ownership
+    /// moves here without copying source bytes or interface records.
+    pub(in crate::compiler) async fn compile_source_pack_unit_with_dependency_pages(
         &self,
-        sources: &[S],
+        template_sources: std::sync::Arc<[String]>,
         library_id: u32,
         unit_id: u32,
-        dependency_pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+        template_dependency_pages: std::sync::Arc<
+            [Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+        >,
         target: SourcePackArtifactTarget,
     ) -> Result<CompiledSourcePackUnit, CompileError> {
+        self.compile_source_pack_unit_with_dependency_pages_and_paths(
+            template_sources, library_id, unit_id, template_dependency_pages, target, None,
+        ).await
+    }
+
+    pub(super) async fn compile_source_pack_unit_with_dependency_pages_and_paths(
+        &self,
+        template_sources: std::sync::Arc<[String]>,
+        library_id: u32,
+        unit_id: u32,
+        template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+        target: SourcePackArtifactTarget,
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<CompiledSourcePackUnit, CompileError> {
+        self.compile_source_pack_unit_with_body_specialization(
+            template_sources, library_id, unit_id, template_dependency_pages, target, None, source_paths,
+        ).await
+    }
+
+    /// Check original definition/graph/owner facts and privately lower one native
+    /// unit. Trait implementation selection is deferred to whole-program
+    /// admission. This path cannot return an object or populate the compiled-unit
+    /// cache; only the exact program admission receipt can release its result.
+    pub(super) async fn compile_pending_original_source_pack_unit(
+        &self,
+        template_sources: std::sync::Arc<[String]>,
+        library_id: u32,
+        unit_id: u32,
+        template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<PendingOriginalUnit, CompileError> {
+        if template_sources.is_empty() {
+            return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
+        }
+        validate_in_memory_source_pack_fits_codegen_unit(
+            "compile pending original source-pack unit",
+            template_sources.as_ref(),
+            self.resident_source_unit_limits(),
+        )?;
+        let artifacts = self
+            .type_check_explicit_source_pack_with_paths_and_interface(
+                template_sources.as_ref(),
+                source_paths,
+                Some(library_id),
+                unit_id,
+                DependencyInterfacePages::Paged(template_dependency_pages.as_ref()),
+                true,
+                None,
+                Some(LoweringObjectRequest::X86_64PendingOriginal {
+                    library_id,
+                    unit_id,
+                }),
+            )
+            .await?;
+        let unit = finish_source_pack_unit(
+            artifacts,
+            template_sources,
+            source_paths,
+            template_dependency_pages,
+            SourcePackArtifactTarget::X86_64,
+            library_id,
+            unit_id,
+        )?;
+        Ok(PendingOriginalUnit {
+            facts: OriginalUnitFacts::from_unit(&unit),
+            unit,
+        })
+    }
+
+    /// Recompile only the immutable inputs owned by one accepted program replay.
+    /// The result remains opaque until that same request checks every fresh call.
+    pub(super) async fn compile_authorized_body_specialization(
+        &self,
+        request: &program_evidence::ValidatedReplayRequest<'_>,
+    ) -> Result<PendingReplayUnit, CompileError> {
+        let template = request.template();
+        let compiled = self
+            .compile_source_pack_unit_with_body_specialization(
+                template.template_sources().clone(),
+                template.interface().library_id,
+                template.interface().unit_id,
+                template.template_dependency_pages().clone(),
+                SourcePackArtifactTarget::X86_64,
+                Some(BodySpecializationInput::authorized(request)),
+                Some(template.template_source_paths().as_ref()),
+            )
+            .await?;
+        Ok(PendingReplayUnit {
+            request_identity: request.identity(),
+            unit: compiled,
+        })
+    }
+
+    pub(super) async fn compile_body_specialization(
+        &self,
+        template: &CompiledSourcePackUnit,
+        call: &gpu_type_checker::CheckedGenericCall,
+    ) -> Result<CompiledSourcePackUnit, CompileError> {
+        if let gpu_type_checker::CheckedGenericTarget::Local {
+            specialization_symbol,
+            ..
+        } = call.target
+        {
+            if !call.has_closed_arguments() {
+                return Err(CompileError::GpuCodegen(
+                    "local body replay requires a complete checked environment".into(),
+                ));
+            }
+            let specialization = gpu_type_checker::CheckedBodySpecialization {
+                target_symbol: specialization_symbol,
+                source_unit: [template.interface.library_id, template.interface.unit_id],
+                arguments: call.arguments.clone(),
+                constants: call.constants.clone(),
+            };
+            let compiled = self
+                .compile_source_pack_unit_with_body_specialization(
+                    template.template_sources.clone(),
+                    template.interface.library_id,
+                    template.interface.unit_id,
+                    template.template_dependency_pages.clone(),
+                    SourcePackArtifactTarget::X86_64,
+                    Some(BodySpecializationInput::strict(
+                        &specialization,
+                        &template.interface,
+                        &template.checked_contracts,
+                    )),
+                    Some(template.template_source_paths.as_ref()),
+                )
+                .await?;
+            return Ok(compiled);
+        }
+        let (library_id, unit_id, target_symbol, method) = match call.target {
+            gpu_type_checker::CheckedGenericTarget::Dependency {
+                library_id,
+                unit_id,
+                declaration_index,
+            } => (library_id, unit_id, declaration_index, false),
+            gpu_type_checker::CheckedGenericTarget::DependencyMethod {
+                library_id,
+                unit_id,
+                method_symbol,
+            } => (library_id, unit_id, method_symbol, true),
+            gpu_type_checker::CheckedGenericTarget::Local { .. } => {
+                return Err(CompileError::GpuCodegen(
+                    "scalar body replay requires an imported function or method".into(),
+                ));
+            }
+        };
+        if library_id != template.interface.library_id
+            || unit_id != template.interface.unit_id
+            || !call.has_closed_arguments()
+        {
+            return Err(CompileError::GpuCodegen(
+                "body replay does not match a complete checked call environment".into(),
+            ));
+        }
+        let (type_count, constant_count) = if method {
+            if target_symbol & 0x8000_0000 == 0 {
+                return Err(CompileError::Diagnostic(Diagnostic::error(
+                    "LNC0017",
+                    "generic method body requires a stable method symbol",
+                )));
+            }
+            let (types, constants) = gpu_type_checker::dependency_method_requirements(
+                &template.interface, target_symbol,
+            ).ok_or_else(|| CompileError::GpuCodegen(
+                "body replay method has no unique accepted implementation owner".into(),
+            ))?;
+            (types as usize, constants as usize)
+        } else {
+            let declaration = template.interface.declarations.get(target_symbol as usize)
+                .ok_or_else(|| CompileError::GpuCodegen("body replay declaration is absent".into()))?;
+            let signature = template.interface.types.get(declaration.signature_type as usize)
+                .ok_or_else(|| CompileError::GpuCodegen("body replay signature is absent".into()))?;
+            if declaration.owner_declaration != u32::MAX
+                || signature.kind != crate::compiler::GpuSemanticInterfaceTypeKind::Function as u32
+            {
+                return Err(CompileError::Diagnostic(Diagnostic::error(
+                    "LNC0017", "generic body requires a top-level function signature",
+                )));
+            }
+            let start = declaration.first_member as usize;
+            let end = start.checked_add(declaration.member_count as usize)
+                .ok_or_else(|| CompileError::GpuCodegen("body replay member range overflow".into()))?;
+            let members = template.interface.members.get(start..end)
+                .ok_or_else(|| CompileError::GpuCodegen("body replay members are absent".into()))?;
+            let count = |kind: crate::compiler::GpuSemanticInterfaceMemberKind| members.iter()
+                .filter(|member| member.kind == kind as u32 && member.value_hi == 0)
+                .count();
+            (count(crate::compiler::GpuSemanticInterfaceMemberKind::GenericTypeParameter),
+             count(crate::compiler::GpuSemanticInterfaceMemberKind::GenericConstParameter))
+        };
+        if constant_count != call.constants.len() || type_count != call.arguments.len() {
+            return Err(CompileError::Diagnostic(Diagnostic::error(
+                "LNC0017",
+                "generic body requires matching type and constant parameters",
+            )));
+        }
+        let specialization = gpu_type_checker::CheckedBodySpecialization {
+            target_symbol,
+            source_unit: [template.interface.library_id, template.interface.unit_id],
+            arguments: call.arguments.clone(),
+            constants: call.constants.clone(),
+        };
+        specialization
+            .packet()
+            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
+        let compiled = self
+            .compile_source_pack_unit_with_body_specialization(
+                template.template_sources.clone(),
+                library_id,
+                unit_id,
+                template.template_dependency_pages.clone(),
+                SourcePackArtifactTarget::X86_64,
+                Some(BodySpecializationInput::strict(
+                    &specialization,
+                    &template.interface,
+                    &template.checked_contracts,
+                )),
+                Some(template.template_source_paths.as_ref()),
+            )
+            .await?;
+        Ok(compiled)
+    }
+
+    async fn compile_source_pack_unit_with_body_specialization(
+        &self,
+        template_sources: std::sync::Arc<[String]>,
+        library_id: u32,
+        unit_id: u32,
+        template_dependency_pages: std::sync::Arc<
+            [Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+        >,
+        target: SourcePackArtifactTarget,
+        body_specialization: Option<BodySpecializationInput<'_>>,
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<CompiledSourcePackUnit, CompileError> {
+        self.compile_source_pack_unit_with_specialization_and_paths(
+            template_sources,
+            library_id,
+            unit_id,
+            template_dependency_pages,
+            target,
+            body_specialization,
+            source_paths,
+        )
+        .await
+    }
+
+    async fn compile_source_pack_unit_with_specialization_and_paths(
+        &self,
+        template_sources: std::sync::Arc<[String]>,
+        library_id: u32,
+        unit_id: u32,
+        template_dependency_pages: std::sync::Arc<
+            [Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+        >,
+        target: SourcePackArtifactTarget,
+        body_specialization: Option<BodySpecializationInput<'_>>,
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<CompiledSourcePackUnit, CompileError> {
+        let sources = template_sources.as_ref();
         if target == SourcePackArtifactTarget::X86_64 && sources.is_empty() {
             return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
         }
@@ -1358,6 +1731,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             self.resident_source_unit_limits(),
         )?;
         let object_request = match target {
+            SourcePackArtifactTarget::X86_64 if body_specialization.is_some() => {
+                LoweringObjectRequest::X86_64Specialized {
+                    library_id,
+                    unit_id,
+                    specialization: body_specialization.unwrap().specialization,
+                    template_contracts: body_specialization.unwrap().contracts.as_ref(),
+                    frontend_trait_check: body_specialization.unwrap().frontend_trait_check,
+                }
+            }
             SourcePackArtifactTarget::X86_64 => LoweringObjectRequest::X86_64 {
                 library_id,
                 unit_id,
@@ -1372,37 +1754,40 @@ impl<'gpu> GpuCompiler<'gpu> {
                 ));
             }
         };
-        let artifacts = self
+        // Generic bodies are absent from the public semantic interface. Keep
+        // exactly the ordered source text checked by this unit so a later
+        // concrete instantiation can recover a body without rereading mutable
+        // files or depending on the current lexer/parser workspace.
+        let mut artifacts = self
             .type_check_explicit_source_pack_with_paths_and_interface(
-                sources,
-                None,
+                template_sources.as_ref(),
+                source_paths,
                 Some(library_id),
                 unit_id,
-                DependencyInterfacePages::Paged(dependency_pages),
+                DependencyInterfacePages::Paged(template_dependency_pages.as_ref()),
                 true,
                 None,
                 Some(object_request),
             )
             .await?;
-        let interface = artifacts.semantic_interface.ok_or_else(|| {
-            CompileError::GpuFrontend(
-                "compiled source-pack unit produced no semantic interface".into(),
-            )
-        })?;
-        let object = match target {
-            SourcePackArtifactTarget::X86_64 => {
-                CompiledSourcePackObject::X86_64(artifacts.x86_object.ok_or_else(|| {
-                    CompileError::GpuCodegen("lowering produced no x86 object".into())
-                })?)
-            }
-            SourcePackArtifactTarget::Wasm => {
-                CompiledSourcePackObject::Wasm(artifacts.wasm_object.ok_or_else(|| {
-                    CompileError::GpuCodegen("lowering produced no Wasm object".into())
-                })?)
-            }
-            SourcePackArtifactTarget::Generic => unreachable!(),
-        };
-        Ok(CompiledSourcePackUnit { interface, object })
+        if let Some(input) = body_specialization {
+            artifacts.semantic_interface = Some(input.interface.clone());
+        }
+        let mut unit = finish_source_pack_unit(
+            artifacts,
+            template_sources,
+            source_paths,
+            template_dependency_pages,
+            target,
+            library_id,
+            unit_id,
+        )?;
+        if let Some(input) = body_specialization {
+            // Definition contracts belong to the checked template. Concrete
+            // replay supplies fresh call environments and caller ownership.
+            unit.checked_contracts = input.contracts.clone();
+        }
+        Ok(unit)
     }
 
     async fn type_check_explicit_source_pack_with_paths_and_interface<S: AsRef<str>>(
@@ -1414,7 +1799,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         dependency_interfaces: DependencyInterfacePages<'_>,
         emit_semantic_interface: bool,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest>,
+        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<CheckedSourcePackArtifacts, CompileError> {
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
@@ -1487,6 +1872,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 &diagnostic_files,
                                 dependency_pages.as_ref(),
                                 emit_semantic_interface,
+                                object_request,
                             )?;
                             self.remember_parser_shape(parser_shape_key, &recorded);
                             Ok(recorded)
@@ -1648,6 +2034,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             semantic_interface_required,
+            None,
+            gpu_type_checker::FrontendTraitCheck::Strict,
             |hir_items| {
                 self.type_checker
                     .prepare_resident_token_buffer_with_hir_items(
@@ -1684,6 +2072,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         hir_node_capacity: u32,
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         semantic_interface_required: bool,
+        body_specialization: Option<&gpu_type_checker::CheckedBodySpecialization>,
+        frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
@@ -1696,6 +2086,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             semantic_interface_required,
+            body_specialization,
+            frontend_trait_check,
             |hir_items| {
                 self.type_checker
                     .record_resident_token_buffer_with_hir_items_on_gpu(
@@ -1746,25 +2138,242 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,
 }
 
-#[derive(Clone, Copy)]
-enum LoweringObjectRequest {
-    X86_64 { library_id: u32, unit_id: u32 },
-    Wasm { library_id: u32, unit_id: u32 },
+/// Immutable source facts available before original program admission. The
+/// private constructor copies accepted metadata from one compilation; consumers
+/// cannot construct a partial inventory or obtain its unpublished native object.
+/// Owning the snapshot lets a session retain it while a pending wrapper is moved
+/// into publication after admission.
+#[derive(Clone)]
+pub(super) struct OriginalUnitFacts {
+    snapshot: std::sync::Arc<OriginalUnitSnapshot>,
 }
 
-impl LoweringObjectRequest {
+struct OriginalUnitSnapshot {
+    interface: crate::compiler::GpuSemanticInterfaceArtifact,
+    checked_contracts: std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
+    generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,
+    checked_call_owners: std::sync::Arc<[gpu_type_checker::CheckedCallOwner]>,
+    template_sources: std::sync::Arc<[String]>,
+    template_source_paths: std::sync::Arc<[Option<PathBuf>]>,
+    template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+}
+
+impl OriginalUnitFacts {
+    fn from_unit(unit: &CompiledSourcePackUnit) -> Self {
+        Self {
+            snapshot: std::sync::Arc::new(OriginalUnitSnapshot {
+                interface: unit.interface.clone(),
+                checked_contracts: unit.checked_contracts.clone(),
+                generic_calls: unit.generic_calls.clone(),
+                checked_call_owners: unit.checked_call_owners.clone(),
+                template_sources: unit.template_sources.clone(),
+                template_source_paths: unit.template_source_paths.clone(),
+                template_dependency_pages: unit.template_dependency_pages.clone(),
+            }),
+        }
+    }
+
+    /// Admission receipts match this exact immutable snapshot, never numeric
+    /// library/unit IDs alone. Cloning the view preserves this identity.
+    pub(super) fn same_snapshot(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.snapshot, &other.snapshot)
+    }
+
+    pub(super) fn interface(&self) -> &crate::compiler::GpuSemanticInterfaceArtifact {
+        &self.snapshot.interface
+    }
+
+    pub(super) fn checked_contracts(&self) -> &std::sync::Arc<gpu_type_checker::CheckedUnitContracts> {
+        &self.snapshot.checked_contracts
+    }
+
+    pub(super) fn generic_calls(&self) -> &std::sync::Arc<[gpu_type_checker::CheckedGenericCall]> {
+        &self.snapshot.generic_calls
+    }
+
+    pub(super) fn checked_call_owners(&self) -> &std::sync::Arc<[gpu_type_checker::CheckedCallOwner]> {
+        &self.snapshot.checked_call_owners
+    }
+
+    pub(super) fn template_sources(&self) -> &std::sync::Arc<[String]> {
+        &self.snapshot.template_sources
+    }
+
+    pub(super) fn template_source_paths(&self) -> &std::sync::Arc<[Option<PathBuf>]> {
+        &self.snapshot.template_source_paths
+    }
+
+    pub(super) fn template_dependency_pages(&self) -> &std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]> {
+        &self.snapshot.template_dependency_pages
+    }
+}
+
+impl CompiledSourcePackUnit {
+    /// Strict standalone compilation has already released this object. Project
+    /// only immutable native facts for the same mandatory program admission gate.
+    pub(super) fn original_facts(&self) -> anyhow::Result<OriginalUnitFacts> {
+        anyhow::ensure!(matches!(self.object, CompiledSourcePackObject::X86_64(_)),
+            "native program checking received a different target");
+        Ok(OriginalUnitFacts::from_unit(self))
+    }
+}
+
+/// Original source compilation has no replay authority. Its lowered object
+/// remains private until a complete program admits these exact immutable facts.
+/// In particular this type exposes no unit/object accessor, Clone, or conversion
+/// into a compiled cache value before that receipt exists.
+pub(super) struct PendingOriginalUnit {
+    unit: CompiledSourcePackUnit,
+    facts: OriginalUnitFacts,
+}
+
+impl PendingOriginalUnit {
+    pub(super) fn facts(&self) -> &OriginalUnitFacts {
+        &self.facts
+    }
+
+    pub(super) fn finish(
+        self,
+        admission: program_evidence::ValidatedOriginalUnit,
+    ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
+        let calls = admission.check_original_unit(&self.facts)?;
+        Ok((self.unit, calls))
+    }
+}
+
+/// Only authorized frontend compilation constructs this wrapper. Its object
+/// stays private until the matching request gates every fresh call. Keep the
+/// constructor here, beside compilation, rather than accepting arbitrary units
+/// through a public request-plus-unit sealing function.
+pub(super) struct PendingReplayUnit {
+    request_identity: std::sync::Arc<()>,
+    unit: CompiledSourcePackUnit,
+}
+
+impl PendingReplayUnit {
+    pub(super) fn finish(
+        mut self,
+        request: program_evidence::ValidatedReplayRequest<'_>,
+    ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
+        let calls = request.check_replay_unit(&mut self.unit, &self.request_identity)?;
+        Ok((self.unit, calls))
+    }
+}
+
+// The authorized constructor obtains every input from one checked request.
+// No caller can attach a proof flag to an unrelated template or specialization.
+#[derive(Clone, Copy)]
+struct BodySpecializationInput<'a> {
+    specialization: &'a gpu_type_checker::CheckedBodySpecialization,
+    interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
+    contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
+    frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
+}
+
+impl<'a> BodySpecializationInput<'a> {
+    fn strict(
+        specialization: &'a gpu_type_checker::CheckedBodySpecialization,
+        interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
+        contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
+    ) -> Self {
+        Self {
+            specialization,
+            interface,
+            contracts,
+            frontend_trait_check: gpu_type_checker::FrontendTraitCheck::Strict,
+        }
+    }
+
+    fn authorized(request: &'a program_evidence::ValidatedReplayRequest<'_>) -> Self {
+        let template = request.template();
+        Self {
+            specialization: request.specialization(),
+            interface: template.interface(),
+            contracts: template.checked_contracts(),
+            frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
+                selected_function_hir: request.selected_function_hir(),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LoweringObjectRequest<'a> {
+    /// Select executable or object emission from GPU-classified parser facts.
+    AutoX86_64,
+    X86_64 {
+        library_id: u32,
+        unit_id: u32,
+    },
+    /// Constructed only by the private pending-original compilation route.
+    X86_64PendingOriginal {
+        library_id: u32,
+        unit_id: u32,
+    },
+    X86_64Specialized {
+        library_id: u32,
+        unit_id: u32,
+        specialization: &'a gpu_type_checker::CheckedBodySpecialization,
+        template_contracts: &'a gpu_type_checker::CheckedUnitContracts,
+        frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
+    },
+    Wasm {
+        library_id: u32,
+        unit_id: u32,
+    },
+}
+
+impl<'a> LoweringObjectRequest<'a> {
+    fn frontend_trait_check(self) -> gpu_type_checker::FrontendTraitCheck {
+        match self {
+            Self::X86_64PendingOriginal { .. } => gpu_type_checker::FrontendTraitCheck::PendingOriginal,
+            Self::X86_64Specialized { frontend_trait_check, .. } => frontend_trait_check,
+            _ => gpu_type_checker::FrontendTraitCheck::Strict,
+        }
+    }
+
+    fn template_contracts(self) -> Option<&'a gpu_type_checker::CheckedUnitContracts> {
+        match self {
+            Self::X86_64Specialized {
+                template_contracts, ..
+            } => Some(template_contracts),
+            _ => None,
+        }
+    }
+
+    fn body_specialization(self) -> Option<&'a gpu_type_checker::CheckedBodySpecialization> {
+        match self {
+            Self::X86_64Specialized { specialization, .. } => Some(specialization),
+            _ => None,
+        }
+    }
     fn target(self) -> LoweringTarget {
         match self {
-            Self::X86_64 { .. } => LoweringTarget::X86_64,
+            Self::AutoX86_64
+            | Self::X86_64 { .. }
+            | Self::X86_64PendingOriginal { .. }
+            | Self::X86_64Specialized { .. } => {
+                LoweringTarget::X86_64
+            }
             Self::Wasm { .. } => LoweringTarget::Wasm,
         }
     }
 
     fn ids(self) -> (u32, u32) {
         match self {
+            Self::AutoX86_64 => (0, 0),
             Self::X86_64 {
                 library_id,
                 unit_id,
+            }
+            | Self::X86_64PendingOriginal {
+                library_id,
+                unit_id,
+            }
+            | Self::X86_64Specialized {
+                library_id,
+                unit_id,
+                ..
             }
             | Self::Wasm {
                 library_id,
@@ -1774,17 +2383,188 @@ impl LoweringObjectRequest {
     }
 }
 
+/// A cached parser shape is validated against the lexer features before its
+/// artifact is accepted. Both cold and warm jobs therefore select the same
+/// path without a second parse or a host scan for generic syntax.
+fn resolve_source_pack_lowering_request<'a>(
+    parser_features: u32,
+    emit_interface: bool,
+    target: Option<LoweringTarget>,
+    request: Option<LoweringObjectRequest<'a>>,
+) -> (
+    bool,
+    Option<LoweringTarget>,
+    Option<LoweringObjectRequest<'a>>,
+) {
+    if !matches!(request, Some(LoweringObjectRequest::AutoX86_64)) {
+        return (emit_interface, target, request);
+    }
+    if parser_features & crate::lexer::features::PARSER_FEATURE_TYPE_ARGS != 0 {
+        (
+            true,
+            None,
+            Some(LoweringObjectRequest::X86_64 {
+                library_id: 0,
+                unit_id: 0,
+            }),
+        )
+    } else {
+        (false, Some(LoweringTarget::X86_64), None)
+    }
+}
+
+
+fn retain_native_call_owners(
+    native_hirs: &[u32],
+    checked_owners: &[gpu_type_checker::CheckedCallOwner],
+) -> anyhow::Result<Vec<u32>> {
+    let mut by_hir = std::collections::BTreeMap::new();
+    for owner in checked_owners {
+        anyhow::ensure!(owner.call_hir != u32::MAX &&
+            by_hir.insert(owner.call_hir, owner.function_hir).is_none(),
+            "invalid or duplicate checked native-call owner");
+    }
+    // Inlining may produce multiple native occurrences of one checked source
+    // call; all of them retain the same explicit lexical owner.
+    native_hirs.iter().map(|hir| by_hir.get(hir).copied().ok_or_else(||
+        anyhow::anyhow!("native call HIR {hir} has no checked lexical owner"))).collect()
+}
+
+fn finish_source_pack_unit(
+    mut artifacts: CheckedSourcePackArtifacts,
+    template_sources: std::sync::Arc<[String]>,
+    source_paths: Option<&[Option<PathBuf>]>,
+    template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+    target: SourcePackArtifactTarget,
+    library_id: u32,
+    unit_id: u32,
+) -> Result<CompiledSourcePackUnit, CompileError> {
+    let template_source_paths: std::sync::Arc<[Option<PathBuf>]> = match source_paths {
+        Some(paths) if paths.len() == template_sources.len() => paths.to_vec().into(),
+        Some(_) => return Err(CompileError::GpuFrontend(
+            "retained source path count does not match source-file count".into(),
+        )),
+        None => vec![None; template_sources.len()].into(),
+    };
+    let interface = artifacts.semantic_interface.ok_or_else(|| {
+        CompileError::GpuFrontend("compiled source-pack unit produced no semantic interface".into())
+    })?;
+    let object = match target {
+        SourcePackArtifactTarget::X86_64 => {
+            CompiledSourcePackObject::X86_64(artifacts.x86_object.ok_or_else(|| {
+                CompileError::GpuCodegen("lowering produced no x86 object".into())
+            })?)
+        }
+        SourcePackArtifactTarget::Wasm => {
+            CompiledSourcePackObject::Wasm(artifacts.wasm_object.ok_or_else(|| {
+                CompileError::GpuCodegen("lowering produced no Wasm object".into())
+            })?)
+        }
+        SourcePackArtifactTarget::Generic => unreachable!(),
+    };
+    gpu_type_checker::scope_generic_type_identities(
+        &mut artifacts.generic_calls,
+        library_id,
+        unit_id,
+    );
+    artifacts
+        .checked_contracts
+        .scope_source_unit(library_id, unit_id);
+    gpu_type_checker::resolve_generic_requirements(
+        &mut artifacts.generic_calls,
+        template_dependency_pages.as_ref(),
+    );
+    let x86_call_function_hirs = retain_native_call_owners(
+        &artifacts.x86_call_hirs, &artifacts.native_call_owners,
+    ).map_err(|error| CompileError::GpuFrontend(format!(
+        "native call ownership retention failed: {error:#}"
+    )))?;
+    // Resolving dependency signatures can remove ordinary imported calls from
+    // the retained generic-call inventory. Keep exactly its checked owner rows,
+    // including explicit no-function owners; absence is never a top-level scope.
+    let call_ids = artifacts
+        .generic_calls
+        .iter()
+        .map(|call| call.call_hir)
+        .collect::<std::collections::BTreeSet<_>>();
+    artifacts
+        .checked_call_owners
+        .retain(|owner| call_ids.contains(&owner.call_hir));
+    let owner_ids = artifacts
+        .checked_call_owners
+        .iter()
+        .map(|owner| owner.call_hir)
+        .collect::<std::collections::BTreeSet<_>>();
+    if call_ids.len() != artifacts.generic_calls.len()
+        || owner_ids.len() != artifacts.checked_call_owners.len()
+        || call_ids != owner_ids
+    {
+        return Err(CompileError::GpuFrontend(
+            "retained calls do not have exactly one checked owner row each".into(),
+        ));
+    }
+    Ok(CompiledSourcePackUnit {
+        interface,
+        object,
+        template_sources,
+        template_source_paths,
+        template_dependency_pages,
+        generic_calls: artifacts.generic_calls.into(),
+        body_native_layouts: artifacts.body_native_layouts.map(Into::into),
+        checked_contracts: std::sync::Arc::new(artifacts.checked_contracts),
+        checked_call_owners: artifacts.checked_call_owners.into(),
+        x86_call_hirs: artifacts.x86_call_hirs.into(),
+        x86_call_function_hirs: x86_call_function_hirs.into(),
+    })
+}
+
 struct CheckedSourcePackArtifacts {
+    body_native_layouts: Option<Vec<u32>>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
     x86_object: Option<crate::codegen::x86::GpuX86RelocatableObject>,
     wasm_object: Option<crate::codegen::wasm::GpuWasmRelocatableObject>,
+    generic_calls: Vec<gpu_type_checker::CheckedGenericCall>,
+    checked_contracts: gpu_type_checker::CheckedUnitContracts,
+    checked_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
+    native_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
+    x86_call_hirs: Vec<u32>,
 }
 
 #[derive(Clone)]
 pub(in crate::compiler) struct CompiledSourcePackUnit {
+    /// Canonical seed-node widths copied after GPU native admission, only for
+    /// concrete replay. These refine the cache independently of semantic keys.
+    pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[u32]>>,
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
+    pub(in crate::compiler) generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,
+    /// Accepted source-owned contracts share this unit's immutable source and
+    /// dependency context. Private anchors are meaningful only in that context.
+    pub(in crate::compiler) checked_contracts:
+        std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
+    /// Checked call-to-function HIR relations belong to this exact source unit.
+    /// Replay refreshes them alongside its concrete call environments.
+    pub(in crate::compiler) checked_call_owners:
+        std::sync::Arc<[gpu_type_checker::CheckedCallOwner]>,
+    /// Dense HIR for each native undefined symbol, in object symbol order.
+    /// The target GPU projection produces this private resident column.
+    pub(in crate::compiler) x86_call_hirs: std::sync::Arc<[u32]>,
+    /// Exact checked lexical owner for each native call above, including
+    /// ordinary imported calls removed from the generic evidence inventory.
+    pub(in crate::compiler) x86_call_function_hirs: std::sync::Arc<[u32]>,
+    /// Source-file ordinal matches the parser's file identity for this unit.
+    /// Shared ownership keeps deferred bodies available on compiled-unit cache
+    /// hits and while a resident build handle outlives cache eviction.
+    pub(in crate::compiler) template_sources: std::sync::Arc<[String]>,
+    /// Original optional paths, exactly aligned with the retained file ordinals.
+    /// Paths are diagnostic provenance; they never participate in type identity.
+    pub(in crate::compiler) template_source_paths: std::sync::Arc<[Option<PathBuf>]>,
+    /// Original page order, including empty pages, belongs to the checked
+    /// body context. A later compilation must not substitute current cache
+    /// entries or newly loaded dependency interfaces for these inputs.
+    pub(in crate::compiler) template_dependency_pages:
+        std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
 }
 
 #[derive(Clone)]
@@ -1845,7 +2625,9 @@ fn lowering_error_to_compile_error_for_source(
     else {
         return CompileError::GpuCodegen(error.to_string());
     };
-    if let Some(diagnostic) = optimizer_incoming_failure(failure.status) {
+    if let Some(diagnostic) = semantic_lowering_capacity_failure(failure.status)
+        .or_else(|| optimizer_incoming_failure(failure.status))
+    {
         return CompileError::Diagnostic(diagnostic);
     }
     let Some(message) = lowering_diagnostic_message(failure.status.diagnostic_reason) else {
@@ -1857,14 +2639,14 @@ fn lowering_error_to_compile_error_for_source(
         .map(|token| (token.start, token.len))
         .unwrap_or_else(|| first_nonempty_source_span(source));
     let mut diagnostic = Diagnostic::error("LNC0017", message)
-            .with_primary_label(diagnostic_label_from_source_span(
-                path,
-                source,
-                span.0,
-                span.1,
-                "not supported by the native x86 backend yet",
-            ))
-            .with_note("the native x86 backend rejected this program before emitting an artifact");
+        .with_primary_label(diagnostic_label_from_source_span(
+            path,
+            source,
+            span.0,
+            span.1,
+            "not supported by the native x86 backend yet",
+        ))
+        .with_note("the native x86 backend rejected this program before emitting an artifact");
     if failure.status.first_unsupported_target_op != u32::MAX {
         diagnostic = diagnostic.with_note(format!(
             "first unsupported target LIR opcode: {}",
@@ -1886,7 +2668,9 @@ fn lowering_error_to_compile_error_for_source_pack(
     else {
         return CompileError::GpuCodegen(error.to_string());
     };
-    if let Some(diagnostic) = optimizer_incoming_failure(failure.status) {
+    if let Some(diagnostic) = semantic_lowering_capacity_failure(failure.status)
+        .or_else(|| optimizer_incoming_failure(failure.status))
+    {
         return CompileError::Diagnostic(diagnostic);
     }
     let Some(message) = lowering_diagnostic_message(failure.status.diagnostic_reason) else {
@@ -1913,8 +2697,8 @@ fn lowering_error_to_compile_error_for_source_pack(
         })
         .unwrap_or_else(|| lowering_fallback_label_for_source_pack(files));
     let mut diagnostic = Diagnostic::error("LNC0017", message)
-            .with_primary_label(label)
-            .with_note("the native x86 backend rejected this program before emitting an artifact");
+        .with_primary_label(label)
+        .with_note("the native x86 backend rejected this program before emitting an artifact");
     if failure.status.first_unsupported_target_op != u32::MAX {
         diagnostic = diagnostic.with_note(format!(
             "first unsupported target LIR opcode: {}",
@@ -1922,6 +2706,34 @@ fn lowering_error_to_compile_error_for_source_pack(
         ));
     }
     CompileError::Diagnostic(diagnostic)
+}
+
+fn lowering_error_to_compile_error_without_source(error: anyhow::Error) -> CompileError {
+    let diagnostic = error
+        .downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
+        .and_then(|failure| semantic_lowering_capacity_failure(failure.status));
+    match diagnostic {
+        Some(diagnostic) => CompileError::Diagnostic(diagnostic),
+        None => CompileError::GpuCodegen(error.to_string()),
+    }
+}
+
+fn semantic_lowering_capacity_failure(
+    status: crate::codegen::lowering_ir::LoweringStatus,
+) -> Option<Diagnostic> {
+    // Other failures reuse the capacity words for their own domain or details.
+    // Report semantic row counts only when that is the sole failure flag.
+    if status.flags != crate::codegen::lowering_ir::opcode::LOWERING_STATUS_SEMANTIC_CAPACITY {
+        return None;
+    }
+    Some(
+        Diagnostic::error("LNC0057", "compiler semantic lowering capacity exceeded")
+            .with_note(format!(
+                "semantic lowering requires {} instruction rows; this compilation unit provides {}",
+                status.required_capacity, status.available_capacity
+            ))
+            .with_note("the compiler rejected this compilation unit before emitting target output"),
+    )
 }
 
 fn optimizer_incoming_failure(
@@ -1933,12 +2745,12 @@ fn optimizer_incoming_failure(
         return None;
     }
     let mut diagnostic = Diagnostic::error("LNC0057", "compiler optimizer failed")
-            .with_note("the SSA incoming-value rewrite could not resolve a reaching definition")
-            .with_note(format!(
-                "first unresolved incoming relation row: {}",
-                status.first_unsupported_opt_row
-            ))
-            .with_help("this is an internal compiler failure, not unsupported Lanius syntax");
+        .with_note("the SSA incoming-value rewrite could not resolve a reaching definition")
+        .with_note(format!(
+            "first unresolved incoming relation row: {}",
+            status.first_unsupported_opt_row
+        ))
+        .with_help("this is an internal compiler failure, not unsupported Lanius syntax");
     if status.diagnostic_detail_kind
         == crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE
     {
@@ -2223,6 +3035,21 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
     detail: u32,
 ) -> CompileError {
     match code {
+        GpuTypeCheckCode::GenericInstantiationBoundary => CompileError::Diagnostic(
+            Diagnostic::error("LNC0047", "type-check execution failed")
+                .with_primary_label(diagnostic_label_from_source_span(path, source, start, len,
+                    "generic type instantiation reached a compiler boundary"))
+                .with_note(match detail {
+                    1 => "the private checked type application arena is exhausted",
+                    2 => "the checked application exceeds 32 type parameters, 32 constant parameters, 32 type arguments per node, 64 traversal levels, or 64 generated or expanded nodes per root",
+                    4 => "an imported declaration type could not be projected from its checked argument and result bindings",
+                    5 => "checked call inference did not converge within 64 rounds per HIR node",
+                    6 => "a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required",
+                    7 => "a retained native width witness conflicts with the GPU-derived replay layout",
+                    8 => "a replay seed has malformed graph roots or exceeds the supported native width",
+                    _ => "a nested type application could not be instantiated from its checked environment",
+                }),
+        ),
         GpuTypeCheckCode::ImportCycle => import_cycle_diagnostic(path, source, start, len),
         GpuTypeCheckCode::UnresolvedImport => {
             unresolved_import_diagnostic(path, source, start, len)
@@ -2250,6 +3077,58 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
             unresolved_identifier_diagnostic(path, source, start, len, detail)
         }
         GpuTypeCheckCode::UnknownType => unknown_type_diagnostic(path, source, start, len, detail),
+        GpuTypeCheckCode::InvalidAssignmentTarget => CompileError::Diagnostic(
+            Diagnostic::error("LNC0068", "invalid assignment target")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "constant parameters cannot be assigned",
+                ))
+                .with_note("store the value in a local variable if it needs to change"),
+        ),
+        GpuTypeCheckCode::IntegerLiteralRange => CompileError::Diagnostic(
+            Diagnostic::error("LNC0069", "integer literal is outside its checked type range")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "this magnitude cannot be represented by the expected integer type",
+                )),
+        ),
+        GpuTypeCheckCode::FloatLiteral => {
+            let scalar = if detail >> 8 == 15 { "f64" } else { "f32" };
+            let label = match detail & 255 {
+                1 => "invalid decimal floating syntax".to_string(),
+                2 => format!("this finite literal overflows {scalar}"),
+                failure => return CompileError::GpuTypeCheck(format!(
+                    "floating literal decoder invariant failed: status={failure}, scalar={}, token_span={start}+{len}, path={}",
+                    detail >> 8, path.display(),
+                )),
+            };
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0070", "invalid floating literal")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, label,
+                    )),
+            )
+        }
+        GpuTypeCheckCode::ComputedFloatConstant => CompileError::Diagnostic(
+            Diagnostic::error("LNC0071", "computed floating constant is not supported")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len,
+                    "floating constant arithmetic and constant references require the portable IEEE evaluator",
+                ))
+                .with_note("floating literals and unary negation are supported; perform computed arithmetic inside a function"),
+        ),
+        GpuTypeCheckCode::InvalidArrayLength => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "array length must have an integer type",
+                ))
+                .with_note("declare the array length parameter with an integer type such as usize"),
+        ),
+        GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "a declared constant parameter could not be inferred",
+                ))
+                .with_note("provide an argument or a result type that determines every declared constant parameter"),
+        ),
         GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {
@@ -2364,6 +3243,14 @@ fn invalid_member_access_diagnostic(
             1 => (
                 "field name is already declared in this struct",
                 "give each field in a struct declaration a unique name",
+            ),
+            3 => (
+                "this record constructor is missing a required field",
+                "supply a value for every field declared by the record",
+            ),
+            4 => (
+                "this constructor supplies the same field more than once",
+                "supply each declared field exactly once",
             ),
             _ => (
                 "this value does not have the requested field",
@@ -2610,8 +3497,19 @@ fn trait_bound_diagnostic(
     const PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW: u32 = 21;
     const PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION: u32 = 22;
     const PREDICATE_STATUS_INACCESSIBLE_BOUND_TYPE_ARG: u32 = 36;
+    const PREDICATE_STATUS_UNSUPPORTED_CONST_TRAIT: u32 = 37;
 
     let (diagnostic_code, message, label, note) = match code {
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_UNSUPPORTED_CONST_TRAIT =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "constant parameters in imported trait bounds are not supported yet",
+                "the trait solver must preserve ordered type and constant operands before this contract can be used",
+            )
+        }
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_INVALID_SUBJECT => (
             "LNC0008",
             "unsatisfied trait bound",
@@ -2641,7 +3539,7 @@ fn trait_bound_diagnostic(
                 "LNC0008",
                 "unsatisfied trait bound",
                 "trait bound exceeds the current trait argument limit",
-                "this compiler currently supports at most two trait type arguments in a bound",
+                "this compiler currently supports at most 32 trait type arguments in a bound",
             )
         }
         GpuTypeCheckCode::TraitBoundUnsatisfied
@@ -2651,7 +3549,7 @@ fn trait_bound_diagnostic(
                 "LNC0008",
                 "unsatisfied trait bound",
                 "trait bound argument shape is not supported here",
-                "use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name",
+                "use complete type arguments with the declared arity; missing arguments and unresolved types cannot satisfy a trait bound",
             )
         }
         GpuTypeCheckCode::TraitBoundUnsatisfied
@@ -2744,15 +3642,15 @@ fn trait_impl_diagnostic(
         ),
         8 => (
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types to the resolved trait declaration; nested generic instance parameters are rejected for now rather than partially matched",
+            "match each implemented method's complete parameter and return types after substituting the trait arguments",
         ),
         11 => (
             "trait impl header exceeds the current trait argument limit",
-            "this compiler currently supports at most two trait type arguments in a trait impl",
+            "this compiler currently supports at most 32 trait type arguments in a trait impl",
         ),
         12 => (
             "trait impl header uses an unsupported trait argument shape",
-            "use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name",
+            "use complete type arguments with the declared arity; missing arguments and unresolved types cannot satisfy a trait bound",
         ),
         13 => (
             "trait impl header uses the wrong number of trait arguments",
@@ -2760,15 +3658,15 @@ fn trait_impl_diagnostic(
         ),
         14 => (
             "trait impl target type is not supported here",
-            "this compiler currently supports trait impls for scalar and non-generic nominal targets here; generic instance targets are rejected",
+            "use a complete resolved target pattern whose generic parameters belong to this impl",
         ),
         15 => (
             "trait impl header contains an unknown trait argument type",
-            "resolve every trait type argument to a scalar or nominal type before implementing the trait",
+            "resolve every trait argument to a complete type pattern using parameters owned by this impl",
         ),
         16 => (
-            "trait method-level generics are not supported here",
-            "move the generic parameter to the trait or impl receiver type until method-level generic substitution is supported",
+            "generic executable trait methods are not supported here",
+            "a trait method's own generic header requires a method-level substitution contract; parameters inherited from an impl are supported",
         ),
         17 => (
             "trait method where clauses are not supported here",
@@ -2804,7 +3702,7 @@ fn trait_impl_diagnostic(
         ),
         28 => (
             "trait impl header uses generic trait arguments that are not supported here",
-            "use concrete non-nested trait arguments in impl headers for now",
+            "use a concrete impl without generic header parameters; blanket impls require a separate impl environment",
         ),
         29 => (
             "inherent impl target path is malformed",
@@ -2823,12 +3721,24 @@ fn trait_impl_diagnostic(
             "the compiler could not map the resolved declaration to compact HIR",
         ),
         33 => (
-            "inherent impl target has the wrong number of type arguments",
+            "inherent impl target has the wrong number of generic arguments",
             "match the target declaration's generic parameter count",
         ),
         34 => (
-            "inherent impl target contains an unsupported type argument",
-            "use scalar, generic, or concrete non-nested target arguments here",
+            "inherent impl target contains an incomplete or unsupported checked type pattern",
+            "use resolved type arguments within the compiler generic limits",
+        ),
+        37 => (
+            "direct constant trait operands are not supported here",
+            "the trait solver must preserve ordered type and constant operands before this contract can be used",
+        ),
+        38 => (
+            "trait impl has a generic parameter absent from its head",
+            "every declared type or constant parameter must occur in the subject or ordered trait arguments; a prerequisite alone does not determine a parameter",
+        ),
+        39 => (
+            "trait impl head exceeds the parameter inventory work limit",
+            "reduce nested head depth or expanded graph size; selection cannot proceed with an incomplete parameter inventory",
         ),
         _ => return None,
     };
@@ -2879,6 +3789,13 @@ fn call_mismatch_diagnostic(
     const CALL_MISMATCH_GENERIC_CLAIM_CAPACITY: u32 = 0xffffff04;
     const CALL_MISMATCH_ARITY: u32 = 0xffffff05;
     const CALL_MISMATCH_TYPED_SLICE_RETURN: u32 = 0xffffff06;
+    const CALL_MISMATCH_DUPLICATE_METHOD: u32 = 0xffffff07;
+    const CALL_MISMATCH_EXPLICIT_ARGUMENT_BINDING: u32 = 0xffffff08;
+    const CALL_MISMATCH_EXPLICIT_ARGUMENT_ARITY: u32 = 0xffffff09;
+    const CALL_MISMATCH_EXPLICIT_ARGUMENT_KIND: u32 = 0xffffff0a;
+    const CALL_MISMATCH_EXPLICIT_ARGUMENT_REFERENCE: u32 = 0xffffff0b;
+    const CALL_MISMATCH_AMBIGUOUS_METHOD: u32 = 0xffffff0c;
+    const CALL_MISMATCH_INVALID_METHOD_RECEIVER: u32 = 0xffffff0d;
     let (label, note) = match detail {
         CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
             "method return type is not supported for generic method dispatch here",
@@ -2903,6 +3820,34 @@ fn call_mismatch_diagnostic(
         CALL_MISMATCH_TYPED_SLICE_RETURN => (
             "slice_from_raw_parts must return a slice type",
             "declare its return type as [Element], matching the intended element layout",
+        ),
+        CALL_MISMATCH_EXPLICIT_ARGUMENT_BINDING => (
+            "explicit callable generic arguments have no checked binding",
+            "this callable must resolve to a declaration with an ordered generic parameter header",
+        ),
+        CALL_MISMATCH_EXPLICIT_ARGUMENT_ARITY => (
+            "explicit callable generic argument count does not match its own header",
+            "supply every parameter declared by this function or method; receiver arguments belong to the receiver header",
+        ),
+        CALL_MISMATCH_EXPLICIT_ARGUMENT_KIND => (
+            "explicit callable generic argument does not match the declared parameter kind",
+            "type parameters need checked types; constant parameters need a supported scalar literal, a checked named constant, or an exact scoped constant parameter of the declared type",
+        ),
+        CALL_MISMATCH_EXPLICIT_ARGUMENT_REFERENCE => (
+            "explicit callable generic argument has no valid checked reference",
+            "arguments must resolve within the separate 32-slot type and constant domains",
+        ),
+        CALL_MISMATCH_AMBIGUOUS_METHOD => (
+            "multiple visible methods match this receiver at the same preferred depth",
+            "use a distinct method name or remove the competing implementation from the visible module inventory",
+        ),
+        CALL_MISMATCH_INVALID_METHOD_RECEIVER => (
+            "method receiver has no valid checked type adjustment",
+            "the receiver needs a complete type graph within the supported 64-level traversal limit",
+        ),
+        CALL_MISMATCH_DUPLICATE_METHOD => (
+            "duplicate inherent methods have equivalent receiver patterns",
+            "keep one method with this name for each equivalent receiver pattern in the module",
         ),
         _ => (
             "call does not match a resolved function or method",
@@ -2992,6 +3937,80 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_call_ownership_retains_ordinary_calls_and_repeated_inlined_sites() {
+        use gpu_type_checker::CheckedCallOwner;
+        let checked = [
+            CheckedCallOwner { call_hir: 7, function_hir: 3 },
+            CheckedCallOwner { call_hir: 9, function_hir: u32::MAX },
+        ];
+        assert_eq!(retain_native_call_owners(&[9, 7, 7], &checked).unwrap(),
+            [u32::MAX, 3, 3]);
+        assert!(retain_native_call_owners(&[10], &checked).is_err());
+        assert!(retain_native_call_owners(&[7], &[checked[0], checked[0]]).is_err());
+    }
+
+    #[test]
+    fn semantic_capacity_failure_preserves_counts_in_public_diagnostic() {
+        let status = crate::codegen::lowering_ir::LoweringStatus {
+            flags: crate::codegen::lowering_ir::opcode::LOWERING_STATUS_SEMANTIC_CAPACITY,
+            required_capacity: 5,
+            available_capacity: 4,
+            ..Default::default()
+        };
+        let error = lowering_error_to_compile_error_without_source(
+            crate::codegen::lowering_pipeline::LoweringFailure { status }.into(),
+        );
+        assert!(matches!(error, CompileError::Diagnostic(_)));
+        let diagnostic = error.to_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0057");
+        assert!(diagnostic.primary_label.is_none());
+        let rendered = diagnostic.render();
+        assert!(rendered.contains("semantic lowering capacity exceeded"));
+        assert!(rendered.contains("requires 5 instruction rows"));
+        assert!(rendered.contains("provides 4"));
+        assert!(!rendered.contains("unsupported target LIR opcode"));
+        assert!(semantic_lowering_capacity_failure(Default::default()).is_none());
+    }
+
+    #[test]
+    fn mixed_semantic_capacity_failure_preserves_existing_failure_details() {
+        use crate::codegen::lowering_ir::opcode;
+        let status = crate::codegen::lowering_ir::LoweringStatus {
+            flags: opcode::LOWERING_STATUS_SEMANTIC_CAPACITY
+                | opcode::LOWERING_STATUS_OPTIMIZATION_STRUCTURE,
+            required_capacity: 91,
+            available_capacity: 17,
+            diagnostic_reason: opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE,
+            first_unsupported_opt_row: 7,
+            diagnostic_detail_kind:
+                crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE,
+            diagnostic_detail: 0x1234,
+            ..Default::default()
+        };
+        assert!(semantic_lowering_capacity_failure(status).is_none());
+        let diagnostic = optimizer_incoming_failure(status).expect("existing optimizer diagnostic");
+        let diagnostic = CompileError::Diagnostic(diagnostic).to_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0057");
+        let rendered = diagnostic.render();
+        assert!(rendered.contains("first unresolved incoming relation row: 7"));
+        assert!(rendered.contains("sample unresolved packed SSA source: 0x00001234"));
+        assert!(!rendered.contains("semantic lowering capacity exceeded"));
+        assert!(!rendered.contains("instruction rows"));
+
+        // The source-free Wasm conversion keeps its original raw phase error.
+        let failure = crate::codegen::lowering_pipeline::LoweringFailure { status };
+        let original = failure.to_string();
+        let error = lowering_error_to_compile_error_without_source(failure.into());
+        match &error {
+            CompileError::GpuCodegen(detail) => assert_eq!(detail, &original),
+            other => panic!("mixed failure changed conversion: {other:?}"),
+        }
+        let diagnostic = error.to_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0057");
+        assert!(!diagnostic.render().contains("instruction rows"));
+    }
+
+    #[test]
     fn unresolved_ssa_incoming_is_a_compiler_failure_not_an_unsupported_feature() {
         let status = crate::codegen::lowering_ir::LoweringStatus {
             diagnostic_reason:
@@ -3021,6 +4040,741 @@ mod tests {
     fn parser_growth_retains_parser_capacity_history() {
         assert!(FrontendWorkspaceReplacement::Lexer.invalidates_parser_allocation());
         assert!(!FrontendWorkspaceReplacement::Parser.invalidates_parser_allocation());
+    }
+
+    #[test]
+    fn qualified_variant_parent_binding_survives_dependency_page_replay() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let left = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            10,
+            &["module lib::left; pub enum Choice<T> { Left(T), Missing }"],
+        ))
+        .expect("left interface");
+        let right = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            11,
+            &["module lib::right; pub enum Choice<T> { Right(T), Missing }"],
+        ))
+        .expect("right interface");
+        let imports =
+            "module app::main; import lib::left; import lib::right; fn main() -> i32 { return 0; }";
+        pollster::block_on(
+            compiler.semantic_interface_for_source_pack_with_dependencies(
+                12,
+                &[imports],
+                &[left.clone(), right.clone()],
+            ),
+        )
+        .expect("both exported interfaces resolve in one dependency batch");
+        for (label, pages) in [
+            ("flat", vec![vec![left.clone(), right.clone()]]),
+            ("left first", vec![vec![left.clone()], vec![right.clone()]]),
+            ("right first", vec![vec![right.clone()], vec![left.clone()]]),
+        ] {
+            pollster::block_on(
+                compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    12,
+                    0,
+                    &[imports],
+                    &pages,
+                ),
+            )
+            .expect("imports survive page partitioning");
+            for expression in ["Choice<i32>::Left(42)", "Choice<i32>::Missing"] {
+                let source = format!(
+                    "module app::main; import lib::left; import lib::right; fn main() -> i32 {{ let wrong = {expression}; return 0; }}"
+                );
+                let error = pollster::block_on(
+                    compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                        12,
+                        0,
+                        &[source],
+                        &pages,
+                    ),
+                )
+                .expect_err("the qualifier remains ambiguous across pages");
+                let diagnostic = error.to_public_diagnostic();
+                assert_eq!(
+                    diagnostic.code, "LNC0005",
+                    "{label}: {expression}: {error:?}"
+                );
+                assert!(diagnostic.primary_label.is_some());
+            }
+            let shadowed = "module app::main; import lib::left; import lib::right; enum Choice<T> { Local(T) } fn main() -> i32 { let wrong = Choice<i32>::Left(42); return 0; }";
+            let error = pollster::block_on(
+                compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    12,
+                    0,
+                    &[shadowed],
+                    &pages,
+                ),
+            )
+            .expect_err("a local parent shadows imports on every page");
+            assert_eq!(
+                error.to_public_diagnostic().code,
+                "LNC0005",
+                "{label}: {error:?}"
+            );
+            let source = r#"
+module app::main;
+import lib::left;
+import lib::right;
+enum Choice<T> { Local(T) }
+fn main() -> i32 {
+    let a = lib::left::Choice<i32>::Left(19);
+    let b = lib::right::Choice<i32>::Right(21);
+    let c = Choice<i32>::Local(2);
+    return (match (a) { lib::left::Choice::Left(v) -> v, _ -> 0 }) +
+        (match (b) { lib::right::Choice::Right(v) -> v, _ -> 0 }) +
+        (match (c) { Choice::Local(v) -> v });
+}
+"#;
+            pollster::block_on(
+                compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    12,
+                    0,
+                    &[source],
+                    &pages,
+                ),
+            )
+            .expect("full qualifiers retain distinct parents after rejected jobs");
+            #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+            assert_paged_native_exit(&compiler, source, &pages, label, 42, b"");
+        }
+        pollster::block_on(compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+            12, 0, &["module app::main; import lib::left; fn main() -> i32 { let a = Choice<i32>::Left(42); return 0; }"],
+            &[vec![left.clone()], vec![left]])).expect("replaying the same parent is not ambiguous");
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn imported_alias_targets_survive_nested_substitution_and_dependency_page_order() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(10, &[
+            "module lib::inner; pub struct Pair<A, B> { first: A, second: B } pub type Id<T> = T; pub type Fixed<T, const N: usize> = [T; N];",
+        ])).expect("inner alias interface");
+        let outer = pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(11, &[
+            "module lib::outer; import lib::inner; pub type Swap<A, B> = lib::inner::Pair<B, A>; pub type Numbers<const N: usize> = lib::inner::Fixed<i32, N>; pub type Id<T> = lib::inner::Id<T>;",
+        ], &[inner.clone()])).expect("reexported alias targets");
+        let source = r#"
+module app::main;
+import lib::inner;
+import lib::outer;
+type Local<T> = lib::outer::Id<lib::inner::Fixed<T, 2> >;
+fn relay<T>(value: Local<T>) -> lib::inner::Fixed<T, 2> { return value; }
+fn main() -> i32 {
+    let data: lib::outer::Id<lib::outer::Numbers<2> > = relay<i32>([19, 23]);
+    let original: lib::inner::Id<lib::outer::Swap<bool, Local<i32> > > =
+        lib::inner::Pair { first: data, second: false };
+    let saved = original;
+    original.first[0] = -9;
+    if (saved.second || saved.first[0] != 19) { return 1; }
+    return saved.first[0] + saved.first[1];
+}
+"#;
+        for (label, pages) in [
+            ("flat aliases", vec![vec![inner.clone(), outer.clone()]]),
+            (
+                "inner first aliases",
+                vec![vec![inner.clone()], vec![outer.clone()]],
+            ),
+            (
+                "outer first aliases",
+                vec![vec![outer.clone()], vec![inner.clone()]],
+            ),
+            (
+                "aliases across empty page",
+                vec![vec![outer.clone()], vec![], vec![inner.clone()]],
+            ),
+        ] {
+            assert_paged_native_exit(&compiler, source, &pages, label, 42, b"");
+            let invalid = source.replace("relay<i32>([19, 23])", "relay<i32>([19, 23, 7])");
+            let error = pollster::block_on(
+                compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    12,
+                    0,
+                    &[invalid],
+                    &pages,
+                ),
+            )
+            .expect_err("alias target length is preserved on every page order");
+            assert_eq!(
+                error.to_public_diagnostic().code,
+                "LNC0006",
+                "{label}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn imported_alias_members_survive_dependency_page_order_and_preserve_scope() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            10,
+            &[r#"
+module lib::inner;
+pub enum Packet<T, const N: usize, F> { Missing, Data([T; N], F) }
+pub type Swap<F, T, const N: usize> = Packet<T, N, F>;
+"#],
+        ))
+        .expect("enum and alias interface");
+        let outer = pollster::block_on(
+            compiler.semantic_interface_for_source_pack_with_dependencies(
+                11,
+                &[r#"
+module lib::outer;
+import lib::inner;
+pub type Numbers<const N: usize> = lib::inner::Swap<bool, i32, N>;
+pub type Empty = Numbers<0>;
+"#],
+                &[inner.clone()],
+            ),
+        )
+        .expect("reexported enum aliases");
+        let source = r#"
+module app::main;
+import lib::inner;
+import lib::outer;
+type Local = lib::outer::Numbers<2>;
+fn main() -> i32 {
+    let value = Local::Data([19, 23], false);
+    let empty = lib::outer::Empty::Missing;
+    let called = lib::outer::Empty::Missing();
+    if (!(match (empty) { lib::inner::Packet::Missing -> true, _ -> false }) ||
+        !(match (called) { lib::inner::Packet::Missing -> true, _ -> false })) { return 1; }
+    let flag = match (value) { lib::inner::Packet::Data(values, flag) -> flag, _ -> true };
+    if (flag) { return 2; }
+    return match (value) { lib::inner::Packet::Data(values, flag) -> values[0] + values[1], _ -> 0 };
+}
+"#;
+        let other = pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(13, &[
+            "module lib::other; import lib::inner; pub type Numbers<const N: usize> = lib::inner::Packet<i32, N, bool>;",
+        ], &[inner.clone()])).expect("independently named alias");
+        for (label, pages) in [
+            (
+                "flat alias members",
+                vec![vec![inner.clone(), outer.clone(), other.clone()]],
+            ),
+            (
+                "target first alias members",
+                vec![
+                    vec![inner.clone()],
+                    vec![outer.clone()],
+                    vec![other.clone()],
+                ],
+            ),
+            (
+                "target last alias members",
+                vec![
+                    vec![other.clone()],
+                    vec![outer.clone()],
+                    vec![inner.clone()],
+                ],
+            ),
+            (
+                "alias members across empty page",
+                vec![
+                    vec![outer.clone()],
+                    vec![],
+                    vec![other.clone()],
+                    vec![inner.clone()],
+                ],
+            ),
+        ] {
+            assert_paged_native_exit(&compiler, source, &pages, label, 42, b"");
+            let invalid = source.replace(
+                "Local::Data([19, 23], false)",
+                "Local::Data([19, 23, 7], false)",
+            );
+            let error = pollster::block_on(
+                compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    12,
+                    0,
+                    &[invalid],
+                    &pages,
+                ),
+            )
+            .expect_err("normalized member lengths constrain every page order");
+            assert_eq!(
+                error.to_public_diagnostic().code,
+                "LNC0006",
+                "{label}: {error:?}"
+            );
+            for (declaration, imports) in [
+                ("", "import lib::other;"),
+                ("enum Numbers<const N: usize> { Local }", ""),
+            ] {
+                let invalid = format!(
+                    "module app::main; import lib::outer; {imports} {declaration} fn main() -> i32 {{ let value = Numbers<2>::Data([19, 23], false); return 0; }}"
+                );
+                let error = pollster::block_on(
+                    compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                        12,
+                        0,
+                        &[invalid],
+                        &pages,
+                    ),
+                )
+                .expect_err("checked targets do not bypass alias ambiguity or shadowing");
+                assert_eq!(
+                    error.to_public_diagnostic().code,
+                    "LNC0005",
+                    "{label}: {error:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn body_replay_preserves_qualified_alias_parameter_identity() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let aliases =
+            pollster::block_on(compiler.semantic_interface_for_source_pack(
+                10,
+                &["module lib::aliases; pub type Id<T> = T;"],
+            ))
+            .expect("identity alias interface");
+        let source = r#"
+module app::main;
+import lib::aliases;
+pub fn keep<T>(v: lib::aliases::Id<T>) -> lib::aliases::Id<lib::aliases::Id<T>> { return v; }
+fn main() -> i32 {
+    let number = keep<i32>(42);
+    let flag = keep<bool>(false);
+    let values = keep<[i32; 2]>([19, 23]);
+    if (flag || values[0] + values[1] != number) { return 1; }
+    return number;
+}
+"#;
+        let pages = vec![vec![aliases]];
+        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(),
+            12,
+            0,
+            pages.clone().into(),
+            SourcePackArtifactTarget::X86_64,
+        ))
+        .expect("symbolic imported aliases are checked");
+        assert_eq!(template.generic_calls.len(), 3);
+        for call in template.generic_calls.iter() {
+            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call))
+                .expect("complete qualified alias references specialize with their parameter");
+            assert_eq!(
+                replay.interface, template.interface,
+                "body replay preserves the symbolic public interface"
+            );
+            assert!(
+                std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts),
+                "replay shares the immutable definition contracts"
+            );
+        }
+        assert_paged_native_exit(
+            &compiler,
+            source,
+            &pages,
+            "specialized imported identity aliases",
+            42,
+            b"",
+        );
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn semantic_replay_materializes_local_nominal_and_array_without_width_witnesses() {
+        use crate::type_checker::{CheckedGenericApplicationArgument, CheckedGenericType};
+        fn omit_widths(ty: &mut CheckedGenericType) {
+            match ty {
+                CheckedGenericType::Nominal { arguments, words, .. } => {
+                    *words = None;
+                    for child in arguments {
+                        if let CheckedGenericApplicationArgument::Type(child) = child { omit_widths(child); }
+                    }
+                }
+                CheckedGenericType::Array { element, words, .. } => { *words = None; omit_widths(element); }
+                CheckedGenericType::Reference(child) | CheckedGenericType::Slice(child) => omit_widths(child),
+                _ => {}
+            }
+        }
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let source = r#"
+module app::main;
+struct Cell<T> { value: T }
+fn relay<U>(value: U) -> U { return value; }
+pub fn keep<T>(value: T) -> T { return relay(value); }
+fn main() -> i32 {
+    let value: Cell<[i32; 2]> = Cell { value: [19, 23] };
+    let copied = keep(value);
+    return copied.value[0] + copied.value[1];
+}
+"#;
+        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(), 12, 0, vec![].into(), SourcePackArtifactTarget::X86_64,
+        )).expect("checked source and immutable declaration graph");
+        let mut call = template.generic_calls.iter().find(|call|
+            call.arguments.first().is_some_and(|argument|
+                matches!(argument.ty, CheckedGenericType::Nominal { .. })))
+            .expect("concrete local nominal call").clone();
+        for argument in &mut call.arguments { omit_widths(&mut argument.ty); }
+        assert!(call.has_closed_arguments());
+        assert!(!call.has_complete_arguments());
+        let replay = pollster::block_on(compiler.compile_body_specialization(&template, &call))
+            .expect("GPU derives the local nominal and nested array layouts");
+        let forwarded = replay.generic_calls.iter().find(|fresh|
+            fresh.call_hir != call.call_hir && fresh.arguments.first().is_some_and(|argument|
+                matches!(argument.ty, CheckedGenericType::Nominal { words: Some(2), .. })))
+            .expect("fresh forwarded call retains the GPU-produced native witness");
+        assert!(forwarded.has_complete_arguments(), "{forwarded:?}");
+        let widths = replay.body_native_layouts.as_ref().expect("completed GPU seed layouts");
+        assert_eq!(widths.last(), Some(&2), "native cache receives the actual nominal width");
+        assert!(!widths.contains(&u32::MAX), "all local seed layouts were materialized");
+        assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts));
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn semantic_replay_layout_admission_preserves_zero_and_recovers_after_conflict() {
+        use crate::type_checker::{CheckedGenericApplicationArgument, CheckedGenericType};
+        fn omit_widths(ty: &mut CheckedGenericType) {
+            match ty {
+                CheckedGenericType::Nominal { arguments, words, .. } => {
+                    *words = None;
+                    for child in arguments {
+                        if let CheckedGenericApplicationArgument::Type(child) = child {
+                            omit_widths(child);
+                        }
+                    }
+                }
+                CheckedGenericType::Array { element, words, .. } => {
+                    *words = None;
+                    omit_widths(element);
+                }
+                CheckedGenericType::Reference(child) | CheckedGenericType::Slice(child) => {
+                    omit_widths(child);
+                }
+                _ => {}
+            }
+        }
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let source = r#"
+module app::main;
+struct Cell<T> { value: T }
+pub fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let empty: Cell<[i32; 0]> = Cell { value: [] };
+    let copied_empty = keep(empty);
+    let copied = keep([19, 23]);
+    return copied[0] + copied[1];
+}
+"#;
+        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(), 12, 0, vec![].into(), SourcePackArtifactTarget::X86_64,
+        )).expect("checked zero-width and nonzero call environments");
+        let mut empty = template.generic_calls.iter().find(|call|
+            call.arguments.first().is_some_and(|argument|
+                matches!(argument.ty, CheckedGenericType::Nominal { words: Some(0), .. })))
+            .expect("zero-width nominal call").clone();
+        let mut full = template.generic_calls.iter().find(|call|
+            call.arguments.first().is_some_and(|argument|
+                matches!(argument.ty, CheckedGenericType::Array { words: Some(2), .. })))
+            .expect("two-word array call").clone();
+        for call in [&mut empty, &mut full] {
+            for argument in &mut call.arguments { omit_widths(&mut argument.ty); }
+            assert!(call.has_closed_arguments());
+            assert!(!call.has_complete_arguments());
+        }
+        let replay = pollster::block_on(compiler.compile_body_specialization(&template, &empty))
+            .expect("GPU must derive zero as a complete width");
+        let saved = replay.body_native_layouts.as_ref().expect("zero seed readback").clone();
+        assert_eq!(saved.as_ref(), &[0, 0, 0]);
+
+        let mut conflicting = full.clone();
+        let CheckedGenericType::Array { words, .. } = &mut conflicting.arguments[0].ty else {
+            unreachable!("selected array call")
+        };
+        *words = Some(3);
+        let error = pollster::block_on(compiler.compile_body_specialization(&template, &conflicting))
+            .err().expect("retained width 3 must not override the derived two-word array");
+        let diagnostic = error.to_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0047", "{error:?}");
+        assert!(diagnostic.notes.iter().any(|note|
+            note.contains("width witness") && note.contains("conflicts")), "{diagnostic:?}");
+
+        // Reuse the same compiler after rejection with both a shorter and a
+        // longer graph. Previous widths, inactive seed rows, and error status
+        // must not become facts about the next replay.
+        for (call, expected) in [(&full, &[0, 2][..]), (&empty, &[0, 0, 0][..])] {
+            let recovered = pollster::block_on(compiler.compile_body_specialization(&template, call))
+                .expect("fresh replay after a rejected width witness");
+            assert_eq!(recovered.body_native_layouts.as_deref(), Some(expected));
+        }
+        assert_eq!(saved.as_ref(), &[0, 0, 0], "later jobs preserve owned layout readback");
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn semantic_replay_descriptors_do_not_require_opaque_referent_widths() {
+        use crate::type_checker::CheckedGenericType;
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let library = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec!["module lib::relay; pub fn keep<T>(value: T) -> T { return value; }".to_owned()].into(),
+            10, 0, vec![].into(), SourcePackArtifactTarget::X86_64,
+        )).expect("descriptor relay template");
+        let source = r#"
+module app::main;
+import lib::relay;
+struct Hidden { value: i32 }
+impl Hidden { fn borrow(&self) -> &Hidden { return self; } }
+fn view(values: [Hidden]) -> [Hidden] { return values; }
+fn main() -> i32 {
+    let first: Hidden = Hidden { value: 19 };
+    let borrowed: &Hidden = lib::relay::keep(first.borrow());
+    let values: [Hidden; 2] = [Hidden { value: 19 }, Hidden { value: 23 }];
+    let slice: [Hidden] = view(values);
+    let copied: [Hidden] = lib::relay::keep(slice);
+    return borrowed.value + copied[1].value;
+}
+"#;
+        let caller = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(), 12, 0, vec![vec![library.interface.clone()]].into(),
+            SourcePackArtifactTarget::X86_64,
+        )).expect("caller-private descriptor operands");
+        for (reference, descriptor_words) in [(true, 1), (false, 3)] {
+            let mut call = caller.generic_calls.iter().find(|call|
+                call.arguments.first().is_some_and(|argument| if reference {
+                    matches!(argument.ty, CheckedGenericType::Reference(_))
+                } else {
+                    matches!(argument.ty, CheckedGenericType::Slice(_))
+                })).expect("checked descriptor call").clone();
+            let (CheckedGenericType::Reference(referent) | CheckedGenericType::Slice(referent)) =
+                &mut call.arguments[0].ty else { unreachable!("selected descriptor") };
+            let CheckedGenericType::Nominal { words, .. } = referent.as_mut() else {
+                panic!("descriptor must retain the caller-private nominal identity")
+            };
+            *words = None;
+            assert!(call.has_closed_arguments());
+            assert!(!call.has_complete_arguments());
+            let replay = pollster::block_on(compiler.compile_body_specialization(&library, &call))
+                .expect("descriptor layout is complete without a foreign payload recipe");
+            let widths = replay.body_native_layouts.as_deref().expect("descriptor seed readback");
+            assert_eq!(widths, &[u32::MAX, descriptor_words],
+                "opaque referent identity survives while only descriptor storage is required");
+            assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &library.checked_contracts));
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn body_replay_preserves_symbolic_public_interfaces() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let source = r#"
+module app::main;
+pub type Items<T, const N: usize> = [T; N];
+pub fn relay<T, const N: usize>(value: Items<T, N>) -> Items<T, N> { return value; }
+fn main() -> i32 {
+    let data: [i32; 2] = relay<i32, 2>([19, 23]);
+    let flags: [bool; 2] = relay<bool, 2>([false, true]);
+    let empty: [str; 0] = relay<str, 0>([]);
+    if (flags[0] || !flags[1]) { return 1; }
+    return data[0] + data[1];
+}
+"#;
+        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(),
+            12,
+            0,
+            vec![].into(),
+            SourcePackArtifactTarget::X86_64,
+        ))
+        .expect("symbolic unit");
+        assert_eq!(template.generic_calls.len(), 3);
+        for call in template.generic_calls.iter() {
+            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call))
+                .expect("concrete replay");
+            assert_eq!(
+                replay.interface, template.interface,
+                "concrete body types must not replace the public generic contract"
+            );
+            assert!(
+                std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts),
+                "replay shares the immutable definition contracts"
+            );
+        }
+        assert_paged_native_exit(
+            &compiler,
+            source,
+            &[],
+            "immutable template interface",
+            42,
+            b"",
+        );
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn assert_paged_native_exit(
+        compiler: &GpuCompiler<'_>,
+        source: &str,
+        pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+        label: &str,
+        expected: i32,
+        expected_stdout: &[u8],
+    ) {
+        use std::{
+            os::unix::fs::PermissionsExt,
+            sync::atomic::{AtomicU64, Ordering},
+        };
+
+        use crate::codegen::x86::GpuX86LinkInput;
+        static NEXT_EXECUTABLE: AtomicU64 = AtomicU64::new(0);
+
+        let unit = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(),
+            12,
+            0,
+            pages.to_vec().into(),
+            SourcePackArtifactTarget::X86_64,
+        ))
+        .unwrap_or_else(|error| panic!("{label}: compile paged values: {error:?}"));
+        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
+            .unwrap_or_else(|error| panic!("{label}: specialize paged values: {error:?}"));
+        let input =
+            GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
+                .expect("link input");
+        let executable = compiler
+            .x86_linker()
+            .expect("x86 linker")
+            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
+            .expect("link paged values");
+        let path = std::env::temp_dir().join(format!(
+            "laniusc-paged-values-{}-{}",
+            std::process::id(),
+            NEXT_EXECUTABLE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::write(&path, executable).expect("write executable");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+            .expect("set executable permission");
+        let output = std::process::Command::new(&path)
+            .output()
+            .expect("run executable");
+        let _ = std::fs::remove_file(path);
+        assert_eq!(output.status.code(), Some(expected), "{label}: {output:?}");
+        assert_eq!(output.stdout, expected_stdout, "{label}: {output:?}");
+        assert!(output.stderr.is_empty(), "{label}: {output:?}");
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn dependency_page_native_layouts_retain_composed_values() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            10,
+            &[r#"
+module lib::inner;
+pub struct Boxed<T> { value: T, code: i32 }
+pub enum Packet<T> { Small(T), Wide([str; 2]), Empty }
+"#],
+        ))
+        .expect("inner interface");
+        let outer = pollster::block_on(
+            compiler.semantic_interface_for_source_pack_with_dependencies(
+                11,
+                &[r#"
+module lib::outer;
+import lib::inner;
+pub enum Outer<T> { Value(lib::inner::Packet<T>), Record(lib::inner::Boxed<T>), Missing }
+"#],
+                &[inner.clone()],
+            ),
+        )
+        .expect("outer interface");
+        let source = r#"
+module app::main;
+import lib::inner;
+import lib::outer;
+extern "lanius_std" fn write_text(handle: i32, text: str) -> i32;
+fn sum(value: lib::outer::Outer<[i32; 2]>) -> i32 {
+    let packet = match (value) {
+        lib::outer::Outer::Value(payload) -> payload,
+        _ -> lib::inner::Packet<[i32; 2]>::Empty()
+    };
+    return match (packet) {
+        lib::inner::Packet::Small(values) -> values[0] + values[1],
+        _ -> 0
+    };
+}
+fn main() -> i32 {
+    let original = lib::outer::Outer<[i32; 2]>::Value(
+        lib::inner::Packet<[i32; 2]>::Small([19, 23]));
+    let saved = original;
+    original = lib::outer::Outer<[i32; 2]>::Missing();
+    let wide = lib::outer::Outer<[i32; 2]>::Value(
+        lib::inner::Packet<[i32; 2]>::Wide(["α", "omega"]));
+    let wide_packet = match (wide) {
+        lib::outer::Outer::Value(payload) -> payload,
+        _ -> lib::inner::Packet<[i32; 2]>::Empty()
+    };
+    let words = match (wide_packet) {
+        lib::inner::Packet::Wide(text) -> text,
+        _ -> ["", ""]
+    };
+    if (write_text(1, words[0]) != 2 || write_text(1, words[1]) != 5) { return 13; }
+    return sum(saved);
+}
+"#;
+        for (label, pages) in [
+            (
+                "flat composed layout",
+                vec![vec![inner.clone(), outer.clone()]],
+            ),
+            (
+                "inner first composed layout",
+                vec![vec![inner.clone()], vec![outer.clone()]],
+            ),
+            (
+                "outer first composed layout",
+                vec![vec![outer], vec![inner]],
+            ),
+        ] {
+            assert_paged_native_exit(&compiler, source, &pages, label, 42, "αomega".as_bytes());
+            // Page ownership must preserve rejection as well as successful
+            // layouts. Reuse the compiler after each rejected source.
+            for invalid in [
+                source.replace("Small([19, 23])", "Small([true, false])"),
+                source.replace("Wide([\"α\", \"omega\"])", "Wide([\"α\"])"),
+            ] {
+                let error = pollster::block_on(
+                    compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                        12,
+                        0,
+                        &[invalid.as_str()],
+                        &pages,
+                    ),
+                )
+                .expect_err("wrong payload type or length must reject on every page order");
+                let diagnostic = error.to_public_diagnostic();
+                assert_eq!(diagnostic.code, "LNC0006", "{label}: {error:?}");
+                assert!(diagnostic.primary_label.is_some(), "{label}: {error:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn qualified_variant_import_ambiguity_is_independent_of_source_pack_membership() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let left = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            10,
+            &["module lib::left; pub enum Choice<T> { Left(T) }"],
+        ))
+        .expect("left interface");
+        let sources = [
+            "module app::main; import lib::source; import lib::left; fn main() -> i32 { let wrong = Choice<i32>::Source(42); return 0; }",
+            "module lib::source; pub enum Choice<T> { Source(T) }",
+        ];
+        let error = pollster::block_on(
+            compiler.semantic_interface_for_source_pack_with_dependencies(11, &sources, &[left]),
+        )
+        .expect_err("source-pack imports do not shadow dependency imports");
+        assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
     }
 
     #[test]

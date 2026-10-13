@@ -1,0 +1,30 @@
+
+running 25 tests
+test codegen::lowering_ir::tests::lowering_records_match_shader_storage_layouts ... ok
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test codegen::lowering_ir::tests::x86_target_lir_entrypoints_match_graph_access_contracts ... ok
+test codegen::x86::object::tests::x86_object_binary_roundtrip_preserves_sections_relocations_and_symbols ... ok
+test codegen::x86::object::tests::x86_object_validation_rejects_corrupt_ranges_and_identity_hashes ... ok
+test codegen::x86::object::tests::x86_objects_reject_pre_stride_abi_versions ... ok
+test compiler::semantic_interface::tests::associated_method_receiver_type_roundtrips_and_must_name_its_owner ... ok
+test compiler::semantic_interface::tests::semantic_interface_binary_roundtrip_preserves_canonical_typed_graph ... ok
+test compiler::semantic_interface::tests::semantic_interface_constants_cannot_be_value_roots_or_elements ... ok
+test compiler::semantic_interface::tests::semantic_interface_generic_order_is_independent_of_binding_slots ... ok
+test compiler::semantic_interface::tests::semantic_interface_nominal_constant_payloads_are_canonical ... ok
+test compiler::semantic_interface::tests::semantic_interface_nominal_constants_roundtrip_and_rebase_by_role ... ok
+test compiler::semantic_interface::tests::semantic_interface_nominal_types_carry_library_identity_and_generic_edges ... ok
+test compiler::semantic_interface::tests::semantic_interface_rejects_hash_only_or_out_of_range_identity_records ... ok
+test compiler::semantic_interface::tests::semantic_interface_rejects_trailing_or_truncated_binary_payloads ... ok
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+test type_checker::generic_body::tests::checked_packets_keep_zero_layouts_distinct_from_missing_layouts ... ok
+test type_checker::generic_body::tests::constant_environments_keep_values_in_specialization_identity ... ok
+test type_checker::generic_body::tests::nominal_constants_keep_value_identity_and_require_closed_domains ... ok
+test type_checker::generic_body::tests::nominal_packets_keep_ordered_children_and_distinct_equal_width_types ... ok
+test type_checker::generic_body::tests::nominal_packets_preserve_nested_structural_arguments_and_arity_limit ... ok
+test type_checker::generic_body::tests::reference_specializations_keep_referent_identity_and_pointer_width ... ok
+test type_checker::generic_body::tests::reference_specializations_reject_unresolved_referents ... ok
+test type_checker::generic_body::tests::replay_keeps_complete_arguments_and_scopes_local_declarations ... ok
+test type_checker::generic_body::tests::specialization_identity_excludes_derived_layout_but_retains_full_types ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 606 filtered out; finished in 0.08s
+

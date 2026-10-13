@@ -1,0 +1,20 @@
+
+running 2 tests
+test generic_reference_results_preserve_referent_identity ... 
+thread 'generic_reference_results_preserve_referent_identity' (575661) panicked at tests/compiler_generic_types_execution.rs:110:29:
+reference forwarding, generic=true: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_reference_forwarding__generic_true_575660_0.lani", line: 5, column: 40, length: 4, byte_start: Some(133), byte_end: Some(137), source_line: Some("    fn borrow(&self) -> &Item { return keep(self); }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test ordinary_reference_results_preserve_referent_identity ... 
+thread 'ordinary_reference_results_preserve_referent_identity' (575718) panicked at tests/compiler_generic_types_execution.rs:110:29:
+reference forwarding, generic=false: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_reference_forwarding__generic_false_575660_1.lani", line: 10, column: 27, length: 4, byte_start: Some(303), byte_end: Some(307), source_line: Some("    let borrowed: &Item = item.borrow();"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+FAILED
+
+failures:
+
+failures:
+    generic_reference_results_preserve_referent_identity
+    ordinary_reference_results_preserve_referent_identity
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 107 filtered out; finished in 1.48s
+

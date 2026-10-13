@@ -1,0 +1,3 @@
+module core::range;
+pub struct Range<T> { start: T, end: T }
+pub struct RangeInclusive<T> { start: T, end: T }

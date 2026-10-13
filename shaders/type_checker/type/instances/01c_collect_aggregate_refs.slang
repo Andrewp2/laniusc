@@ -1,4 +1,4 @@
-// HIR-driven array and slice instance headers.
+// HIR-driven array, slice, and reference instance headers.
 //
 // The pass publishes token-indexed instance refs for aggregate type forms.
 // Element and length refs are filled in a later pass after all child type refs
@@ -33,6 +33,7 @@ static const uint HIR_TYPE = 5u;
 
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint HIR_TYPE_FORM_SLICE = 3u;
+static const uint HIR_TYPE_FORM_REF = 4u;
 
 static const uint TYPE_REF_INSTANCE = 3u;
 
@@ -66,7 +67,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint form = compact_hir_payload[node].a;
-    if (form != HIR_TYPE_FORM_ARRAY && form != HIR_TYPE_FORM_SLICE)
+    if (form != HIR_TYPE_FORM_ARRAY && form != HIR_TYPE_FORM_SLICE &&
+        form != HIR_TYPE_FORM_REF)
         return;
 
     uint token = compact_hir_core[node].token_start;
@@ -75,8 +77,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     type_expr_ref_tag[token] = TYPE_REF_INSTANCE;
     type_expr_ref_payload[token] = token;
-    type_instance_kind[token] = form == HIR_TYPE_FORM_ARRAY ? TYPE_INSTANCE_ARRAY
-                                                            : TYPE_INSTANCE_SLICE;
+    type_instance_kind[token] = form;
     type_instance_head_token[token] = token;
     type_instance_state[token] = TYPE_INSTANCE_UNRESOLVED;
 }

@@ -1,0 +1,1 @@
+import core::option; fn main() -> i32 { let value: core::option::Option<bool> = core::option::Option::None(); return match (value) { core::option::None -> 42, _ -> 1 }; }

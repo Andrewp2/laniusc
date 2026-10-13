@@ -287,34 +287,6 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.impl_header.local",
-        &passes.tokens_impl_header_01_local,
-        &[(
-            "statement_event_block",
-            "statement_event_block",
-            Some(AccessMode::Write),
-        )],
-    )?;
-    statement_scan(
-        graph,
-        IMPL_HEADER_SCAN_UP,
-        IMPL_HEADER_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
-    pass(
-        graph,
-        "parser.tokens.impl_header.apply",
-        &passes.tokens_impl_header_02_apply,
-        &[(
-            "token_impl_context_event",
-            "token_impl_context_event",
-            Some(AccessMode::Write),
-        )],
-    )?;
-
-    pass(
-        graph,
         "parser.tokens.delimiters.local",
         &passes.token_delimiters_01,
         &[
@@ -377,6 +349,35 @@ pub(super) fn register_schedule(
         passes,
         levels,
     )?;
+    // Impl-header boundaries distinguish array-type separators from statement
+    // terminators using the completed raw bracket-depth relation.
+    pass(
+        graph,
+        "parser.tokens.impl_header.local",
+        &passes.tokens_impl_header_01_local,
+        &[(
+            "statement_event_block",
+            "statement_event_block",
+            Some(AccessMode::Write),
+        )],
+    )?;
+    statement_scan(
+        graph,
+        IMPL_HEADER_SCAN_UP,
+        IMPL_HEADER_SCAN_DOWN,
+        passes,
+        levels,
+    )?;
+    pass(
+        graph,
+        "parser.tokens.impl_header.apply",
+        &passes.tokens_impl_header_02_apply,
+        &[(
+            "token_impl_context_event",
+            "token_impl_context_event",
+            Some(AccessMode::Write),
+        )],
+    )?;
     pass(
         graph,
         "parser.tokens.generic_shr.raw_local",
@@ -409,6 +410,73 @@ pub(super) fn register_schedule(
             ("block_prefix_sum", "generic_shr_block_prefix_sum", None),
             ("block_prefix_min", "generic_shr_block_prefix_min", None),
         ],
+    )?;
+    pass(
+        graph,
+        "parser.tokens.delimiter_match.depth_blocks",
+        &passes.tokens_delimiter_match_01_depth_blocks,
+        &[
+            (
+                "paren_match_depth",
+                "paren_match_depth",
+                Some(AccessMode::Write),
+            ),
+            (
+                "brace_match_depth",
+                "brace_match_depth",
+                Some(AccessMode::Write),
+            ),
+            (
+                "bracket_match_depth",
+                "bracket_match_depth",
+                Some(AccessMode::Write),
+            ),
+            (
+                "angle_match_depth",
+                "angle_match_depth",
+                Some(AccessMode::Write),
+            ),
+            (
+                "paren_match_block_min",
+                "paren_match_block_min",
+                Some(AccessMode::Write),
+            ),
+            (
+                "brace_match_block_min",
+                "brace_match_block_min",
+                Some(AccessMode::Write),
+            ),
+            (
+                "bracket_match_block_min",
+                "bracket_match_block_min",
+                Some(AccessMode::Write),
+            ),
+            (
+                "angle_match_block_min",
+                "angle_match_block_min",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    pass(
+        graph,
+        MIN_TREE_BUILD,
+        &passes.tokens_delimiter_match_02_build_min_tree,
+        &[],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        MIN_TREE_BUILD,
+        &[
+            "paren_match_min_tree",
+            "brace_match_min_tree",
+            "bracket_match_min_tree",
+            "angle_match_min_tree",
+        ],
+    )?;
+    graph.repeat_pass_range(
+        blocks.next_power_of_two().ilog2() + 1,
+        MIN_TREE_BUILD,
+        MIN_TREE_BUILD,
     )?;
     pass(
         graph,
@@ -483,75 +551,13 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.delimiter_match.depth_blocks",
-        &passes.tokens_delimiter_match_01_depth_blocks,
-        &[
-            (
-                "bracket_semantic_kind",
-                "bracket_semantic_kind",
-                Some(AccessMode::Write),
-            ),
-            (
-                "paren_match_depth",
-                "paren_match_depth",
-                Some(AccessMode::Write),
-            ),
-            (
-                "brace_match_depth",
-                "brace_match_depth",
-                Some(AccessMode::Write),
-            ),
-            (
-                "bracket_match_depth",
-                "bracket_match_depth",
-                Some(AccessMode::Write),
-            ),
-            (
-                "angle_match_depth",
-                "angle_match_depth",
-                Some(AccessMode::Write),
-            ),
-            (
-                "paren_match_block_min",
-                "paren_match_block_min",
-                Some(AccessMode::Write),
-            ),
-            (
-                "brace_match_block_min",
-                "brace_match_block_min",
-                Some(AccessMode::Write),
-            ),
-            (
-                "bracket_match_block_min",
-                "bracket_match_block_min",
-                Some(AccessMode::Write),
-            ),
-            (
-                "angle_match_block_min",
-                "angle_match_block_min",
-                Some(AccessMode::Write),
-            ),
-        ],
-    )?;
-    pass(
-        graph,
-        MIN_TREE_BUILD,
-        &passes.tokens_delimiter_match_02_build_min_tree,
-        &[],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        MIN_TREE_BUILD,
-        &[
-            "paren_match_min_tree",
-            "brace_match_min_tree",
-            "bracket_match_min_tree",
-            "angle_match_min_tree",
-        ],
-    )?;
-    graph.repeat_pass_range(
-        blocks.next_power_of_two().ilog2() + 1,
-        MIN_TREE_BUILD,
-        MIN_TREE_BUILD,
+        "parser.tokens.bracket.kinds",
+        &passes.tokens_bracket_01_kinds,
+        &[(
+            "bracket_semantic_kind",
+            "bracket_semantic_kind",
+            Some(AccessMode::Write),
+        )],
     )?;
     clear(
         graph,

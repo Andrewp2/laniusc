@@ -541,7 +541,10 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     );
     #[cfg(not(debug_assertions))]
     if matches!(options.backend, BackendSelection::X86) {
-        device::global().persist_and_release_pipeline_cache();
+        // Program evidence and specialization create pipelines on demand after
+        // the ready event. Keep the device cache available to those pipelines;
+        // run_session persists their additions when the daemon shuts down.
+        device::persist_pipeline_cache();
     }
     let startup_ms = startup.elapsed().as_secs_f64() * 1000.0;
 

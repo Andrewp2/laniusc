@@ -1,0 +1,14 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "compiler::tests::imported_inherent_ambiguity_is_independent_of_dependency_page_order",
+    "--exact"
+  ],
+  "exit_code": 101,
+  "seconds": 2.3680258549993596,
+  "binary_sha256": "1de88314c1989f1a15f032ac24d09fc9e6642b5372a1fce4600f11365438e3a6",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

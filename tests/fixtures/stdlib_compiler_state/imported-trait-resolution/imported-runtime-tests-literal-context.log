@@ -1,0 +1,23 @@
+
+running 4 tests
+test imported_trait_contract_records_preserve_ordinary_generic_execution ... ok
+test imported_trait_contracts_execute_caller_owned_compound_methods ... ok
+test imported_trait_keys_normalize_paths_and_preserve_defining_unit_identity ... GPU source-pack type-check rejection: token=29 code=InvalidTraitImplementation detail=19
+GPU source-pack type-check rejection: token=91 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=79 code=TraitBoundUnsatisfied detail=9
+ok
+test imported_trait_methods_reject_incomplete_and_incompatible_contracts ... GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=6
+GPU source-pack type-check rejection: token=40 code=InvalidTraitImplementation detail=23
+GPU source-pack type-check rejection: token=40 code=InvalidTraitImplementation detail=24
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=22 code=InvalidTraitImplementation detail=26
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=7
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=37
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 341 filtered out; finished in 3.43s
+

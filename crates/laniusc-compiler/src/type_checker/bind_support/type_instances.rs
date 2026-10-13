@@ -92,7 +92,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         TYPE_INSTANCES_COLLECT_INITIAL_AGGREGATE_DETAILS,
         &hir_dispatch_args,
     )?;
+    let constant_scalars = ComputeOperation::direct_spec(
+        device, graph, resources, passes, TYPE_CONSTANT_SCALARS_INITIAL, token_capacity.max(1),
+    )?;
     let collection = TypeInstanceCollectionOperations {
+        projected_constant_scalars: constant_scalars.invocation(graph, TYPE_CONSTANT_SCALARS_PROJECTED.name)?,
+        alias_constant_scalars: constant_scalars.invocation(graph, TYPE_CONSTANT_SCALARS_AFTER_ALIASES.name)?,
+        constant_scalars,
         projected_scalar: collection_scalar
             .invocation(graph, TYPE_INSTANCES_COLLECT_PROJECTED.name)?,
         projected_named: collection_named
@@ -154,6 +160,18 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         graph,
         compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
     )?;
+    let member_receivers_inference = member_receivers.invocation(
+        graph,
+        compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
+    )?;
+    let member_results_inference = member_results.invocation(
+        graph,
+        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
+    )?;
+    let member_substitute_inference = member_substitute.invocation(
+        graph,
+        compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
+    )?;
     // These scans are recorded before aggregate comparison begins, so the
     // aggregate scan workspace can safely serve both relations without
     // increasing resident scratch memory.
@@ -166,6 +184,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             TYPE_INSTANCES_CLEAR,
             token_capacity.max(hir_capacity),
         )?,
+        clear_constants: ComputeOperation::direct_spec(
+            device, graph, resources, passes, TYPE_CONSTANT_STORAGE_CLEAR,
+            token_capacity.max(1),
+        )?,
         type_instance_arg_row_scan,
         generic_parameters,
         struct_field_index,
@@ -177,10 +199,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             passes,
             TYPE_INSTANCES_COLLECT_NAMED_ARG_REFS,
             &hir_dispatch_args,
-        )?,
-        hash_arg_rows: indirect_token(
-            compiler_graph::TYPE_INSTANCE_ARG_HASH_ROWS_PASS,
-            "type_checker/type/instances/01g_hash_arg_rows",
         )?,
         clear_semantic_type_rows: Box::new(ComputeOperation::direct(
             device,
@@ -210,15 +228,51 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS,
             &hir_dispatch_args,
         )?,
+        index_closed_applications: if generic_param_record_passes_required(parser_feature_flags) {
+            Some(indirect_token(
+                compiler_graph::TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
+                "type_checker/type/instances/02c_index_closed_applications",
+            )?)
+        } else {
+            None
+        },
+        materialize_applications: if generic_param_record_passes_required(parser_feature_flags) {
+            Some(indirect_token(
+                compiler_graph::TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
+                "type_checker/type/instances/02d_materialize_applications",
+            )?)
+        } else {
+            None
+        },
+        index_generated_applications: if generic_param_record_passes_required(parser_feature_flags)
+        {
+            Some(indirect_token(
+                compiler_graph::TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS,
+                "type_checker/type/instances/02c_index_closed_applications",
+            )?)
+        } else {
+            None
+        },
         member_receivers,
+        project_imported_fields: if generic_param_record_passes_required(parser_feature_flags) {
+            Some(indirect_token(
+                compiler_graph::TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
+                "type_checker/type/instances/02e_project_imported_fields",
+            )?)
+        } else {
+            None
+        },
         member_receivers_after_match,
         member_receivers_after_array,
+        member_receivers_inference,
         member_results,
         member_results_after_match,
         member_results_after_array,
+        member_results_inference,
         member_substitute,
         member_substitute_after_match,
         member_substitute_after_array,
+        member_substitute_inference,
         struct_init_clear: ComputeOperation::direct(
             device,
             graph,
@@ -234,6 +288,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         struct_init_fields: indirect_hir(
             compiler_graph::TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS,
             "type_checker/type/instances/04_struct_init_fields",
+        )?,
+        nested_struct_init_contexts: indirect_hir(
+            compiler_graph::TYPE_INSTANCES_NESTED_STRUCT_INIT_CONTEXTS_PASS,
+            "type_checker/type/instances/04a3_nested_struct_contexts",
         )?,
         struct_init_substitute: indirect_token(
             compiler_graph::TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS,

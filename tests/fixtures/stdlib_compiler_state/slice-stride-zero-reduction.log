@@ -1,0 +1,62 @@
+CASE full_direct_view
+SOURCE
+import core::mem;
+
+struct Empty {}
+struct Frame { before: i32, values: [Empty; 3], after: i32 }
+fn view<T>(values: [T]) -> [T] { return values; }
+fn replace<T>(values: [T], index: i32, value: T) -> T {
+    values[index] = value;
+    return values[index];
+}
+fn touch(seen: [i32]) -> Empty {
+    seen[0] += 1;
+    return Empty {};
+}
+fn main() -> i32 {
+    let seen: [i32; 1] = [0];
+    let seed: Empty = Empty {};
+    let owner: Frame = Frame { before: -71, values: [seed, seed, seed], after: 93 };
+    let values: [Empty] = view(owner.values);
+    let copied: [Empty] = core::mem::identity(values);
+    let recovered: Empty = replace(copied, 2, touch(seen));
+    let raw: [Empty] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(seen), 3);
+    let raw_value: Empty = replace(view(raw), 0, touch(seen));
+    let empty: [Empty; 0] = [];
+    let empty_view: [Empty] = view(empty);
+    let empty_copy: [Empty] = core::mem::identity(empty_view);
+    if (seen[0] != 2 || owner.before != -71 || owner.after != 93) { return 1; }
+    return 0;
+}
+
+EXIT 0
+sample=0 ms=99.864
+entry=/tmp/lanius-zero-slice-probes-vx1kf7rq/full_direct_view.lani rebuild_entry=false warmups=1 iters=1 output_bytes=16018 min_ms=99.864 median_ms=99.864 avg_ms=99.864 max_ms=99.864 output_verified=true
+
+CASE minimal_empty_generic
+SOURCE
+import core::mem; struct Empty {} fn view<T>(values: [T]) -> [T] { return core::mem::identity(values); } fn main() -> i32 { let seed: Empty = Empty {}; let values: [Empty; 3] = [seed, seed, seed]; let result: [Empty] = view(values); let value: Empty = result[2]; return 0; }
+EXIT 1
+stdlib_gpu_perf: /tmp/lanius-zero-slice-probes-vx1kf7rq/minimal_empty_generic.lani: error[LNC0017]: referenced function has no native definition
+ --> <source pack link>:1:1
+     = a referenced function has no executable native body
+     = help: provide an executable native definition; imported generic payload bodies require concrete specialization support
+     = note: native function has no emitted definition (library 0, unit 0, declaration 25; relocation 0)
+
+CASE minimal_i32_generic
+SOURCE
+import core::mem; fn view<T>(values: [T]) -> [T] { return core::mem::identity(values); } fn main() -> i32 { let values: [i32; 3] = [1, 2, 3]; let result: [i32] = view(values); if (result[2] != 3) { return 1; } return 0; }
+EXIT 1
+stdlib_gpu_perf: /tmp/lanius-zero-slice-probes-vx1kf7rq/minimal_i32_generic.lani: error[LNC0017]: referenced function has no native definition
+ --> <source pack link>:1:1
+     = a referenced function has no executable native body
+     = help: provide an executable native definition; imported generic payload bodies require concrete specialization support
+     = note: native function has no emitted definition (library 0, unit 0, declaration 25; relocation 0)
+
+CASE minimal_empty_concrete
+SOURCE
+import core::mem; struct Empty {} fn view(values: [Empty]) -> [Empty] { return core::mem::identity(values); } fn main() -> i32 { let seed: Empty = Empty {}; let values: [Empty; 3] = [seed, seed, seed]; let result: [Empty] = view(values); let value: Empty = result[2]; return 0; }
+EXIT 0
+sample=0 ms=33.903
+entry=/tmp/lanius-zero-slice-probes-vx1kf7rq/minimal_empty_concrete.lani rebuild_entry=false warmups=1 iters=1 output_bytes=7093 min_ms=33.903 median_ms=33.903 avg_ms=33.903 max_ms=33.903 output_verified=true
+

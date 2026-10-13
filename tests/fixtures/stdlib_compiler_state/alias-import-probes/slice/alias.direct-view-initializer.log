@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=42 code=AssignMismatch detail=0
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_34105.lani: error[LNC0006]: type mismatch
+ --> <source pack file 0>:2:88
+  |
+2 | fn main() -> i32 { let data: [i32; 2] = [19, 23]; let view: core::aliases::View<i32> = data; view[0] = 20; return data[0] + view[1] - 43; }
+  |                                                                                        ^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

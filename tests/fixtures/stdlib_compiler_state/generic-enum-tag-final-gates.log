@@ -1,0 +1,134 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.38s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_foundation_execution.rs (target/stdlib-perf/build/release/deps/stdlib_foundation_execution-9857bf2b3426914a)
+
+running 7 tests
+test executable_core_function_surface_has_runtime_cases ... ok
+test imported_bool_constructor_rejects_integer_argument ... ok
+test imported_generic_slice_claims_execute_and_reject_inconsistent_types ... ok
+test legacy_i32x4_functions_execute_on_x86 ... ok
+test legacy_scalar_functions_execute_on_x86 ... ok
+test portable_stdlib_helpers_execute_on_x86 ... ok
+test stdlib_helpers_execute_after_parser_workspace_shrinks ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.36s
+
+     Running tests/stdlib_generic_enum_declaration_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_enum_declaration_execution-5118d1f96a067361)
+
+running 33 tests
+test concrete_generic_enum_values_execute_on_x86 ... ok
+test imported_concrete_two_payload_match_executes_on_x86 ... ok
+test imported_declaration_only_generic_enum_executes_on_x86 ... ok
+test imported_generic_aggregate_payload_constructor_is_rejected ... ok
+test imported_generic_enum_constructor_emits_and_passes_on_x86 ... ok
+test imported_generic_enum_rejects_wrong_payload_type ... ok
+test imported_generic_enum_rejects_wrong_second_payload_type ... ok
+test imported_generic_enum_tag_predicate_executes_on_x86 ... ok
+test imported_generic_enum_uses_maximum_variant_abi_width_on_x86 ... ok
+test imported_generic_payload_constructor_direct_argument_rejects_wrong_type ... ok
+test imported_generic_payload_constructor_requires_concrete_result_type ... ok
+test imported_generic_payload_match_executes_on_x86 ... ok
+test imported_generic_payload_pattern_rejects_another_enum ... ok
+test imported_generic_payload_pattern_rejects_scalar_scrutinee ... ok
+test imported_generic_payload_pattern_rejects_wrong_arity ... ok
+test imported_generic_two_payload_match_executes_on_x86 ... ok
+test imported_generic_unit_constructor_direct_argument_executes_on_x86 ... ok
+test imported_generic_unit_constructor_direct_argument_rejects_unrelated_enum ... ok
+test imported_generic_unit_constructor_preserves_enum_abi_on_x86 ... ok
+test imported_generic_unit_constructor_requires_concrete_result_type ... ok
+test imported_generic_unit_pattern_checks_discriminant_on_x86 ... ok
+test imported_generic_unit_pattern_rejects_scalar_scrutinee ... ok
+test imported_generic_unit_variant_is_not_a_bare_value ... ok
+test imported_two_parameter_variants_execute_as_direct_arguments_on_x86 ... ok
+test imported_unit_enum_match_checks_discriminants_on_x86 ... ok
+test imported_unit_enum_match_direct_call_executes_on_x86 ... ok
+test imported_unit_enum_pattern_rejects_inferred_scalar_scrutinee ... ok
+test imported_unit_enum_pattern_rejects_payload_binding ... ok
+test imported_unit_enum_pattern_rejects_scalar_scrutinee ... ok
+test imported_unit_enum_pattern_rejects_unrelated_call_result ... ok
+test imported_unit_enum_pattern_rejects_unrelated_scrutinee ... ok
+test unqualified_imported_unit_pattern_rejects_unrelated_scrutinee ... ok
+test unused_generic_enum_declaration_executes_on_x86 ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.23s
+
+     Running tests/stdlib_generic_interface.rs (target/stdlib-perf/build/release/deps/stdlib_generic_interface-d74145b54fb2223b)
+
+running 6 tests
+test generic_option_and_result_variant_payloads_refer_to_their_enum_parameters ... ok
+test generic_vec_public_methods_remain_exported_as_associated_members ... ok
+test imported_generic_slice_parameters_refer_to_their_function_parameters ... ok
+test non_generic_public_methods_are_exported_as_associated_members ... ok
+test public_option_methods_export_their_explicit_parameter_types ... ok
+test public_static_and_receiver_methods_export_multiple_parameter_types ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s
+
+     Running tests/stdlib_generic_predicates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_predicates_execution-7a485e1ea6857aa6)
+
+running 6 tests
+test imported_option_predicates_execute_across_scalar_payloads ... ok
+test imported_option_predicates_with_local_nominal_payloads_execute ... ignored, compiler dependency 76: imported enum constructors reject caller-local nominal payloads
+test option_predicate_bodies_execute_with_multiword_payloads ... ok
+test result_predicate_bodies_execute_with_two_generic_payloads ... ok
+test unresolved_payload_reads_and_offsets_fail_explicitly ... ok
+test unused_earlier_payload_keeps_the_used_payload_offset ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.26s
+
+     Running tests/stdlib_generic_vec_flat_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_vec_flat_execution-b8fe5484c683f193)
+
+running 13 tests
+test generic_vec_empty_from_flat_source_pack_executes ... ok
+test generic_vec_free_new_from_flat_source_pack_executes ... ok
+test generic_vector_empty_functions_have_flat_runtime_calls ... ok
+test imported_generic_free_arguments_execute_on_x86 ... ok
+test imported_generic_free_arguments_reject_unrelated_nominal_type ... ok
+test imported_generic_free_constructor_executes_on_x86 ... ok
+test imported_generic_free_constructor_rejects_unrelated_result_type ... ok
+test imported_generic_free_direct_arguments_execute_on_x86 ... ok
+test imported_generic_free_direct_arguments_reject_unrelated_type ... ok
+test imported_generic_method_does_not_substitute_an_unrelated_return ... ok
+test imported_generic_method_receiver_and_return_execute_on_x86 ... ok
+test imported_generic_vec_empty_operations_execute_on_x86 ... ok
+test imported_generic_vec_free_api_executes_on_x86 ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+
+     Running tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+
+running 18 tests
+test boolean_programs_use_option_bool_enum_on_x86 ... ok
+test concrete_generic_enum_return_executes_on_x86 ... ok
+test enum_match_later_payload_comparison_executes_on_x86 ... ok
+test enum_match_payload_short_circuit_executes_on_x86 ... ok
+test enum_match_result_consumers_execute_on_x86 ... ok
+test four_argument_generic_factory_receiver_executes_on_x86 ... ok
+test imported_empty_struct_results_execute_without_erasing_nominal_checks ... ok
+test imported_generic_factories_preserve_receiver_specializations ... ok
+test imported_generic_factory_methods_reject_wrong_result_types ... ok
+test imported_methods_validate_multiple_scalar_and_nominal_parameters ... ok
+test imported_option_bool_factory_result_supports_method_calls ... ok
+test imported_option_bool_methods_reject_wrong_argument_types ... ok
+test later_generic_enums_preserve_payloads_and_empty_variants ... ok
+test mixed_generic_factories_execute_in_one_module ... ok
+test option_bool_enum_methods_execute_on_x86 ... ok
+test option_bool_method_results_pass_directly_to_imported_functions ... ok
+test option_bool_rejects_wrong_payload_and_receiver ... ok
+test unused_generic_enum_does_not_prevent_later_construction ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.57s
+
+     Running tests/stdlib_option_result_methods_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_result_methods_execution-2e510d92adf371a3)
+
+running 5 tests
+test bool_char_float_option_result_methods_execute_on_x86 ... ok
+test concrete_option_result_methods_execute_on_x86 ... ok
+test imported_aggregate_method_chains_execute_on_x86 ... ok
+test mixed_option_result_methods_select_their_imported_types ... ok
+test option_result_program_uses_methods ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.02s
+

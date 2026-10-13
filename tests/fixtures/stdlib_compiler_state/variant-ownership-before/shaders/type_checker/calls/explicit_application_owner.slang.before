@@ -1,0 +1,25 @@
+// A callable application belongs to its final path segment. Checked call
+// identity may also be projected onto a qualified path's head token; that alias
+// must never select the receiver's independent generic argument list.
+import hir_records;
+
+public uint explicit_callable_application_token(uint call, uint hir_count, uint token_capacity,
+    StructuredBuffer<HirCore> cores, StructuredBuffer<HirLinks> links,
+    StructuredBuffer<HirPayload> payloads, StructuredBuffer<uint> path_ids,
+    StructuredBuffer<uint> path_count, StructuredBuffer<HirPath> paths,
+    StructuredBuffer<HirPathSegment> segments)
+{
+    if (call >= hir_count || cores[call].kind != 19u) return 0xffffffffu;
+    uint callee = payloads[call].a;
+    if (callee >= hir_count) return 0xffffffffu;
+    if (cores[callee].kind == 21u) return payloads[callee].c;
+    if (cores[callee].kind == 22u) callee = links[callee].first_child;
+    if (callee >= hir_count || cores[callee].kind != 33u) return 0xffffffffu;
+    uint path = path_ids[callee];
+    if (path >= min(path_count[0u], hir_count)) return 0xffffffffu;
+    HirPath record = paths[path];
+    if (record.owner != callee || record.segment_count == 0u ||
+        record.segment_start >= token_capacity ||
+        record.segment_count > token_capacity - record.segment_start) return 0xffffffffu;
+    return segments[record.segment_start + record.segment_count - 1u].name_token;
+}

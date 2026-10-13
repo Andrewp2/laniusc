@@ -1,0 +1,3 @@
+enum Choice<T> { Some(T), None }
+type Maybe<T> = Choice<T>;
+fn main() -> i32 { let value = Maybe<i32>::Some(42); return match (value) { Choice::Some(inner) -> inner - 42, Choice::None -> 1 }; }

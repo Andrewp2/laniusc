@@ -1,0 +1,62 @@
+[
+  {
+    "key": "00_initialize",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "01_clear_atom_index",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_admit_catalog_rows",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "03_build_atom_index",
+    "exit_code": 1,
+    "error": "error: line 1643: ID '1613[%1613]' has not been defined\n  %1614 = OpFunctionCall %bool %pev_output_write %uint_6 %row_6 %uint_1 %1613\n\n"
+  },
+  {
+    "key": "04_check_atom_identity",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "05_map_callables",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "06_map_definition_identities",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "07_check_method_targets",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "08_clear_implementation_index",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "09_build_implementation_index",
+    "exit_code": 1,
+    "error": "error: line 6617: ID '5646[%5646]' has not been defined\n  %5647 = OpFunctionCall %bool %pev_output_write %uint_6 %row_25 %uint_1 %5646\n\n"
+  },
+  {
+    "key": "10_check_coherence",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "11_freeze_catalog",
+    "exit_code": 0,
+    "error": ""
+  }
+]

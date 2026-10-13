@@ -1,0 +1,2 @@
+struct Pair { left: i32, right: i32 }
+fn keep<T>(value: T) -> T { return value; } fn main() -> i32 { let original: Pair = Pair { left: 19, right: 23 }; let copied = keep(original); original.left = 0; if (copied.left != 19 || copied.right != 23) { return 1; } return 0; }

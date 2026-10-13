@@ -79,6 +79,7 @@ pub(crate) struct GpuX86ObjectStage {
     _definition_prefix: LaniusBuffer<u32>,
     relocations: LaniusBuffer<X86ObjectRelocationRow>,
     undefined_symbols: LaniusBuffer<X86ObjectUndefinedRow>,
+    call_hir_by_symbol: LaniusBuffer<u32>,
     definitions: LaniusBuffer<X86ObjectDefinitionRow>,
     text_words: LaniusBuffer<u32>,
     rodata_words: LaniusBuffer<u32>,
@@ -148,6 +149,10 @@ impl GpuX86ObjectStage {
                 function_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
+        let call_hir_by_symbol = alias_u32(
+            "artifact.x86.object.call_hir_by_symbol",
+            relocation_capacity,
+        )?;
         let text_words = alias_u32(
             "artifact.x86.object.text_bytes",
             artifact_capacity.div_ceil(4),
@@ -286,18 +291,17 @@ impl GpuX86ObjectStage {
             &definition_prefix,
             &definition_total,
         )?;
-        let relocations_op = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "artifact.x86.object.relocations",
-            &relocations_pass,
-            &params,
-            relocation_capacity,
-        )?;
         let mut identity_resources = resources.clone();
         identity_resources.buffer("gParams", &params);
         identity_resources.buffer("gIdentity", &identity);
+        let relocations_op = ComputeOperation::direct(
+            device,
+            &context,
+            &identity_resources,
+            "artifact.x86.object.relocations",
+            &relocations_pass,
+            relocation_capacity,
+        )?;
         let definitions_op = ComputeOperation::direct(
             device,
             &context,
@@ -393,6 +397,7 @@ impl GpuX86ObjectStage {
             _definition_prefix: definition_prefix,
             relocations,
             undefined_symbols,
+            call_hir_by_symbol,
             definitions,
             text_words,
             rodata_words,
@@ -448,7 +453,7 @@ impl GpuX86ObjectStage {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<GpuX86RelocatableObject> {
+    ) -> Result<(GpuX86RelocatableObject, Vec<u32>)> {
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             eprintln!("[x86_object_identity] finish requested library={library_id} unit={unit_id}");
         }
@@ -507,7 +512,8 @@ impl GpuX86ObjectStage {
             definition_bytes,
             text,
             rodata,
-        ]: [Vec<u8>; 5] = self
+            call_hir_bytes,
+        ]: [Vec<u8>; 6] = self
             .payload_readback
             .read_regions(
                 device,
@@ -537,6 +543,12 @@ impl GpuX86ObjectStage {
                         0,
                         rodata_len,
                         "x86 object rodata",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.call_hir_by_symbol,
+                        0,
+                        symbol_count * 4,
+                        "x86 object call HIR identities",
                     )?,
                 ],
                 "x86 object payload readback",
@@ -622,7 +634,7 @@ impl GpuX86ObjectStage {
             identity_bytes,
         };
         object.validate().map_err(anyhow::Error::msg)?;
-        Ok(object)
+        Ok((object, decode_words(&call_hir_bytes)))
     }
 }
 

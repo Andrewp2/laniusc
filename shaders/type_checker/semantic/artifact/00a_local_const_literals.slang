@@ -1,3 +1,5 @@
+import integer_words;
+import primitive_types;
 import hir_records;
 import gpu_index;
 
@@ -9,7 +11,7 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_expr_scalar_type;
-RWStructuredBuffer<uint> semantic_value_const_by_hir;
+RWStructuredBuffer<uint2> semantic_value_const_by_hir;
 RWStructuredBuffer<uint> semantic_value_const_present_by_hir;
 
 static const uint INVALID = 0xffffffffu;
@@ -45,7 +47,6 @@ static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
-static const uint SCALAR_TYPE_SHIFT = 28u;
 static const uint LEFT_READY = 1u;
 static const uint RIGHT_READY = 2u;
 static const uint BOTH_READY = 3u;
@@ -58,61 +59,71 @@ uint scalar_type(uint node)
         ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : 0u;
 }
 
-bool evaluate_unary(uint form, uint operand, uint operand_type, out uint result)
+bool evaluate_unary(uint form, uint2 operand, uint operand_type, out uint2 result)
 {
-    result = 0u;
-    if (form == HIR_EXPR_NOT) { result = operand == 0u ? 1u : 0u; return true; }
+    result = uint2(0u, 0u);
+    if (form == HIR_EXPR_NOT) { result.x = integer_words_zero(operand) ? 1u : 0u; return true; }
     if (form != HIR_EXPR_NEG) return false;
-    result = operand_type == TY_FLOAT
-        ? asuint(-asfloat(operand)) : uint(-int(operand));
+    if (scalar_is_float(operand_type))
+    {
+        result = operand;
+        if (operand_type == SCALAR_F64) result.y ^= 0x80000000u;
+        else result.x ^= 0x80000000u;
+        return true;
+    }
+    uint bits = scalar_integer_bits(operand_type);
+    if (bits == 0u) return false;
+    result = integer_words_normalize(integer_words_negate(operand), bits);
     return true;
 }
 
-bool evaluate_binary(
-    uint form, uint lhs, uint rhs, uint operand_type, out uint result)
+bool evaluate_binary(uint form, uint2 lhs, uint2 rhs, uint operand_type, out uint2 result)
 {
-    result = 0u;
-    bool floating = operand_type == TY_FLOAT;
-    bool signed_integer = operand_type == TY_INT;
-    if (form == HIR_EXPR_ADD) result = floating ? asuint(asfloat(lhs) + asfloat(rhs)) : lhs + rhs;
-    else if (form == HIR_EXPR_SUB) result = floating ? asuint(asfloat(lhs) - asfloat(rhs)) : lhs - rhs;
-    else if (form == HIR_EXPR_MUL) result = floating ? asuint(asfloat(lhs) * asfloat(rhs)) : lhs * rhs;
-    else if (form == HIR_EXPR_DIV)
+    result = uint2(0u, 0u);
+    // Native GPU floats do not establish portable IEEE constant semantics.
+    // Admission rejects this pending evaluator explicitly; never publish zero.
+    if (scalar_is_float(operand_type)) return false;
+    uint bits = scalar_integer_bits(operand_type);
+    if (bits == 0u && (operand_type == SCALAR_BOOL || operand_type == SCALAR_CHAR)) bits = 32u;
+    if (bits == 0u) return false;
+    bool signed_integer = scalar_is_signed_integer(operand_type);
+    lhs = integer_words_normalize(lhs, bits);
+    // Shift counts have their own checked integer width; never truncate one
+    // to the operation width before its full-value range check.
+    bool shift = form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
+    if (!shift) rhs = integer_words_normalize(rhs, bits);
+    if (form == HIR_EXPR_ADD) result = integer_words_add(lhs, rhs);
+    else if (form == HIR_EXPR_SUB) result = integer_words_sub(lhs, rhs);
+    else if (form == HIR_EXPR_MUL) result = integer_words_multiply(lhs, rhs);
+    else if (form == HIR_EXPR_DIV || form == HIR_EXPR_MOD)
     {
-        if ((!floating && rhs == 0u) || (floating && asfloat(rhs) == 0.0f)) return false;
-        result = floating ? asuint(asfloat(lhs) / asfloat(rhs))
-                          : (signed_integer ? uint(int(lhs) / int(rhs)) : lhs / rhs);
+        uint2 quotient; uint2 remainder;
+        if (integer_words_divide(lhs, rhs, operand_type, quotient, remainder) != 0u) return false;
+        result = form == HIR_EXPR_DIV ? quotient : remainder;
     }
-    else if (form == HIR_EXPR_MOD)
-    {
-        if (rhs == 0u || floating) return false;
-        result = signed_integer ? uint(int(lhs) % int(rhs)) : lhs % rhs;
-    }
-    else if (form == HIR_EXPR_AND) result = lhs != 0u && rhs != 0u ? 1u : 0u;
-    else if (form == HIR_EXPR_OR) result = lhs != 0u || rhs != 0u ? 1u : 0u;
+    else if (form == HIR_EXPR_AND) result.x = uint(!integer_words_zero(lhs) && !integer_words_zero(rhs));
+    else if (form == HIR_EXPR_OR) result.x = uint(!integer_words_zero(lhs) || !integer_words_zero(rhs));
     else if (form == HIR_EXPR_BIT_OR) result = lhs | rhs;
     else if (form == HIR_EXPR_BIT_XOR) result = lhs ^ rhs;
     else if (form == HIR_EXPR_BIT_AND) result = lhs & rhs;
-    else if (form == HIR_EXPR_SHL) result = lhs << (rhs & 31u);
-    else if (form == HIR_EXPR_SHR)
-        result = signed_integer ? uint(int(lhs) >> (rhs & 31u)) : lhs >> (rhs & 31u);
-    else if (form == HIR_EXPR_EQ)
-        result = floating ? (asfloat(lhs) == asfloat(rhs) ? 1u : 0u) : (lhs == rhs ? 1u : 0u);
-    else if (form == HIR_EXPR_NE)
-        result = floating ? (asfloat(lhs) != asfloat(rhs) ? 1u : 0u) : (lhs != rhs ? 1u : 0u);
-    else if (form == HIR_EXPR_LT)
-        result = floating ? (asfloat(lhs) < asfloat(rhs) ? 1u : 0u)
-                          : (signed_integer ? (int(lhs) < int(rhs) ? 1u : 0u) : (lhs < rhs ? 1u : 0u));
-    else if (form == HIR_EXPR_GT)
-        result = floating ? (asfloat(lhs) > asfloat(rhs) ? 1u : 0u)
-                          : (signed_integer ? (int(lhs) > int(rhs) ? 1u : 0u) : (lhs > rhs ? 1u : 0u));
-    else if (form == HIR_EXPR_LE)
-        result = floating ? (asfloat(lhs) <= asfloat(rhs) ? 1u : 0u)
-                          : (signed_integer ? (int(lhs) <= int(rhs) ? 1u : 0u) : (lhs <= rhs ? 1u : 0u));
-    else if (form == HIR_EXPR_GE)
-        result = floating ? (asfloat(lhs) >= asfloat(rhs) ? 1u : 0u)
-                          : (signed_integer ? (int(lhs) >= int(rhs) ? 1u : 0u) : (lhs >= rhs ? 1u : 0u));
+    else if (shift)
+    {
+        if (rhs.y != 0u || rhs.x >= bits) return false;
+        result = form == HIR_EXPR_SHL ? integer_words_shift_left(lhs, rhs.x)
+            : signed_integer ? integer_words_arithmetic_shift_right(lhs, rhs.x, bits)
+            : integer_words_shift_right(lhs, rhs.x);
+    }
+    else if (form >= HIR_EXPR_EQ && form <= HIR_EXPR_GE)
+    {
+        bool equal = all(lhs == rhs);
+        bool less = signed_integer ? integer_words_less_signed(lhs, rhs, bits) : integer_words_less(lhs, rhs);
+        result.x = form == HIR_EXPR_EQ ? uint(equal) : form == HIR_EXPR_NE ? uint(!equal) :
+            form == HIR_EXPR_LT ? uint(less) : form == HIR_EXPR_GT ? uint(!less && !equal) :
+            form == HIR_EXPR_LE ? uint(less || equal) : uint(!less);
+        return true;
+    }
     else return false;
+    result = integer_words_normalize(result, bits);
     return true;
 }
 
@@ -129,7 +140,7 @@ void propagate_constant(uint node, uint hir_count)
              (parent_core.kind == HIR_EXPR && parent_payload.a == HIR_EXPR_FORWARD)) &&
             parent_payload.b == current)
         {
-            uint result = semantic_value_const_by_hir[current];
+            uint2 result = semantic_value_const_by_hir[current];
             if (parent_payload.a != HIR_EXPR_FORWARD &&
                 !evaluate_unary(parent_payload.a, result, scalar_type(current), result))
                 return;
@@ -146,7 +157,7 @@ void propagate_constant(uint node, uint hir_count)
         uint prior;
         InterlockedOr(semantic_value_const_present_by_hir[parent], ready, prior);
         if ((prior & ready) != 0u || (prior | ready) != BOTH_READY) return;
-        uint result;
+        uint2 result;
         if (!evaluate_binary(
                 parent_payload.a,
                 semantic_value_const_by_hir[parent_payload.b],
@@ -177,7 +188,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
          payload.a == HIR_EXPR_TRUE || payload.a == HIR_EXPR_FALSE))
     {
         semantic_value_const_by_hir[row] =
-            payload.a == HIR_EXPR_TRUE ? 1u : payload.a == HIR_EXPR_FALSE ? 0u : payload.b;
+            payload.a == HIR_EXPR_TRUE ? uint2(1u, 0u) : payload.a == HIR_EXPR_FALSE ? uint2(0u, 0u) :
+            payload.a == HIR_EXPR_FLOAT && scalar_type(row) == SCALAR_F64
+                ? uint2(payload.c, payload.d)
+                : uint2(payload.b, payload.a == HIR_EXPR_INT ? payload.c : 0u);
         semantic_value_const_present_by_hir[row] = CONST_PRESENT;
         present = true;
     }

@@ -26,6 +26,7 @@ impl GpuParser {
             bg_cache: Some(&mut *cache_guard),
         };
 
+        bufs.clear_operations().record_hir_literal_status(ctx.encoder);
         self.record_active_pair_dispatch_args(ctx.encoder, bufs)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.active_pair_dispatch_args");
         self.passes
@@ -753,6 +754,13 @@ impl GpuParser {
                             .expect("resident parser requires a bind-group cache"),
                     )?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_literal_values");
+                    self.passes.hir_float_values.record_with_source(
+                        &self.device, &self.queue, ctx.encoder, bufs, source_len,
+                        token_buf, source_buf,
+                        ctx.bg_cache.as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                    )?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_float_values");
                     self.passes.hir_string_compact_local.record_pass(
                         &mut ctx,
                         crate::gpu::passes_core::InputElements::Elements1D(

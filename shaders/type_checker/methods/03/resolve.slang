@@ -6,6 +6,7 @@
 // matching parentheses/commas in token ranges, or walking child lists.
 
 import hir_records;
+import type_checker.methods.candidate;
 import gpu_index;
 import status;
 
@@ -19,6 +20,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_inference_state;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
@@ -27,6 +29,7 @@ StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_signature_flags;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
+StructuredBuffer<MethodCandidate> method_candidate;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
@@ -295,31 +298,7 @@ uint resolved_method_return_token(uint method_i, uint fn_i)
     return valid_token(table_token) ? table_token : call_return_type_token[fn_i];
 }
 
-bool has_unsubstituted_generic_return(uint fn_i, uint resolved_ty)
-{
-    if (resolved_ty < TY_GENERIC_BASE || !valid_token(fn_i))
-        return false;
 
-    uint tag = fn_return_ref_tag[fn_i];
-    uint payload = fn_return_ref_payload[fn_i];
-
-    // Nominal types are source-token addressed. Their legacy scalar code can
-    // numerically cross TY_GENERIC_BASE in large source packs, so magnitude is
-    // not sufficient evidence that a return remains generic.
-    if (tag == TYPE_REF_SCALAR)
-        return false;
-
-    if (tag == TYPE_REF_GENERIC_PARAM)
-    {
-        uint slot = generic_param_slot_for_payload(payload);
-        return slot == INVALID || resolved_ty == TY_GENERIC_BASE + slot;
-    }
-
-    // Aggregate refs can encode arrays whose element remains generic. They
-    // are unsupported here until the aggregate substitution path resolves
-    // them to an ordinary scalar type.
-    return tag != TYPE_REF_INVALID;
-}
 
 uint path_id_for_callee_hir(uint callee_hir)
 {
@@ -429,17 +408,6 @@ bool method_has_self_receiver(uint fn_i)
     return mode == METHOD_RECEIVER_SELF || mode == METHOD_RECEIVER_REF_SELF;
 }
 
-bool method_explicit_receiver_consumes_param(uint fn_i, uint receiver_ty)
-{
-    uint mode = fn_i < active_token_count() ? method_decl_receiver_mode[fn_i] : METHOD_RECEIVER_NONE;
-    if (mode != METHOD_RECEIVER_EXPLICIT)
-        return false;
-    if (call_param_count[fn_i] == 0u)
-        return false;
-    uint first_ty = param_type_for_fn_ordinal(fn_i, 0u);
-    return first_ty == receiver_ty;
-}
-
 bool param_row_matches(uint row, uint fn_i, uint ordinal)
 {
     return row < call_param_row_count_out[0u] &&
@@ -488,15 +456,16 @@ uint receiver_token_for_member(uint member_hir)
 bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty, uint call_hir)
 {
     uint param_count = call_param_count[fn_i];
-    bool has_self_receiver = method_has_self_receiver(fn_i);
-    bool consumes_receiver = method_explicit_receiver_consumes_param(fn_i, receiver_ty);
-    if (!has_self_receiver && !consumes_receiver)
+    MethodCandidate candidate = method_candidate[method_i];
+    bool receiver_consumed = candidate.state == METHOD_CANDIDATE_UNIQUE &&
+        candidate.callable_kind == METHOD_CALLABLE_LOCAL && candidate.local_index == fn_i &&
+        candidate.receiver_mode != 0u;
+    if (!receiver_consumed)
     {
         record_error(method_i, ERR_CALL_MISMATCH, receiver_ty);
         return false;
     }
 
-    bool receiver_consumed = has_self_receiver || consumes_receiver;
     uint expected_args = receiver_consumed && param_count > 0u ? param_count - 1u : param_count;
     uint actual_args = call_arg_count_for_call_hir(method_i, call_hir);
     if (actual_args != expected_args)
@@ -528,6 +497,14 @@ bool validate_associated_args(uint method_i, uint fn_i, uint call_hir)
     return true;
 }
 
+bool method_selection_rejected(uint token)
+{
+    uint state = method_candidate[token].state;
+    // The finalized transaction owns these diagnostics. Its cleared callable
+    // must not be reinterpreted as an unresolved name by this signature pass.
+    return state == METHOD_CANDIDATE_AMBIGUOUS || state == METHOD_CANDIDATE_INVALID;
+}
+
 void resolve_method_call(uint call_hir, uint member_hir)
 {
     uint method_i = valid_dense(member_hir) ? compact_hir_payload[member_hir].c : INVALID;
@@ -537,7 +514,7 @@ void resolve_method_call(uint call_hir, uint member_hir)
     if (!valid_dense(call_hir) || compact_hir_core[call_hir].kind != HIR_CALL_EXPR)
         return;
 
-    if (method_call_name_id[method_i] == INVALID)
+    if (method_call_name_id[method_i] == INVALID || method_selection_rejected(method_i))
         return;
     // Imported member methods are projected from the active semantic
     // interface page before this local-table resolver runs.  Their stable
@@ -561,12 +538,12 @@ void resolve_method_call(uint call_hir, uint member_hir)
         receiver_ty = call_return_type[receiver_i];
 
     uint signature_flags = valid_token(fn_i) ? method_decl_signature_flags[fn_i] : 0u;
-    if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
+    if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u && (signature_flags & 4u) == 0u)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC);
         return;
     }
-    if ((signature_flags & METHOD_SIGNATURE_HAS_WHERE) != 0u)
+    if ((signature_flags & METHOD_SIGNATURE_HAS_WHERE) != 0u && (signature_flags & 4u) == 0u)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE);
         return;
@@ -574,12 +551,8 @@ void resolve_method_call(uint call_hir, uint member_hir)
 
     uint ret_ty = resolved_method_return_type(method_i, fn_i);
     uint ret_token = resolved_method_return_token(method_i, fn_i);
-    if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
-        has_unsubstituted_generic_return(fn_i, ret_ty))
-    {
-        record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
-        return;
-    }
+    // Complete call-return materialization validates symbolic signatures.
+    // A resolved method may remain a template until its receiver is concrete.
     call_fn_index[method_i] = fn_i;
     call_return_type[method_i] = ret_ty;
     call_return_type_token[method_i] = ret_token;
@@ -632,7 +605,12 @@ void resolve_associated_call(uint call_hir)
     uint method_i = associated_method_token_for_call(call_hir);
     if (!valid_token(method_i))
         return;
-    if (method_call_name_id[method_i] == INVALID)
+    // Member and associated calls share the dependency target contract.
+    // A checked imported target is validated by dependency argument/arity
+    // passes; it has no function row in this page's local method table.
+    if (call_dependency_library_id[method_i] != INVALID)
+        return;
+    if (method_call_name_id[method_i] == INVALID || method_selection_rejected(method_i))
         return;
 
     uint fn_i = call_fn_index[method_i];
@@ -648,12 +626,12 @@ void resolve_associated_call(uint call_hir)
     }
 
     uint signature_flags = valid_token(fn_i) ? method_decl_signature_flags[fn_i] : 0u;
-    if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
+    if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u && (signature_flags & 4u) == 0u)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC);
         return;
     }
-    if ((signature_flags & METHOD_SIGNATURE_HAS_WHERE) != 0u)
+    if ((signature_flags & METHOD_SIGNATURE_HAS_WHERE) != 0u && (signature_flags & 4u) == 0u)
     {
         record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE);
         return;
@@ -661,12 +639,8 @@ void resolve_associated_call(uint call_hir)
 
     uint ret_ty = resolved_method_return_type(method_i, fn_i);
     uint ret_token = resolved_method_return_token(method_i, fn_i);
-    if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
-        has_unsubstituted_generic_return(fn_i, ret_ty))
-    {
-        record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
-        return;
-    }
+    // Complete call-return materialization validates symbolic signatures.
+    // A resolved method may remain a template until its receiver is concrete.
 
     if (!validate_associated_args(method_i, fn_i, call_hir))
         return;
@@ -680,6 +654,9 @@ void resolve_associated_call(uint call_hir)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    // Method targets can appear only after their receiver's generic calls
+    // converge. Validate once the complete relation is available.
+    if (call_inference_state[0u] != 0u) return;
     uint i = linear_thread_id(dtid);
     if (!valid_dense(i) || compact_hir_core[i].kind != HIR_CALL_EXPR)
         return;

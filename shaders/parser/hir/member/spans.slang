@@ -5,6 +5,9 @@
 // This pass uses the already-published receiver relation, avoiding a race with
 // chained member metadata derivation.
 
+import generated_parse_production_ids;
+import parser.hir.postfix_sequence;
+
 struct Params
 {
     uint n;
@@ -14,6 +17,10 @@ struct Params
 ConstantBuffer<Params> gHirMember;
 
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> out_emit_pos;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
@@ -57,6 +64,28 @@ uint semantic_row_node(uint row)
     return valid_node(node) ? node : INVALID;
 }
 
+bool is_postfix_operator(uint production)
+{
+    return production == PROD_POSTFIX_CALL || production == PROD_POSTFIX_INDEX ||
+           production == PROD_POSTFIX_MEMBER;
+}
+
+uint receiver_span_start(uint receiver)
+{
+    // Calls widen later and member chains run in parallel. Grammar ownership
+    // and original token positions establish the start independently of both.
+    for (uint depth = 0u; depth < active_node_count() && valid_node(receiver); depth++)
+    {
+        if (!is_postfix_operator(node_kind[receiver])) return out_emit_pos[receiver];
+        uint owner = parent[receiver];
+        if (!valid_node(owner)) return INVALID;
+        if (is_postfix_operator(node_kind[owner])) receiver = owner;
+        else if (hir_is_postfix_sequence_owner(node_kind[owner])) receiver = first_child[owner];
+        else return out_emit_pos[receiver];
+    }
+    return INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -70,7 +99,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(receiver))
         return;
 
-    uint receiver_start = hir_token_pos[receiver];
+    uint receiver_start = receiver_span_start(receiver);
     uint member_start = hir_token_pos[node];
     if (receiver_start != INVALID &&
         (member_start == INVALID || receiver_start < member_start))
@@ -86,6 +115,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (receiver_end == INVALID || receiver_end > receiver_end_limit)
                 hir_token_end[receiver] = receiver_end_limit;
         }
-        hir_token_end[node] = member_token + 1u;
+        // The member expression includes its own generic argument list.
+        // The argument list's grammar span excludes the continuation.
+        uint arguments = first_child[node];
+        if (valid_node(arguments))
+            hir_token_end[node] = hir_token_end[arguments];
     }
 }

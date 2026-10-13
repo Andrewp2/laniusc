@@ -1,0 +1,29 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 52.32s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_vec_i32_sort_search_execution.rs (target/stdlib-perf/build/release/deps/stdlib_vec_i32_sort_search_execution-16c4b454b3fe0c4e)
+
+running 1 test
+test owned_i32_vector_sort_and_search_execute_on_x86 ... SLICE TRACE STATUS [0, 7397, 3, 0]
+
+thread 'owned_i32_vector_sort_and_search_execute_on_x86' (650435) panicked at tests/stdlib_vec_i32_sort_search_execution.rs:13:29:
+vec_i32_sort_search: compile: error[LNC0006]: type mismatch
+ --> <source pack file 4>:231:42
+    |
+231 |     return core::slice::reverse_in_place(elements, value.length);
+    |                                          ^^^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    owned_i32_vector_sort_and_search_execute_on_x86
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.18s
+
+error: test failed, to rerun pass `--test stdlib_vec_i32_sort_search_execution`

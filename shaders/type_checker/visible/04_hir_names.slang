@@ -17,6 +17,7 @@ import hir_records;
 import range_query;
 import segment_tree;
 import status;
+import type_checker.type.instances.generic_param_lookup;
 
 struct Params
 {
@@ -33,6 +34,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> hir_value_decl_name_present;
+StructuredBuffer<uint> hir_visible_decl_flag;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> hir_visible_decl_count_out;
 StructuredBuffer<uint> hir_visible_decl_owner_fn;
@@ -45,6 +47,13 @@ StructuredBuffer<uint> hir_visible_decl_scope_tree;
 StructuredBuffer<uint> module_value_path_call_leaf;
 StructuredBuffer<uint> module_value_path_associated_method_token;
 StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_token;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_lookup_state;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> visible_decl;
@@ -139,6 +148,8 @@ bool valid_node(uint node)
 {
     return node != INVALID && node < active_semantic_hir_count();
 }
+
+#include "../type/instances/lexical_parameter_lookup.slang"
 
 bool parser_published_type_syntax(uint node, uint token_i)
 {
@@ -398,6 +409,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         use_token = core.token_start;
     if (!valid_token(use_token))
         return;
+    // Match payload declarations also have name-expression HIR rows. Their
+    // anchors introduce a name; looking them up as uses can bind an earlier
+    // arm's spelling or falsely reject a later independent declaration.
+    if (hir_visible_decl_flag[use_token] != 0u)
+        return;
     if (parser_published_type_syntax(node, use_token))
         return;
     if (module_value_path_call_leaf[use_token] != 0u)
@@ -405,12 +421,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (module_value_path_associated_method_token[use_token] != INVALID)
         return;
     uint use_name = name_id_by_token[use_token];
-    if (use_name == INVALID || use_name >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT ||
-        hir_value_decl_name_present[use_name] == 0u)
+    if (use_name == INVALID || use_name >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
         return;
 
     uint owner_encoded = encoded_owner_fn(use_token);
-    uint decl_row = best_hir_decl_row_from_table(use_token, owner_encoded, use_name);
+    uint decl_row = hir_value_decl_name_present[use_name] != 0u
+        ? best_hir_decl_row_from_table(use_token, owner_encoded, use_name) : INVALID;
     uint decl_i = sorted_decl_row(decl_row);
     uint decl_token = decl_i == INVALID ? INVALID : hir_visible_decl_token[decl_i];
     if (valid_token(decl_token))
@@ -421,6 +437,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
         visible_decl[use_token] = decl_token;
+        return;
+    }
+
+    // Live value declarations shadow constant parameters. A single-name use
+    // otherwise consumes the same exact lexical parameter lookup as type
+    // substitution. Qualified paths cannot capture a local parameter.
+    uint parameter = core.token_end == use_token + 1u
+        ? lexical_parameter_row(node, use_token, 2u) : INVALID;
+    if (parameter < min(generic_param_count_out[0u], gParams.n_tokens))
+    {
+        visible_decl[use_token] = generic_param_token[parameter];
         return;
     }
 

@@ -1,0 +1,24 @@
+
+running 2 tests
+test local_generic_methods_preserve_compound_values_and_nested_calls ... 
+thread 'local_generic_methods_preserve_compound_values_and_nested_calls' (638488) panicked at tests/compiler_generic_types_execution.rs:117:5:
+assertion `left == right` failed: local generic compound method bodies: Output { status: ExitStatus(unix_wait_status(256)), stdout: "alpha λ\n", stderr: "" }
+  left: Some(1)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test local_generic_methods_use_lexical_impl_parameter_order ... 
+thread 'local_generic_methods_use_lexical_impl_parameter_order' (638536) panicked at tests/compiler_generic_types_execution.rs:117:5:
+assertion `left == right` failed: reordered impl parameter methods: Output { status: ExitStatus(unix_wait_status(256)), stdout: "left λ\n", stderr: "" }
+  left: Some(1)
+ right: Some(0)
+FAILED
+
+failures:
+
+failures:
+    local_generic_methods_preserve_compound_values_and_nested_calls
+    local_generic_methods_use_lexical_impl_parameter_order
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 117 filtered out; finished in 2.55s
+

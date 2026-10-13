@@ -1,0 +1,16 @@
+{
+  "source_count": 3218,
+  "shader_payload_count": 1464,
+  "changed_spv": 21,
+  "changed_reflection": 20,
+  "canonical_compiler_median_ms": 42.0496205,
+  "canonical_wall_median_ms": 45.1716885,
+  "generic_32_median_ms": 402.744,
+  "canonical_elf_count": 20,
+  "tracked_live_bytes": [
+    1645006779
+  ],
+  "tracked_allocations": [
+    270
+  ]
+}

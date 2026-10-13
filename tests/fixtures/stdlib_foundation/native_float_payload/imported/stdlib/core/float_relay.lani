@@ -1,0 +1,5 @@
+module core::float_relay;
+pub fn seventh<T>(a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T) -> T { return g; }
+pub fn eighth<T>(a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T) -> T { return h; }
+pub fn scalar(a: f64, b: f32, c: f64, d: f32, e: f64, f: f32, g: f64, h: f32) -> f64 { return g; }
+pub fn small(a: f64, b: f32, c: f64, d: f32, e: f64, f: f32, g: f64, h: f32) -> f32 { return h; }

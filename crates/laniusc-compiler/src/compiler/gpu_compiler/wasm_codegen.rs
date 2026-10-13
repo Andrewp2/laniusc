@@ -77,8 +77,10 @@ mod tests {
     #[test]
     fn gpu_projects_compiled_user_call_to_relocatable_wasm_object() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let object = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            &[r#"
+        let object = pollster::block_on(
+            compiler.compile_source_pack_unit_with_dependency_pages(
+                vec![
+                    r#"
 pub fn seven() -> i32 {
     return 7;
 }
@@ -86,12 +88,16 @@ pub fn seven() -> i32 {
 fn main() -> i32 {
     return seven();
 }
-"#],
-            11,
-            3,
-            &[],
-            SourcePackArtifactTarget::Wasm,
-        ))
+"#
+                    .to_owned(),
+                ]
+                .into(),
+                11,
+                3,
+                Vec::new().into(),
+                SourcePackArtifactTarget::Wasm,
+            ),
+        )
         .expect("compile relocatable Wasm unit")
         .object
         .into_wasm()
@@ -135,13 +141,19 @@ pub fn seven() -> i32 {
             &["module noise::unused;\npub fn zero() -> i32 { return 0; }"],
         ))
         .expect("project unrelated semantic interface");
-        let provider = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            &provider_source,
-            7,
-            0,
-            &[],
-            SourcePackArtifactTarget::Wasm,
-        ))
+        let provider = pollster::block_on(
+            compiler.compile_source_pack_unit_with_dependency_pages(
+                provider_source
+                    .iter()
+                    .map(|source| source.to_string())
+                    .collect::<Vec<_>>()
+                    .into(),
+                7,
+                0,
+                Vec::new().into(),
+                SourcePackArtifactTarget::Wasm,
+            ),
+        )
         .expect("compile provider Wasm unit");
         let provider_interface = provider.interface;
         let provider_object = provider.object.into_wasm().expect("provider Wasm object");
@@ -155,18 +167,23 @@ fn main() -> i32 {
     return core::math::seven();
 }
 "#];
-        let consumer_object =
-            pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-                &consumer_source,
+        let consumer_object = pollster::block_on(
+            compiler.compile_source_pack_unit_with_dependency_pages(
+                consumer_source
+                    .iter()
+                    .map(|source| source.to_string())
+                    .collect::<Vec<_>>()
+                    .into(),
                 11,
                 2,
-                &[vec![noise_interface], vec![provider_interface]],
+                vec![vec![noise_interface], vec![provider_interface]].into(),
                 SourcePackArtifactTarget::Wasm,
-            ))
-            .expect("compile consumer Wasm unit against provider interface")
-            .object
-            .into_wasm()
-            .expect("consumer Wasm object");
+            ),
+        )
+        .expect("compile consumer Wasm unit against provider interface")
+        .object
+        .into_wasm()
+        .expect("consumer Wasm object");
         assert_eq!(consumer_object.entry_function, Some(0));
         assert_eq!(consumer_object.relocations.len(), 1);
         let relocation = &consumer_object.relocations[0];

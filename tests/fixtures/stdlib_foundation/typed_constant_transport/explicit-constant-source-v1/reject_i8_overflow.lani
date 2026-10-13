@@ -1,0 +1,2 @@
+fn value<const N:i8>()->i8 { return N; }
+fn main()->i32 { let invalid:i8 = value<-129>(); return 0; }

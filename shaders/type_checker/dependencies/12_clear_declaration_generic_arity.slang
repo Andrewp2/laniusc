@@ -13,6 +13,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> declaration_generic_arity;
+RWStructuredBuffer<uint> dependency_declaration_constant_arity;
 RWStructuredBuffer<uint> declaration_field_count;
 
 static const uint WG_SIZE = 256u;
@@ -26,6 +27,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (declaration_i < gParams.declaration_count)
     {
         declaration_generic_arity[declaration_i] = 0u;
+        dependency_declaration_constant_arity[declaration_i] = 0u;
         declaration_field_count[declaration_i] = 0u;
     }
 }

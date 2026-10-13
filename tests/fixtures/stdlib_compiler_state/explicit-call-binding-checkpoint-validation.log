@@ -1,0 +1,9 @@
+Validated 1747 source_sha256 entries
+Validated 5 binary_sha256 entries
+Validated 1488 shader_payload_sha256 entries
+Validated 8 evidence_log_sha256 entries
+All saved shader payloads match the current build artifact directory
+The two execution runs cover all 221 binary test names exactly once: 219 pass, two known failures
+Source changes match 19 existing compiler/test files, five docs, and six added shader/reproduction files
+Interface version 7 and native ABI remain unchanged; this checkpoint has no new performance measurement
+Checkpoint validation passed

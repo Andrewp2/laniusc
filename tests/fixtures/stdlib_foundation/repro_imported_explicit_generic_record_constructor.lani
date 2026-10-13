@@ -1,0 +1,10 @@
+module app::main;
+import core::five;
+fn main() -> i32 {
+    let value: core::five::Five<i32, bool, char, u32, i32> =
+        core::five::Five<i32, bool, char, u32, i32> {
+            first: 11, second: false, third: 'Ω', fourth: 4294967295, fifth: -7,
+        };
+    if (value.last() != -7) { return 1; }
+    return 0;
+}

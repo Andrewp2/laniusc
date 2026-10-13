@@ -1,0 +1,82 @@
+{
+  "checkpoint": "selected generic body emission and sibling publication",
+  "date": "2026-10-11",
+  "distinct_checks": 29,
+  "native_integration_tests": 11,
+  "library_gpu_tests": 2,
+  "host_tests": 16,
+  "runs": [
+    {
+      "record": "sibling-native-final.json",
+      "log": "sibling-native-final.log",
+      "source_snapshot": "sibling-native-final-sources.json",
+      "kind": "native integration",
+      "test_count": 11,
+      "tests": [
+        "caller_selected_bounds_forward_through_nested_bodies_and_existing_bodies",
+        "explicit_constant_arguments_execute_independent_method_domains",
+        "generic_impl_sibling_replay_preserves_local_helpers_across_workspace_reuse",
+        "generic_impl_sibling_replay_preserves_method_and_impl_constants",
+        "generic_impl_sibling_replay_preserves_ordinary_imported_helpers",
+        "imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments",
+        "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+        "imported_generic_bodies_execute_with_caller_selected_implementations",
+        "imported_trait_contract_records_preserve_ordinary_generic_execution",
+        "ordinary_trait_methods_execute_alongside_generic_value_calls",
+        "reused_native_bodies_still_reject_missing_bounds_at_the_actual_call"
+      ]
+    },
+    {
+      "record": "sibling-library-final.json",
+      "log": "sibling-library-final.log",
+      "source_snapshot": "sibling-library-final-sources.json",
+      "kind": "library host and physical GPU",
+      "test_count": 18,
+      "tests": [
+        "compiler::gpu_compiler::program_evidence::packet::tests::admitted_call_handles_require_the_exact_arena_and_terminal_admission",
+        "compiler::gpu_compiler::program_evidence::packet::tests::arena_growth_preserves_old_graph_references_after_physical_moves",
+        "compiler::gpu_compiler::program_evidence::packet::tests::every_empty_submission_resets_and_requires_its_own_receipt",
+        "compiler::gpu_compiler::program_evidence::packet::tests::every_original_unit_and_source_occurrence_is_required",
+        "compiler::gpu_compiler::program_evidence::packet::tests::foreign_packet_submissions_and_evidence_cannot_authorize_replay",
+        "compiler::gpu_compiler::program_evidence::packet::tests::program_failure_diagnostics_require_an_exact_retained_file_span",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_cannot_normalize_a_changed_ordinary_helper",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_rejects_a_nonselected_generic_definition_or_native_call",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_rejects_missing_or_conflicting_native_ownership",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_restores_only_omitted_template_facts_and_preserves_selected_calls",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_inherits_every_origin_binding_and_reuses_only_admitted_siblings",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_occurrences_do_not_upgrade_an_original_symbolic_call_handle",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_reuses_equal_sibling_facts_and_paths_but_rejects_changes",
+        "compiler::gpu_compiler::program_evidence::packet::tests::replay_routing_and_provenance_are_checked_before_call_iteration",
+        "compiler::gpu_compiler::typecheck::tests::native_call_ownership_retains_ordinary_calls_and_repeated_inlined_sites",
+        "compiler::gpu_compiler::unit_cache::tests::fallback_cache_keeps_diagnostic_paths_in_its_identity",
+        "compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_retain_nongeneric_imported_caller_owner",
+        "compiler::gpu_compiler::x86_codegen::tests::scalar_body_specialization_executes_both_variants_and_clears_between_jobs"
+      ]
+    }
+  ],
+  "source_changes_between_final_runs": [
+    "crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs",
+    "crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs"
+  ],
+  "source_change_explanation": "Only the workspace-reset test and removal of its unused cfg(test) scalar replay wrapper changed after the final native run. The private normalizer extraction precedes both final runs.",
+  "shader_manifest": "sibling-final-shaders.json",
+  "shader_validation": "sibling-changed-shaders-validation.json",
+  "performance": [
+    "performance-sibling-contracts/comparison.json",
+    "performance-sibling-ordinary/comparison.json"
+  ],
+  "performance_scope": "Measured before the private normalizer extraction for host fault tests; exact binary/shader pairs retained. Warm workloads only.",
+  "excluded_attempts": {
+    "sibling-library-1.json": "17 passed; obsolete manual-specialization link test failed missing independently generic is_some body. Updated test uses production scheduler and asserts scope reset with a concrete-signature generic marker.",
+    "sibling-reset-preserved-baseline.json": "Preserved prior compiler terminated at timeout90. Identical historical link failure is not established."
+  },
+  "remaining": [
+    "Generic trait implementations and prerequisites",
+    "Generic trait methods and method-level bounds",
+    "Constant trait operands",
+    "Structural reference-target methods and nested-reference place semantics",
+    "Ordinary wide-scalar semantics dependency",
+    "Large-input and generic-graph scaling performance acceptance"
+  ],
+  "goal_complete": false
+}

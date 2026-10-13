@@ -1,0 +1,60 @@
+module app::main;
+import std::io;
+
+struct Pair { number: i32, text: str }
+enum Batch<T> { Items([T; 2]), Empty }
+
+fn second<T>(value: Batch<T>, fallback: T) -> T {
+    return match (value) { Items(items) -> items[1], Empty -> fallback };
+}
+
+fn main() -> i32 {
+    let numbers: [i32; 2] = [-2147483648, 2147483647];
+    let integers: Batch<i32> = Items(numbers);
+    let no_integer: Batch<i32> = Empty;
+    if (second(integers, -7) != 2147483647 || second(no_integer, -7) != -7) { return 1; }
+    let flags: [bool; 2] = [false, true];
+    let booleans: Batch<bool> = Items(flags);
+    let no_boolean: Batch<bool> = Empty;
+    if (!second(booleans, false) || second(no_boolean, false)) { return 2; }
+
+    let words: [str; 2] = ["Ω", ""];
+    let strings: Batch<str> = Items(words);
+    let no_string: Batch<str> = Empty;
+    std::io::println(second(strings, "backup"));
+    std::io::println(second(no_string, "backup"));
+
+    let first: Pair = Pair { number: -7, text: "" };
+    let last: Pair = Pair { number: 42, text: "Ω" };
+    let backup: Pair = Pair { number: 99, text: "backup" };
+    let pairs: [Pair; 2] = [first, last];
+    let records: Batch<Pair> = Items(pairs);
+    let no_record: Batch<Pair> = Empty;
+    let selected: Pair = second(records, backup);
+    let absent: Pair = second(no_record, backup);
+    if (selected.number != 42 || absent.number != 99) { return 3; }
+    std::io::println(selected.text);
+    std::io::println(absent.text);
+    selected.number = 123;
+    selected.text = "changed";
+    let original: Pair = second(records, backup);
+    if (original.number != 42 || pairs[1].number != 42 || last.number != 42) { return 4; }
+    std::io::println(original.text);
+
+    let left: [str; 2] = ["Ω", ""];
+    let right: [str; 2] = ["", "backup"];
+    let rows: [[str; 2]; 2] = [left, right];
+    let nested: Batch<[str; 2]> = Items(rows);
+    let no_row: Batch<[str; 2]> = Empty;
+    let selected_row: [str; 2] = second(nested, left);
+    let absent_row: [str; 2] = second(no_row, left);
+    std::io::println(selected_row[0]);
+    std::io::println(selected_row[1]);
+    std::io::println(absent_row[0]);
+    std::io::println(absent_row[1]);
+    selected_row[1] = "changed";
+    let original_row: [str; 2] = second(nested, left);
+    std::io::println(original_row[1]);
+    std::io::println(rows[1][1]);
+    return 0;
+}

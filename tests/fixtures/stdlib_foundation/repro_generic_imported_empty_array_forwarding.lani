@@ -1,0 +1,10 @@
+module app::main;
+import core::mem;
+
+fn main() -> i32 {
+    let nothing: [i32; 0] = [];
+    let array: [i32; 0] = core::mem::identity(nothing);
+    if (check_array(array, 42) != 42) { return 1; }
+    return 0;
+}
+fn check_array(value: [i32; 0], sentinel: i32) -> i32 { return sentinel; }

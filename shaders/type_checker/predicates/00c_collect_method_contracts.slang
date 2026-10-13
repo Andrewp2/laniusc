@@ -92,9 +92,11 @@ uint contract_status(uint flags, bool structurally_valid)
 {
     if (!structurally_valid)
         return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
-    if ((flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
+    if ((flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u && (flags & 4u) == 0u)
         return PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC;
-    if ((flags & METHOD_SIGNATURE_HAS_WHERE) != 0u)
+    // Inherent bounds use the ordinary callable obligation inventory. Trait
+    // method bounds still require required/implemented contract equivalence.
+    if ((flags & METHOD_SIGNATURE_HAS_WHERE) != 0u && (flags & 4u) == 0u)
         return PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE;
     return PREDICATE_STATUS_OK;
 }

@@ -1,0 +1,15 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/program-native-integrated/stdlib_gpu_perf",
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/generic-completion-audit/pointer-slice-composition.lani",
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+    "-",
+    "1",
+    "1"
+  ],
+  "exit_code": 0,
+  "seconds": 2.518084600000293,
+  "binary_sha256": "a0ace6c3a9a411b9569a7929fc594c8adfcdc162d13b849d5f9d68c655b72630",
+  "shader_root": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/results/current-shaders",
+  "source_sha256": "9e65d8c3d7ab2966a898f3f89200b4fd581288babb37852452ee3ff6a2f7d318"
+}

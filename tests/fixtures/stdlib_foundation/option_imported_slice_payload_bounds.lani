@@ -1,0 +1,16 @@
+module app::main;
+import core::option;
+import core::mem;
+struct View { values: [i32] }
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 3);
+    let view: View = View { values: cells };
+    let present: core::option::Option<View> = core::option::Some(view);
+    let recovered: View = match (present) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> view,
+    };
+    let recovered_cells: [i32] = recovered.values;
+    return recovered_cells[3];
+}

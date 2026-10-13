@@ -1,0 +1,23 @@
+
+running 9 tests
+test type_checker_accepts_array_length_from_fifth_const_generic_slot ... ok
+
+thread 'type_checker_accepts_generic_array_calls_beyond_cached_argument_width' (692659) panicked at tests/type_checker_semantics.rs:8:49:
+source should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source>", line: 14, column: 28, length: 9, byte_start: Some(229), byte_end: Some(238), source_line: Some("    let copied: [i32; 2] = copy_wide(values, 1, 2, 3, 4);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test type_checker_accepts_generic_array_calls_beyond_cached_argument_width ... FAILED
+test type_checker_infers_array_generic_from_fifth_argument ... ok
+test type_checker_infers_array_generic_from_fifth_generic_slot ... ok
+test type_checker_rejects_array_length_mismatch_from_fifth_const_generic_slot ... ok
+test type_checker_rejects_generic_array_call_result_length_mismatch ... ok
+test type_checker_rejects_nonzero_generic_call_argument_mismatches_on_gpu ... ok
+test type_checker_rejects_repeated_array_const_generic_mismatch_beyond_cached_argument_width ... ok
+test type_checker_substitutes_bounded_generic_type_aliases_on_gpu ... ok
+
+failures:
+
+failures:
+    type_checker_accepts_generic_array_calls_beyond_cached_argument_width
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 247 filtered out; finished in 1.63s
+

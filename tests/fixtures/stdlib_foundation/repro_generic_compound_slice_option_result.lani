@@ -1,0 +1,46 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+
+struct Pair { left: i32, right: i32 }
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn count(values: [Pair]) -> i32 {
+    let result: i32 = 0;
+    for value in values { result += 1; }
+    return result;
+}
+fn inspect(values: [Pair], fallback: [Pair]) -> i32 {
+    let some: core::option::Option<[Pair]> = core::option::Some(values);
+    let none: core::option::Option<[Pair]> = core::option::None();
+    let present: [Pair] = core::option::unwrap_or(keep(some), fallback);
+    let absent: [Pair] = none.unwrap_or(fallback);
+    let success: core::result::Result<[Pair], [Pair]> = core::result::Ok(values);
+    let failure: core::result::Result<[Pair], [Pair]> = core::result::Err(fallback);
+    let recovered: [Pair] = core::result::unwrap_or(keep(success), fallback);
+    let selected: [Pair] = failure.unwrap_or(values);
+    let error: [Pair] = core::result::unwrap_err_or(failure, values);
+    if (count(present) != 2 || count(recovered) != 2 || count(absent) != 3 || count(selected) != 2 || count(error) != 3) { return 1; }
+    if (present[0].left != -7 || recovered[1].right != -11 || absent[2].left != 55 || error[2].right != -100) { return 2; }
+    present[0].left = -99;
+    error[2].right = 123;
+    if (values[0].left != -99 || selected[0].left != -99 || recovered[0].left != -99 || absent[2].right != 123 || fallback[2].right != 123) { return 3; }
+    let empty: [Pair] = core::mem::typed_slice_from_raw_parts(core::mem::i32_slice_data_ptr(values), 0);
+    let some_empty: core::option::Option<[Pair]> = core::option::Some(empty);
+    let ok_empty: core::result::Result<[Pair], [Pair]> = core::result::Ok(empty);
+    let optional_empty: [Pair] = some_empty.unwrap_or(fallback);
+    let result_empty: [Pair] = core::result::unwrap_or(ok_empty, fallback);
+    if (count(optional_empty) != 0 || count(result_empty) != 0) { return 4; }
+    return 0;
+}
+fn main() -> i32 {
+    let first: Pair = Pair { left: -7, right: 42 };
+    let second: Pair = Pair { left: 99, right: -11 };
+    let third: Pair = Pair { left: 55, right: -100 };
+    let rows: [Pair; 2] = [first, second];
+    let fallback: [Pair; 3] = [second, first, third];
+    let status: i32 = inspect(rows, fallback);
+    if (status != 0) { return status; }
+    if (rows[0].left != -99 || rows[0].right != 42 || rows[1].right != -11 || fallback[2].right != 123 || third.right != -100) { return 5; }
+    return 0;
+}

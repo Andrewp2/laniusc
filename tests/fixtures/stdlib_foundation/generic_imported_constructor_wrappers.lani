@@ -1,0 +1,35 @@
+import core::option;
+import core::result;
+
+struct Empty {}
+struct Cell<T> { value: T, sentinel: i32 }
+fn present<T>(value: T) -> core::option::Option<T> { return core::option::Some(value); }
+fn success<T, E>(value: T) -> core::result::Result<T, E> { return core::result::Ok(value); }
+fn failure<T, E>(value: E) -> core::result::Result<T, E> { return core::result::Err(value); }
+fn view<T>(values: [T]) -> [T] { return values; }
+fn main() -> i32 {
+    let number: core::option::Option<i32> = present(42);
+    let flag: core::option::Option<bool> = present(false);
+    if (core::option::unwrap_or(number, 0) != 42 || core::option::unwrap_or(flag, true)) { return 1; }
+
+    let source: Cell<[i32; 2]> = Cell { value: [11, 22], sentinel: 97 };
+    let record: core::option::Option<Cell<[i32; 2]>> = present(source);
+    source.value[0] = 99;
+    let copy: Cell<[i32; 2]> = core::option::unwrap_or(record, source);
+    if (copy.value[0] != 11 || copy.value[1] != 22 || copy.sentinel != 97) { return 2; }
+
+    let empty: core::option::Option<Empty> = present(Empty {});
+    if (!core::option::is_some(empty)) { return 3; }
+
+    let borrowed: core::option::Option<[i32]> = present(view(source.value));
+    let alias: [i32] = core::option::unwrap_or(borrowed, view(copy.value));
+    alias[1] = 41;
+    if (source.value[1] != 41 || source.sentinel != 97 || copy.value[1] != 22) { return 4; }
+
+    let good: core::result::Result<[i32; 2], bool> = success([31, 41]);
+    let bad: core::result::Result<[i32; 2], bool> = failure(false);
+    let pair: [i32; 2] = core::result::unwrap_or(good, [0, 0]);
+    if (pair[0] != 31 || pair[1] != 41 || !core::result::is_err(bad) ||
+        core::result::unwrap_err_or(bad, true)) { return 5; }
+    return 0;
+}

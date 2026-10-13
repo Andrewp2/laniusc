@@ -1,0 +1,19 @@
+module app::main;
+import core::five;
+
+fn fixed<A, B>(value: core::five::ReorderedFields<A, B>) -> [B; 2] {
+    return value.fixed;
+}
+fn view(value: [str]) -> [str] { return value; }
+
+fn main() -> i32 {
+    let text: [str; 1] = ["x"];
+    let value: core::five::ReorderedFields<str, i32> = core::five::ReorderedFields {
+        fixed: [-7, 42], borrowed: view(text), sentinel: 99
+    };
+    let result: [i32; 2] = fixed(value);
+    if (result[0] != -7 || result[1] != 42) { return 1; }
+    result[0] = 9;
+    if (value.fixed[0] != -7 || value.sentinel != 99) { return 2; }
+    return 0;
+}

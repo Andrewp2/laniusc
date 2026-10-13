@@ -1,0 +1,21 @@
+
+running 1 test
+test imported_constructor_contexts_preserve_compound_payload_patterns ... [typecheck.call_inference] round=0 changed=147
+[typecheck.call_inference] round=1 changed=0
+typecheck final status: [1, 4294967295, 0, 0]
+[typecheck.call_inference] round=0 changed=48
+[typecheck.call_inference] round=1 changed=0
+typecheck final status: [0, 83, 3, 106]
+
+thread 'imported_constructor_contexts_preserve_compound_payload_patterns' (871089) panicked at tests/compiler_generic_types_execution.rs:131:29:
+imported compound constructor contexts: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 7, column: 49, length: 7, byte_start: Some(253), byte_end: Some(260), source_line: Some("    let values: [u32; 2] = match (batch) { Data(numbers, label) -> numbers, Missing -> fallback };"), message: "value type is an unsupported type, which is not accepted here" }), help: None, notes: ["found an unsupported type, but this context requires another type; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_constructor_contexts_preserve_compound_payload_patterns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 149 filtered out; finished in 4.73s
+

@@ -1,0 +1,26 @@
+{
+  "command": [
+    "target/program-catalog-tests/stdlib_gpu_perf",
+    "gpu_catalog_admission_",
+    "gpu_catalog_preserves_public_private_method_targets_and_rejects_cross_wiring",
+    "gpu_catalog_rejects_equal_keys_from_linked_unit_without_caller_import_edge",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 4.621404404999339,
+  "binary_sha256": "df722da95a7feb2fdd06fe23ef6d0ba43c9b1176843d32ba9edbd3cdad888f32",
+  "sources_unchanged": true,
+  "passed": [
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_enforces_the_reachable_graph_depth_boundary",
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_shape_valid_reachable_cycles",
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_unused_rows_and_broken_identity_relationships",
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_valid_parameters_from_another_lexical_owner",
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_requires_valid_header_before_any_row_work",
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_preserves_public_private_method_targets_and_rejects_cross_wiring",
+    "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_rejects_equal_keys_from_linked_unit_without_caller_import_edge"
+  ],
+  "summaries": [
+    "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 685 filtered out; finished in 4.42s"
+  ]
+}

@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.lir.wasm.host_abi;
+import primitive_types;
 
 static const uint WASM_MODULE_I32 = 0x7fu;
 static const uint WASM_MODULE_F32 = 0x7du;
@@ -15,6 +16,8 @@ uint wasm_module_leb5_byte(uint value, uint byte_i)
 
 uint wasm_module_value_type(uint type_id)
 {
+    // ABI passes reject f64 before publication; never encode it as i32.
+    if (type_id == SCALAR_F64) return 0u;
     return type_id == WASM_MODULE_TY_FLOAT ? WASM_MODULE_F32 : WASM_MODULE_I32;
 }
 

@@ -1,0 +1,8 @@
+struct Cell<T> { value: T }
+fn read<T>(container: Cell<Cell<T>>) -> T { return container.value.value; }
+fn main() -> i32 {
+    let container: Cell<Cell<i32>> = Cell { value: Cell { value: 42 } };
+    let result = read(container);
+    if (result != 42) { return 1; }
+    return 0;
+}

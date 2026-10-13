@@ -24,13 +24,16 @@ RWStructuredBuffer<uint> parser_feature_flags;
 
 static const uint TK_IDENT = 1;
 static const uint TK_INT = 2;
+static const uint TK_RPAREN = 5;
 static const uint TK_ASSIGN = 8;
 static const uint TK_LT = 12;
 static const uint TK_LBRACKET = 20;
 static const uint TK_RBRACKET = 21;
+static const uint TK_AMPERSAND = 25;
 static const uint TK_STRING = 32;
 static const uint TK_DOT = 35;
 static const uint TK_FLOAT = 33;
+static const uint TK_CHAR = 34;
 static const uint TK_PUB = 66;
 static const uint TK_FN = 67;
 static const uint TK_LET = 68;
@@ -70,10 +73,13 @@ static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 static const uint PARSER_FEATURE_IMPORTS = 0x00000080u;
 static const uint PARSER_FEATURE_TYPE_ALIASES = 0x00000100u;
 static const uint PARSER_FEATURE_STRING_EXPRS = 0x00000200u;
+static const uint PARSER_FEATURE_REFERENCES = 0x00000400u;
+static const uint PARSER_FEATURE_FLOAT_LITERALS = 0x00000800u;
 
 uint parser_features_for_lexical_token(uint kind)
 {
     uint flags = 0u;
+    if (kind == TK_FLOAT) flags |= PARSER_FEATURE_FLOAT_LITERALS;
     if (kind == TK_LBRACKET || kind == TK_RBRACKET)
         flags |= PARSER_FEATURE_ARRAYS;
     if (kind == TK_ENUM)
@@ -124,6 +130,22 @@ bool starts_generic_declaration(uint token_index, uint kind, uint file_id)
     return declaration_kind == TK_FN || declaration_kind == TK_STRUCT ||
            declaration_kind == TK_ENUM || declaration_kind == TK_TRAIT ||
            declaration_kind == TK_TYPE;
+}
+
+bool ampersand_may_start_reference(uint token_index, uint kind, uint file_id)
+{
+    if (kind != TK_AMPERSAND)
+        return false;
+
+    // Host allocation and pass selection precede semantic token classification.
+    // Exclude only predecessors that prove a binary operator; all other `&`
+    // positions conservatively reserve reference storage, including borrows.
+    uint previous = previous_compact_kind(token_index, file_id);
+    return previous != TK_IDENT && previous != TK_INT && previous != TK_FLOAT &&
+           previous != TK_STRING && previous != TK_CHAR &&
+           previous != TK_TRUE && previous != TK_FALSE &&
+           previous != TK_SELF_VALUE && previous != TK_RPAREN &&
+           previous != TK_RBRACKET;
 }
 
 uint2 file_start_and_id_for_token_end(uint end_excl)
@@ -422,6 +444,8 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
         parser_features |= PARSER_FEATURE_TYPE_ARGS;
     if (string_may_be_expression(k, kind, file_info.y))
         parser_features |= PARSER_FEATURE_STRING_EXPRS;
+    if (ampersand_may_start_reference(k, kind, file_info.y))
+        parser_features |= PARSER_FEATURE_REFERENCES;
     if (parser_features != 0u)
         atomic_u32_or(parser_feature_flags, 0u, parser_features);
 }

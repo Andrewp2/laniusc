@@ -1,0 +1,4 @@
+internal compiler phase error: concrete body replay produced no native definition for Local { function_start_token: 19, generic_parameter_count: 1, native_symbol: 1073741843, specialization_symbol: 1073741843 } with [CheckedGenericArgument { slot: 0, ty: NativeValue { identity: [0, 0, 536870921], words: 2 } }]
+error[LNC0057]: compiler execution failed
+     = help: this is a compiler diagnostic gap; re-run with `laniusc check` when target output is not required
+     = note: the compiler stopped while generating target output before producing a target-specific diagnostic

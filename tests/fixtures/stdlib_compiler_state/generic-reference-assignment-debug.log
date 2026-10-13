@@ -1,0 +1,16 @@
+
+running 1 test
+GPU source-pack type-check rejection: token=130 code=AssignMismatch detail=1895891712
+
+thread 'imported_reference_fields_preserve_pointer_layout_and_aliases' (642284) panicked at tests/compiler_generic_types_execution.rs:115:29:
+imported reference fields: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 22, length: 5, byte_start: Some(428), byte_end: Some(433), source_line: Some("    original.value = other.borrow();"), message: "value type is unknown type but this context expects generic parameter 7397635" }), help: None, notes: ["expected generic parameter 7397635, found unknown type; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test imported_reference_fields_preserve_pointer_layout_and_aliases ... FAILED
+
+failures:
+
+failures:
+    imported_reference_fields_preserve_pointer_layout_and_aliases
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 118 filtered out; finished in 2.09s
+

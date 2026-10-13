@@ -1,0 +1,25 @@
+import std::io;
+enum Packet<T> { Void, Payload(T) }
+struct Mixed {
+    scalar: Packet<bool>, text: Packet<str>, empty: [[i32; 0]; 2],
+    array: Packet<[str; 3]>, nested: Packet<[[str; 2]; 2]>
+}
+fn packet<T>(value: T) -> Packet<T> { return Payload(value); }
+fn build() -> Mixed {
+    return Mixed {
+        nested: packet([["α", "β"], ["γ", "δ"]]), empty: [[], []],
+        text: packet("keep"), array: packet(["a", "b", "c"]), scalar: packet(true)
+    };
+}
+fn show(value: Mixed) {
+    let text: str = match (value.text) { Payload(v) => v, Void => "wrong" };
+    let array: [str; 3] = match (value.array) { Payload(v) => v, Void => ["x", "y", "z"] };
+    let nested: [[str; 2]; 2] = match (value.nested) {
+        Payload(v) => v, Void => [["x", "y"], ["z", "w"]]
+    };
+    std::io::println(text);
+    std::io::println(array[0]);
+    std::io::println(array[2]);
+    std::io::println(nested[1][0]);
+}
+fn main() -> i32 { let original: Mixed = build(); show(original); return 0; }

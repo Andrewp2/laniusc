@@ -1,0 +1,153 @@
+// Record construction contributes named field evidence to the same ordered
+// type/constant environment used by calls. The graph matchers own type rules;
+// this producer owns field lookup and merging constraints across fields.
+bool merge_record_field_constraints(inout uint2 types[32], inout uint type_mask,
+    inout uint2 constants[32], inout uint constant_mask,
+    uint2 next_types[32], uint next_type_mask, uint2 next_constants[32], uint next_constant_mask)
+{
+    for (uint slot = 0u; slot < 32u; slot++)
+    {
+        uint bit = 1u << slot;
+        if ((next_type_mask & bit) != 0u)
+        {
+            if ((type_mask & bit) != 0u && !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+                types[slot].x, types[slot].y, INVALID, next_types[slot].x, next_types[slot].y,
+                INVALID, checked_type_capacity(), gParams.n_tokens)) return false;
+            types[slot] = next_types[slot]; type_mask |= bit;
+        }
+        if ((next_constant_mask & bit) != 0u)
+        {
+            if ((constant_mask & bit) != 0u && any(constants[slot] != next_constants[slot])) return false;
+            constants[slot] = next_constants[slot]; constant_mask |= bit;
+        }
+    }
+    return true;
+}
+
+uint record_field_type_token(uint node)
+{
+    if (!valid_hir(node)) return INVALID;
+    uint token = compact_hir_core[node].token_start;
+    return valid_token(token) && type_expr_ref_tag[token] != 0u ? token : INVALID;
+}
+
+uint imported_record_field_pattern(uint declaration, uint token)
+{
+    uint name = name_id_by_token[token];
+    if (name >= gParams.n_tokens) return INVALID;
+    uint start = dependency_declaration_word(declaration * 14u + 8u);
+    uint count = dependency_declaration_word(declaration * 14u + 9u);
+    if (start > dependency_member_count() || count > dependency_member_count() - start) return INVALID;
+    for (uint member = start; member < start + count; member++)
+    {
+        uint base = member * SEMANTIC_INTERFACE_MEMBER_WORDS;
+        if (dependency_member_word(base + 1u) == 4u &&
+            dependency_member_word(base + 3u) == name_hash_lo[name] &&
+            dependency_member_word(base + 4u) == name_hash_hi[name])
+            return dependency_member_word(base + 7u);
+    }
+    return INVALID;
+}
+
+void infer_record_field_constraints(uint node, uint declaration)
+{
+    uint token = compact_hir_core[node].token_start;
+    if (!valid_token(token) || valid_instance(struct_lit_context_instance[node])) return;
+    bool imported = external_type_library_id[token] != INVALID;
+    uint owner = INVALID; uint dependency = INVALID;
+    if (imported)
+    {
+        dependency = dependency_find_declaration(external_type_library_id[token],
+            external_type_unit_id[token], external_type_local_index[token]);
+        if (dependency >= dependency_declaration_count() ||
+            dependency_declaration_word(dependency * 14u + 6u) != 6u) return;
+    }
+    else
+    {
+        if (!valid_token(declaration) || type_instance_kind[declaration] != 1u) return;
+        owner = type_decl_hir_node_by_token[declaration];
+        if (!valid_hir(owner) || compact_hir_core[owner].kind != 27u) return;
+    }
+    HirPayload literal = compact_hir_payload[node];
+    uint fields = min(compact_field_count[0u], gParams.n_tokens);
+    if (literal.c != 0u && (literal.b >= fields || literal.c > fields - literal.b)) return;
+    uint2 types[32]; uint2 constants[32]; uint type_mask = 0u; uint constant_mask = 0u;
+    for (uint slot = 0u; slot < 32u; slot++)
+    { types[slot] = uint2(0u, INVALID); constants[slot] = uint2(0u, INVALID); }
+    for (uint row = literal.b; row < literal.b + literal.c; row++)
+    {
+        HirField field = compact_fields[row];
+        if (field.owner != node || !valid_token(field.name_token)) return;
+        if (struct_field_lookup_find(node, name_id_by_token[field.name_token], fields,
+            gParams.n_tokens, compact_fields, name_id_by_token, struct_field_lookup_state) != row)
+        { record_min_token_error(status, field.name_token, 8u, 4u); return; }
+        uint pattern_tag = 5u; uint pattern;
+        if (imported)
+            pattern = imported_record_field_pattern(dependency, field.name_token);
+        else
+        {
+            uint field_row = struct_field_lookup_find(owner, name_id_by_token[field.name_token],
+                fields, gParams.n_tokens, compact_fields, name_id_by_token, struct_field_lookup_state);
+            if (field_row >= fields)
+            { record_min_token_error(status, field.name_token, 8u, 0u); return; }
+            uint pattern_token = record_field_type_token(compact_fields[field_row].value);
+            if (!valid_token(pattern_token)) return;
+            pattern_tag = type_expr_ref_tag[pattern_token]; pattern = type_expr_ref_payload[pattern_token];
+        }
+        if (pattern == INVALID)
+        { record_min_token_error(status, field.name_token, 8u, 0u); return; }
+        uint tag; uint payload;
+        if (!inference_value_reference(field.value, tag, payload)) continue;
+        uint2 inferred[32]; uint mask; uint2 inferred_constants[32]; uint constants_mask;
+        bool accepted;
+        if (imported)
+            accepted = canonical_type_and_constant_constraints<ScopedCheckedTypeGraph>(INVALID,
+                pattern, tag, payload, checked_type_capacity(), gParams.n_tokens, true,
+                inferred, mask, inferred_constants, constants_mask, true, true);
+        else
+            accepted = scoped_type_and_constant_constraints<ScopedCheckedTypeGraph>(
+                pattern_tag, pattern, INVALID, tag, payload, checked_type_capacity(), gParams.n_tokens,
+                inferred, mask, inferred_constants, constants_mask, true, true);
+        if (!accepted || !merge_record_field_constraints(types, type_mask, constants, constant_mask,
+            inferred, mask, inferred_constants, constants_mask))
+        {
+            if (call_inference_state[0u] == 0u) record_min_token_error(status, field.name_token, 3u, 0u);
+            return;
+        }
+    }
+    uint required_fields = 0u;
+    if (imported)
+    {
+        uint start = dependency_declaration_word(dependency * 14u + 8u);
+        uint count = dependency_declaration_word(dependency * 14u + 9u);
+        if (start > dependency_member_count() || count > dependency_member_count() - start) return;
+        for (uint member = start; member < start + count; member++)
+            if (dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 1u) == 4u) required_fields++;
+    }
+    else
+    {
+        uint first = first_local_struct_field(compact_hir_core[owner].token_start, fields, compact_fields);
+        for (uint row = first; row < fields && compact_fields[row].owner == owner; row++) required_fields++;
+    }
+    if (literal.c != required_fields)
+    { record_min_token_error(status, token, 8u, 3u); return; }
+    // One literal owns these cells. No field lane or materializer reads them
+    // until the next dispatch; unknown fields can settle in a later round.
+    for (uint slot = 0u; slot < 32u; slot++)
+    {
+        if ((type_mask & (1u << slot)) != 0u)
+        {
+            call_context_ref_tag[node * 32u + slot] = types[slot].x;
+            call_context_ref_payload[node * 32u + slot] = types[slot].y;
+        }
+        if ((constant_mask & (1u << slot)) != 0u)
+        {
+            call_context_constant_kind[node * 32u + slot] = constants[slot].x;
+            call_context_constant_payload[node * 32u + slot] = constants[slot].y;
+        }
+    }
+    call_context_arg_mask[node] = type_mask;
+    call_context_constant_mask[node] = constant_mask;
+    call_context_owner_by_token[token] = node;
+    struct_lit_context_decl_token[node] = imported ? INVALID : declaration;
+}

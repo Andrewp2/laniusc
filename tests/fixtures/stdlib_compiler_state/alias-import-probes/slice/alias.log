@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=38 code=AssignMismatch detail=0
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_34631.lani: error[LNC0006]: type mismatch
+ --> <source pack file 0>:2:80
+  |
+2 | fn borrow<T>(value: core::aliases::View<T>) -> core::aliases::View<T> { return value; }
+  |                                                                                ^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

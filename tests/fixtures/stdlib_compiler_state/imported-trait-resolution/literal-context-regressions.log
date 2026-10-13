@@ -1,0 +1,46 @@
+
+running 18 tests
+test direct_record_literal_arguments_execute_through_ordinary_and_generic_calls ... ok
+test direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types ... ok
+test direct_record_literal_arguments_preserve_contextual_generic_compositions ... ok
+test direct_record_literal_arguments_preserve_generic_body_failure ... ok
+test direct_record_literal_arguments_preserve_imported_generic_record_fields ... ok
+test direct_record_literal_generic_arguments_reject_type_and_field_conflicts ... GPU source-pack type-check rejection: token=72 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=62 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=61 code=AssignMismatch detail=770
+ok
+test inferred_array_literals_preserve_nested_values_and_generic_body_types ... ok
+test inferred_array_literals_preserve_reference_and_slice_aliases ... ok
+test inferred_array_literals_reject_incompatible_elements_and_missing_empty_types ... GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=105 code=GenericInstantiationBoundary detail=3
+ok
+test late_method_results_compose_through_local_and_imported_generic_calls ... ok
+test late_method_results_preserve_all_thirty_two_compound_arguments ... ok
+test late_method_results_preserve_types_without_receiver_or_result_annotations ... ok
+test late_method_results_reject_conflicting_complete_types ... GPU source-pack type-check rejection: token=115 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=115 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+ok
+test ordinary_inferred_array_literals_and_contextual_empty_literals_execute ... ok
+test scalar_literal_contexts_execute_imported_unsigned_constructors ... ok
+test scalar_literal_contexts_execute_local_imported_and_ordinary_calls ... ok
+test scalar_literal_contexts_execute_unsigned_match_arms ... ok
+test scalar_literal_contexts_reject_named_values_and_noninteger_literals ... GPU source-pack type-check rejection: token=38 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=33 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=1029
+GPU source-pack type-check rejection: token=18 code=AssignMismatch detail=1029
+GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=66 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=49 code=AssignMismatch detail=0
+ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 327 filtered out; finished in 11.70s
+

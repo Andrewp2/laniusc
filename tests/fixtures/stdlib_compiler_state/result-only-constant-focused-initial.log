@@ -1,0 +1,8 @@
+
+running 3 tests
+test generic_result_only_constants_execute_imported_calls ... ok
+test generic_result_only_constants_execute_local_calls ... ok
+test generic_result_only_constants_reject_conflicting_constraints ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 174 filtered out; finished in 39.54s
+

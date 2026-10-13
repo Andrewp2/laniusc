@@ -1,0 +1,7 @@
+
+running 2 tests
+test trait_bound_subjects_preserve_value_copies_borrows_and_empty_values ... ok
+test trait_bounds_preserve_complete_argument_graphs_and_symbolic_bindings ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 334 filtered out; finished in 2.52s
+

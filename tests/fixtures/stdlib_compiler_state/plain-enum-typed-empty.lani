@@ -1,0 +1,1 @@
+struct Empty {} enum Decision { Vacant([Empty; 0]) } fn main() -> i32 { let payload: [Empty; 0] = []; let value: Decision = Vacant(payload); return 0; }

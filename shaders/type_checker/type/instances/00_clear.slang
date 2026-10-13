@@ -19,17 +19,33 @@ static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> type_instance_kind;
+RWStructuredBuffer<uint> type_instance_lookup_head;
+RWStructuredBuffer<uint> type_instance_lookup_next;
+RWStructuredBuffer<uint> type_instance_lookup_present;
+RWStructuredBuffer<uint> type_application_count;
+RWStructuredBuffer<uint2> imported_type_alias_target;
+RWStructuredBuffer<uint> imported_field_ref_start;
+RWStructuredBuffer<uint> imported_field_ref_count;
+RWStructuredBuffer<uint> imported_field_ref_total;
+RWStructuredBuffer<uint> imported_layout_kind;
+RWStructuredBuffer<uint> imported_layout_group_start;
+RWStructuredBuffer<uint> imported_layout_group_count;
+RWStructuredBuffer<uint> imported_layout_group_total;
+RWStructuredBuffer<uint2> imported_layout_groups;
+RWStructuredBuffer<uint> imported_field_ref_tag;
+RWStructuredBuffer<uint> imported_field_ref_payload;
+RWStructuredBuffer<uint2> imported_field_name_hash;
 RWStructuredBuffer<uint> type_instance_head_token;
 RWStructuredBuffer<uint> type_decl_generic_param_count;
 RWStructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 RWStructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
+RWStructuredBuffer<uint> type_const_param_value_by_token;
 RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_arg_ref_tag;
 RWStructuredBuffer<uint> type_instance_arg_ref_payload;
-RWStructuredBuffer<uint> type_instance_arg_hash;
 RWStructuredBuffer<uint> type_instance_arg_row_start;
 RWStructuredBuffer<uint> type_instance_arg_row_count_out;
 RWStructuredBuffer<uint> type_instance_arg_row_ref_tag;
@@ -53,6 +69,16 @@ RWStructuredBuffer<uint> fn_return_ref_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> decl_imported_type_token;
+RWStructuredBuffer<uint> call_inference_result_tag;
+RWStructuredBuffer<uint> call_inference_result_payload;
+RWStructuredBuffer<uint> argument_expected_ref_tag;
+RWStructuredBuffer<uint> argument_expected_ref_payload;
+RWStructuredBuffer<uint> literal_context_type_by_hir;
+RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
+RWStructuredBuffer<uint> call_explicit_arg_constant_kind;
+RWStructuredBuffer<uint> call_explicit_arg_constant_payload;
+RWStructuredBuffer<uint> imported_match_payload_ref_tag;
+RWStructuredBuffer<uint> imported_match_payload_ref_payload;
 RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
@@ -81,6 +107,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (i < gParams.n_hir_nodes)
     {
+        // Iteration kinds are retained through inference and final publication.
+        semantic_iterable_kind_by_hir[i] = 0u;
+        call_explicit_arg_constant_kind[i] = 0u;
+        call_explicit_arg_constant_payload[i] = INVALID;
+        uint result_capacity; uint result_stride;
+        call_inference_result_tag.GetDimensions(result_capacity, result_stride);
+        if (i < result_capacity)
+        {
+            call_inference_result_tag[i] = 0u;
+            call_inference_result_payload[i] = INVALID;
+            argument_expected_ref_tag[i] = 0u;
+            argument_expected_ref_payload[i] = INVALID;
+            literal_context_type_by_hir[i] = 0u;
+            imported_match_payload_ref_tag[i] = 0u;
+            imported_match_payload_ref_payload[i] = INVALID;
+        }
         type_instance_arg_row_ref_tag[i] = TYPE_REF_INVALID;
         type_instance_arg_row_ref_payload[i] = INVALID;
     }
@@ -88,10 +130,50 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i == 0u)
     {
         type_instance_arg_row_count_out[0u] = 0u;
+        type_application_count[0u] = 0u;
+        imported_field_ref_total[0u] = 0u;
+        imported_layout_group_total[0u] = 0u;
     }
 
     if (i >= gParams.n_tokens)
         return;
+
+    uint alias_capacity; uint alias_stride;
+    imported_type_alias_target.GetDimensions(alias_capacity, alias_stride);
+    if (i < alias_capacity) imported_type_alias_target[i] = uint2(0u, INVALID);
+
+    uint lookup_capacity; uint lookup_stride;
+    type_instance_lookup_head.GetDimensions(lookup_capacity, lookup_stride);
+    for (uint bucket = i; bucket < lookup_capacity; bucket += gParams.n_tokens)
+        type_instance_lookup_head[bucket] = 0u;
+    type_instance_lookup_next.GetDimensions(lookup_capacity, lookup_stride);
+    for (uint instance = i; instance < lookup_capacity; instance += gParams.n_tokens)
+    {
+        type_instance_lookup_next[instance] = 0u;
+        type_instance_lookup_present[instance] = 0u;
+    }
+    type_instance_kind.GetDimensions(lookup_capacity, lookup_stride);
+    for (uint instance = gParams.n_tokens + i; instance < lookup_capacity; instance += gParams.n_tokens)
+        type_instance_kind[instance] = TYPE_INSTANCE_INVALID;
+    imported_field_ref_start.GetDimensions(lookup_capacity, lookup_stride);
+    for (uint instance = i; instance < lookup_capacity; instance += gParams.n_tokens)
+    {
+        imported_field_ref_start[instance] = INVALID;
+        imported_field_ref_count[instance] = 0u;
+        imported_layout_kind[instance] = 0u;
+        imported_layout_group_start[instance] = INVALID;
+        imported_layout_group_count[instance] = 0u;
+    }
+    imported_field_ref_tag.GetDimensions(lookup_capacity, lookup_stride);
+    for (uint row = i; row < lookup_capacity; row += gParams.n_tokens)
+    {
+        imported_field_ref_tag[row] = 0u;
+        imported_field_ref_payload[row] = INVALID;
+        imported_field_name_hash[row] = uint2(0u, 0u);
+    }
+    imported_layout_groups.GetDimensions(lookup_capacity, lookup_stride);
+    for (uint row = i; row < lookup_capacity; row += gParams.n_tokens)
+        imported_layout_groups[row] = uint2(0u, 0u);
 
     type_expr_ref_tag[i] = TYPE_REF_INVALID;
     type_expr_ref_payload[i] = INVALID;
@@ -102,9 +184,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_decl_const_param_count_by_owner_token[i] = 0u;
     type_generic_param_slot_by_token[i] = INVALID;
     type_const_param_slot_by_token[i] = INVALID;
+    type_const_param_value_by_token[i] = INVALID;
     type_instance_arg_start[i] = INVALID;
     type_instance_arg_count[i] = 0u;
-    type_instance_arg_hash[i] = 0u;
     type_instance_arg_row_start[i] = INVALID;
     uint arg_ref_i = i * TYPE_INSTANCE_ARG_REF_STRIDE;
     type_instance_arg_ref_tag[arg_ref_i + 0u] = TYPE_REF_INVALID;

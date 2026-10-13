@@ -1,0 +1,1 @@
+struct Wide { value: u64 } fn main() -> i32 { let value: i32 = 7; let result: Wide = Wide { value: value }; return 0; }

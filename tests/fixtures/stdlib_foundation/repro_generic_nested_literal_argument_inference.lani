@@ -1,0 +1,18 @@
+fn choose<T>(left: T, right: T, first: bool) -> T {
+    if (first) { return left; }
+    return right;
+}
+fn choose_nested<T>(values: [[T; 2]; 2], fallback: T) -> T { return values[0][0]; }
+
+fn main() -> i32 {
+    let typed: [u32; 2] = [4294967295, 7];
+    let array = choose([2147483648, 1], typed, true);
+    if (array[0] / 2 != 1073741824 || array[1] != 1) { return 1; }
+    let unsigned: u32 = 4294967295;
+    let element = choose_nested([[2147483648, 1], [2, 3]], unsigned);
+    if (element / 2 != 1073741824) { return 2; }
+    let matrix: [[u32; 2]; 2] = [[4294967295, 7], [8, 9]];
+    let nested = choose([[2147483648, 1], [2, 3]], matrix, true);
+    if (nested[0][0] / 2 != 1073741824 || nested[1][1] != 3) { return 3; }
+    return 0;
+}

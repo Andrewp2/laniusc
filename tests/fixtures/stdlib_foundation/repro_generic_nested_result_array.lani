@@ -1,0 +1,9 @@
+enum Length<T> { Known(usize), Values(T) }
+fn length<T, const N: usize>() -> Length<[T; N]> { return Known(N); }
+fn main() -> i32 {
+    let items: [[Length<[i32; 2]>; 2]; 1] = [[length(), length()]];
+    let a: usize = match (items[0][0]) { Known(n) => n, Values(v) => 99 };
+    let b: usize = match (items[0][1]) { Known(n) => n, Values(v) => 99 };
+    if (a != 2 || b != 2) { return 1; }
+    return 0;
+}

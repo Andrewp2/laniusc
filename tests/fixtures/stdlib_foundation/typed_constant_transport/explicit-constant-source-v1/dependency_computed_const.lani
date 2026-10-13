@@ -1,0 +1,4 @@
+module app::computed;
+const VALUE:u64 = 4294967295 + 1;
+fn value<const N:u64>()->u64 { return N; }
+fn main()->i32 { let result:u64 = value<app::computed::VALUE>(); return 0; }

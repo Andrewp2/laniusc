@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 0.19s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... GPU source-pack type-check rejection: token=53 code=GenericInstantiationBoundary detail=3
+
+thread 'generated_imported_receivers_preserve_more_than_four_type_arguments' (266432) panicked at tests/compiler_generic_types_execution.rs:197:6:
+compile generated receiver applications with more than four arguments: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 8, column: 16, length: 6, byte_start: Some(239), byte_end: Some(245), source_line: Some("    let value: Holder<i32> = Holder {"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generated_imported_receivers_preserve_more_than_four_type_arguments
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 1.42s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

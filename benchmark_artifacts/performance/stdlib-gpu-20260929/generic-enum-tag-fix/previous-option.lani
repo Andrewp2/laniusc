@@ -1,0 +1,105 @@
+// Optional values use one generic enum. A stored false is Some(false), not None.
+// Concrete bool methods execute on x86. General generic function bodies still
+// need compiler specialization; they are not exposed as working stdlib APIs.
+module core::option;
+
+import core::result_bool;
+
+pub enum Option<T> {
+    Some(T),
+    None,
+}
+
+pub fn contains_i32(value: Option<i32>, expected: i32) -> bool {
+    return match (value) {
+        Some(inner) -> inner == expected,
+        None -> false,
+    };
+}
+
+pub fn contains_u32(value: Option<u32>, expected: u32) -> bool {
+    return match (value) {
+        Some(inner) -> inner == expected,
+        None -> false,
+    };
+}
+
+pub fn contains_u8(value: Option<u8>, expected: u8) -> bool {
+    return match (value) {
+        Some(inner) -> inner == expected,
+        None -> false,
+    };
+}
+
+// These conversions accept the executable concrete ResultBool representation.
+// Generic Result<T, E> conversion remains a compiler dependency.
+pub fn ok(value: core::result_bool::ResultBool) -> Option<bool> {
+    if (core::result_bool::is_ok(value)) {
+        let present: Option<bool> = Some(core::result_bool::unwrap_or(value, false));
+        return present;
+    }
+    let absent: Option<bool> = None();
+    return absent;
+}
+
+pub fn err(value: core::result_bool::ResultBool) -> Option<bool> {
+    if (core::result_bool::is_err(value)) {
+        let present: Option<bool> = Some(core::result_bool::unwrap_err_or(value, false));
+        return present;
+    }
+    let absent: Option<bool> = None();
+    return absent;
+}
+
+// The compiler supports concrete impls on a generic type. Keep the type generic
+// instead of introducing a separate enum or struct for each payload type.
+pub impl Option<bool> {
+    pub fn is_some(&self) -> bool {
+        return match (self) { Some(inner) -> true, None -> false };
+    }
+
+    pub fn is_none(&self) -> bool {
+        return match (self) { Some(inner) -> false, None -> true };
+    }
+
+    pub fn contains(&self, expected: bool) -> bool {
+        return match (self) { Some(inner) -> inner == expected, None -> false };
+    }
+
+    // No panic: None returns the explicit caller-supplied fallback.
+    pub fn unwrap_or(&self, fallback: bool) -> bool {
+        return match (self) { Some(inner) -> inner, None -> fallback };
+    }
+
+    pub fn or(&self, fallback: Option<bool>) -> Option<bool> {
+        if (self.is_some()) {
+            let present: Option<bool> = Some(self.unwrap_or(false));
+            return present;
+        }
+        return fallback;
+    }
+
+    pub fn and(&self, next: Option<bool>) -> Option<bool> {
+        if (self.is_some()) { return next; }
+        let absent: Option<bool> = None();
+        return absent;
+    }
+
+    pub fn xor(&self, right: Option<bool>) -> Option<bool> {
+        let absent: Option<bool> = None();
+        if (right.is_some()) {
+            if (self.is_some()) { return absent; }
+            return right;
+        }
+        if (self.is_some()) {
+            let present: Option<bool> = Some(self.unwrap_or(false));
+            return present;
+        }
+        return absent;
+    }
+
+    pub fn ok_or(&self, error: bool) -> core::result_bool::ResultBool {
+        if (self.is_some()) { return core::result_bool::ok(self.unwrap_or(false)); }
+        return core::result_bool::err(error);
+    }
+}

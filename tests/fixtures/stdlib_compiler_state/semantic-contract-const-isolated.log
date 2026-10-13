@@ -1,0 +1,16 @@
+
+running 1 test
+GPU type-check rejection: token=43 code=AssignMismatch detail=0
+
+thread 'type_checker_accepts_generic_array_calls_beyond_cached_argument_width' (689912) panicked at tests/type_checker_semantics.rs:8:49:
+source should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source>", line: 9, column: 12, length: 6, byte_start: Some(144), byte_end: Some(150), source_line: Some("    return values;"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test type_checker_accepts_generic_array_calls_beyond_cached_argument_width ... FAILED
+
+failures:
+
+failures:
+    type_checker_accepts_generic_array_calls_beyond_cached_argument_width
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 255 filtered out; finished in 1.14s
+

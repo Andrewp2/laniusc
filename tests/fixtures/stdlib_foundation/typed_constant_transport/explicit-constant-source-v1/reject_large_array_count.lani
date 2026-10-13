@@ -1,0 +1,4 @@
+module app::large;
+const COUNT:u64 = 4294967296;
+type Invalid = [u8;app::large::COUNT];
+fn main()->i32 { return 0; }

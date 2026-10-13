@@ -1,0 +1,2 @@
+fn read(index: usize) -> i32 { let values: [i32; 1] = [77]; return values[index]; }
+fn main() -> i32 { let index: usize = 4294967296; return read(index); }

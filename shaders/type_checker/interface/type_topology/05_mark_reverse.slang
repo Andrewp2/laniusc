@@ -1,35 +1,19 @@
-import hir_records;
-
-// Mark reachable public-signature type nodes in reverse HIR preorder. A GPU
-// scan over these flags gives descendants lower persisted indices than parents.
-
-struct Params { uint hir_capacity; uint decl_capacity; };
-ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> compact_hir_count;
-StructuredBuffer<HirCore> compact_hir_core;
-StructuredBuffer<uint> interface_type_root_owner;
-StructuredBuffer<uint> interface_type_seed_owner;
+#include "checked_types.slang"
 RWStructuredBuffer<uint> interface_type_reverse_flag;
-
-static const uint INVALID = 0xffffffffu;
-static const uint HIR_TYPE = 5u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
-uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
-
+// Each annotation root reserves its complete checked tree. An alias may expand
+// to a different shape and number of nodes than its written arguments.
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint reverse_row = linear_thread_id(dtid);
+    uint row = dtid.x + dtid.y * 16776960u;
     uint active = min(compact_hir_count[0u], gParams.hir_capacity);
-    if (reverse_row >= active)
-        return;
-    uint node = active - 1u - reverse_row;
-    uint root = node < active && compact_hir_core[node].kind == HIR_TYPE
-                    ? interface_type_root_owner[node]
-                    : INVALID;
-    interface_type_reverse_flag[reverse_row] =
-        root < active &&
-        interface_type_seed_owner[root] < gParams.decl_capacity ? 1u : 0u;
+    if (row >= active) return;
+    interface_type_reverse_flag[row] = 0u;
+    uint root = active - 1u - row;
+    // The seed is either a declaration index or a tagged implementation owner.
+    if (interface_type_seed_owner[root] == INVALID) return;
+    uint count;
+    if (!checked_export_size(root, count)) { checked_export_fail(root, 1u); return; }
+    interface_type_reverse_flag[row] = count;
 }

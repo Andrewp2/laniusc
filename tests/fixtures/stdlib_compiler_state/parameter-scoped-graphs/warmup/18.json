@@ -1,0 +1,7 @@
+{
+  "index": 18,
+  "shader": "type_checker/conditions/aggregate_args.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.1153694699969492,
+  "sha256": "54de8dcadbee2883e08534eb9a6afe45d4b8f1231963496cb24c56dad4e09864"
+}

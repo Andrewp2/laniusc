@@ -1,0 +1,15 @@
+
+running 1 test
+test imported_constructor_contexts_preserve_compound_payload_patterns ... 
+thread 'imported_constructor_contexts_preserve_compound_payload_patterns' (872101) panicked at tests/compiler_generic_types_execution.rs:131:29:
+imported compound constructor contexts: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "x86 callee function lost its checked aggregate result layout", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 11, column: 5, length: 3, byte_start: Some(503), byte_end: Some(506), source_line: Some("    let zero: core::packets::Batch<[str; 0], str> = core::packets::Data([[], []], \"zero\");"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_constructor_contexts_preserve_compound_payload_patterns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 149 filtered out; finished in 3.78s
+

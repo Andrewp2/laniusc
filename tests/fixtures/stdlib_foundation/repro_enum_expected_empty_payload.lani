@@ -1,0 +1,12 @@
+import core::option;
+enum Packet<T> { Data(T), Missing }
+fn main() -> i32 {
+    let packet: Packet<[str; 0]> = Data([]);
+    let fallback: [str; 0] = [];
+    let local: [str; 0] = match (packet) { Data(value) -> value, Missing -> fallback };
+    let imported: core::option::Option<[str; 0]> = core::option::Some([]);
+    let copied: [str; 0] = imported.unwrap_or(fallback);
+    let local_is_some: bool = match (packet) { Data(value) -> true, Missing -> false };
+    if (!local_is_some || !imported.is_some()) { return 1; }
+    return 0;
+}

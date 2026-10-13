@@ -1,0 +1,21 @@
+{
+  "command": [
+    "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "nested_symbolic_nominal_constants_in_trait_bounds_",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 2.3674658039999485,
+  "binary_sha256": "198394b63baddeefa520c21e9a02dea0373ed03ad2009aa7cb290fafe4707a59",
+  "passed": [
+    "nested_symbolic_nominal_constants_in_trait_bounds_execute",
+    "nested_symbolic_nominal_constants_in_trait_bounds_reject_wrong_bindings"
+  ],
+  "summaries": [
+    "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 2.25s"
+  ],
+  "frozen_sources_unchanged": true,
+  "source_snapshot": "unbatched-sources.json",
+  "shader_snapshot": "current-shader-hashes.json"
+}

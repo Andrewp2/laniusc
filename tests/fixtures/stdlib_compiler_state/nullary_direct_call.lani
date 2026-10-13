@@ -1,0 +1,1 @@
+enum Maybe<T> { Value(T), Missing } fn main()->i32 {let value:Maybe<bool> = Missing();return match(value){Value(flag)->1,Missing->0};}

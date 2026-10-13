@@ -1,0 +1,34 @@
+module core::five;
+
+pub struct Five<A, B, C, D, E> {
+    first: A,
+    second: B,
+    third: C,
+    fourth: D,
+    fifth: E,
+}
+
+pub impl<A, B, C, D, E> Five<A, B, C, D, E> {
+    pub fn borrow(&self) -> &Five<A, B, C, D, E> { return self; }
+    pub fn first_value(&self) -> A { return self.first; }
+    pub fn second_value(&self) -> B { return self.second; }
+    pub fn third_value(&self) -> C { return self.third; }
+    pub fn fourth_value(&self) -> D { return self.fourth; }
+    pub fn last(&self) -> E { return self.fifth; }
+}
+
+pub struct Other<A, B, C, D, E> {
+    first: A,
+    second: B,
+    third: C,
+    fourth: D,
+    fifth: E,
+}
+
+pub struct ArrayField<T> { items: [T; 2] }
+
+pub struct SliceField<T> { items: [T], sentinel: i32 }
+
+pub struct NestedField<T> { child: ArrayField<T>, sentinel: i32 }
+
+pub struct ReorderedFields<A, B> { fixed: [B; 2], borrowed: [A], sentinel: i32 }

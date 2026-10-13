@@ -1,0 +1,30 @@
+[
+  {
+    "name": "shadowed",
+    "exit_status": 0,
+    "emitted_elf": true,
+    "elapsed_seconds": 2.424,
+    "command": [
+      "target/release/laniusc",
+      "--stdlib-root",
+      "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes",
+      "-o",
+      "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/shadowed.elf",
+      "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/shadowed.lani"
+    ]
+  },
+  {
+    "name": "ambiguous",
+    "exit_status": 0,
+    "emitted_elf": true,
+    "elapsed_seconds": 2.421,
+    "command": [
+      "target/release/laniusc",
+      "--stdlib-root",
+      "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes",
+      "-o",
+      "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/ambiguous.elf",
+      "tests/fixtures/stdlib_compiler_state/qualifier-scope-probes/ambiguous.lani"
+    ]
+  }
+]

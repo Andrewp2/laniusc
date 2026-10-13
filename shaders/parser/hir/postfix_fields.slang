@@ -1,6 +1,7 @@
 // Materialize independent member fields and index spans in one semantic-row walk.
 
 import generated_parse_production_ids;
+import parser.hir.postfix_sequence;
 
 struct Params
 {
@@ -16,6 +17,8 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> prev_sibling;
+StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> out_emit_pos;
 StructuredBuffer<uint> hir_kind;
 RWStructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> hir_token_end;
@@ -109,15 +112,11 @@ uint member_name_token_for_node(uint member_node)
     if (!valid_node(member_node))
         return INVALID;
 
-    uint child = first_child_node(member_node);
-    uint child_token = valid_node(child) ? hir_token_pos[child] : INVALID;
-    if (child_token != INVALID && child_token > hir_token_pos[member_node])
-        return child_token - 1u;
-
-    uint end = hir_token_end[member_node];
-    if (end != INVALID && end > hir_token_pos[member_node] + 1u)
-        return end - 1u;
-    return INVALID;
+    // The optional argument list begins immediately after the member name.
+    uint arguments = first_child_node(member_node);
+    uint argument_token = valid_node(arguments) ? out_emit_pos[arguments] : INVALID;
+    return argument_token != INVALID && argument_token > out_emit_pos[member_node]
+        ? argument_token - 1u : INVALID;
 }
 
 uint postfix_operator_head_token(uint operator_node)
@@ -126,7 +125,7 @@ uint postfix_operator_head_token(uint operator_node)
         return INVALID;
     if (node_kind[operator_node] == PROD_POSTFIX_MEMBER)
         return member_name_token_for_node(operator_node);
-    return token_before(hir_token_pos[operator_node]);
+    return token_before(out_emit_pos[operator_node]);
 }
 
 uint receiver_token_for_node(uint receiver_node)
@@ -146,17 +145,17 @@ uint receiver_token_for_node(uint receiver_node)
                 break;
             base = next;
         }
-        return valid_node(base) ? hir_token_pos[base] : INVALID;
+        return valid_node(base) ? out_emit_pos[base] : INVALID;
     }
     if (is_postfix_operator(node_kind[receiver_node]))
         return postfix_operator_head_token(receiver_node);
-    return hir_token_pos[receiver_node];
+    return out_emit_pos[receiver_node];
 }
 
 uint receiver_node_for_member(uint member_node)
 {
     uint previous = previous_sibling_node(member_node);
-    if (is_postfix_operator(node_kind[previous]))
+    if (valid_node(previous) && is_postfix_operator(node_kind[previous]))
         return previous;
 
     uint owner = parent_node(member_node);
@@ -164,7 +163,7 @@ uint receiver_node_for_member(uint member_node)
         return INVALID;
     if (is_postfix_operator(node_kind[owner]))
         return owner;
-    return node_kind[owner] == PROD_POSTFIX ? first_child_node(owner) : INVALID;
+    return hir_is_postfix_sequence_owner(node_kind[owner]) ? first_child_node(owner) : INVALID;
 }
 
 uint expr_record(uint node, uint field)
@@ -185,6 +184,23 @@ void publish_member(uint node)
     hir_member_name_token[node] = member_token;
 }
 
+uint postfix_base_start(uint base)
+{
+    // Continuations are nested grammar children. Walk their immutable owner
+    // links to the original value instead of reading an earlier index's span
+    // while another lane is widening it. Call and member spans widen later.
+    for (uint depth = 0u; depth < active_node_count() && valid_node(base); depth++)
+    {
+        if (!is_postfix_operator(node_kind[base])) return out_emit_pos[base];
+        uint owner = parent_node(base);
+        if (!valid_node(owner)) return INVALID;
+        if (is_postfix_operator(node_kind[owner])) base = owner;
+        else if (hir_is_postfix_sequence_owner(node_kind[owner])) base = first_child_node(owner);
+        else return out_emit_pos[base];
+    }
+    return INVALID;
+}
+
 void publish_index_span(uint node)
 {
     if (expr_record(node, HIR_EXPR_RECORD_FORM) != HIR_EXPR_INDEX)
@@ -194,18 +210,21 @@ void publish_index_span(uint node)
     if (!valid_node(base))
         return;
 
-    uint base_start = hir_token_pos[base];
+    uint base_start = postfix_base_start(base);
     uint index_start = hir_token_pos[node];
     if (base_start != INVALID &&
         (index_start == INVALID || base_start < index_start))
         hir_token_pos[node] = base_start;
 
-    uint index_expr = expr_record(node, HIR_EXPR_RECORD_RIGHT);
-    if (!valid_node(index_expr))
-        return;
-    uint index_expr_end = hir_token_end[index_expr];
-    if (index_expr_end != INVALID)
-        hir_token_end[node] = index_expr_end + 1u;
+    // The index grammar owns its closing bracket and continuation. The
+    // operand's semantic span may include empty-tail anchors, and another
+    // lane can be publishing a nested index span in this dispatch. Its end
+    // plus one is therefore neither a boundary nor a stable input.
+    uint operand = first_child_node(node);
+    uint tail = valid_node(operand) ? next_sibling[operand] : INVALID;
+    if (valid_node(tail) && parent[tail] == node &&
+        (is_postfix_operator(node_kind[tail]) || node_kind[tail] == PROD_POSTFIX_END))
+        hir_token_end[node] = out_emit_pos[tail];
 }
 
 [shader("compute")]

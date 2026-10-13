@@ -1,0 +1,3 @@
+import core::left;
+import core::right;
+fn main() -> i32 { let wrong = Choice<i32>::Left(42); return 0; }

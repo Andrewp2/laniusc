@@ -1,0 +1,11 @@
+sample=0 ms=21.229
+sample=1 ms=18.618
+sample=2 ms=16.728
+sample=3 ms=16.784
+sample=4 ms=17.077
+sample=5 ms=18.607
+sample=6 ms=17.835
+sample=7 ms=17.721
+sample=8 ms=17.587
+sample=9 ms=17.795
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_imported_generic_enum_construct_only.lani rebuild_entry=true warmups=3 iters=10 output_bytes=4255 min_ms=16.728 median_ms=17.758 avg_ms=17.998 max_ms=21.229 output_verified=true

@@ -1,0 +1,33 @@
+module app::main;
+import core::relay;
+import std::io;
+
+struct Pair { first: i32, text: str, last: i32 }
+fn view(values: [i32]) -> [i32] { return values; }
+
+fn main() -> i32 {
+    if (core::relay::read_nested(core::relay::wrap(core::relay::wrap(42))) != 42) { return 1; }
+    let original: Pair = Pair { first: -7, text: "Ω", last: 91 };
+    let wrapped = core::relay::wrap(core::relay::wrap(original));
+    let copy = core::relay::read_nested(wrapped);
+    copy.last = 83;
+    if (copy.first != -7 || copy.last != 83 || original.last != 91 ||
+        wrapped.value.value.last != 91) { return 2; }
+    std::io::println(copy.text);
+
+    let strings: [str; 2] = ["Ω", ""];
+    let nested = core::relay::wrap(core::relay::wrap(strings));
+    let array_copy = core::relay::read_nested(nested);
+    array_copy[0] = "replacement";
+    std::io::println(strings[0]);
+    std::io::println(array_copy[0]);
+    std::io::println(array_copy[1]);
+
+    let numbers: [i32; 2] = [-7, 42];
+    let borrowed: [i32] = view(numbers);
+    let views = core::relay::wrap(core::relay::wrap(borrowed));
+    let alias = core::relay::read_nested(views);
+    alias[1] = 71;
+    if (alias[0] != -7 || numbers[1] != 71) { return 3; }
+    return 0;
+}

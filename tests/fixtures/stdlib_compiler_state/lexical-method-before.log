@@ -1,0 +1,21 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.45s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test lexical_method_environment_keeps_impl_and_method_arguments_distinct ... 
+thread 'lexical_method_environment_keeps_impl_and_method_arguments_distinct' (783374) panicked at tests/compiler_generic_types_execution.rs:125:29:
+impl and method lexical type environments: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0021", title: "invalid trait implementation", category: "trait solving", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0021", message: "invalid trait implementation", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_impl_and_method_lexical_type_environments_783373_0.lani", line: 5, column: 8, length: 4, byte_start: Some(98), byte_end: Some(102), source_line: Some("    fn pair<U>(self, value: U) -> Pair<T, U> {"), message: "trait method-level generics are not supported here" }), help: None, notes: ["move the generic parameter to the trait or impl receiver type until method-level generic substitution is supported"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    lexical_method_environment_keeps_impl_and_method_arguments_distinct
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 133 filtered out; finished in 1.47s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

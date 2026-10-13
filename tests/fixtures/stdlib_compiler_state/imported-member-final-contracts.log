@@ -1,0 +1,36 @@
+
+running 6 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::body_replay_preserves_symbolic_public_interfaces ... ok
+test compiler::gpu_compiler::typecheck::tests::imported_alias_members_survive_dependency_page_order_and_preserve_scope ... GPU source-pack type-check rejection: token=47 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=33 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=47 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=33 code=UnresolvedIdent detail=2
+GPU source-pack type-check rejection: token=47 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=33 code=UnresolvedIdent detail=2
+GPU source-pack type-check rejection: token=47 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=33 code=UnresolvedIdent detail=2
+ok
+test compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order ... GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+ok
+test compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay ... GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=39 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=39 code=UnresolvedIdent detail=2
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=28 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=39 code=UnresolvedIdent detail=2
+ok
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 632 filtered out; finished in 5.79s
+

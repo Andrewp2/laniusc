@@ -1,0 +1,17 @@
+{
+  "executables": [
+    {
+      "path": "target/stdlib-perf/build/release/deps/type_checker_modules-2fa27f7cc330361d",
+      "sha256": "bf599864b3c2fd480e7dfd27c3d296ff8d66d71c10bdfe4707a0c8be73f934cd",
+      "inode": 29386149
+    },
+    {
+      "path": "target/trait-contract-tests/stdlib_gpu_perf",
+      "sha256": "bf599864b3c2fd480e7dfd27c3d296ff8d66d71c10bdfe4707a0c8be73f934cd",
+      "inode": 29386149
+    }
+  ],
+  "normal_name": "95-second initialization timeout; no source checked",
+  "benchmark_name": "complete semantic-interface test passed in 1.57 seconds",
+  "inference": "Pipeline cache reuse is sensitive to executable identity/name in this environment; driver cause not established. No production cache change made. Correctness checks use identical binary bytes through a hard link."
+}

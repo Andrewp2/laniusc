@@ -1,0 +1,1 @@
+enum Maybe<T>{Some(T),None} fn present<T>(value:T)->Maybe<T> { return Some(value); } fn main()->i32 { let v:Maybe<i32> =present(42); return match(v){Some(x)->x-42,None->1}; }

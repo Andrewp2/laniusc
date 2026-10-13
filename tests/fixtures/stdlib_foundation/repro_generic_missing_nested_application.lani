@@ -1,0 +1,13 @@
+module app::main;
+
+struct Cell<T> { value: T }
+struct Holder<T> { child: Cell<T> }
+
+// The concrete Cell<i32> application is implied by Holder<i32>, but has no
+// explicit type-use row. General instantiation must create that checked row.
+fn read(holder: Holder<i32>) -> i32 { return holder.child.value; }
+fn main() -> i32 {
+    let holder: Holder<i32> = Holder { child: Cell { value: -7 } };
+    if (read(holder) != -7) { return 1; }
+    return 0;
+}

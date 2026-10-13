@@ -1,0 +1,15 @@
+
+running 1 test
+test imported_generic_methods_and_results_preserve_compound_payloads ... 
+thread 'imported_generic_methods_and_results_preserve_compound_payloads' (615251) panicked at tests/compiler_generic_types_execution.rs:115:29:
+compound methods and Result: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 1>", line: 60, column: 46, length: 5, byte_start: Some(1815), byte_end: Some(1820), source_line: Some("        return match (self) { Some(inner) -> inner, None -> fallback };"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_generic_methods_and_results_preserve_compound_payloads
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 111 filtered out; finished in 1.39s
+

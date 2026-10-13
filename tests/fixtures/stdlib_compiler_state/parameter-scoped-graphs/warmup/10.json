@@ -1,0 +1,7 @@
+{
+  "index": 10,
+  "shader": "type_checker/calls/03g_project_expression_types.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.1656740780017572,
+  "sha256": "59c7fadca808e4088e0f2e3d083d4e2ae5a12e00aa580f4301de16e704acb506"
+}

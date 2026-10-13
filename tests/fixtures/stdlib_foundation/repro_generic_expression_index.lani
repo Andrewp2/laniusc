@@ -1,0 +1,19 @@
+module app::main;
+import std::io;
+
+struct Pair { first: i32, text: str, last: i32 }
+fn duplicate<T>(value: T) -> [T; 2] { return [value, value]; }
+fn keep<T>(value: T) -> T { return value; }
+
+fn main() -> i32 {
+    let original: Pair = Pair { first: -7, text: "Ω", last: 42 };
+    let array = duplicate(original);
+    let selected = keep(array[1]);
+    let direct = keep(duplicate(original)[0]);
+    selected.last = 91;
+    if (selected.first != -7 || selected.last != 91 || direct.last != 42 ||
+        original.last != 42 || array[1].last != 42) { return 1; }
+    std::io::println(selected.text);
+    std::io::println(direct.text);
+    return 0;
+}

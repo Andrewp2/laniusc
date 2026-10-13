@@ -1,0 +1,19 @@
+
+running 5 tests
+test generic_match_arguments_preserve_completion_and_effect_order ... 
+thread 'generic_match_arguments_preserve_completion_and_effect_order' (45513) panicked at tests/compiler_generic_types_execution.rs:136:29:
+nested match argument completion and sibling effects: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 8, column: 34, length: 4, byte_start: Some(325), byte_end: Some(329), source_line: Some("        (match (false) { true => mark(2), false => mark(3) }), mark(4));"), message: "expected one of `*`, `=`, `/`, `<`, `>`, `<=`, `>=`, `==`, `&&`, `||`, `&`, `|`, `(`, `[`, `.`, `!=`, `%`, `^`, `<<`, `>>`, `+=`, `-=`, `*=`, `/=`, `%=`, `^=`, `<<=`, `>>=`, `&=`, `|=`, `+`, `-`, `)`, `]`, `,`, `}`, `{`, or `;`, found `mark`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test generic_nested_result_match_arms_execute ... ok
+test generic_nested_result_monomorphic_fields_preserve_widths_and_copies ... ok
+test generic_void_function_preserves_final_imported_call ... ok
+test ordinary_match_call_arguments_execute ... ok
+
+failures:
+
+failures:
+    generic_match_arguments_preserve_completion_and_effect_order
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 188 filtered out; finished in 24.16s
+

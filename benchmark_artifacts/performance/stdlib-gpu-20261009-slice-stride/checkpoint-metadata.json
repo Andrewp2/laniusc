@@ -1,0 +1,36 @@
+{
+  "shader_metadata": "digest=3575f9b83b5465e4\ncount=746\nmax_spv_bytes=504704\nmax_spv_name=codegen/lir/x86/emit\nsize_guard_status=enforced\nsize_guard_max_bytes=524288\n",
+  "sources_unchanged": 2984,
+  "shader_payloads_unchanged": 1492,
+  "canonical_cli_build_transition": {
+    "before_sha256": "219a8f4468edeee73fad35c536ecf33e35bae7283a523f4e8b6096d4fe71e64e",
+    "measured_sha256": "c8c57ca566998536db9d9f497d97f7a23df5c1a63d70d3c2bcd36f28a2b83916"
+  },
+  "canonical_compiler_ms": 46.695640499999996,
+  "canonical_wall_ms": 49.4739675,
+  "canonical_source_hashes_match_baseline": true,
+  "canonical_elfs_verified": 20,
+  "canonical_cache_hits": 0,
+  "canonical_resource_creations": 0,
+  "tracked_live_bytes": [
+    1619201735
+  ],
+  "excluded_raw_buffers": [
+    5
+  ],
+  "generic_32_ms": 414.562,
+  "generic_32_final_elf_verified": true,
+  "canonical_runner_status": "saved_report_then_existing_catalogue_list_get_exception",
+  "execution_matrix": {
+    "total": 246,
+    "passes": 246,
+    "exclusions": 0,
+    "group_elapsed_seconds": [
+      33.24,
+      60.02,
+      40.03
+    ]
+  },
+  "cpu_contract_checks": 25,
+  "gpu_interface_export_checks": 8
+}

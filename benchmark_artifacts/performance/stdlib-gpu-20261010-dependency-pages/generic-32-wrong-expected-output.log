@@ -1,0 +1,11 @@
+sample=0 ms=400.952
+sample=1 ms=399.806
+sample=2 ms=399.829
+sample=3 ms=400.791
+sample=4 ms=400.285
+sample=5 ms=402.085
+sample=6 ms=403.464
+sample=7 ms=404.067
+sample=8 ms=405.292
+sample=9 ms=405.040
+stdlib_gpu_perf: emitted program failed its output contract: Output { status: ExitStatus(unix_wait_status(0)), stdout: "Ω\nΩ\nΩ\nΩ\nΩ\nΩ\nΩ\nΩ\nΩ\nΩ\nΩ\nΩ\n\nΩ\nΩ\n", stderr: "" }

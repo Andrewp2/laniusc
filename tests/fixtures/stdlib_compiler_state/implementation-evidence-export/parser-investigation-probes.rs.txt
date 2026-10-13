@@ -1,0 +1,257 @@
+const NESTED_TRAIT_IMPL_OPERANDS: &str = r#"
+pub struct Cell<T> { value:T }
+pub trait Rel<A> {}
+pub trait Ordered<A,B> {}
+pub impl Rel<Cell<&[i32;2]>> for char {}
+pub impl Rel<&[i32;2]> for bool {}
+pub impl Rel<Cell<[i32;2]>> for i32 {}
+pub impl Rel<Cell<i32>> for u32 {}
+pub impl Ordered<Cell<&[i32;2]>,Cell<[bool;0]>> for char {}
+"#;
+
+#[test]
+fn parser_trait_impl_nested_reference_operands_keep_application_ownership() {
+    let source = NESTED_TRAIT_IMPL_OPERANDS;
+    let parsed = parse_resident_source(source);
+    assert!(parsed.ll1.accepted, "nested implementation operand fixture: {:?}", parsed.ll1);
+
+    let describe = |dense: u32| {
+        let raw = parsed.hir_canonical_dense_to_raw.get(dense as usize).copied();
+        let start = raw.and_then(|raw| parsed.hir_token_pos.get(raw as usize)).copied();
+        let end = raw.and_then(|raw| parsed.hir_token_end.get(raw as usize)).copied();
+        let form = raw.and_then(|raw| parsed.hir_type_form.get(raw as usize)).copied();
+        format!("dense={dense} raw={raw:?} span={start:?}..{end:?} form={form:?}")
+    };
+    let rows = parsed.hir_compact_type_args.iter().enumerate().map(|(row, arg)| {
+        format!("row={row} owner=[{}] application_token={} ordinal={} value=[{}]",
+            describe(arg.owner), arg.application_token, arg.ordinal, describe(arg.value))
+    }).collect::<Vec<_>>().join("\n");
+    let diagnostic = format!("{source}\ncompact argument rows:\n{rows}");
+    let raw = |dense: u32| -> usize {
+        let raw = parsed.hir_canonical_dense_to_raw.get(dense as usize).copied()
+            .unwrap_or_else(|| panic!("missing dense type {dense}\n{diagnostic}")) as usize;
+        assert_eq!(parsed.hir_kind[raw], HIR_NODE_TYPE, "{diagnostic}");
+        assert_eq!(parsed.hir_canonical_raw_to_dense[raw], dense, "{diagnostic}");
+        raw
+    };
+    let application = |owner: u32, forms: &[u32]| -> Vec<u32> {
+        let owner_raw = raw(owner);
+        assert_eq!(parsed.hir_type_form[owner_raw], HIR_TYPE_FORM_PATH, "{diagnostic}");
+        let start = parsed.hir_type_arg_range_start[owner as usize] as usize;
+        let count = parsed.hir_type_arg_range_count[owner as usize] as usize;
+        assert_eq!(count, forms.len(), "application {} has the wrong operand count\n{diagnostic}", describe(owner));
+        let arguments = parsed.hir_compact_type_args.get(start..start + count)
+            .unwrap_or_else(|| panic!("application {} has invalid range {start}..{}\n{diagnostic}", describe(owner), start + count));
+        let owner_token = parsed.hir_token_pos[owner_raw];
+        assert_eq!(parsed.hir_path_type_arg_range_start[owner_token as usize], start as u32, "{diagnostic}");
+        assert_eq!(parsed.hir_path_type_arg_range_count[owner_token as usize], count as u32, "{diagnostic}");
+        let mut previous_start = owner_token;
+        for (ordinal, (argument, form)) in arguments.iter().zip(forms).enumerate() {
+            assert_eq!(argument.owner, owner, "application range includes another owner's operand\n{diagnostic}");
+            assert_eq!(argument.application_token, owner_token, "{diagnostic}");
+            assert_eq!(argument.ordinal, ordinal as u32, "{diagnostic}");
+            let value_raw = raw(argument.value);
+            let value_start = parsed.hir_token_pos[value_raw];
+            assert_eq!(parsed.hir_type_form[value_raw], *form, "operand root lost its outer type constructor\n{diagnostic}");
+            assert!(value_start > previous_start, "operand order differs from source order\n{diagnostic}");
+            if ordinal == 0 {
+                // Each fixture application has one name followed by `<`.
+                // This distinguishes a wrong operand node from a wrong span.
+                assert_eq!(value_start, owner_token + 2, "the first operand must start immediately after `<`\n{diagnostic}");
+            }
+            // Adjacent virtual `>` delimiters can share a lexer token.
+            assert!(parsed.hir_token_end[value_raw] <= parsed.hir_token_end[owner_raw],
+                "operand escapes its application's source span\n{diagnostic}");
+            previous_start = value_start;
+        }
+        arguments.iter().map(|argument| argument.value).collect()
+    };
+    let element = |owner: u32, form: u32| -> u32 {
+        let owner_raw = raw(owner);
+        let child_raw = parsed.hir_type_value_node[owner_raw] as usize;
+        assert!(child_raw < parsed.hir_kind.len(), "missing reference/array child\n{diagnostic}");
+        assert_eq!(parsed.hir_type_form[child_raw], form, "{diagnostic}");
+        assert_eq!(parsed.hir_token_pos[child_raw], parsed.hir_token_pos[owner_raw] + 1,
+            "reference/array child must follow its opening token\n{diagnostic}");
+        parsed.hir_canonical_raw_to_dense[child_raw]
+    };
+    let bounds = &parsed.hir_compact_predicate_bound;
+    assert_eq!(bounds.len(), 5, "{diagnostic}");
+    assert!(parsed.hir_compact_predicate_metadata.iter().all(|metadata| metadata & 0xff == 2), "{diagnostic}");
+    for (bound, nested_form) in [(bounds[0], HIR_TYPE_FORM_REF),
+        (bounds[2], HIR_TYPE_FORM_ARRAY), (bounds[3], HIR_TYPE_FORM_PATH)] {
+        let cell = application(bound, &[HIR_TYPE_FORM_PATH])[0];
+        let value = application(cell, &[nested_form])[0];
+        if nested_form == HIR_TYPE_FORM_REF {
+            let array = element(value, HIR_TYPE_FORM_ARRAY);
+            element(array, HIR_TYPE_FORM_PATH);
+        } else if nested_form == HIR_TYPE_FORM_ARRAY {
+            element(value, HIR_TYPE_FORM_PATH);
+        }
+    }
+    let reference = application(bounds[1], &[HIR_TYPE_FORM_REF])[0];
+    let array = element(reference, HIR_TYPE_FORM_ARRAY);
+    element(array, HIR_TYPE_FORM_PATH);
+    let ordered = application(bounds[4], &[HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_PATH]);
+    let reference = application(ordered[0], &[HIR_TYPE_FORM_REF])[0];
+    let array = element(reference, HIR_TYPE_FORM_ARRAY);
+    element(array, HIR_TYPE_FORM_PATH);
+    let array = application(ordered[1], &[HIR_TYPE_FORM_ARRAY])[0];
+    element(array, HIR_TYPE_FORM_PATH);
+}
+
+#[test]
+fn parser_production_trait_impl_nested_reference_operands_keep_application_ownership() {
+    use laniusc_compiler::gpu::buffers::LaniusBuffer;
+    use std::{collections::BTreeMap, sync::mpsc, time::{Duration, Instant}};
+
+    fn column<'a, T>(name: &'static str, buffer: &'a LaniusBuffer<T>)
+        -> (&'static str, &'a wgpu::Buffer, u64, usize)
+    {
+        (name, &buffer.buffer, buffer.byte_offset, buffer.byte_size)
+    }
+    let data = common::block_on_gpu_with_timeout("production parser compact type operands", async {
+        let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"), "/tables/parse_tables.bin"
+        ))).expect("load parser tables");
+        let lexer = GpuLexer::new().await.expect("create GPU lexer");
+        let parser = GpuParser::new().await.expect("create GPU parser");
+        lexer.with_recorded_resident_source_pack_tokens_after_count(
+            &[NESTED_TRAIT_IMPL_OPERANDS],
+            |device, _, buffers, token_count, encoder, mut timer| {
+                let token_capacity = token_count.max(1);
+                let capacity = parser.measure_resident_partial_parse_capacity(
+                    token_capacity, &buffers.tokens_out, &buffers.token_count,
+                    Some(&buffers.token_file_id), &tables, &mut timer,
+                )?;
+                let (check, captured) = parser
+                    .record_checked_resident_ll1_hir_artifacts_with_tree_capacity_and_features(
+                        encoder, token_capacity, &buffers.tokens_out, &buffers.token_count,
+                        Some(&buffers.token_file_id), buffers.n, &buffers.in_bytes, &tables,
+                        Some(capacity.tree_capacity), capacity.parser_feature_flags, &mut timer,
+                        |parsed, encoder, _| {
+                            assert!(!parsed.retain_debug_hir_buffers,
+                                "regression must use the production parser allocation contract");
+                            let columns = [
+                                column("count", &parsed.hir_canonical_count),
+                                column("core", &parsed.hir_core),
+                                column("payload", &parsed.hir_payload),
+                                column("arg_count", &parsed.hir_type_arg_table_count),
+                                column("args", &parsed.hir_type_arg_rows),
+                                column("ranges", &parsed.hir_type_arg_ranges),
+                                column("path_ranges", &parsed.hir_path_type_arg_ranges),
+                                column("predicate_count", &parsed.hir_predicate_table_count),
+                                column("predicates", &parsed.hir_predicate_rows),
+                            ];
+                            let size = columns.iter().map(|(_, _, _, size)| *size as u64).sum();
+                            let staging = device.create_buffer(&wgpu::BufferDescriptor {
+                                label: Some("test.production_type_operands"), size,
+                                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                                mapped_at_creation: false,
+                            });
+                            let mut offset = 0u64;
+                            let mut ranges = Vec::new();
+                            for (name, source, source_offset, size) in columns {
+                                encoder.copy_buffer_to_buffer(source, source_offset, &staging, offset, size as u64);
+                                ranges.push((name, offset as usize..offset as usize + size));
+                                offset += size as u64;
+                            }
+                            Ok::<_, anyhow::Error>((staging, ranges))
+                        },
+                    )?;
+                Ok::<_, anyhow::Error>((check, captured?))
+            },
+            |device, _, (check, (staging, ranges))| {
+                parser.finish_recorded_resident_ll1_hir_check(&check)?;
+                let (send, receive) = mpsc::channel();
+                staging.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = send.send(result);
+                });
+                let deadline = Instant::now() + Duration::from_secs(20);
+                loop {
+                    device.poll(wgpu::PollType::Poll)?;
+                    match receive.try_recv() {
+                        Ok(result) => { result?; break; }
+                        Err(mpsc::TryRecvError::Disconnected) => anyhow::bail!("production operand readback disconnected"),
+                        Err(mpsc::TryRecvError::Empty) => {}
+                    }
+                    anyhow::ensure!(Instant::now() < deadline, "production operand readback timed out");
+                    std::thread::yield_now();
+                }
+                let mapped = staging.slice(..).get_mapped_range();
+                let mut data = BTreeMap::new();
+                for (name, range) in ranges {
+                    data.insert(name, mapped[range].chunks_exact(4)
+                        .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap())).collect::<Vec<_>>());
+                }
+                drop(mapped);
+                staging.unmap();
+                Ok::<_, anyhow::Error>(data)
+            },
+        ).await.expect("production resident lex").expect("production compact parser readback")
+    });
+    let count = data["count"][0] as usize;
+    let arg_count = data["arg_count"][0] as usize;
+    let predicate_count = data["predicate_count"][0] as usize;
+    let core = data["core"].chunks_exact(4).take(count).collect::<Vec<_>>();
+    let payload = data["payload"].chunks_exact(4).take(count).collect::<Vec<_>>();
+    let args = data["args"].chunks_exact(5).take(arg_count).collect::<Vec<_>>();
+    let predicates = data["predicates"].chunks_exact(4).take(predicate_count).collect::<Vec<_>>();
+    let diagnostic = format!("{NESTED_TRAIT_IMPL_OPERANDS}\ncore(kind,parent,start,end)={core:?}\npayload={payload:?}\nargs(owner,value,ordinal,file,application_token)={args:?}\nranges={:?}\npath_ranges={:?}\npredicates={predicates:?}", data["ranges"], data["path_ranges"]);
+    let application = |owner: u32, forms: &[u32]| -> Vec<u32> {
+        let owner = owner as usize;
+        assert!(owner < core.len(), "{diagnostic}");
+        assert_eq!(core[owner][0], HIR_NODE_TYPE, "{diagnostic}");
+        assert_eq!(payload[owner][0], HIR_TYPE_FORM_PATH, "{diagnostic}");
+        let start = data["ranges"][owner * 2] as usize;
+        let count = data["ranges"][owner * 2 + 1] as usize;
+        assert_eq!(count, forms.len(), "owner={owner}\n{diagnostic}");
+        let operands = args.get(start..start + count)
+            .unwrap_or_else(|| panic!("invalid owner={owner} range={start}..{}\n{diagnostic}", start + count));
+        let token = core[owner][2];
+        assert_eq!(&data["path_ranges"][token as usize * 2..token as usize * 2 + 2],
+            &[start as u32, count as u32], "{diagnostic}");
+        let mut previous = token;
+        for (ordinal, (arg, expected_form)) in operands.iter().zip(forms).enumerate() {
+            assert_eq!(arg[0], owner as u32, "wrong application owner\n{diagnostic}");
+            assert_eq!(arg[2], ordinal as u32, "wrong operand ordinal\n{diagnostic}");
+            assert_eq!(arg[4], token, "wrong application token\n{diagnostic}");
+            let value = arg[1] as usize;
+            assert!(value < core.len(), "{diagnostic}");
+            assert_eq!(payload[value][0], *expected_form, "wrong operand root\n{diagnostic}");
+            assert!(core[value][2] > previous, "{diagnostic}");
+            if ordinal == 0 { assert_eq!(core[value][2], token + 2, "wrong operand span\n{diagnostic}"); }
+            assert!(core[value][3] <= core[owner][3], "{diagnostic}");
+            previous = core[value][2];
+        }
+        operands.iter().map(|arg| arg[1]).collect()
+    };
+    let element = |owner: u32, form: u32| -> u32 {
+        let child = payload[owner as usize][1] as usize;
+        assert!(child < core.len(), "{diagnostic}");
+        assert_eq!(core[child][0], HIR_NODE_TYPE, "{diagnostic}");
+        assert_eq!(payload[child][0], form, "{diagnostic}");
+        assert_eq!(core[child][2], core[owner as usize][2] + 1, "{diagnostic}");
+        child as u32
+    };
+    assert_eq!(predicates.len(), 5, "{diagnostic}");
+    assert!(predicates.iter().all(|row| row[3] & 0xff == 2), "{diagnostic}");
+    for (row, form) in [(0, HIR_TYPE_FORM_REF), (2, HIR_TYPE_FORM_ARRAY), (3, HIR_TYPE_FORM_PATH)] {
+        let cell = application(predicates[row][2], &[HIR_TYPE_FORM_PATH])[0];
+        let value = application(cell, &[form])[0];
+        if form == HIR_TYPE_FORM_REF {
+            let array = element(value, HIR_TYPE_FORM_ARRAY);
+            element(array, HIR_TYPE_FORM_PATH);
+        } else if form == HIR_TYPE_FORM_ARRAY { element(value, HIR_TYPE_FORM_PATH); }
+    }
+    let reference = application(predicates[1][2], &[HIR_TYPE_FORM_REF])[0];
+    let array = element(reference, HIR_TYPE_FORM_ARRAY);
+    element(array, HIR_TYPE_FORM_PATH);
+    let ordered = application(predicates[4][2], &[HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_PATH]);
+    let reference = application(ordered[0], &[HIR_TYPE_FORM_REF])[0];
+    let array = element(reference, HIR_TYPE_FORM_ARRAY);
+    element(array, HIR_TYPE_FORM_PATH);
+    let array = application(ordered[1], &[HIR_TYPE_FORM_ARRAY])[0];
+    element(array, HIR_TYPE_FORM_PATH);
+}
+

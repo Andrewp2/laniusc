@@ -1,0 +1,1 @@
+module core::closes; pub type Id<T> = T; pub type Fixed<T, const N: usize> = [T; N];

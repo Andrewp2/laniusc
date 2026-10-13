@@ -514,6 +514,20 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "tooling",
         DiagnosticPrimaryLabelPolicy::None,
     ),
+    DiagnosticCodeInfo::error(
+        "LNC0068",
+        "invalid assignment target",
+        "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
+    DiagnosticCodeInfo::error(
+        "LNC0070", "invalid floating literal", "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
+    DiagnosticCodeInfo::error(
+        "LNC0071", "computed floating constant is not supported", "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
 ];
 
 /// Stable diagnostic categories used by registry and category metadata output.
@@ -2291,6 +2305,15 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source(
     diagnostic_path: &Path,
     failure: &ParserFailure,
 ) -> super::CompileError {
+    if let Some(message) = failure.ll1().integer_literal_rejection() {
+        let mut diagnostic = Diagnostic::error("LNC0069", "invalid integer literal");
+        if let Ok(token) = read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos) {
+            diagnostic = diagnostic.with_primary_label(diagnostic_label_from_source_span(
+                diagnostic_path, source, token.start, token.len, message));
+        }
+        return super::CompileError::Diagnostic(diagnostic.with_note(message));
+    }
+
     if let Some(diagnostic) = lexical_syntax_error_to_compile_error(diagnostic_path, source) {
         return diagnostic;
     }
@@ -3196,6 +3219,18 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source_pack(
     diagnostic_files: &[DiagnosticSourceFile],
     failure: &ParserFailure,
 ) -> super::CompileError {
+    if let Some(message) = failure.ll1().integer_literal_rejection() {
+        let mut diagnostic = Diagnostic::error("LNC0069", "invalid integer literal");
+        if let Ok(token) = read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos) {
+            if let Some(file) = source_pack_file_for_global_span(diagnostic_files, token.start) {
+                let local_token = source_pack_local_token(&token, file);
+                diagnostic = diagnostic.with_primary_label(diagnostic_label_from_source_span(
+                    &file.path, &file.source, local_token.start, local_token.len, message));
+            }
+        }
+        return super::CompileError::Diagnostic(diagnostic.with_note(message));
+    }
+
     for file in diagnostic_files {
         if let Some(diagnostic) = lexical_syntax_error_to_compile_error(&file.path, &file.source) {
             return diagnostic;
@@ -4571,6 +4606,9 @@ mod tests {
             ),
             ("LNC0066", "parser execution failed", "parsing"),
             ("LNC0067", "CLI operation failed", "tooling"),
+            ("LNC0068", "invalid assignment target", "type checking"),
+            ("LNC0070", "invalid floating literal", "type checking"),
+            ("LNC0071", "computed floating constant is not supported", "type checking"),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());

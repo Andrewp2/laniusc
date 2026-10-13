@@ -1,0 +1,1 @@
+fn choose<T>(left: T, right: T) -> T { return left; } fn main() -> i32 { let narrow: i32 = 7; let wide: u64 = 7; let result: u64 = choose(narrow, wide); return 0; }

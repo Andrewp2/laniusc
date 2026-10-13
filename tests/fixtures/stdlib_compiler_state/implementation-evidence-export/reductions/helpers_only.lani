@@ -1,0 +1,26 @@
+module contracts::implementations;
+pub struct Cell<T> { value:T }
+pub struct Empty {}
+pub enum Choice<T> { Some(T), None }
+pub trait Mark {}
+pub trait Rel<A> {}
+pub trait Echo<T> {
+    pub fn copy(self, value:T)->T;
+    fn secret(self, value:[T;0])->[T;0];
+}
+pub impl Mark for [i32;2] {}
+pub impl Mark for [bool;0] {}
+pub impl Mark for Empty {}
+pub impl Mark for Choice<[i32;2]> {}
+pub impl Mark for [i32] {}
+pub impl Mark for &Cell<i32> {}
+pub impl Mark for Cell<[i32;2]> {}
+pub impl Rel<Cell<&[i32;2]>> for char {}
+pub impl Echo<[i32;2]> for bool {
+    pub fn copy(self, value:[i32;2])->[i32;2] { return value; }
+    fn secret(self, value:[[i32;2];0])->[[i32;2];0] { return value; }
+}
+impl<T> Cell<T> { fn borrow(&self)->&Cell<T> { return self; } }
+fn keep<T>(value:T)->T where T:Mark { return value; }
+fn flag<T>(value:T)->T where T:Echo<[i32;2]> { return value; }
+fn main()->i32{return 0;}

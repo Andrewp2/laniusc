@@ -1,0 +1,41 @@
+// Expected exit 0 and no output. The input parameters stay unpromoted;
+// borrowing only the copied locals forces packed-to-canonical initialization.
+impl [i32; 3] {
+    fn array_ref(&self) -> &[i32; 3] { return self; }
+}
+impl [i32; 0] {
+    fn empty_ref(&self) -> &[i32; 0] { return self; }
+    fn marker(self) -> i32 { return 17; }
+}
+fn copy_three(input: [i32; 3]) -> i32 {
+    let before: i32 = 71;
+    let local: [i32; 3] = input;
+    let after: i32 = 93;
+    let alias: &[i32; 3] = local.array_ref();
+    if (alias[0] != 11 || alias[1] != 13 || alias[2] != 17) { return 1; }
+    input[0] = 19;
+    if (local[0] != 11 || alias[0] != 11) { return 2; }
+    local = [23, 29, 31];
+    if (alias[0] != 23 || alias[1] != 29 || alias[2] != 31) { return 3; }
+    alias[1] = 37;
+    if (local[1] != 37 || input[0] != 19 || input[1] != 13 || input[2] != 17) { return 4; }
+    if (before != 71 || after != 93) { return 5; }
+    return 0;
+}
+fn copy_empty(input: [i32; 0]) -> i32 {
+    let before: i32 = 101;
+    let local: [i32; 0] = input;
+    let after: i32 = 103;
+    let alias: &[i32; 0] = local.empty_ref();
+    local = [];
+    if (alias.marker() != 17 || before != 101 || after != 103) { return 6; }
+    return 0;
+}
+fn main() -> i32 {
+    let input: [i32; 3] = [11, 13, 17];
+    let copied: i32 = copy_three(input);
+    if (copied != 0) { return copied; }
+    if (input[0] != 11 || input[1] != 13 || input[2] != 17) { return 7; }
+    let empty: [i32; 0] = [];
+    return copy_empty(empty);
+}

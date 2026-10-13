@@ -1,0 +1,21 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0425]: cannot find function `compile_source_to_x86_64_with_gpu` in module `laniusc_compiler::compiler`
+    --> tests/compiler_generic_types_execution.rs:5751:56
+     |
+5751 |         pollster::block_on(laniusc_compiler::compiler::compile_source_to_x86_64_with_gpu(&source)))
+     |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+    ::: crates/laniusc-compiler/src/compiler/gpu_public_api.rs:555:1
+     |
+ 555 | pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
+     | -------------------------------------------------------------------------------------------------- similarly named function `compile_source_to_x86_64_with_gpu_codegen` defined here
+     |
+help: a function with a similar name exists
+     |
+5751 |         pollster::block_on(laniusc_compiler::compiler::compile_source_to_x86_64_with_gpu_codegen(&source)))
+     |                                                                                         ++++++++
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `laniusc` (test "compiler_generic_types_execution") due to 1 previous error

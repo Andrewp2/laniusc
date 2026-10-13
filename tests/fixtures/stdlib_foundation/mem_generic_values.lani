@@ -1,0 +1,49 @@
+module app::main;
+import core::mem;
+import std::io;
+
+fn forwarded(value: str) -> str { return core::mem::identity(value); }
+
+fn main() -> i32 {
+    let low: i32 = -2147483648;
+    let high: i32 = 2147483647;
+    if (core::mem::identity(low) != low || core::mem::first(low, high) != low) { return 1; }
+    if (core::mem::second(low, high) != high) { return 2; }
+    if (core::mem::select(true, low, high) != low || core::mem::select(false, low, high) != high) { return 3; }
+    if (core::mem::identity(false) || core::mem::first(false, true) || !core::mem::second(false, true)) { return 4; }
+    if (core::mem::select(true, false, true) || !core::mem::select(false, false, true)) { return 5; }
+
+    let unsigned_zero: u32 = 0;
+    let unsigned_high: u32 = 4294967295;
+    if (core::mem::identity(unsigned_high) != unsigned_high) { return 6; }
+    if (core::mem::first(unsigned_high, unsigned_zero) != unsigned_high || core::mem::second(unsigned_zero, unsigned_high) != unsigned_high) { return 7; }
+    if (core::mem::select(true, unsigned_zero, unsigned_high) != unsigned_zero || core::mem::select(false, unsigned_zero, unsigned_high) != unsigned_high) { return 8; }
+
+    if (core::mem::identity(-7.5) != -7.5 || core::mem::first(-7.5, 3.25) != -7.5) { return 9; }
+    if (core::mem::second(-7.5, 3.25) != 3.25) { return 10; }
+    if (core::mem::select(true, -7.5, 3.25) != -7.5 || core::mem::select(false, -7.5, 3.25) != 3.25) { return 11; }
+    let negative_zero: f32 = core::mem::identity(-0.0);
+    if (negative_zero != 0.0 || 1.0 / negative_zero >= 0.0) { return 12; }
+    let nan: f32 = 0.0 / 0.0;
+    let same_nan: f32 = core::mem::second(99.0, nan);
+    if (same_nan == same_nan) { return 13; }
+
+    if (core::mem::identity('Ω') != 'Ω' || core::mem::first('Ω', '\0') != 'Ω') { return 14; }
+    if (core::mem::second('Ω', '\0') != '\0') { return 15; }
+    if (core::mem::select(true, 'Ω', '\0') != 'Ω' || core::mem::select(false, 'Ω', '\0') != '\0') { return 16; }
+
+    let original: str = "payload";
+    let empty: str = "";
+    let identity: str = core::mem::identity(original);
+    let first: str = core::mem::first(original, empty);
+    let second: str = core::mem::second(empty, original);
+    let selected_left: str = core::mem::select(true, original, empty);
+    let selected_right: str = core::mem::select(false, empty, original);
+    let selected_empty: str = core::mem::select(false, original, empty);
+    let via_helper: str = forwarded(original);
+    if (std::io::println(identity) != 8 || std::io::println(first) != 8) { return 17; }
+    if (std::io::println(second) != 8 || std::io::println(selected_left) != 8) { return 18; }
+    if (std::io::println(selected_right) != 8 || std::io::println(selected_empty) != 1) { return 19; }
+    if (std::io::println(via_helper) != 8 || std::io::println(original) != 8) { return 20; }
+    return 0;
+}

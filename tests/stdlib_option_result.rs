@@ -48,14 +48,16 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_i32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/option_i32.lani")),
         "path manifest should include core::option_i32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_i32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/result_i32.lani")),
         "path manifest should include core::result through the option_i32 import chain"
     );
 
@@ -111,14 +113,16 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_i32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/option_i32.lani")),
         "path manifest should include core::option_i32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_i32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/result_i32.lani")),
         "path manifest should include core::result through the option_i32 import chain"
     );
 
@@ -171,14 +175,16 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/option_u32.lani")),
         "path manifest should include core::option_u32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/result_u32.lani")),
         "path manifest should include core::result through the option_u32 import chain"
     );
 
@@ -231,14 +237,16 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/option_u32.lani")),
         "path manifest should include core::option_u32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/result_u32.lani")),
         "path manifest should include core::result through the option_u32 import chain"
     );
 
@@ -306,14 +314,16 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/option_u32.lani")),
         "path manifest should include core::option_u32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u32.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/result_u32.lani")),
         "path manifest should include core::result through the option_u32 import chain"
     );
     assert!(
@@ -369,17 +379,15 @@ fn main() {
         "path manifest should include core::u8 from the stdlib root"
     );
     assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u8.lani")),
+        manifest.files.iter().any(
+            |file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u8.lani")
+        ),
         "path manifest should include core::option_u8 from the stdlib root"
     );
     assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u8.lani")),
+        manifest.files.iter().any(
+            |file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u8.lani")
+        ),
         "path manifest should include core::result through the option_u8 import chain"
     );
 
@@ -429,17 +437,15 @@ fn main() {
         "path manifest should include core::u8 from the stdlib root"
     );
     assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u8.lani")),
+        manifest.files.iter().any(
+            |file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u8.lani")
+        ),
         "path manifest should include core::option_u8 from the stdlib root"
     );
     assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u8.lani")),
+        manifest.files.iter().any(
+            |file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u8.lani")
+        ),
         "path manifest should include core::result through the option_u8 import chain"
     );
 
@@ -478,37 +484,6 @@ fn main() {
 }
 
 #[test]
-fn option_xor_type_checks() {
-    let sources = [
-        include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/option.lani"),
-        r#"
-module app::main;
-
-import core::option;
-
-fn main() {
-    let left: core::option::Option<i32> = core::option::Some(7);
-    let right: core::option::Option<i32> = core::option::None;
-    let selected: core::option::Option<i32> = core::option::xor(left, right);
-    let selected_value: i32 = core::option::unwrap_or(selected, 0);
-    let both_left: core::option::Option<i32> = core::option::Some(1);
-    let both_right: core::option::Option<i32> = core::option::Some(2);
-    let blocked: core::option::Option<i32> = core::option::xor(both_left, both_right);
-    let blocked_value: i32 = core::option::unwrap_or(blocked, 0);
-    if (selected_value != 7 || blocked_value != 0) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    ];
-
-    common::type_check_source_pack_with_timeout(&sources)
-        .expect("core::option::xor should type check for concrete option payloads");
-}
-
-#[test]
 fn result_qualified_constructor_generic_return_type_checks() {
     let sources = [
         include_str!("../stdlib/core/result.lani"),
@@ -534,77 +509,4 @@ fn main() {
 
     common::type_check_source_pack_with_timeout(&sources)
         .expect("qualified Result constructors should type check in generic returns");
-}
-
-#[test]
-fn option_ok_or_type_checks() {
-    let sources = [
-        include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/option.lani"),
-        r#"
-module app::main;
-
-import core::option;
-import core::result;
-
-fn main() {
-    let some: core::option::Option<i32> = core::option::Some(7);
-    let none: core::option::Option<i32> = core::option::None;
-    let ok: core::result::Result<i32, i32> = core::option::ok_or(some, 9);
-    let err: core::result::Result<i32, i32> = core::option::ok_or(none, 9);
-    let ok_hit: bool = core::result::contains_i32(ok, 7);
-    let err_hit: bool = core::result::contains_err_i32(err, 9);
-    if (!ok_hit || !err_hit) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    ];
-
-    common::type_check_source_pack_with_timeout(&sources)
-        .expect("core::option::ok_or should type check with concrete Result payloads");
-}
-
-#[test]
-fn option_ok_err_result_conversions_type_check() {
-    let sources = [
-        include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/option.lani"),
-        r#"
-module app::main;
-
-import core::option;
-import core::result;
-
-fn main() {
-    let ok_for_value: core::result::Result<i32, i32> = core::result::Ok(7);
-    let err_for_value: core::result::Result<i32, i32> = core::result::Err(9);
-    let ok_for_error: core::result::Result<i32, i32> = core::result::Ok(11);
-    let err_for_error: core::result::Result<i32, i32> = core::result::Err(13);
-
-    let value: core::option::Option<i32> = core::option::ok(ok_for_value);
-    let missing_value: core::option::Option<i32> = core::option::ok(err_for_value);
-    let missing_error: core::option::Option<i32> = core::option::err(ok_for_error);
-    let error: core::option::Option<i32> = core::option::err(err_for_error);
-
-    if (!core::option::contains_i32(value, 7)) {
-        return 1;
-    }
-    if (!core::option::is_none(missing_value)) {
-        return 1;
-    }
-    if (!core::option::is_none(missing_error)) {
-        return 1;
-    }
-    if (!core::option::contains_i32(error, 13)) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    ];
-
-    common::type_check_source_pack_with_timeout(&sources)
-        .expect("core::option::ok and core::option::err should type check Result conversions");
 }

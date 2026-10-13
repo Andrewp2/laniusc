@@ -24,6 +24,8 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> language_entrypoint_tag_by_name_id;
@@ -53,6 +55,7 @@ StructuredBuffer<uint> type_instance_elem_ref_payload;
 
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> fn_start_token_by_decl_token;
+RWStructuredBuffer<uint> fn_hir_by_decl_token;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_return_generic_slot;
@@ -317,6 +320,7 @@ uint semantic_type_code_for_ref(uint tag, uint payload)
             return TY_UNKNOWN;
 
         uint kind = type_instance_kind[payload];
+        if (kind == 4u) return 8u;
         if (kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE)
         {
             uint elem_tag = type_instance_elem_ref_tag[payload];
@@ -423,6 +427,7 @@ void publish_function_lookup(uint fn_node)
         return;
 
     call_fn_index[fn_decl_token] = fn_decl_token;
+    fn_hir_by_decl_token[fn_decl_token] = fn_node;
     uint tag;
     uint payload;
     return_ref_for_function(fn_decl_token, tag, payload);
@@ -491,6 +496,23 @@ bool function_item_kind(uint item_kind)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
+    if (node < min(compact_variant_count[0u], gParams.n_hir_nodes))
+    {
+        HirVariant variant = compact_variants[node];
+        if (valid_node(variant.owner) && valid_token(variant.name_token))
+        {
+            uint declaration = compact_hir_payload[variant.owner].b;
+            if (valid_token(declaration))
+            {
+                // A constructor targets a variant but binds its enum header.
+                // It has no function body or name-only lookup entry.
+                call_fn_index[variant.name_token] = variant.name_token;
+                fn_hir_by_decl_token[variant.name_token] = variant.owner;
+                call_return_type[variant.name_token] = TY_ENUM_BASE + declaration;
+                call_return_type_token[variant.name_token] = declaration;
+            }
+        }
+    }
     if (node >= active_hir_node_count() || compact_hir_core[node].kind != HIR_FN)
         return;
 

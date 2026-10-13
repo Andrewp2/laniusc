@@ -1,0 +1,135 @@
+
+running 1 test
+test compiler::tests::imported_inherent_ambiguity_is_independent_of_dependency_page_order ... METHOD-DUMP left=GpuSemanticInterfaceArtifact {
+    version: 13,
+    library_id: 71,
+    unit_id: 0,
+    modules: [
+        GpuSemanticInterfaceModuleRecord {
+            first_segment: 0,
+            segment_count: 2,
+        },
+    ],
+    module_segments: [
+        GpuSemanticInterfaceModuleSegmentRecord {
+            name_hash_lo: 1665810282,
+            name_hash_hi: 2037964559,
+            name_byte_start: 0,
+            name_byte_len: 8,
+        },
+        GpuSemanticInterfaceModuleSegmentRecord {
+            name_hash_lo: 3094551882,
+            name_hash_hi: 3987782306,
+            name_byte_start: 8,
+            name_byte_len: 4,
+        },
+    ],
+    declarations: [],
+    types: [
+        GpuSemanticInterfaceTypeRecord {
+            kind: 1,
+            payload_lo: 3,
+            payload_hi: 0,
+            first_edge: 0,
+            edge_count: 0,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: 0,
+        },
+        GpuSemanticInterfaceTypeRecord {
+            kind: 1,
+            payload_lo: 3,
+            payload_hi: 0,
+            first_edge: 0,
+            edge_count: 0,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: 0,
+        },
+        GpuSemanticInterfaceTypeRecord {
+            kind: 1,
+            payload_lo: 1,
+            payload_hi: 0,
+            first_edge: 0,
+            edge_count: 0,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: 0,
+        },
+    ],
+    type_edges: [],
+    members: [
+        GpuSemanticInterfaceMemberRecord {
+            owner_ref: 2147483648,
+            kind: 8,
+            ordinal: 0,
+            name_hash_lo: 2129179110,
+            name_hash_hi: 3901890087,
+            name_byte_start: 12,
+            name_byte_len: 4,
+            type_index: 0,
+            value_lo: 1342177280,
+            value_hi: 2147483654,
+            receiver_type_index: 1,
+            generic_parameter_ordinal: 4294967295,
+        },
+    ],
+    predicates: [],
+    predicate_arguments: [],
+    implementations: [
+        GpuSemanticInterfaceImplementationRecord {
+            module: 0,
+            visibility: 1,
+            trait_library_id: 4294967295,
+            trait_unit_id: 4294967295,
+            trait_declaration_index: 4294967295,
+            subject_type: 1,
+            first_argument: 0,
+            argument_count: 0,
+            first_member: 0,
+            member_count: 1,
+            first_prerequisite: 0,
+            prerequisite_count: 0,
+            first_method_binding: 0,
+            method_binding_count: 0,
+            kind: 1,
+        },
+    ],
+    implementation_arguments: [],
+    implementation_method_bindings: [],
+    name_bytes: [
+        114,
+        101,
+        99,
+        101,
+        105,
+        118,
+        101,
+        114,
+        108,
+        101,
+        102,
+        116,
+        112,
+        105,
+        99,
+        107,
+    ],
+}
+GPU source-pack type-check rejection: token=29 code=CallMismatch detail=9
+
+thread 'compiler::tests::imported_inherent_ambiguity_is_independent_of_dependency_page_order' (157889) panicked at crates/laniusc-compiler/src/compiler/tests.rs:123:13:
+reject ambiguity, not invalid receiver adjustment or unresolved names: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 92, length: 4, byte_start: Some(91), byte_end: Some(95), source_line: Some("import receiver::left; import receiver::right; fn main()->i32{let value:i32=0;return value.pick();}"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::tests::imported_inherent_ambiguity_is_independent_of_dependency_page_order
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 722 filtered out; finished in 7.09s
+

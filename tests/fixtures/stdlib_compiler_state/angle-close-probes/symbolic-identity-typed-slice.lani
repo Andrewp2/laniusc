@@ -1,0 +1,46 @@
+import core::aliases;
+import std::io;
+
+struct Cell<T> { value: T }
+impl<T> Cell<T> { fn borrow(&self) -> &Cell<T> { return self; } }
+enum Choice<T> { Missing, Present(T) }
+
+fn keep<T>(value: core::aliases::Id<T>) -> core::aliases::Id<core::aliases::Id<T>> {
+    return value;
+}
+fn result<T>(value: T) -> core::aliases::Id<core::aliases::Id<T>> { return value; }
+fn argument<T>(value: core::aliases::Id<core::aliases::Id<T>>) -> T { return value; }
+fn second<A, B>(ignored: core::aliases::Id<A>, value: core::aliases::Id<B>) -> core::aliases::Id<B> {
+    return value;
+}
+
+fn main() -> i32 {
+    if (keep<i32>(42) != 42 || keep<bool>(false)) { return 1; }
+    let data: [i32; 2] = [19, 23];
+    let copied = keep<[i32; 2]>(data);
+    let original_view: [i32] = data;
+    let view: [i32] = keep<[i32]>(original_view);
+    view[0] = 20;
+    if (data[0] != 20 || copied[0] != 19) { return 2; }
+
+    let cell: Cell<[i32; 2]> = Cell { value: copied };
+    let saved = keep<Cell<[i32; 2]>>(cell);
+    let borrowed = keep<&Cell<[i32; 2]>>(cell.borrow());
+    cell.value[1] = 22;
+    if (borrowed.value[1] != 22 || saved.value[1] != 23) { return 3; }
+
+    let choice: Choice<[i32; 2]> = Choice::Present(copied);
+    let retained = keep<Choice<[i32; 2]>>(choice);
+    choice = Choice::Missing;
+    let total = match (retained) { Choice::Present(values) -> values[0] + values[1], _ -> 0 };
+    if (total != 42) { return 4; }
+    let empty: [str; 0] = keep<[str; 0]>([]);
+
+    let selected = second<bool, [i32; 2]>(false, copied);
+    let flag = second<i32, bool>(42, false);
+    let returned = result<[i32; 2]>(selected);
+    let accepted = argument<[i32; 2]>(returned);
+    if (flag || accepted[0] + accepted[1] != 42) { return 5; }
+    if (std::io::println(keep<str>("Ω")) != 3) { return 6; }
+    return 0;
+}

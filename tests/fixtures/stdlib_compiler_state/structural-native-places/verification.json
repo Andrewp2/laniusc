@@ -1,0 +1,89 @@
+{
+  "checkpoint": "structural receivers and native storage",
+  "date": "2026-10-11",
+  "distinct_checks": 23,
+  "native_integration_tests": 18,
+  "library_gpu_tests": 2,
+  "host_graph_tests": 3,
+  "runs": [
+    {
+      "record": "storage-structural-suite-final.json",
+      "log": "storage-structural-suite-final.log",
+      "kind": "native integration",
+      "test_count": 11,
+      "tests": [
+        "structural_inherent_adjusted_values_preserve_copy_and_argument_order",
+        "structural_inherent_array_parameters_copy_into_stable_places",
+        "structural_inherent_deep_receivers_preserve_capture_order",
+        "structural_inherent_imported_methods_rank_by_reference_depth",
+        "structural_inherent_imported_scalar_methods_execute_without_local_methods",
+        "structural_inherent_loop_values_keep_array_and_slice_shapes",
+        "structural_inherent_reference_array_indexes_reject_negative_bounds",
+        "structural_inherent_reference_cells_preserve_place_identity",
+        "structural_inherent_reference_indexes_preserve_aliases_and_stride",
+        "structural_inherent_reference_slice_indexes_reject_upper_bounds",
+        "structural_inherent_unused_receivers_preserve_following_arguments"
+      ],
+      "source_snapshot": "sources-9573f0b80a7f5b23.json",
+      "shader_snapshot": "shaders-b4d8a1821b79b826.json"
+    },
+    {
+      "record": "storage-structural-generic-regressions-1.json",
+      "log": "storage-structural-generic-regressions-1.log",
+      "kind": "native integration",
+      "test_count": 6,
+      "tests": [
+        "structural_impl_receivers_execute_imported_compositions",
+        "structural_impl_receivers_execute_local_compositions",
+        "structural_impl_receivers_execute_nested_generic_array_patterns",
+        "structural_impl_receivers_execute_ordinary_array_patterns",
+        "structural_impl_receivers_execute_thirty_two_parameters_imported",
+        "structural_impl_receivers_execute_thirty_two_parameters_locally"
+      ],
+      "source_snapshot": "sources-94620d5b2e578458.json",
+      "shader_snapshot": "shaders-2ea84b7a0fbc4398.json"
+    },
+    {
+      "record": "storage-generic-call-chains-1.json",
+      "log": "storage-generic-call-chains-1.log",
+      "kind": "native integration",
+      "test_count": 1,
+      "tests": [
+        "generic_nested_result_symbolic_contexts_and_call_chains_execute"
+      ],
+      "source_snapshot": "sources-94620d5b2e578458.json",
+      "shader_snapshot": "shaders-2ea84b7a0fbc4398.json"
+    },
+    {
+      "record": "storage-library-final.json",
+      "log": "storage-library-final.log",
+      "kind": "library: two physical GPU, three host",
+      "test_count": 5,
+      "tests": [
+        "codegen::lowering::tests::physical_gpu_projects_dense_function_abi",
+        "codegen::lowering_ir::tests::both_target_graphs_have_common_semantic_lowering_and_target_output",
+        "codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts",
+        "compiler::tests::imported_inherent_ambiguity_is_independent_of_dependency_page_order",
+        "type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes"
+      ],
+      "source_snapshot": "sources-00269a3077b00a6f.json",
+      "shader_snapshot": "shaders-b4d8a1821b79b826.json"
+    }
+  ],
+  "ordering_note": "The seven generic regressions precede the two final method-selection guard fixes. The eleven structural tests and five library checks were run after those fixes. Each run retains its source and shader snapshot.",
+  "performance": "performance-comparison.json",
+  "canonical_performance": "current-1mb.json",
+  "canonical_output_checks": "current-1mb.validation.json",
+  "canonical_command_exit": 1,
+  "canonical_reporting_failure": "All twenty compilations and output checks completed. Cataloging then rejected a non-object JSON document with AttributeError; a two-line validator repair and two host checks are recorded separately.",
+  "remaining": [
+    "generic implementation prerequisites",
+    "generic trait methods and method bounds",
+    "constant trait operands",
+    "full primitive-width behavior",
+    "typed full-width generic constant identity and forwarding",
+    "unsupported direct temporary/variant-payload places",
+    "caller-managed reference lifetimes; no static escape checking",
+    "user-program GPU execution and cross-compiler performance target unverified"
+  ]
+}

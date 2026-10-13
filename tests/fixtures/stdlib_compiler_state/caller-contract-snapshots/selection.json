@@ -1,0 +1,19 @@
+{
+  "snapshot": [
+    "checked_unit_contracts_"
+  ],
+  "regression": [
+    "retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse",
+    "retained_generic_call_environments_keep_each_calls_concrete_type",
+    "retained_generic_result_environments_preserve_two_slots_and_record_layouts",
+    "retained_contextual_environments_preserve_all_thirty_two_parameters",
+    "caller_private_nominals_execute_through_imported_generic_relay",
+    "body_replay_preserves_symbolic_public_interfaces",
+    "body_replay_preserves_qualified_alias_parameter_identity",
+    "typecheck_graph_tracks_operation_workspace_lifetimes",
+    "type_checker::generic_calls::tests::"
+  ],
+  "native": [
+    "nested_symbolic_nominal_constants_in_trait_bounds_"
+  ]
+}

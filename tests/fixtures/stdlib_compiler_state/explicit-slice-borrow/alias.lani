@@ -1,0 +1,2 @@
+import core::aliases; fn keep<T>(v: core::aliases::Id<T>) -> core::aliases::Id<T> { return v; }
+fn main() -> i32 { let data: [i32; 2] = [19,23]; let view: [i32] = keep<[i32]>(data); view[0] = 20; data[1] = 22; if (view[0] + view[1] != 42 || data[0] != 20) { return 1; } return 0; }

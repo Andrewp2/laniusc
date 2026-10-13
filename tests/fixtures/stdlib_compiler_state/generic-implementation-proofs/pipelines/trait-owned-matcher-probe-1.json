@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/shader_pipeline_probe",
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/compile-overlays/owned-matching-test-v3/tests__owned_type_constraints__production.spv",
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/compile-overlays/owned-matching-test-v3/tests__owned_type_constraints__production.reflection.json"
+  ],
+  "seconds": 101.77386646000014,
+  "exit_code": "timeout100",
+  "spv_sha256": "d388d12b72e37c01bf9cbf8f120c6823cef612e5e2e5ac0879b4c3c04ce86a0e",
+  "reflection_sha256": "110fa5263b7529e12ab56351634d016b342a9db05ce855e9f749b8faa31729db",
+  "probe_sha256": "7816d4d297469299829f4cc67709e74f65ea7222edece9bc92aafeb89f8201c6",
+  "output": ""
+}

@@ -1,0 +1,67 @@
+import core::aliases;
+import std::io;
+struct Cell<T> { value: T }
+fn keep<T>(value: T) -> T { return value; }
+fn choose<T>(left: T, right: T, first: bool) -> T {
+    if (first) { return left; }
+    return right;
+}
+fn aliased<T>(value: core::aliases::Id<T>) -> core::aliases::Id<T> { return value; }
+fn first<T, const N: usize>(values: [T; N]) -> T {
+    let view = core::aliases::keep<[T]>(values);
+    return view[0];
+}
+fn main() -> i32 {
+    let data: [i32; 2] = [19, 23];
+    let other: [i32; 3] = [1, 2, 3];
+    let view = choose<[i32]>(other, data, false);
+    view[0] = 20;
+    data[1] = 22;
+    if (view[0] + view[1] != 42 || data[0] != 20 || other[0] != 1) { return 1; }
+    let none: [i32; 0] = [];
+    let empty = choose<[i32]>(data, none, false);
+    let count: i32 = 0;
+    for value in empty { count += 1; }
+    if (count != 0) { return 2; }
+
+    let field: Cell<[i32; 2]> = Cell { value: [19, 23] };
+    let field_view = keep<[i32]>(field.value);
+    field_view[0] = 20;
+    field.value[1] = 22;
+    if (field.value[0] != 20 || field_view[1] != 22) { return 3; }
+
+    let flags: [bool; 2] = [false, true];
+    let flag_view = aliased<[bool]>(flags);
+    flag_view[0] = true;
+    flags[1] = false;
+    if (!flags[0] || flag_view[1]) { return 4; }
+
+    let cells: [Cell<i32>; 2] = [Cell { value: 19 }, Cell { value: 23 }];
+    let cell_view = core::aliases::keep<[Cell<i32>]>(cells);
+    cell_view[0].value = 20;
+    cells[1].value = 22;
+    if (cells[0].value != 20 || cell_view[1].value != 22) { return 5; }
+
+    let pairs: [[i32; 2]; 2] = [[19, 23], [1, 2]];
+    let pair_view = keep<[[i32; 2]]>(pairs);
+    pair_view[0][0] = 20;
+    pairs[0][1] = 22;
+    if (pairs[0][0] != 20 || pair_view[0][1] != 22) { return 6; }
+
+    let zeros: [[i32; 0]; 2] = [[], []];
+    let zero_view = keep<[[i32; 0]]>(zeros);
+    let zero_count: i32 = 0;
+    for value in zero_view { zero_count += 1; }
+    if (zero_count != 2) { return 7; }
+
+    let words: [str; 2] = ["A", "B"];
+    let word_view = core::aliases::keep<[str]>(words);
+    word_view[0] = "Ω";
+    words[1] = "C";
+    if (std::io::println(words[0]) != 3 || std::io::println(word_view[1]) != 2) { return 8; }
+    let copied: [i32; 2] = keep<[i32; 2]>(data);
+    copied[0] = -1;
+    if (data[0] != 20) { return 9; }
+    if (first<i32, 2>(data) != 20 || !first<bool, 2>(flags)) { return 10; }
+    return 0;
+}

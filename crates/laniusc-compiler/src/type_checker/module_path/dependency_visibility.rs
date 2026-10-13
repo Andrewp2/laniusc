@@ -86,17 +86,19 @@ impl DependencyTypeIndexOperations {
 /// separate outputs so downstream passes cannot interpret a persisted identity
 /// as a local HIR row.
 pub(in crate::type_checker) struct DependencyVisibilityState {
-    /// Stable dependency identity for each resolved value path. These rows
+    /// Stable dependency identity for each resolved type path. These rows
     /// remain valid after dependency pages are replaced, unlike page-local
     /// declaration indices.
     pub(in crate::type_checker) resolved_dependency_library_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) resolved_dependency_unit_id: LaniusBuffer<u32>,
     pub(in crate::type_checker) resolved_dependency_local_index: LaniusBuffer<u32>,
+    /// Value bindings are independent when the same path also names a type.
+    pub(in crate::type_checker) resolved_dependency_value_library_id: LaniusBuffer<u32>,
+    pub(in crate::type_checker) resolved_dependency_value_unit_id: LaniusBuffer<u32>,
+    pub(in crate::type_checker) resolved_dependency_value_local_index: LaniusBuffer<u32>,
     pub(in crate::type_checker) declaration_field_count: LaniusBuffer<u32>,
-    pub(in crate::type_checker) call_compare_scan_input: LaniusBuffer<u32>,
     _retained_buffers: Box<[LaniusBuffer<u32>]>,
     pub(in crate::type_checker) scan: PrefixScanOperation,
-    pub(in crate::type_checker) call_compare_scan: PrefixScanOperation,
     pub(in crate::type_checker) count_group: ComputeOperation,
     pub(in crate::type_checker) clear_workspace_group: ComputeOperation,
     pub(in crate::type_checker) scatter_group: ComputeOperation,
@@ -111,9 +113,12 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) build_lookup_call_collection: ComputeInvocation,
     pub(in crate::type_checker) resolve_type_call_collection: ComputeInvocation,
     pub(in crate::type_checker) resolve_value_call_collection: ComputeInvocation,
-    pub(in crate::type_checker) project_types_call_collection: ComputeInvocation,
     pub(in crate::type_checker) project_types_after_clear: ComputeInvocation,
     pub(in crate::type_checker) project_calls_group: ComputeOperation,
+    pub(in crate::type_checker) clear_normalized_member_lookup: ComputeInvocation,
+    pub(in crate::type_checker) build_normalized_member_lookup: ComputeOperation,
+    pub(in crate::type_checker) resolve_normalized_members: ComputeOperation,
+    pub(in crate::type_checker) project_normalized_values: ComputeOperation,
     pub(in crate::type_checker) project_call_params_group: ComputeOperation,
     pub(in crate::type_checker) scatter_call_params_group: ComputeOperation,
     pub(in crate::type_checker) validate_call_arity_group: ComputeOperation,
@@ -121,23 +126,27 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) validate_call_results_group: ComputeOperation,
     pub(in crate::type_checker) validate_call_results_validate: ComputeInvocation,
     pub(in crate::type_checker) generic_call_results_resolve: ComputeInvocation,
-    pub(in crate::type_checker) validate_call_type_args_group: ComputeOperation,
-    pub(in crate::type_checker) call_compare_dispatch_group: ComputeOperation,
     pub(in crate::type_checker) type_index: DependencyTypeIndexOperations,
     pub(in crate::type_checker) type_index_module_paths: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_call_collection: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_after_type_clear: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_type_instance_projection: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_alias_targets: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_call_param_scatter: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_method_projection: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_method_lookup: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_return_materialization: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) type_index_call_validation: DependencyTypeIndexInvocations,
+    pub(in crate::type_checker) type_index_trait_contracts: DependencyTypeIndexInvocations,
     pub(in crate::type_checker) project_type_instances_group: ComputeOperation,
+    pub(in crate::type_checker) materialize_alias_targets_group: ComputeOperation,
+    pub(in crate::type_checker) collect_methods_group: ComputeOperation,
     pub(in crate::type_checker) project_methods_group: ComputeOperation,
+    pub(in crate::type_checker) project_struct_literals_group: ComputeOperation,
     pub(in crate::type_checker) _params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _type_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _value_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _canonical_type_params: LaniusBuffer<DependencyCanonicalTypeParams>,
-    pub(in crate::type_checker) _call_compare_dispatch_params: LaniusBuffer<CountDispatchParams>,
 }
 
 pub(in crate::type_checker) fn create(
@@ -215,36 +224,21 @@ pub(in crate::type_checker) fn create(
     let owner_module = graph.u32_buffer("dependency_visible_owner_module")?;
     let declaration = graph.u32_buffer("dependency_visible_decl")?;
     let lookup = graph.u32_buffer("dependency_visible_lookup")?;
-    let resolved_type_decl = graph.u32_buffer("dependency_resolved_type_decl")?;
-    let resolved_value_decl = graph.u32_buffer("dependency_resolved_value_decl")?;
     let resolved_dependency_library_id = graph.u32_buffer("resolved_dependency_library_id")?;
     let resolved_dependency_unit_id = graph.u32_buffer("resolved_dependency_unit_id")?;
     let resolved_dependency_local_index = graph.u32_buffer("resolved_dependency_local_index")?;
-    let call_compare_scan_input = graph.u32_buffer("dependency_call_compare_scan_input")?;
-    let call_compare_prefix = graph.u32_buffer("dependency_call_compare_prefix")?;
-    let call_compare_total = graph.u32_buffer("dependency_call_compare_total")?;
-    let call_compare_expected_type = graph.u32_buffer("dependency_call_compare_expected_type")?;
-    let call_compare_actual_instance =
-        graph.u32_buffer("dependency_call_compare_actual_instance")?;
-    let call_compare_callee = graph.u32_buffer("dependency_call_compare_callee")?;
-    let call_compare_error_token = graph.u32_buffer("dependency_call_compare_error_token")?;
+    let resolved_dependency_value_library_id =
+        graph.u32_buffer("resolved_dependency_value_library_id")?;
+    let resolved_dependency_value_unit_id = graph.u32_buffer("resolved_dependency_value_unit_id")?;
+    let resolved_dependency_value_local_index =
+        graph.u32_buffer("resolved_dependency_value_local_index")?;
     let mut scan_resources = resources.clone();
-    scan_resources.buffers([
-        ("hir_active_count", inputs.hir_active_count_buf),
-        ("hir_active_dispatch_args", inputs.hir_active_dispatch_args),
-    ]);
     scan_resources.buffers([
         ("import_record_count_out", &buffers.import_count_out),
         ("import_dispatch_args", &buffers.import_dispatch_args),
         ("dependency_visible_count", &count),
         ("dependency_visible_prefix", &prefix),
         ("dependency_visible_total", &total),
-        (
-            "dependency_call_compare_scan_input",
-            &call_compare_scan_input,
-        ),
-        ("dependency_call_compare_prefix", &call_compare_prefix),
-        ("dependency_call_compare_total", &call_compare_total),
     ]);
     scan_resources.buffers([
         (
@@ -259,18 +253,6 @@ pub(in crate::type_checker) fn create(
             "module_record_scan_prefix_a",
             inputs.module_record_scan_workspace.block_prefix,
         ),
-        (
-            "module_value_scan_local_prefix",
-            inputs.module_value_scan_workspace.local_prefix,
-        ),
-        (
-            "module_value_scan_block_sum",
-            inputs.module_value_scan_workspace.block_sum,
-        ),
-        (
-            "module_value_scan_prefix_a",
-            inputs.module_value_scan_workspace.block_prefix,
-        ),
     ]);
     let scan = PrefixScanOperation::from_spec(
         device,
@@ -278,37 +260,8 @@ pub(in crate::type_checker) fn create(
         &scan_resources,
         compiler_graph::DEPENDENCY_VISIBLE_SCAN,
     )?;
-    let call_compare_scan = PrefixScanOperation::from_spec(
-        device,
-        passes,
-        &scan_resources,
-        compiler_graph::DEPENDENCY_CALL_COMPARE_SCAN,
-    )?;
-    let call_compare_dispatch_args = graph.u32_buffer("dependency_call_compare_dispatch_args")?;
-    let call_compare_dispatch_params = uniform_from_val(
-        device,
-        "type_check.dependencies.call_compare.dispatch_params",
-        &CountDispatchParams {
-            capacity: u32::MAX,
-            multiplier: 1,
-            reserved0: 0,
-            reserved1: 0,
-        },
-    );
-    let mut call_compare_dispatch_resources = resources.clone();
-    call_compare_dispatch_resources.buffer("gParams", &call_compare_dispatch_params);
-    let call_compare_dispatch_group = ComputeOperation::direct_spec(
-        device,
-        graph,
-        &call_compare_dispatch_resources,
-        passes,
-        DEPENDENCY_CALL_COMPARE_DISPATCH,
-        1,
-    )?;
     let canonical_type_roots_a = graph.u32_buffer("dependency_canonical_type_roots_a")?;
     let canonical_type_roots_b = graph.u32_buffer("dependency_canonical_type_roots_b")?;
-    let canonical_type_subtree_a = graph.u32_buffer("dependency_canonical_type_subtree_a")?;
-    let canonical_type_subtree_b = graph.u32_buffer("dependency_canonical_type_subtree_b")?;
     let declaration_generic_arity = graph.u32_buffer("dependency_declaration_generic_arity")?;
     let declaration_field_count = graph.u32_buffer("dependency_declaration_field_count")?;
     let mut canonical_type_jump_rounds = 0u32;
@@ -464,6 +417,20 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_TYPE_INSTANCES_PROJECT,
         &buffers.path_dispatch_args,
     )?;
+    let mut alias_resources = canonical_type_resources.clone();
+    alias_resources.buffer("gParams", inputs.params);
+    let materialize_alias_targets_group = ComputeOperation::indirect_spec(
+        device, graph, &alias_resources, passes, DEPENDENCY_ALIAS_TARGETS_MATERIALIZE,
+        &buffers.path_dispatch_args,
+    )?;
+    let collect_methods_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_METHODS_COLLECT,
+        inputs.hir_active_dispatch_args,
+    )?;
     let project_methods_group = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -472,6 +439,25 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_METHODS_PROJECT,
         inputs.hir_active_dispatch_args,
     )?;
+    let project_struct_literals_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &canonical_type_resources,
+        passes,
+        DEPENDENCY_STRUCT_LITERALS_PROJECT,
+        inputs.hir_active_dispatch_args,
+    )?;
+    let clear_normalized_member_lookup = clear_lookup_group.invocation(
+        graph, DEPENDENCY_NORMALIZED_MEMBER_LOOKUP_CLEAR.name)?;
+    let build_normalized_member_lookup = ComputeOperation::direct_spec(
+        device, graph, &visibility_resources, passes,
+        DEPENDENCY_NORMALIZED_MEMBER_LOOKUP_BUILD, visible_capacity)?;
+    let resolve_normalized_members = ComputeOperation::indirect_spec(
+        device, graph, &visibility_resources, passes,
+        DEPENDENCY_NORMALIZED_MEMBERS_RESOLVE, &buffers.path_dispatch_args)?;
+    let project_normalized_values = ComputeOperation::indirect_spec(
+        device, graph, &canonical_type_resources, passes,
+        DEPENDENCY_NORMALIZED_VALUES_PROJECT, &buffers.path_dispatch_args)?;
     let project_calls_group = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -520,15 +506,6 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_CALL_RESULTS_SUBSTITUTE,
         inputs.hir_active_dispatch_args,
     )?;
-    let validate_call_type_args_group = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        &value_path_resources,
-        passes,
-        DEPENDENCY_CALL_TYPE_ARGS_VALIDATE,
-        &call_compare_dispatch_args,
-    )?;
-
     let replay = DEPENDENCY_PAGE_CALL_COLLECTION;
     let count_call_collection = count_group.invocation(graph, replay.count_import_visibility)?;
     let scatter_call_collection =
@@ -541,8 +518,6 @@ pub(in crate::type_checker) fn create(
         resolve_type_group.invocation(graph, replay.resolve_type_paths)?;
     let resolve_value_call_collection =
         resolve_value_group.invocation(graph, replay.resolve_value_paths)?;
-    let project_types_call_collection =
-        project_types_group.invocation(graph, replay.project_types)?;
     let project_types_after_clear =
         project_types_group.invocation(graph, DEPENDENCY_TYPES_PROJECT_AFTER_CLEAR.name)?;
     let validate_call_results_validate =
@@ -569,6 +544,9 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_TYPE_INDEX_TYPE_INSTANCE_PROJECTION,
         canonical_type_jump_rounds,
     )?;
+    let type_index_alias_targets = type_index.invocations(
+        graph, DEPENDENCY_TYPE_INDEX_ALIAS_TARGETS, canonical_type_jump_rounds,
+    )?;
     let type_index_call_param_scatter = type_index.invocations(
         graph,
         DEPENDENCY_TYPE_INDEX_CALL_PARAM_SCATTER,
@@ -579,9 +557,24 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_TYPE_INDEX_METHOD_PROJECTION,
         canonical_type_jump_rounds,
     )?;
+    let type_index_method_lookup = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_METHOD_LOOKUP,
+        canonical_type_jump_rounds,
+    )?;
     let type_index_call_validation = type_index.invocations(
         graph,
         DEPENDENCY_TYPE_INDEX_CALL_VALIDATION,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_return_materialization = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_RETURN_MATERIALIZATION,
+        canonical_type_jump_rounds,
+    )?;
+    let type_index_trait_contracts = type_index.invocations(
+        graph,
+        DEPENDENCY_TYPE_INDEX_TRAIT_CONTRACTS,
         canonical_type_jump_rounds,
     )?;
 
@@ -589,8 +582,10 @@ pub(in crate::type_checker) fn create(
         resolved_dependency_library_id,
         resolved_dependency_unit_id,
         resolved_dependency_local_index,
+        resolved_dependency_value_library_id,
+        resolved_dependency_value_unit_id,
+        resolved_dependency_value_local_index,
         declaration_field_count: declaration_field_count.clone(),
-        call_compare_scan_input,
         _retained_buffers: Box::new([
             count,
             prefix,
@@ -598,23 +593,12 @@ pub(in crate::type_checker) fn create(
             owner_module,
             declaration,
             lookup,
-            resolved_type_decl,
-            resolved_value_decl,
-            call_compare_prefix,
-            call_compare_total,
-            call_compare_expected_type,
-            call_compare_actual_instance,
-            call_compare_callee,
-            call_compare_error_token,
             canonical_type_roots_a,
             canonical_type_roots_b,
-            canonical_type_subtree_a,
-            canonical_type_subtree_b,
             declaration_generic_arity,
             declaration_field_count,
         ]),
         scan,
-        call_compare_scan,
         count_group,
         clear_workspace_group,
         scatter_group,
@@ -629,9 +613,12 @@ pub(in crate::type_checker) fn create(
         build_lookup_call_collection,
         resolve_type_call_collection,
         resolve_value_call_collection,
-        project_types_call_collection,
         project_types_after_clear,
         project_calls_group,
+        clear_normalized_member_lookup,
+        build_normalized_member_lookup,
+        resolve_normalized_members,
+        project_normalized_values,
         project_call_params_group,
         scatter_call_params_group,
         validate_call_arity_group,
@@ -639,22 +626,26 @@ pub(in crate::type_checker) fn create(
         validate_call_results_group,
         validate_call_results_validate,
         generic_call_results_resolve,
-        validate_call_type_args_group,
-        call_compare_dispatch_group,
         type_index,
         type_index_module_paths,
         type_index_call_collection,
         type_index_after_type_clear,
         type_index_type_instance_projection,
+        type_index_alias_targets,
         type_index_call_param_scatter,
         type_index_method_projection,
+        type_index_method_lookup,
+        type_index_return_materialization,
         type_index_call_validation,
+        type_index_trait_contracts,
         project_type_instances_group,
+        materialize_alias_targets_group,
+        collect_methods_group,
         project_methods_group,
+        project_struct_literals_group,
         _params: params,
         _type_params: type_params,
         _value_params: value_params,
         _canonical_type_params: canonical_type_params,
-        _call_compare_dispatch_params: call_compare_dispatch_params,
     })))
 }

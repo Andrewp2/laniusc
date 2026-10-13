@@ -1,4 +1,5 @@
-// Allocation-free helpers for [i32] views. The caller supplies the view length
+// Allocation-free generic view access and copying, plus i32 algorithms.
+// The caller supplies the view length
 // because the source language cannot read slice metadata yet. A length larger
 // than the actual view is invalid; native indexing traps if it reaches beyond
 // the view. Functions below specify whether a negative length is treated as
@@ -11,17 +12,17 @@ fn nonnegative_len_i32(len: i32) -> i32 {
     }
     return len;
 }
-pub fn first_i32(values:[i32]) -> i32 {
+pub fn first<T>(values:[T]) -> T {
     // Native indexing traps if values is empty.
     return values[0];
 }
-pub fn first_or_i32(values:[i32], len: i32, fallback: i32) -> i32 {
+pub fn first_or<T>(values:[T], len: i32, fallback: T) -> T {
     if (len <= 0) {
         return fallback;
     }
     return values[0];
 }
-pub fn get_or_i32(values:[i32], len: i32, index: i32, fallback: i32) -> i32 {
+pub fn get_or<T>(values:[T], len: i32, index: i32, fallback: T) -> T {
     if (index<0) {
         return fallback;
     } else {
@@ -33,7 +34,7 @@ pub fn get_or_i32(values:[i32], len: i32, index: i32, fallback: i32) -> i32 {
     }
 }
 // Returns false and leaves the view unchanged for an out-of-range index.
-pub fn set_i32(values:[i32], len: i32, index: i32, value: i32) -> bool {
+pub fn set<T>(values:[T], len: i32, index: i32, value: T) -> bool {
     if (index<0 || index >= len) {
         return false;
     }
@@ -41,17 +42,17 @@ pub fn set_i32(values:[i32], len: i32, index: i32, value: i32) -> bool {
     return true;
 }
 // Returns false and leaves the view unchanged if either index is invalid.
-pub fn swap_i32(values:[i32], len: i32, left: i32, right: i32) -> bool {
+pub fn swap<T>(values:[T], len: i32, left: i32, right: i32) -> bool {
     if (left<0 || right<0 || left >= len || right >= len) {
         return false;
     }
-    let previous: i32 = values[left];
+    let previous: T = values[left];
     values[left] = values[right];
     values[right] = previous;
     return true;
 }
 // Returns the number of elements written; nonpositive lengths write nothing.
-pub fn fill_i32(values:[i32], len: i32, value: i32) -> i32 {
+pub fn fill<T>(values:[T], len: i32, value: T) -> i32 {
     let index: i32 = 0;
     while (index<len) {
         values[index] = value;
@@ -60,7 +61,7 @@ pub fn fill_i32(values:[i32], len: i32, value: i32) -> i32 {
     return index;
 }
 // Returns the number of swaps performed.
-pub fn reverse_in_place_i32(values:[i32], len: i32) -> i32 {
+pub fn reverse_in_place<T>(values:[T], len: i32) -> i32 {
     if (len <= 1) {
         return 0;
     }
@@ -68,7 +69,7 @@ pub fn reverse_in_place_i32(values:[i32], len: i32) -> i32 {
     let right: i32 = len - 1;
     let swaps: i32 = 0;
     while (left<right) {
-        let previous: i32 = values[left];
+        let previous: T = values[left];
         values[left] = values[right];
         values[right] = previous;
         left += 1;
@@ -111,7 +112,7 @@ pub fn rotate_right_i32(values:[i32], len: i32, amount: i32) -> bool {
 // Copies [source_start, source_end) to destination_start within one view.
 // Overlap is supported. Bounds invalid relative to `len` return false without
 // writing; the caller must still supply the actual backing view length.
-pub fn copy_within_i32(values:[i32], len: i32, source_start: i32, source_end: i32, destination_start: i32) -> bool {
+pub fn copy_within<T>(values:[T], len: i32, source_start: i32, source_end: i32, destination_start: i32) -> bool {
     if (len<0 || source_start<0 || source_end<source_start || source_end>len || destination_start<0) {
         return false;
     }
@@ -135,10 +136,10 @@ pub fn copy_within_i32(values:[i32], len: i32, source_start: i32, source_end: i3
     return true;
 }
 // Copies the source prefix into a backed destination view. The copied ranges
-// must not overlap in memory; use copy_within_i32 for overlap in one view.
+// must not overlap in memory; use copy_within for overlap in one view.
 // Invalid lengths return false without writing. Caller-supplied lengths must
 // not exceed the actual backing view lengths.
-pub fn copy_nonoverlapping_prefix_i32(destination:[i32], destination_len: i32, source:[i32], source_len: i32) -> bool {
+pub fn copy_nonoverlapping_prefix<T>(destination:[T], destination_len: i32, source:[T], source_len: i32) -> bool {
     if (destination_len<0 || source_len<0) {
         return false;
     }
@@ -153,10 +154,10 @@ pub fn copy_nonoverlapping_prefix_i32(destination:[i32], destination_len: i32, s
     return true;
 }
 // Copies `count` elements between distinct backed view ranges. The source
-// and destination ranges must not overlap in memory; use copy_within_i32 for
+// and destination ranges must not overlap in memory; use copy_within for
 // overlap. Invalid logical lengths or ranges return false without writing.
 // Claimed lengths must fit the actual backing views or native indexing traps.
-pub fn copy_nonoverlapping_range_i32(destination:[i32], destination_len: i32, destination_start: i32, source:[i32], source_len: i32, source_start: i32, count: i32) -> bool {
+pub fn copy_nonoverlapping_range<T>(destination:[T], destination_len: i32, destination_start: i32, source:[T], source_len: i32, source_start: i32, count: i32) -> bool {
     if (destination_len<0 || source_len<0 || destination_start<0 || source_start<0 || count<0) {
         return false;
     }

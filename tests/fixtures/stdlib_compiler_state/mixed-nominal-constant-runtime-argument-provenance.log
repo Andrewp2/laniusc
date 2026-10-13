@@ -1,0 +1,65 @@
+
+running 1 test
+test nominal_constant_arguments_preserve_owned_values ... [gpu_compile_host_timer] pipeline_cache.create.path: 0.017ms
+[gpu_compile_host_timer] pipeline_cache.create.prune: 0.034ms
+[gpu_compile_host_timer] pipeline_cache.create.read: 183.902ms
+[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 234785500 bytes
+[gpu_compile_host_timer] pipeline_cache.create.decode: 41.963ms
+[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 234785460 bytes
+[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 140.670ms
+[gpu_compile_host_timer] pipeline_cache.create.total: 408.688ms
+[gpu_compile_host_timer] compiler.init.lexer: 5.288ms (total 5.288ms)
+[gpu_compile_host_timer] compiler.init.parse_tables: 1.116ms (total 6.403ms)
+[gpu_compile_host_timer] compiler.init.parser: 61.810ms (total 68.213ms)
+[laniusc][pipeline-timing] label=codegen/lir/functions/finalize total_ms=134.615 shader_module_ms=0.010 pipeline_layout_ms=133.648 compute_pipeline_ms=0.958
+[laniusc][pipeline-timing] label=radix/bucket_bases total_ms=132.478 shader_module_ms=0.005 pipeline_layout_ms=131.533 compute_pipeline_ms=0.940
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 152.132ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 234785460 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 42.355ms
+[gpu_compile_host_timer] pipeline_cache.persist.skipped.unchanged: 194.557ms
+[laniusc][pipeline-timing] label=type_checker/calls/03a1_emit_generic_claims total_ms=1002.497 shader_module_ms=0.288 pipeline_layout_ms=4.137 compute_pipeline_ms=998.072
+[laniusc][pipeline-timing] label=type_checker/calls/03e_materialize_return_types total_ms=22.999 shader_module_ms=0.367 pipeline_layout_ms=0.181 compute_pipeline_ms=22.451
+[laniusc][pipeline-timing] label=type_checker/calls/03k2_materialize_match_payloads total_ms=25.403 shader_module_ms=0.207 pipeline_layout_ms=0.057 compute_pipeline_ms=25.139
+[laniusc][pipeline-timing] label=type_checker/calls/03k_project_argument_contexts total_ms=45217.661 shader_module_ms=0.360 pipeline_layout_ms=0.130 compute_pipeline_ms=45217.171
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01b_array_index_refs total_ms=20.678 shader_module_ms=0.456 pipeline_layout_ms=0.094 compute_pipeline_ms=20.128
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01c_generic_native_words total_ms=4440.477 shader_module_ms=0.222 pipeline_layout_ms=0.066 compute_pipeline_ms=4440.190
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01d_imported_member_layout total_ms=36.113 shader_module_ms=0.033 pipeline_layout_ms=0.069 compute_pipeline_ms=36.010
+[laniusc][pipeline-timing] label=type_checker/type/instances/01e_collect_named_arg_refs total_ms=70.156 shader_module_ms=0.056 pipeline_layout_ms=0.130 compute_pipeline_ms=69.970
+[laniusc][pipeline-timing] label=type_checker/type/instances/02d_materialize_applications total_ms=3464.495 shader_module_ms=0.174 pipeline_layout_ms=0.032 compute_pipeline_ms=3464.289
+[laniusc][pipeline-timing] label=type_checker/type/instances/02e_project_imported_fields total_ms=473.079 shader_module_ms=0.271 pipeline_layout_ms=0.071 compute_pipeline_ms=472.737
+[laniusc][pipeline-timing] label=type_checker/type/instances/03_member_results total_ms=360.684 shader_module_ms=0.217 pipeline_layout_ms=0.066 compute_pipeline_ms=360.402
+[laniusc][pipeline-timing] label=type_checker/type/instances/04a3_nested_struct_contexts total_ms=339.208 shader_module_ms=0.198 pipeline_layout_ms=0.034 compute_pipeline_ms=338.976
+[gpu_compile_host_timer] compiler.init.parallel.type_checker: 55953.492ms
+[gpu_compile_host_timer] compiler.init.parallel_pipeline_families: 55954.739ms (total 56022.952ms)
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 152.792ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 240263488 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 41.596ms
+[gpu_compile_host_timer] pipeline_cache.persist.create_dir_all: 0.012ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.encode_header: 0.000ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.create_file: 0.045ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.write_header: 0.010ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.write_data: 122.094ms
+[gpu_compile_host_timer] pipeline_cache.persist.file_bytes: 240263528 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.flush: 0.000ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp.close: 0.004ms
+[gpu_compile_host_timer] pipeline_cache.persist.write_tmp: 122.243ms
+[gpu_compile_host_timer] pipeline_cache.persist.rename: 611.280ms
+[gpu_compile_host_timer] pipeline_cache.persist.total: 928.040ms
+[gpu_compile_host_timer] lex.source-pack.count_boundary: 5.844ms (total 5.844ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=true reason=empty wanted_tokens=150 wanted_tree=1 wanted_features=0xffffffff wanted_debug=false
+[gpu_compile_host_timer] compile.source-pack.record.parser_capacity_measured: 21.820ms (total 21.820ms)
+[gpu_compile_host_timer] parser.resident_cache: allocate=true reason=empty wanted_tokens=150 wanted_tree=787 wanted_features=0x00000053 wanted_debug=false
+GPU type-check detail: Gpu(compiler pass type_check.calls.generic_claims.emit reads call_arg_row_accepts_integer_context before it is initialized)
+
+thread 'nominal_constant_arguments_preserve_owned_values' (677128) panicked at tests/compiler_generic_types_execution.rs:141:29:
+nominal constant ordinary values: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_nominal_constant_ordinary_values_677127_0.lani", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("struct Buffer<T, const N: usize> { values: [T; N] }"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    nominal_constant_arguments_preserve_owned_values
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 231 filtered out; finished in 57.81s
+

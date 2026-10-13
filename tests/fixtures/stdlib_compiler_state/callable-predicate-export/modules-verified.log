@@ -1,0 +1,21 @@
+
+running 16 tests
+test semantic_interface_export_preserves_transitive_dependency_nominal_identity ... ok
+test semantic_interface_exports_arbitrary_depth_module_segments ... ok
+test semantic_interface_exports_callable_predicate_graphs_and_scopes ... ok
+test semantic_interface_exports_public_checked_graph_on_gpu ... ok
+test semantic_interface_exports_public_generic_traits ... ok
+test semantic_interface_preserves_all_thirty_two_trait_parameters ... ok
+test semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands ... ok
+test semantic_interface_preserves_trait_method_shapes_and_parent_scopes ... ok
+test semantic_interface_rejects_public_predicate_with_unexported_trait ... ok
+test semantic_interface_rejects_unsupported_method_predicates_instead_of_omitting_them ... ok
+test semantic_interface_variant_rows_do_not_alias_dense_hir_declarations ... ok
+test type_checker_enforces_stdlib_trait_where_obligations_from_source_pack ... ok
+test type_checker_rejects_leaf_name_trait_impl_for_different_qualified_bound ... ok
+test type_checker_rejects_unqualified_trait_impl_for_different_module_bound ... ok
+test type_checker_resolves_qualified_trait_bounds ... ok
+test type_checker_resolves_trait_bounds_beyond_the_legacy_path_depth ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 90 filtered out; finished in 2.74s
+

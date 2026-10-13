@@ -1,0 +1,74 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+
+struct Empty {}
+struct Phantom<A, B> {}
+struct Frame<T> { head: i32, value: T, tail: i32 }
+enum Mixed<A, B> { Payload(A, B), Absent }
+fn wrap<T>(value: T) -> Frame<T> { return Frame { head: -91, value: value, tail: 99 }; }
+fn visit<T>(value: T, seen: [i32]) -> T { seen[0] = seen[0] + 1; return value; }
+fn view(values: [i32]) -> [i32] { return values; }
+fn runtime_index(value: i32) -> i32 { if (value == -99) { return 0; } return value; }
+
+fn main() -> i32 {
+    let count: [i32; 1] = [0];
+    let seen: [i32] = view(count);
+    let seed: Empty = Empty {};
+    let frame: Frame<Empty> = wrap(seed);
+    let copied: Frame<Empty> = core::mem::identity(frame);
+    copied.value = visit(seed, seen);
+    if (frame.head != -91 || frame.tail != 99 || copied.head != -91 || copied.tail != 99 || count[0] != 1) { return 1; }
+    copied.tail = -33;
+    if (frame.tail != 99 || copied.tail != -33) { return 2; }
+
+    let nothing: [i32; 0] = [];
+    let array_frame: Frame<[i32; 0]> = wrap(nothing);
+    let array_copy: Frame<[i32; 0]> = core::mem::identity(array_frame);
+    array_copy.value = visit(nothing, seen);
+    if (array_copy.head != -91 || array_copy.tail != 99 || array_frame.tail != 99 || count[0] != 2) { return 3; }
+
+    let values: [Empty; 3] = [seed, seed, seed];
+    let values_copy: [Empty; 3] = core::mem::identity(values);
+    let index: i32 = runtime_index(2);
+    values_copy[index] = visit(seed, seen);
+    let recovered: Empty = values_copy[index];
+    let wrapped: Frame<Empty> = wrap(core::mem::identity(recovered));
+    if (wrapped.head != -91 || wrapped.tail != 99 || count[0] != 3) { return 4; }
+
+    let marker: Phantom<[str; 0], Empty> = Phantom {};
+    let marker_frame: Frame<Phantom<[str; 0], Empty>> = wrap(core::mem::identity(marker));
+    let marker_copy: Frame<Phantom<[str; 0], Empty>> = core::mem::identity(marker_frame);
+    marker_copy.value = visit(marker, seen);
+    if (marker_copy.head != -91 || marker_copy.tail != 99 || count[0] != 4) { return 5; }
+
+    let present: core::option::Option<Empty> = Some(seed);
+    let absent: core::option::Option<Empty> = None();
+    let present_copy: core::option::Option<Empty> = core::mem::identity(present);
+    let absent_copy: core::option::Option<Empty> = core::mem::identity(absent);
+    if (!core::option::is_some(present_copy) || !core::option::is_none(absent_copy)) { return 6; }
+    let extracted: Empty = core::option::unwrap_or(present_copy, seed);
+    let fallback: Empty = core::option::unwrap_or(absent_copy, seed);
+    let last: Frame<Empty> = wrap(visit(extracted, seen));
+    if (last.head != -91 || last.tail != 99 || count[0] != 5) { return 7; }
+
+    let ok: core::result::Result<Empty, i32> = Ok(seed);
+    let err: core::result::Result<Empty, i32> = Err(-7);
+    let ok_copy: core::result::Result<Empty, i32> = core::mem::identity(ok);
+    let err_copy: core::result::Result<Empty, i32> = core::mem::identity(err);
+    if (!core::result::is_ok(ok_copy) || !core::result::is_err(err_copy) ||
+        core::result::unwrap_err_or(ok_copy, 42) != 42 ||
+        core::result::unwrap_err_or(err_copy, 42) != -7) { return 8; }
+    let final: Empty = core::result::unwrap_or(ok_copy, seed);
+
+    let mixed: Mixed<Empty, str> = Payload(seed, "Ω");
+    let missing: Mixed<Empty, str> = Absent();
+    let mixed_copy: Mixed<Empty, str> = core::mem::identity(mixed);
+    let missing_copy: Mixed<Empty, str> = core::mem::identity(missing);
+    let text: str = match (mixed_copy) { Payload(empty, text) -> text, Absent -> "wrong" };
+    let backup: str = match (missing_copy) { Payload(empty, text) -> text, Absent -> "backup" };
+    if (std::io::println(text) != 3 || std::io::println(backup) != 7) { return 9; }
+    return 0;
+}

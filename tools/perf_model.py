@@ -221,6 +221,8 @@ def command_output(argv: list[str], cwd: Path) -> str:
 
 
 def validate_document(document: dict) -> None:
+    if not isinstance(document, dict):
+        raise ValueError("performance result must be a JSON object")
     legacy_keys = _keys_with_prefix(document, "legacy_")
     if legacy_keys:
         raise ValueError(f"canonical result contains obsolete metadata key {legacy_keys[0]!r}")

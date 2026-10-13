@@ -1,0 +1,13 @@
+module app::main;
+import core::five;
+import std::io;
+
+fn first<T>(value: core::five::ArrayField<T>) -> T {
+    return value.items[0];
+}
+
+fn main() -> i32 {
+    let value: core::five::ArrayField<str> = core::five::ArrayField { items: ["Ω", ""] };
+    if (std::io::println(first(value)) != 3 || std::io::println(value.items[1]) != 1) { return 1; }
+    return 0;
+}

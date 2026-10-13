@@ -1,0 +1,6 @@
+
+running 1 test
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_forwards_hypotheses_and_keeps_two_replay_occurrences_separate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 731 filtered out; finished in 69.63s
+

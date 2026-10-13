@@ -1,0 +1,59 @@
+{
+  "status": "24 selected checks pass: seven physical GPU batch tests, nine physical GPU catalog tests, eight host scheduling tests",
+  "verified_source_snapshot": "verified-sources.json",
+  "binary_sha256": "19810fab4031d28ba0def5f80d29ac3e6a223a9ea72b2a409a72df2b7edb97e2",
+  "binary_preserved_at": "target/program-batch-complete-baseline/stdlib_gpu_perf",
+  "tests": {
+    "first": [
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_selects_imported_callers_nested_length_implementation"
+    ],
+    "remaining": [
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_empty_deltas_get_fresh_receipts_and_reject_unused_bad_roots",
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_forwards_hypotheses_and_keeps_two_replay_occurrences_separate",
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_missing_and_wrong_inner_implementations_are_semantic_failures",
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_authentic_evidence_for_a_different_replay_goal",
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_retained_witness_before_replay",
+      "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_unused_replay_binding_despite_matching_predicate"
+    ],
+    "catalog": [
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_enforces_the_reachable_graph_depth_boundary",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_malformed_input_directories_and_recovers",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_shape_valid_reachable_cycles",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_unused_rows_and_broken_identity_relationships",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_rejects_valid_parameters_from_another_lexical_owner",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_admission_requires_valid_header_before_any_row_work",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_distinguishes_nested_lengths_and_deduplicates_retained_units",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_preserves_public_private_method_targets_and_rejects_cross_wiring",
+      "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_rejects_equal_keys_from_linked_unit_without_caller_import_edge"
+    ],
+    "host": [
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_diagnostic_prefers_the_receipts_named_failure_rows",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_output_reset_requires_one_fresh_receipt_for_an_empty_delta",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_plan_admits_only_new_suffix_rows_after_the_catalog_prefix",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_plan_normalizes_empty_spans_even_with_existing_rows",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_plan_rebuilds_all_assumptions_only_when_bucket_count_changes",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_plan_rejects_mismatched_context_call_and_obligation_ranges",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_plan_rejects_reset_gaps_duplicates_and_old_result_overwrites",
+      "compiler::gpu_compiler::program_evidence::dispatch::host_batch_tests::host_batch_plan_rejects_shrinking_shared_and_batch_suffixes"
+    ]
+  },
+  "sources_unchanged": true,
+  "shaders": "input-projection-spirv-validation.json",
+  "execution_target": "Physical GPU executes the compiler, complete catalog admission, batch selection, and explicit replay-context checks. These tests do not execute emitted native user programs.",
+  "changes": [
+    "One shared catalog/assumption comparison call site retains catalog priority and complete chain checks.",
+    "Complete output record IO validates its whole physical span once; concurrent receipt publication retains CAS ownership.",
+    "Input projections check logical row membership and actual physical bounds; initialization still validates every full descriptor and overlap."
+  ],
+  "pipeline_preparation": {
+    "previous_selection": "ordered-roots-pipeline-17.json: 90-second timeout",
+    "selection_after_shared_loop": "shared-selection-pipeline-17.json:20.649seconds including probe startup (prior to the subsequent input-reader reduction)",
+    "context_after_input_projection": "input-projection-pipeline-14.json:5.022seconds including probe startup",
+    "current_executable_batch_first_seconds": 24.25554989599914
+  },
+  "limits": [
+    "Native finalization and imported-body caller evidence are not wired.",
+    "Generic implementations and prerequisite solving, generic trait methods, method where clauses, and direct constant trait operands remain unsupported by this checkpoint.",
+    "No end-to-end generic correctness or whole-compiler performance claim."
+  ]
+}

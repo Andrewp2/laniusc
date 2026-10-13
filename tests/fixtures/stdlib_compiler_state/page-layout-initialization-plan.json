@@ -1,0 +1,9 @@
+{
+  "contract": "Every retained layout buffer is initialized for every compilation job, including modules without application types. Field readers bind only shared payload storage, not enum-layout group metadata.",
+  "evidence": "page-enum-layout-rejection-debug.log",
+  "before_images": {
+    "shaders/type_checker/type/instances/00_clear.slang": "6d4a74ac9644aa11b198fd7ff653f7617f9d3129879d40b32dd3f415c2d8e214",
+    "shaders/type_checker/dependencies/retained_value_layout.slang": "3d78baf9192e4dc69ea805ee16c43ddb6f3ab82d59bc8121289d2b506574f115",
+    "shaders/type_checker/dependencies/record_fields.slang": "680a8cde4016b030d8f352d94eb29978cbf43544b158d5e2ef34843eedcd66f9"
+  }
+}

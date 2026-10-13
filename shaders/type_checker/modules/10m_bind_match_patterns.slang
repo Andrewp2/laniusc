@@ -135,13 +135,14 @@ void bind_resolved_pattern(uint pattern, uint actual_count)
     if (!valid_token(owner_token) || owner_token != pattern_token)
         return;
 
-    uint dependency_value_base = path_i * 3u;
+    uint dependency_value_base = path_i * 4u;
     uint imported_kind = resolved_dependency_value_metadata[dependency_value_base];
-    if (imported_kind == IMPORTED_GENERIC_UNIT_VARIANT ||
+    if (imported_kind == HIR_ITEM_KIND_ENUM_VARIANT ||
+        imported_kind == IMPORTED_GENERIC_UNIT_VARIANT ||
         imported_kind == IMPORTED_PAYLOAD_VARIANT)
     {
-        // A pattern obtains missing type arguments from its scrutinee.
-        // Bare generic values remain unresolved in the value consumer.
+        // A pattern obtains type arguments from its scrutinee. Unit-value
+        // construction is owned separately by the shared value-type consumer.
         bind_decl(owner_token, owner_token);
         decl_type_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
         decl_type_ref_payload[owner_token] =

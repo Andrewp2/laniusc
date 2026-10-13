@@ -1,0 +1,157 @@
+{
+  "registered_generic_tests": 286,
+  "new_generic_tests": [
+    "qualified_enum_variants_retain_their_parent_declarations",
+    "qualified_enum_variants_reject_ambiguous_and_unrelated_names",
+    "qualified_enum_variants_bind_parent_applications",
+    "qualified_enum_variant_parent_forms_execute_independently",
+    "qualified_enum_variants_preserve_wide_and_symbolic_parent_headers",
+    "qualified_enum_variants_forward_symbolic_parameters",
+    "qualified_enum_variants_reject_conflicting_parent_applications",
+    "implicit_method_receivers_preserve_argument_constraints"
+  ],
+  "selected_generic_tests": [
+    "qualified_enum_variants_retain_their_parent_declarations",
+    "qualified_enum_variants_reject_ambiguous_and_unrelated_names",
+    "qualified_enum_variants_bind_parent_applications",
+    "qualified_enum_variant_parent_forms_execute_independently",
+    "qualified_enum_variants_preserve_wide_and_symbolic_parent_headers",
+    "qualified_enum_variants_forward_symbolic_parameters",
+    "qualified_enum_variants_reject_conflicting_parent_applications",
+    "generic_unit_values_preserve_complete_local_and_imported_types",
+    "imported_nongeneric_unit_values_have_complete_types_without_annotations",
+    "generic_unit_values_retain_thirty_two_context_bindings",
+    "generic_unit_values_reject_missing_and_incompatible_contexts",
+    "explicit_generic_arguments_preserve_unrelated_member_comparisons",
+    "imported_bare_nominal_annotations_preserve_composed_values",
+    "generic_unit_variant_values_receive_complete_types",
+    "generic_enum_constructors_infer_complete_payload_types",
+    "generic_enum_constructor_headers_bind_types_and_constants",
+    "generic_enum_constructors_reject_inconsistent_and_missing_bindings",
+    "generic_enum_constructors_infer_thirty_two_bindings_from_payloads",
+    "generic_record_fields_infer_complete_types",
+    "generic_record_fields_infer_constant_and_symbolic_parameters",
+    "generic_record_fields_infer_thirty_two_bindings",
+    "generic_record_field_constraints_reject_conflicts_and_missing_bindings",
+    "generic_assignment_destinations_supply_complete_result_contexts",
+    "generic_assignment_destinations_reject_conflicting_payloads",
+    "generic_assignment_contexts_preserve_slice_descriptors_and_aliases",
+    "bare_nominal_compositions_preserve_copies_and_aliases",
+    "nominal_declaration_identity_is_independent_of_source_positions",
+    "native_compilation_preserves_generic_and_plain_programs_in_one_workspace",
+    "local_generic_enums_substitute_nested_payload_types",
+    "local_generic_functions_preserve_nested_enum_values",
+    "imported_generic_functions_preserve_enum_values_and_nested_options",
+    "local_enum_constructors_receive_nested_expression_types",
+    "local_enum_constructor_contexts_preserve_nongeneric_nominal_identity",
+    "local_enum_constructor_contexts_reject_conflicting_payloads",
+    "generic_nested_result_arguments_execute",
+    "generic_nested_result_fields_execute",
+    "generic_nested_result_array_elements_execute",
+    "generic_nested_result_match_arms_execute",
+    "generic_nested_result_conflicts_and_missing_context_reject",
+    "enum_layouts_include_unconstructed_compound_variants",
+    "enum_constructor_expected_empty_payloads_execute",
+    "enum_constructor_expected_unsigned_payloads_execute",
+    "checked_window_program_executes_generic_values_and_portable_utilities",
+    "imported_enum_constructor_wrappers_preserve_symbolic_payloads",
+    "imported_enum_constructor_wrappers_reject_unrelated_parameters",
+    "zero_sized_generic_calls_retain_distinct_complete_type_identities",
+    "concrete_nominal_parameters_retain_complete_return_types",
+    "concrete_nominal_parameters_reject_incompatible_returns",
+    "concrete_nominal_parameters_reject_incompatible_arguments",
+    "concrete_nominal_parameters_preserve_all_nested_type_arguments",
+    "imported_generic_record_fields_execute_in_the_importing_module",
+    "imported_generic_record_fields_reject_wrong_types_and_names",
+    "imported_generic_record_fields_preserve_native_slice_bounds",
+    "imported_reference_fields_preserve_pointer_layout_and_aliases",
+    "explicit_callable_arguments_execute_independent_receiver_and_method_headers",
+    "explicit_dotted_arguments_execute_imported_method_headers",
+    "explicit_callable_arguments_execute_imported_own_method_headers",
+    "explicit_constant_arguments_execute_independent_method_domains",
+    "explicit_constant_arguments_execute_constant_only_forwarding",
+    "explicit_callable_arguments_execute_compound_and_symbolic_bindings",
+    "explicit_constant_arguments_reject_value_and_result_conflicts",
+    "explicit_callable_arguments_reject_value_and_result_conflicts",
+    "explicit_dotted_arguments_reject_conflicts_and_wrong_headers",
+    "implicit_method_receivers_preserve_argument_constraints"
+  ],
+  "selected_module_tests": [
+    "type_checker_rejects_duplicate_declarations_in_same_module_on_gpu",
+    "type_checker_resolves_qualified_function_calls",
+    "type_checker_resolves_qualified_generic_call_arguments_by_ordinal",
+    "type_checker_resolves_qualified_constants_independent_of_source_order",
+    "type_checker_accepts_same_module_private_qualified_values",
+    "type_checker_rejects_private_cross_module_qualified_paths",
+    "type_checker_rejects_ambiguous_imported_names_independent_of_source_and_import_order",
+    "type_checker_keeps_imported_type_and_value_namespaces_separate",
+    "type_checker_prefers_local_declarations_over_imported_names",
+    "type_checker_resolves_qualified_unit_enum_variants"
+  ],
+  "verification": {
+    "validation-order-rejected": {
+      "exit_status": 101,
+      "elapsed_seconds": 31.217,
+      "log": "variant-ownership-validation-order-rejected.log",
+      "selected_tests": 63,
+      "reason": "62 passed; one method rejection control emitted an ELF. Exact-baseline reproduction later confirmed this failure predates the qualified-variant changes."
+    },
+    "baseline-method-rejection": {
+      "exit_status": 101,
+      "log": "variant-ownership-baseline-probe.log",
+      "identities": "variant-ownership-baseline-probe-identities.json",
+      "finding": "The same invalid dotted method call emits an ELF with exact unit-value checkpoint compiler sources and all shader payloads. It predates qualified variant changes."
+    },
+    "method-parameter-producer": {
+      "finding": "Implicit self had no written type and was omitted by hir_callable_parameter, so ordinal-zero range publication never ran. Retaining source parameter rows restores scalar, compound, and generic argument checking without adding a separate validator.",
+      "log": "variant-ownership-method-parameter-fix.log",
+      "exit_status": 0,
+      "tests": 3
+    },
+    "generic-final": {
+      "exit_status": 0,
+      "elapsed_seconds": 32.821,
+      "log": "variant-ownership-generic-final.log",
+      "selected_tests": 64
+    },
+    "module-final": {
+      "exit_status": 0,
+      "elapsed_seconds": 3.169,
+      "log": "variant-ownership-module-final.log",
+      "tests": [
+        "type_checker_rejects_duplicate_declarations_in_same_module_on_gpu",
+        "type_checker_resolves_qualified_function_calls",
+        "type_checker_resolves_qualified_generic_call_arguments_by_ordinal",
+        "type_checker_resolves_qualified_constants_independent_of_source_order",
+        "type_checker_accepts_same_module_private_qualified_values",
+        "type_checker_rejects_private_cross_module_qualified_paths",
+        "type_checker_rejects_ambiguous_imported_names_independent_of_source_and_import_order",
+        "type_checker_keeps_imported_type_and_value_namespaces_separate",
+        "type_checker_prefers_local_declarations_over_imported_names",
+        "type_checker_resolves_qualified_unit_enum_variants"
+      ]
+    },
+    "enum-final": {
+      "exit_status": 0,
+      "elapsed_seconds": 6.023,
+      "log": "variant-ownership-enum-final.log",
+      "tests": "all 33 stdlib enum tests"
+    },
+    "cpu-final": {
+      "exit_status": 0,
+      "elapsed_seconds": 0.114,
+      "log": "variant-ownership-cpu-final.log",
+      "tests": [
+        "type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes",
+        "codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts"
+      ]
+    }
+  },
+  "performance_directory": "benchmark_artifacts/performance/stdlib-gpu-20261010-qualified-variants",
+  "checkpoint_complete": true,
+  "remaining_dependencies": [
+    "alias-qualified variants",
+    "cross-page qualifier shadowing/ambiguity",
+    "broader generics completion contracts in docs/compiler-generic-types.md"
+  ]
+}

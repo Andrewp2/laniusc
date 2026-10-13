@@ -1,0 +1,6 @@
+error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_foundation/repro_generic_literal_argument_inference.lani:8:27
+  |
+8 |     let later = choose(1, unsigned, false);
+  |                           ^^^^^^^^ value type is u32 but this context expects i32
+     = note: expected i32, found u32; change the expression or the annotation so they agree

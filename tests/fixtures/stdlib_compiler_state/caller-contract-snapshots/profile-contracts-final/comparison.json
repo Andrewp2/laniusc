@@ -1,0 +1,205 @@
+{
+  "baseline": {
+    "version": "baseline",
+    "command": [
+      "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/caller-contract-snapshot-baseline/stdlib_gpu_perf",
+      "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+      "stdlib",
+      "-",
+      "1",
+      "1"
+    ],
+    "environment": {
+      "LANIUS_PERF_REBUILD_ENTRY": "1",
+      "LANIUS_GPU_COMPILE_HOST_TIMING": "1",
+      "LANIUS_GPU_PIPELINE_PROGRESS": "1"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 1.5673264110009768,
+    "binary_sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
+    "samples_ms": [
+      53.22
+    ],
+    "median_ms": 53.22,
+    "output_verified": true,
+    "sources_unchanged": true,
+    "shader_link_restored": true,
+    "readback_counts": {
+      "lex.source-pack.resident.count": 2,
+      "parser.partial_parse_tree_capacity.status": 1,
+      "type_check.call_inference": 8,
+      "parser.recorded-ll1-hir.status": 4,
+      "type_check.status": 4,
+      "semantic-interface artifact metadata": 2,
+      "semantic-interface artifact": 2,
+      "lowering status readback": 4,
+      "x86 object metadata readback": 4,
+      "x86 object payload readback": 4,
+      "generic call counts": 4,
+      "generic call claims": 4,
+      "generic call rows": 32,
+      "result context masks": 4,
+      "codegen.x86.link.symbol_partition.status": 2,
+      "codegen.x86.link.symbol_partition.values": 2,
+      "codegen.x86.link.layout_chunk": 2,
+      "codegen.x86.link.page": 2,
+      "lexer.source-pack.fused.metadata": 2
+    },
+    "total_readbacks": 89
+  },
+  "unbatched": {
+    "version": "current",
+    "command": [
+      "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+      "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+      "stdlib",
+      "-",
+      "1",
+      "1"
+    ],
+    "environment": {
+      "LANIUS_PERF_REBUILD_ENTRY": "1",
+      "LANIUS_GPU_COMPILE_HOST_TIMING": "1",
+      "LANIUS_GPU_PIPELINE_PROGRESS": "1"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 1.567438251000567,
+    "binary_sha256": "6856fec5184d67f760df0d2a6b662e7f3b8bf626c7fd9a35ba6ab731950c2ea4",
+    "samples_ms": [
+      59.189
+    ],
+    "median_ms": 59.189,
+    "output_verified": true,
+    "sources_unchanged": true,
+    "shader_link_restored": true,
+    "readback_counts": {
+      "lex.source-pack.resident.count": 2,
+      "parser.partial_parse_tree_capacity.status": 1,
+      "type_check.call_inference": 8,
+      "parser.recorded-ll1-hir.status": 4,
+      "type_check.status": 4,
+      "semantic-interface artifact metadata": 2,
+      "semantic-interface artifact": 2,
+      "lowering status readback": 4,
+      "x86 object metadata readback": 4,
+      "x86 object payload readback": 4,
+      "generic call counts": 4,
+      "generic call claims": 4,
+      "generic call rows": 64,
+      "result context masks and binder links": 4,
+      "checked contract facts": 6,
+      "generic argument type": 112,
+      "checked nominal arguments": 32,
+      "codegen.x86.link.symbol_partition.status": 2,
+      "codegen.x86.link.symbol_partition.values": 2,
+      "codegen.x86.link.layout_chunk": 2,
+      "codegen.x86.link.page": 2,
+      "lexer.source-pack.fused.metadata": 2
+    },
+    "total_readbacks": 271
+  },
+  "prefetch": {
+    "version": "current",
+    "command": [
+      "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+      "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+      "stdlib",
+      "-",
+      "1",
+      "1"
+    ],
+    "environment": {
+      "LANIUS_PERF_REBUILD_ENTRY": "1",
+      "LANIUS_GPU_COMPILE_HOST_TIMING": "1",
+      "LANIUS_GPU_PIPELINE_PROGRESS": "1"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 1.5673769429995446,
+    "binary_sha256": "47bf6a56f9adb721f9f891ba702d7b5d646b31c404f80342c2edb4514431928f",
+    "samples_ms": [
+      65.346
+    ],
+    "median_ms": 65.346,
+    "output_verified": true,
+    "sources_unchanged": true,
+    "shader_link_restored": true,
+    "readback_counts": {
+      "lex.source-pack.resident.count": 2,
+      "parser.partial_parse_tree_capacity.status": 1,
+      "type_check.call_inference": 8,
+      "parser.recorded-ll1-hir.status": 4,
+      "type_check.status": 4,
+      "semantic-interface artifact metadata": 2,
+      "semantic-interface artifact": 2,
+      "lowering status readback": 4,
+      "x86 object metadata readback": 4,
+      "x86 object payload readback": 4,
+      "generic call counts": 4,
+      "generic call claims": 4,
+      "generic call rows": 34,
+      "result context masks and binder links": 4,
+      "checked contract facts": 6,
+      "checked type frontier": 4,
+      "checked nominal frontier": 4,
+      "codegen.x86.link.symbol_partition.status": 2,
+      "codegen.x86.link.symbol_partition.values": 2,
+      "codegen.x86.link.layout_chunk": 2,
+      "codegen.x86.link.page": 2,
+      "lexer.source-pack.fused.metadata": 2
+    },
+    "total_readbacks": 105
+  },
+  "final": {
+    "version": "current",
+    "command": [
+      "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+      "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+      "stdlib",
+      "-",
+      "1",
+      "1"
+    ],
+    "environment": {
+      "LANIUS_PERF_REBUILD_ENTRY": "1",
+      "LANIUS_GPU_COMPILE_HOST_TIMING": "1",
+      "LANIUS_GPU_PIPELINE_PROGRESS": "1"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 1.668368268001359,
+    "binary_sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
+    "samples_ms": [
+      68.343
+    ],
+    "median_ms": 68.343,
+    "output_verified": true,
+    "sources_unchanged": true,
+    "shader_link_restored": true,
+    "readback_counts": {
+      "lex.source-pack.resident.count": 2,
+      "parser.partial_parse_tree_capacity.status": 1,
+      "type_check.call_inference": 8,
+      "parser.recorded-ll1-hir.status": 4,
+      "type_check.status": 4,
+      "semantic-interface artifact metadata": 2,
+      "semantic-interface artifact": 2,
+      "lowering status readback": 4,
+      "x86 object metadata readback": 4,
+      "x86 object payload readback": 4,
+      "generic call counts": 4,
+      "generic call claims": 4,
+      "generic call rows": 34,
+      "result context masks and binder links": 4,
+      "checked contract facts": 2,
+      "checked type frontier": 4,
+      "checked nominal frontier": 4,
+      "codegen.x86.link.symbol_partition.status": 2,
+      "codegen.x86.link.symbol_partition.values": 2,
+      "codegen.x86.link.layout_chunk": 2,
+      "codegen.x86.link.page": 2,
+      "lexer.source-pack.fused.metadata": 2
+    },
+    "total_readbacks": 101,
+    "source_snapshot": "final-sources.json"
+  },
+  "warning": "Instrumented timing changes scheduling. Compare map counts here; use the uninstrumented paired runs for latency."
+}

@@ -1,0 +1,354 @@
+import type_checker.constant_parameter_slots;
+// Validate declaration initializers, assignments, and returns from dense
+// compact HIR. Scalar compatibility is checked here. Aggregate structure stays
+// in the type-instance passes, while this boundary rejects a definite
+// aggregate/non-aggregate category mismatch.
+
+import hir_records;
+import gpu_index;
+import status;
+
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<uint> compact_expr_scalar_type;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_return_type_token;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+RWStructuredBuffer<uint> status;
+
+static const uint INVALID = 0xffffffffu;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_STMT_LET = 1u;
+static const uint HIR_STMT_RETURN = 2u;
+static const uint HIR_STMT_CONST = 4u;
+static const uint HIR_STMT_ASSIGN = 5u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint TY_UNKNOWN = 0u;
+static const uint TY_VOID = 1u;
+static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
+static const uint TY_CHAR = 6u;
+static const uint TY_STRING = 7u;
+static const uint TY_POINTER = 8u;
+static const uint TY_ARRAY_BASE = 128u;
+static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint ERR_INVALID_ASSIGNMENT_TARGET = 21u;
+static const uint SCALAR_TYPE_SHIFT = 28u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
+
+uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
+bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
+bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+uint scalar_type(uint node)
+{
+    return valid_hir(node) ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : TY_UNKNOWN;
+}
+bool known_scalar(uint ty) { return ty != TY_UNKNOWN && ty <= TY_POINTER; }
+bool legacy_aggregate_type(uint ty)
+{
+    return ty >= TY_ARRAY_BASE && ty < TY_GENERIC_BASE;
+}
+
+uint declaration_token(uint token)
+{
+    if (!valid_token(token)) return INVALID;
+    uint decl = visible_decl[token];
+    return valid_token(decl) ? decl : token;
+}
+
+bool aggregate_decl_ref(uint token)
+{
+    uint decl = declaration_token(token);
+    return valid_token(decl) && decl_type_ref_tag[decl] == TYPE_REF_INSTANCE;
+}
+
+bool aggregate_type_node(uint node)
+{
+    if (!valid_hir(node)) return false;
+    uint token = compact_hir_core[node].token_start;
+    return valid_token(token) && type_expr_ref_tag[token] == TYPE_REF_INSTANCE;
+}
+
+uint scalar_decl_type(uint token)
+{
+    if (!valid_token(token) || aggregate_decl_ref(token)) return TY_UNKNOWN;
+    uint ty = visible_type[token];
+    if (known_scalar(ty)) return ty;
+    uint decl = visible_decl[token];
+    if (valid_token(decl))
+    {
+        ty = visible_type[decl];
+        if (known_scalar(ty)) return ty;
+    }
+    ty = call_return_type[token];
+    return known_scalar(ty) ? ty : TY_UNKNOWN;
+}
+
+uint expression_token(uint node)
+{
+    return valid_hir(node) ? compact_hir_core[node].token_start : INVALID;
+}
+
+bool resolved_dependency_call(uint node)
+{
+    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_CALL_EXPR)
+        return false;
+    uint callee = compact_hir_payload[node].a;
+    if (!valid_hir(callee))
+        return false;
+    HirCore core = compact_hir_core[callee];
+    HirPayload payload = compact_hir_payload[callee];
+    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    if (!valid_token(token)) token = core.token_start;
+    return valid_token(token) && call_dependency_library_id[token] != INVALID;
+}
+
+bool expression_type_ref(uint node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+    if (!valid_hir(node)) return false;
+    tag = semantic_expr_ref_tag_by_hir[node];
+    payload = semantic_expr_ref_payload_by_hir[node];
+    return tag != TYPE_REF_INVALID;
+}
+
+bool null_pointer_constant(uint node)
+{
+    return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
+        compact_hir_payload[node].b == 0u;
+}
+
+bool assignable(uint dst, uint src, uint source_node)
+{
+    if (dst == src) return true;
+    if (dst == TY_POINTER)
+        return src == TY_INT && null_pointer_constant(source_node);
+    if (dst == TY_INT) return src == TY_UINT || src == TY_CHAR;
+    if (dst == TY_UINT) return src == TY_INT || src == TY_CHAR;
+    if (dst == TY_CHAR) return src == TY_INT || src == TY_UINT;
+    if (dst == TY_FLOAT) return src == TY_INT || src == TY_UINT || src == TY_CHAR;
+    return false;
+}
+
+void validate_pair(uint expected, uint actual, uint actual_node, uint error_token)
+{
+    if (!known_scalar(expected) || !known_scalar(actual) ||
+        assignable(expected, actual, actual_node)) return;
+    record_min_token_error(
+        status,
+        valid_token(error_token) ? error_token : 0u,
+        ERR_ASSIGN_MISMATCH,
+        expected * 256u + actual);
+}
+
+void validate_decl(HirPayload stmt)
+{
+    // The declaration's compact type node is the authoritative annotation.
+    // Symbol visibility may legitimately map a declaration token through a
+    // different namespace row, so do not reinterpret aggregate annotations as
+    // scalar void while aggregate validation owns the full type relation.
+    uint expected_ref_tag = TYPE_REF_INVALID;
+    uint expected_ref_payload = INVALID;
+    bool expected_ref_known = expression_type_ref(
+        stmt.d, expected_ref_tag, expected_ref_payload);
+    bool expected_instance =
+        expected_ref_tag == TYPE_REF_INSTANCE ||
+        (expected_ref_tag == TYPE_REF_SCALAR &&
+         legacy_aggregate_type(expected_ref_payload));
+    if (!expected_ref_known)
+        expected_instance = aggregate_type_node(stmt.d);
+    uint actual_scalar = scalar_type(stmt.c);
+    uint actual_ref_tag = TYPE_REF_INVALID;
+    uint actual_ref_payload = INVALID;
+    expression_type_ref(stmt.c, actual_ref_tag, actual_ref_payload);
+    uint actual_token = expression_token(stmt.c);
+    uint actual_legacy_type = valid_token(actual_token)
+                                  ? visible_type[actual_token]
+                                  : TY_UNKNOWN;
+    bool actual_instance = actual_ref_tag == TYPE_REF_INSTANCE ||
+                           (!known_scalar(actual_scalar) && (
+                            legacy_aggregate_type(actual_scalar) ||
+                            legacy_aggregate_type(actual_legacy_type) ||
+                            (actual_ref_tag == TYPE_REF_SCALAR &&
+                             legacy_aggregate_type(actual_ref_payload))));
+    uint expected_scalar = scalar_decl_type(stmt.b);
+    if ((!expected_instance && known_scalar(expected_scalar) && actual_instance) ||
+        (expected_ref_known && expected_instance && !actual_instance && known_scalar(actual_scalar)))
+    {
+        record_min_token_error(
+            status,
+            valid_token(expression_token(stmt.c)) ? expression_token(stmt.c) : 0u,
+            ERR_ASSIGN_MISMATCH,
+            0u);
+        return;
+    }
+    if (expected_instance) return;
+    validate_pair(expected_scalar, actual_scalar, stmt.c, expression_token(stmt.c));
+}
+
+void validate_assignment(HirPayload stmt)
+{
+    uint target = stmt.b;
+    for (uint depth = 0u; depth < 64u && valid_hir(target); depth += 1u)
+    {
+        HirCore core = compact_hir_core[target];
+        HirPayload payload = compact_hir_payload[target];
+        if (core.kind == HIR_EXPR && payload.a == HIR_EXPR_FORWARD)
+        {
+            target = payload.b;
+            continue;
+        }
+        if (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||
+            (core.kind == HIR_EXPR && payload.a == HIR_EXPR_NAME))
+        {
+            uint token = valid_token(payload.d) ? payload.d : core.token_start;
+            uint decl = declaration_token(token);
+            if (valid_token(decl) && type_const_param_slot_by_token[decl] < 32u)
+            {
+                record_min_token_error(status, token, ERR_INVALID_ASSIGNMENT_TARGET, decl);
+                return;
+            }
+        }
+        break;
+    }
+    uint expected_ref_tag = TYPE_REF_INVALID;
+    uint expected_ref_payload = INVALID;
+    uint actual_ref_tag; uint actual_ref_payload;
+    expression_type_ref(stmt.c, actual_ref_tag, actual_ref_payload);
+    if (expression_type_ref(stmt.b, expected_ref_tag,
+                            expected_ref_payload) &&
+        (expected_ref_tag == TYPE_REF_INSTANCE ||
+         (expected_ref_tag == TYPE_REF_SCALAR &&
+          legacy_aggregate_type(expected_ref_payload))) &&
+        actual_ref_tag != TYPE_REF_INSTANCE && known_scalar(scalar_type(stmt.c)))
+    {
+        record_min_token_error(
+            status,
+            valid_token(expression_token(stmt.c)) ? expression_token(stmt.c) : 0u,
+            ERR_ASSIGN_MISMATCH,
+            0u);
+        return;
+    }
+    uint target_token = expression_token(stmt.b);
+    // A member expression starts at its receiver's token. That receiver can
+    // be an aggregate while the selected field is scalar. Its accepted field
+    // reference is authoritative; the receiver's declaration cannot exempt
+    // this store from scalar compatibility checking.
+    if (expected_ref_tag == TYPE_REF_SCALAR && known_scalar(expected_ref_payload))
+    {
+        validate_pair(expected_ref_payload, scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
+        return;
+    }
+    if (aggregate_decl_ref(target_token)) return;
+    validate_pair(scalar_type(stmt.b), scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
+}
+
+void validate_return(uint node, HirCore core, HirPayload stmt)
+{
+    if (!valid_token(core.token_start)) return;
+    uint fn = compact_hir_nearest_fn[node];
+    if (!valid_hir(fn)) return;
+    uint fn_token = compact_hir_payload[fn].b;
+    if (!valid_token(fn_token)) return;
+    uint expected_ref_tag = fn_return_ref_tag[fn_token];
+    uint expected = call_return_type[fn_token];
+    uint return_tag;
+    uint return_payload;
+    if (expression_type_ref(compact_fn_return_type[fn], return_tag, return_payload))
+    {
+        expected_ref_tag = return_tag;
+        if (return_tag == TYPE_REF_SCALAR && known_scalar(return_payload))
+            expected = return_payload;
+    }
+    if (valid_hir(stmt.b))
+    {
+        uint actual_scalar = scalar_type(stmt.b);
+        uint actual_ref_tag = TYPE_REF_INVALID;
+        uint actual_ref_payload = INVALID;
+        bool actual_ref_known = expression_type_ref(
+            stmt.b, actual_ref_tag, actual_ref_payload) || known_scalar(actual_scalar);
+        if (actual_ref_tag == TYPE_REF_EXTERNAL_CANONICAL &&
+            resolved_dependency_call(stmt.b))
+            return;
+        bool expected_ref_known = expected_ref_tag != TYPE_REF_INVALID ||
+                                  known_scalar(expected);
+        bool actual_is_instance = actual_ref_tag == TYPE_REF_INSTANCE;
+        if (expected_ref_known && actual_ref_known &&
+            ((expected_ref_tag == TYPE_REF_INSTANCE) != actual_is_instance))
+        {
+            record_min_token_error(
+                status,
+                valid_token(expression_token(stmt.b)) ? expression_token(stmt.b) : core.token_start,
+                ERR_ASSIGN_MISMATCH,
+                0u);
+            return;
+        }
+    }
+    if (!valid_hir(stmt.b))
+    {
+        if (expected != TY_VOID &&
+            (expected_ref_tag != TYPE_REF_INVALID || known_scalar(expected)) &&
+            valid_token(call_return_type_token[fn_token]))
+        {
+            record_min_token_error(
+                status,
+                core.token_start,
+                ERR_ASSIGN_MISMATCH,
+                expected * 256u + TY_VOID);
+        }
+        return;
+    }
+    if (expected_ref_tag == TYPE_REF_INSTANCE) return;
+    if (!known_scalar(expected)) return;
+    validate_pair(expected, scalar_type(stmt.b), stmt.b, expression_token(stmt.b));
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (!valid_hir(node)) return;
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    if (core.kind != HIR_STMT && core.kind != HIR_LET_STMT &&
+        core.kind != HIR_RETURN_STMT && core.kind != HIR_ASSIGN_EXPR)
+        return;
+
+    if (payload.a == HIR_STMT_LET ||
+        (core.kind == HIR_STMT && payload.a == HIR_STMT_CONST))
+        validate_decl(payload);
+    else if (payload.a == HIR_STMT_ASSIGN)
+        validate_assignment(payload);
+    else if (payload.a == HIR_STMT_RETURN)
+        validate_return(node, core, payload);
+}

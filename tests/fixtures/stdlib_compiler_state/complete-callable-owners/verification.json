@@ -1,0 +1,49 @@
+{
+  "status": "25 selected correctness checks pass; complete executable callable ownership and normalized body identity verified",
+  "suites": {
+    "library": 20,
+    "native": 5
+  },
+  "source_files": 3981,
+  "source_snapshot": "final-sources.json",
+  "shader_files": 2224,
+  "shader_snapshot": "current-shader-hashes.json",
+  "frozen_sources_unchanged": true,
+  "performance": {
+    "performance-contracts": {
+      "pooled_median_ms": {
+        "baseline": 73.50450000000001,
+        "current": 77.3095
+      },
+      "change_percent": 5.176553816433005,
+      "method": "Existing stdlib_gpu_perf; exact previous checkpoint binary/shaders vs frozen current binary/shaders; ABBA; 3 warmups and 10 measured entry rebuilds per run; output verification after every run.",
+      "limits": [
+        "Two focused workloads; no cross-compiler or canonical 1MB claim.",
+        "Cold driver preparation excluded from warm measurements.",
+        "Observed changes do not establish causality without further investigation."
+      ]
+    },
+    "performance-ordinary": {
+      "pooled_median_ms": {
+        "baseline": 262.403,
+        "current": 265.5105
+      },
+      "change_percent": 1.1842471313208813,
+      "method": "Existing stdlib_gpu_perf; exact previous checkpoint binary/shaders vs frozen current binary/shaders; ABBA; 3 warmups and 10 measured entry rebuilds per run; output verification after every run.",
+      "limits": [
+        "Two focused workloads; no cross-compiler or canonical 1MB claim.",
+        "Cold driver preparation excluded from warm measurements.",
+        "Observed changes do not establish causality without further investigation."
+      ]
+    }
+  },
+  "initial_attempts": [
+    "First library build failed due to relative CARGO_TARGET_DIR generated include paths; rerunning with absolute path succeeded.",
+    "First library run passed19/20. The new test incorrectly equated main body offset with startup-wrapper entry offset. Callable identity passed. Replaced the incorrect equality with entry presence; reran the focused suite."
+  ],
+  "execution_target": "Physical GPU executes the compiler. Emitted user programs execute as x86_64 Linux ELF. User-program GPU execution not established.",
+  "limits": [
+    "Program-wide catalog coherence, trait implementation selection, retained proof validation and imported replay authorization remain unfinished.",
+    "This checkpoint adds callable ownership; it does not satisfy trait obligations."
+  ]
+}

@@ -1,0 +1,1 @@
+Library run reached its90-second deadline during the first test. Native no-run build briefly overlapped and was explicitly terminated; this run is not accepted as clean verification. Focused diagnostics follow.

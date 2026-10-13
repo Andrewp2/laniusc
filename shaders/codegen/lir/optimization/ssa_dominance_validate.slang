@@ -4,6 +4,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -29,11 +30,9 @@ StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<OptIrNodeCore> opt_ir_core;
 StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<OptIrNodeOperands> opt_ir_ssa_operands;
-StructuredBuffer<OptIrNodeControl> opt_ir_control;
 StructuredBuffer<OptIrNodeResults> opt_ir_results;
 StructuredBuffer<uint> opt_ir_position_by_node;
 StructuredBuffer<uint> opt_ir_source_hir;
-StructuredBuffer<uint> opt_ir_block_total;
 StructuredBuffer<OptIrBlock> opt_ir_blocks;
 StructuredBuffer<OptIrEdge> opt_ir_edges;
 StructuredBuffer<uint> opt_ir_dominator_preorder;
@@ -64,13 +63,36 @@ RWStructuredBuffer<LoweringStatus> lowering_status;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-void report_structure_failure(uint row)
+// The winning diagnostic records one coherent use/definition witness. The
+// independently minimized opt row may identify an earlier failing use; it is
+// not the owner of the witness fields below.
+void report_structure_failure(uint row, uint use_node, uint use_block,
+    uint value, uint site)
 {
-    uint ignored;
+    uint prior;
     InterlockedCompareExchange(lowering_status[0u].diagnostic_reason,
         LOWERING_DIAGNOSTIC_NONE,
         LOWERING_DIAGNOSTIC_OPT_SSA_DOMINANCE,
-        ignored);
+        prior);
+    if (prior == LOWERING_DIAGNOSTIC_NONE)
+    {
+        uint node_total = min(opt_ir_total[0u], gParams.semantic_capacity);
+        uint value_total = min(opt_ir_ssa_value_total[0u],
+            gParams.value_capacity);
+        // OptIR preserves semantic row identity at this boundary. For an
+        // incoming edge without a terminator, use_node is explicitly INVALID.
+        lowering_status[0u].first_unsupported_semantic_row = use_node;
+        lowering_status[0u].first_unsupported_hir = use_node < node_total
+            ? opt_ir_source_hir[use_node] : INVALID;
+        // For this internal diagnostic these two slots carry the use block
+        // and value identity, not a resource-capacity failure.
+        lowering_status[0u].required_capacity = use_block;
+        lowering_status[0u].available_capacity = value;
+        lowering_status[0u].diagnostic_detail_kind =
+            LOWERING_DIAGNOSTIC_DETAIL_VALUE_SOURCE | (site << 8u);
+        lowering_status[0u].diagnostic_detail = value < value_total
+            ? opt_ir_ssa_value_definitions[value].source : 0u;
+    }
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
@@ -256,7 +278,9 @@ bool has_cfg_edge(uint from, uint to, uint block_total)
 bool active_call_argument(uint row, SemanticLirCallArg argument,
     uint node_total)
 {
-    if (argument.call_instruction >= node_total) return false;
+    if (!opt_ir_node_is_executable(argument.call_instruction, node_total) ||
+        !semantic_lir_is_call(opt_ir_op(opt_ir_core[argument.call_instruction])))
+        return false;
     uint hir = opt_ir_source_hir[argument.call_instruction];
     if (hir >= gParams.hir_capacity) return false;
     uint start = semantic_lir_call_arg_start_by_hir[hir];
@@ -286,14 +310,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         OptIrNodeCore core = opt_ir_core[row];
         OptIrNodeOperands operands = opt_ir_ssa_operands[row];
-        for (uint ordinal = 0u; ordinal < 3u; ++ordinal)
+        bool executable = opt_ir_node_is_executable(row, node_total);
+        if (!executable &&
+            (opt_ir_results[row].value_out != INVALID ||
+             operands.result != INVALID || operands.a != INVALID ||
+             operands.b != INVALID || operands.c != INVALID))
+            report_structure_failure(row, row, opt_ir_control[row].block_id,
+                opt_ir_results[row].value_out, 6u);
+        for (uint ordinal = 0u; executable && ordinal < 3u; ++ordinal)
         {
             if (!opt_ir_operand_is_value(core, ordinal)) continue;
             uint value = opt_ir_operand(operands, ordinal);
             if (!value_available_at_node(value, row, node_total,
                     parameter_total, argument_total, value_total,
                     block_total))
-                report_structure_failure(row);
+                report_structure_failure(row, row,
+                    opt_ir_control[row].block_id, value, ordinal);
         }
     }
 
@@ -304,7 +336,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             !value_available_at_node(opt_ir_ssa_call_argument_values[row],
                 argument.call_instruction, node_total, parameter_total,
                 argument_total, value_total, block_total))
-            report_structure_failure(argument.call_instruction);
+            report_structure_failure(argument.call_instruction,
+                argument.call_instruction,
+                opt_ir_control[argument.call_instruction].block_id,
+                opt_ir_ssa_call_argument_values[row], 3u);
     }
 
     uint aggregate_total = min(semantic_lir_aggregate_element_total[0u],
@@ -313,13 +348,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         SemanticLirAggregateElement element =
             semantic_lir_aggregate_elements[row];
-        bool active = element.aggregate_instruction < node_total &&
+        bool active = opt_ir_node_is_executable(
+            element.aggregate_instruction, node_total) &&
+            opt_ir_op(opt_ir_core[element.aggregate_instruction]) ==
+                SEMANTIC_LIR_OP_AGGREGATE_NEW &&
             element.value_instruction < node_total;
         if (active && !value_available_at_node(
                 opt_ir_ssa_aggregate_element_values[row],
                 element.aggregate_instruction, node_total, parameter_total,
                 argument_total, value_total, block_total))
-            report_structure_failure(element.aggregate_instruction);
+            report_structure_failure(element.aggregate_instruction,
+                element.aggregate_instruction,
+                opt_ir_control[element.aggregate_instruction].block_id,
+                opt_ir_ssa_aggregate_element_values[row], 4u);
     }
 
     if (row < incoming_total)
@@ -340,6 +381,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             block_total) && value_available_at_block_end(incoming.value,
             incoming.predecessor, node_total, parameter_total,
             argument_total, value_total, block_total);
-        if (!valid) report_structure_failure(row);
+        if (!valid)
+        {
+            uint use_node = incoming.predecessor < block_total
+                ? opt_ir_blocks[incoming.predecessor].terminator : INVALID;
+            report_structure_failure(row, use_node, incoming.predecessor,
+                incoming.value, 5u);
+        }
     }
 }

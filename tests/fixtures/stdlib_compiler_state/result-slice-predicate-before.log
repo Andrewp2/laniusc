@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+error[LNC0006]: type mismatch
+ --> <source pack file 0>:9:30
+  |
+9 |     if (!core::result::is_ok(value)) { return 1; }
+  |                              ^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

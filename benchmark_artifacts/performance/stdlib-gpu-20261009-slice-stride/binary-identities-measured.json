@@ -1,0 +1,7 @@
+{
+  "target/stdlib-perf/build/release/laniusc": "c8c57ca566998536db9d9f497d97f7a23df5c1a63d70d3c2bcd36f28a2b83916",
+  "target/stdlib-perf/build/release/examples/stdlib_gpu_perf": "789d2df11440be6a7183d066ba6f379b8afe514b7c23f9574dc227a4cfcc0a61",
+  "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248": "2d3adad61f1968149dd3c00da12878d900ae52a28e97325323dea800897077ae",
+  "target/stdlib-perf/build/release/deps/stdlib_generic_interface-e48fc18f18b73ae1": "d7a6b156733006f332dd924f31163c3752f58efe8fbb1294ab8a28bc92034a75",
+  "target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66": "f54787904d7d51a1295a23388924c2d9adec6fc3196242e865e7f4b7e7dd0f0f"
+}

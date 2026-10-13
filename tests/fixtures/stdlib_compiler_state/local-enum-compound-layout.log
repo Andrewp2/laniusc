@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=280 code=UnresolvedIdent detail=6
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/local-enum-compound-layout.lani: error[LNC0005]: unresolved identifier
+ --> tests/fixtures/stdlib_compiler_state/local-enum-compound-layout.lani:16:19
+   |
+16 |  original.value = Borrow(view(data));
+   |                   ^^^^^^ not found in this scope
+     = note: declare the value before using it or import its defining module

@@ -1,3 +1,4 @@
+import type_checker.constant_storage_plan;
 // Initialize one parent pointer per canonical dependency type. Type aliases
 // point at their checked signature type; all other nodes are roots. Later
 // parallel pointer-jumping rounds flatten arbitrary alias chains.
@@ -16,7 +17,8 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> canonical_type_roots;
-RWStructuredBuffer<uint> canonical_type_subtree_start;
+RWStructuredBuffer<uint2> dependency_constant_ref_by_type_out;
+RWStructuredBuffer<uint4> checked_constant_atoms;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
@@ -95,11 +97,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     canonical_type_roots[type_i] = root;
 
-    uint first_edge = dependency_type_word(base + 3u);
-    uint edge_count = dependency_type_word(base + 4u);
-    uint last = edge_count == 0u
-        ? type_i
-        : dependency_type_edge_word(first_edge + edge_count - 1u);
-    canonical_type_subtree_start[type_i] =
-        last < dependency_type_count() ? last : type_i;
+    // This map is page-local. Published atom rows instead belong to an immutable
+    // per-page span retained across every replay of the dependency slot.
+    uint map_capacity; uint map_stride;
+    dependency_constant_ref_by_type_out.GetDimensions(map_capacity, map_stride);
+    if (type_i >= map_capacity) return;
+    dependency_constant_ref_by_type_out[type_i] = uint2(0u, INVALID);
+    uint3 value;
+    if (!dependency_literal_constant_value(type_i, value)) return;
+    uint page_base = dependency_constant_type_span_base();
+    uint total = dependency_constant_type_rows();
+    if (page_base > total || type_i >= total - page_base ||
+        gConstantStoragePlan.imported_base > gConstantStoragePlan.dynamic_base ||
+        total > gConstantStoragePlan.dynamic_base - gConstantStoragePlan.imported_base ||
+        gConstantStoragePlan.dynamic_base > gConstantStoragePlan.dynamic_limit ||
+        gConstantStoragePlan.dynamic_limit > gConstantStoragePlan.total_rows ||
+        gConstantStoragePlan.total_rows - gConstantStoragePlan.dynamic_limit != 96u) return;
+    uint atom = gConstantStoragePlan.imported_base + page_base + type_i;
+    uint atom_capacity; uint atom_stride;
+    checked_constant_atoms.GetDimensions(atom_capacity, atom_stride);
+    // The final 96 rows belong exclusively to selected-body replay.
+    if (gConstantStoragePlan.total_rows > atom_capacity || atom >= gConstantStoragePlan.dynamic_base) return;
+    checked_constant_atoms[atom] = uint4(value, 0u);
+    dependency_constant_ref_by_type_out[type_i] = uint2(1u, atom);
+
 }

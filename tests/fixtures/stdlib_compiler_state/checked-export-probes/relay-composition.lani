@@ -1,0 +1,10 @@
+import core::aliases;
+type Local<T, const N: usize> = core::aliases::Id<core::aliases::Fixed<T, N> >;
+fn relay<T, const N: usize>(value: Local<T, N>) -> core::aliases::Fixed<T, N> {
+    let saved: core::aliases::Id<Local<T, N> > = core::aliases::keep(value);
+    return saved;
+}
+fn main() -> i32 {
+    let data: core::aliases::Constant<2> = relay<i32, 2>([19, 23]);
+    return data[0] + data[1];
+}

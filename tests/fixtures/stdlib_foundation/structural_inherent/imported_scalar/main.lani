@@ -1,0 +1,9 @@
+import core::scalar;
+
+fn main() -> i32 {
+    let positive: i32 = 7;
+    let negative: i32 = -4;
+    if (positive.weighted(3) != 73) { return 1; }
+    if (negative.weighted(9) != -31) { return 2; }
+    return positive.weighted(5);
+}

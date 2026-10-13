@@ -1,0 +1,7 @@
+
+running 1 test
+test gpu::typed_constant_tests::physical_gpu_typed_constant_identity_and_claim_provenance_claim_merge ... [laniusc][pipeline][tests/typed_constant_identity_claim_merge] shader_module.start
+[laniusc][pipeline][tests/typed_constant_identity_claim_merge] shader_module.done
+[laniusc][pipeline][tests/typed_constant_identity_claim_merge] pipeline_layout.start
+[laniusc][pipeline][tests/typed_constant_identity_claim_merge] pipeline_layout.done
+[laniusc][pipeline][tests/typed_constant_identity_claim_merge] compute_pipeline.start

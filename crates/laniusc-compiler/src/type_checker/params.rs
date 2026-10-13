@@ -1,3 +1,4 @@
+use crate::primitive_types::*;
 use encase::ShaderType;
 
 /// Top-level uniform shared by most resident type-check shaders.
@@ -15,6 +16,12 @@ pub(in crate::type_checker) struct TypeCheckParams {
     pub(in crate::type_checker) parser_feature_flags: u32,
     /// Whether dependency-value metadata is produced for this job.
     pub(in crate::type_checker) dependency_interfaces_present: u32,
+    /// Retain callable definitions even when no generic or predicate rows exist.
+    pub(in crate::type_checker) retain_callable_owners: u32,
+    /// 0: strict; 1: pending original; 2: private authorized replay unit.
+    pub(in crate::type_checker) trait_obligation_mode: u32,
+    /// Exact callable HIR in the immutable replay template; INVALID in strict mode.
+    pub(in crate::type_checker) authorized_replay_callable: u32,
 }
 
 /// Uniform for the enclosing-`if` depth prefix-scan passes.
@@ -167,6 +174,11 @@ pub(in crate::type_checker) struct SemanticInterfaceArtifactParams {
     pub(in crate::type_checker) artifact_word_capacity: u32,
     pub(in crate::type_checker) unit_id: u32,
     pub(in crate::type_checker) version: u32,
+    pub(in crate::type_checker) predicate_capacity: u32,
+    pub(in crate::type_checker) predicate_argument_capacity: u32,
+    pub(in crate::type_checker) implementation_capacity: u32,
+    pub(in crate::type_checker) implementation_argument_capacity: u32,
+    pub(in crate::type_checker) implementation_method_binding_capacity: u32,
 }
 
 /// Capacities for dependency semantic-interface module indexing.
@@ -192,6 +204,31 @@ pub(in crate::type_checker) struct DependencyInterfaceVisibilityParams {
     pub(in crate::type_checker) path_capacity: u32,
     pub(in crate::type_checker) namespace: u32,
     pub(in crate::type_checker) hir_capacity: u32,
+}
+
+/// Immutable workspace allocation partitions. Current-job token/HIR bounds
+/// never select these addresses; smaller reused jobs retain the same plan.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ShaderType)]
+pub(in crate::type_checker) struct ConstantStoragePlan {
+    pub(in crate::type_checker) imported_base: u32,
+    pub(in crate::type_checker) dynamic_base: u32,
+    pub(in crate::type_checker) dynamic_limit: u32,
+    pub(in crate::type_checker) total_rows: u32,
+}
+impl ConstantStoragePlan {
+    pub(in crate::type_checker) fn new(
+        hir_capacity: u32, token_capacity: u32, dependency_rows: u32, enabled: bool,
+    ) -> Option<Self> {
+        if !enabled {
+            return Some(Self { imported_base: 0, dynamic_base: 0, dynamic_limit: 0, total_rows: 96 });
+        }
+        let imported_base = hir_capacity.max(1).checked_mul(2)?;
+        let dynamic_base = imported_base.checked_add(dependency_rows)?;
+        let dynamic_limit = dynamic_base.checked_add(token_capacity.max(64).checked_mul(2)?)?;
+        let total_rows = dynamic_limit.checked_add(96)?;
+        Some(Self { imported_base, dynamic_base, dynamic_limit, total_rows })
+    }
 }
 
 /// Capacity packet for parallel canonical dependency-type normalization.
@@ -348,6 +385,21 @@ pub(in crate::type_checker) fn predicate_capacity_for_features(
     }
 }
 
+/// Implementation export has no rows for ordinary generic applications.
+/// The lexer marks every impl header (including inherent-only/no-bound units),
+/// trait, where, and bound-colon syntax as predicates. The export scan itself
+/// enumerates active HIR owners, not compact predicate rows.
+pub(in crate::type_checker) fn implementation_capacity_for_features(
+    hir_node_capacity: u32,
+    parser_feature_flags: u32,
+) -> u32 {
+    if parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES == 0 {
+        1
+    } else {
+        hir_node_capacity.max(1)
+    }
+}
+
 pub(in crate::type_checker) fn type_alias_passes_required(parser_feature_flags: u32) -> bool {
     parser_feature_flags & crate::lexer::features::PARSER_FEATURE_TYPE_ALIASES != 0
 }
@@ -367,9 +419,10 @@ pub(in crate::type_checker) fn generic_param_record_passes_required(
         PARSER_FEATURE_PREDICATES,
         PARSER_FEATURE_STRUCTS,
         PARSER_FEATURE_TYPE_ARGS,
+        PARSER_FEATURE_TYPE_ALIASES,
     };
     parser_feature_flags
-        & (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES | PARSER_FEATURE_STRUCTS)
+        & (PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_PREDICATES | PARSER_FEATURE_STRUCTS | PARSER_FEATURE_TYPE_ALIASES)
         != 0
 }
 
@@ -425,6 +478,7 @@ pub(in crate::type_checker) fn aggregate_passes_required(parser_feature_flags: u
         PARSER_FEATURE_ARRAYS,
         PARSER_FEATURE_ENUMS,
         PARSER_FEATURE_MEMBERS,
+        PARSER_FEATURE_REFERENCES,
         PARSER_FEATURE_STRUCTS,
         PARSER_FEATURE_TYPE_ARGS,
     };
@@ -433,7 +487,8 @@ pub(in crate::type_checker) fn aggregate_passes_required(parser_feature_flags: u
             | PARSER_FEATURE_ENUMS
             | PARSER_FEATURE_MEMBERS
             | PARSER_FEATURE_STRUCTS
-            | PARSER_FEATURE_TYPE_ARGS)
+            | PARSER_FEATURE_TYPE_ARGS
+            | PARSER_FEATURE_REFERENCES)
         != 0
 }
 
@@ -516,24 +571,24 @@ pub(in crate::type_checker) const LANGUAGE_DECL_TAGS: &[u32] = &[
     LANGUAGE_DECL_TAG_MAIN,
     LANGUAGE_DECL_TAG_ASSERT,
     LANGUAGE_DECL_TAG_PRINT,
-    2, // bool
-    3, // i8
-    3, // i16
-    3, // i32
-    3, // i64
-    3, // isize
-    4, // u8
-    4, // u16
-    4, // u32
-    4, // u64
-    4, // usize
-    5, // f32
-    5, // f64
-    6, // char
-    7, // str
+    SCALAR_BOOL, // bool
+    SCALAR_I8, // i8
+    SCALAR_I16, // i16
+    SCALAR_I32, // i32
+    SCALAR_I64, // i64
+    SCALAR_ISIZE, // isize
+    SCALAR_U8, // u8
+    SCALAR_U16, // u16
+    SCALAR_U32, // u32
+    SCALAR_U64, // u64
+    SCALAR_USIZE, // usize
+    SCALAR_F32, // f32
+    SCALAR_F64, // f64
+    SCALAR_CHAR, // char
+    SCALAR_STR, // str
     LANGUAGE_DECL_TAG_PRINT,
     LANGUAGE_DECL_TAG_I32_ARRAY_DATA_PTR,
-    8, // ptr
+    SCALAR_PTR, // ptr
     LANGUAGE_DECL_TAG_I32_SLICE_FROM_RAW_PARTS,
     LANGUAGE_DECL_TAG_I32_SLICE_DATA_PTR,
     LANGUAGE_DECL_TAG_STRING_DATA_PTR,
@@ -620,6 +675,7 @@ mod tests {
         PARSER_FEATURE_MATCHES,
         PARSER_FEATURE_MEMBERS,
         PARSER_FEATURE_PREDICATES,
+        PARSER_FEATURE_REFERENCES,
         PARSER_FEATURE_STRUCTS,
         PARSER_FEATURE_TYPE_ALIASES,
         PARSER_FEATURE_TYPE_ARGS,
@@ -726,9 +782,36 @@ mod tests {
             PARSER_FEATURE_MEMBERS,
             PARSER_FEATURE_STRUCTS,
             PARSER_FEATURE_TYPE_ARGS,
+            PARSER_FEATURE_REFERENCES,
         ] {
             assert!(aggregate_passes_required(feature));
         }
         assert!(aggregate_passes_required(u32::MAX));
+    }
+}
+
+#[cfg(test)]
+mod constant_storage_plan_tests {
+    use super::ConstantStoragePlan;
+
+    #[test]
+    fn reused_workspace_partitions_keep_imported_atoms_disjoint() {
+        // A smaller job uses lexical rows below 2*3000, but the workspace's
+        // imported partition stays at 2*4096 for every page and dispatch.
+        let plan = ConstantStoragePlan::new(4096, 8192, 3000, true).unwrap();
+        assert_eq!(plan.imported_base, 8192);
+        assert_eq!(plan.dynamic_base, 11192);
+        assert!(2 * 3000 <= plan.imported_base);
+        assert_eq!(plan.dynamic_limit + 96, plan.total_rows);
+        assert_eq!(plan.dynamic_limit - plan.dynamic_base, 2 * 8192);
+    }
+
+    #[test]
+    fn storage_plan_rejects_address_overflow_and_keeps_empty_tail() {
+        assert!(ConstantStoragePlan::new(u32::MAX, 1, 0, true).is_none());
+        assert!(ConstantStoragePlan::new(1, 1, u32::MAX, true).is_none());
+        assert!(ConstantStoragePlan::new(1, u32::MAX, 0, true).is_none());
+        assert_eq!(ConstantStoragePlan::new(0, 0, 0, false).unwrap(),
+            ConstantStoragePlan { imported_base: 0, dynamic_base: 0, dynamic_limit: 0, total_rows: 96 });
     }
 }

@@ -22,7 +22,8 @@ bool valid_node(uint node) { return node != INVALID && node < active_node_count(
 bool is_path_segment(uint prod)
 {
     return prod == PROD_PATH_IDENT || prod == PROD_PATH_IDENT_ARGS ||
-           prod == PROD_TYPE_PATH_IDENT || prod == PROD_BOUND_TYPE_PATH_IDENT;
+           prod == PROD_TYPE_PATH_IDENT || prod == PROD_BOUND_TYPE_PATH_IDENT ||
+           prod == PROD_ARRAY_LENGTH_PATH_IDENT;
 }
 
 [shader("compute")]

@@ -1,0 +1,30 @@
+
+module app::main;
+import lib::inner;
+import lib::outer;
+fn sum(value: lib::outer::Outer<[i32; 2]>) -> i32 {
+    return match (value) {
+        lib::outer::Outer::Value(packet) -> match (packet) {
+            lib::inner::Packet::Small(values) -> values[0] + values[1],
+            _ -> 0
+        },
+        _ -> 0
+    };
+}
+fn main() -> i32 {
+    let original = lib::outer::Outer<[i32; 2]>::Value(
+        lib::inner::Packet<[i32; 2]>::Small([19, 23]));
+    let saved = original;
+    original = lib::outer::Outer<[i32; 2]>::Missing();
+    let wide = lib::outer::Outer<[i32; 2]>::Value(
+        lib::inner::Packet<[i32; 2]>::Wide(["alpha", "omega"]));
+    let words = match (wide) {
+        lib::outer::Outer::Value(packet) -> match (packet) {
+            lib::inner::Packet::Wide(text) -> text,
+            _ -> ["", ""]
+        },
+        _ -> ["", ""]
+    };
+    if (words[0] != "alpha" || words[1] != "omega") { return 13; }
+    return sum(saved);
+}

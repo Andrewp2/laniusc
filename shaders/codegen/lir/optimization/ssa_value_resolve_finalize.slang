@@ -2,6 +2,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -44,12 +45,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint value = opt_ir_ssa_value_link_payload(link);
     uint value_total = min(opt_ir_ssa_value_total[0u],
         gParams.value_capacity);
-    bool produces = semantic_lir_produces_value(op);
+    bool executable = opt_ir_node_is_executable(row, total);
+    bool produces = executable && semantic_lir_produces_value(op);
     bool valid = produces
         ? kind == OPT_IR_SSA_VALUE_LINK_VALUE && value < value_total
         : kind == OPT_IR_SSA_VALUE_LINK_INVALID;
 
-    if (valid && op == SEMANTIC_LIR_OP_VALUE_GET)
+    if (valid && !executable)
+        valid = opt_ir_results[row].value_out == 0xffffffffu;
+    else if (valid && op == SEMANTIC_LIR_OP_VALUE_GET)
     {
         OptIrNodeResults result = opt_ir_results[row];
         result.value_out = value;

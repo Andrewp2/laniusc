@@ -1,0 +1,98 @@
+{
+  "checkpoint": "Stage A direct generic trait implementation methods",
+  "date": "2026-10-11",
+  "build_record": "build.json",
+  "target": "GPU compiler producing x86_64 Linux ELF; strict interface checks also use the physical GPU",
+  "runs": [
+    {
+      "label": "trait-method-positive-compositions-2",
+      "kind": "native_execution",
+      "record": "runs/trait-method-positive-compositions-2.json",
+      "log": "runs/trait-method-positive-compositions-2.log",
+      "passed_tests": 4,
+      "binary_sha256": "9f9239764470d66f777249ef8d91ca2f8dbb14fce32f424ae9f9122a7fe80985",
+      "sources_manifest": "manifests/sources-b296dc419f6bab3798a601b2a0a84267eb76ee0b6c1071a803f3bf76e543330e.json",
+      "shaders_manifest": "manifests/shaders-975ad731dc585c0559bdf5776bb888e4536b9c7c2d65de6dcc9037517e7722c2.json"
+    },
+    {
+      "label": "trait-method-required-contract-rejections-2",
+      "kind": "native_rejection",
+      "record": "runs/trait-method-required-contract-rejections-2.json",
+      "log": "runs/trait-method-required-contract-rejections-2.log",
+      "passed_tests": 4,
+      "binary_sha256": "9f9239764470d66f777249ef8d91ca2f8dbb14fce32f424ae9f9122a7fe80985",
+      "sources_manifest": "manifests/sources-b296dc419f6bab3798a601b2a0a84267eb76ee0b6c1071a803f3bf76e543330e.json",
+      "shaders_manifest": "manifests/shaders-975ad731dc585c0559bdf5776bb888e4536b9c7c2d65de6dcc9037517e7722c2.json"
+    },
+    {
+      "label": "trait-method-strict-interface-contracts-cache-alias-1",
+      "kind": "strict_interface",
+      "record": "runs/trait-method-strict-interface-contracts-cache-alias-1.json",
+      "log": "runs/trait-method-strict-interface-contracts-cache-alias-1.log",
+      "passed_tests": 4,
+      "binary_sha256": "c49c400779c8beb6958084e5afe358c23857804cdbe1e13dff0cd0e3ebdf6412",
+      "sources_manifest": "manifests/sources-b296dc419f6bab3798a601b2a0a84267eb76ee0b6c1071a803f3bf76e543330e.json",
+      "shaders_manifest": "manifests/shaders-975ad731dc585c0559bdf5776bb888e4536b9c7c2d65de6dcc9037517e7722c2.json"
+    },
+    {
+      "label": "trait-method-interface-header-2",
+      "kind": "host_contract",
+      "record": "runs/trait-method-interface-header-2.json",
+      "log": "runs/trait-method-interface-header-2.log",
+      "passed_tests": 1,
+      "binary_sha256": "7d9e220d5355a8ce62440d7f43c7184d596279296e3d7e32fd938e96a836dbdd",
+      "sources_manifest": "manifests/sources-b296dc419f6bab3798a601b2a0a84267eb76ee0b6c1071a803f3bf76e543330e.json",
+      "shaders_manifest": "manifests/shaders-975ad731dc585c0559bdf5776bb888e4536b9c7c2d65de6dcc9037517e7722c2.json"
+    },
+    {
+      "label": "trait-method-strict-interface-contracts-2",
+      "kind": "strict_initialization_timeout",
+      "record": "runs/trait-method-strict-interface-contracts-2.json",
+      "log": "runs/trait-method-strict-interface-contracts-2.log",
+      "passed_tests": 0,
+      "binary_sha256": "c49c400779c8beb6958084e5afe358c23857804cdbe1e13dff0cd0e3ebdf6412",
+      "sources_manifest": "manifests/sources-b296dc419f6bab3798a601b2a0a84267eb76ee0b6c1071a803f3bf76e543330e.json",
+      "shaders_manifest": "manifests/shaders-975ad731dc585c0559bdf5776bb888e4536b9c7c2d65de6dcc9037517e7722c2.json"
+    }
+  ],
+  "distinct_selected_passed_tests": 13,
+  "native_execution_tests": 4,
+  "native_rejection_tests": 4,
+  "strict_interface_tests": 4,
+  "host_contract_tests": 1,
+  "cache_provenance": [
+    {
+      "label": "trait-runtime-provenance-strict-1",
+      "record": "cache-provenance/trait-runtime-provenance-strict-1.json",
+      "excerpt": "cache-provenance/trait-runtime-provenance-strict-1.trace-excerpt",
+      "original_trace_path": "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/trait-runtime-provenance-strict-1.trace",
+      "original_trace_sha256": "dba6b5d841fe919cb84253574a7664d07e92de6a420aac4557886abf3a3eb742",
+      "excerpt_rule": "verbatim openat rows containing strict-cache-identity-probe/, wgpu, or NVIDIA GLCache .toc/.bin files",
+      "excerpt_sha256": "00937c146ddf6efad0d710ba3a0aa44b2c8f07d39907c56f1b8fc80558ea36dd"
+    },
+    {
+      "label": "trait-runtime-provenance-native-1",
+      "record": "cache-provenance/trait-runtime-provenance-native-1.json",
+      "excerpt": "cache-provenance/trait-runtime-provenance-native-1.trace-excerpt",
+      "original_trace_path": "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/trait-runtime-provenance-native-1.trace",
+      "original_trace_sha256": "29c5e8f3dc0658cef46a334f4fe3e06bd839070d498c2ed9a247c39435a14640",
+      "excerpt_rule": "verbatim openat rows containing strict-cache-identity-probe/, wgpu, or NVIDIA GLCache .toc/.bin files",
+      "excerpt_sha256": "7641f3f8834ba8573847ceeb8c4a565cbee10570738e4ef25266a8fb488bb39b"
+    },
+    {
+      "label": "trait-runtime-provenance-strict-alias-1",
+      "record": "cache-provenance/trait-runtime-provenance-strict-alias-1.json",
+      "excerpt": "cache-provenance/trait-runtime-provenance-strict-alias-1.trace-excerpt",
+      "original_trace_path": "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/trait-runtime-provenance-strict-alias-1.trace",
+      "original_trace_sha256": "3396101a5c6cd28e396d21d1b515a3ef722e02c6034e58299af490da94bdd2d4",
+      "excerpt_rule": "verbatim openat rows containing strict-cache-identity-probe/, wgpu, or NVIDIA GLCache .toc/.bin files",
+      "excerpt_sha256": "ebc060bec05557eae0fd86463e92e32d7143d896ae8ed0848b7b22da29a30a1f"
+    }
+  ],
+  "limits": [
+    "Original strict test basename still exceeded its 85-second initialization watchdog. Strict successes used a hardlink of the identical module binary with the native test basename.",
+    "Single-case cache provenance runs repeat existing tests and are not added to the distinct test count.",
+    "No user-program GPU execution, abstract T:Trait member dispatch, complete trait-method own headers/where clauses, full stdlib acceptance, or refreshed performance acceptance is claimed.",
+    "All selected run records share the same source and shader manifest; subsequent compiler work is outside this checkpoint."
+  ]
+}

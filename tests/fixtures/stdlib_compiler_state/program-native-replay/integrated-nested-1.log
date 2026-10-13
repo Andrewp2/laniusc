@@ -1,0 +1,7 @@
+
+running 2 tests
+test caller_selected_bounds_forward_through_nested_bodies_and_existing_bodies ... ok
+test reused_native_bodies_still_reject_missing_bounds_at_the_actual_call ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 355 filtered out; finished in 2.56s
+

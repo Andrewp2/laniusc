@@ -22,6 +22,10 @@ pub const PARSER_FEATURE_IMPORTS: u32 = 0x0000_0080;
 pub const PARSER_FEATURE_TYPE_ALIASES: u32 = 0x0000_0100;
 /// Source contains a string expression rather than only import or extern ABI strings.
 pub const PARSER_FEATURE_STRING_EXPRS: u32 = 0x0000_0200;
+/// Source may contain reference type or borrow syntax rather than binary `&`.
+pub const PARSER_FEATURE_REFERENCES: u32 = 0x0000_0400;
+/// Final lexical tokens contain decimal floating literals.
+pub const PARSER_FEATURE_FLOAT_LITERALS: u32 = 0x0000_0800;
 
 /// Parser families whose absence can be proven directly from final lexical tokens.
 pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS
@@ -32,7 +36,9 @@ pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS
     | PARSER_FEATURE_MEMBERS
     | PARSER_FEATURE_IMPORTS
     | PARSER_FEATURE_TYPE_ALIASES
-    | PARSER_FEATURE_STRING_EXPRS;
+    | PARSER_FEATURE_STRING_EXPRS
+    | PARSER_FEATURE_REFERENCES
+    | PARSER_FEATURE_FLOAT_LITERALS;
 
 /// Safe fallback when a caller has not run GPU feature classification.
 ///

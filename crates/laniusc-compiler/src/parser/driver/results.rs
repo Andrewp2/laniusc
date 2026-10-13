@@ -23,13 +23,33 @@ pub struct Ll1AcceptResult {
 impl Ll1AcceptResult {
     /// Decodes the six-word parser status buffer used by GPU parser passes.
     pub(crate) fn from_status_words(words: &[u32]) -> Self {
-        Self {
+        let mut result = Self {
             accepted: words[0] != 0,
             error_pos: words[1],
             error_code: words[2],
             detail: words[3],
             steps: words[4],
             emit_len: words[5],
+        };
+        if result.accepted && words.len() >= 11 {
+            for (reason, &encoded_token) in words[8..11].iter().enumerate() {
+                if encoded_token != 0 && (result.accepted || !encoded_token < result.error_pos) {
+                    result.accepted = false;
+                    result.error_pos = !encoded_token;
+                    result.error_code = 16 + reason as u32;
+                    result.detail = reason as u32;
+                }
+            }
+        }
+        result
+    }
+
+    pub fn integer_literal_rejection(&self) -> Option<&'static str> {
+        match self.error_code {
+            16 => Some("integer literal magnitude exceeds 18446744073709551615"),
+            17 => Some("array length exceeds the supported storage extent"),
+            18 => Some("invalid integer literal token or source extent"),
+            _ => None,
         }
     }
 
@@ -39,6 +59,7 @@ impl Ll1AcceptResult {
             return "parse accepted".to_string();
         }
 
+        if let Some(message) = self.integer_literal_rejection() { return message.to_owned(); }
         match self.error_code {
             3 => format!(
                 "parse error: this input is too large for the current parser buffers \
@@ -83,9 +104,9 @@ impl ParserFailure {
             !ll1.accepted,
             "accepted LL(1) status should not be reported as a parser failure"
         );
-        let ll1_rejection = semantic_token_kinds
-            .as_deref()
-            .and_then(|kinds| parse_tables.diagnose_ll1_rejection(kinds));
+        let ll1_rejection = if ll1.integer_literal_rejection().is_some() { None } else {
+            semantic_token_kinds.as_deref().and_then(|kinds| parse_tables.diagnose_ll1_rejection(kinds))
+        };
         Self {
             kind: ParserFailureKind::Ll1Rejected,
             ll1,
@@ -242,7 +263,7 @@ pub struct ParseResult {
     pub hir_type_form: Vec<u32>,
     pub hir_type_value_node: Vec<u32>,
     pub hir_type_len_token: Vec<u32>,
-    pub hir_type_len_value: Vec<u32>,
+    pub hir_type_len_operand: Vec<u32>,
     pub hir_type_file_id: Vec<u32>,
     pub hir_type_path_leaf_node: Vec<u32>,
     pub hir_type_arg_start: Vec<u32>,
@@ -337,7 +358,7 @@ pub struct ResidentParseResult {
     pub hir_type_form: Vec<u32>,
     pub hir_type_value_node: Vec<u32>,
     pub hir_type_len_token: Vec<u32>,
-    pub hir_type_len_value: Vec<u32>,
+    pub hir_type_len_operand: Vec<u32>,
     pub hir_type_file_id: Vec<u32>,
     pub hir_type_path_leaf_node: Vec<u32>,
     pub hir_type_arg_start: Vec<u32>,
@@ -422,6 +443,9 @@ pub struct ResidentParseResult {
     pub hir_param_range_count: Vec<u32>,
     pub hir_type_arg_range_start: Vec<u32>,
     pub hir_type_arg_range_count: Vec<u32>,
+    pub hir_path_type_arg_range_start: Vec<u32>,
+    pub hir_path_type_arg_range_count: Vec<u32>,
+    pub hir_compact_type_args: Vec<crate::parser::buffers::HirTypeArg>,
     pub hir_generic_param_owner: Vec<u32>,
     pub hir_generic_param_name_token: Vec<u32>,
     pub hir_generic_param_kind: Vec<u32>,
@@ -531,13 +555,13 @@ impl PendingResidentLl1HirStatus {
         crate::gpu::passes_core::finish_readback_map_blocking(device, self.map)?;
         let mapped = self.status_readback.slice(..).get_mapped_range();
         let words =
-            crate::gpu::readback::read_u32_words::<8>(&mapped, "parser.recorded-ll1-hir.status")?;
+            crate::gpu::readback::read_u32_words::<11>(&mapped, "parser.recorded-ll1-hir.status")?;
         drop(mapped);
         self.status_readback.unmap();
 
         validate_raw_tree_depth_status(words[7])?;
 
-        Ok((Ll1AcceptResult::from_status_words(&words[..6]), words[6]))
+        Ok((Ll1AcceptResult::from_status_words(&words), words[6]))
     }
 }
 

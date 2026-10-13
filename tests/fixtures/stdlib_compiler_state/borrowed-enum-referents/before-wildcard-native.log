@@ -1,0 +1,22 @@
+
+running 8 tests
+test borrowed_enum_concrete_methods_preserve_boolean_payloads ... ok
+test borrowed_enum_generic_methods_preserve_array_copies_and_slice_aliases ... ok
+test borrowed_enum_reference_payload_preserves_alias_and_following_boolean ... 
+thread 'borrowed_enum_reference_payload_preserves_alias_and_following_boolean' (154163) panicked at tests/compiler_generic_types_execution.rs:161:29:
+borrowed enum reference payload width, imported=false: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "operation is not implemented by the x86 backend", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_borrowed_enum_reference_payload_width__imported_false_153892_11.lani", line: 14, column: 39, length: 4, byte_start: Some(452), byte_end: Some(456), source_line: Some("        return match (self) { Data(_, flag) -> flag, Missing -> false };"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact", "first unsupported target LIR opcode: 8"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test generic_match_arguments_preserve_completion_and_effect_order ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_match_results_preserve_float_and_string_representations ... ok
+test ordinary_match_in_condition_header_executes ... ok
+test qualified_enum_variants_bind_parent_applications ... ok
+
+failures:
+
+failures:
+    borrowed_enum_reference_payload_preserves_alias_and_following_boolean
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 342 filtered out; finished in 53.04s
+

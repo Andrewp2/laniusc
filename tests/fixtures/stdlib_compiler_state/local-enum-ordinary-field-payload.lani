@@ -1,0 +1,1 @@
+struct Slot<T> { value: T, sentinel: i32 } enum Decision { Accept(bool), Reject } fn main() -> i32 { let slot: Slot<Decision> = Slot { value: Accept(false), sentinel: 97 }; return match (slot.value) { Accept(v) -> 0, Reject -> 1 }; }

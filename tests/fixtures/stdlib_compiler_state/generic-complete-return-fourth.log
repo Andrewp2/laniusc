@@ -1,0 +1,32 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 53.65s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 7 tests
+test generic_compound_returns_use_complete_call_environments ... FAILED
+test generic_value_functions_preserve_compound_array_elements ... ok
+test generic_value_functions_preserve_compound_slice_bounds ... ok
+test generic_value_functions_preserve_compound_slice_elements ... ok
+test imported_compound_field_generic_reader_executes ... ok
+test imported_generic_compound_record_fields_execute ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+
+failures:
+
+---- generic_compound_returns_use_complete_call_environments stdout ----
+
+thread 'generic_compound_returns_use_complete_call_environments' (423658) panicked at tests/compiler_generic_types_execution.rs:564:6:
+compile complete generic compound return environment: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "operation is not implemented by the x86 backend", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 5, column: 12, length: 5, byte_start: Some(118), byte_end: Some(123), source_line: Some("    return value.fixed;"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact", "first unsupported target LIR opcode: 33"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    generic_compound_returns_use_complete_call_environments
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 35 filtered out; finished in 7.32s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

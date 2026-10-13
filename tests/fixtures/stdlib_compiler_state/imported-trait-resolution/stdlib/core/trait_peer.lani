@@ -1,0 +1,2 @@
+module core::trait_peer;
+pub trait Rel<T> {}

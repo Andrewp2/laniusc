@@ -1,0 +1,98 @@
+module app::main;
+import core::option;
+import core::result_bool;
+
+fn state(value: core::option::Option<bool>) -> i32 {
+    let present: bool = match (value) {
+        core::option::Some(ignored) -> true,
+        core::option::None -> false,
+    };
+    let payload: bool = match (value) {
+        core::option::Some(payload_value) -> payload_value,
+        core::option::None -> false,
+    };
+    if (!present) { return 0; }
+    if (payload) { return 2; }
+    return 1;
+}
+
+fn check_value(value: core::option::Option<bool>, expected: i32) -> bool {
+    if (value.is_some() != (expected != 0) || value.is_none() != (expected == 0)) { return false; }
+    if (value.contains(false) != (expected == 1) || value.contains(true) != (expected == 2)) { return false; }
+    if (value.unwrap_or(false) != (expected == 2) ||
+        value.unwrap_or(true) != (expected != 1)) { return false; }
+    let no_error: core::result_bool::ResultBool = value.ok_or(false);
+    let yes_error: core::result_bool::ResultBool = value.ok_or(true);
+    if (no_error.is_ok() != (expected != 0) || yes_error.is_err() != (expected == 0)) { return false; }
+    if (expected == 0) {
+        if (!no_error.contains_err(false) || !yes_error.contains_err(true)) { return false; }
+    } else {
+        if (!no_error.contains(expected == 2) || !yes_error.contains(expected == 2)) { return false; }
+    }
+    return state(value) == expected;
+}
+
+fn check_pair(left: core::option::Option<bool>, right: core::option::Option<bool>, a: i32, b: i32) -> bool {
+    let expected_or: i32 = a;
+    if (a == 0) { expected_or = b; }
+    let expected_and: i32 = 0;
+    if (a != 0) { expected_and = b; }
+    let expected_xor: i32 = 0;
+    if (a == 0) { expected_xor = b; }
+    if (a != 0 && b == 0) { expected_xor = a; }
+    let combined_or: core::option::Option<bool> = left.or(right);
+    let combined_and: core::option::Option<bool> = left.and(right);
+    let combined_xor: core::option::Option<bool> = left.xor(right);
+    if (state(combined_or) != expected_or || state(combined_and) != expected_and ||
+        state(combined_xor) != expected_xor) { return false; }
+    // Borrowed operations preserve both inputs.
+    return state(left) == a && state(right) == b;
+}
+
+fn main() -> i32 {
+    let absent: core::option::Option<bool> = core::option::None();
+    let no_value: core::option::Option<bool> = core::option::Some(false);
+    let yes: core::option::Option<bool> = core::option::Some(true);
+    if (!check_value(absent, 0) || !check_value(no_value, 1) || !check_value(yes, 2)) { return 1; }
+    if (!check_pair(absent, absent, 0, 0) || !check_pair(absent, no_value, 0, 1) ||
+        !check_pair(absent, yes, 0, 2) || !check_pair(no_value, absent, 1, 0) ||
+        !check_pair(no_value, no_value, 1, 1) || !check_pair(no_value, yes, 1, 2) ||
+        !check_pair(yes, absent, 2, 0) || !check_pair(yes, no_value, 2, 1) ||
+        !check_pair(yes, yes, 2, 2)) { return 2; }
+    if (!absent.or(no_value).contains(false) || !yes.and(absent).is_none() ||
+        !yes.xor(absent).or(no_value).contains(true) || !no_value.ok_or(true).contains(false)) { return 3; }
+
+    let true_ok: core::result_bool::ResultBool = core::result_bool::ok(true);
+    let false_ok: core::result_bool::ResultBool = core::result_bool::ok(false);
+    let true_error: core::result_bool::ResultBool = core::result_bool::err(true);
+    let false_error: core::result_bool::ResultBool = core::result_bool::err(false);
+    let from_true_ok: core::option::Option<bool> = core::option::ok(true_ok);
+    let from_false_ok: core::option::Option<bool> = core::option::ok(false_ok);
+    let from_true_error: core::option::Option<bool> = core::option::ok(true_error);
+    let from_false_error: core::option::Option<bool> = core::option::ok(false_error);
+    let error_from_true_ok: core::option::Option<bool> = core::option::err(true_ok);
+    let error_from_false_ok: core::option::Option<bool> = core::option::err(false_ok);
+    let error_from_true_error: core::option::Option<bool> = core::option::err(true_error);
+    let error_from_false_error: core::option::Option<bool> = core::option::err(false_error);
+    if (state(from_true_ok) != 2 || state(from_false_ok) != 1 ||
+        state(from_true_error) != 0 || state(from_false_error) != 0 ||
+        state(error_from_true_ok) != 0 || state(error_from_false_ok) != 0 ||
+        state(error_from_true_error) != 2 || state(error_from_false_error) != 1) { return 4; }
+
+    let signed: core::option::Option<i32> = core::option::Some(-2147483648);
+    let unsigned_max: u32 = 4294967295;
+    let byte_max: u8 = 255;
+    let byte_zero: u8 = 0;
+    let unsigned: core::option::Option<u32> = core::option::Some(unsigned_max);
+    let byte: core::option::Option<u8> = core::option::Some(byte_max);
+    let no_signed: core::option::Option<i32> = core::option::None();
+    let no_unsigned: core::option::Option<u32> = core::option::None();
+    let no_byte: core::option::Option<u8> = core::option::None();
+    if (!core::option::contains_i32(signed, -2147483648) || core::option::contains_i32(signed, 0) ||
+        core::option::contains_i32(no_signed, 0) ||
+        !core::option::contains_u32(unsigned, 4294967295) || core::option::contains_u32(unsigned, 0) ||
+        core::option::contains_u32(no_unsigned, 0) ||
+        !core::option::contains_u8(byte, byte_max) || core::option::contains_u8(byte, byte_zero) ||
+        core::option::contains_u8(no_byte, byte_zero)) { return 5; }
+    return 0;
+}

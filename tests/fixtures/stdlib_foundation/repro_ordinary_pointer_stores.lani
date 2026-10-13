@@ -1,0 +1,30 @@
+module app::main;
+import core::mem;
+
+struct Addresses { first: ptr, sentinel: i32, second: ptr }
+fn copy(value: Addresses) -> Addresses { return value; }
+
+fn main() -> i32 {
+    let first: [i32; 2] = [-7, 42];
+    let second: [i32; 2] = [71, 99];
+    let left: ptr = core::mem::i32_array_data_ptr(first);
+    let right: ptr = core::mem::i32_array_data_ptr(second);
+    let null: ptr = 0;
+    let original: Addresses = Addresses { first: left, sentinel: -91, second: right };
+    let copied: Addresses = copy(original);
+    copied.first = right;
+    copied.second = left;
+    if (copied.first != right || copied.second != left || copied.sentinel != -91 ||
+        original.first != left || original.second != right) { return 1; }
+
+    let pointers: [ptr; 3] = [left, null, right];
+    pointers[1] = right;
+    pointers[2] = null;
+    if (pointers[0] != left || pointers[1] != right || pointers[2] != null) { return 2; }
+    let first_view: [i32] = core::mem::i32_slice_from_raw_parts(copied.second, 2);
+    let second_view: [i32] = core::mem::i32_slice_from_raw_parts(pointers[1], 2);
+    first_view[0] = -33;
+    second_view[1] = 123;
+    if (first[0] != -33 || first[1] != 42 || second[0] != 71 || second[1] != 123) { return 3; }
+    return 0;
+}

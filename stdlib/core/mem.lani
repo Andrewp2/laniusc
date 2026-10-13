@@ -96,6 +96,9 @@ pub fn select<T>(condition: bool, when_true: T, when_false: T) -> T {
 // Borrow `length` elements from caller-owned storage. The caller must keep
 // `data` alive, aligned for T, and backed by at least `length` T values for
 // the entire use of the returned view. The view does not own or free storage.
+// Native i32 elements are packed ascending with byte stride +4. Other T
+// elements use descending eight-byte words, with stride -8 * native_words(T);
+// zero-sized elements have stride 0. This follows the native value layout.
 // A negative length traps; an invalid pointer cannot be checked here.
 pub fn typed_slice_from_raw_parts<T>(data: ptr, length: i32) -> [T] {
     assert(length >= 0);

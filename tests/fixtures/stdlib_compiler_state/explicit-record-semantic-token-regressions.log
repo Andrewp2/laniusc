@@ -1,0 +1,24 @@
+
+running 19 tests
+test parser_semantic_tokens_accept_public_void_extern ... ok
+test parser_semantic_tokens_classify_call_after_struct_literal ... ok
+test parser_semantic_tokens_classify_generic_alias_targets_as_types ... ok
+test parser_semantic_tokens_classify_if_inside_standalone_block ... ok
+test parser_semantic_tokens_classify_index_after_struct_literal ... ok
+test parser_semantic_tokens_classify_lexically_separated_nested_references ... ok
+test parser_semantic_tokens_classify_nested_postfix_chain_around_struct_literal ... ok
+test parser_semantic_tokens_classify_reference_type_arguments_from_type_colons ... ok
+test parser_semantic_tokens_close_const_type_before_next_function ... ok
+test parser_semantic_tokens_keep_const_generic_trait_method_terminators ... ok
+test parser_semantic_tokens_keep_empty_array_struct_field_boundaries ... ok
+test parser_semantic_tokens_keep_impl_const_generic_names_as_identifiers ... ok
+test parser_semantic_tokens_keep_infix_operators_after_struct_literals ... ok
+test parser_semantic_tokens_keep_struct_literals_inside_while_conditions ... ok
+test parser_semantic_tokens_match_type_argument_close_across_token_blocks ... ok
+test parser_semantic_tokens_preserve_nested_block_control_flow_context ... ok
+test parser_semantic_tokens_qualified_declaration_applications_are_types ... ok
+test parser_semantic_tokens_qualified_generic_constructor_value_path ... ok
+test parser_semantic_tokens_restore_array_context_after_struct_literals ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 226 filtered out; finished in 1.64s
+

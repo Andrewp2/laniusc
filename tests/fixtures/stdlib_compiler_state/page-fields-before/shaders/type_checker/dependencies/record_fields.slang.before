@@ -1,0 +1,83 @@
+import semantic_interface_layout;
+// Imported record fields are read from the active immutable interface page.
+// The resulting references use the caller's checked graph and survive page
+// replacement. A page-local canonical type ID is never a result reference.
+import dependency_interface;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.dependencies.canonical_field_types;
+import type_checker.dependencies.retained_payload_refs;
+
+public uint imported_record_declaration(uint instance)
+{
+    static const uint INVALID = 0xffffffffu;
+    if (instance >= checked_type_capacity() || type_instance_kind[instance] != 1u ||
+        external_type_library_id[instance] == INVALID ||
+        external_type_unit_id[instance] == INVALID ||
+        external_type_local_index[instance] == INVALID) return INVALID;
+    uint declaration = dependency_find_declaration(external_type_library_id[instance],
+        external_type_unit_id[instance], external_type_local_index[instance]);
+    return declaration < dependency_declaration_count() &&
+        dependency_declaration_word(declaration * 14u + 6u) == 6u ? declaration : INVALID;
+}
+
+public bool imported_record_field_type(uint instance, uint type, uint ordinal, out uint tag, out uint payload)
+{
+    static const uint INVALID = 0xffffffffu;
+    tag = 0u; payload = INVALID;
+    if (type >= dependency_type_count()) return false;
+    uint root = canonical_type_roots[type];
+    if (root >= dependency_type_count()) return false;
+    uint kind = dependency_type_word(root * 9u);
+    if (kind == 2u)
+        return ScopedCheckedTypeGraph.environment_argument(instance, dependency_generic_type_slot(root), tag, payload);
+    if (kind == 1u)
+    {
+        tag = 1u; payload = dependency_type_word(root * 9u + 1u);
+        return payload != 0u && payload != INVALID;
+    }
+    uint capacity; uint stride;
+    imported_field_ref_start.GetDimensions(capacity, stride);
+    if (instance >= capacity || ordinal >= imported_field_ref_count[instance]) return false;
+    uint start = imported_field_ref_start[instance];
+    imported_field_ref_tag.GetDimensions(capacity, stride);
+    if (start >= capacity || ordinal >= capacity - start) return false;
+    tag = imported_field_ref_tag[start + ordinal];
+    payload = imported_field_ref_payload[start + ordinal];
+    return tag != 0u && payload != INVALID;
+}
+
+public uint imported_record_field_member(uint instance, uint ordinal)
+{
+    static const uint INVALID = 0xffffffffu;
+    uint declaration = imported_record_declaration(instance);
+    if (declaration == INVALID) return INVALID;
+    uint start = dependency_declaration_word(declaration * 14u + 8u);
+    uint count = dependency_declaration_word(declaration * 14u + 9u);
+    if (start > dependency_member_count() || count > dependency_member_count() - start) return INVALID;
+    uint seen = 0u;
+    for (uint member = start; member < start + count; member++)
+        if (dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 1u) == 4u && seen++ == ordinal) return member;
+    return INVALID;
+}
+
+public uint imported_record_named_field(uint instance, uint name_lo, uint name_hi, out uint ordinal)
+{
+    static const uint INVALID = 0xffffffffu;
+    ordinal = INVALID;
+    uint declaration = imported_record_declaration(instance);
+    if (declaration == INVALID) return INVALID;
+    uint start = dependency_declaration_word(declaration * 14u + 8u);
+    uint count = dependency_declaration_word(declaration * 14u + 9u);
+    if (start > dependency_member_count() || count > dependency_member_count() - start) return INVALID;
+    uint seen = 0u;
+    for (uint member = start; member < start + count; member++)
+    {
+        if (dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 1u) != 4u) continue;
+        if (dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 3u) == name_lo &&
+            dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 4u) == name_hi)
+        { ordinal = seen; return member; }
+        seen++;
+    }
+    return INVALID;
+}

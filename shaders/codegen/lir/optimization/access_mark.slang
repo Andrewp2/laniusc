@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -43,6 +44,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (position >= total) return;
 
     uint node = semantic_schedule_order[position];
-    opt_ir_access_flag[position] = node < total &&
+    opt_ir_access_flag[position] = opt_ir_node_is_executable(node, total) &&
         opt_ir_access_kind(opt_ir_core[node]) != OPT_IR_ACCESS_INVALID ? 1u : 0u;
 }

@@ -1,0 +1,2 @@
+enum Maybe<T> { Value(T), Missing }
+fn main() -> i32 { let value = Missing(); return 0; }

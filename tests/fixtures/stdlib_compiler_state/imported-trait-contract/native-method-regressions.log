@@ -1,0 +1,12 @@
+
+running 7 tests
+test explicit_callable_arguments_execute_imported_own_method_headers ... ok
+test imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments ... ok
+test imported_generic_bodies_enforce_their_concrete_trait_contracts ... ok
+test lexical_method_environment_imported_compounds_and_constants_execute ... ok
+test lexical_method_environment_imported_parameters_execute ... ok
+test lexical_method_environment_imported_rejects_missing_and_conflicting_bindings ... ok
+test ordinary_trait_methods_execute_alongside_generic_value_calls ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 335 filtered out; finished in 3.05s
+

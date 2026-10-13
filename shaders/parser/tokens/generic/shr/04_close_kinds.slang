@@ -27,6 +27,8 @@ static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
+static const uint TK_DOT = 35u;
 
 uint tree_leaf_base()
 {
@@ -76,7 +78,11 @@ uint close_kind_at_depth(uint hi, uint count, int target_depth)
         open_i >= count || token_words[open_i].kind != TK_LT ||
         angle_match_depth[open_i] != target_depth)
         return TK_GT;
-    return close_kind_for_open(semantic_token_kinds[open_i + 1u]);
+    uint open_kind = semantic_token_kinds[open_i + 1u];
+    if (open_kind == TK_PATH_TYPE_ARG_LT && open_i >= 2u &&
+        token_words[open_i - 2u].kind == TK_DOT)
+        return TK_MEMBER_TYPE_ARG_GT;
+    return close_kind_for_open(open_kind);
 }
 
 [shader("compute")]

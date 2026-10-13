@@ -1,0 +1,127 @@
+
+running 53 tests
+test alias_qualified_constructors_preserve_injected_and_constant_arguments ... ok
+test alias_qualified_constructors_preserve_normalized_concrete_unit_parents ... ok
+test alias_qualified_constructors_preserve_reordered_target_arguments ... ok
+test alias_qualified_constructors_preserve_symbolic_and_constant_domains ... ok
+test alias_qualified_constructors_preserve_thirty_two_injected_operands ... ok
+test alias_qualified_constructors_reject_conflicting_and_invalid_applications ... GPU source-pack type-check rejection: token=88 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=88 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=88 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=93 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=83 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=83 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=93 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=83 code=UnresolvedIdent detail=5
+ok
+test alias_qualified_enum_constructors_preserve_parent_arguments ... ok
+test explicit_callable_arguments_execute_32_ordered_unused_slots ... ok
+test explicit_callable_arguments_execute_32_used_structural_slots ... ok
+test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test explicit_callable_arguments_execute_imported_own_method_headers ... ok
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... ok
+test explicit_callable_arguments_execute_string_reference_and_slice_forms ... ok
+test explicit_callable_arguments_reject_value_and_result_conflicts ... GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=49 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=51 code=AssignMismatch detail=0
+ok
+test explicit_callable_arguments_validate_own_headers ... GPU source-pack type-check rejection: token=22 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=27 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=25 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=25 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=45 code=CallMismatch detail=4294967049
+ok
+test explicit_constant_arguments_execute_both_thirty_two_slot_domains ... ok
+test explicit_constant_arguments_execute_constant_only_forwarding ... ok
+test explicit_constant_arguments_execute_imported_bindings ... ok
+test explicit_constant_arguments_execute_literals_and_zero ... ok
+test explicit_constant_arguments_execute_mixed_types_and_caller_parameters ... ok
+test explicit_constant_arguments_reject_kind_and_arity_errors ... GPU source-pack type-check rejection: token=25 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=30 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=32 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=27 code=CallMismatch detail=4294967050
+ok
+test explicit_constant_arguments_reject_value_and_result_conflicts ... GPU source-pack type-check rejection: token=57 code=AssignMismatch detail=32768
+GPU source-pack type-check rejection: token=63 code=AssignMismatch detail=0
+ok
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test generic_aliases_preserve_mixed_compositions_and_empty_values ... ok
+test generic_result_only_constants_execute_method_environments ... ok
+test generic_unit_values_preserve_complete_local_and_imported_types ... ok
+test imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments ... ok
+test imported_alias_associated_methods_reject_receiver_and_own_argument_conflicts ... GPU source-pack type-check rejection: token=16 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=41 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+ok
+test imported_alias_constructors_preserve_concrete_and_empty_unit_parents ... ok
+test imported_alias_constructors_preserve_reordered_compound_and_constant_arguments ... ok
+test imported_alias_constructors_preserve_thirty_two_injected_operands ... ok
+test imported_alias_constructors_reject_conflicting_and_invalid_applications ... GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=32 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=UnresolvedIdent detail=5
+ok
+test imported_alias_qualified_constructors_preserve_parent_arguments ... ok
+test imported_generic_aliases_preserve_nested_local_and_imported_compositions ... ok
+test imported_generic_aliases_preserve_symbolic_type_and_constant_environments ... ok
+test imported_generic_aliases_reject_type_length_and_header_conflicts ... GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=39 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=UnknownType detail=22
+GPU source-pack type-check rejection: token=16 code=UnknownType detail=22
+ok
+test imported_generic_aliases_substitute_array_targets ... ok
+test imported_generic_aliases_substitute_identity_targets ... ok
+test imported_generic_aliases_substitute_reordered_record_targets ... ok
+test imported_generic_aliases_substitute_slice_targets ... ok
+test imported_transparent_aliases_preserve_scalar_values ... ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nominal_constant_arguments_execute_thirty_two_interleaved_operands ... ok
+test qualified_enum_variants_bind_parent_applications ... ok
+test qualified_enum_variants_bind_qualifier_scope_before_members ... GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+ok
+test qualified_enum_variants_forward_symbolic_parameters ... ok
+test qualified_enum_variants_preserve_wide_and_symbolic_parent_headers ... ok
+test qualified_enum_variants_reject_conflicting_parent_applications ... GPU source-pack type-check rejection: token=67 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967051
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=71 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967051
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967051
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+ok
+test reexported_alias_constructors_resolve_members_without_importing_the_target_module ... ok
+test reexported_generic_aliases_preserve_constant_array_targets ... ok
+test reexported_generic_aliases_preserve_identity_targets ... ok
+test reexported_generic_aliases_preserve_reordered_nominal_targets ... ok
+
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 269 filtered out; finished in 28.93s
+

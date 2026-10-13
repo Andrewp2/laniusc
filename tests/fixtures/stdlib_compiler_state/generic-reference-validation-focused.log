@@ -1,0 +1,7 @@
+
+running 2 tests
+test generic_reference_results_preserve_referent_identity ... ok
+test ordinary_reference_results_preserve_referent_identity ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 107 filtered out; finished in 56.39s
+

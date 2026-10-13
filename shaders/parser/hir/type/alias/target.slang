@@ -1,9 +1,9 @@
-// Publish each type-alias item's first contained type node from dense semantic-HIR rows.
+// Publish each type-alias item's direct right-hand-side type node.
 //
 // A prior pointer-jump pass computes the nearest item owner for every semantic
-// row. This pass scatters type nodes only when that nearest owner is a
-// type-alias item, producing the preorder-first target type node without source
-// text, token spelling, token neighborhoods, or child/sibling walks.
+// row. The grammar gives the alias exactly one direct type-expression child.
+// Header annotations and bounds belong to nested productions; selecting the
+// first contained type would mistake `const N: usize` for the alias target.
 
 struct Params
 {
@@ -19,6 +19,7 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_type_alias_owner_value;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> raw_to_hir;
 StructuredBuffer<uint> hir_item_kind;
@@ -81,7 +82,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner = hir_type_alias_owner_value[row];
-    if (!valid_original_node(owner) || owner == node ||
+    if (!valid_original_node(owner) || parent[node] != owner ||
         item_kind_for_raw(owner) != HIR_ITEM_KIND_TYPE_ALIAS)
         return;
 
@@ -89,5 +90,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? owner
         : raw_to_hir[owner];
     if (output_row != INVALID)
-        InterlockedMin(hir_type_alias_target_node[output_row], node);
+        hir_type_alias_target_node[output_row] = node;
 }

@@ -47,6 +47,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalFiel
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
+                "alias_to_hir".into(),
+                b.hir_canonical_alias_to_dense.as_entire_binding(),
+            ),
+            (
+                "decl_ordinal".into(),
+                b.hir_struct_field_ordinal.as_entire_binding(),
+            ),
+            (
+                "literal_ordinal".into(),
+                b.hir_struct_lit_field_rank_a.as_entire_binding(),
+            ),
+            (
                 "decl_owner".into(),
                 b.hir_struct_field_parent_struct.as_entire_binding(),
             ),

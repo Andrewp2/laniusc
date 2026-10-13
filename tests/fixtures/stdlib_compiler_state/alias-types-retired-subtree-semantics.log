@@ -1,0 +1,47 @@
+
+running 18 tests
+test trait_methods_control::type_checker_rejects_trait_impl_targets_aliasing_scalar_types_on_gpu ... GPU type-check rejection: token=9 code=InvalidTraitImplementation detail=14
+ok
+test trait_methods_control::type_checker_rejects_trait_impl_targets_aliasing_type_instances_on_gpu ... GPU type-check rejection: token=13 code=InvalidTraitImplementation detail=14
+ok
+test type_checker_accepts_bounded_array_type_aliases_on_gpu ... ok
+test type_checker_accepts_bounded_nominal_type_aliases_on_gpu ... ok
+test type_checker_accepts_bounded_scalar_type_alias_chains_on_gpu ... GPU type-check rejection: token=1 code=BadHir detail=1095499781
+ok
+test type_checker_accepts_bounded_scalar_type_aliases_on_gpu ... ok
+test type_checker_normalizes_alias_predicate_type_argument_leaves_on_gpu ... GPU type-check rejection: token=55 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_normalizes_nominal_alias_predicate_type_argument_leaves_on_gpu ... GPU type-check rejection: token=46 code=TraitBoundUnsatisfied detail=12
+
+thread 'type_checker_normalizes_nominal_alias_predicate_type_argument_leaves_on_gpu' (14171) panicked at tests/type_checker_semantics.rs:8:49:
+source should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0008", title: "unsatisfied trait bound", category: "trait solving", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0008", message: "unsatisfied trait bound", primary_label: Some(DiagnosticLabel { path: "<source>", line: 14, column: 40, length: 8, byte_start: Some(143), byte_end: Some(151), source_line: Some("fn keep<T>(value: T) -> T where T: Rel<KeyAlias> {"), message: "trait bound argument shape is not supported here" }), help: None, notes: ["use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test type_checker_normalizes_qualified_alias_predicate_type_arguments_on_gpu ... GPU source-pack type-check rejection: token=79 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_resolves_concrete_injection_through_deep_generic_type_alias_chains ... GPU type-check rejection: token=996 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_generated_generic_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=2036 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_generated_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=330 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_reordered_generic_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=996 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_width_changing_generic_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=1124 code=AssignMismatch detail=770
+ok
+test type_checker_substitutes_alias_normalized_bound_arguments_from_nonzero_slots_on_gpu ... GPU type-check rejection: token=68 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_substitutes_alias_normalized_call_arguments_into_trait_bounds_on_gpu ... GPU type-check rejection: token=62 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_substitutes_bounded_generic_type_alias_chains_on_gpu ... GPU type-check rejection: token=32 code=AssignMismatch detail=770
+ok
+test type_checker_substitutes_bounded_generic_type_aliases_on_gpu ... GPU type-check rejection: token=21 code=AssignMismatch detail=770
+ok
+
+failures:
+
+failures:
+    type_checker_normalizes_nominal_alias_predicate_type_argument_leaves_on_gpu
+
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 238 filtered out; finished in 5.23s
+

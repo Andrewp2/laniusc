@@ -177,6 +177,7 @@ impl ParserBuffers {
                 n_tokens: self.token_input_capacity,
                 n_blocks: self.token_delimiter_n_blocks,
                 scan_step: 0,
+                match_tree_leaf_base: self.token_brace_match_min_tree_base,
             },
         );
         write_uniform(
@@ -184,6 +185,7 @@ impl ParserBuffers {
             &self.token_brace_match_params,
             &TokenBraceMatchParams {
                 n_tokens: self.token_input_capacity,
+                match_tree_leaf_base: self.token_brace_match_min_tree_base,
             },
         );
         write_uniform(
@@ -541,8 +543,9 @@ impl ParserBuffers {
             };
         }
         let ll1_status = graph_buffer!(u32, "ll1_status");
+        let hir_literal_status = graph_buffer!(u32, "hir_literal_status");
         let ll1_status_readback =
-            readback_bytes(device, "rb.parser.recorded_ll1_hir.status", 32, 32);
+            readback_bytes(device, "rb.parser.recorded_ll1_hir.status", 44, 44);
         let hir_count_readback = readback_bytes(device, "rb.parser.hir_counts", 120, 120);
 
         let stream_has_soi = token_kinds_u32
@@ -579,6 +582,7 @@ impl ParserBuffers {
                 n_tokens: token_input_capacity,
                 n_blocks: token_delimiter_n_blocks,
                 scan_step: 0,
+                match_tree_leaf_base: next_power_of_two_u32(token_delimiter_n_blocks).max(1),
             },
         );
         let token_block_scan_plan =
@@ -665,6 +669,7 @@ impl ParserBuffers {
             "parser.token_brace_match.params",
             &TokenBraceMatchParams {
                 n_tokens: token_input_capacity,
+                match_tree_leaf_base: next_power_of_two_u32(token_delimiter_n_blocks).max(1),
             },
         );
         let token_brace_match_depth = graph_buffer!(i32, "brace_match_depth");
@@ -1189,7 +1194,7 @@ impl ParserBuffers {
         let hir_type_form = graph_buffer!(u32, "hir_type_form");
         let hir_type_value_node = graph_buffer!(u32, "hir_type_value_node");
         let hir_type_len_token = graph_buffer!(u32, "hir_type_len_token");
-        let hir_type_len_value = graph_buffer!(u32, "hir_type_len_value");
+        let hir_type_len_operand = graph_buffer!(u32, "hir_type_len_operand");
         let hir_type_file_id = if retain_debug_hir_buffers {
             alias_storage_buffer::<u32, u32>(&hir_token_file_id, tree_capacity as usize)
         } else {
@@ -1227,6 +1232,8 @@ impl ParserBuffers {
         let hir_type_alias_target_node = graph_buffer!(u32, "hir_type_alias_target_node");
         let hir_fn_return_type_node = graph_buffer!(u32, "hir_fn_return_type_node");
         let hir_type_arg_owner_a = graph_buffer!(u32, "hir_type_arg_owner_a");
+        let hir_type_arg_application_owner = graph_buffer!(u32, "hir_type_arg_application_owner");
+        let hir_type_arg_application_token = graph_buffer!(u32, "hir_type_arg_application_token");
         let hir_type_arg_owner_b = graph_buffer!(u32, "hir_type_arg_owner_b");
         let hir_type_arg_link_a = graph_buffer!(u32, "hir_type_arg_link_a");
         let hir_type_arg_link_b = graph_buffer!(u32, "hir_type_arg_link_b");
@@ -1432,6 +1439,8 @@ impl ParserBuffers {
         };
         let hir_expr_int_value = graph_buffer!(u32, "hir_expr_int_value");
         let hir_expr_float_bits = graph_buffer!(u32, "hir_expr_float_bits");
+        let hir_float_workspace = optional_graph_buffer!(u32, "hir_float_workspace",
+            parser_feature_flags & crate::lexer::features::PARSER_FEATURE_FLOAT_LITERALS != 0);
         // Literal rows are token-anchored in production. Integer and float
         // literals still initialize these columns, so an absent string family
         // uses token capacity rather than a one-row sentinel, but never raw
@@ -1633,9 +1642,11 @@ impl ParserBuffers {
         let hir_type_arg_family_flag = graph_buffer!(u32, "hir_type_arg_family_flag");
         let hir_type_arg_rows = graph_buffer!(HirTypeArg, "hir_type_arg_rows");
         let hir_type_arg_ranges = graph_buffer!(HirRange, "hir_type_arg_ranges");
+        let hir_path_type_arg_ranges = graph_buffer!(HirRange, "hir_path_type_arg_ranges");
         let hir_generic_param_table_count = graph_buffer!(u32, "hir_generic_param_table_count");
         let hir_generic_param_family_flag = graph_buffer!(u32, "hir_generic_param_family_flag");
         let hir_generic_param_rows = graph_buffer!(HirGenericParam, "hir_generic_param_rows");
+        let hir_generic_param_types = graph_buffer!(u32, "hir_generic_param_types");
         let hir_generic_param_ranges = graph_buffer!(HirRange, "hir_generic_param_ranges");
         let hir_path_segment_rows = graph_buffer!(HirPathSegment, "hir_path_segment_rows");
         let hir_canonical_string_rows = graph_buffer!(HirString, "hir_canonical_string_rows");
@@ -1699,6 +1710,7 @@ impl ParserBuffers {
                 &partial_parse_status,
                 &token_feature_flags,
                 &tree_depth_status,
+                &hir_literal_status,
                 &ll1_status_readback,
             )
             .expect("parser status readbacks must match the compiler graph");
@@ -1927,6 +1939,7 @@ impl ParserBuffers {
             retain_debug_hir_buffers,
 
             ll1_status,
+            hir_literal_status,
             ll1_status_readback,
             hir_count_readback,
             status_readback_operations,
@@ -2091,9 +2104,11 @@ impl ParserBuffers {
             hir_type_arg_family_flag,
             hir_type_arg_rows,
             hir_type_arg_ranges,
+            hir_path_type_arg_ranges,
             hir_generic_param_table_count,
             hir_generic_param_family_flag,
             hir_generic_param_rows,
+            hir_generic_param_types,
             hir_generic_param_ranges,
             hir_path_table_count,
             hir_path_family_flag,
@@ -2216,7 +2231,7 @@ impl ParserBuffers {
             hir_type_form,
             hir_type_value_node,
             hir_type_len_token,
-            hir_type_len_value,
+            hir_type_len_operand,
             hir_type_file_id,
             hir_type_path_leaf_node,
             hir_bound_path_owner_by_leaf,
@@ -2238,6 +2253,8 @@ impl ParserBuffers {
             hir_type_alias_target_node,
             hir_fn_return_type_node,
             hir_type_arg_owner_a,
+            hir_type_arg_application_owner,
+            hir_type_arg_application_token,
             hir_type_arg_owner_b,
             hir_type_arg_link_a,
             hir_type_arg_link_b,
@@ -2378,6 +2395,7 @@ impl ParserBuffers {
             hir_binary_span_start_b,
             hir_expr_int_value,
             hir_expr_float_bits,
+            hir_float_workspace,
             hir_expr_string_start,
             hir_expr_string_len,
             hir_literal_values_params,

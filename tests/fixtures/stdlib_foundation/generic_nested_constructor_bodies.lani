@@ -1,0 +1,40 @@
+module app::main;
+import std::io;
+
+struct Pair { number: i32, text: str }
+struct Cell<T> { value: T }
+struct Holder<T> { child: Cell<T> }
+
+fn wrap<T>(value: T) -> Holder<T> {
+    return Holder { child: Cell { value: value } };
+}
+
+fn main() -> i32 {
+    let number: Holder<i32> = wrap(-7);
+    let flag: Holder<bool> = wrap(false);
+    let text: Holder<str> = wrap("Ω");
+    let empty: Holder<str> = wrap("");
+    let source: Pair = Pair { number: -9, text: "Ω" };
+    let pair: Holder<Pair> = wrap(source);
+    let words: [str; 2] = ["", "Ω"];
+    let array: Holder<[str; 2]> = wrap(words);
+    if (number.child.value != -7 || flag.child.value) { return 1; }
+    if (pair.child.value.number != -9) { return 2; }
+    std::io::println(text.child.value);
+    std::io::println(empty.child.value);
+    std::io::println(pair.child.value.text);
+    std::io::println(array.child.value[0]);
+    std::io::println(array.child.value[1]);
+
+    let copy: Holder<Pair> = pair;
+    copy.child.value.number = 11;
+    copy.child.value.text = "backup";
+    array.child.value[1] = "backup";
+    if (source.number != -9 || pair.child.value.number != -9 ||
+        copy.child.value.number != 11) { return 3; }
+    std::io::println(copy.child.value.text);
+    std::io::println(pair.child.value.text);
+    std::io::println(words[1]);
+    std::io::println(array.child.value[1]);
+    return 0;
+}

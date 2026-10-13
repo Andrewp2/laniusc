@@ -1,0 +1,24 @@
+// Acceptance provider; not compiled or executed by this author.
+module core::levels;
+pub enum Item { Empty, Value(i32) }
+pub struct Packet { words: [i32; 2], guard: i32 }
+pub fn forward<T>(value: & &T) -> & &T { return value; }
+impl Item {
+    pub fn borrow(&self) -> &Item { return self; }
+    pub fn level(self) -> i32 { return 10; }
+    pub fn prefer_local(self) -> i32 { return 12; }
+}
+impl &Item {
+    pub fn borrow_outer(&self) -> & &Item { return self; }
+    pub fn level(self) -> i32 { return 20; }
+    pub fn prefer_imported(self) -> i32 { return 24; }
+}
+impl & &Item { pub fn level(self) -> i32 { return 30; } }
+impl Packet {
+    pub fn borrow(&self) -> &Packet { return self; }
+    pub fn edited(self) -> Packet {
+        self.words[0] = self.words[0] + 10;
+        self.guard = self.guard + 1;
+        return self;
+    }
+}

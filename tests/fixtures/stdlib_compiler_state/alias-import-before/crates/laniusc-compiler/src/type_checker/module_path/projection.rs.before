@@ -1,0 +1,253 @@
+use anyhow::Result;
+
+use super::{super::*, inputs::CreateInputs};
+
+/// Bind groups for projecting resolved paths into semantic type/value facts.
+///
+/// This is the bridge from module lookup tables to the rest of type checking:
+/// type paths become type refs, value paths become call/const/enum facts, and
+/// match patterns get bound to enum payload rows.
+pub(in crate::type_checker) struct ProjectionBindGroups {
+    pub(in crate::type_checker) clear_type_path_types: ComputeOperation,
+    pub(in crate::type_checker) project_type_paths: ComputeOperation,
+    pub(in crate::type_checker) project_type_paths_after_aliases: ComputeInvocation,
+    pub(in crate::type_checker) project_type_paths_after_projected_aliases: ComputeInvocation,
+    pub(in crate::type_checker) project_type_paths_after_alias_equivalence: ComputeInvocation,
+    pub(in crate::type_checker) validate_type_paths: ComputeOperation,
+    pub(in crate::type_checker) type_aliases: Option<Box<TypeAliasProjection>>,
+    pub(in crate::type_checker) project_type_instances: ComputeOperation,
+    pub(in crate::type_checker) mark_value_call_paths: ComputeOperation,
+    pub(in crate::type_checker) project_value_paths: ComputeOperation,
+    pub(in crate::type_checker) consume_value_calls: ComputeOperation,
+    pub(in crate::type_checker) consume_value_calls_after_methods: ComputeInvocation,
+    pub(in crate::type_checker) mirror_value_call_leaf: ComputeOperation,
+    pub(in crate::type_checker) mirror_value_call_leaf_after_row_args: ComputeInvocation,
+    pub(in crate::type_checker) mirror_value_call_leaf_after_methods: ComputeInvocation,
+    pub(in crate::type_checker) mirror_value_call_leaf_after_method_row_args: ComputeInvocation,
+    pub(in crate::type_checker) consume_value_consts: ComputeOperation,
+    pub(in crate::type_checker) consume_value_enum_units: ComputeOperation,
+    pub(in crate::type_checker) consume_value_enum_calls: ComputeOperation,
+    pub(in crate::type_checker) finalize_value_enum_calls: ComputeOperation,
+    pub(in crate::type_checker) bind_match_patterns: ComputeOperation,
+    pub(in crate::type_checker) validate_imported_unit_patterns: ComputeOperation,
+    pub(in crate::type_checker) type_match_payloads: ComputeOperation,
+    pub(in crate::type_checker) type_match_exprs: ComputeOperation,
+}
+
+/// Transparent aliases are normalized against immutable source type rows.
+/// Publishing their complete refs is a separate dispatch before signatures
+/// capture them, so other lanes never observe half-normalized argument edges.
+pub(in crate::type_checker) struct TypeAliasProjection {
+    normalize: ComputeOperation,
+    publish: ComputeOperation,
+    resolve_members: ComputeOperation,
+}
+
+impl TypeAliasProjection {
+    pub(in crate::type_checker) fn record_instances(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.normalize.record(encoder)?;
+        self.publish.record(encoder)?;
+        self.resolve_members.record(encoder)
+    }
+}
+
+/// Creates bind groups for path projection and value/type path validation.
+pub(in crate::type_checker) fn create_projection_bind_groups(
+    passes: &TypeCheckPasses,
+    device: &wgpu::Device,
+    graph: &compiler_graph::TypeCheckCompilerGraph,
+    inputs: &CreateInputs<'_>,
+    resources: &ResourceMap<'_>,
+) -> Result<ProjectionBindGroups> {
+    let clear_type_path_types = ComputeOperation::direct_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        TYPE_PATH_STATE_CLEAR,
+        inputs.token_capacity.max(1),
+    )?;
+    let path_dispatch_args = graph.u32_buffer("path_dispatch_args")?;
+    let project_type_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        TYPE_PATHS_PROJECT,
+        &path_dispatch_args,
+    )?;
+    let project_type_paths_after_aliases =
+        project_type_paths.invocation(graph, TYPE_PATHS_PROJECT_AFTER_ALIASES.name)?;
+    let project_type_paths_after_projected_aliases =
+        project_type_paths.invocation(graph, TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES.name)?;
+    let project_type_paths_after_alias_equivalence =
+        project_type_paths.invocation(graph, TYPE_PATHS_PROJECT_AFTER_ALIAS_EQUIVALENCE.name)?;
+    let validate_type_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        TYPE_PATHS_VALIDATE,
+        &path_dispatch_args,
+    )?;
+    let aliases_required = type_alias_passes_required(inputs.hir_items.parser_feature_flags);
+    let type_aliases = if aliases_required {
+        let token_dispatch_args = graph.u32_buffer("token_active_dispatch_args")?;
+        Some(Box::new(TypeAliasProjection {
+            normalize: ComputeOperation::indirect_spec(
+                device, graph, resources, passes, TYPE_ALIASES_NORMALIZE, &token_dispatch_args,
+            )?,
+            publish: ComputeOperation::indirect_spec(
+                device, graph, resources, passes, TYPE_ALIAS_INSTANCES_PROJECT, &token_dispatch_args,
+            )?,
+            resolve_members: ComputeOperation::indirect_spec(
+                device, graph, resources, passes, NORMALIZED_VALUE_MEMBERS_RESOLVE, &path_dispatch_args,
+            )?,
+        }))
+    } else {
+        None
+    };
+    let project_type_instances = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        TYPE_INSTANCES_PROJECT,
+        &path_dispatch_args,
+    )?;
+    let mark_value_call_paths = ComputeOperation::direct_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_CALL_PATHS_MARK,
+        inputs.token_capacity.max(inputs.hir_node_capacity).max(1),
+    )?;
+    let project_value_paths = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_PATHS_PROJECT,
+        &path_dispatch_args,
+    )?;
+    let consume_value_calls = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_CALLS_CONSUME,
+        &path_dispatch_args,
+    )?;
+    let consume_value_calls_after_methods =
+        consume_value_calls.invocation(graph, VALUE_CALLS_CONSUME_AFTER_METHODS.name)?;
+    let mirror_value_call_leaf = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_CALL_LEAF_MIRROR,
+        &path_dispatch_args,
+    )?;
+    let mirror_value_call_leaf_after_row_args =
+        mirror_value_call_leaf.invocation(graph, VALUE_CALL_LEAF_MIRROR_AFTER_ROW_ARGS.name)?;
+    let mirror_value_call_leaf_after_methods =
+        mirror_value_call_leaf.invocation(graph, VALUE_CALL_LEAF_MIRROR_AFTER_METHODS.name)?;
+    let mirror_value_call_leaf_after_method_row_args = mirror_value_call_leaf
+        .invocation(graph, VALUE_CALL_LEAF_MIRROR_AFTER_METHOD_ROW_ARGS.name)?;
+    let consume_value_consts = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_CONSTS_CONSUME,
+        &path_dispatch_args,
+    )?;
+    let consume_value_enum_units = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_ENUM_UNITS_CONSUME,
+        &path_dispatch_args,
+    )?;
+    let consume_value_enum_calls = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_ENUM_CALLS_CONSUME,
+        &path_dispatch_args,
+    )?;
+    let finalize_value_enum_calls = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        VALUE_ENUM_CALLS_FINALIZE,
+        &path_dispatch_args,
+    )?;
+    let match_hir_dispatch_args = graph.u32_buffer("match_hir_dispatch_args")?;
+    let bind_match_patterns = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        MATCH_PATTERNS_BIND,
+        &match_hir_dispatch_args,
+    )?;
+    let validate_imported_unit_patterns = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE,
+        &match_hir_dispatch_args,
+    )?;
+    let type_match_payloads = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        MATCH_PAYLOADS_TYPE,
+        &match_hir_dispatch_args,
+    )?;
+    let type_match_exprs = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        MATCH_EXPRS_TYPE,
+        inputs.hir_active_dispatch_args,
+    )?;
+
+    Ok(ProjectionBindGroups {
+        clear_type_path_types,
+        project_type_paths,
+        project_type_paths_after_aliases,
+        project_type_paths_after_projected_aliases,
+        project_type_paths_after_alias_equivalence,
+        validate_type_paths,
+        type_aliases,
+        project_type_instances,
+        mark_value_call_paths,
+        project_value_paths,
+        consume_value_calls,
+        consume_value_calls_after_methods,
+        mirror_value_call_leaf,
+        mirror_value_call_leaf_after_row_args,
+        mirror_value_call_leaf_after_methods,
+        mirror_value_call_leaf_after_method_row_args,
+        consume_value_consts,
+        consume_value_enum_units,
+        consume_value_enum_calls,
+        finalize_value_enum_calls,
+        bind_match_patterns,
+        validate_imported_unit_patterns,
+        type_match_payloads,
+        type_match_exprs,
+    })
+}

@@ -1,0 +1,15 @@
+
+running 10 tests
+test explicit_callable_arguments_execute_32_ordered_unused_slots ... ok
+test explicit_callable_arguments_execute_32_used_structural_slots ... ok
+test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test explicit_callable_arguments_execute_imported_own_method_headers ... ok
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... ok
+test explicit_callable_arguments_execute_scalar_and_unused_bindings ... ok
+test explicit_callable_arguments_execute_string_reference_and_slice_forms ... ok
+test explicit_callable_arguments_reject_value_and_result_conflicts ... ok
+test explicit_callable_arguments_validate_own_headers ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 211 filtered out; finished in 11.25s
+

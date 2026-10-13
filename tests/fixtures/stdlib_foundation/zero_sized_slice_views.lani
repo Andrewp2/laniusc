@@ -1,0 +1,28 @@
+import core::mem;
+
+struct Empty {}
+struct Frame { before: i32, values: [Empty; 3], after: i32 }
+fn view<T>(values: [T]) -> [T] { return core::mem::identity(values); }
+fn replace<T>(values: [T], index: i32, value: T) -> T {
+    values[index] = value;
+    return values[index];
+}
+fn touch(seen: [i32]) -> Empty {
+    seen[0] += 1;
+    return Empty {};
+}
+fn main() -> i32 {
+    let seen: [i32; 1] = [0];
+    let seed: Empty = Empty {};
+    let owner: Frame = Frame { before: -71, values: [seed, seed, seed], after: 93 };
+    let values: [Empty] = view(owner.values);
+    let copied: [Empty] = core::mem::identity(values);
+    let recovered: Empty = replace(copied, 2, touch(seen));
+    let raw: [Empty] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(seen), 3);
+    let raw_value: Empty = replace(view(raw), 0, touch(seen));
+    let empty: [Empty; 0] = [];
+    let empty_view: [Empty] = view(empty);
+    let empty_copy: [Empty] = core::mem::identity(empty_view);
+    if (seen[0] != 2 || owner.before != -71 || owner.after != 93) { return 1; }
+    return 0;
+}

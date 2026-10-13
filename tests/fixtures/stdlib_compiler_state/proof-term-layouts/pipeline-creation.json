@@ -1,0 +1,20 @@
+{
+  "command": [
+    "timeout",
+    "100s",
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/numeric-build-2-probe-cache-alias/compiler_generic_types_execution-443177ec3361c248",
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/results/current-shaders/type_checker/program_evidence/native_layout/entries/05_materialize_proof_value.spv",
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/results/current-shaders/type_checker/program_evidence/native_layout/entries/05_materialize_proof_value.reflect.json"
+  ],
+  "spv_sha256": "6f8d0bf23cad6ff0c1baba943bb416e1d09bd0547a54d677c9acaae8fa9fef36",
+  "reflection_sha256": "ba84227d81a971c18196943c3eeb48191345abeae116e63da82d32b2ad6977ae",
+  "binary_sha256": "a0270e2fc5456833de2e63c79b2fd3f35eca53bff574238d1aa8eb5038837290",
+  "env": {
+    "LANIUS_GPU_COMPILE_HOST_TIMING": "1",
+    "LANIUS_PIPELINE_TIMING": "1",
+    "LANIUS_PIPELINE_CACHE_DIR": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/wgpu-pipeline-cache"
+  },
+  "exit_code": 0,
+  "seconds": 33.076307113999064,
+  "artifacts_unchanged": true
+}

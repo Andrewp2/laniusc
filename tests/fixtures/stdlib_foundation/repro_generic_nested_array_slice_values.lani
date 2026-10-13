@@ -1,0 +1,24 @@
+module app::main;
+import core::mem;
+
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn inspect(values: [[i32; 2]]) -> i32 {
+    let copied: [[i32; 2]] = core::mem::identity(values);
+    let forwarded: [[i32; 2]] = keep(copied);
+    if (forwarded[0][0] != -7 || forwarded[0][1] != 42 || forwarded[1][0] != 99 || forwarded[1][1] != -11) { return 1; }
+    forwarded[1][0] = 123;
+    if (values[1][0] != 123 || copied[1][0] != 123 || copied[1][1] != -11) { return 2; }
+    let count: i32 = 0;
+    for row in forwarded { count += 1; }
+    if (count != 2) { return 3; }
+    return 0;
+}
+fn main() -> i32 {
+    let first: [i32; 2] = [-7, 42];
+    let second: [i32; 2] = [99, -11];
+    let rows: [[i32; 2]; 2] = [first, second];
+    let status: i32 = inspect(rows);
+    if (status != 0) { return status; }
+    if (rows[1][0] != 123 || second[0] != 99 || rows[0][1] != 42) { return 4; }
+    return 0;
+}

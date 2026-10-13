@@ -1,0 +1,6 @@
+module core::zero;
+pub fn visit<T>(value: T, seen: [i32], sentinel: i32) -> T {
+    assert(sentinel == 42);
+    seen[0] = seen[0] + 1;
+    return value;
+}

@@ -1,0 +1,1 @@
+struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Missing(),sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}

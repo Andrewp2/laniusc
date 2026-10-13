@@ -1,0 +1,9 @@
+{
+  "target/release/laniusc": "1f0f7640a315ef7b359973c54766ac3249a94dd08228493f952d8452b4dd1cd2",
+  "target/release/examples/stdlib_gpu_perf": "653a46d57691944f791247b58b2da06e28509f65960d57aa2e47a510859a9dae",
+  "target/release/deps/compiler_generic_types_execution-443177ec3361c248": "b8f2465ef577197247969f8ba28e872dcbb5951aa03aa49a1c13caf3a116f9b8",
+  "target/release/deps/type_checker_semantics-62096f05155dc389": "6bfd8c900759bbffae61d6c29c1715a9e4021e8d0709d95bad0ef95d486336e9",
+  "target/release/deps/parser_hir_records-6a4a7d077edcca4f": "408a45af06915efb542c71e0565bd8707a0ef28570df4232bcaa7ea3e0d7e595",
+  "target/release/deps/lexer_parser_feature_flags-ed7bee63e6c1c767": "e38cca1a150f02b9182ede035f6de620016e74f67c9a87076f2a6baf3687ee51",
+  "target/release/deps/laniusc_compiler-88bea0616d867d66": "4864eacdc4ebd3bdab4da0603008547056418a4bd06ea86fa2513f2203de786a"
+}

@@ -1,3 +1,5 @@
+import type_checker.checked_array_counts;
+import type_checker.constant_parameter_slots;
 // Publish per-call array-argument facts from compact argument rows.
 //
 // Conditions consume this fact instead of scanning a fixed argument window.
@@ -5,6 +7,8 @@
 // and atomically marks the owning call when the argument is array-typed.
 
 import hir_records;
+import primitive_types;
+StructuredBuffer<uint> literal_context_type_by_hir;
 import atomics;
 import hir_expr_semantics;
 
@@ -33,7 +37,6 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
@@ -106,8 +109,6 @@ static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
-static const uint TYPE_LEN_LITERAL = 1u;
-static const uint TYPE_LEN_CONST_PARAM = 2u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -254,10 +255,13 @@ uint direct_expr_record_type(uint node)
     uint form = expr_form(node);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
-    if (form == HIR_EXPR_INT)
-        return TY_INT;
-    if (form == HIR_EXPR_FLOAT)
-        return TY_FLOAT;
+    if (form == HIR_EXPR_INT || form == HIR_EXPR_FLOAT)
+    {
+        uint context = literal_context_type_by_hir[node];
+        if ((form == HIR_EXPR_INT && scalar_is_integer(context)) ||
+            (form == HIR_EXPR_FLOAT && scalar_is_float(context))) return context;
+        return form == HIR_EXPR_FLOAT ? TY_FLOAT : TY_INT;
+    }
     if (form == HIR_EXPR_NAME)
     {
         uint token = expr_value_token(node);
@@ -290,7 +294,8 @@ uint direct_expr_record_type(uint node)
     {
         uint left_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
         uint right_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
-        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+        return scalar_is_float(left_ty) ? left_ty : scalar_is_float(right_ty) ? right_ty :
+            scalar_is_integer(left_ty) ? left_ty : scalar_is_integer(right_ty) ? right_ty : TY_UNKNOWN;
     }
 
     if (form == HIR_EXPR_MOD ||
@@ -354,26 +359,41 @@ uint call_callee_token(uint call_node)
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
+    uint callee_node = compact_hir_payload[call_node].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[callee_node].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
     uint call_token = compact_hir_core[call_node].token_start;
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
     HirCore callee = compact_hir_core[callee_node];
     HirPayload payload = compact_hir_payload[callee_node];
-    uint token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    uint token = payload.d;
     if (!valid_token(token)) token = callee.token_start;
     return valid_token(token) ? token : INVALID;
+}
+
+bool valid_array_instance_row(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return instance < capacity;
 }
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
 {
     return tag == TYPE_REF_INSTANCE &&
-           valid_token(payload) &&
-           type_instance_kind[payload] == TYPE_INSTANCE_ARRAY
+           valid_array_instance_row(payload) &&
+           type_instance_kind[payload] == TYPE_INSTANCE_ARRAY &&
+           checked_source_array_length_valid(type_instance_len_kind[payload],
+               type_instance_len_payload[payload], gParams.n_tokens)
                ? payload
                : INVALID;
 }
@@ -442,34 +462,23 @@ bool concrete_array_elem_ref(uint tag, uint payload)
         return true;
     if (tag == TYPE_REF_GENERIC_PARAM)
         return false;
-    return tag == TYPE_REF_INSTANCE && valid_token(payload);
+    return tag == TYPE_REF_INSTANCE && valid_array_instance_row(payload);
 }
 
 bool same_array_len(uint lhs, uint rhs)
 {
-    uint lhs_kind = type_instance_len_kind[lhs];
-    uint rhs_kind = type_instance_len_kind[rhs];
-    if (lhs_kind != rhs_kind)
-        return false;
-    if (lhs_kind == TYPE_LEN_LITERAL)
-        return type_instance_len_payload[lhs] == type_instance_len_payload[rhs];
-    if (lhs_kind == TYPE_LEN_CONST_PARAM)
-    {
-        uint lhs_payload = type_instance_len_payload[lhs];
-        uint rhs_payload = type_instance_len_payload[rhs];
-        uint lhs_slot = valid_token(lhs_payload) ? type_const_param_slot_by_token[lhs_payload] : INVALID;
-        uint rhs_slot = valid_token(rhs_payload) ? type_const_param_slot_by_token[rhs_payload] : INVALID;
-        return lhs_slot != INVALID && lhs_slot == rhs_slot;
-    }
-    return false;
+    return checked_source_array_lengths_equal(
+        uint2(type_instance_len_kind[lhs], type_instance_len_payload[lhs]),
+        uint2(type_instance_len_kind[rhs], type_instance_len_payload[rhs]), gParams.n_tokens);
 }
 
 bool concrete_bounded_array_instance(uint instance)
 {
-    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
+    if (!valid_array_instance_row(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
         return false;
-    if (type_instance_len_kind[instance] != TYPE_LEN_LITERAL)
-        return false;
+    uint count;
+    if (!checked_source_array_count(type_instance_len_kind[instance],
+        type_instance_len_payload[instance], gParams.n_tokens, count)) return false;
     return concrete_array_elem_ref(
         type_instance_elem_ref_tag[instance],
         type_instance_elem_ref_payload[instance]);
@@ -477,7 +486,7 @@ bool concrete_bounded_array_instance(uint instance)
 
 bool same_bounded_array_instance(uint lhs, uint rhs)
 {
-    if (!valid_token(lhs) || !valid_token(rhs))
+    if (!valid_array_instance_row(lhs) || !valid_array_instance_row(rhs))
         return false;
     if (type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
         type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY)

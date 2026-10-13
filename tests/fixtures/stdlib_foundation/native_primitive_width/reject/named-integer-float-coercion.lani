@@ -1,0 +1,1 @@
+fn take(value: f32) -> f32 { return value; } fn main() -> i32 { let value: i32 = 7; let result: f32 = take(value); return 0; }

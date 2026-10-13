@@ -1,0 +1,1 @@
+struct Pair { low: u32 } fn compare(left: Pair, low: u32) -> u32 { if (low < left.low) { return 1; } if (low < 3) { return 2; } return low >> (1); } fn main()->i32 { let left = Pair { low: 7 }; if(compare(left,3)!=1 || compare(left,8)!=4){return 1;} return 42;}

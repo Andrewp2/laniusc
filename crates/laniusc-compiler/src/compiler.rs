@@ -122,11 +122,19 @@ pub use semantic_interface::{
     GpuSemanticInterfaceMemberRecord,
     GpuSemanticInterfaceModuleRecord,
     GpuSemanticInterfaceModuleSegmentRecord,
+    GpuSemanticInterfacePredicateRecord,
+    GpuSemanticInterfaceImplementationKind,
+    GpuSemanticInterfaceImplementationRecord,
+    GpuSemanticInterfaceImplementationMethodBindingRecord,
     GpuSemanticInterfaceTypeEdge,
     GpuSemanticInterfaceTypeKind,
     GpuSemanticInterfaceTypeRecord,
 };
 pub(crate) use semantic_interface::{
+    MEMBER_U32S,
+    PREDICATE_U32S,
+    IMPLEMENTATION_U32S,
+    IMPLEMENTATION_METHOD_BINDING_U32S,
     dependency_batch::GpuSemanticInterfaceDependencyBatch,
     stable_name_hash,
 };

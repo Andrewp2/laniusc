@@ -1,0 +1,7 @@
+{
+  "shaders/type_checker/modules/10c_resolve_qualified_paths.slang": "12d984b844e84399ffa9fc7246e9e996262272ceabd3bbd9f13968619978131d",
+  "shaders/type_checker/modules/10k_project_type_instances.slang": "f7d938e00a6c7d040dbd478c8a8c946c98904a1ab4e902d48c71866162cf0b68",
+  "crates/laniusc-compiler/src/type_checker/module_path/projection.rs": "b709bcaea4da5c44b700cca006a662ed1e1ec41a7ce672c42aa205d4f1c4c12e",
+  "crates/laniusc-compiler/src/type_checker/operations/module_paths.rs": "e1411d40d95cb787d45ec638c316b06640c47a95a9c46d0e9b2f89020be90518",
+  "crates/laniusc-compiler/src/type_checker/compiler_graph.rs": "d16e2a85284d81de6ee056afea78c5b92304304c7e5d6f882c9e0451e6c2a964"
+}

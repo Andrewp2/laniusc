@@ -41,6 +41,7 @@ StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> decl_lookup_state;
 StructuredBuffer<uint> import_visible_value_count_out;
 StructuredBuffer<uint> import_visible_value_key_module_id;
@@ -205,11 +206,11 @@ uint resolved_function_for_call_path(uint call_node)
 
 uint find_local_decl(uint module_id, uint name_id)
 {
-    return decl_lookup_find(
-        module_id, HIR_ITEM_NAMESPACE_VALUE, name_id,
+    return decl_lookup_query(
+        module_id, HIR_ITEM_NAMESPACE_VALUE, name_id, DECL_LOOKUP_ANY_PARENT,
         min(decl_count_out[0], gParams.n_tokens),
         decl_module_id, decl_namespace, decl_name_id,
-        decl_lookup_state);
+        decl_parent_type_decl, decl_lookup_state).unique();
 }
 
 uint find_import_visible_decl(uint module_id, uint name_id)

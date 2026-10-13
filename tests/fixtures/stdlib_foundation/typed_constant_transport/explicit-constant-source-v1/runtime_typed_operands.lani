@@ -1,0 +1,23 @@
+module app::constants;
+const MAXIMUM:u64 = 18446744073709551615;
+const LETTER:char = 'Z';
+fn wide<const V:u64>()->u64 { return V; }
+fn signed<const V:i64>()->i64 { return V; }
+fn flag<const V:bool>()->bool { return V; }
+fn letter<const V:char>()->char { return V; }
+fn small<const V:i8>()->i8 { return V; }
+fn relay<const V:u64>()->u64 { return wide<V>(); }
+fn main()->i32 {
+    let maximum:u64 = 18446744073709551615;
+    let minimum:i64 = -9223372036854775808;
+    if (wide<18446744073709551615>() != maximum) { return 1; }
+    if (wide<4294967296>() == wide<0>()) { return 2; }
+    if (signed<-9223372036854775808>() != minimum) { return 3; }
+    if (!flag<true>() || flag<false>()) { return 4; }
+    if (letter<'Z'>() != 'Z') { return 5; }
+    if (small<-128>() != -128) { return 6; }
+    if (wide<+4294967296>() != relay<4294967296>()) { return 7; }
+    if (wide<app::constants::MAXIMUM>() != maximum) { return 8; }
+    if (letter<app::constants::LETTER>() != 'Z') { return 9; }
+    return 0;
+}

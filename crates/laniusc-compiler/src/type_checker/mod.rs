@@ -14,6 +14,35 @@ mod bind_groups;
 mod bind_models;
 mod bind_support;
 mod compiler_graph;
+mod generic_body;
+mod generic_calls;
+mod checked_contracts;
+#[cfg(test)]
+mod scoped_type_graph_tests;
+pub(crate) use checked_contracts::{
+    CheckedCallOwner, CheckedNominalRecipe, CheckedNominalRecipeKind, CheckedUnitContracts,
+};
+#[cfg(test)]
+pub(crate) use checked_contracts::{
+    CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
+    CheckedPredicateContract,
+};
+pub(crate) use generic_body::CheckedBodySpecialization;
+pub(crate) use generic_calls::{
+    CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
+    CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
+};
+pub(crate) use generic_calls::{
+    CheckedGenericApplicationArgument,
+    CheckedGenericArgument,
+    CheckedGenericCall,
+    CheckedGenericConstant,
+    CheckedGenericTarget,
+    CheckedGenericType,
+    dependency_method_requirements,
+    resolve_generic_requirements,
+    scope_generic_type_identities,
+};
 mod dependency_interface;
 mod module_path;
 mod operations;
@@ -97,6 +126,13 @@ pub enum GpuTypeCheckCode {
     InvalidTraitImplementation,
     DuplicateModule,
     InvalidModulePath,
+    InvalidAssignmentTarget,
+    InvalidArrayLength,
+    IntegerLiteralRange,
+    FloatLiteral,
+    ComputedFloatConstant,
+    MissingConstantBinding,
+    GenericInstantiationBoundary,
     Unknown(u32),
 }
 
@@ -122,6 +158,12 @@ impl GpuTypeCheckCode {
             17 => Self::InvalidTraitImplementation,
             18 => Self::DuplicateModule,
             20 => Self::InvalidModulePath,
+            21 => Self::InvalidAssignmentTarget,
+            22 => Self::InvalidArrayLength,
+            23 => Self::MissingConstantBinding,
+            24 => Self::IntegerLiteralRange,
+            25 => Self::FloatLiteral,
+            26 => Self::ComputedFloatConstant,
             other => Self::Unknown(other),
         }
     }
@@ -147,6 +189,15 @@ impl GpuTypeCheckCode {
             Self::InvalidTraitImplementation => "invalid trait implementation".to_string(),
             Self::DuplicateModule => "duplicate module declaration".to_string(),
             Self::InvalidModulePath => "invalid module path".to_string(),
+            Self::InvalidAssignmentTarget => "invalid assignment target".to_string(),
+            Self::InvalidArrayLength => "array length must have an integer type".to_string(),
+            Self::IntegerLiteralRange => "integer literal is outside its checked type range".to_string(),
+            Self::FloatLiteral => "floating literal cannot be represented by its checked type".to_string(),
+            Self::ComputedFloatConstant => "computed floating constant is not supported".to_string(),
+            Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
+            Self::GenericInstantiationBoundary => {
+                "generic type instantiation reached a compiler boundary".to_string()
+            }
             Self::Unknown(code) => format!("unknown type-check error (code {code})"),
         }
     }
@@ -165,6 +216,31 @@ pub enum GpuTypeCheckError {
     /// GPU setup, submission, or readback failed before semantic status could
     /// be decoded.
     Gpu(anyhow::Error),
+}
+
+/// Internal recording policy derived by compiler orchestration. This is not
+/// proof authority. Pending originals cannot publish an object before whole-program
+/// admission; only a validated program replay request may select replay.
+#[derive(Clone, Copy, Default)]
+pub(crate) enum FrontendTraitCheck {
+    #[default]
+    Strict,
+    /// Original definitions and call graphs are checked, but implementation
+    /// selection belongs to a later whole-program admission.
+    PendingOriginal,
+    /// Rechecked calls defer selection to the same program: selected-body calls
+    /// receive fresh proofs and ordinary siblings must retain their admitted facts.
+    AuthorizedReplay { selected_function_hir: u32 },
+}
+
+impl FrontendTraitCheck {
+    pub(crate) fn shader_words(self) -> (u32, u32) {
+        match self {
+            Self::Strict => (0, u32::MAX),
+            Self::PendingOriginal => (1, u32::MAX),
+            Self::AuthorizedReplay { selected_function_hir } => (2, selected_function_hir),
+        }
+    }
 }
 
 /// Compact HIR plus the explicitly scoped upstream workspace consumed by the
@@ -187,6 +263,10 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// checking. Ordinary executable compilation leaves the interface-only
     /// workspace unmaterialized.
     pub semantic_interface_required: bool,
+    /// One explicit body replay. Ordinary jobs upload an empty packet.
+    pub(crate) body_specialization: Option<&'a CheckedBodySpecialization>,
+    /// Derived from the same private frontend request as the body packet.
+    pub(crate) frontend_trait_check: FrontendTraitCheck,
     /// The parser's compact semantic artifact. Keeping this as one typed view
     /// preserves allocation identity for compiler-graph validation and makes
     /// it impossible for type-check code to assemble a partial HIR from raw
@@ -262,8 +342,12 @@ impl From<anyhow::Error> for GpuTypeCheckError {
 pub struct GpuTypeChecker {
     passes: TypeCheckPasses,
     params_buf: LaniusBuffer<TypeCheckParams>,
+    body_specialization_inputs: LaniusBuffer<u32>,
+    empty_dependency_words: LaniusBuffer<u32>,
     status_buf: LaniusBuffer<u32>,
     status_readback: LaniusBuffer<u32>,
+    call_inference_state: LaniusBuffer<u32>,
+    call_inference_readback: LaniusBuffer<u32>,
     preflight_graph: preflight::TypeCheckPreflightGraph,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
@@ -417,18 +501,6 @@ struct TypeSemanticBuffers {
     row_by_ordinal: LaniusBuffer<u32>,
 }
 
-struct TypeSubtreeCompareBuffers {
-    scan_input: LaniusBuffer<u32>,
-    prefix: LaniusBuffer<u32>,
-    count_out: LaniusBuffer<u32>,
-    left_root: LaniusBuffer<u32>,
-    right_root: LaniusBuffer<u32>,
-    error_token: LaniusBuffer<u32>,
-    error_detail: LaniusBuffer<u32>,
-    dispatch_args: LaniusBuffer<u32>,
-    dispatch_params: LaniusBuffer<CountDispatchParams>,
-}
-
 /// Type checking uses the compiler-wide kernel registry.  Artifact keys are
 /// the kernel identity; semantic graph-node names remain invocation identity.
 type TypeCheckPasses = KernelRegistry;
@@ -437,6 +509,7 @@ type TypeCheckPasses = KernelRegistry;
 // resources stay alive across the retained pipeline even when a field is only
 // consumed indirectly by a reflected bind group.
 struct ResidentTypeCheckWorkspace {
+    _constant_storage_plan: LaniusBuffer<ConstantStoragePlan>,
     resettable_buffers: Vec<crate::gpu::buffers::ResettableBuffer>,
     /// Dead storage inherited from the parser/lexer boundary.
     ///
@@ -491,14 +564,22 @@ impl ResidentTypeCheckWorkspace {
         self.cache_key.covers(key)
     }
 
-    fn semantic_artifact(&self) -> Result<OwnedGpuSemanticArtifact> {
+    fn semantic_artifact(
+        &self,
+        hir: &crate::parser::buffers::GpuHirView,
+        parser_feature_flags: u32,
+        dependency_interfaces_present: bool,
+        semantic_interface_required: bool,
+    ) -> Result<OwnedGpuSemanticArtifact> {
         let graph = &self.typecheck_graph;
         Ok(OwnedGpuSemanticArtifact {
             value_decl_by_hir: graph.buffer("semantic_value_decl_by_hir")?,
             value_type_by_hir: graph.buffer("semantic_value_type_by_hir")?,
             value_const_by_hir: graph.buffer("semantic_value_const_by_hir")?,
             value_const_present_by_hir: graph.buffer("semantic_value_const_present_by_hir")?,
-            param_type_by_row: graph.buffer("semantic_param_type_by_row")?,
+            argument_mode_by_hir: graph.buffer("semantic_argument_mode_by_hir")?,
+            param_ref_tag_by_row: graph.buffer("semantic_param_ref_tag_by_row")?,
+            param_ref_payload_by_row: graph.buffer("semantic_param_ref_payload_by_row")?,
             enclosing_fn_by_hir: graph.buffer("semantic_enclosing_fn_by_hir")?,
             function_return_type_by_hir: graph.buffer("semantic_function_return_type_by_hir")?,
             function_entrypoint_by_hir: graph.buffer("semantic_function_entrypoint_by_hir")?,
@@ -509,7 +590,10 @@ impl ResidentTypeCheckWorkspace {
             expr_ref_payload_by_hir: graph.buffer("semantic_expr_ref_payload_by_hir")?,
             aggregate_decl_token_by_hir: graph.buffer("semantic_aggregate_decl_token_by_hir")?,
             aggregate_word_count_by_hir: graph.buffer("semantic_aggregate_word_count_by_hir")?,
+            type_instance_native_words: graph.buffer("type_native_word_count")?,
             type_instance_kind: graph.buffer("type_instance_kind")?,
+            type_instance_lookup_head: graph.buffer("type_instance_lookup_head")?,
+            type_instance_lookup_next: graph.buffer("type_instance_lookup_next")?,
             type_instance_decl_token: graph.buffer("type_instance_decl_token")?,
             type_instance_arg_count: graph.buffer("type_instance_arg_count")?,
             type_instance_arg_start: graph.buffer("type_instance_arg_start")?,
@@ -519,15 +603,41 @@ impl ResidentTypeCheckWorkspace {
             type_instance_arg_row_count: graph.buffer("type_instance_arg_row_count_out")?,
             type_instance_arg_row_ref_tag: graph.buffer("type_instance_arg_row_ref_tag")?,
             type_instance_arg_row_ref_payload: graph.buffer("type_instance_arg_row_ref_payload")?,
+            type_instance_elem_ref_tag: graph.buffer("type_instance_elem_ref_tag")?,
+            type_instance_elem_ref_payload: graph.buffer("type_instance_elem_ref_payload")?,
+            type_instance_len_kind: graph.buffer("type_instance_len_kind")?,
+            type_instance_len_payload: graph.buffer("type_instance_len_payload")?,
+            external_type_library_id: graph.buffer("external_type_library_id")?,
+            external_type_unit_id: graph.buffer("external_type_unit_id")?,
+            external_type_local_index: graph.buffer("external_type_local_index")?,
             type_generic_param_slot: graph.buffer("type_generic_param_slot_by_token")?,
+            type_const_param_slot: graph.buffer("type_const_param_slot_by_token")?,
+            checked_constant_atoms: graph.buffer("checked_constant_atoms")?,
+            checked_constant_projections: graph.buffer("checked_constant_projections")?,
+            type_const_param_scalar: graph.buffer("type_const_param_scalar_by_token")?,
+            type_const_param_value: graph.buffer("type_const_param_value_by_token")?,
             array_length_by_hir: graph.buffer("semantic_array_length_by_hir")?,
             member_field_ordinal_by_hir: graph.buffer("semantic_member_field_ordinal_by_hir")?,
+            member_field_word_offset_by_hir: graph
+                .buffer("semantic_member_field_word_offset_by_hir")?,
+            member_field_word_count_by_hir: graph
+                .buffer("semantic_member_field_word_count_by_hir")?,
             iterable_kind_by_hir: graph.buffer("semantic_iterable_kind_by_hir")?,
             function_result_word_count_by_hir: graph
                 .buffer("semantic_function_result_word_count_by_hir")?,
             expr_scalar_type_by_hir: graph.buffer("semantic_expr_scalar_type_by_hir")?,
             public_decl_index_by_hir: self.module_path.interface_public_decl_index_by_hir.clone(),
             struct_init_field_ordinal_by_row: graph.buffer("struct_init_field_ordinal_by_row")?,
+            generic_call_inputs: semantic_interface_required
+                .then(|| {
+                    generic_calls::RetainedGenericCallInputs::new(
+                        graph,
+                        hir,
+                        parser_feature_flags,
+                        dependency_interfaces_present,
+                    )
+                })
+                .transpose()?,
         })
     }
 
@@ -584,6 +694,12 @@ pub(crate) struct GpuCheckedCallArtifact {
     pub callable_kind: u32,
     pub callable_hir: u32,
     pub callable_ordinal: u32,
+    pub receiver_adjustment_kind: u32,
+    pub receiver_deref_count: u32,
+    pub receiver_matched_ref_tag: u32,
+    pub receiver_matched_ref_payload: u32,
+    pub receiver_parameter_ref_tag: u32,
+    pub receiver_parameter_ref_payload: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -592,12 +708,17 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     pub value_decl_by_hir: &'a LaniusBuffer<u32>,
     /// Resolved type identity for each compact HIR value row.
     pub value_type_by_hir: &'a LaniusBuffer<u32>,
-    /// Literal value bits for imported constant paths, keyed by dense HIR row.
+    /// Literal low/high u32 pairs for each dense HIR row. The raw u32 buffer
+    /// therefore contains two words per row; Slang reads uint2 elements.
     pub value_const_by_hir: &'a LaniusBuffer<u32>,
     /// Nonzero when the corresponding row names an imported constant.
     pub value_const_present_by_hir: &'a LaniusBuffer<u32>,
-    /// Resolved type identity for each compact parameter row.
-    pub param_type_by_row: &'a LaniusBuffer<u32>,
+    /// Complete checked declaration type for each compact parameter row,
+    /// including implicit receivers without a written type node.
+    pub param_ref_tag_by_row: &'a LaniusBuffer<u32>,
+    pub param_ref_payload_by_row: &'a LaniusBuffer<u32>,
+    /// Parameter passing mode retained before dependency pages expire.
+    pub argument_mode_by_hir: &'a LaniusBuffer<u32>,
     /// Encoded enclosing compact-HIR function identity for each HIR row.
     pub enclosing_fn_by_hir: &'a LaniusBuffer<u32>,
     /// Checked return type keyed by dense function HIR row.
@@ -619,7 +740,10 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     /// Checked aggregate ABI width keyed by dense expression HIR row.
     pub aggregate_word_count_by_hir: &'a LaniusBuffer<u32>,
     /// Checked type-instance relation retained for concrete enum layout.
+    pub type_instance_native_words: &'a LaniusBuffer<u32>,
     pub type_instance_kind: &'a LaniusBuffer<u32>,
+    pub type_instance_lookup_head: &'a LaniusBuffer<u32>,
+    pub type_instance_lookup_next: &'a LaniusBuffer<u32>,
     pub type_instance_decl_token: &'a LaniusBuffer<u32>,
     pub type_instance_arg_count: &'a LaniusBuffer<u32>,
     pub type_instance_arg_start: &'a LaniusBuffer<u32>,
@@ -629,11 +753,27 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     pub type_instance_arg_row_count: &'a LaniusBuffer<u32>,
     pub type_instance_arg_row_ref_tag: &'a LaniusBuffer<u32>,
     pub type_instance_arg_row_ref_payload: &'a LaniusBuffer<u32>,
+    pub type_instance_elem_ref_tag: &'a LaniusBuffer<u32>,
+    pub type_instance_elem_ref_payload: &'a LaniusBuffer<u32>,
+    pub type_instance_len_kind: &'a LaniusBuffer<u32>,
+    pub type_instance_len_payload: &'a LaniusBuffer<u32>,
+    pub external_type_library_id: &'a LaniusBuffer<u32>,
+    pub external_type_unit_id: &'a LaniusBuffer<u32>,
+    pub external_type_local_index: &'a LaniusBuffer<u32>,
     pub type_generic_param_slot: &'a LaniusBuffer<u32>,
+    pub type_const_param_slot: &'a LaniusBuffer<u32>,
+    /// Immutable checked constant rows, exposed as four raw words per row.
+    pub checked_constant_atoms: &'a LaniusBuffer<u32>,
+    pub checked_constant_projections: &'a LaniusBuffer<u32>,
+    pub type_const_param_scalar: &'a LaniusBuffer<u32>,
+    pub type_const_param_value: &'a LaniusBuffer<u32>,
     /// Checked fixed-array length keyed by dense expression HIR row.
     pub array_length_by_hir: &'a LaniusBuffer<u32>,
     /// Checked field ordinal keyed by dense member-expression HIR row.
     pub member_field_ordinal_by_hir: &'a LaniusBuffer<u32>,
+    /// Imported field's accepted native range, retained before its page expires.
+    pub member_field_word_offset_by_hir: &'a LaniusBuffer<u32>,
+    pub member_field_word_count_by_hir: &'a LaniusBuffer<u32>,
     /// Checked iteration representation keyed by dense for-statement HIR row.
     pub iterable_kind_by_hir: &'a LaniusBuffer<u32>,
     /// Checked target-word width keyed by dense function HIR row.
@@ -653,11 +793,14 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
 /// scratch to be recolored or released without changing backend contracts.
 #[derive(Clone)]
 pub(crate) struct OwnedGpuSemanticArtifact {
+    generic_call_inputs: Option<generic_calls::RetainedGenericCallInputs>,
     value_decl_by_hir: LaniusBuffer<u32>,
     value_type_by_hir: LaniusBuffer<u32>,
     value_const_by_hir: LaniusBuffer<u32>,
     value_const_present_by_hir: LaniusBuffer<u32>,
-    param_type_by_row: LaniusBuffer<u32>,
+    param_ref_tag_by_row: LaniusBuffer<u32>,
+    param_ref_payload_by_row: LaniusBuffer<u32>,
+    argument_mode_by_hir: LaniusBuffer<u32>,
     enclosing_fn_by_hir: LaniusBuffer<u32>,
     function_return_type_by_hir: LaniusBuffer<u32>,
     function_entrypoint_by_hir: LaniusBuffer<u32>,
@@ -668,7 +811,10 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     expr_ref_payload_by_hir: LaniusBuffer<u32>,
     aggregate_decl_token_by_hir: LaniusBuffer<u32>,
     aggregate_word_count_by_hir: LaniusBuffer<u32>,
+    type_instance_native_words: LaniusBuffer<u32>,
     type_instance_kind: LaniusBuffer<u32>,
+    type_instance_lookup_head: LaniusBuffer<u32>,
+    type_instance_lookup_next: LaniusBuffer<u32>,
     type_instance_decl_token: LaniusBuffer<u32>,
     type_instance_arg_count: LaniusBuffer<u32>,
     type_instance_arg_start: LaniusBuffer<u32>,
@@ -678,9 +824,23 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     type_instance_arg_row_count: LaniusBuffer<u32>,
     type_instance_arg_row_ref_tag: LaniusBuffer<u32>,
     type_instance_arg_row_ref_payload: LaniusBuffer<u32>,
+    type_instance_elem_ref_tag: LaniusBuffer<u32>,
+    type_instance_elem_ref_payload: LaniusBuffer<u32>,
+    type_instance_len_kind: LaniusBuffer<u32>,
+    type_instance_len_payload: LaniusBuffer<u32>,
+    external_type_library_id: LaniusBuffer<u32>,
+    external_type_unit_id: LaniusBuffer<u32>,
+    external_type_local_index: LaniusBuffer<u32>,
     type_generic_param_slot: LaniusBuffer<u32>,
+    type_const_param_slot: LaniusBuffer<u32>,
+    checked_constant_atoms: LaniusBuffer<u32>,
+    checked_constant_projections: LaniusBuffer<u32>,
+    type_const_param_scalar: LaniusBuffer<u32>,
+    type_const_param_value: LaniusBuffer<u32>,
     array_length_by_hir: LaniusBuffer<u32>,
     member_field_ordinal_by_hir: LaniusBuffer<u32>,
+    member_field_word_offset_by_hir: LaniusBuffer<u32>,
+    member_field_word_count_by_hir: LaniusBuffer<u32>,
     iterable_kind_by_hir: LaniusBuffer<u32>,
     function_result_word_count_by_hir: LaniusBuffer<u32>,
     expr_scalar_type_by_hir: LaniusBuffer<u32>,
@@ -690,12 +850,14 @@ pub(crate) struct OwnedGpuSemanticArtifact {
 
 impl OwnedGpuSemanticArtifact {
     fn retained_buffers(&self) -> Vec<crate::gpu::buffers::TrackedBufferView<'_>> {
-        vec![
+        let mut buffers = vec![
             (&self.value_decl_by_hir).into(),
             (&self.value_type_by_hir).into(),
             (&self.value_const_by_hir).into(),
             (&self.value_const_present_by_hir).into(),
-            (&self.param_type_by_row).into(),
+            (&self.param_ref_tag_by_row).into(),
+            (&self.param_ref_payload_by_row).into(),
+            (&self.argument_mode_by_hir).into(),
             (&self.enclosing_fn_by_hir).into(),
             (&self.function_return_type_by_hir).into(),
             (&self.function_entrypoint_by_hir).into(),
@@ -706,7 +868,10 @@ impl OwnedGpuSemanticArtifact {
             (&self.expr_ref_payload_by_hir).into(),
             (&self.aggregate_decl_token_by_hir).into(),
             (&self.aggregate_word_count_by_hir).into(),
+            (&self.type_instance_native_words).into(),
             (&self.type_instance_kind).into(),
+            (&self.type_instance_lookup_head).into(),
+            (&self.type_instance_lookup_next).into(),
             (&self.type_instance_decl_token).into(),
             (&self.type_instance_arg_count).into(),
             (&self.type_instance_arg_start).into(),
@@ -716,15 +881,33 @@ impl OwnedGpuSemanticArtifact {
             (&self.type_instance_arg_row_count).into(),
             (&self.type_instance_arg_row_ref_tag).into(),
             (&self.type_instance_arg_row_ref_payload).into(),
+            (&self.type_instance_elem_ref_tag).into(),
+            (&self.type_instance_elem_ref_payload).into(),
+            (&self.type_instance_len_kind).into(),
+            (&self.type_instance_len_payload).into(),
+            (&self.external_type_library_id).into(),
+            (&self.external_type_unit_id).into(),
+            (&self.external_type_local_index).into(),
             (&self.type_generic_param_slot).into(),
+            (&self.type_const_param_slot).into(),
+            (&self.checked_constant_atoms).into(),
+            (&self.checked_constant_projections).into(),
+            (&self.type_const_param_scalar).into(),
+            (&self.type_const_param_value).into(),
             (&self.array_length_by_hir).into(),
             (&self.member_field_ordinal_by_hir).into(),
+            (&self.member_field_word_offset_by_hir).into(),
+            (&self.member_field_word_count_by_hir).into(),
             (&self.iterable_kind_by_hir).into(),
             (&self.function_result_word_count_by_hir).into(),
             (&self.expr_scalar_type_by_hir).into(),
             (&self.public_decl_index_by_hir).into(),
             (&self.struct_init_field_ordinal_by_row).into(),
-        ]
+        ];
+        if let Some(inputs) = self.generic_call_inputs.as_ref() {
+            buffers.extend(inputs.retained_buffers());
+        }
+        buffers
     }
 
     fn retained_allocation_ids(&self) -> std::collections::HashSet<u64> {
@@ -740,7 +923,9 @@ impl OwnedGpuSemanticArtifact {
             value_type_by_hir: &self.value_type_by_hir,
             value_const_by_hir: &self.value_const_by_hir,
             value_const_present_by_hir: &self.value_const_present_by_hir,
-            param_type_by_row: &self.param_type_by_row,
+            param_ref_tag_by_row: &self.param_ref_tag_by_row,
+            param_ref_payload_by_row: &self.param_ref_payload_by_row,
+            argument_mode_by_hir: &self.argument_mode_by_hir,
             enclosing_fn_by_hir: &self.enclosing_fn_by_hir,
             function_return_type_by_hir: &self.function_return_type_by_hir,
             function_entrypoint_by_hir: &self.function_entrypoint_by_hir,
@@ -751,7 +936,10 @@ impl OwnedGpuSemanticArtifact {
             expr_ref_payload_by_hir: &self.expr_ref_payload_by_hir,
             aggregate_decl_token_by_hir: &self.aggregate_decl_token_by_hir,
             aggregate_word_count_by_hir: &self.aggregate_word_count_by_hir,
+            type_instance_native_words: &self.type_instance_native_words,
             type_instance_kind: &self.type_instance_kind,
+            type_instance_lookup_head: &self.type_instance_lookup_head,
+            type_instance_lookup_next: &self.type_instance_lookup_next,
             type_instance_decl_token: &self.type_instance_decl_token,
             type_instance_arg_count: &self.type_instance_arg_count,
             type_instance_arg_start: &self.type_instance_arg_start,
@@ -761,9 +949,23 @@ impl OwnedGpuSemanticArtifact {
             type_instance_arg_row_count: &self.type_instance_arg_row_count,
             type_instance_arg_row_ref_tag: &self.type_instance_arg_row_ref_tag,
             type_instance_arg_row_ref_payload: &self.type_instance_arg_row_ref_payload,
+            type_instance_elem_ref_tag: &self.type_instance_elem_ref_tag,
+            type_instance_elem_ref_payload: &self.type_instance_elem_ref_payload,
+            type_instance_len_kind: &self.type_instance_len_kind,
+            type_instance_len_payload: &self.type_instance_len_payload,
+            external_type_library_id: &self.external_type_library_id,
+            external_type_unit_id: &self.external_type_unit_id,
+            external_type_local_index: &self.external_type_local_index,
             type_generic_param_slot: &self.type_generic_param_slot,
+            type_const_param_slot: &self.type_const_param_slot,
+            checked_constant_atoms: &self.checked_constant_atoms,
+            checked_constant_projections: &self.checked_constant_projections,
+            type_const_param_scalar: &self.type_const_param_scalar,
+            type_const_param_value: &self.type_const_param_value,
             array_length_by_hir: &self.array_length_by_hir,
             member_field_ordinal_by_hir: &self.member_field_ordinal_by_hir,
+            member_field_word_offset_by_hir: &self.member_field_word_offset_by_hir,
+            member_field_word_count_by_hir: &self.member_field_word_count_by_hir,
             iterable_kind_by_hir: &self.iterable_kind_by_hir,
             function_result_word_count_by_hir: &self.function_result_word_count_by_hir,
             expr_scalar_type_by_hir: &self.expr_scalar_type_by_hir,
@@ -832,6 +1034,7 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub resolved_dependency_library_id: TrackedBufferView<'a>,
     pub resolved_dependency_unit_id: TrackedBufferView<'a>,
     pub resolved_dependency_local_index: TrackedBufferView<'a>,
+    pub resolved_dependency_trait_header: TrackedBufferView<'a>,
     pub path_id_by_owner_hir: TrackedBufferView<'a>,
     pub path_id_by_owner_token: TrackedBufferView<'a>,
     pub resolved_type_decl: TrackedBufferView<'a>,
@@ -841,6 +1044,8 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     pub generic_param_name_id: TrackedBufferView<'a>,
     pub generic_param_token: TrackedBufferView<'a>,
     pub generic_param_kind: TrackedBufferView<'a>,
+    pub generic_param_lookup_state: TrackedBufferView<'a>,
+    pub generic_decl_owner_by_node_a: TrackedBufferView<'a>,
     pub type_decl_generic_param_count_by_owner_token: TrackedBufferView<'a>,
     pub type_decl_const_param_count_by_owner_token: TrackedBufferView<'a>,
 }
@@ -854,7 +1059,9 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
     pub compact_hir_capacity: u32,
     pub compact_hir_count: &'a LaniusBuffer<u32>,
     pub compact_hir_core: &'a LaniusBuffer<crate::parser::buffers::HirCore>,
+    pub compact_hir_links: &'a LaniusBuffer<crate::parser::buffers::HirLinks>,
     pub compact_hir_payload: &'a LaniusBuffer<crate::parser::buffers::HirPayload>,
+    pub compact_hir_semantic_facts: &'a LaniusBuffer<crate::parser::buffers::HirSemanticFacts>,
     pub compact_const_value: &'a LaniusBuffer<u32>,
     pub compact_fn_return_type: &'a LaniusBuffer<u32>,
     pub compact_type_alias_target: &'a LaniusBuffer<u32>,
@@ -862,11 +1069,14 @@ pub struct GpuSemanticInterfaceHirBuffers<'a> {
     pub compact_param_count: &'a LaniusBuffer<u32>,
     pub compact_params: &'a LaniusBuffer<crate::parser::buffers::HirParam>,
     pub compact_param_ranges: &'a LaniusBuffer<crate::parser::buffers::HirRange>,
+    pub compact_predicate_count: &'a LaniusBuffer<u32>,
+    pub compact_predicates: &'a LaniusBuffer<crate::parser::buffers::HirPredicate>,
     pub compact_type_arg_count: &'a LaniusBuffer<u32>,
     pub compact_type_args: &'a LaniusBuffer<crate::parser::buffers::HirTypeArg>,
     pub compact_type_arg_ranges: &'a LaniusBuffer<crate::parser::buffers::HirRange>,
     pub compact_generic_param_count: &'a LaniusBuffer<u32>,
     pub compact_generic_params: &'a LaniusBuffer<crate::parser::buffers::HirGenericParam>,
+    pub compact_generic_param_ranges: &'a LaniusBuffer<crate::parser::buffers::HirRange>,
     pub compact_path_count: &'a LaniusBuffer<u32>,
     pub compact_paths: &'a LaniusBuffer<crate::parser::buffers::HirPath>,
     pub compact_path_segment_count: &'a LaniusBuffer<u32>,

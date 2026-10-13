@@ -1,0 +1,15 @@
+module app::main;
+import core::mem;
+
+struct Cell<T> { value: T, sentinel: i32 }
+struct Holder<T> { child: Cell<T>, sentinel: i32 }
+
+fn main() -> i32 {
+    let cell: Cell<i32> = Cell { value: -7, sentinel: 42 };
+    let holder: Holder<i32> = Holder { child: cell, sentinel: 99 };
+    let copied: Holder<i32> = core::mem::identity(holder);
+    if (copied.child.value != -7) { return 1; }
+    if (copied.child.sentinel != 42) { return 2; }
+    if (copied.sentinel != 99) { return 3; }
+    return 0;
+}

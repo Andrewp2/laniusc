@@ -1,0 +1,35 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.22s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 2 tests
+test generic_nominal_arguments_survive_imported_and_forwarded_body_replay ... FAILED
+test generic_nominal_results_reject_conflicting_contextual_constraints ... FAILED
+
+failures:
+
+---- generic_nominal_arguments_survive_imported_and_forwarded_body_replay stdout ----
+GPU parser rejection: error_pos=0 code=4 detail=15 steps=6731 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'generic_nominal_arguments_survive_imported_and_forwarded_body_replay' (517896) panicked at tests/compiler_generic_types_execution.rs:695:6:
+compile imported and forwarded complete nominal graphs: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 11, column: 45, length: 1, byte_start: Some(286), byte_end: Some(287), source_line: Some("pub fn absent<T>() -> Equal<T, T> { loop {} }"), message: "expected one of `*`, `=`, `/`, `<`, `>`, `<=`, `>=`, `==`, `&&`, `||`, `{`, `&`, `|`, `(`, `[`, `.`, `!=`, `%`, `^`, `<<`, `>>`, `+=`, `-=`, `*=`, `/=`, `%=`, `^=`, `<<=`, `>>=`, `&=`, `|=`, `+`, `-`, `)`, `]`, `,`, `}`, or `;`, found `}`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- generic_nominal_results_reject_conflicting_contextual_constraints stdout ----
+GPU parser rejection: error_pos=0 code=4 detail=15 steps=443 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'generic_nominal_results_reject_conflicting_contextual_constraints' (517930) panicked at tests/compiler_generic_types_execution.rs:674:9:
+assertion `left == right` failed: repeated scalar constraint: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 11, column: 45, length: 1, byte_start: Some(286), byte_end: Some(287), source_line: Some("pub fn absent<T>() -> Equal<T, T> { loop {} }"), message: "expected one of `*`, `=`, `/`, `<`, `>`, `<=`, `>=`, `==`, `&&`, `||`, `{`, `&`, `|`, `(`, `[`, `.`, `!=`, `%`, `^`, `<<`, `>>`, `+=`, `-=`, `*=`, `/=`, `%=`, `^=`, `<<=`, `>>=`, `&=`, `|=`, `+`, `-`, `)`, `]`, `,`, `}`, or `;`, found `}`" }), help: None, notes: [] })
+  left: "LNC0016"
+ right: "LNC0006"
+
+
+failures:
+    generic_nominal_arguments_survive_imported_and_forwarded_body_replay
+    generic_nominal_results_reject_conflicting_contextual_constraints
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 45 filtered out; finished in 1.30s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

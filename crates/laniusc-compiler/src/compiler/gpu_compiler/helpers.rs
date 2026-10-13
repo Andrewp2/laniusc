@@ -54,14 +54,6 @@ pub(super) fn type_mismatch_label(detail: u32) -> String {
 
 fn type_code_note(code: u32) -> String {
     const TY_UNKNOWN: u32 = 0;
-    const TY_VOID: u32 = 1;
-    const TY_BOOL: u32 = 2;
-    const TY_INT: u32 = 3;
-    const TY_UINT: u32 = 4;
-    const TY_FLOAT: u32 = 5;
-    const TY_CHAR: u32 = 6;
-    const TY_STRING: u32 = 7;
-    const TY_POINTER: u32 = 8;
     const TY_ARRAY_BASE: u32 = 128;
     const TY_STRUCT_BASE: u32 = 4096;
     const TY_ENUM_BASE: u32 = 6144;
@@ -69,14 +61,8 @@ fn type_code_note(code: u32) -> String {
 
     match code {
         TY_UNKNOWN => "unknown type".to_string(),
-        TY_VOID => "void".to_string(),
-        TY_BOOL => "bool".to_string(),
-        TY_INT => "i32".to_string(),
-        TY_UINT => "u32".to_string(),
-        TY_FLOAT => "float".to_string(),
-        TY_CHAR => "char".to_string(),
-        TY_STRING => "str".to_string(),
-        TY_POINTER => "ptr".to_string(),
+        code if crate::primitive_types::is_known(code) => crate::primitive_types::name(code)
+            .expect("known scalar has a diagnostic name").to_string(),
         code if (TY_ARRAY_BASE..TY_STRUCT_BASE).contains(&code) => {
             let element_code = code - TY_ARRAY_BASE;
             if element_code == TY_UNKNOWN {

@@ -1,0 +1,392 @@
+[
+  {
+    "shader": "32_11_admit_environments",
+    "bytes": 137560,
+    "functions": 88,
+    "stored_instructions": 8751,
+    "hypothetical_fully_inlined_instructions": 88765,
+    "largest": [
+      [
+        "%main",
+        88765
+      ],
+      [
+        "%pev_admit_batch_environment_row",
+        76603
+      ],
+      [
+        "%pev_admit_batch_environment",
+        75955
+      ],
+      [
+        "%pev_admit_environment",
+        20728
+      ],
+      [
+        "%pev_batch_call_header",
+        11631
+      ],
+      [
+        "%pev_admit_root",
+        10682
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        10673
+      ],
+      [
+        "%pev_batch_admission_row",
+        8816
+      ],
+      [
+        "%pev_admit_environment_header",
+        8061
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        7926
+      ],
+      [
+        "%pev_batch_context_header",
+        7790
+      ],
+      [
+        "%pev_batch_context_header_0",
+        7790
+      ],
+      [
+        "%pev_batch_failure",
+        3299
+      ],
+      [
+        "%ProgramEvidenceTypeGraph_substitute_type_parameter",
+        2312
+      ]
+    ]
+  },
+  {
+    "shader": "32_13_admit_contexts",
+    "bytes": 157348,
+    "functions": 93,
+    "stored_instructions": 10077,
+    "hypothetical_fully_inlined_instructions": 113283,
+    "largest": [
+      [
+        "%main",
+        113283
+      ],
+      [
+        "%pev_admit_batch_context",
+        101121
+      ],
+      [
+        "%pev_admit_batch_environment",
+        75955
+      ],
+      [
+        "%pev_admit_environment",
+        20728
+      ],
+      [
+        "%pev_admit_batch_assumption",
+        14932
+      ],
+      [
+        "%pev_batch_call_header",
+        11631
+      ],
+      [
+        "%pev_admit_root",
+        10682
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        10673
+      ],
+      [
+        "%pev_batch_admission_row",
+        8816
+      ],
+      [
+        "%pev_admit_environment_header",
+        8061
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        7926
+      ],
+      [
+        "%pev_batch_context_header",
+        7790
+      ],
+      [
+        "%pev_batch_context_header_0",
+        7790
+      ],
+      [
+        "%pev_batch_context_header_1",
+        7790
+      ]
+    ]
+  },
+  {
+    "shader": "32_14_admit_assumptions",
+    "bytes": 64688,
+    "functions": 44,
+    "stored_instructions": 4023,
+    "hypothetical_fully_inlined_instructions": 27094,
+    "largest": [
+      [
+        "%main",
+        27094
+      ],
+      [
+        "%pev_admit_batch_assumption",
+        14932
+      ],
+      [
+        "%pev_batch_admission_row",
+        8816
+      ],
+      [
+        "%pev_batch_context_header",
+        7790
+      ],
+      [
+        "%pev_batch_failure",
+        3299
+      ],
+      [
+        "%pev_applicable_predicate_at",
+        3165
+      ],
+      [
+        "%pev_applicable_predicate_count",
+        1937
+      ],
+      [
+        "%pev_batch_is_building",
+        1513
+      ],
+      [
+        "%pev_catalog_is_valid",
+        636
+      ],
+      [
+        "%pev_catalog_row",
+        491
+      ],
+      [
+        "%pev_catalog_span",
+        485
+      ],
+      [
+        "%pev_batch_span",
+        485
+      ],
+      [
+        "%pev_batch_row",
+        466
+      ],
+      [
+        "%pev_descriptor",
+        429
+      ]
+    ]
+  },
+  {
+    "shader": "32_15_admit_calls",
+    "bytes": 148864,
+    "functions": 93,
+    "stored_instructions": 9441,
+    "hypothetical_fully_inlined_instructions": 118753,
+    "largest": [
+      [
+        "%main",
+        118753
+      ],
+      [
+        "%pev_admit_batch_call",
+        106591
+      ],
+      [
+        "%pev_admit_batch_environment",
+        75955
+      ],
+      [
+        "%pev_admit_environment",
+        20728
+      ],
+      [
+        "%pev_admit_batch_obligation",
+        16206
+      ],
+      [
+        "%pev_batch_call_header",
+        11631
+      ],
+      [
+        "%pev_batch_call_header_0",
+        11631
+      ],
+      [
+        "%pev_admit_root",
+        10682
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        10673
+      ],
+      [
+        "%pev_batch_admission_row",
+        8816
+      ],
+      [
+        "%pev_admit_environment_header",
+        8061
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        7926
+      ],
+      [
+        "%pev_batch_context_header",
+        7790
+      ],
+      [
+        "%pev_batch_context_header_0",
+        7790
+      ]
+    ]
+  },
+  {
+    "shader": "32_16_admit_obligations",
+    "bytes": 65008,
+    "functions": 44,
+    "stored_instructions": 4049,
+    "hypothetical_fully_inlined_instructions": 28368,
+    "largest": [
+      [
+        "%main",
+        28368
+      ],
+      [
+        "%pev_admit_batch_obligation",
+        16206
+      ],
+      [
+        "%pev_batch_call_header",
+        11631
+      ],
+      [
+        "%pev_batch_admission_row",
+        8816
+      ],
+      [
+        "%pev_batch_context_header",
+        7790
+      ],
+      [
+        "%pev_batch_failure",
+        3299
+      ],
+      [
+        "%pev_applicable_predicate_at",
+        3165
+      ],
+      [
+        "%pev_applicable_predicate_count",
+        1937
+      ],
+      [
+        "%pev_batch_is_building",
+        1513
+      ],
+      [
+        "%pev_catalog_is_valid",
+        636
+      ],
+      [
+        "%pev_catalog_row",
+        491
+      ],
+      [
+        "%pev_catalog_span",
+        485
+      ],
+      [
+        "%pev_batch_span",
+        485
+      ],
+      [
+        "%pev_batch_row",
+        466
+      ]
+    ]
+  },
+  {
+    "shader": "32_17_admit_evidence",
+    "bytes": 93384,
+    "functions": 51,
+    "stored_instructions": 5936,
+    "hypothetical_fully_inlined_instructions": 65609,
+    "largest": [
+      [
+        "%main",
+        65609
+      ],
+      [
+        "%pev_admit_batch_evidence",
+        53447
+      ],
+      [
+        "%pev_admit_batch_obligation",
+        16206
+      ],
+      [
+        "%pev_admit_batch_assumption",
+        14932
+      ],
+      [
+        "%pev_batch_call_header",
+        11631
+      ],
+      [
+        "%pev_batch_call_header_0",
+        11631
+      ],
+      [
+        "%pev_batch_admission_row",
+        8816
+      ],
+      [
+        "%pev_batch_context_header",
+        7790
+      ],
+      [
+        "%pev_batch_context_header_0",
+        7790
+      ],
+      [
+        "%pev_batch_context_header_1",
+        7790
+      ],
+      [
+        "%pev_batch_failure",
+        3299
+      ],
+      [
+        "%pev_applicable_predicate_at",
+        3165
+      ],
+      [
+        "%pev_applicable_predicate_count",
+        1937
+      ],
+      [
+        "%pev_batch_is_building",
+        1513
+      ]
+    ]
+  }
+]

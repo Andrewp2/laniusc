@@ -1,0 +1,7 @@
+{
+  "index": 5,
+  "shader": "type_checker/calls/03c_validate_array_results.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.2655890630012436,
+  "sha256": "96dee71b599c7741e0ce6ca3204d6998b0a40b397cace3f318dfb71867baa533"
+}

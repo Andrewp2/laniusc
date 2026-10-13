@@ -1,0 +1,27 @@
+[
+  {
+    "case": "method-signature",
+    "exit": 0,
+    "tail": "sample=0 ms=268.092\nentry=tests/fixtures/stdlib_compiler_state/method-result-contract/method-signature.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=268.092 median_ms=268.092 avg_ms=268.092 max_ms=268.092 output_verified=true"
+  },
+  {
+    "case": "method-signature-inherent-control",
+    "exit": 0,
+    "tail": "sample=0 ms=191.493\nentry=tests/fixtures/stdlib_compiler_state/method-result-contract/method-signature-inherent-control.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=191.493 median_ms=191.493 avg_ms=191.493 max_ms=191.493 output_verified=true"
+  },
+  {
+    "case": "receiver-annotated",
+    "exit": 0,
+    "tail": "sample=0 ms=189.224\nentry=tests/fixtures/stdlib_compiler_state/method-result-contract/receiver-annotated.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=189.224 median_ms=189.224 avg_ms=189.224 max_ms=189.224 output_verified=true"
+  },
+  {
+    "case": "ordinary-function",
+    "exit": 0,
+    "tail": "sample=0 ms=185.336\nentry=tests/fixtures/stdlib_compiler_state/method-result-contract/ordinary-function.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=185.336 median_ms=185.336 avg_ms=185.336 max_ms=185.336 output_verified=true"
+  },
+  {
+    "case": "method-signature-annotated",
+    "exit": 0,
+    "tail": "sample=0 ms=190.442\nentry=tests/fixtures/stdlib_compiler_state/method-result-contract/method-signature-annotated.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=190.442 median_ms=190.442 avg_ms=190.442 max_ms=190.442 output_verified=true"
+  }
+]

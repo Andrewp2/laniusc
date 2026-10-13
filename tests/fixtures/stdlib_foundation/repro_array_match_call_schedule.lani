@@ -1,0 +1,9 @@
+fn choose(value: bool) -> bool { return value; }
+fn main() -> i32 {
+    let values: [i32; 2] = [
+        (match (choose(false)) { true => 11, false => 13 }),
+        (match (choose(true)) { true => 17, false => 19 })
+    ];
+    if (values[0] != 13 || values[1] != 17) { return 1; }
+    return 0;
+}

@@ -1,0 +1,28 @@
+// Every implicit self owns its declared ABI width even if its body ignores it.
+impl [i32; 2] {
+    fn after_array(self, value: i32) -> i32 { return value; }
+    fn after_explicit_array(self: [i32; 2], value: i32) -> i32 { return value; }
+}
+impl [i32; 0] {
+    fn after_empty(self, value: i32) -> i32 { return value; }
+    fn after_explicit_empty(self: [i32; 0], value: i32) -> i32 { return value; }
+}
+impl [i32] {
+    fn after_slice(self, value: i32) -> i32 { return value; }
+    fn after_explicit_slice(self: [i32], value: i32) -> i32 { return value; }
+    fn after_borrowed_slice(&self, value: i32) -> i32 { return value; }
+}
+fn slice(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let values: [i32; 2] = [71, 73];
+    if (values.after_array(131) != 131) { return 1; }
+    if (values.after_explicit_array(137) != 137) { return 2; }
+    let view: [i32] = slice(values);
+    if (view.after_slice(139) != 139) { return 3; }
+    if (view.after_borrowed_slice(149) != 149) { return 4; }
+    if (view.after_explicit_slice(151) != 151) { return 5; }
+    let empty: [i32; 0] = [];
+    if (empty.after_empty(157) != 157) { return 6; }
+    if (empty.after_explicit_empty(163) != 163) { return 7; }
+    return 0;
+}

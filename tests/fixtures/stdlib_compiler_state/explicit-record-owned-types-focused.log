@@ -1,0 +1,4 @@
+
+running 3 tests
+test explicit_record_constructor_actual_arguments_reject_context_conflicts ... ok
+test explicit_record_constructor_composed_types_execute ... 

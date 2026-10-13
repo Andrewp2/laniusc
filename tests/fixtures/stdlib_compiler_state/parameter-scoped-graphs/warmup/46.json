@@ -1,0 +1,7 @@
+{
+  "index": 46,
+  "shader": "type_checker/type/instances/04a3_nested_struct_contexts.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.466826083000342,
+  "sha256": "3725bb2341ed9a1f480dc500b0265201d9cd2c13b6c449dbad33a31504496fa0"
+}

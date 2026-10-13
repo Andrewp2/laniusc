@@ -1,0 +1,9 @@
+
+running 4 tests
+test compiler::gpu_compiler::body_specialization::tests::closed_replay_defers_missing_native_layout_to_gpu_materialization ... ok
+test type_checker::generic_body::tests::completed_gpu_layouts_replace_unknown_cache_witnesses_before_reuse ... ok
+test type_checker::generic_body::tests::semantic_packets_reject_symbolic_graphs_but_preserve_missing_layouts ... ok
+test type_checker::generic_body::tests::semantic_seed_preserves_missing_zero_and_known_width_witnesses ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 734 filtered out; finished in 0.00s
+

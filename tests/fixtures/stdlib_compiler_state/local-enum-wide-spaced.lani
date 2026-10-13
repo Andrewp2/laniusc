@@ -1,0 +1,25 @@
+
+struct Holder<T> { value: T, sentinel: i32 }
+enum Wide<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31> { First(A0), Last(A31), Absent }
+fn empty<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31>() -> Holder<Wide<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31> > {
+    return Holder { value: Absent(), sentinel: 97 };
+}
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let direct: Holder<Wide<i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2]> > = Holder { value: Last([11, 22]), sentinel: 89 };
+    let missing: Holder<Wide<i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2]> > = empty();
+    let absent: bool = match (missing.value) { Absent -> true, _ -> false };
+    let value: [i32; 2] = match (direct.value) { Last(v) -> v, _ -> [0, 0] };
+    value[0] = 33;
+    let original: [i32; 2] = match (direct.value) { Last(v) -> v, _ -> [0, 0] };
+    if (!absent || missing.sentinel != 97 || direct.sentinel != 89 || original[0] != 11 || original[1] != 22) { return 1; }
+    direct.value = First(41);
+    let first: i32 = match (direct.value) { First(v) -> v, _ -> 0 };
+    if (first != 41 || direct.sentinel != 89) { return 2; }
+    let data: [i32; 2] = [51, 61];
+    let alias: Holder<Wide<i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32; 2], i32, bool, str, [i32]> > = Holder { value: Last(view(data)), sentinel: 83 };
+    let slice: [i32] = match (alias.value) { Last(v) -> v, _ -> view(data) };
+    slice[1] = 71;
+    if (data[0] != 51 || data[1] != 71 || alias.sentinel != 83) { return 3; }
+    return 0;
+}

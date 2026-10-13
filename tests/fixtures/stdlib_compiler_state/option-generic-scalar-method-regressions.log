@@ -1,0 +1,39 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.36s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_option_scalar_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_scalar_execution-ad3ec1f71a2e4849)
+
+running 4 tests
+test option_float_methods_preserve_nan_payloads_and_ieee_membership ... FAILED
+test option_scalar_choice_program_executes ... FAILED
+test option_scalar_methods_reject_wrong_payload_arguments ... ok
+test option_scalar_payload_methods_execute_all_state_pairs ... FAILED
+
+failures:
+
+---- option_float_methods_preserve_nan_payloads_and_ieee_membership stdout ----
+
+thread 'option_float_methods_preserve_nan_payloads_and_ieee_membership' (578315) panicked at tests/stdlib_option_scalar_execution.rs:105:59:
+compile Option NaN methods: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 13, column: 57, length: 6, byte_start: Some(567), byte_end: Some(573), source_line: Some("    let selected: core::option::Option<f32> = stored.or(absent);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- option_scalar_choice_program_executes stdout ----
+
+thread 'option_scalar_choice_program_executes' (578335) panicked at tests/stdlib_option_scalar_execution.rs:135:6:
+compile scalar Option choice with ranges, slices, and arithmetic: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 26, column: 34, length: 6, byte_start: Some(1026), byte_end: Some(1032), source_line: Some("    let chosen: i32 = primary.or(backup).unwrap_or(0);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+
+---- option_scalar_payload_methods_execute_all_state_pairs stdout ----
+
+thread 'option_scalar_payload_methods_execute_all_state_pairs' (578343) panicked at tests/stdlib_option_scalar_execution.rs:68:50:
+compile concrete Option scalar methods: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 19, column: 59, length: 6, byte_start: Some(1071), byte_end: Some(1077), source_line: Some("    let selected_5: core::option::Option<i32> = absent.or(absent);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+
+
+failures:
+    option_float_methods_preserve_nan_payloads_and_ieee_membership
+    option_scalar_choice_program_executes
+    option_scalar_payload_methods_execute_all_state_pairs
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.81s
+
+error: test failed, to rerun pass `--test stdlib_option_scalar_execution`

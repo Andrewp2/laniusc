@@ -3,5 +3,5 @@ import core::maybe;
 
 fn main() -> i32 {
     let value: core::maybe::Maybe<i32> = core::maybe::None;
-    return 0;
+    return match (value) { core::maybe::None -> 0, _ -> 1 };
 }

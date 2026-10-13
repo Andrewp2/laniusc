@@ -1,0 +1,1 @@
+module core::right; pub enum Choice<T> { Right(T) }

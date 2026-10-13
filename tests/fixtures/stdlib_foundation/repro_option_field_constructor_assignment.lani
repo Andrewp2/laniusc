@@ -1,0 +1,10 @@
+import core::option;
+struct Holder { value: core::option::Option<i32> }
+fn main() -> i32 {
+    let holder: Holder = Holder { value: core::option::None() };
+    holder.value = core::option::Some(42);
+    if (core::option::unwrap_or(holder.value, 0) != 42) { return 1; }
+    holder.value = core::option::None();
+    if (!core::option::is_none(holder.value)) { return 2; }
+    return 0;
+}

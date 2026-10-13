@@ -1,0 +1,139 @@
+// Executable 32-parameter composition with generated inner applications.
+module app::main;
+import std::io;
+import core::mem;
+struct Pair { number: i32, text: str }
+struct Wide<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31> {
+    f0: A0,
+    f1: A1,
+    f2: A2,
+    f3: A3,
+    f4: A4,
+    f5: A5,
+    f6: A6,
+    f7: A7,
+    f8: A8,
+    f9: A9,
+    f10: A10,
+    f11: A11,
+    f12: A12,
+    f13: A13,
+    f14: A14,
+    f15: A15,
+    f16: A16,
+    f17: A17,
+    f18: A18,
+    f19: A19,
+    f20: A20,
+    f21: A21,
+    f22: A22,
+    f23: A23,
+    f24: A24,
+    f25: A25,
+    f26: A26,
+    f27: A27,
+    f28: A28,
+    f29: A29,
+    f30: A30,
+    f31: A31,
+}
+struct Holder<T> { child: Wide<i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, T>, sentinel: i32 }
+fn build<T>(input: T, views: [i32]) -> Holder<T> {
+    return Holder {
+        child: Wide {
+            f0: -1000,
+            f1: false,
+            f2: "Ω",
+            f3: [-7, 42],
+            f4: Pair { number: 4, text: "Ω" },
+            f5: views,
+            f6: -994,
+            f7: false,
+            f8: "Ω",
+            f9: [-7, 42],
+            f10: Pair { number: 10, text: "Ω" },
+            f11: views,
+            f12: -988,
+            f13: false,
+            f14: "Ω",
+            f15: [-7, 42],
+            f16: Pair { number: 16, text: "Ω" },
+            f17: views,
+            f18: -982,
+            f19: false,
+            f20: "Ω",
+            f21: [-7, 42],
+            f22: Pair { number: 22, text: "Ω" },
+            f23: views,
+            f24: -976,
+            f25: false,
+            f26: "Ω",
+            f27: [-7, 42],
+            f28: Pair { number: 28, text: "Ω" },
+            f29: views,
+            f30: -970,
+            f31: input,
+        }, sentinel: 1234
+    };
+}
+fn last<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31>(input: Wide<A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31>) -> A31 { return input.f31; }
+fn main() -> i32 {
+    let words: [str; 2] = ["Ω", ""];
+    let numbers: [i32; 2] = [-7, 42];
+    let value: Holder<[str; 2]> = build(words, numbers);
+    let forwarded: Holder<[str; 2]> = core::mem::identity(value);
+    let forwarded_child: Wide<i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, bool, str, [i32; 2], Pair, [i32], i32, [str; 2]> = core::mem::identity(value.child);
+    if (forwarded.child.f0 != -1000 || forwarded_child.f0 != -1000 ||
+        std::io::println(forwarded_child.f31[0]) != 3) { return 8; }
+    forwarded_child.f0 = 777;
+    if (value.child.f0 != -1000 || forwarded.child.f0 != -1000) { return 9; }
+    if (value.child.f0 != -1000) { return 1; }
+    if (value.child.f1) { return 2; }
+    if (std::io::println(value.child.f2) != 3) { return 3; }
+    if (value.child.f3[0] != -7 || value.child.f3[1] != 42) { return 4; }
+    if (value.child.f4.number != 4) { return 5; }
+    if (std::io::println(value.child.f4.text) != 3) { return 6; }
+    if (value.child.f5[0] != -7 || value.child.f5[1] != 42) { return 7; }
+    if (value.child.f6 != -994) { return 1; }
+    if (value.child.f7) { return 2; }
+    if (std::io::println(value.child.f8) != 3) { return 3; }
+    if (value.child.f9[0] != -7 || value.child.f9[1] != 42) { return 4; }
+    if (value.child.f10.number != 10) { return 5; }
+    if (std::io::println(value.child.f10.text) != 3) { return 6; }
+    if (value.child.f11[0] != -7 || value.child.f11[1] != 42) { return 7; }
+    if (value.child.f12 != -988) { return 1; }
+    if (value.child.f13) { return 2; }
+    if (std::io::println(value.child.f14) != 3) { return 3; }
+    if (value.child.f15[0] != -7 || value.child.f15[1] != 42) { return 4; }
+    if (value.child.f16.number != 16) { return 5; }
+    if (std::io::println(value.child.f16.text) != 3) { return 6; }
+    if (value.child.f17[0] != -7 || value.child.f17[1] != 42) { return 7; }
+    if (value.child.f18 != -982) { return 1; }
+    if (value.child.f19) { return 2; }
+    if (std::io::println(value.child.f20) != 3) { return 3; }
+    if (value.child.f21[0] != -7 || value.child.f21[1] != 42) { return 4; }
+    if (value.child.f22.number != 22) { return 5; }
+    if (std::io::println(value.child.f22.text) != 3) { return 6; }
+    if (value.child.f23[0] != -7 || value.child.f23[1] != 42) { return 7; }
+    if (value.child.f24 != -976) { return 1; }
+    if (value.child.f25) { return 2; }
+    if (std::io::println(value.child.f26) != 3) { return 3; }
+    if (value.child.f27[0] != -7 || value.child.f27[1] != 42) { return 4; }
+    if (value.child.f28.number != 28) { return 5; }
+    if (std::io::println(value.child.f28.text) != 3) { return 6; }
+    if (value.child.f29[0] != -7 || value.child.f29[1] != 42) { return 7; }
+    if (value.child.f30 != -970) { return 1; }
+    let selected: [str; 2] = last(value.child);
+    if (std::io::println(selected[0]) != 3) { return 8; }
+    if (std::io::println(selected[1]) != 1) { return 9; }
+    selected[0] = "changed";
+    if (std::io::println(value.child.f31[0]) != 3) { return 10; }
+    let duplicate: Holder<[str; 2]> = value;
+    duplicate.child.f0 = 999;
+    duplicate.child.f31[0] = "changed";
+    if (value.child.f0 != -1000 || value.sentinel != 1234) { return 11; }
+    if (std::io::println(value.child.f31[0]) != 3) { return 13; }
+    value.child.f5[0] = 9;
+    if (numbers[0] != 9 || value.child.f11[0] != 9) { return 12; }
+    return 0;
+}

@@ -1,0 +1,50 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 49.44s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_option_generic_payload_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_generic_payload_execution-eeaa609c017fb174)
+
+running 1 test
+test actual_option_generic_payload_functions_execute_scalar_and_string_instances ... METHOD DEBUG method GpuSemanticInterfaceMemberRecord { owner_declaration: 1, kind: 6, ordinal: 15, name_hash_lo: 3239899390, name_hash_hi: 3084123927, name_byte_start: 2336, name_byte_len: 9, type_index: 151, value_lo: 1, value_hi: 2147484068, receiver_type_index: 156 } types 317 edges 170
+METHOD DEBUG type 152: GpuSemanticInterfaceTypeRecord { kind: 2, payload_lo: 17, payload_hi: 0, first_edge: 16, edge_count: 0, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG type 151: GpuSemanticInterfaceTypeRecord { kind: 2, payload_lo: 17, payload_hi: 0, first_edge: 16, edge_count: 0, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG type 156: GpuSemanticInterfaceTypeRecord { kind: 3, payload_lo: 0, payload_hi: 1, first_edge: 16, edge_count: 1, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG type 155: GpuSemanticInterfaceTypeRecord { kind: 2, payload_lo: 17, payload_hi: 0, first_edge: 16, edge_count: 0, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG slots {17} receiver slots [(17, 0)]
+METHOD DEBUG method GpuSemanticInterfaceMemberRecord { owner_declaration: 1, kind: 6, ordinal: 15, name_hash_lo: 3239899390, name_hash_hi: 3084123927, name_byte_start: 2336, name_byte_len: 9, type_index: 151, value_lo: 1, value_hi: 2147484068, receiver_type_index: 156 } types 317 edges 170
+METHOD DEBUG type 152: GpuSemanticInterfaceTypeRecord { kind: 2, payload_lo: 17, payload_hi: 0, first_edge: 16, edge_count: 0, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG type 151: GpuSemanticInterfaceTypeRecord { kind: 2, payload_lo: 17, payload_hi: 0, first_edge: 16, edge_count: 0, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG type 156: GpuSemanticInterfaceTypeRecord { kind: 3, payload_lo: 0, payload_hi: 1, first_edge: 16, edge_count: 1, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG type 155: GpuSemanticInterfaceTypeRecord { kind: 2, payload_lo: 17, payload_hi: 0, first_edge: 16, edge_count: 0, length_kind: 0, length_lo: 0, length_hi: 0, nominal_unit_id: 0 }
+METHOD DEBUG slots {17} receiver slots [(17, 0)]
+BODY DEBUG unit 0:0 methods []
+BODY DEBUG unit 1:1 methods [CheckedGenericCall { call_hir: 102, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 141, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 146, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 200, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 205, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 212, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484068 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 220, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484068 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 228, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 294, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484056 }, arguments: [], receiver_arguments: [Scalar(2)], required_generic_parameters: None }, CheckedGenericCall { call_hir: 670, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484044 }, arguments: [], receiver_arguments: [Scalar(7)], required_generic_parameters: None }]
+BODY DEBUG incomplete CheckedGenericCall { call_hir: 212, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484068 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }
+BODY DEBUG incomplete CheckedGenericCall { call_hir: 220, target: DependencyMethod { library_id: 0, unit_id: 0, method_symbol: 2147484068 }, arguments: [], receiver_arguments: [Scalar(3)], required_generic_parameters: None }
+BODY DEBUG absent call 282 symbol 31 identity [0, 0, 0, 0, 0, 0, 0, 0, 133, 2, 0, 128]
+BODY DEBUG absent call 288 symbol 32 identity [0, 0, 0, 0, 0, 0, 0, 0, 133, 2, 0, 128]
+BODY DEBUG absent call 357 symbol 39 identity [0, 0, 0, 0, 0, 0, 0, 0, 191, 2, 0, 128]
+BODY DEBUG absent call 363 symbol 40 identity [0, 0, 0, 0, 0, 0, 0, 0, 191, 2, 0, 128]
+BODY DEBUG absent call 369 symbol 41 identity [0, 0, 0, 0, 0, 0, 0, 0, 191, 2, 0, 128]
+BODY DEBUG absent call 431 symbol 47 identity [0, 0, 0, 0, 0, 0, 0, 0, 211, 2, 0, 128]
+BODY DEBUG absent call 438 symbol 48 identity [0, 0, 0, 0, 0, 0, 0, 0, 211, 2, 0, 128]
+BODY DEBUG absent call 445 symbol 49 identity [0, 0, 0, 0, 0, 0, 0, 0, 211, 2, 0, 128]
+BODY DEBUG absent call 554 symbol 57 identity [0, 0, 0, 0, 0, 0, 0, 0, 231, 2, 0, 128]
+BODY DEBUG absent call 560 symbol 58 identity [0, 0, 0, 0, 0, 0, 0, 0, 231, 2, 0, 128]
+BODY DEBUG absent call 566 symbol 59 identity [0, 0, 0, 0, 0, 0, 0, 0, 231, 2, 0, 128]
+
+thread 'actual_option_generic_payload_functions_execute_scalar_and_string_instances' (572541) panicked at tests/stdlib_option_generic_payload_execution.rs:33:6:
+instantiate actual Option free functions with all supported scalar identities: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 2147484068; relocation 23)"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    actual_option_generic_payload_functions_execute_scalar_and_string_instances
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+
+error: test failed, to rerun pass `--test stdlib_option_generic_payload_execution`

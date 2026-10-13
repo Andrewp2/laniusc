@@ -1,0 +1,13 @@
+    Finished `release` profile [optimized] target(s) in 0.19s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/stdlib-perf/build/release/deps/laniusc_compiler-2bd833ccf41b075f)
+
+running 4 tests
+test compiler::gpu_compiler::unit_cache::tests::template_dependency_snapshots_are_charged_to_the_cache_budget ... ok
+test compiler::gpu_compiler::unit_cache::tests::template_sources_are_charged_to_the_cache_budget_without_orphan_hints ... ok
+test compiler::gpu_compiler::x86_codegen::tests::retained_template_context_recompiles_with_original_dependency_interfaces ... ok
+test compiler::gpu_compiler::x86_codegen::tests::retained_template_sources_recompile_after_caller_inputs_are_changed ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 607 filtered out; finished in 1.53s
+

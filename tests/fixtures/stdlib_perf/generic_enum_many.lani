@@ -1,0 +1,388 @@
+// Layout stress: 64 concrete generic enums and scalar match results.
+pub enum Maybe_0<T> { Present_0(T), Absent_0 }
+fn probe_0() -> i32 {
+    let value: Maybe_0<i32> = Present_0(0);
+    return match (value) { Present_0(payload_0) -> payload_0, Absent_0 -> -1 };
+}
+pub enum Maybe_1<T> { Present_1(T), Absent_1 }
+fn probe_1() -> i32 {
+    let value: Maybe_1<i32> = Present_1(1);
+    return match (value) { Present_1(payload_1) -> payload_1, Absent_1 -> -1 };
+}
+pub enum Maybe_2<T> { Present_2(T), Absent_2 }
+fn probe_2() -> i32 {
+    let value: Maybe_2<i32> = Present_2(2);
+    return match (value) { Present_2(payload_2) -> payload_2, Absent_2 -> -1 };
+}
+pub enum Maybe_3<T> { Present_3(T), Absent_3 }
+fn probe_3() -> i32 {
+    let value: Maybe_3<i32> = Present_3(3);
+    return match (value) { Present_3(payload_3) -> payload_3, Absent_3 -> -1 };
+}
+pub enum Maybe_4<T> { Present_4(T), Absent_4 }
+fn probe_4() -> i32 {
+    let value: Maybe_4<i32> = Present_4(4);
+    return match (value) { Present_4(payload_4) -> payload_4, Absent_4 -> -1 };
+}
+pub enum Maybe_5<T> { Present_5(T), Absent_5 }
+fn probe_5() -> i32 {
+    let value: Maybe_5<i32> = Present_5(5);
+    return match (value) { Present_5(payload_5) -> payload_5, Absent_5 -> -1 };
+}
+pub enum Maybe_6<T> { Present_6(T), Absent_6 }
+fn probe_6() -> i32 {
+    let value: Maybe_6<i32> = Present_6(6);
+    return match (value) { Present_6(payload_6) -> payload_6, Absent_6 -> -1 };
+}
+pub enum Maybe_7<T> { Present_7(T), Absent_7 }
+fn probe_7() -> i32 {
+    let value: Maybe_7<i32> = Present_7(7);
+    return match (value) { Present_7(payload_7) -> payload_7, Absent_7 -> -1 };
+}
+pub enum Maybe_8<T> { Present_8(T), Absent_8 }
+fn probe_8() -> i32 {
+    let value: Maybe_8<i32> = Present_8(8);
+    return match (value) { Present_8(payload_8) -> payload_8, Absent_8 -> -1 };
+}
+pub enum Maybe_9<T> { Present_9(T), Absent_9 }
+fn probe_9() -> i32 {
+    let value: Maybe_9<i32> = Present_9(9);
+    return match (value) { Present_9(payload_9) -> payload_9, Absent_9 -> -1 };
+}
+pub enum Maybe_10<T> { Present_10(T), Absent_10 }
+fn probe_10() -> i32 {
+    let value: Maybe_10<i32> = Present_10(10);
+    return match (value) { Present_10(payload_10) -> payload_10, Absent_10 -> -1 };
+}
+pub enum Maybe_11<T> { Present_11(T), Absent_11 }
+fn probe_11() -> i32 {
+    let value: Maybe_11<i32> = Present_11(11);
+    return match (value) { Present_11(payload_11) -> payload_11, Absent_11 -> -1 };
+}
+pub enum Maybe_12<T> { Present_12(T), Absent_12 }
+fn probe_12() -> i32 {
+    let value: Maybe_12<i32> = Present_12(12);
+    return match (value) { Present_12(payload_12) -> payload_12, Absent_12 -> -1 };
+}
+pub enum Maybe_13<T> { Present_13(T), Absent_13 }
+fn probe_13() -> i32 {
+    let value: Maybe_13<i32> = Present_13(13);
+    return match (value) { Present_13(payload_13) -> payload_13, Absent_13 -> -1 };
+}
+pub enum Maybe_14<T> { Present_14(T), Absent_14 }
+fn probe_14() -> i32 {
+    let value: Maybe_14<i32> = Present_14(14);
+    return match (value) { Present_14(payload_14) -> payload_14, Absent_14 -> -1 };
+}
+pub enum Maybe_15<T> { Present_15(T), Absent_15 }
+fn probe_15() -> i32 {
+    let value: Maybe_15<i32> = Present_15(15);
+    return match (value) { Present_15(payload_15) -> payload_15, Absent_15 -> -1 };
+}
+pub enum Maybe_16<T> { Present_16(T), Absent_16 }
+fn probe_16() -> i32 {
+    let value: Maybe_16<i32> = Present_16(16);
+    return match (value) { Present_16(payload_16) -> payload_16, Absent_16 -> -1 };
+}
+pub enum Maybe_17<T> { Present_17(T), Absent_17 }
+fn probe_17() -> i32 {
+    let value: Maybe_17<i32> = Present_17(17);
+    return match (value) { Present_17(payload_17) -> payload_17, Absent_17 -> -1 };
+}
+pub enum Maybe_18<T> { Present_18(T), Absent_18 }
+fn probe_18() -> i32 {
+    let value: Maybe_18<i32> = Present_18(18);
+    return match (value) { Present_18(payload_18) -> payload_18, Absent_18 -> -1 };
+}
+pub enum Maybe_19<T> { Present_19(T), Absent_19 }
+fn probe_19() -> i32 {
+    let value: Maybe_19<i32> = Present_19(19);
+    return match (value) { Present_19(payload_19) -> payload_19, Absent_19 -> -1 };
+}
+pub enum Maybe_20<T> { Present_20(T), Absent_20 }
+fn probe_20() -> i32 {
+    let value: Maybe_20<i32> = Present_20(20);
+    return match (value) { Present_20(payload_20) -> payload_20, Absent_20 -> -1 };
+}
+pub enum Maybe_21<T> { Present_21(T), Absent_21 }
+fn probe_21() -> i32 {
+    let value: Maybe_21<i32> = Present_21(21);
+    return match (value) { Present_21(payload_21) -> payload_21, Absent_21 -> -1 };
+}
+pub enum Maybe_22<T> { Present_22(T), Absent_22 }
+fn probe_22() -> i32 {
+    let value: Maybe_22<i32> = Present_22(22);
+    return match (value) { Present_22(payload_22) -> payload_22, Absent_22 -> -1 };
+}
+pub enum Maybe_23<T> { Present_23(T), Absent_23 }
+fn probe_23() -> i32 {
+    let value: Maybe_23<i32> = Present_23(23);
+    return match (value) { Present_23(payload_23) -> payload_23, Absent_23 -> -1 };
+}
+pub enum Maybe_24<T> { Present_24(T), Absent_24 }
+fn probe_24() -> i32 {
+    let value: Maybe_24<i32> = Present_24(24);
+    return match (value) { Present_24(payload_24) -> payload_24, Absent_24 -> -1 };
+}
+pub enum Maybe_25<T> { Present_25(T), Absent_25 }
+fn probe_25() -> i32 {
+    let value: Maybe_25<i32> = Present_25(25);
+    return match (value) { Present_25(payload_25) -> payload_25, Absent_25 -> -1 };
+}
+pub enum Maybe_26<T> { Present_26(T), Absent_26 }
+fn probe_26() -> i32 {
+    let value: Maybe_26<i32> = Present_26(26);
+    return match (value) { Present_26(payload_26) -> payload_26, Absent_26 -> -1 };
+}
+pub enum Maybe_27<T> { Present_27(T), Absent_27 }
+fn probe_27() -> i32 {
+    let value: Maybe_27<i32> = Present_27(27);
+    return match (value) { Present_27(payload_27) -> payload_27, Absent_27 -> -1 };
+}
+pub enum Maybe_28<T> { Present_28(T), Absent_28 }
+fn probe_28() -> i32 {
+    let value: Maybe_28<i32> = Present_28(28);
+    return match (value) { Present_28(payload_28) -> payload_28, Absent_28 -> -1 };
+}
+pub enum Maybe_29<T> { Present_29(T), Absent_29 }
+fn probe_29() -> i32 {
+    let value: Maybe_29<i32> = Present_29(29);
+    return match (value) { Present_29(payload_29) -> payload_29, Absent_29 -> -1 };
+}
+pub enum Maybe_30<T> { Present_30(T), Absent_30 }
+fn probe_30() -> i32 {
+    let value: Maybe_30<i32> = Present_30(30);
+    return match (value) { Present_30(payload_30) -> payload_30, Absent_30 -> -1 };
+}
+pub enum Maybe_31<T> { Present_31(T), Absent_31 }
+fn probe_31() -> i32 {
+    let value: Maybe_31<i32> = Present_31(31);
+    return match (value) { Present_31(payload_31) -> payload_31, Absent_31 -> -1 };
+}
+pub enum Maybe_32<T> { Present_32(T), Absent_32 }
+fn probe_32() -> i32 {
+    let value: Maybe_32<i32> = Present_32(32);
+    return match (value) { Present_32(payload_32) -> payload_32, Absent_32 -> -1 };
+}
+pub enum Maybe_33<T> { Present_33(T), Absent_33 }
+fn probe_33() -> i32 {
+    let value: Maybe_33<i32> = Present_33(33);
+    return match (value) { Present_33(payload_33) -> payload_33, Absent_33 -> -1 };
+}
+pub enum Maybe_34<T> { Present_34(T), Absent_34 }
+fn probe_34() -> i32 {
+    let value: Maybe_34<i32> = Present_34(34);
+    return match (value) { Present_34(payload_34) -> payload_34, Absent_34 -> -1 };
+}
+pub enum Maybe_35<T> { Present_35(T), Absent_35 }
+fn probe_35() -> i32 {
+    let value: Maybe_35<i32> = Present_35(35);
+    return match (value) { Present_35(payload_35) -> payload_35, Absent_35 -> -1 };
+}
+pub enum Maybe_36<T> { Present_36(T), Absent_36 }
+fn probe_36() -> i32 {
+    let value: Maybe_36<i32> = Present_36(36);
+    return match (value) { Present_36(payload_36) -> payload_36, Absent_36 -> -1 };
+}
+pub enum Maybe_37<T> { Present_37(T), Absent_37 }
+fn probe_37() -> i32 {
+    let value: Maybe_37<i32> = Present_37(37);
+    return match (value) { Present_37(payload_37) -> payload_37, Absent_37 -> -1 };
+}
+pub enum Maybe_38<T> { Present_38(T), Absent_38 }
+fn probe_38() -> i32 {
+    let value: Maybe_38<i32> = Present_38(38);
+    return match (value) { Present_38(payload_38) -> payload_38, Absent_38 -> -1 };
+}
+pub enum Maybe_39<T> { Present_39(T), Absent_39 }
+fn probe_39() -> i32 {
+    let value: Maybe_39<i32> = Present_39(39);
+    return match (value) { Present_39(payload_39) -> payload_39, Absent_39 -> -1 };
+}
+pub enum Maybe_40<T> { Present_40(T), Absent_40 }
+fn probe_40() -> i32 {
+    let value: Maybe_40<i32> = Present_40(40);
+    return match (value) { Present_40(payload_40) -> payload_40, Absent_40 -> -1 };
+}
+pub enum Maybe_41<T> { Present_41(T), Absent_41 }
+fn probe_41() -> i32 {
+    let value: Maybe_41<i32> = Present_41(41);
+    return match (value) { Present_41(payload_41) -> payload_41, Absent_41 -> -1 };
+}
+pub enum Maybe_42<T> { Present_42(T), Absent_42 }
+fn probe_42() -> i32 {
+    let value: Maybe_42<i32> = Present_42(42);
+    return match (value) { Present_42(payload_42) -> payload_42, Absent_42 -> -1 };
+}
+pub enum Maybe_43<T> { Present_43(T), Absent_43 }
+fn probe_43() -> i32 {
+    let value: Maybe_43<i32> = Present_43(43);
+    return match (value) { Present_43(payload_43) -> payload_43, Absent_43 -> -1 };
+}
+pub enum Maybe_44<T> { Present_44(T), Absent_44 }
+fn probe_44() -> i32 {
+    let value: Maybe_44<i32> = Present_44(44);
+    return match (value) { Present_44(payload_44) -> payload_44, Absent_44 -> -1 };
+}
+pub enum Maybe_45<T> { Present_45(T), Absent_45 }
+fn probe_45() -> i32 {
+    let value: Maybe_45<i32> = Present_45(45);
+    return match (value) { Present_45(payload_45) -> payload_45, Absent_45 -> -1 };
+}
+pub enum Maybe_46<T> { Present_46(T), Absent_46 }
+fn probe_46() -> i32 {
+    let value: Maybe_46<i32> = Present_46(46);
+    return match (value) { Present_46(payload_46) -> payload_46, Absent_46 -> -1 };
+}
+pub enum Maybe_47<T> { Present_47(T), Absent_47 }
+fn probe_47() -> i32 {
+    let value: Maybe_47<i32> = Present_47(47);
+    return match (value) { Present_47(payload_47) -> payload_47, Absent_47 -> -1 };
+}
+pub enum Maybe_48<T> { Present_48(T), Absent_48 }
+fn probe_48() -> i32 {
+    let value: Maybe_48<i32> = Present_48(48);
+    return match (value) { Present_48(payload_48) -> payload_48, Absent_48 -> -1 };
+}
+pub enum Maybe_49<T> { Present_49(T), Absent_49 }
+fn probe_49() -> i32 {
+    let value: Maybe_49<i32> = Present_49(49);
+    return match (value) { Present_49(payload_49) -> payload_49, Absent_49 -> -1 };
+}
+pub enum Maybe_50<T> { Present_50(T), Absent_50 }
+fn probe_50() -> i32 {
+    let value: Maybe_50<i32> = Present_50(50);
+    return match (value) { Present_50(payload_50) -> payload_50, Absent_50 -> -1 };
+}
+pub enum Maybe_51<T> { Present_51(T), Absent_51 }
+fn probe_51() -> i32 {
+    let value: Maybe_51<i32> = Present_51(51);
+    return match (value) { Present_51(payload_51) -> payload_51, Absent_51 -> -1 };
+}
+pub enum Maybe_52<T> { Present_52(T), Absent_52 }
+fn probe_52() -> i32 {
+    let value: Maybe_52<i32> = Present_52(52);
+    return match (value) { Present_52(payload_52) -> payload_52, Absent_52 -> -1 };
+}
+pub enum Maybe_53<T> { Present_53(T), Absent_53 }
+fn probe_53() -> i32 {
+    let value: Maybe_53<i32> = Present_53(53);
+    return match (value) { Present_53(payload_53) -> payload_53, Absent_53 -> -1 };
+}
+pub enum Maybe_54<T> { Present_54(T), Absent_54 }
+fn probe_54() -> i32 {
+    let value: Maybe_54<i32> = Present_54(54);
+    return match (value) { Present_54(payload_54) -> payload_54, Absent_54 -> -1 };
+}
+pub enum Maybe_55<T> { Present_55(T), Absent_55 }
+fn probe_55() -> i32 {
+    let value: Maybe_55<i32> = Present_55(55);
+    return match (value) { Present_55(payload_55) -> payload_55, Absent_55 -> -1 };
+}
+pub enum Maybe_56<T> { Present_56(T), Absent_56 }
+fn probe_56() -> i32 {
+    let value: Maybe_56<i32> = Present_56(56);
+    return match (value) { Present_56(payload_56) -> payload_56, Absent_56 -> -1 };
+}
+pub enum Maybe_57<T> { Present_57(T), Absent_57 }
+fn probe_57() -> i32 {
+    let value: Maybe_57<i32> = Present_57(57);
+    return match (value) { Present_57(payload_57) -> payload_57, Absent_57 -> -1 };
+}
+pub enum Maybe_58<T> { Present_58(T), Absent_58 }
+fn probe_58() -> i32 {
+    let value: Maybe_58<i32> = Present_58(58);
+    return match (value) { Present_58(payload_58) -> payload_58, Absent_58 -> -1 };
+}
+pub enum Maybe_59<T> { Present_59(T), Absent_59 }
+fn probe_59() -> i32 {
+    let value: Maybe_59<i32> = Present_59(59);
+    return match (value) { Present_59(payload_59) -> payload_59, Absent_59 -> -1 };
+}
+pub enum Maybe_60<T> { Present_60(T), Absent_60 }
+fn probe_60() -> i32 {
+    let value: Maybe_60<i32> = Present_60(60);
+    return match (value) { Present_60(payload_60) -> payload_60, Absent_60 -> -1 };
+}
+pub enum Maybe_61<T> { Present_61(T), Absent_61 }
+fn probe_61() -> i32 {
+    let value: Maybe_61<i32> = Present_61(61);
+    return match (value) { Present_61(payload_61) -> payload_61, Absent_61 -> -1 };
+}
+pub enum Maybe_62<T> { Present_62(T), Absent_62 }
+fn probe_62() -> i32 {
+    let value: Maybe_62<i32> = Present_62(62);
+    return match (value) { Present_62(payload_62) -> payload_62, Absent_62 -> -1 };
+}
+pub enum Maybe_63<T> { Present_63(T), Absent_63 }
+fn probe_63() -> i32 {
+    let value: Maybe_63<i32> = Present_63(63);
+    return match (value) { Present_63(payload_63) -> payload_63, Absent_63 -> -1 };
+}
+fn main() -> i32 {
+    if (probe_0() != 0) { return 1; }
+    if (probe_1() != 1) { return 1; }
+    if (probe_2() != 2) { return 1; }
+    if (probe_3() != 3) { return 1; }
+    if (probe_4() != 4) { return 1; }
+    if (probe_5() != 5) { return 1; }
+    if (probe_6() != 6) { return 1; }
+    if (probe_7() != 7) { return 1; }
+    if (probe_8() != 8) { return 1; }
+    if (probe_9() != 9) { return 1; }
+    if (probe_10() != 10) { return 1; }
+    if (probe_11() != 11) { return 1; }
+    if (probe_12() != 12) { return 1; }
+    if (probe_13() != 13) { return 1; }
+    if (probe_14() != 14) { return 1; }
+    if (probe_15() != 15) { return 1; }
+    if (probe_16() != 16) { return 1; }
+    if (probe_17() != 17) { return 1; }
+    if (probe_18() != 18) { return 1; }
+    if (probe_19() != 19) { return 1; }
+    if (probe_20() != 20) { return 1; }
+    if (probe_21() != 21) { return 1; }
+    if (probe_22() != 22) { return 1; }
+    if (probe_23() != 23) { return 1; }
+    if (probe_24() != 24) { return 1; }
+    if (probe_25() != 25) { return 1; }
+    if (probe_26() != 26) { return 1; }
+    if (probe_27() != 27) { return 1; }
+    if (probe_28() != 28) { return 1; }
+    if (probe_29() != 29) { return 1; }
+    if (probe_30() != 30) { return 1; }
+    if (probe_31() != 31) { return 1; }
+    if (probe_32() != 32) { return 1; }
+    if (probe_33() != 33) { return 1; }
+    if (probe_34() != 34) { return 1; }
+    if (probe_35() != 35) { return 1; }
+    if (probe_36() != 36) { return 1; }
+    if (probe_37() != 37) { return 1; }
+    if (probe_38() != 38) { return 1; }
+    if (probe_39() != 39) { return 1; }
+    if (probe_40() != 40) { return 1; }
+    if (probe_41() != 41) { return 1; }
+    if (probe_42() != 42) { return 1; }
+    if (probe_43() != 43) { return 1; }
+    if (probe_44() != 44) { return 1; }
+    if (probe_45() != 45) { return 1; }
+    if (probe_46() != 46) { return 1; }
+    if (probe_47() != 47) { return 1; }
+    if (probe_48() != 48) { return 1; }
+    if (probe_49() != 49) { return 1; }
+    if (probe_50() != 50) { return 1; }
+    if (probe_51() != 51) { return 1; }
+    if (probe_52() != 52) { return 1; }
+    if (probe_53() != 53) { return 1; }
+    if (probe_54() != 54) { return 1; }
+    if (probe_55() != 55) { return 1; }
+    if (probe_56() != 56) { return 1; }
+    if (probe_57() != 57) { return 1; }
+    if (probe_58() != 58) { return 1; }
+    if (probe_59() != 59) { return 1; }
+    if (probe_60() != 60) { return 1; }
+    if (probe_61() != 61) { return 1; }
+    if (probe_62() != 62) { return 1; }
+    if (probe_63() != 63) { return 1; }
+    return 0;
+}

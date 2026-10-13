@@ -49,7 +49,7 @@ RWStructuredBuffer<uint> hir_array_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_type_alias_target_node;
 RWStructuredBuffer<uint> hir_fn_return_type_node;
-RWStructuredBuffer<uint> hir_type_len_value;
+RWStructuredBuffer<uint> hir_type_len_operand;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -122,7 +122,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_type_alias_target_node[node] = INVALID;
         hir_fn_return_type_node[node] = INVALID;
     }
-    hir_type_len_value[node] = INVALID;
+    hir_type_len_operand[node] = INVALID;
     if ((gClear.parser_feature_flags & PARSER_FEATURE_PREDICATES) != 0u ||
         gClear.retain_debug_rows != 0u)
     {

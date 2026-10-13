@@ -1,0 +1,11 @@
+sample=0 ms=9.361
+sample=1 ms=8.843
+sample=2 ms=9.481
+sample=3 ms=8.967
+sample=4 ms=8.738
+sample=5 ms=9.304
+sample=6 ms=11.265
+sample=7 ms=11.393
+sample=8 ms=9.970
+sample=9 ms=13.993
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/function_calls.lani warmups=3 iters=10 output_bytes=2201 min_ms=8.738 median_ms=9.421 avg_ms=10.132 max_ms=13.993 output_verified=true

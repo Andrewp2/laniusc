@@ -19,5 +19,4 @@ mod state;
 pub(super) use create::create_with_passes as create_module_path_state_with_passes;
 pub(super) use dependency_visibility::DependencyVisibilityState;
 pub(super) use inputs::CreateInputs as ModulePathCreateInputs;
-pub(super) use projection::TypeAliasProjectStage;
 pub(super) use state::State as ModulePathState;

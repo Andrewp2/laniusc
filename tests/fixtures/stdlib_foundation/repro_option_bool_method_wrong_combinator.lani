@@ -1,0 +1,8 @@
+module app::main;
+import core::option;
+fn main() -> i32 {
+    let value: core::option::Option<bool> = core::option::None();
+    let other: core::option::Option<i32> = core::option::Some(7);
+    let result: core::option::Option<bool> = value.and(other);
+    return 0;
+}

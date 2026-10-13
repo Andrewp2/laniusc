@@ -46,6 +46,7 @@ pub(crate) struct GpuX86ArtifactObjectView<'a> {
 pub(crate) struct GpuX86ArtifactStage {
     artifact_capacity: u32,
     byte_counts: Vec<ComputeOperation>,
+    integer_byte_counts: Vec<ComputeOperation>,
     entrypoint_clear: ComputeOperation,
     entrypoint_reduce: ComputeOperation,
     layout_op: ComputeOperation,
@@ -130,6 +131,7 @@ impl GpuX86ArtifactStage {
         let fixed_params = &params[0];
 
         let byte_count_pass = load(kernels, "lir.x86.byte_count", "codegen/lir/x86/byte_count")?;
+        let integer_byte_count_pass = load(kernels, "lir.x86.integer_byte_count", "codegen/lir/x86/integer_byte_count")?;
         let entrypoint_clear_pass = load(
             kernels,
             "lir.x86.entrypoint.clear",
@@ -188,6 +190,25 @@ impl GpuX86ArtifactStage {
                     &resources,
                     "lir.x86.byte_count",
                     &byte_count_pass,
+                    params,
+                    target_capacity
+                        .saturating_sub(target_start)
+                        .min(TARGET_LIR_PAGE_ROWS),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let integer_byte_counts = params
+            .iter()
+            .enumerate()
+            .take(target_capacity.div_ceil(TARGET_LIR_PAGE_ROWS) as usize)
+            .map(|(page_id, params)| {
+                let target_start = page_id as u32 * TARGET_LIR_PAGE_ROWS;
+                ComputeOperation::direct_with_uniform(
+                    device,
+                    &context,
+                    &resources,
+                    "lir.x86.integer_byte_count",
+                    &integer_byte_count_pass,
                     params,
                     target_capacity
                         .saturating_sub(target_start)
@@ -346,6 +367,7 @@ impl GpuX86ArtifactStage {
         Ok(Self {
             artifact_capacity,
             byte_counts,
+            integer_byte_counts,
             entrypoint_clear,
             entrypoint_reduce,
             layout_op,
@@ -375,6 +397,10 @@ impl GpuX86ArtifactStage {
         self.byte_counts
             .get(page_id)
             .context("x86 target page has no byte-count operation")?
+            .record(encoder)?;
+        self.integer_byte_counts
+            .get(page_id)
+            .context("x86 target page has no integer byte-count operation")?
             .record(encoder)
     }
 
@@ -615,6 +641,13 @@ mod tests {
             &records(&[[u32::MAX; 4]; 2]),
             2,
         );
+        let place_storage_by_token = storage_ro_from_u32s(
+            &gpu.device,
+            "test.place_storage_by_token",
+            &vec![0u32; capacities.declaration_capacity() as usize * 4],
+        );
+        let param_value_layout =
+            storage_ro_from_u32s(&gpu.device, "test.parameter_value_layout", &[0u32; 128]);
         let semantic = GpuSemanticLirView {
             count: &semantic_total,
             core: &semantic_core,
@@ -635,6 +668,8 @@ mod tests {
             functions: &semantic_functions,
             function_count: &semantic_function_count,
             params: &semantic_params,
+            param_value_layout: &param_value_layout,
+            place_storage_by_token: &place_storage_by_token,
             param_count: &zero,
             locals: &semantic_locals,
             local_count: &zero,
@@ -727,7 +762,7 @@ mod tests {
             &records(&[
                 [1.5f32.to_bits(), 0, 0, 5],
                 [2.0f32.to_bits(), 0, 0, 5],
-                [opcode::X86_LIR_BINARY_ADD_F32, 0, 1, 5],
+                [opcode::X86_LIR_BINARY_ADD_FLOAT, 0, 1, 5],
                 [3.5f32.to_bits(), 0, 0, 5],
                 [0, 2, 3, 5],
                 [4, 0, 0, 0],

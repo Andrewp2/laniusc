@@ -1,0 +1,13 @@
+module core::portable;
+
+pub struct Cell<T> { value: T }
+impl<T> Cell<T> {
+    pub fn borrow(&self) -> &Cell<T> { return self; }
+}
+pub trait Contract<const N: usize, T> {
+    pub fn apply(value: &[Cell<T>; N]) -> [Cell<T>; N];
+    fn reset(&self);
+}
+
+pub fn hold<T>(value: T) -> T { return value; }
+pub fn view<T>(values: [T]) -> [T] { return values; }

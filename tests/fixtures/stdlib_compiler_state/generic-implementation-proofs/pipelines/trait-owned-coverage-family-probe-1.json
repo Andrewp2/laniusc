@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/shader_pipeline_probe",
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/compile-overlays/owned-matching-families-v1/tests__owned_type_constraints_coverage__production.spv",
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/compile-overlays/owned-matching-families-v1/tests__owned_type_constraints_coverage__production.reflection.json"
+  ],
+  "seconds": 1.5871365279999736,
+  "exit_code": 0,
+  "spv_sha256": "ba8911c06d75173c62bfcaa976b025d2b9321bc99aac195594cd0cfbecdfbaac",
+  "reflection_sha256": "beeddf21f71eeb5af30f04d73a42dc3d8b480d887873366b59c86409bb148431",
+  "probe_sha256": "7816d4d297469299829f4cc67709e74f65ea7222edece9bc92aafeb89f8201c6",
+  "output": "{\"pipeline_create_ms\":408.850798,\"reflected_parameters\":4,\"reflection\":\"/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/compile-overlays/owned-matching-families-v1/tests__owned_type_constraints_coverage__production.reflection.json\",\"schema\":\"lanius.shader-pipeline-probe.v1\",\"spv\":\"/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/compile-overlays/owned-matching-families-v1/tests__owned_type_constraints_coverage__production.spv\",\"spv_bytes\":66296}\n"
+}

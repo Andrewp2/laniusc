@@ -1,0 +1,38 @@
+import core::option;
+import core::result;
+import std::io;
+struct Cell<T> { value: T }
+fn keep<T>(value: T) -> T { return value; }
+fn mark(value: i32) -> bool { std::io::print_i32(value); return true; }
+fn main() -> i32 {
+    let stored_false: core::option::Option<bool> = core::option::Some(false);
+    if ((match (stored_false) { core::option::Some(v) -> keep(v), core::option::None -> true })) {
+        return 1;
+    } else { std::io::print_i32(1); }
+    let cell: Cell<bool> = Cell { value: true };
+    let record: core::option::Option<Cell<bool>> = core::option::Some(cell);
+    if ((match (record) { core::option::Some(v) -> v.value, core::option::None -> false })) {
+        std::io::print_i32(2);
+    } else { return 2; }
+    let success: core::result::Result<bool, i32> = core::result::Ok(true);
+    if ((match ((match (success) {
+        core::result::Ok(v) -> keep(v), core::result::Err(e) -> false
+    })) { true -> keep(true), false -> false })) { std::io::print_i32(3); }
+    else { return 3; }
+    let absent: core::option::Option<bool> = core::option::None();
+    let picked: [i32; 1] = [(match ((match (absent) {
+        core::option::Some(v) -> v, core::option::None -> true
+    })) { true -> keep(7), false -> 99 })];
+    if (picked[0] != 7) { return 4; }
+    let count: i32 = 0;
+    while ((match (count < 2) { true -> keep(true), false -> false })) {
+        count = count + 1;
+        std::io::print_i32(count + 3);
+    }
+    if (count != 2) { return 5; }
+    if (false && (match (true) { true -> mark(98), false -> false })) { return 6; }
+    if (true || (match (true) { true -> mark(99), false -> false })) {
+        std::io::print_i32(6);
+    } else { return 7; }
+    return 0;
+}

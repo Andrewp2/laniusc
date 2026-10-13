@@ -1,0 +1,40 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+    Finished `release` profile [optimized] target(s) in 58.55s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 7 tests
+test deferred_template_interfaces_still_check_payload_arguments ... ok
+test imported_receiver_payload_templates_execute_distinct_scalar_instances ... ok
+test imported_scalar_payload_templates_execute_both_branches ... ok
+test qualified_generic_scalar_returns_execute_after_substitution ... ok
+test unresolved_payload_templates_do_not_poison_imported_executable_functions ... ok
+test unused_local_payload_templates_preserve_executable_predicates ... ok
+test used_local_payload_templates_still_fail_explicitly ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.98s
+
+     Running tests/stdlib_mem_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_mem_generic_execution-3d5775ab86854f89)
+
+running 1 test
+test generic_value_helpers_preserve_scalar_and_string_values ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+
+     Running tests/stdlib_result_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_result_generic_execution-82a33b04090f5a93)
+
+running 9 tests
+test actual_result_module_predicates_and_membership_execute ... ok
+test result_membership_rejects_wrong_scalar_argument_types ... ok
+test result_payload_functions_preserve_float_char_unsigned_and_string_values ... ok
+test result_predicates_and_matches_preserve_borrowed_descriptors ... ok
+test result_reading_total_program_executes_both_concrete_return_variants ... ok
+test result_scalar_payload_functions_execute_both_variants ... ok
+test result_slice_arguments_preserve_generic_and_concrete_type_relations ... ok
+test result_slice_payload_function_has_an_explicit_native_failure ... ok
+test result_slice_payloads_keep_native_bounds ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.04s
+

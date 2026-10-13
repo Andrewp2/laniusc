@@ -1,0 +1,17 @@
+module app::counts;
+const FOUR:u64 = 4;
+const TWO:i16 = 2;
+fn keep<const N:u64>(value:[i32;N])->[i32;N] { return value; }
+fn narrow<const N:u8>(value:[i32;N])->[i32;N] { return value; }
+fn replay<const N:u64>(value:[i32;N])->[i32;N] { return keep<N>(value); }
+fn matrix(value:[[i32;2];2])->[[i32;2];2] { return value; }
+fn main()->i32 {
+    let explicit:[i32;app::counts::FOUR] = keep<4>([11,13,17,19]);
+    let inferred:[i32;4] = narrow([23,29,31,37]);
+    let forwarded:[i32;4] = replay(explicit);
+    let nested:[[i32;app::counts::TWO];2] = matrix([[41,43],[47,53]]);
+    if (forwarded[3] != 19) { return 1; }
+    if (inferred[2] != 31) { return 2; }
+    if (nested[1][0] != 47) { return 3; }
+    return 0;
+}

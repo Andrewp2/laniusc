@@ -1,0 +1,14 @@
+{
+  "contract": "Enum payload delimiters seed the same qualified type-path role as every other type position; the role propagates through the whole path, including prefix scan blocks.",
+  "evidence": "page-layout-composition-1.log",
+  "before_images": {
+    "shaders/parser/tokens/type/path/context/01_local.slang": "1bca9e42cba82d270e43df756465d7e01ae93bff52c12cbfa68a2e06df7b6319",
+    "shaders/parser/tokens/type/path/context/02_apply.slang": "361fc58f65a75ade1e4b67ca3c4d75cf0e1f3576125adf0b018e651a4bcb0b2a",
+    "tests/parser_hir_records.rs": "34bf8e44de92c4251ed1a9afb0eca6d803d93cb5c7c3fef46596a4e095b0ff8a"
+  },
+  "verification": [
+    "parse first and later qualified enum payloads",
+    "parse qualified payload spanning prefix blocks",
+    "execute composed paged generic values"
+  ]
+}

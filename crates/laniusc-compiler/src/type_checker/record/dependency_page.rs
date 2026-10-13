@@ -1,5 +1,34 @@
 use super::*;
 
+/// Owns the dependency-page lifetime for a parameter-pattern operation.
+/// Operations keep initialization, scans and indexes outside this replay;
+/// only readers of page-local patterns execute once per immutable page.
+pub(in crate::type_checker) struct DependencyPatternReplay<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    pub pages: Option<&'a GpuDependencyInterfacePages>,
+    pub passes: &'a TypeCheckPasses,
+    pub state: &'a ModulePathState,
+}
+
+impl DependencyPatternReplay<'_> {
+    pub(in crate::type_checker) fn record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        mut pattern_reader: impl FnMut(&mut wgpu::CommandEncoder) -> Result<()>,
+    ) -> Result<()> {
+        if let Some(pages) = self.pages.filter(|pages| pages.len() > 1) {
+            record_each_dependency_page(self.device, self.queue, encoder, pages, |encoder| {
+                record_dependency_type_index(self.passes, encoder, self.state,
+                    DEPENDENCY_TYPE_INDEX_CALL_PARAM_SCATTER)?;
+                pattern_reader(encoder)
+            })
+        } else {
+            pattern_reader(encoder)
+        }
+    }
+}
+
 /// Streams every logical dependency page through one fixed GPU slot. A queue
 /// submission separates each upload from the next overwrite; without that
 /// ordering, all recorded dispatches would observe only the final page.
@@ -42,6 +71,9 @@ fn submit_dependency_page_boundary(
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
 ) {
+    // Page uploads may overwrite every dependency word. Submit all work that
+    // reads the current page, including deferred compute dispatches, first.
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("type-check-dependency-page-encoder"),
     });
@@ -170,14 +202,15 @@ pub(in crate::type_checker) fn record_dependency_page(
         encoder,
     )?;
     record_dependency_type_index(passes, encoder, state, names.type_index)?;
-    record_graph_invocation(
-        &visibility.project_types_group,
-        call_collection.map(|state| &state.project_types_call_collection),
-        encoder,
-    )
+    match names.stage {
+        DependencyPageStage::ModulePaths => visibility.project_types_group.record(encoder),
+        // Type expressions are already checked here. Republishing a canonical
+        // seed would erase their complete application and declaration identity.
+        DependencyPageStage::CallCollection => Ok(()),
+    }
 }
 
-/// Rebuilds the canonical type roots, subtree bounds, and declaration arity
+/// Rebuilds the canonical type roots and declaration arity
 /// for whichever page currently occupies the reusable dependency slot.
 pub(in crate::type_checker) fn record_dependency_type_index(
     _passes: &TypeCheckPasses,
@@ -195,32 +228,56 @@ pub(in crate::type_checker) fn record_dependency_type_index(
         DependencyTypeIndexStage::TypeInstanceProjection => {
             &visibility.type_index_type_instance_projection
         }
+        DependencyTypeIndexStage::AliasTargets => &visibility.type_index_alias_targets,
         DependencyTypeIndexStage::CallParamScatter => &visibility.type_index_call_param_scatter,
         DependencyTypeIndexStage::MethodProjection => &visibility.type_index_method_projection,
+        DependencyTypeIndexStage::MethodLookup => &visibility.type_index_method_lookup,
+        DependencyTypeIndexStage::ReturnMaterialization => {
+            &visibility.type_index_return_materialization
+        }
         DependencyTypeIndexStage::CallValidation => &visibility.type_index_call_validation,
+        DependencyTypeIndexStage::TraitContracts => &visibility.type_index_trait_contracts,
     };
     visibility.type_index.record(encoder, invocations)
 }
 
-/// Projects direct member calls against the dependency page currently loaded
-/// in the shared interface slot.  The projection runs before local method
-/// resolution so imported methods are treated as resolved call targets rather
-/// than being rejected by the local method table.
+/// Collects candidate identities or projects the finalized winner for the
+/// currently loaded page. The caller owns the all-pages barrier between phases.
 pub(in crate::type_checker) fn record_dependency_methods(
-    _passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     state: &ModulePathState,
-    _hir_active_dispatch_args: &LaniusBuffer<u32>,
+    stage: MethodSelectionStage,
+    collect: bool,
 ) -> Result<()> {
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
     };
-    visibility.project_methods_group.record(encoder)
+    let (collector, projection, scatter) = match stage {
+        MethodSelectionStage::Direct => (
+            DEPENDENCY_METHODS_COLLECT, DEPENDENCY_METHODS_PROJECT,
+            DEPENDENCY_METHOD_PARAMS_SCATTER,
+        ),
+        MethodSelectionStage::Lookup => (
+            DEPENDENCY_METHODS_COLLECT_LOOKUP, DEPENDENCY_METHODS_PROJECT_LOOKUP,
+            DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP,
+        ),
+        MethodSelectionStage::Inference => (
+            DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_METHODS_PROJECT_INFERENCE,
+            DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
+        ),
+    };
+    if collect {
+        visibility.collect_methods_group.record_as(encoder, collector.name)
+    } else {
+        visibility.project_methods_group.record_as(encoder, projection.name)?;
+        // Publish exact parameter patterns while the winner's page is active.
+        visibility.scatter_call_params_group.record_as(encoder, scatter.name)
+    }
 }
 
 /// Validates calls whose stable declaration identities belong to the active
-/// dependency page. Compound comparison requests are produced, scanned, and
-/// consumed before the page slot may be overwritten.
+/// dependency page. Canonical argument and result checks finish before the
+/// page slot may be overwritten.
 pub(in crate::type_checker) fn record_dependency_call_validation(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
@@ -239,14 +296,10 @@ pub(in crate::type_checker) fn record_dependency_call_validation(
             DEPENDENCY_TYPE_INDEX_CALL_VALIDATION,
         )?;
     }
-    visibility.call_compare_scan_input.clear(encoder, 0, None);
     visibility.validate_call_arity_group.record(encoder)?;
     visibility.validate_call_args_group.record(encoder)?;
     visibility.validate_call_results_group.record(encoder)?;
     visibility
         .validate_call_results_group
-        .record_invocation(encoder, &visibility.validate_call_results_validate)?;
-    visibility.call_compare_scan.record(encoder)?;
-    visibility.call_compare_dispatch_group.record(encoder)?;
-    visibility.validate_call_type_args_group.record(encoder)
+        .record_invocation(encoder, &visibility.validate_call_results_validate)
 }

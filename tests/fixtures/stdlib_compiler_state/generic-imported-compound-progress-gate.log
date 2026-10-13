@@ -1,0 +1,65 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.88s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 40 tests
+test direct_record_descriptor_fields_have_exact_types ... ok
+test direct_string_slice_access_preserves_descriptors ... ok
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... ok
+test generic_bodies_construct_nested_applications ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... ok
+test generic_slice_operations_preserve_record_element_layouts ... ok
+test generic_slice_operations_preserve_string_element_descriptors ... ok
+test generic_value_functions_preserve_compound_array_elements ... ok
+test generic_value_functions_preserve_compound_slice_bounds ... ok
+test generic_value_functions_preserve_compound_slice_elements ... ok
+test generic_value_functions_preserve_slice_of_slice_descriptors ... ok
+test imported_generic_compound_record_fields_execute ... FAILED
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... ok
+test imported_generic_functions_preserve_fixed_array_element_representations ... ok
+test imported_generic_functions_preserve_fixed_array_values ... ok
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+test imported_generic_record_constructors_check_declaration_and_fields ... ok
+test imported_generic_record_fields_execute_in_the_importing_module ... ok
+test imported_generic_record_fields_preserve_native_slice_bounds ... ok
+test imported_generic_record_fields_reject_wrong_types_and_names ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test imported_record_dependencies_report_explicit_boundaries ... ok
+test imported_scalar_calls_accept_projected_array_elements ... ok
+test local_generic_enums_substitute_nested_payload_types ... ok
+test local_generic_functions_preserve_fixed_array_values ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test local_generic_match_results_preserve_float_and_string_representations ... ok
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_records_preserve_concrete_field_layouts ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nested_generic_applications_are_created_without_source_annotations ... ok
+test nested_generic_declaration_fields_substitute_in_the_enclosing_scope ... ok
+test option_and_result_fixed_array_payloads_preserve_values_and_independent_copies ... ok
+test ordinary_trait_methods_execute_alongside_generic_value_calls ... ok
+test unbounded_generic_application_expansion_reports_an_explicit_boundary ... ok
+
+failures:
+
+---- imported_generic_compound_record_fields_execute stdout ----
+
+thread 'imported_generic_compound_record_fields_execute' (404843) panicked at tests/compiler_generic_types_execution.rs:526:5:
+assertion `left == right` failed: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    imported_generic_compound_record_fields_execute
+
+test result: FAILED. 39 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.13s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

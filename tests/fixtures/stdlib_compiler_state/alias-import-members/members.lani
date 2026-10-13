@@ -1,0 +1,21 @@
+module core::members;
+pub enum Pair<A, B> { Both(A, B), Empty }
+pub enum Packet<T, const N: usize, F> { Missing, Data([T; N], F) }
+pub type Flip<A, B> = Pair<B, A>;
+pub type Number = Pair<i32, bool>;
+pub type Swap<F, T, const N: usize> = Packet<T, N, F>;
+pub type Numbers<const N: usize> = Swap<bool, i32, N>;
+pub struct Cell<T> { value: T }
+impl<T> Cell<T> {
+    pub fn make(value: T) -> Cell<T> { return Cell { value: value }; }
+    pub fn read(&self) -> T { return self.value; }
+    pub fn choose<U>(value: T, other: U) -> U { return other; }
+}
+pub type Items<T, const N: usize> = Cell<[T; N]>;
+pub type Truth = Cell<bool>;
+pub fn total(value: Packet<i32, 2, bool>) -> i32 {
+    return match (value) { Packet::Data(values, flag) -> values[0] + values[1], _ -> 0 };
+}
+pub fn missing(value: Packet<i32, 0, bool>) -> bool {
+    return match (value) { Packet::Missing -> true, _ -> false };
+}

@@ -20,6 +20,8 @@ pub mod item;
 pub mod list;
 /// Literal value extraction passes.
 pub mod literal_values;
+/// Exact floating candidate extraction using bounded storage workers.
+pub mod float_values;
 /// Match expression and arm record passes.
 pub mod matches;
 /// Member access record passes.

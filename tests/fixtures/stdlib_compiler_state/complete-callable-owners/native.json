@@ -1,0 +1,26 @@
+{
+  "command": [
+    "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "ordinary_trait_methods_execute_alongside_generic_value_calls",
+    "imported_trait_contract_records_preserve_ordinary_generic_execution",
+    "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+    "explicit_constant_arguments_execute_independent_method_domains",
+    "imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 3.42035883599965,
+  "binary_sha256": "2b96e0a6e2a0eb88c5be81dc94ed5e03db7446c06c3556659db123e1103d9e12",
+  "passed": [
+    "explicit_constant_arguments_execute_independent_method_domains",
+    "imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments",
+    "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+    "imported_trait_contract_records_preserve_ordinary_generic_execution",
+    "ordinary_trait_methods_execute_alongside_generic_value_calls"
+  ],
+  "summaries": [
+    "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 349 filtered out; finished in 3.31s"
+  ],
+  "frozen_sources_unchanged": true
+}

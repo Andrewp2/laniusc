@@ -1,0 +1,12 @@
+fn main() -> i32 {
+    let count: i32 = 0;
+    let last: i32 = 0;
+    for value in 2147483646.. {
+        count += 1;
+        last = value;
+        if (count > 2 || value < 0) { return 1; }
+        continue;
+    }
+    if (count != 2 || last != 2147483647) { return 2; }
+    return 0;
+}

@@ -1,0 +1,8 @@
+{
+  "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248": "d4b68de38f11794e8bf53daa4f6344c90040f78afa4da86321c2be1f53cf2d8f",
+  "target/stdlib-perf/build/release/deps/stdlib_generic_enum_declaration_execution-0c999e2ce290d60f": "7748546f0c44b3d51ca8d0aa632444fab5e7d614e151fb39081ba78822296553",
+  "target/stdlib-perf/build/release/deps/type_checker_modules-2fa27f7cc330361d": "8bc0a173e46b15559038c9a8f49a4f55a9255580fcc278cd9e6b955865102b60",
+  "target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66": "14e983e8fb778ffb76facd0f4036b186edd2246c32f66576baab0caa286c887d",
+  "target/stdlib-perf/build/release/examples/stdlib_gpu_perf": "771f55b279494fb53eff6e6ea590c0fda2eaff44c056604d54305826c6058992",
+  "target/stdlib-perf/build/release/laniusc": "868c7714ec35210337d027020fdf8702fb0dd49b0b889ae3627887eb113b583c"
+}

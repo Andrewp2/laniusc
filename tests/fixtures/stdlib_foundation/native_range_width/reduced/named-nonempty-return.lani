@@ -1,0 +1,7 @@
+module app::main;
+import core::range;
+fn main() -> i32 {
+    let one: core::range::Range<u64> = core::range::Range { start: 4294967296, end: 4294967297 };
+    for value in one { return 0; }
+    return 1;
+}

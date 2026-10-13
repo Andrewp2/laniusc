@@ -1,0 +1,9 @@
+
+running 4 tests
+test generic_record_field_constraints_reject_conflicts_and_missing_bindings ... ok
+test generic_record_fields_infer_complete_types ... ok
+test generic_record_fields_infer_constant_and_symbolic_parameters ... ok
+test generic_record_fields_infer_thirty_two_bindings ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 268 filtered out; finished in 9.35s
+

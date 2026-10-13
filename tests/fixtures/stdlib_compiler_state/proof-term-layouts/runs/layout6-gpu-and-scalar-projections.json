@@ -1,0 +1,21 @@
+{
+  "environment": {
+    "LANIUS_GPU_TEST_TIMEOUT_MS": "85000",
+    "LANIUS_PIPELINE_TIMING": "1"
+  },
+  "args": [
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/numeric-build-6-cache-alias/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "gpu_native_layout_",
+    "physical_gpu_lowers_scalar_dependency_graph",
+    "physical_gpu_projects_dense_function_abi",
+    "physical_gpu_preserves_unowned_family_shapes_without_executable_rows",
+    "physical_gpu_materializes_control_events_and_unsupported_rows"
+  ],
+  "exit_code": 0,
+  "seconds": 41.33438490000117,
+  "binary_sha256": "e7db0b179b29c463c1fb6d1dcc3b6a87cb332a1cb3716d4d729f85bba8da933b",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

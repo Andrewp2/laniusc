@@ -1,0 +1,40 @@
+    Finished `release` profile [optimized] target(s) in 0.20s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 5 tests
+test generic_value_functions_preserve_compound_slice_elements ... GPU source-pack type-check rejection: token=388 code=AssignMismatch detail=12
+
+thread 'generic_value_functions_preserve_compound_slice_elements' (234912) panicked at tests/compiler_generic_types_execution.rs:57:29:
+compound slice descriptors: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 101, column: 12, length: 6, byte_start: Some(3140), byte_end: Some(3146), source_line: Some("    assert(length >= 0);"), message: "value type is an unsupported type, which is not accepted here" }), help: None, notes: ["found an unsupported type, but this context requires another type; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test imported_generic_functions_preserve_descriptor_record_fields ... GPU source-pack type-check rejection: token=54 code=AssignMismatch detail=0
+
+thread 'imported_generic_functions_preserve_descriptor_record_fields' (234964) panicked at tests/compiler_generic_types_execution.rs:57:29:
+imported descriptor record: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 15, column: 1, length: 3, byte_start: Some(593), byte_end: Some(596), source_line: Some("pub const RAW_MEMORY_RUNTIME_ABI_VERSION: RawMemoryRuntimeAbiVersion = 1;"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+FAILED
+test local_generic_records_preserve_concrete_field_layouts ... GPU source-pack type-check rejection: token=388 code=AssignMismatch detail=12
+
+thread 'local_generic_records_preserve_concrete_field_layouts' (234966) panicked at tests/compiler_generic_types_execution.rs:57:29:
+generic record scalar layout: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 101, column: 12, length: 6, byte_start: Some(3140), byte_end: Some(3146), source_line: Some("    assert(length >= 0);"), message: "value type is an unsupported type, which is not accepted here" }), help: None, notes: ["found an unsupported type, but this context requires another type; change the expression or the annotation so they agree"] })
+FAILED
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test nested_generic_applications_are_created_without_source_annotations ... GPU source-pack type-check rejection: token=226 code=AssignMismatch detail=0
+
+thread 'nested_generic_applications_are_created_without_source_annotations' (234971) panicked at tests/compiler_generic_types_execution.rs:57:29:
+compiler generated nested applications: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 64, column: 5, length: 2, byte_start: Some(2062), byte_end: Some(2064), source_line: Some("pub fn raw_memory_api_is_executable() -> MemoryCapability {"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+FAILED
+
+failures:
+
+failures:
+    generic_value_functions_preserve_compound_slice_elements
+    imported_generic_functions_preserve_descriptor_record_fields
+    local_generic_records_preserve_concrete_field_layouts
+    nested_generic_applications_are_created_without_source_annotations
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 26 filtered out; finished in 2.87s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

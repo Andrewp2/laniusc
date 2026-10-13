@@ -1,0 +1,23 @@
+{
+  "command": [
+    "target/program-catalog-tests/stdlib_gpu_perf",
+    "compiler::gpu_compiler::program_evidence::packet::tests::",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 0.0036462989992287476,
+  "binary_sha256": "df722da95a7feb2fdd06fe23ef6d0ba43c9b1176843d32ba9edbd3cdad888f32",
+  "sources_unchanged": true,
+  "passed": [
+    "compiler::gpu_compiler::program_evidence::packet::tests::arena_growth_preserves_old_graph_references_after_physical_moves",
+    "compiler::gpu_compiler::program_evidence::packet::tests::every_empty_submission_resets_and_requires_its_own_receipt",
+    "compiler::gpu_compiler::program_evidence::packet::tests::every_original_unit_and_source_occurrence_is_required",
+    "compiler::gpu_compiler::program_evidence::packet::tests::foreign_packet_submissions_and_evidence_cannot_authorize_replay",
+    "compiler::gpu_compiler::program_evidence::packet::tests::replay_inherits_every_origin_binding_and_reuses_only_admitted_siblings",
+    "compiler::gpu_compiler::program_evidence::packet::tests::replay_routing_and_provenance_are_checked_before_call_iteration"
+  ],
+  "summaries": [
+    "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 686 filtered out; finished in 0.00s"
+  ]
+}

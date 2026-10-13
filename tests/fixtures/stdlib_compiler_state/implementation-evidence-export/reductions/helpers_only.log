@@ -1,0 +1,2 @@
+sample=0 ms=173.417
+entry=tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/helpers_only.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2227 min_ms=173.417 median_ms=173.417 avg_ms=173.417 max_ms=173.417 output_verified=true

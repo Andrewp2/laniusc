@@ -1,10 +1,12 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
+StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<uint> target_lir_flags;
 StructuredBuffer<uint> target_semantic_origin;
@@ -29,8 +31,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         InterlockedMin(lowering_status[0u].available_capacity, gParams.target_capacity);
     }
     if (row >= min(required, gParams.target_capacity)) return;
-    if ((target_lir_flags[page_row] & TARGET_LIR_FLAG_UNSUPPORTED) == 0u) return;
     uint opt_row = target_semantic_origin[page_row];
+    uint node_total = min(opt_ir_total[0u], gParams.semantic_capacity);
+    if (!opt_ir_node_is_executable(opt_row, node_total))
+    {
+        InterlockedOr(lowering_status[0u].flags,
+            LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
+        InterlockedMin(lowering_status[0u].first_unsupported_opt_row, opt_row);
+        return;
+    }
+    if ((target_lir_flags[page_row] & TARGET_LIR_FLAG_UNSUPPORTED) == 0u) return;
     uint semantic_row = opt_row < gParams.semantic_capacity
         ? opt_ir_semantic_row[opt_row] : 0xffffffffu;
     uint source_hir = opt_row < gParams.semantic_capacity

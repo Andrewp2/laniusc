@@ -1,0 +1,4 @@
+module app::wrong;
+const VALUE:u32 = 1;
+fn signed<const N:i32>()->i32 { return N; }
+fn main()->i32 { return signed<app::wrong::VALUE>(); }

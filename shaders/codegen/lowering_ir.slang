@@ -1,3 +1,4 @@
+import primitive_types;
 // Shared GPU lowering records and opcodes. Rust constants are generated from
 // the declarations marked `IR_OPCODE`; keep numeric ownership in this file.
 
@@ -95,7 +96,19 @@ static const uint SEMANTIC_LIR_OP_NOP = 40u;
 // IR_OPCODE
 static const uint SEMANTIC_LIR_OP_TRAP = 41u;
 // IR_OPCODE
-static const uint SEMANTIC_LIR_OP_COUNT = 42u;
+static const uint SEMANTIC_LIR_OP_FIELD_ADDRESS = 42u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_INDEX_ADDRESS = 43u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_PLACE_LOAD = 44u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_PLACE_STORE = 45u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_CONST_I64 = 46u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_CONST_F64 = 47u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_COUNT = 48u;
 
 // Semantic operation metadata is indexed directly by opcode. Rust consumes
 // the same rows through crates/laniusc-compiler/build.rs; adding an opcode
@@ -337,7 +350,7 @@ static const SemanticLirOpProperties
 // IR_SEMANTIC_OP SEMANTIC_LIR_OP_DROP
 { 0u, 0x001u, 0u, 0u, 0u, 0u, 0u, 0u },
 // IR_SEMANTIC_OP SEMANTIC_LIR_OP_ADDRESS
-{ 1u, 0x001u, 4u, 10u, 0u, 0u, 0u, 0u },
+{ 1u, 0x002u, 4u, 10u, 0u, 0u, 0u, 0u },
 // IR_SEMANTIC_OP SEMANTIC_LIR_OP_LOAD
 { 545u, 0xde1u, 6u, 1u, 0u, 3u, 0u, 0u },
 // IR_SEMANTIC_OP SEMANTIC_LIR_OP_STORE
@@ -360,6 +373,18 @@ static const SemanticLirOpProperties
 { 2048u, 0x000u, 0u, 0u, 0u, 0u, 0u, 0u },
 // IR_SEMANTIC_OP SEMANTIC_LIR_OP_TRAP
 { 38u, 0x000u, 0u, 0u, 7u, 2u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_FIELD_ADDRESS
+{ 1u, 0xd31u, 4u, 10u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_INDEX_ADDRESS
+{ 33u, 0xd11u, 4u, 10u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_PLACE_LOAD
+{ 545u, 0x001u, 6u, 1u, 0u, 3u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_PLACE_STORE
+{ 1056u, 0x011u, 0u, 1u, 0u, 4u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONST_I64
+{ 1u, 0x033u, 1u, 1u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_CONST_F64
+{ 1u, 0x033u, 1u, 1u, 0u, 0u, 0u, 0u },
 };
 
 SemanticLirOpProperties semantic_lir_op_properties(uint op)
@@ -482,7 +507,7 @@ static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
 static const uint INTRINSIC_I32_SLICE_DATA_PTR = 5u;
 // IR_OPCODE
 static const uint INTRINSIC_STRING_DATA_PTR = 6u;
-// Concrete typed slices and i32 slices share the pointer-length value ABI.
+// Concrete typed slices and i32 slices share the data/length/stride value ABI.
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 
 bool intrinsic_slice_from_raw_parts(uint tag)
@@ -548,6 +573,12 @@ static const uint SEMANTIC_LIR_FLAG_UNSUPPORTED_MATCH_CONTEXT = 1024u;
 // Fixed arrays carry a constant count at call boundaries; slices load and
 // forward the count from their second declaration component.
 static const uint SEMANTIC_LIR_FLAG_ARRAY_PAIR = 2048u;
+// Addressable storage uses canonical native words, including fixed i32 arrays.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_FLAG_NATIVE_PLACE = 4096u;
+// A projection base denotes mutable backing, rather than a value snapshot.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_FLAG_PLACE_VIEW = 8192u;
 
 static const uint SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME = 0xfffffffeu;
 
@@ -673,10 +704,14 @@ static const uint LOWERING_DIAGNOSTIC_DETAIL_TOKEN = 1u;
 static const uint LOWERING_DIAGNOSTIC_DETAIL_HIR = 2u;
 // Packed OptIR SSA source for optimizer-internal diagnostics only.
 static const uint LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE = 3u;
+// Packed dense SSA value definition. High bytes identify the use category.
+static const uint LOWERING_DIAGNOSTIC_DETAIL_VALUE_SOURCE = 4u;
 
 // x86 target LIR is the backend's uniform virtual-instruction vocabulary.
 // IR_OPCODE
 static const uint X86_LIR_OP_IMM_I32 = 1u;
+// IR_OPCODE
+static const uint X86_LIR_OP_IMM_I64 = 2u;
 // IR_OPCODE
 static const uint X86_LIR_OP_UNARY = 3u;
 // IR_OPCODE
@@ -783,7 +818,7 @@ static const uint X86_LIR_UNARY_NEG_I32 = 1u;
 // IR_OPCODE
 static const uint X86_LIR_UNARY_NOT_BOOL = 2u;
 // IR_OPCODE
-static const uint X86_LIR_UNARY_NEG_F32 = 3u;
+static const uint X86_LIR_UNARY_NEG_FLOAT = 3u;
 // IR_OPCODE
 static const uint X86_LIR_BINARY_ADD_I32 = 1u;
 // IR_OPCODE
@@ -816,13 +851,13 @@ static const uint X86_LIR_BINARY_DIV_CONST_POW2_I32 = 13u;
 // IR_OPCODE
 static const uint X86_LIR_BINARY_REM_CONST_POW2_I32 = 14u;
 // IR_OPCODE
-static const uint X86_LIR_BINARY_ADD_F32 = 16u;
+static const uint X86_LIR_BINARY_ADD_FLOAT = 16u;
 // IR_OPCODE
-static const uint X86_LIR_BINARY_SUB_F32 = 17u;
+static const uint X86_LIR_BINARY_SUB_FLOAT = 17u;
 // IR_OPCODE
-static const uint X86_LIR_BINARY_MUL_F32 = 18u;
+static const uint X86_LIR_BINARY_MUL_FLOAT = 18u;
 // IR_OPCODE
-static const uint X86_LIR_BINARY_DIV_F32 = 19u;
+static const uint X86_LIR_BINARY_DIV_FLOAT = 19u;
 // Signed division and remainder by a statically known positive non-power-of-
 // two divisor. Operand C carries the divisor; instruction selection derives
 // the multiplier and shift without retaining the constant producer.
@@ -832,6 +867,17 @@ static const uint X86_LIR_BINARY_DIV_CONST_I32 = 20u;
 static const uint X86_LIR_BINARY_REM_CONST_I32 = 21u;
 
 // Wasm target-IR opcodes intentionally equal their final primary opcode byte.
+// IR_OPCODE
+static const uint X86_LIR_OP_DECL_ADDRESS = 45u;
+// IR_OPCODE
+static const uint X86_LIR_OP_FIELD_ADDRESS = 46u;
+// IR_OPCODE
+static const uint X86_LIR_OP_INDEX_ADDRESS = 47u;
+// IR_OPCODE
+static const uint X86_LIR_OP_PLACE_LOAD = 48u;
+// IR_OPCODE
+static const uint X86_LIR_OP_PLACE_STORE = 49u;
+
 // IR_OPCODE
 static const uint WASM_LIR_OP_UNREACHABLE = 0x00u;
 // IR_OPCODE
@@ -983,8 +1029,8 @@ static const uint X86_LIR_METADATA_IMMEDIATE = 0x08000000u;
 // deliberately explicit: concrete aggregate type IDs may share their low byte
 // with a primitive type tag and must never be classified by truncation.
 static const uint X86_LIR_METADATA_STRING_PAIR = 0x04000000u;
-// Native array views use the same two-word shape as slices: pointer then
-// element count. These bits distinguish the pair and its length component.
+// Native array views contain (data, length, signed byte stride). These bits
+// identify a view and its narrow length component; data and stride are wide.
 static const uint X86_LIR_METADATA_ARRAY_PAIR = 0x02000000u;
 static const uint X86_LIR_METADATA_ARRAY_LEN = 0x01000000u;
 // Native `[i32; N]` storage uses the language's raw-view representation:
@@ -992,8 +1038,8 @@ static const uint X86_LIR_METADATA_ARRAY_LEN = 0x01000000u;
 // The semantic aggregate width remains word-based so existing frame and ABI
 // bounds stay conservative while the target owns the concrete byte layout.
 static const uint X86_LIR_METADATA_PACKED_I32_ARRAY = 0x00800000u;
-// A runtime slice expression is represented by the address of its two-word
-// (data, length) value, rather than by two direct declaration homes. Member
+// A runtime slice expression is represented by the address of its three-word
+// (data, length, stride) value, rather than by three direct declaration homes. Member
 // projections and slice-producing calls use this representation.
 static const uint X86_LIR_METADATA_INDIRECT_ARRAY_PAIR = 0x00400000u;
 // FIELD_STORE receives an address of one aggregate word, not a scalar value.
@@ -1230,6 +1276,8 @@ static const uint X86_TARGET_FUNCTION_FRAME_SLOT_MASK = 0x3fffffffu;
 struct X86LirCore
 {
     uint source_hir;
+    // For pointer BINARY operations: exact checked RHS scalar type. Other
+    // opcodes retain their existing operation-specific ordinal/layout meaning.
     uint local_ordinal;
     uint op;
     uint result_or_target;

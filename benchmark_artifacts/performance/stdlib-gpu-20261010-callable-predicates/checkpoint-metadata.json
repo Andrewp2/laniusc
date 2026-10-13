@@ -1,0 +1,68 @@
+{
+  "removed_shader_payloads": [],
+  "source_count": 3859,
+  "shader_payload_count": 1466,
+  "frozen_sources_and_shaders_unchanged": true,
+  "measured_binary_identities": {
+    "target/release/laniusc": "e28eb615c6b3b7296e56a46956bf23b6d91024037f6586b86f52e77329183633",
+    "target/release/examples/stdlib_gpu_perf": "d15675bd132d76d6e87b1fb26ebb8b519116445b290795d6ff769ba762b6d0d6"
+  },
+  "canonical_cli_rebuild_binary_transitions": {
+    "target/release/laniusc": {
+      "before": "4d9547bfd86740e9329ad57400bb98b45259da9d73f18724fbb8fd0bf6ee1c33",
+      "after": "e28eb615c6b3b7296e56a46956bf23b6d91024037f6586b86f52e77329183633"
+    }
+  },
+  "shader_metadata": "shader-artifact-digest: 60f9f20b287b7823\nshader-artifact-count: 733\nshader-artifact-max-bytes: 504704\nshader-artifact-max-name: codegen/lir/x86/emit\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nshader-compile-timeout-ms: 120000",
+  "changed_spv": 10,
+  "changed_reflection": 10,
+  "canonical_compiler_median_ms": 39.159968500000005,
+  "canonical_wall_median_ms": 42.459787500000004,
+  "generic_32_median_ms": 357.73,
+  "canonical_elf_count": 20,
+  "canonical_source_hashes_match_baseline": true,
+  "canonical_seeds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39
+  ],
+  "canonical_source_bytes": 1000000,
+  "canonical_cache_hits": 0,
+  "canonical_resource_creations": 0,
+  "recorded_compute_dispatches": [
+    1469
+  ],
+  "recorded_compute_passes": [
+    98
+  ],
+  "tracked_live_bytes": [
+    1668354099
+  ],
+  "tracked_allocations": [
+    276
+  ],
+  "excluded_raw_buffers": [
+    5
+  ],
+  "canonical_runner_status": "saved_report_then_catalogue_error",
+  "generic_32_final_elf_verified": true,
+  "generic_32_expected_stdout_sha256": "8c310f2ef145f0339cff8fcadb4c8291ba04cd6161401d7c06cfcf4dcdfcd47b",
+  "output_contracts_verified": 21
+}

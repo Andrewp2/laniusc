@@ -1,0 +1,16 @@
+
+running 1 test
+test explicit_callable_arguments_execute_scalar_and_unused_bindings ... GPU type-check detail: Gpu(compiler pass type_check.calls.contextual_result_requests maps storage binding compact_hir_core more than once)
+
+thread 'explicit_callable_arguments_execute_scalar_and_unused_bindings' (416842) panicked at tests/compiler_generic_types_execution.rs:136:29:
+explicit scalar bindings: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_explicit_scalar_bindings_416841_0.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("fn keep<T>(v: T) -> T { return v; }"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    explicit_callable_arguments_execute_scalar_and_unused_bindings
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 217 filtered out; finished in 1.62s
+

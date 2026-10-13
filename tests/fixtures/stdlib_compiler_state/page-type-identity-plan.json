@@ -1,0 +1,18 @@
+{
+  "contract": "Type-path resolution retains the same stable library/unit/declaration identity as value paths; projection reacquires the declaration in the active page. Clearing checked type storage cannot erase path resolution ownership.",
+  "before_images": {
+    "shaders/type_checker/modules/10m3_validate_imported_unit_patterns.slang": "8f1dac8a481007bc5632927de1944b755293de85097e6d80937af18b321b40fe",
+    "shaders/type_checker/dependencies/06_resolve_paths.slang": "e95f0c00b1ba6e95b248235d0c99a9e6c6c873ed0da5ef0509eb9a5284de09c3",
+    "shaders/type_checker/dependencies/11_project_types.slang": "a011645af88f143cd9c7055467f1dcd160ab86c7e3c165a19ec2584560a99c57",
+    "shaders/type_checker/modules/01a_clear_path_state.slang": "2a4613038f758b1b523a0abd5be4678f0a6d9726984796a72e71bd230431fe09",
+    "crates/laniusc-compiler/src/type_checker/compiler_graph.rs": "e388619c9762b2ab97739c5a4f1a72a2783f5b9a9e1e085a28dbc262dba6c567",
+    "crates/laniusc-compiler/src/type_checker/operations/module_paths.rs": "1d28a71044a44752d352769c9bf13228ca6996c9db0b8165f926d57b9cfa1b27",
+    "shaders/type_checker/dependencies/00_clear_workspace.slang": "9fbcf41d0f2eeead50fe90c1a30bce698da4d648ac1373b1cc1859d94ed02dd8",
+    "crates/laniusc-compiler/src/type_checker/module_path/dependency_visibility.rs": "7178e957a75196debcfc93840370da462412190b3cb3959e383f43778eee782f",
+    "crates/laniusc-compiler/src/type_checker/operations/dependencies.rs": "741261cc37caf9fcf908458beb933c3aab6cd8f24e80c8cdfd8dba79d6c3384a",
+    "crates/laniusc-compiler/src/type_checker/record/dependency_page.rs": "beb26a8387a1dbe359e41a72d6fc9f646d2da593020e643a1c43e5429f551db9"
+  },
+  "evidence": "page-pattern-focused-1.log",
+  "confirmed_reader": "page-type-identity-diagnostic.log: 0x72010bff reports expected library 11 and actual checked parameter with INVALID external library after reversed pages. Diagnostic instrumentation removed.",
+  "projection_rule": "Call collection consumes retained resolution; it must not overwrite checked type expressions with canonical page seeds. Obsolete page-local declaration outputs are removed."
+}

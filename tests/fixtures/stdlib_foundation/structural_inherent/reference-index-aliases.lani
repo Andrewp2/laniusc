@@ -1,0 +1,52 @@
+// Expected exit 0 and no output. Indexing follows one/two references while
+// whole-array replacement and descriptor/reference-cell rebinding stay visible.
+impl [i32; 3] {
+    fn array_ref(&self) -> &[i32; 3] { return self; }
+}
+impl &[i32; 3] {
+    fn outer_array_ref(&self) -> & &[i32; 3] { return self; }
+}
+impl [i32] {
+    fn slice_ref(&self) -> &[i32] { return self; }
+}
+impl &[i32] {
+    fn outer_slice_ref(&self) -> & &[i32] { return self; }
+}
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let data: [i32; 3] = [11, 13, 17];
+    let first: &[i32; 3] = data.array_ref();
+    let second: & &[i32; 3] = first.outer_array_ref();
+    if (first[0] != 11 || second[1] != 13 || second[2] != 17) { return 1; }
+    second[1] = 19;
+    if (data[1] != 19 || first[1] != 19) { return 2; }
+    data = [23, 29, 31];
+    if (first[0] != 23 || second[1] != 29 || second[2] != 31) { return 3; }
+
+    let other: [i32; 3] = [41, 43, 47];
+    first = other.array_ref();
+    second[0] = 49;
+    if (first[0] != 49 || other[0] != 49 || data[0] != 23) { return 4; }
+
+    let slice: [i32] = view(data);
+    let slice_first: &[i32] = slice.slice_ref();
+    let slice_second: & &[i32] = slice_first.outer_slice_ref();
+    if (slice_first[0] != 23 || slice_second[2] != 31) { return 5; }
+    slice_second[1] = 53;
+    if (data[1] != 53 || slice_first[1] != 53) { return 6; }
+
+    // data is canonical native storage; packed is never borrowed as an array.
+    // Replacing the descriptor must replace its signed stride along with data.
+    let packed: [i32; 3] = [59, 61, 67];
+    slice = view(packed);
+    if (slice_first[0] != 59 || slice_second[1] != 61 || slice_second[2] != 67) { return 7; }
+    slice_second[2] = 71;
+    if (packed[2] != 71 || slice[2] != 71 || data[2] != 31) { return 8; }
+
+    let replacement: [i32] = view(other);
+    slice_first = replacement.slice_ref();
+    if (slice_second[0] != 49 || slice_second[2] != 47 || slice[0] != 59) { return 9; }
+    slice_second[1] = 73;
+    if (other[1] != 73 || replacement[1] != 73 || packed[1] != 61) { return 10; }
+    return 0;
+}

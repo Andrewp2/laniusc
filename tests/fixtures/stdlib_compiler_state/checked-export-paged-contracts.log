@@ -1,0 +1,17 @@
+
+running 3 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order ... 
+thread 'compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order' (129125) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3661:14:
+link paged values: native function has no emitted definition (library 12, unit 0, declaration 1073741870; relocation 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+failures:
+
+failures:
+    compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 633 filtered out; finished in 2.46s
+

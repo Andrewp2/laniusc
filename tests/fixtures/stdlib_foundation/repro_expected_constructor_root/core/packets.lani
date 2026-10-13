@@ -1,0 +1,2 @@
+module core::packets;
+pub enum Batch<A, B> { Data([A; 2], B), Missing }

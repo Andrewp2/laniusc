@@ -1,0 +1,20 @@
+{
+  "environment": {
+    "LANIUS_GPU_TEST_TIMEOUT_MS": "85000"
+  },
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "native_range_width_named",
+    "native_range_width_direct_wide",
+    "native_range_width_bound_snapshot",
+    "native_range_width_repeated_empty_inclusive",
+    "native_primitive_width_imported_values_and_stack_arguments"
+  ],
+  "exit_code": 0,
+  "seconds": 4.922020092999446,
+  "binary_sha256": "c4d4245714c15bceca13ed0048f9c4b4057b5aad778bd3ff28c7ff382e1781bf",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

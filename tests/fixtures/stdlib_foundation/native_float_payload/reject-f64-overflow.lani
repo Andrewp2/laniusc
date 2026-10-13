@@ -1,0 +1,1 @@
+fn main() -> i32 { let value: f64 = 1.0e309; return 0; }

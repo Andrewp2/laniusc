@@ -124,7 +124,7 @@ struct ResidentTreeReadbacks {
     hir_type_form: U32Readback,
     hir_type_value_node: U32Readback,
     hir_type_len_token: U32Readback,
-    hir_type_len_value: U32Readback,
+    hir_type_len_operand: U32Readback,
     hir_type_file_id: U32Readback,
     hir_type_path_leaf_node: U32Readback,
     hir_type_arg_start: U32Readback,
@@ -203,6 +203,9 @@ struct ResidentTreeReadbacks {
     hir_canonical_raw_to_dense: U32Readback,
     hir_param_ranges: U32Readback,
     hir_type_arg_ranges: U32Readback,
+    hir_path_type_arg_ranges: U32Readback,
+    hir_compact_type_arg_count: U32Readback,
+    hir_type_arg_rows: U32Readback,
     hir_generic_param_count: U32Readback,
     hir_generic_param_rows: U32Readback,
     hir_generic_param_ranges: U32Readback,
@@ -345,10 +348,10 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_type_len_token",
                 bufs.hir_type_len_token.byte_size,
             ),
-            hir_type_len_value: rb(
+            hir_type_len_operand: rb(
                 device,
-                "rb.parser.resident_tree.hir_type_len_value",
-                bufs.hir_type_len_value.byte_size,
+                "rb.parser.resident_tree.hir_type_len_operand",
+                bufs.hir_type_len_operand.byte_size,
             ),
             hir_type_file_id: rb(
                 device,
@@ -740,6 +743,21 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_type_arg_ranges",
                 bufs.hir_type_arg_ranges.byte_size,
             ),
+            hir_path_type_arg_ranges: rb(
+                device,
+                "rb.parser.resident_tree.hir_path_type_arg_ranges",
+                bufs.hir_path_type_arg_ranges.byte_size,
+            ),
+            hir_compact_type_arg_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_compact_type_arg_count",
+                bufs.hir_type_arg_table_count.byte_size,
+            ),
+            hir_type_arg_rows: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_arg_rows",
+                bufs.hir_type_arg_rows.byte_size,
+            ),
             hir_generic_param_count: rb(
                 device,
                 "rb.parser.resident_tree.hir_generic_param_count",
@@ -997,10 +1015,10 @@ impl ResidentTreeReadbacks {
             &bufs.hir_type_len_token,
             bufs.hir_type_len_token.byte_size as u64,
         );
-        self.hir_type_len_value.copy_from(
+        self.hir_type_len_operand.copy_from(
             encoder,
-            &bufs.hir_type_len_value,
-            bufs.hir_type_len_value.byte_size as u64,
+            &bufs.hir_type_len_operand,
+            bufs.hir_type_len_operand.byte_size as u64,
         );
         self.hir_type_file_id.copy_from(
             encoder,
@@ -1392,6 +1410,21 @@ impl ResidentTreeReadbacks {
             &bufs.hir_type_arg_ranges,
             bufs.hir_type_arg_ranges.byte_size as u64,
         );
+        self.hir_path_type_arg_ranges.copy_from(
+            encoder,
+            &bufs.hir_path_type_arg_ranges,
+            bufs.hir_path_type_arg_ranges.byte_size as u64,
+        );
+        self.hir_compact_type_arg_count.copy_from(
+            encoder,
+            &bufs.hir_type_arg_table_count,
+            bufs.hir_type_arg_table_count.byte_size as u64,
+        );
+        self.hir_type_arg_rows.copy_from(
+            encoder,
+            &bufs.hir_type_arg_rows,
+            bufs.hir_type_arg_rows.byte_size as u64,
+        );
         self.hir_generic_param_count.copy_from(
             encoder,
             &bufs.hir_generic_param_table_count,
@@ -1576,7 +1609,7 @@ impl ResidentTreeReadbacks {
         self.hir_type_form.map();
         self.hir_type_value_node.map();
         self.hir_type_len_token.map();
-        self.hir_type_len_value.map();
+        self.hir_type_len_operand.map();
         self.hir_type_file_id.map();
         self.hir_type_path_leaf_node.map();
         self.hir_type_arg_start.map();
@@ -1655,6 +1688,9 @@ impl ResidentTreeReadbacks {
         self.hir_canonical_raw_to_dense.map();
         self.hir_param_ranges.map();
         self.hir_type_arg_ranges.map();
+        self.hir_path_type_arg_ranges.map();
+        self.hir_compact_type_arg_count.map();
+        self.hir_type_arg_rows.map();
         self.hir_generic_param_count.map();
         self.hir_generic_param_rows.map();
         self.hir_generic_param_ranges.map();
@@ -1705,6 +1741,17 @@ impl ResidentTreeReadbacks {
             self.hir_param_ranges.read_ranges(canonical_capacity)?;
         let (hir_type_arg_range_start, hir_type_arg_range_count) =
             self.hir_type_arg_ranges.read_ranges(canonical_capacity)?;
+        let (hir_path_type_arg_range_start, hir_path_type_arg_range_count) =
+            self.hir_path_type_arg_ranges.read_ranges(canonical_capacity)?;
+        let type_arg_count = self.hir_compact_type_arg_count.read_words(1)?[0] as usize;
+        anyhow::ensure!(type_arg_count <= bufs.hir_type_arg_rows.count,
+            "compact type argument count exceeds its retained capacity");
+        let type_arg_words = self.hir_type_arg_rows.read_words(type_arg_count * 5)?;
+        let hir_compact_type_args = type_arg_words.chunks_exact(5).map(|words|
+            crate::parser::buffers::HirTypeArg {
+                owner: words[0], value: words[1], ordinal: words[2],
+                file_id: words[3], application_token: words[4],
+            }).collect();
         let (hir_generic_param_range_start, hir_generic_param_range_count) = self
             .hir_generic_param_ranges
             .read_ranges(canonical_capacity)?;
@@ -2057,7 +2104,7 @@ impl ResidentTreeReadbacks {
             hir_type_form: self.hir_type_form.read_words(tree_len)?,
             hir_type_value_node: self.hir_type_value_node.read_words(tree_len)?,
             hir_type_len_token: self.hir_type_len_token.read_words(tree_len)?,
-            hir_type_len_value: self.hir_type_len_value.read_words(tree_len)?,
+            hir_type_len_operand: self.hir_type_len_operand.read_words(tree_len)?,
             hir_type_file_id: self.hir_type_file_id.read_words(tree_len)?,
             hir_type_path_leaf_node: self.hir_type_path_leaf_node.read_words(tree_len)?,
             hir_type_arg_start: self.hir_type_arg_start.read_words(tree_len)?,
@@ -2229,6 +2276,9 @@ impl ResidentTreeReadbacks {
             hir_param_range_count,
             hir_type_arg_range_start,
             hir_type_arg_range_count,
+            hir_path_type_arg_range_start,
+            hir_path_type_arg_range_count,
+            hir_compact_type_args,
             hir_generic_param_owner,
             hir_generic_param_name_token,
             hir_generic_param_kind,

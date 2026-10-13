@@ -1,0 +1,9 @@
+module app::main;
+import core::option;
+import std::io;
+fn main() -> i32 {
+    let present: core::option::Option<str> = core::option::Some("payload");
+    let value: str = core::option::unwrap_or(present, "missing");
+    if (std::io::println(value) != 8) { return 1; }
+    return 0;
+}

@@ -1,4 +1,6 @@
 import hir_records;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
 
 // GPU method-call key marking for call-result receivers.
 //
@@ -8,7 +10,8 @@ import hir_records;
 //   fn_return_ref_*.
 // - For each HIR call whose callee is a HIR member expression and whose
 //   receiver is itself a resolved call expression, publish the method lookup
-//   key from the resolved callee's declared return type ref.
+//   key from its completed call-result reference when available, then from
+//   its declaration template while inference is still in progress.
 // - This pass complements type_check_methods_06_mark_call_keys.slang without
 //   exceeding the adapter storage-buffer binding limit. It does not inspect
 //   source bytes, hash token text, perform CPU lookup, or compare names by
@@ -26,6 +29,8 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_dependency_library_id;
@@ -33,7 +38,6 @@ StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> external_type_library_id;
 struct TokenIn
 {
     uint kind;
@@ -57,10 +61,14 @@ StructuredBuffer<uint> module_value_path_call_open;
 StructuredBuffer<uint> module_value_path_call_path_id;
 StructuredBuffer<uint> module_value_path_associated_method_token;
 
-RWStructuredBuffer<uint> method_call_receiver_ref_tag;
-RWStructuredBuffer<uint> method_call_receiver_ref_payload;
+RWStructuredBuffer<uint> method_call_source_ref_tag;
+RWStructuredBuffer<uint> method_call_source_ref_payload;
+RWStructuredBuffer<uint> method_call_receiver_hir;
 RWStructuredBuffer<uint> method_call_name_id;
 RWStructuredBuffer<uint> method_call_site_module_id;
+
+
+#include "receiver_reference.slang"
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -306,14 +314,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     method_call_name_id[method_i] = name_id_by_token[method_i];
     method_call_site_module_id[method_i] = module_for_compact_hir(member_hir);
 
-    if (method_call_receiver_ref_tag[method_i] != TYPE_REF_INVALID)
+    // A completed call result is authoritative even if a previous round
+    // seeded this key from a declaration template or a scalar return cache.
+    uint receiver_hir = member.b;
+    method_call_receiver_hir[method_i] = receiver_hir;
+    if (valid_dense(receiver_hir) && compact_hir_core[receiver_hir].kind == HIR_CALL_EXPR)
+    {
+        // This producer exclusively owns call-result sources; never retain a
+        // stale source when the current accepted result becomes unavailable.
+        method_call_source_ref_tag[method_i] = TYPE_REF_INVALID;
+        method_call_source_ref_payload[method_i] = INVALID;
+        uint tag = call_inference_result_tag[receiver_hir];
+        uint payload = call_inference_result_payload[receiver_hir];
+        if (tag != TYPE_REF_INVALID && method_lookup_receiver(tag, payload))
+        {
+            method_call_source_ref_tag[method_i] = tag;
+            method_call_source_ref_payload[method_i] = payload;
+            return;
+        }
+    }
+    if (method_call_source_ref_tag[method_i] != TYPE_REF_INVALID)
         return;
 
     uint receiver_i = receiver_token_for_member_hir(member_hir);
     if (!valid_token(receiver_i))
         return;
 
-    uint receiver_hir = member.b;
     if (valid_dense(receiver_hir) && compact_hir_core[receiver_hir].kind == HIR_CALL_EXPR)
     {
         uint receiver_callee = callee_token_for_call(receiver_hir);
@@ -323,9 +349,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint tag;
     uint payload;
-    if (!receiver_call_return_type_ref(receiver_i, tag, payload))
-        return;
+    if (!receiver_call_return_type_ref(receiver_i, tag, payload)) return;
+    // Declaration templates have the callee's lexical parameters. Publishing
+    // them as receiver bindings poisons later inference with parameters that
+    // do not belong to the caller. Closed declarations are usable immediately;
+    // symbolic results must first pass through complete call materialization.
+    if (tag == 2u || (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity() &&
+        type_instance_kind[payload] != 0u &&
+        !checked_instance_is_closed(payload))) return;
+    if (!method_lookup_receiver(tag, payload)) return;
 
-    method_call_receiver_ref_tag[method_i] = tag;
-    method_call_receiver_ref_payload[method_i] = payload;
+    method_call_source_ref_tag[method_i] = tag;
+    method_call_source_ref_payload[method_i] = payload;
 }

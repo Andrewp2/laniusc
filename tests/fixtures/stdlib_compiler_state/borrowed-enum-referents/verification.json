@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-10",
+  "contract": "Borrowed enum payload substitution and native layout preserve complete referent types, wildcard prefix widths, copy and alias behavior, and explicit lowering capacity failure. Structural annotation edges are finalized after imported nominal projection.",
+  "selected_passes": 19,
+  "checks": {
+    "library": {
+      "command": [
+        "target/borrowed-enum-tests/stdlib_gpu_perf",
+        "compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type",
+        "physical_gpu_semantic_projection_rejects_capacity_overflow",
+        "semantic_capacity_failure_preserves_counts_in_public_diagnostic",
+        "mixed_semantic_capacity_failure_preserves_existing_failure_details",
+        "typecheck_graph_tracks_operation_workspace_lifetimes",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 3.0684367579997343,
+      "binary_sha256": "f710497d8f13b80b1e62b17f00b997e9ce9858ef6fe990ab48cabc5ed0c65ca8",
+      "passed": [
+        "codegen::lowering::tests::physical_gpu_semantic_projection_rejects_capacity_overflow",
+        "compiler::gpu_compiler::typecheck::tests::mixed_semantic_capacity_failure_preserves_existing_failure_details",
+        "compiler::gpu_compiler::typecheck::tests::semantic_capacity_failure_preserves_counts_in_public_diagnostic",
+        "compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type",
+        "type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes"
+      ],
+      "summaries": [
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 667 filtered out; finished in 2.95s"
+      ],
+      "frozen_sources_unchanged": true
+    },
+    "native": {
+      "command": [
+        "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+        "borrowed_enum_concrete_methods_preserve_boolean_payloads",
+        "borrowed_enum_generic_methods_preserve_array_copies_and_slice_aliases",
+        "borrowed_enum_reference_payload_preserves_alias_and_following_boolean",
+        "borrowed_enum_wildcards_preserve_multiword_and_zero_sized_payload_offsets",
+        "qualified_enum_variants_bind_parent_applications",
+        "imported_option_generic_functions_preserve_borrowed_slice_payloads",
+        "generic_match_arguments_preserve_completion_and_effect_order",
+        "ordinary_match_in_condition_header_executes",
+        "local_generic_match_results_preserve_float_and_string_representations",
+        "structural_annotations_preserve_local_and_imported_nominal_children",
+        "imported_generic_aliases_preserve_nested_local_and_imported_compositions",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 6.974557723000544,
+      "binary_sha256": "d5f8040e4234cad8a8746c129372008f2cef2fa83be43bb266708ae03b2f15b8",
+      "passed": [
+        "borrowed_enum_concrete_methods_preserve_boolean_payloads",
+        "borrowed_enum_generic_methods_preserve_array_copies_and_slice_aliases",
+        "borrowed_enum_reference_payload_preserves_alias_and_following_boolean",
+        "borrowed_enum_wildcards_preserve_multiword_and_zero_sized_payload_offsets",
+        "generic_match_arguments_preserve_completion_and_effect_order",
+        "imported_generic_aliases_preserve_nested_local_and_imported_compositions",
+        "imported_option_generic_functions_preserve_borrowed_slice_payloads",
+        "local_generic_match_results_preserve_float_and_string_representations",
+        "ordinary_match_in_condition_header_executes",
+        "qualified_enum_variants_bind_parent_applications",
+        "structural_annotations_preserve_local_and_imported_nominal_children"
+      ],
+      "summaries": [
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 341 filtered out; finished in 6.80s"
+      ],
+      "frozen_sources_unchanged": true
+    },
+    "x86": {
+      "command": [
+        "target/borrowed-enum-x86-tests/stdlib_gpu_perf",
+        "x86_executes_return_match_on_integer_and_boolean_patterns",
+        "x86_executes_first_matching_arm_before_wildcard_default",
+        "x86_executes_match_expression_local_initializer",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.9170717279994278,
+      "binary_sha256": "bae61d9b66bd31c838d8fda9652426a55238e7a4df5532f1aa8d03cb7f45ad66",
+      "passed": [
+        "x86_executes_first_matching_arm_before_wildcard_default",
+        "x86_executes_match_expression_local_initializer",
+        "x86_executes_return_match_on_integer_and_boolean_patterns"
+      ],
+      "summaries": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 1.77s"
+      ],
+      "frozen_sources_unchanged": true
+    }
+  },
+  "source_snapshot": "frozen-sources.json",
+  "source_files_hashed": 3934,
+  "frozen_sources_unchanged": true,
+  "native_target": "x86_64 Linux ELF emitted by physical GPU compiler",
+  "user_program_gpu_execution": "not established",
+  "earlier_failures": {
+    "wildcard_payload_type": "Fixed: retain occurrence type while publishing lexical bindings only for names. See before-wildcard-native.log.",
+    "imported_structural_child": "Fixed: move projected aggregate-details after imported instance projection. Original misleading syntax diagnostic was checker alias-normalization failure 0x414c0003. See qualified-reference-parser-diagnostic.log.",
+    "test_binary_startup": "codegen_x86 binary exceeded 90 seconds before first result; same rebuilt binary passed all three controls as stdlib_gpu_perf. Original timeout log/metadata preserved.",
+    "build_setup": "Relative CARGO_TARGET_DIR produced invalid shader include paths; successful builds use absolute CARGO_TARGET_DIR."
+  },
+  "remaining_dependencies": [
+    "Nested-reference producer probe rejects impl &Flag with LNC0021; no claim that &&Enum source values execute. Probe source and failure metadata retained separately.",
+    "Scalar-reference matching needs its own value recipe.",
+    "Program-catalog implementation selection and retained proof forwarding into imported bodies remain unimplemented.",
+    "Generic implementations/prerequisites, method where clauses, generic trait methods, and direct constant trait operands remain open."
+  ],
+  "nested_reference_probe": {
+    "metadata": "nested-reference-probe.json",
+    "snapshot": "before-imported-edge-frozen-sources.json",
+    "result": "Rejected with LNC0021 before runtime; no output claimed."
+  },
+  "performance": "No new paired performance measurement. Existing final aggregate-details dispatch moved; no additional dispatch."
+}

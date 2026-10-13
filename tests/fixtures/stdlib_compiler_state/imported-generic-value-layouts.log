@@ -1,0 +1,28 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0308]: mismatched types
+   --> crates/laniusc-compiler/src/codegen/lowering.rs:690:55
+    |
+690 |       let semantic_views: [TrackedBufferView<'a>; 33] = [
+    |  _________________________---------------------------___^
+    | |                         |
+    | |                         expected due to this
+691 | |         semantic.value_decl_by_hir.into(),
+692 | |         semantic.value_type_by_hir.into(),
+693 | |         semantic.value_const_by_hir.into(),
+...   |
+724 | |         semantic.struct_init_field_ordinal_by_row.into(),
+725 | |     ];
+    | |_____^ expected an array with a size of 33, found one with a size of 34
+    |
+    = note: expected array `[gpu::buffers::TrackedBufferView<'a>; 33]`
+               found array `[gpu::buffers::TrackedBufferView<'_>; 34]`
+help: consider specifying the actual array length
+    |
+690 -     let semantic_views: [TrackedBufferView<'a>; 33] = [
+690 +     let semantic_views: [TrackedBufferView<'a>; 34] = [
+    |
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `laniusc-compiler` (lib) due to 1 previous error

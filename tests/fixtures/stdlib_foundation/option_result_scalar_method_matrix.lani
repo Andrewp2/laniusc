@@ -1,11 +1,11 @@
 module app::main;
-import core::option_bool;
+import core::option;
 import core::option_char;
 import core::option_f32;
 
 fn main() -> i32 {
-    let missing_bool: core::option_bool::OptionBool = core::option_bool::none();
-    let false_value: core::option_bool::OptionBool = core::option_bool::some(false);
+    let missing_bool: core::option::Option<bool> = core::option::None();
+    let false_value: core::option::Option<bool> = core::option::Some(false);
     let missing_char: core::option_char::OptionChar = core::option_char::none();
     let letter: core::option_char::OptionChar = core::option_char::some('é');
     let missing_float: core::option_f32::OptionF32 = core::option_f32::none();

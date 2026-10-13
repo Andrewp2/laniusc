@@ -47,6 +47,7 @@ static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_INDEX_LBRACKET = 30u;
@@ -109,7 +110,8 @@ int angle_delta(uint kind)
         kind == TK_BOUND_TYPE_ARG_LT || kind == TK_PATH_TYPE_ARG_LT)
         return 1;
     if (kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_GENERIC_PARAM_GT ||
-        kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT)
+        kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT ||
+        kind == TK_MEMBER_TYPE_ARG_GT)
         return -1;
     return 0;
 }

@@ -3,6 +3,7 @@ import codegen.lir.wasm.host_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import gpu_index;
+import primitive_types;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
 ConstantBuffer<Params> gParams;
@@ -70,6 +71,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
+    // Host/intrinsic support cannot override an unsupported checked width.
+    if (core.type_id == SCALAR_F64) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     flags |= semantic_function_id_by_hir[
         opt_ir_source_hir[semantic_row]] == WASM_LIR_INVALID
         ? 0u : (1u << 8u);
@@ -102,6 +105,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint phase = local_row % 6u;
             SemanticLirAggregateElement aggregate_element =
                 semantic_lir_aggregate_elements[operands.a + element];
+            if ((aggregate_element.value_metadata &
+                 SEMANTIC_LIR_VALUE_TYPE_MASK) == SCALAR_F64)
+                flags |= TARGET_LIR_FLAG_UNSUPPORTED;
             bool element_is_f32 =
                 (aggregate_element.value_metadata &
                  SEMANTIC_LIR_VALUE_TYPE_MASK) == TY_FLOAT;

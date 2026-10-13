@@ -29,10 +29,10 @@ fn main() -> i32 {
     let pointer: ptr = core::mem::i32_array_data_ptr(values);
     let view:[i32] = core::mem::i32_slice_from_raw_parts(pointer, 3);
     let empty:[i32] = core::mem::i32_slice_from_raw_parts(pointer, 0);
-    if (core::slice::first_i32(view) != 3 || core::slice::first_or_i32(empty, 0, 9) != 9 || core::slice::first_or_i32(view, 3, 9) != 3) {
+    if (core::slice::first(view) != 3 || core::slice::first_or(empty, 0, 9) != 9 || core::slice::first_or(view, 3, 9) != 3) {
         return 6;
     }
-    if (core::slice::get_or_i32(view, 3, 2, 9) != 4 || core::slice::get_or_i32(view, 3, -1, 9) != 9 || core::slice::get_or_i32(view, 3, 3, 9) != 9 || core::slice::get_or_i32(view, -1, 0, 9) != 9) {
+    if (core::slice::get_or(view, 3, 2, 9) != 4 || core::slice::get_or(view, 3, -1, 9) != 9 || core::slice::get_or(view, 3, 3, 9) != 9 || core::slice::get_or(view, -1, 0, 9) != 9) {
         return 7;
     }
     if (!core::slice::contains_i32(view, 3, 1) || core::slice::contains_i32(view, 3, 2) || core::slice::contains_i32(empty, 0, 3) || core::slice::contains_i32(view, -1, 3)) {
@@ -86,37 +86,37 @@ fn main() -> i32 {
     let editable:[i32; 4] =[3, 1, 4, 1];
     let editable_ptr: ptr = core::mem::i32_array_data_ptr(editable);
     let editable_view:[i32] = core::mem::i32_slice_from_raw_parts(editable_ptr, 4);
-    if (!core::slice::set_i32(editable_view, 4, 1, 9) || core::slice::set_i32(editable_view, 4, -1, 7) || core::slice::set_i32(editable_view, 4, 4, 7) || editable[1] != 9 || editable[0] != 3) {
+    if (!core::slice::set(editable_view, 4, 1, 9) || core::slice::set(editable_view, 4, -1, 7) || core::slice::set(editable_view, 4, 4, 7) || editable[1] != 9 || editable[0] != 3) {
         return 18;
     }
-    if (!core::slice::swap_i32(editable_view, 4, 0, 3) || core::slice::swap_i32(editable_view, 4, -1, 2) || core::slice::swap_i32(editable_view, 4, 2, 4) || !core::slice::swap_i32(editable_view, 4, 1, 1) || editable[0] != 1 || editable[3] != 3 || editable[1] != 9) {
+    if (!core::slice::swap(editable_view, 4, 0, 3) || core::slice::swap(editable_view, 4, -1, 2) || core::slice::swap(editable_view, 4, 2, 4) || !core::slice::swap(editable_view, 4, 1, 1) || editable[0] != 1 || editable[3] != 3 || editable[1] != 9) {
         return 19;
     }
-    if (core::slice::reverse_in_place_i32(editable_view, 4) != 2 || editable[0] != 3 || editable[1] != 4 || editable[2] != 9 || editable[3] != 1 || core::slice::reverse_in_place_i32(editable_view, 1) != 0 || core::slice::reverse_in_place_i32(empty, 0) != 0) {
+    if (core::slice::reverse_in_place(editable_view, 4) != 2 || editable[0] != 3 || editable[1] != 4 || editable[2] != 9 || editable[3] != 1 || core::slice::reverse_in_place(editable_view, 1) != 0 || core::slice::reverse_in_place(empty, 0) != 0) {
         return 20;
     }
-    if (core::slice::fill_i32(editable_view, 4, -2) != 4 || editable[0] != -2 || editable[1] != -2 || editable[2] != -2 || editable[3] != -2 || core::slice::fill_i32(empty, 0, 8) != 0 || core::slice::fill_i32(editable_view, -1, 8) != 0 || editable[0] != -2) {
+    if (core::slice::fill(editable_view, 4, -2) != 4 || editable[0] != -2 || editable[1] != -2 || editable[2] != -2 || editable[3] != -2 || core::slice::fill(empty, 0, 8) != 0 || core::slice::fill(editable_view, -1, 8) != 0 || editable[0] != -2) {
         return 21;
     }
     let shift_right:[i32; 5] =[1, 2, 3, 4, 5];
     let right_ptr: ptr = core::mem::i32_array_data_ptr(shift_right);
     let right_view:[i32] = core::mem::i32_slice_from_raw_parts(right_ptr, 5);
-    if (!core::slice::copy_within_i32(right_view, 5, 0, 3, 1) || shift_right[0] != 1 || shift_right[1] != 1 || shift_right[2] != 2 || shift_right[3] != 3 || shift_right[4] != 5) {
+    if (!core::slice::copy_within(right_view, 5, 0, 3, 1) || shift_right[0] != 1 || shift_right[1] != 1 || shift_right[2] != 2 || shift_right[3] != 3 || shift_right[4] != 5) {
         return 22;
     }
     let shift_left:[i32; 5] =[1, 2, 3, 4, 5];
     let left_ptr: ptr = core::mem::i32_array_data_ptr(shift_left);
     let left_view:[i32] = core::mem::i32_slice_from_raw_parts(left_ptr, 5);
-    if (!core::slice::copy_within_i32(left_view, 5, 1, 4, 0) || shift_left[0] != 2 || shift_left[1] != 3 || shift_left[2] != 4 || shift_left[3] != 4 || shift_left[4] != 5) {
+    if (!core::slice::copy_within(left_view, 5, 1, 4, 0) || shift_left[0] != 2 || shift_left[1] != 3 || shift_left[2] != 4 || shift_left[3] != 4 || shift_left[4] != 5) {
         return 23;
     }
     let separate:[i32; 5] =[1, 2, 3, 4, 5];
     let separate_ptr: ptr = core::mem::i32_array_data_ptr(separate);
     let separate_view:[i32] = core::mem::i32_slice_from_raw_parts(separate_ptr, 5);
-    if (!core::slice::copy_within_i32(separate_view, 5, 0, 2, 3) || separate[0] != 1 || separate[1] != 2 || separate[2] != 3 || separate[3] != 1 || separate[4] != 2) {
+    if (!core::slice::copy_within(separate_view, 5, 0, 2, 3) || separate[0] != 1 || separate[1] != 2 || separate[2] != 3 || separate[3] != 1 || separate[4] != 2) {
         return 24;
     }
-    if (!core::slice::copy_within_i32(separate_view, 5, 0, 0, 5) || core::slice::copy_within_i32(separate_view, 5, -1, 2, 0) || core::slice::copy_within_i32(separate_view, 5, 3, 2, 0) || core::slice::copy_within_i32(separate_view, 5, 0, 6, 0) || core::slice::copy_within_i32(separate_view, 5, 0, 2, 4) || separate[0] != 1 || separate[3] != 1 || separate[4] != 2) {
+    if (!core::slice::copy_within(separate_view, 5, 0, 0, 5) || core::slice::copy_within(separate_view, 5, -1, 2, 0) || core::slice::copy_within(separate_view, 5, 3, 2, 0) || core::slice::copy_within(separate_view, 5, 0, 6, 0) || core::slice::copy_within(separate_view, 5, 0, 2, 4) || separate[0] != 1 || separate[3] != 1 || separate[4] != 2) {
         return 25;
     }
     let sortable:[i32; 8] =[7, -3, 0, 7, 2147483647, -2147483648, 4, -3];

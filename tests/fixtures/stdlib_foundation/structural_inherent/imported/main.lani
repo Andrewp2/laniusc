@@ -1,0 +1,34 @@
+// Acceptance candidate; not compiled or executed by this author. Expected exit 0.
+// Exact reference depth ranks before local/imported preference at deeper depths.
+import core::levels;
+impl core::levels::Item {
+    fn prefer_imported(self) -> i32 { return 41; }
+}
+impl &core::levels::Item {
+    fn prefer_local(self) -> i32 { return 42; }
+}
+fn keep<T>(value: T) -> T { return value; }
+fn read(value: & &core::levels::Item) -> i32 {
+    return match (value) {
+        core::levels::Item::Empty => -1,
+        core::levels::Item::Value(number) => number
+    };
+}
+fn main() -> i32 {
+    let first: core::levels::Item = core::levels::Item::Value(7);
+    let second: core::levels::Item = core::levels::Item::Value(9);
+    let borrowed: &core::levels::Item = first.borrow();
+    let outer: & &core::levels::Item = core::levels::forward(keep(borrowed.borrow_outer()));
+    if (first.level() != 10 || borrowed.level() != 20 || outer.level() != 30) { return 1; }
+    if (first.prefer_local() != 12 || borrowed.prefer_local() != 42 || outer.prefer_local() != 42) { return 2; }
+    if (first.prefer_imported() != 41 || borrowed.prefer_imported() != 24 || outer.prefer_imported() != 24) { return 3; }
+    borrowed = second.borrow();
+    if (read(outer) != 9) { return 4; }
+
+    let packet: core::levels::Packet = core::levels::Packet { words: [19, 23], guard: 70 };
+    let reference: &core::levels::Packet = packet.borrow();
+    let copied: core::levels::Packet = reference.edited();
+    if (copied.words[0] != 29 || copied.words[1] != 23 || copied.guard != 71) { return 5; }
+    if (packet.words[0] != 19 || packet.words[1] != 23 || packet.guard != 70) { return 6; }
+    return 0;
+}

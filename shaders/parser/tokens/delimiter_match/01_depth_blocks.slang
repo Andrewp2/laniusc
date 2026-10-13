@@ -26,9 +26,7 @@ StructuredBuffer<int> block_prefix_paren;
 StructuredBuffer<int> block_prefix_brace;
 StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<int> block_prefix_angle;
-StructuredBuffer<uint> statement_context_kind;
 
-RWStructuredBuffer<uint> bracket_semantic_kind;
 RWStructuredBuffer<int> paren_match_depth;
 RWStructuredBuffer<int> brace_match_depth;
 RWStructuredBuffer<int> bracket_match_depth;
@@ -48,6 +46,7 @@ static const uint TK_LPAREN = 4u;
 static const uint TK_RPAREN = 5u;
 static const uint TK_LT = 12u;
 static const uint TK_GT = 13u;
+static const uint TK_SHR = 44u;
 static const uint TK_LBRACKET = 20u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
@@ -83,6 +82,7 @@ static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
 groupshared int4 local_depth[256];
@@ -131,42 +131,8 @@ bool is_angle_open(uint kind)
 bool is_angle_close(uint kind)
 {
     return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_GENERIC_PARAM_GT ||
-           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
-}
-
-uint raw_kind_at(uint parser_i, uint count)
-{
-    if (parser_i == 0u || parser_i > count)
-        return 0u;
-    return token_words[parser_i - 1u].kind;
-}
-
-bool in_type_alias_rhs_context(uint parser_i, uint count)
-{
-    uint token_i = parser_i - 1u;
-    return token_i < count &&
-           (statement_context_kind[token_i] & 0xffu) == STATEMENT_CONTEXT_TYPE_ALIAS_RHS;
-}
-
-bool semantic_token_ends_primary(uint kind)
-{
-    return kind == TK_IDENT || kind == TK_INT || kind == TK_RPAREN ||
-           kind == TK_RBRACKET || kind == TK_CALL_RPAREN || kind == TK_GROUP_RPAREN ||
-           kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
-           kind == TK_TYPE_ARRAY_RBRACKET || kind == TK_PATTERN_RPAREN ||
-           kind == TK_ENUM_PAYLOAD_RPAREN || kind == TK_STRING || kind == TK_FLOAT ||
-           kind == TK_CHAR || kind == TK_TRUE || kind == TK_FALSE ||
-           kind == TK_SELF_VALUE;
-}
-
-uint bracket_open_kind(uint parser_i, uint count)
-{
-    uint previous = raw_kind_at(parser_i - 1u, count);
-    if (in_type_alias_rhs_context(parser_i, count))
-        return TK_TYPE_ARRAY_LBRACKET;
-    if (previous == TK_COLON || previous == TK_ARROW || previous == TK_AMPERSAND)
-        return TK_TYPE_ARRAY_LBRACKET;
-    return semantic_token_ends_primary(previous) ? TK_INDEX_LBRACKET : TK_ARRAY_LBRACKET;
+           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT ||
+           kind == TK_MEMBER_TYPE_ARG_GT;
 }
 
 [shader("compute")]
@@ -177,7 +143,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint token_i = block_idx * WG_SIZE + ltid.x;
     uint count = active_token_count();
     int4 event_depth = PrefixScanI32x4Min.identity();
-    uint semantic_kind = 0u;
 
     if (token_i < gParams.n_tokens && token_i < count)
     {
@@ -195,11 +160,11 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         if (kind == TK_LBRACKET)
         {
             event_depth.z = depth_before.z;
-            semantic_kind = bracket_open_kind(token_i + 1u, count);
         }
         else if (kind == TK_RBRACKET) event_depth.z = depth_before.z - 1;
         if (is_angle_open(kind)) event_depth.w = depth_before.w;
         else if (is_angle_close(kind)) event_depth.w = depth_before.w - 1;
+        else if (kind == TK_SHR) event_depth.w = depth_before.w - 2;
     }
 
     if (token_i < gParams.n_tokens)
@@ -208,7 +173,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         brace_match_depth[token_i] = event_depth.y;
         bracket_match_depth[token_i] = event_depth.z;
         angle_match_depth[token_i] = event_depth.w;
-        bracket_semantic_kind[token_i] = semantic_kind;
     }
 
     int4 block_min = prefix_scan_inclusive<int4, PrefixScanI32x4Min, 256>(

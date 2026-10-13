@@ -1,0 +1,54 @@
+module app::main;
+import core::option;
+
+struct Pair { first: i32, second: i32 }
+struct Quad { first: i32, second: i32, third: i32, fourth: i32 }
+struct Nested { pair: Pair, last: i32 }
+
+fn pair_or(value: core::option::Option<Pair>, fallback: Pair) -> Pair {
+    return match (value) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> fallback,
+    };
+}
+
+fn quad_or(value: core::option::Option<Quad>, fallback: Quad) -> Quad {
+    return match (value) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> fallback,
+    };
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { first: -7, second: 999 };
+    let fallback: Pair = Pair { first: 19, second: -200 };
+    let present: core::option::Option<Pair> = core::option::Some(pair);
+    let absent: core::option::Option<Pair> = core::option::None();
+    let recovered: Pair = pair_or(present, fallback);
+    if (recovered.first != -7 || recovered.second != 999) { return 1; }
+    let selected: Pair = pair_or(absent, fallback);
+    if (selected.first != 19 || selected.second != -200) { return 2; }
+
+    let quad: Quad = Quad { first: -7, second: 999, third: 0, fourth: 123 };
+    let quad_fallback: Quad = Quad { first: 4, second: 3, third: 2, fourth: 1 };
+    let present_quad: core::option::Option<Quad> = core::option::Some(quad);
+    let absent_quad: core::option::Option<Quad> = core::option::None();
+    let recovered_quad: Quad = quad_or(present_quad, quad_fallback);
+    if (recovered_quad.first != -7 || recovered_quad.second != 999 ||
+        recovered_quad.third != 0 || recovered_quad.fourth != 123) { return 3; }
+    let selected_quad: Quad = quad_or(absent_quad, quad_fallback);
+    if (selected_quad.first != 4 || selected_quad.second != 3 ||
+        selected_quad.third != 2 || selected_quad.fourth != 1) { return 4; }
+
+    let nested: Nested = Nested { pair: pair, last: -555 };
+    let present_nested: core::option::Option<Nested> = core::option::Some(nested);
+    let nested_result: i32 = match (present_nested) {
+        core::option::Some(inner) -> inner.pair.second + inner.last,
+        core::option::None -> 0,
+    };
+    if (nested_result != 444) { return 5; }
+    // Smaller calls after multiword results must keep their own layout.
+    let recovered_again: Pair = pair_or(present, fallback);
+    if (recovered_again.first != -7 || recovered_again.second != 999) { return 6; }
+    return 0;
+}

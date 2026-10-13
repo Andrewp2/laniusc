@@ -1,0 +1,7 @@
+
+running 2 tests
+test generic_assignment_destinations_reject_conflicting_payloads ... ok
+test generic_assignment_destinations_supply_complete_result_contexts ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 249 filtered out; finished in 3.33s
+

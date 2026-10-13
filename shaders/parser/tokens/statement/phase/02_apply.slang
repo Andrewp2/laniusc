@@ -1,3 +1,4 @@
+import parser.tokens.statement.parameter_keywords;
 // Apply prefix-scanned statement phase rows.
 
 import prefix_scan;
@@ -206,6 +207,8 @@ uint statement_phase_event_for(
     if (bracket_depth_before != 0)
         return 0u;
     uint context_kind = statement_context_token_kind(statement_context_kind[token_i]);
+    uint previous = token_i != 0u ? token_words[token_i - 1u].kind : 0u;
+    if (statement_keyword_is_const_parameter(kind, previous)) return 0u;
     if (is_statement_starter(kind))
         return encode_statement_event(token_i, kind);
     if (is_statement_reset_boundary(kind))

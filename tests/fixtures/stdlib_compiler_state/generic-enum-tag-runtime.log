@@ -1,0 +1,18 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 49.86s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_generic_predicates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_predicates_execution-7a485e1ea6857aa6)
+
+running 6 tests
+test imported_generic_constructor_rejects_an_unrelated_local_nominal ... ok
+test imported_option_predicates_execute_across_scalar_payloads ... ok
+test imported_option_predicates_with_local_nominal_payloads_execute ... ignored, compiler dependency 76: imported enum constructors reject caller-local nominal payloads
+test option_predicate_bodies_execute_with_multiword_payloads ... ok
+test unresolved_payload_reads_and_offsets_fail_explicitly ... ok
+test unused_earlier_payload_keeps_the_used_payload_offset ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.37s
+

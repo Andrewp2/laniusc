@@ -1,0 +1,21 @@
+
+running 6 tests
+test constant_length_inference_collects_all_dimensions_locally_and_imported ... ok
+test constant_length_inference_executes_all_32_slots_locally_and_imported ... ok
+test constant_length_inference_preserves_nested_patterns ... ok
+test constant_length_inference_preserves_symbolic_forwarding ... ok
+test constant_length_inference_rejects_a_33rd_slot_explicitly ... GPU source-pack type-check rejection: token=164 code=GenericInstantiationBoundary detail=2
+GPU source-pack type-check rejection: token=67 code=GenericInstantiationBoundary detail=2
+GPU source-pack type-check rejection: token=164 code=GenericInstantiationBoundary detail=2
+ok
+test constant_length_inference_rejects_fixed_and_repeated_dimension_conflicts ... GPU source-pack type-check rejection: token=282 code=AssignMismatch detail=32768
+GPU source-pack type-check rejection: token=290 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=282 code=AssignMismatch detail=32768
+GPU source-pack type-check rejection: token=282 code=AssignMismatch detail=32768
+GPU source-pack type-check rejection: token=282 code=AssignMismatch detail=32768
+GPU source-pack type-check rejection: token=292 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=292 code=AssignMismatch detail=0
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 158 filtered out; finished in 6.27s
+

@@ -1,0 +1,17 @@
+{
+  "large_medians_ms": {
+    "previous": 232.548326,
+    "fixed": 229.418779
+  },
+  "large_median_paired_change_pct": -1.344156747130587,
+  "imported_medians_ms": {
+    "baseline": 21.536499999999997,
+    "current": 20.911
+  },
+  "imported_median_change_pct": -2.90437164813222,
+  "large_executables_validated": 30,
+  "large_matching_hash_pairs": 15,
+  "imported_timed_compiles": 80,
+  "imported_final_executables_validated": 8,
+  "harness_sha256": "9a3416001d5c690173106832405cdd6b227cce7c65391a6776e1e7ef31d4d135"
+}

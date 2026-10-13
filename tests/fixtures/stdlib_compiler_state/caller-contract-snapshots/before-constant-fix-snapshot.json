@@ -1,0 +1,19 @@
+{
+  "command": [
+    "target/caller-contract-tests/stdlib_gpu_perf",
+    "checked_unit_contracts_",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 2.317643197000507,
+  "binary_sha256": "0c5d97a11c56f012505eeb11e422a6836a259f5a2e3f60b585a3ec751483638e",
+  "passed": [
+    "compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_keep_actual_callers_and_execute_after_workspace_reuse",
+    "compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse"
+  ],
+  "summaries": [
+    "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 672 filtered out; finished in 2.21s"
+  ],
+  "frozen_sources_unchanged": true
+}

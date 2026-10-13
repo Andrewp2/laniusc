@@ -100,6 +100,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
+    // The acyclic resolver omits retreating edges. Prove that each such edge
+    // targets a dominator of its source, so it cannot add an entry path that
+    // invalidates the forward-graph solution. Checking only the target's
+    // parent would admit a sibling-to-sibling retreating edge incorrectly.
+    if (expected_back) dominator = to_block;
     uint cursor = edge.from_block;
     uint steps = 0u;
     while (valid && cursor != dominator)

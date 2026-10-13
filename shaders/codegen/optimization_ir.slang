@@ -302,28 +302,66 @@ uint opt_ir_op(OptIrNodeCore core)
     return (core.flags & SEMANTIC_LIR_OP_MASK) >> SEMANTIC_LIR_OP_SHIFT;
 }
 
+// Shared effective effects for access inventory and target snapshot reuse.
+// No call capture/alias summaries exist here: every call may read or write
+// through argument aliases. A fresh aggregate copy reads its source payload
+// at this schedule position even though its destination is private storage.
+uint opt_ir_memory_effects(OptIrNodeCore core)
+{
+    uint op = opt_ir_op(core);
+    if (semantic_lir_is_call(op))
+        return SEMANTIC_LIR_OP_FLAG_MEMORY_READ |
+            SEMANTIC_LIR_OP_FLAG_MEMORY_WRITE;
+    if (op == SEMANTIC_LIR_OP_AGGREGATE_COPY)
+        return SEMANTIC_LIR_OP_FLAG_MEMORY_READ;
+    // Legacy unprojected STORE still updates declaration SSA. Promoted
+    // declarations instead use PLACE_STORE with an actual address value.
+    bool projected = (core.flags &
+        (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u;
+    if (op == SEMANTIC_LIR_OP_STORE && !projected) return 0u;
+    return semantic_lir_op_properties(op).flags &
+        (SEMANTIC_LIR_OP_FLAG_MEMORY_READ | SEMANTIC_LIR_OP_FLAG_MEMORY_WRITE);
+}
+
+bool opt_ir_may_read_memory(OptIrNodeCore core)
+{
+    return (opt_ir_memory_effects(core) & SEMANTIC_LIR_OP_FLAG_MEMORY_READ) != 0u;
+}
+
+bool opt_ir_may_write_memory(OptIrNodeCore core)
+{
+    return (opt_ir_memory_effects(core) & SEMANTIC_LIR_OP_FLAG_MEMORY_WRITE) != 0u;
+}
+
 uint opt_ir_access_kind(OptIrNodeCore core)
 {
     uint op = opt_ir_op(core);
     if (semantic_lir_op_has_flag(op,
         SEMANTIC_LIR_OP_FLAG_DECLARATION_READ))
         return OPT_IR_ACCESS_DECLARATION_READ;
+    bool projected = (core.flags &
+        (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u;
     if (semantic_lir_op_has_flag(op,
-        SEMANTIC_LIR_OP_FLAG_DECLARATION_WRITE))
+        SEMANTIC_LIR_OP_FLAG_DECLARATION_WRITE) ||
+        (op == SEMANTIC_LIR_OP_STORE && !projected))
         return OPT_IR_ACCESS_DECLARATION_WRITE;
-    if (semantic_lir_op_has_flag(op, SEMANTIC_LIR_OP_FLAG_MEMORY_READ))
+    // One inventory row represents each instruction. Read/write calls use
+    // the write category; consumers needing both effects use the helper above.
+    uint memory = opt_ir_memory_effects(core);
+    if ((memory & SEMANTIC_LIR_OP_FLAG_MEMORY_WRITE) != 0u)
+        return OPT_IR_ACCESS_MEMORY_WRITE;
+    if ((memory & SEMANTIC_LIR_OP_FLAG_MEMORY_READ) != 0u)
         return OPT_IR_ACCESS_MEMORY_READ;
-    if (semantic_lir_op_has_flag(op, SEMANTIC_LIR_OP_FLAG_MEMORY_WRITE))
-    {
-        // Compound assignment still uses STORE for its scalar declaration
-        // update. Only field/index projections address memory here.
-        bool projected = (core.flags &
-            (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u;
-        return op == SEMANTIC_LIR_OP_STORE && !projected
-            ? OPT_IR_ACCESS_DECLARATION_WRITE
-            : OPT_IR_ACCESS_MEMORY_WRITE;
-    }
     return OPT_IR_ACCESS_INVALID;
+}
+
+uint opt_ir_access_subject(OptIrNodeCore core, OptIrNodeOperands operands,
+    uint node)
+{
+    // Callee/function/intrinsic IDs are not address-value node IDs. Calls
+    // instead retain an opaque node-owned memory subject. These subjects do
+    // not assert disjoint aliases and never enter declaration SSA grouping.
+    return semantic_lir_is_call(opt_ir_op(core)) ? node : operands.a;
 }
 
 uint opt_ir_access_domain(uint kind)

@@ -1,0 +1,26 @@
+module core::factory;
+
+pub enum Maybe<T> { Some(T), None }
+
+pub fn byte_value(value: u8) -> Maybe<u8> {
+    let result: Maybe<u8> = Some(value);
+    return result;
+}
+
+pub fn bool_value(value: bool) -> Maybe<bool> {
+    let result: Maybe<bool> = Some(value);
+    return result;
+}
+
+pub impl Maybe<u8> {
+    pub fn read(&self) -> u8 {
+        let zero: u8 = 0;
+        return match (self) { Some(value) -> value, None -> zero };
+    }
+}
+
+pub impl Maybe<bool> {
+    pub fn read(&self) -> bool {
+        return match (self) { Some(value) -> value, None -> true };
+    }
+}

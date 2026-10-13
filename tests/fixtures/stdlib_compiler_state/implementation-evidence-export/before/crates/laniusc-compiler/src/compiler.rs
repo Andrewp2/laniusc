@@ -1,0 +1,345 @@
+//! Public compiler orchestration and source-pack APIs.
+//!
+//! This module is the host-side boundary between CLI/package loading and the
+//! GPU-resident compiler phases. It owns public compile/check errors,
+//! diagnostics, source-pack planning/execution records, and `GpuCompiler`, the
+//! coordinator that records lexer, parser, type-check, and backend work.
+
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use futures_intrusive::sync::Mutex;
+use serde::{Deserialize, Serialize};
+
+#[cfg(test)]
+use crate::codegen::unit::artifact_key_for_output as source_pack_artifact_key_for_output;
+use crate::{
+    codegen::{
+        lowering_ir::LoweringTarget,
+        lowering_pipeline::GpuLoweringWorkspaceCache,
+        unit::{
+            CompilationUnit,
+            CompilationUnitLimits,
+            CompilationUnitPlan,
+            DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES,
+            DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES,
+            LibraryUnit,
+            LibraryUnitPlan,
+            SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION,
+            SOURCE_PACK_BUILD_ARTIFACT_SHARD_INDEX_VERSION,
+            SOURCE_PACK_LINK_BATCH_INPUT_DEFAULT_PAGE_SIZE,
+            SourceFileUnitInput,
+            SourcePackArtifactIndexRange,
+            SourcePackArtifactKind,
+            SourcePackArtifactManifest,
+            SourcePackArtifactManifestEntry,
+            SourcePackArtifactPlan,
+            SourcePackArtifactRef,
+            SourcePackArtifactTarget,
+            SourcePackBuildArtifactManifest,
+            SourcePackBuildArtifactShard,
+            SourcePackBuildArtifactShardIndex,
+            SourcePackBuildArtifactShardKind,
+            SourcePackBuildPlan,
+            SourcePackBuildShardLimits,
+            SourcePackJob,
+            SourcePackJobArtifactManifest,
+            SourcePackJobArtifactManifestPlan,
+            SourcePackJobBatch,
+            SourcePackJobBatchDependency,
+            SourcePackJobBatchDependencyRange,
+            SourcePackJobBatchLimits,
+            SourcePackJobIndexRange,
+            SourcePackJobPhase,
+            SourcePackJobPlan,
+            SourcePackJobPlanBuilder,
+            SourcePackJobSchedule,
+            SourcePackLibraryDependency,
+            SourcePackLinkInterfaceBatch,
+            SourcePackLinkObjectBatch,
+            SourcePackScheduleError,
+        },
+        wasm,
+        x86,
+    },
+    gpu::{
+        device::{self, GpuDevice},
+        timer::GpuTimer,
+    },
+    lexer::{
+        buffers::GpuBuffers as LexerBuffers,
+        driver::{GpuLexer, ResidentLexerParserInputs},
+    },
+    parser::{
+        driver::{GpuParser, Ll1AcceptResult},
+        tables::PrecomputedParseTables,
+    },
+    type_checker as gpu_type_checker,
+};
+
+mod artifact_descriptor;
+pub use artifact_descriptor::{
+    GPU_SOURCE_PACK_ARTIFACT_DESCRIPTOR_VERSION,
+    GPU_SOURCE_PACK_FIRST_RUNTIME_SERVICE_ID,
+    GPU_SOURCE_PACK_LAST_RUNTIME_SERVICE_ID,
+    GPU_SOURCE_PACK_RUNTIME_ABI_VERSION,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_CLOCK_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_COUNT,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_ENV_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_FILESYSTEM_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_GPU_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_HOST_SERVICES_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_NETWORK_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_PANIC_HOOK_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_PROCESS_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_SECURE_RNG_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_THREADS_ID,
+    GPU_SOURCE_PACK_UNKNOWN_RUNTIME_ABI_VERSION,
+    GpuSourcePackArtifactDescriptor,
+    GpuSourcePackArtifactStage,
+    GpuSourcePackCodegenObjectFormat,
+    GpuSourcePackCodegenObjectPayloadDescriptor,
+    GpuSourcePackDependencyInterfaceSummary,
+    GpuSourcePackRecordArrayDescriptor,
+};
+
+mod semantic_interface;
+pub use semantic_interface::{
+    GPU_SEMANTIC_INTERFACE_VERSION,
+    GpuSemanticInterfaceArtifact,
+    GpuSemanticInterfaceDeclarationRecord,
+    GpuSemanticInterfaceIdentityArtifact,
+    GpuSemanticInterfaceMemberKind,
+    GpuSemanticInterfaceMemberRecord,
+    GpuSemanticInterfaceModuleRecord,
+    GpuSemanticInterfaceModuleSegmentRecord,
+    GpuSemanticInterfacePredicateRecord,
+    GpuSemanticInterfaceTypeEdge,
+    GpuSemanticInterfaceTypeKind,
+    GpuSemanticInterfaceTypeRecord,
+};
+pub(crate) use semantic_interface::{
+    MEMBER_U32S,
+    PREDICATE_U32S,
+    dependency_batch::GpuSemanticInterfaceDependencyBatch,
+    stable_name_hash,
+};
+
+mod source_pack;
+pub use source_pack::*;
+
+mod work_queue_progress;
+use work_queue_progress::*;
+
+mod build_progress;
+use build_progress::*;
+
+mod diagnostics;
+pub use diagnostics::*;
+
+/// Error returned by public compile/check operations.
+///
+/// `Diagnostic` is the preferred user-facing variant because it carries a
+/// stable diagnostic code and source labels. The phase-specific string variants
+/// are used when the compiler cannot yet map a failure into a structured
+/// diagnostic at the owning boundary.
+#[derive(Clone, Debug)]
+pub enum CompileError {
+    /// Structured diagnostic with code, message, and labels.
+    Diagnostic(Diagnostic),
+    /// Failure before syntax/type-check/codegen ownership is available.
+    GpuFrontend(String),
+    /// Syntax or parser failure that was not mapped into a structured
+    /// diagnostic.
+    GpuSyntax(String),
+    /// Type-check failure that was not mapped into a structured diagnostic.
+    GpuTypeCheck(String),
+    /// Backend failure that was not mapped into a structured diagnostic.
+    GpuCodegen(String),
+}
+
+impl CompileError {
+    /// Converts any borrowed compiler error into a public diagnostic payload.
+    ///
+    /// This is the non-consuming form used by `Display` and other reporting
+    /// paths that must not leak legacy phase-specific strings.
+    pub fn to_public_diagnostic(&self) -> Diagnostic {
+        if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+            match self {
+                CompileError::GpuFrontend(detail)
+                | CompileError::GpuSyntax(detail)
+                | CompileError::GpuTypeCheck(detail)
+                | CompileError::GpuCodegen(detail) => {
+                    eprintln!("internal compiler phase error: {detail}");
+                }
+                CompileError::Diagnostic(_) => {}
+            }
+        }
+        match self {
+            CompileError::Diagnostic(diagnostic) => diagnostic.clone(),
+            CompileError::GpuFrontend(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while preparing frontend work before producing a more specific diagnostic",
+            ),
+            CompileError::GpuSyntax(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while parsing before producing a source-specific syntax diagnostic",
+            ),
+            CompileError::GpuTypeCheck(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while type checking before producing a source-specific diagnostic",
+            ),
+            CompileError::GpuCodegen(_) => compiler_execution_failed_diagnostic(
+                "compiler execution failed",
+                "the compiler stopped while generating target output before producing a target-specific diagnostic",
+            ),
+        }
+    }
+
+    /// Converts any compiler error into a public diagnostic payload.
+    ///
+    /// Specific compilation failures should normally construct
+    /// `CompileError::Diagnostic` at the owning source/type/backend boundary.
+    /// This fallback keeps the CLI and tool APIs structured when an older raw
+    /// phase error still escapes.
+    pub fn into_public_diagnostic(self) -> Diagnostic {
+        self.to_public_diagnostic()
+    }
+}
+
+fn compiler_execution_failed_diagnostic(
+    message: &'static str,
+    phase_note: &'static str,
+) -> Diagnostic {
+    Diagnostic::error("LNC0057", message)
+        .with_note(phase_note)
+        .with_help(
+            "this is a compiler diagnostic gap; re-run with `laniusc check` when target output is not required",
+        )
+}
+
+pub(in crate::compiler) fn compiler_execution_failed_error(
+    phase_note: &'static str,
+    operation: impl Into<String>,
+    _detail: impl std::fmt::Display,
+) -> CompileError {
+    let operation = operation.into();
+    CompileError::Diagnostic(
+        compiler_execution_failed_diagnostic("compiler execution failed", phase_note)
+            .with_note(format!("operation: {operation}")),
+    )
+}
+
+pub(in crate::compiler) fn compiler_initialization_failed_error(
+    phase_note: &'static str,
+    operation: impl Into<String>,
+    detail: anyhow::Error,
+) -> CompileError {
+    let operation = operation.into();
+    if let Some(limit) = detail.downcast_ref::<crate::gpu::passes_core::GpuPassResourceLimitError>()
+    {
+        return CompileError::Diagnostic(
+            Diagnostic::error("LNC0057", "selected GPU cannot initialize the compiler")
+                .with_note(phase_note)
+                .with_note(format!("operation: {operation}"))
+                .with_note(format!("GPU pass: {}", limit.pass_label))
+                .with_note(format!(
+                    "required compute-stage storage buffers: {}",
+                    limit.required_storage_buffers
+                ))
+                .with_note(format!(
+                    "selected adapter compute-stage storage-buffer limit: {}",
+                    limit.adapter_storage_buffer_limit
+                ))
+                .with_help(
+                    "use an adapter with a sufficient storage-buffer limit; this compiler pass still needs packed records or splitting for lower-limit adapters",
+                ),
+        );
+    }
+    if let Some(device) = detail.downcast_ref::<crate::gpu::device::GpuDeviceInitializationError>()
+    {
+        if let crate::gpu::device::GpuDeviceInitializationError::SoftwareAdapter { name, backend } =
+            device
+        {
+            return CompileError::Diagnostic(
+                Diagnostic::error("LNC0057", "Lanius requires a hardware GPU adapter")
+                    .with_note(phase_note)
+                    .with_note(format!("operation: {operation}"))
+                    .with_note(format!("selected adapter: {name}"))
+                    .with_note(format!("selected backend: {backend:?}"))
+                    .with_help(
+                        "select a physical or hardware-virtualized GPU; CPU software adapters are only supported for explicit compiler diagnostics",
+                    ),
+            );
+        }
+    }
+    compiler_execution_failed_error(phase_note, operation, detail)
+}
+
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_public_diagnostic())
+    }
+}
+
+impl std::error::Error for CompileError {}
+
+/// Parser benchmark output used by compiler measurement tools.
+pub struct GpuParseBenchmarkResult {
+    /// LL parser status and accepted/rejected details.
+    pub ll1: Ll1AcceptResult,
+    /// Number of tokens produced by lexing.
+    pub token_count: u32,
+    /// Parser tree capacity selected before HIR recording.
+    pub parser_tree_capacity: u32,
+    /// Semantic parser-family features measured by GPU token classification.
+    pub parser_feature_flags: u32,
+    /// Number of semantic HIR nodes emitted by parser HIR passes.
+    pub semantic_hir_count: u32,
+    /// Number of durable token-anchored HIR nodes after grammar scaffolding is removed.
+    pub canonical_hir_count: u32,
+}
+
+/// Live frontend capacity estimate used before recording phases that need
+/// sized GPU buffers.
+pub struct GpuLiveCapacityEstimateResult {
+    /// Number of tokens produced by lexing.
+    pub token_count: u32,
+    /// Parser tree capacity required by LL/tree recovery.
+    pub parser_tree_capacity: u32,
+    /// Semantic parser-family features measured by GPU token classification.
+    pub parser_feature_flags: u32,
+    /// Parser emit stream length used while sizing HIR construction.
+    pub parser_emit_len: u32,
+    /// Number of semantic parser candidate rows before canonical compaction.
+    pub semantic_hir_count: u32,
+    /// Number of dense, token-anchored HIR rows retained after grammar
+    /// forwarding layers are removed.
+    pub canonical_hir_count: u32,
+}
+
+mod gpu_compiler;
+pub use gpu_compiler::*;
+
+mod public_planning_api;
+pub use public_planning_api::*;
+
+mod public_execution_api;
+pub use public_execution_api::*;
+
+mod gpu_public_api;
+pub use gpu_public_api::*;
+
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod tests;

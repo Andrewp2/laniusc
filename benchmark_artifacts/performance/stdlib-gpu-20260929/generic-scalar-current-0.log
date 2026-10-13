@@ -1,0 +1,11 @@
+sample=0 ms=10.933
+sample=1 ms=10.783
+sample=2 ms=10.610
+sample=3 ms=10.471
+sample=4 ms=10.596
+sample=5 ms=11.115
+sample=6 ms=10.730
+sample=7 ms=10.237
+sample=8 ms=10.569
+sample=9 ms=10.154
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_generic_enum_local_scalar.lani warmups=3 iters=10 output_bytes=2470 min_ms=10.154 median_ms=10.603 avg_ms=10.620 max_ms=11.115 output_verified=true

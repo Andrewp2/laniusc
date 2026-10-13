@@ -1,0 +1,1 @@
+import core::closes; type Local<T> = core::closes::Id<core::closes::Fixed<T, 2>>; fn main() -> i32 { let v: Local<i32> = [19, 23]; return v[0] + v[1] - 42; }

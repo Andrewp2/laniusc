@@ -1,0 +1,20 @@
+{
+  "command": [
+    "timeout",
+    "8s",
+    "strace",
+    "-f",
+    "-e",
+    "trace=openat",
+    "-o",
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/trait-runtime-provenance-native-1.trace",
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--test-threads=1",
+    "--exact",
+    "generic_trait_methods_execute_inherited_environments_at_different_layouts"
+  ],
+  "exit_code": 0,
+  "seconds": 3.8089789059995383,
+  "binary_sha256": "9f9239764470d66f777249ef8d91ca2f8dbb14fce32f424ae9f9122a7fe80985",
+  "purpose": "Bounded file-open provenance observation; timeout is not a test assertion."
+}

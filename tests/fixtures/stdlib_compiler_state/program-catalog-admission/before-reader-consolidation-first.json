@@ -1,0 +1,14 @@
+{
+  "command": [
+    "target/program-catalog-tests/stdlib_gpu_perf",
+    "gpu_catalog_distinguishes_nested_lengths_and_deduplicates_retained_units",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 124,
+  "seconds": 90.40567038099834,
+  "binary_sha256": "2037211ccaae4d64bd0255da4fbc89003406e9fce4eda0aea190defa2363dd23",
+  "sources_unchanged": true,
+  "passed": [],
+  "summaries": []
+}

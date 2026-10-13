@@ -1,0 +1,15 @@
+{
+  "case": "contracts",
+  "order": "baseline/current/current/baseline",
+  "samples_per_version": {
+    "baseline": 20,
+    "current": 20
+  },
+  "median_ms": {
+    "baseline": 93.138,
+    "current": 90.812
+  },
+  "change_percent": -2.497369494728263,
+  "all_outputs_verified": true,
+  "scope": "Warm entry rebuild, three warmups and ten samples per run; previous native integration versus sibling emission checkpoint, before private normalizer extraction for host tests."
+}

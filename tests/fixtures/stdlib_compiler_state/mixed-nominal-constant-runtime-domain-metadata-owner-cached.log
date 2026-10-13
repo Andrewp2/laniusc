@@ -1,0 +1,48 @@
+
+running 8 tests
+test nominal_constant_arguments_compose_with_caller_scopes_option_and_result ... [laniusc][pipeline-timing] label=type_checker/conditions/aggregate_args total_ms=287.548 shader_module_ms=0.222 pipeline_layout_ms=1.886 compute_pipeline_ms=285.440
+[laniusc][pipeline-timing] label=type_checker/conditions/compact_aggregate_requests total_ms=453.050 shader_module_ms=0.340 pipeline_layout_ms=0.086 compute_pipeline_ms=452.624
+[laniusc][pipeline-timing] label=type_checker/dependencies/07_project_calls total_ms=349.287 shader_module_ms=0.194 pipeline_layout_ms=1.205 compute_pipeline_ms=347.888
+[laniusc][pipeline-timing] label=type_checker/dependencies/08_validate_call_args total_ms=1100.234 shader_module_ms=0.553 pipeline_layout_ms=1.260 compute_pipeline_ms=1098.422
+[laniusc][pipeline-timing] label=type_checker/dependencies/08a_validate_call_results total_ms=2369.950 shader_module_ms=0.387 pipeline_layout_ms=1.297 compute_pipeline_ms=2368.267
+[laniusc][pipeline-timing] label=type_checker/dependencies/08b_validate_call_type_args total_ms=153.649 shader_module_ms=0.144 pipeline_layout_ms=1.244 compute_pipeline_ms=152.260
+[laniusc][pipeline-timing] label=type_checker/dependencies/14_project_type_instances total_ms=105.448 shader_module_ms=0.062 pipeline_layout_ms=1.023 compute_pipeline_ms=104.363
+[laniusc][pipeline-timing] label=type_checker/dependencies/15_project_methods total_ms=710.019 shader_module_ms=0.368 pipeline_layout_ms=0.994 compute_pipeline_ms=708.657
+[laniusc][pipeline-timing] label=type_checker/methods/03/resolve total_ms=115.873 shader_module_ms=0.086 pipeline_layout_ms=0.045 compute_pipeline_ms=115.742
+[laniusc][pipeline-timing] label=type_checker/methods/05_validate_keys total_ms=343.194 shader_module_ms=0.233 pipeline_layout_ms=0.972 compute_pipeline_ms=341.989
+[laniusc][pipeline-timing] label=type_checker/methods/06_mark_call_keys total_ms=202.963 shader_module_ms=0.142 pipeline_layout_ms=1.043 compute_pipeline_ms=201.778
+[laniusc][pipeline-timing] label=type_checker/methods/07_resolve_table total_ms=667.217 shader_module_ms=0.437 pipeline_layout_ms=1.024 compute_pipeline_ms=665.756
+[laniusc][pipeline-timing] label=type_checker/modules/10l2_validate_value_enum_call_payloads total_ms=828.143 shader_module_ms=0.503 pipeline_layout_ms=0.978 compute_pipeline_ms=826.662
+[laniusc][pipeline-timing] label=type_checker/modules/10m2_type_match_payloads total_ms=784.189 shader_module_ms=0.475 pipeline_layout_ms=0.988 compute_pipeline_ms=782.726
+[laniusc][pipeline-timing] label=type_checker/modules/10n_type_match_exprs total_ms=269.864 shader_module_ms=0.184 pipeline_layout_ms=0.040 compute_pipeline_ms=269.640
+[laniusc][pipeline-timing] label=type_checker/predicates/01_collect total_ms=108.412 shader_module_ms=0.046 pipeline_layout_ms=0.980 compute_pipeline_ms=107.385
+[laniusc][pipeline-timing] label=type_checker/predicates/01_collect_impls total_ms=2486.183 shader_module_ms=0.118 pipeline_layout_ms=1.038 compute_pipeline_ms=2485.027
+[laniusc][pipeline-timing] label=type_checker/predicates/01a_validate_bound_args total_ms=1336.972 shader_module_ms=0.072 pipeline_layout_ms=0.077 compute_pipeline_ms=1336.823
+[laniusc][pipeline-timing] label=type_checker/predicates/01f1_emit_method_param_validation_rows total_ms=185.548 shader_module_ms=0.139 pipeline_layout_ms=1.116 compute_pipeline_ms=184.293
+[laniusc][pipeline-timing] label=type_checker/predicates/01f_emit_method_validation_rows total_ms=261.622 shader_module_ms=0.180 pipeline_layout_ms=0.065 compute_pipeline_ms=261.377
+[laniusc][pipeline-timing] label=type_checker/predicates/02a_count_obligations total_ms=135.791 shader_module_ms=0.050 pipeline_layout_ms=0.041 compute_pipeline_ms=135.700
+[laniusc][pipeline-timing] label=type_checker/predicates/02b_validate_obligations total_ms=3536.848 shader_module_ms=0.099 pipeline_layout_ms=0.056 compute_pipeline_ms=3536.693
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01b_array_index_refs total_ms=1221.931 shader_module_ms=0.613 pipeline_layout_ms=0.989 compute_pipeline_ms=1220.329
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01c_generic_native_words total_ms=42005.366 shader_module_ms=0.213 pipeline_layout_ms=0.077 compute_pipeline_ms=42005.076
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01d_member_layout total_ms=448.176 shader_module_ms=0.286 pipeline_layout_ms=0.072 compute_pipeline_ms=447.818
+[laniusc][pipeline-timing] label=type_checker/type/instances/02d_materialize_applications total_ms=21416.367 shader_module_ms=0.186 pipeline_layout_ms=0.059 compute_pipeline_ms=21416.122
+[laniusc][pipeline-timing] label=type_checker/type/instances/02e_project_imported_fields total_ms=798.369 shader_module_ms=0.411 pipeline_layout_ms=0.070 compute_pipeline_ms=797.888
+[laniusc][pipeline-timing] label=type_checker/type/instances/03_member_results total_ms=543.514 shader_module_ms=0.334 pipeline_layout_ms=0.068 compute_pipeline_ms=543.112
+[laniusc][pipeline-timing] label=type_checker/type/instances/03b_member_substitute total_ms=118.914 shader_module_ms=0.253 pipeline_layout_ms=0.048 compute_pipeline_ms=118.613
+[laniusc][pipeline-timing] label=type_checker/type/instances/04a2_struct_init_contexts total_ms=130.158 shader_module_ms=0.102 pipeline_layout_ms=0.039 compute_pipeline_ms=130.017
+[laniusc][pipeline-timing] label=type_checker/type/instances/04a3_nested_struct_contexts total_ms=489.532 shader_module_ms=0.298 pipeline_layout_ms=0.062 compute_pipeline_ms=489.173
+[laniusc][pipeline-timing] label=type_checker/type/instances/04b_struct_init_substitute total_ms=332.826 shader_module_ms=0.251 pipeline_layout_ms=0.032 compute_pipeline_ms=332.542
+[laniusc][pipeline-timing] label=type_checker/type/instances/05_array_return_refs total_ms=387.522 shader_module_ms=0.317 pipeline_layout_ms=0.064 compute_pipeline_ms=387.141
+[laniusc][pipeline-timing] label=type_checker/type/instances/05b_array_literal_return_refs total_ms=627.159 shader_module_ms=0.421 pipeline_layout_ms=0.072 compute_pipeline_ms=626.665
+ok
+test nominal_constant_arguments_execute_imported_records_functions_and_methods ... ok
+test nominal_constant_arguments_execute_thirty_two_interleaved_operands ... ok
+test nominal_constant_arguments_preserve_owned_values ... ok
+test nominal_constant_arguments_preserve_unused_identity_and_zero_lengths ... ok
+test nominal_constant_arguments_reject_equal_width_identity_conflicts ... [laniusc][pipeline-timing] label=codegen_wasm_link_module total_ms=146.994 shader_module_ms=0.171 pipeline_layout_ms=1.718 compute_pipeline_ms=145.105
+ok
+test nominal_constant_first_headers_preserve_type_domains_and_owned_values ... ok
+test nominal_constant_record_values_execute ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 92.59s
+

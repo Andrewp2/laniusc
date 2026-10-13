@@ -88,6 +88,9 @@ uint value_location(uint row, uint total)
 
 bool inline_value_op(uint op)
 {
+    if (op == SEMANTIC_LIR_OP_ADDRESS || op == SEMANTIC_LIR_OP_FIELD_ADDRESS ||
+        op == SEMANTIC_LIR_OP_INDEX_ADDRESS || op == SEMANTIC_LIR_OP_PLACE_LOAD ||
+        op == SEMANTIC_LIR_OP_PLACE_STORE) return false;
     return op == SEMANTIC_LIR_OP_CONST_I32 ||
         op == SEMANTIC_LIR_OP_VALUE_GET ||
         op == SEMANTIC_LIR_OP_VALUE_SET ||

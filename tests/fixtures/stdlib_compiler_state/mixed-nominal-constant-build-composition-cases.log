@@ -1,0 +1,14 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0425]: cannot find function `compile_source_to_x86_64_with_gpu_codegen` in this scope
+    --> tests/compiler_generic_types_execution.rs:7776:28
+     |
+7776 |         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source))
+     |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+     |
+help: consider importing this function
+     |
+   3 + use laniusc_compiler::compiler::compile_source_to_x86_64_with_gpu_codegen;
+     |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `laniusc` (test "compiler_generic_types_execution") due to 1 previous error

@@ -1,0 +1,17 @@
+module app::main;
+import core::zero;
+struct Empty {}
+struct Phantom<A, B> {}
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let count: [i32; 2] = [0, -91];
+    let seen: [i32] = view(count);
+    let seed: Empty = Empty {};
+    let empty: Empty = core::zero::visit(seed, seen, 42);
+    let nothing: [str; 0] = [];
+    let array: [str; 0] = core::zero::visit(nothing, seen, 42);
+    let marker: Phantom<Empty, [str; 0]> = Phantom {};
+    let copied: Phantom<Empty, [str; 0]> = core::zero::visit(marker, seen, 42);
+    if (count[0] != 3 || count[1] != -91) { return 1; }
+    return 0;
+}

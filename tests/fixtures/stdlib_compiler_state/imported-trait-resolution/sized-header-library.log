@@ -1,0 +1,6 @@
+
+running 4 tests
+test compiler::tests::imported_trait_contracts_survive_page_order_and_workspace_reuse ... 
+thread 'compiler::tests::imported_trait_contracts_survive_page_order_and_workspace_reuse' (79861) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+timeout: the monitored command dumped core

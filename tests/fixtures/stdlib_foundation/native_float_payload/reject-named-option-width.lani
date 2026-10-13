@@ -1,0 +1,1 @@
+module app::main; import core::option; fn main() -> i32 { let value: core::option::Option<f32> = core::option::Some(1.0); let widened: core::option::Option<f64> = value; return 0; }

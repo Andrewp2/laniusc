@@ -1,0 +1,42 @@
+module app::main;
+import core::range;
+fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let signed: core::range::RangeInclusive<i64> = core::range::RangeInclusive {
+        start: -9223372036854775808, end: -9223372036854775807,
+    };
+    let count: i32 = 0;
+    let first: i64 = 0;
+    let last: i64 = 0;
+    for value in signed {
+        if (count == 0) { first = keep(value); }
+        last = value;
+        count += 1;
+        if (count > 2) { return 1; }
+    }
+    if (count != 2 || first != -9223372036854775808 || last != -9223372036854775807) { return 2; }
+    let unsigned: core::range::RangeInclusive<u64> = core::range::RangeInclusive {
+        start: 18446744073709551614, end: 18446744073709551615,
+    };
+    let ucount: i32 = 0;
+    let ulast: u64 = 0;
+    for value in unsigned {
+        ucount += 1;
+        ulast = value;
+        unsigned.end = 0;
+        if (ucount > 2) { return 3; }
+        continue;
+    }
+    if (ucount != 2 || ulast != 18446744073709551615) { return 4; }
+    let empty: core::range::Range<u64> = core::range::Range { start: 18446744073709551615, end: 1 };
+    for value in empty { return 5; }
+    let exclusive: core::range::Range<u64> = core::range::Range { start: 4294967296, end: 4294967298 };
+    let ecount: i32 = 0;
+    let elast: u64 = 0;
+    for value in exclusive {
+        ecount += 1; elast = value;
+        if (ecount > 2) { return 6; }
+    }
+    if (ecount != 2 || elast != 4294967297) { return 7; }
+    return 0;
+}

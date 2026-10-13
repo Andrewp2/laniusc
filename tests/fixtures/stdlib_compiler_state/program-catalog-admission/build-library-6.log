@@ -1,0 +1,404 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+warning: unused imports: `ArenaCopy`, `ArenaWrite`, `OutputRange`, and `UploadPlan`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/mod.rs:12:22
+   |
+12 | pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
+   |                      ^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `CatalogInput`, `FrozenCatalog`, `FrozenSnapshotId`, and `StableWitnessIdentity`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/mod.rs:13:26
+   |
+13 | pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};
+   |                          ^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ProgramPacket`, `ReplayContextInput`, `Submission`, and `ValidatedEvidence`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/mod.rs:14:25
+   |
+14 | pub(super) use packet::{ProgramPacket, ReplayContextInput, Submission, ValidatedEvidence};
+   |                         ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:21:10
+   |
+21 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+21 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+21 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+   |
+
+warning: type `FrozenSnapshot` is more private than the item `catalog::FrozenCatalog::snapshots`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:97:5
+   |
+97 |     pub snapshots: Vec<FrozenSnapshot>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `catalog::FrozenCatalog::snapshots` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `FrozenSnapshot` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:42:1
+   |
+42 | pub(super) struct FrozenSnapshot {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `abi::Tables` is more private than the item `catalog::FrozenCatalog::tables`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:99:5
+   |
+99 |     pub tables: Tables,
+   |     ^^^^^^^^^^^^^^^^^^ field `catalog::FrozenCatalog::tables` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `abi::Tables` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:57:1
+   |
+57 | pub(super) struct Tables {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `catalog::Atoms` is more private than the item `catalog::FrozenCatalog::atoms`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:100:5
+    |
+100 |     pub atoms: Atoms,
+    |     ^^^^^^^^^^^^^^^^ field `catalog::FrozenCatalog::atoms` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+    |
+note: but type `catalog::Atoms` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:57:1
+    |
+ 57 | pub(super) struct Atoms {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Slice` is more private than the item `catalog::FrozenCatalog::slices`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:108:5
+    |
+108 |     pub slices: [Slice; TABLE_COUNT],
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `catalog::FrozenCatalog::slices` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+    |
+note: but type `abi::Slice` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:107:1
+    |
+107 | pub(super) struct Slice {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Slice` is more private than the item `catalog::FrozenCatalog::outputs`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:109:5
+    |
+109 |     pub outputs: [Slice; OUTPUT_COUNT],
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `catalog::FrozenCatalog::outputs` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+    |
+note: but type `abi::Slice` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:107:1
+    |
+107 | pub(super) struct Slice {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Span` is more private than the item `packet::Submission::call_span`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:39:5
+   |
+39 |     pub call_span: Span,
+   |     ^^^^^^^^^^^^^^^^^^^ field `packet::Submission::call_span` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `abi::Span` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:40:1
+   |
+40 | pub(super) struct Span {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Span` is more private than the item `packet::Submission::context_span`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:40:5
+   |
+40 |     pub context_span: Span,
+   |     ^^^^^^^^^^^^^^^^^^^^^^ field `packet::Submission::context_span` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `abi::Span` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:40:1
+   |
+40 | pub(super) struct Span {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Span` is more private than the item `packet::Submission::obligation_span`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:41:5
+   |
+41 |     pub obligation_span: Span,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ field `packet::Submission::obligation_span` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `abi::Span` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:40:1
+   |
+40 | pub(super) struct Span {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Span` is more private than the item `packet::Submission::assumption_index_span`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:44:5
+   |
+44 |     pub assumption_index_span: Span,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `packet::Submission::assumption_index_span` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `abi::Span` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:40:1
+   |
+40 | pub(super) struct Span {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Tables` is more private than the item `packet::ProgramPacket::tables`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:50:5
+   |
+50 |     pub tables: Tables,
+   |     ^^^^^^^^^^^^^^^^^^ field `packet::ProgramPacket::tables` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+   |
+note: but type `abi::Tables` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:57:1
+   |
+57 | pub(super) struct Tables {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `abi::Span` is more private than the item `packet::ProgramPacket::append_unit_calls`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:251:5
+    |
+251 | /     pub fn append_unit_calls(
+252 | |         &mut self,
+253 | |         unit: &CompiledSourcePackUnit,
+254 | |         selected_replay: Option<(u32, u32)>,
+255 | |     ) -> Result<Span> {
+    | |_____________________^ method `packet::ProgramPacket::append_unit_calls` is reachable at visibility `pub(in crate::compiler::gpu_compiler)`
+    |
+note: but type `abi::Span` is only usable at visibility `pub(in crate::compiler::gpu_compiler::program_evidence)`
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:40:1
+    |
+ 40 | pub(super) struct Span {
+    | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `copies`, `writes`, `output_copies`, `input_word_count`, and `output_word_count` are never read
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/abi.rs:136:9
+    |
+135 | pub(in crate::compiler::gpu_compiler) struct UploadPlan {
+    |                                              ---------- fields in this struct
+136 |     pub copies: Vec<ArenaCopy>,
+    |         ^^^^^^
+137 |     pub writes: Vec<ArenaWrite>,
+    |         ^^^^^^
+138 |     pub output_copies: Vec<ArenaCopy>,
+    |         ^^^^^^^^^^^^^
+139 |     pub initialize_outputs: Vec<OutputRange>,
+140 |     pub input_word_count: u32,
+    |         ^^^^^^^^^^^^^^^^
+141 |     pub output_word_count: u32,
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: `UploadPlan` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `GpuProgramEvidence` is never constructed
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:16:19
+   |
+16 | pub(super) struct GpuProgramEvidence {
+   |                   ^^^^^^^^^^^^^^^^^^
+
+warning: struct `GpuPacket` is never constructed
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:28:19
+   |
+28 | pub(super) struct GpuPacket {
+   |                   ^^^^^^^^^
+
+warning: method `packet_mut` is never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:38:12
+   |
+37 | impl GpuPacket {
+   | -------------- method in this implementation
+38 |     pub fn packet_mut(&mut self) -> Result<&mut ProgramPacket> {
+   |            ^^^^^^^^^^
+
+warning: associated items `admit`, `new_packet`, and `check` are never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:45:12
+   |
+44 | impl GpuProgramEvidence {
+   | ----------------------- associated items in this implementation
+45 |     pub fn admit(
+   |            ^^^^^
+...
+83 |     pub fn new_packet(&self) -> Result<GpuPacket> {
+   |            ^^^^^^^^^^
+...
+95 |     pub fn check(&mut self, packet: &mut GpuPacket) -> Result<Vec<Option<ValidatedEvidence>>> {
+   |            ^^^^^
+
+warning: struct `OutputLayout` is never constructed
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:161:19
+    |
+161 | pub(super) struct OutputLayout { slices: [Slice; OUTPUT_COUNT] }
+    |                   ^^^^^^^^^^^^
+
+warning: associated items `from_submission`, `reset_writes`, and `region` are never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:163:8
+    |
+162 | impl OutputLayout {
+    | ----------------- associated items in this implementation
+163 |     fn from_submission(catalog: &FrozenCatalog, submission: &Submission) -> Result<Self> {
+    |        ^^^^^^^^^^^^^^^
+...
+208 |     fn reset_writes(&self, submission: &Submission) -> Result<Vec<ArenaWrite>> {
+    |        ^^^^^^^^^^^^
+...
+241 |     fn region<'a>(&self, catalog: &'a Arena, output: &'a Arena, table: usize, span: Span) -> Result<ReadbackRegion<'a>> {
+    |        ^^^^^^
+
+warning: function `catalog_bootstrap` is never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:252:4
+    |
+252 | fn catalog_bootstrap(catalog: &FrozenCatalog) -> Result<(Vec<u32>, Vec<u32>)> {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `statuses` is never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:273:4
+    |
+273 | fn statuses(bytes: &[u8]) -> Result<Vec<[u32; 8]>> {
+    |    ^^^^^^^^
+
+warning: function `one_status` is never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/mod.rs:278:4
+    |
+278 | fn one_status(bytes: &[u8]) -> Result<[u32; 8]> {
+    |    ^^^^^^^^^^
+
+warning: function `byte_len` is never used
+ --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/arena.rs:6:15
+  |
+6 | pub(super) fn byte_len(words: u32) -> Result<usize> {
+  |               ^^^^^^^^
+
+warning: function `byte_offset` is never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/arena.rs:10:4
+   |
+10 | fn byte_offset(words: u32) -> u64 { u64::from(words) * 4 }
+   |    ^^^^^^^^^^^
+
+warning: function `checked_allocation` is never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/arena.rs:12:4
+   |
+12 | fn checked_allocation(device: &wgpu::Device, words: u32, storage: bool) -> Result<(usize, u64)> {
+   |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `allocate` is never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/arena.rs:27:15
+   |
+27 | pub(super) fn allocate(
+   |               ^^^^^^^^
+
+warning: struct `Arena` is never constructed
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/arena.rs:50:19
+   |
+50 | pub(super) struct Arena {
+   |                   ^^^^^
+
+warning: associated items `empty`, `from_words`, `prepare`, and `upload` are never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/arena.rs:56:12
+    |
+ 55 | impl Arena {
+    | ---------- associated items in this implementation
+ 56 |     pub fn empty(device: &wgpu::Device, label: &str) -> Result<Self> {
+    |            ^^^^^
+...
+ 61 |     pub fn from_words(device: &wgpu::Device, label: &str, words: &[u32]) -> Result<Self> {
+    |            ^^^^^^^^^^
+...
+ 71 |     pub fn prepare(
+    |            ^^^^^^^
+...
+128 |     pub fn upload(
+    |            ^^^^^^
+
+warning: constant `CATALOG_KEYS` is never used
+ --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs:7:7
+  |
+7 | const CATALOG_KEYS: [&str; 12] = [
+  |       ^^^^^^^^^^^^
+
+warning: struct `CatalogKernels` is never constructed
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs:22:19
+   |
+22 | pub(super) struct CatalogKernels { passes: Vec<PassData> }
+   |                   ^^^^^^^^^^^^^^
+
+warning: associated items `load` and `record` are never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs:24:12
+   |
+23 | impl CatalogKernels {
+   | ------------------- associated items in this implementation
+24 |     pub fn load(device: &wgpu::Device) -> Result<Self> {
+   |            ^^^^
+...
+30 |     pub fn record(
+   |            ^^^^^^
+
+warning: function `record_phase` is never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs:55:15
+   |
+55 | pub(super) fn record_phase(
+   |               ^^^^^^^^^^^^
+
+warning: struct `BatchKernels` is never constructed
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs:106:19
+    |
+106 | pub(super) struct BatchKernels;
+    |                   ^^^^^^^^^^^^
+
+warning: associated items `load` and `record` are never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/dispatch/kernels.rs:108:12
+    |
+107 | impl BatchKernels {
+    | ----------------- associated items in this implementation
+108 |     pub fn load(_device: &wgpu::Device) -> Result<Self> {
+    |            ^^^^
+...
+111 |     pub fn record(
+    |            ^^^^^^
+
+warning: method `find` is never used
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/catalog.rs:74:12
+   |
+62 | impl Atoms {
+   | ---------- method in this implementation
+...
+74 |     pub fn find(&self, key: &[u32; 8]) -> Result<u32> {
+   |            ^^^^
+
+warning: fields `predicate_identity` and `implementation_identity` are never read
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:22:9
+   |
+18 | pub(in crate::compiler::gpu_compiler) struct ValidatedEvidence {
+   |                                              ----------------- fields in this struct
+...
+22 |     pub predicate_identity: StableWitnessIdentity,
+   |         ^^^^^^^^^^^^^^^^^^
+23 |     pub implementation_identity: StableWitnessIdentity,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `ValidatedEvidence` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `assumption_index_span` is never read
+  --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:44:9
+   |
+35 | pub(in crate::compiler::gpu_compiler) struct Submission {
+   |                                              ---------- field in this struct
+...
+44 |     pub assumption_index_span: Span,
+   |         ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `Submission` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: method `original_context` is never used
+   --> crates/laniusc-compiler/src/compiler/gpu_compiler/program_evidence/packet.rs:129:12
+    |
+ 69 | impl ProgramPacket {
+    | ------------------ method in this implementation
+...
+129 |     pub fn original_context(&mut self, snapshot: u32, actual_function_hir: u32) -> Result<u32> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: `laniusc-compiler` (lib test) generated 41 warnings (run `cargo fix --lib -p laniusc-compiler --tests` to apply 4 suggestions)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 02s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+  Executable unittests src/lib.rs (target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66)

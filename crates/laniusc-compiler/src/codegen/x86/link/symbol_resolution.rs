@@ -4,6 +4,7 @@ use super::{
     GpuX86LinkInput,
     GpuX86LinkRelocationRecord,
     GpuX86LinkSymbolRecord,
+    GpuX86MissingSymbolDefinition,
     symbol_partitions::{GpuX86SymbolPartition, GpuX86SymbolPartitionPlan},
 };
 use crate::{
@@ -492,6 +493,19 @@ fn read_partition_batch(
     drop(mapped);
     status_readback.unmap();
     if status[0] != 1 || status[1] != 0 {
+        if matches!(status[1], 4 | 5) {
+            if let Some(symbol) = input
+                .relocations
+                .get(status[2] as usize)
+                .and_then(|relocation| input.symbols.get(relocation.target_index as usize))
+            {
+                return Err(GpuX86MissingSymbolDefinition {
+                    identity: symbol.identity,
+                    relocation_index: status[2],
+                }
+                .into());
+            }
+        }
         bail!("x86 GPU symbol partition failed with status {status:?}");
     }
     if relocation_indices.is_empty() {

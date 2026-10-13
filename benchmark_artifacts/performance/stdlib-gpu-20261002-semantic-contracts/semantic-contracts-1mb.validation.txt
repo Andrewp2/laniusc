@@ -1,0 +1,24 @@
+measure-0: source=1a7ec79e353e12cc08a3de7937ac6f177ac8ed920272dcbbcda01e258ead4a77 exact stdout, empty stderr, exit 0
+measure-1: source=ed5f62a438e357541301e501b2fb0990258d224c72b022ae1dc80a66837ddac4 exact stdout, empty stderr, exit 0
+measure-2: source=1d2e7656e82c78fa6df08755ff283488c7dd18855739caf043ed2ecb7cf6bb48 exact stdout, empty stderr, exit 0
+measure-3: source=de6a2435131fa0175b85ee33826fca10e06b69adb9263b8526f3cc5c81ceaf30 exact stdout, empty stderr, exit 0
+measure-4: source=891290ce401c2c38702cd93a8e8b80279ccebca21b47acb812382da64b4fb71e exact stdout, empty stderr, exit 0
+measure-5: source=b4bcc5e8d021b68656fa67f7cff81e3af6902cf46e028cb9388aeaf71f9f5b04 exact stdout, empty stderr, exit 0
+measure-6: source=40b4935db5e3556756e027b31c6f1950fb0dc9e970c0809cf7b8f4299c8cadcc exact stdout, empty stderr, exit 0
+measure-7: source=99e603e639fd6008a0c4109f9ac590147c1e0142617dcd52e556ae6dbff0b44c exact stdout, empty stderr, exit 0
+measure-8: source=b88b07258308434bf0cce2e7a44140c17ba4b6731bcb8a459da3514a85695200 exact stdout, empty stderr, exit 0
+measure-9: source=d280aa4d3cb74ffe953a67aee8e0a5b5fd1db9decda64ed14275aad9b7a0033e exact stdout, empty stderr, exit 0
+measure-10: source=0a362364644f21aa149e9186615cd5c02d72a1e532a2fe4b73ae0f4cbcc6e8d8 exact stdout, empty stderr, exit 0
+measure-11: source=8c57ddb3adb7f0ad4fafd13dcd6329c05d7d19393a5e335e9adcbe6ee0d90980 exact stdout, empty stderr, exit 0
+measure-12: source=de58513961fe87c79245fb3a40feb6803a30a815f574d6b7c71710ea5db61364 exact stdout, empty stderr, exit 0
+measure-13: source=fdb1ddb33428249bd9a4c2fa0e98eb7a51c6607f7f049c36c1f2d4320cd69809 exact stdout, empty stderr, exit 0
+measure-14: source=c56aa922b56d323fa6bfb082113ceaf278dcbfb116bd85402041907a2bbd5a9b exact stdout, empty stderr, exit 0
+measure-15: source=9dcdecc24928d7973a53e4e11209801cb8276760baf0ce2458527719ec29cac8 exact stdout, empty stderr, exit 0
+measure-16: source=af28f98bfe6be946e7ea8950ab2760b8a5df24df74d17883c007371fc8e83e35 exact stdout, empty stderr, exit 0
+measure-17: source=b8deac8505051c09b07f1e05afe5bd17ada138d0e571e5250d6186307437e13b exact stdout, empty stderr, exit 0
+measure-18: source=4a963149bb075b5f6e14c1ecd4e0c70eda098c56ddda83d3a8592f9616543fb1 exact stdout, empty stderr, exit 0
+measure-19: source=5df51810c32b774a5c2c2d1f80da33efc0587fc62b307efe48f99713caa04545 exact stdout, empty stderr, exit 0
+/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/benchmark_artifacts/performance/stdlib-gpu-20261002-semantic-contracts/semantic-contracts-1mb.json
+Compiler median: 38.788097 ms
+Wall median: 41.815756 ms
+20 emitted programs validated; zero timed cache hits or resource creations.

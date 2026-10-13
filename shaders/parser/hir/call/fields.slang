@@ -4,6 +4,7 @@
 // inspect token neighborhoods, source bytes, helper names, or stdlib names.
 
 import generated_parse_production_ids;
+import parser.hir.postfix_sequence;
 import atomics;
 
 struct Params
@@ -142,7 +143,7 @@ uint callee_for_call(uint call_node)
     if (!valid_node(p))
         return INVALID;
 
-    if (node_kind[p] == PROD_POSTFIX)
+    if (hir_is_postfix_sequence_owner(node_kind[p]))
         return callable_head_for_node(previous_sibling_node(call_node));
 
     if (is_postfix_operator(node_kind[p]))

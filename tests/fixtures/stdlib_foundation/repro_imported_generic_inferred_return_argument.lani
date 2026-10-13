@@ -1,0 +1,11 @@
+module app::main;
+import core::relay;
+
+fn main() -> i32 {
+    let values = core::relay::duplicate(42);
+    let copied = core::relay::forward_array(values);
+    if (copied[0] != 42 || copied[1] != 42) { return 1; }
+    copied[0] = -7;
+    if (values[0] != 42 || copied[1] != 42) { return 2; }
+    return 0;
+}

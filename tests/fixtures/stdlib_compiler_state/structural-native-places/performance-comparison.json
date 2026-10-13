@@ -1,0 +1,38 @@
+{
+  "contracts": {
+    "pooled_medians_ms": {
+      "baseline": 80.098,
+      "current": 82.1885
+    },
+    "difference_percent": 2.609927838397974,
+    "run_medians_ms": {
+      "baseline": [
+        79.58,
+        80.803
+      ],
+      "current": [
+        82.0295,
+        82.1885
+      ]
+    },
+    "all_outputs_verified": true
+  },
+  "ordinary": {
+    "pooled_medians_ms": {
+      "baseline": 273.302,
+      "current": 279.758
+    },
+    "difference_percent": 2.362222010815862,
+    "run_medians_ms": {
+      "baseline": [
+        273.78999999999996,
+        272.9475
+      ],
+      "current": [
+        279.93399999999997,
+        279.5825
+      ]
+    },
+    "all_outputs_verified": true
+  }
+}

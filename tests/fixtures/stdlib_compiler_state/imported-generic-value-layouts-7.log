@@ -1,0 +1,33 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.59s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 8 tests
+test direct_record_descriptor_fields_have_exact_types ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.98s
+
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 9 tests
+test deferred_template_interfaces_still_check_payload_arguments ... ok
+test imported_generic_slice_payloads_execute_reads_writes_and_swaps ... ok
+test imported_receiver_payload_templates_execute_distinct_scalar_instances ... ok
+test imported_scalar_payload_templates_execute_both_branches ... ok
+test qualified_generic_scalar_returns_execute_after_substitution ... ok
+test unresolved_payload_templates_do_not_poison_imported_executable_functions ... ok
+test unused_local_payload_templates_preserve_executable_predicates ... ok
+test used_local_payload_templates_execute ... ok
+test used_local_slice_element_templates_execute ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.24s
+

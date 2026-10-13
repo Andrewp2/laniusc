@@ -1,0 +1,3 @@
+canonical-1mb.json: executed and validated 20 artifacts
+daemon_warm_workspace: wall median 59.229 ms, compile median 56.074 ms
+shader-artifact-digest: 49ceefb7cccfcae5

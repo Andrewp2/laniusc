@@ -1,3 +1,6 @@
+import primitive_types;
+import type_checker.concrete_type_equality;
+import type_checker.constant_atoms_identity;
 // Project checked array/slice references into dense semantic HIR.
 //
 // The earlier index-result pass establishes that the index expression has a
@@ -6,15 +9,39 @@
 // checked semantic artifact boundary.
 
 import hir_records;
+import status;
+import type_checker.checked_array_counts;
+import type_checker.checked_index_reference;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.native_nominal_identity;
 import gpu_index;
-import dependency_interface;
+import checked_semantic_artifact;
+import type_checker.argument_context;
+import hir_expr_semantics;
+
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return instance < capacity;
+}
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
+StructuredBuffer<uint> argument_expected_ref_tag;
+StructuredBuffer<uint> argument_expected_ref_payload;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
+StructuredBuffer<uint> struct_init_field_expected_ref_tag;
+StructuredBuffer<uint> struct_init_field_expected_ref_payload;
+StructuredBuffer<uint> struct_init_field_expected_context_instance;
 StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_array_element_start;
 StructuredBuffer<uint> compact_array_element_count;
@@ -23,39 +50,20 @@ StructuredBuffer<HirArrayElement> compact_array_elements;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
+StructuredBuffer<uint> type_native_word_count;
+StructuredBuffer<uint> type_native_scalar_identity;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
-StructuredBuffer<uint> decl_id_by_name_token;
-StructuredBuffer<uint> decl_name_id;
-StructuredBuffer<uint> decl_module_id;
-StructuredBuffer<uint> module_key_segment_count;
-StructuredBuffer<uint> module_key_segment_base;
-StructuredBuffer<uint> module_key_segment_name_id;
-StructuredBuffer<uint> language_name_id;
-StructuredBuffer<uint> name_hash_lo;
-StructuredBuffer<uint> name_hash_hi;
-StructuredBuffer<uint> external_type_library_id;
-StructuredBuffer<uint> external_type_unit_id;
-StructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 RWStructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
+RWStructuredBuffer<uint> semantic_aggregate_word_count_by_hir;
 RWStructuredBuffer<uint> semantic_array_length_by_hir;
 RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
+RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> semantic_function_result_word_count_by_hir;
 
 static const uint INVALID = 0xffffffffu;
@@ -75,17 +83,12 @@ static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
-static const uint TYPE_LEN_LITERAL = 1u;
+static const uint NATIVE_RUNTIME_LENGTH = 0xfffffffeu;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_REF_SCALAR = 1u;
-static const uint TYPE_I32 = 3u;
 static const uint ITERABLE_EXCLUSIVE_RANGE = 1u;
 static const uint ITERABLE_INCLUSIVE_RANGE = 2u;
 static const uint ITERABLE_FIXED_ARRAY = 3u;
-static const uint LANGUAGE_SYMBOL_CORE = 63u;
-static const uint LANGUAGE_SYMBOL_RANGE_MODULE = 64u;
-static const uint LANGUAGE_SYMBOL_RANGE_TYPE = 65u;
-static const uint LANGUAGE_SYMBOL_RANGE_INCLUSIVE_TYPE = 66u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count()
@@ -113,6 +116,18 @@ uint name_token(uint node)
     return valid_token(token) ? token : INVALID;
 }
 
+uint forwarded_expression(uint node)
+{
+    for (uint depth = 0u; depth < 64u && valid_hir(node); depth++)
+    {
+        uint kind = compact_hir_core[node].kind;
+        HirPayload value = compact_hir_payload[node];
+        if ((kind != 14u && kind != 16u && kind != 17u) || value.a != 1u) return node;
+        node = value.b;
+    }
+    return INVALID;
+}
+
 void publish_ref(uint node, uint tag, uint payload)
 {
     if (!valid_hir(node)) return;
@@ -120,28 +135,67 @@ void publish_ref(uint node, uint tag, uint payload)
     semantic_expr_ref_payload_by_hir[node] = payload;
 }
 
+bool native_array_count(uint instance, out uint count)
+{
+    count = 0u;
+    return valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY &&
+        checked_source_array_count(type_instance_len_kind[instance],
+            type_instance_len_payload[instance], gParams.n_tokens, count) &&
+        count < NATIVE_RUNTIME_LENGTH;
+}
+
 void publish_array_length(uint node, uint instance)
 {
-    if (!valid_hir(node)) return;
-    if (type_instance_kind[instance] == TYPE_INSTANCE_SLICE)
+    if (!valid_hir(node) || !valid_instance(instance)) return;
+    uint kind = type_instance_kind[instance];
+    if (kind == TYPE_INSTANCE_SLICE)
     {
-        semantic_array_length_by_hir[node] = 0xfffffffeu;
+        semantic_array_length_by_hir[node] = NATIVE_RUNTIME_LENGTH;
         return;
     }
-    if (type_instance_len_kind[instance] == TYPE_LEN_LITERAL)
-        semantic_array_length_by_hir[node] = type_instance_len_payload[instance];
+    if (kind != TYPE_INSTANCE_ARRAY) return;
+    semantic_array_length_by_hir[node] = INVALID;
+    uint count;
+    if (native_array_count(instance, count))
+    {
+        semantic_array_length_by_hir[node] = count;
+        return;
+    }
+    // Original generic bodies may retain a conditional array-count contract.
+    // Only a genuinely symbolic integer remains deferred; malformed atoms,
+    // failed concrete fits and fixed counts colliding with native markers fail.
+    ConstantReferenceDescriptor descriptor;
+    bool symbolic = inspect_constant_reference<CheckedSourceConstantGraph, CheckedSourceConstantEnvironment>(
+        uint3(type_instance_len_kind[instance], type_instance_len_payload[instance], 0u),
+        gParams.n_tokens, descriptor) &&
+        descriptor.disposition == CONSTANT_REFERENCE_SYMBOLIC &&
+        scalar_is_integer(descriptor.terminal_scalar);
+    if (!symbolic)
+        record_min_token_error(status, compact_hir_core[node].token_start, 6u, 0x474e0006u);
 }
 
 uint array_element_decl_token(uint instance)
 {
-    if (!valid_token(instance)) return INVALID;
+    if (!valid_instance(instance)) return INVALID;
     uint tag = type_instance_elem_ref_tag[instance];
     uint payload = type_instance_elem_ref_payload[instance];
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+    if (tag == TYPE_REF_INSTANCE && valid_instance(payload))
         return type_instance_decl_token[payload];
-    if (tag == TYPE_REF_SCALAR && payload >= 4096u && payload < 8192u)
-        return payload >= 6144u ? payload - 6144u : payload - 4096u;
+    if (tag == TYPE_REF_SCALAR)
+        return native_nominal_token(payload, gParams.n_tokens, type_native_scalar_identity);
     return INVALID;
+}
+
+uint element_aggregate_words(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_INSTANCE && valid_instance(payload)) return type_native_word_count[payload];
+    if (tag == TYPE_REF_SCALAR && payload == 7u) return 2u;
+    if (tag == TYPE_REF_SCALAR)
+    {
+        uint token = native_nominal_token(payload, gParams.n_tokens, type_native_scalar_identity);
+        if (token != INVALID) return type_native_word_count[token];
+    }
+    return 0u;
 }
 
 void publish_array_ref(uint node, uint instance)
@@ -151,6 +205,14 @@ void publish_array_ref(uint node, uint instance)
     uint decl_token = array_element_decl_token(instance);
     if (valid_hir(node) && valid_token(decl_token))
         semantic_aggregate_decl_token_by_hir[node] = decl_token;
+    uint length;
+    if (valid_hir(node) && native_array_count(instance, length))
+    {
+        uint width = element_aggregate_words(type_instance_elem_ref_tag[instance],
+            type_instance_elem_ref_payload[instance]);
+        if (width != 0u && width != INVALID && length <= (INVALID - 1u) / width)
+            semantic_aggregate_word_count_by_hir[node] = length * width;
+    }
 }
 
 void publish_array_literal_element_decl(uint node)
@@ -167,115 +229,78 @@ void publish_array_literal_element_decl(uint node)
         semantic_aggregate_decl_token_by_hir[node] = decl_token;
 }
 
+#include "../../array_literal_expected.slang"
+
 uint contextual_array_instance(uint node)
 {
-    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_ARRAY_EXPR)
-        return INVALID;
-    uint parent = compact_hir_payload[node].d;
-    if (!valid_hir(parent)) return INVALID;
-    HirCore parent_core = compact_hir_core[parent];
-    HirPayload parent_payload = compact_hir_payload[parent];
-    if ((parent_core.kind == HIR_STMT || parent_core.kind == HIR_LET_STMT) &&
-        parent_payload.a == HIR_STMT_LET &&
-        parent_payload.c == node)
+    if (valid_hir(node) && call_inference_result_tag[node] == TYPE_REF_INSTANCE)
     {
-        uint token = parent_payload.b;
-        return valid_token(token) && decl_type_ref_tag[token] == TYPE_REF_INSTANCE
-            ? decl_type_ref_payload[token] : INVALID;
+        uint instance = call_inference_result_payload[node];
+        if (valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY)
+            return instance;
     }
-    if (parent_core.kind == HIR_RETURN_STMT &&
-        parent_payload.a == HIR_STMT_RETURN && parent_payload.b == node)
-    {
-        uint fn_node = compact_hir_nearest_fn[parent];
-        uint fn_token = valid_hir(fn_node) ? compact_hir_payload[fn_node].b : INVALID;
-        return valid_token(fn_token) && fn_return_ref_tag[fn_token] == TYPE_REF_INSTANCE
-            ? fn_return_ref_payload[fn_token] : INVALID;
-    }
-    return INVALID;
+    return declared_array_literal_instance(node);
 }
 
-uint named_iterable_kind(uint instance)
+bool checked_index_base_reference(uint node, out uint tag, out uint payload)
 {
-    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_NAMED)
-        return 0u;
-    if (type_instance_arg_count[instance] != 1u)
-        return 0u;
-    uint tag = 0u;
-    uint payload = INVALID;
-    uint row = type_instance_arg_row_start[instance];
-    if (row != INVALID && row < type_instance_arg_row_count_out[0u])
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (checked_value_index_reference(node, active_hir_count(), gParams.n_tokens,
+        compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
+        decl_type_ref_payload, member_result_ref_tag, member_result_ref_payload,
+        semantic_calls_by_hir, type_instance_kind, type_instance_elem_ref_tag,
+        type_instance_elem_ref_payload, tag, payload)) return true;
+    uint indices = 0u;
+    uint root = node;
+    for (uint depth = 0u; depth < 64u && valid_hir(root); depth++)
     {
-        tag = type_instance_arg_row_ref_tag[row];
-        payload = type_instance_arg_row_ref_payload[row];
+        root = forwarded_expression(root);
+        if (!valid_hir(root)) return false;
+        if (compact_hir_core[root].kind != HIR_INDEX_EXPR) break;
+        indices++;
+        root = compact_hir_payload[root].b;
     }
-    if (tag == 0u)
-    {
-        row = type_instance_arg_start[instance];
-        if (row == INVALID || row >= gParams.n_tokens) return 0u;
-        tag = type_instance_arg_ref_tag[row];
-        payload = type_instance_arg_ref_payload[row];
-    }
-    if (tag != TYPE_REF_SCALAR || payload != TYPE_I32) return 0u;
+    if (!valid_hir(root) || compact_hir_core[root].kind == HIR_INDEX_EXPR || indices == 0u)
+        return false;
 
-    uint library_id = external_type_library_id[instance];
-    uint unit_id = external_type_unit_id[instance];
-    uint local_id = external_type_local_index[instance];
-    if (library_id != INVALID && unit_id != INVALID && local_id != INVALID)
+    // Read the accepted root reference, not an earlier index lane's output.
+    // These producer tables are immutable throughout this projection pass.
+    uint kind = compact_hir_core[root].kind;
+    if (kind == HIR_NAME_EXPR || kind == HIR_PATH_EXPR)
     {
-        uint dependency_decl = dependency_find_declaration(library_id, unit_id, local_id);
-        if (dependency_decl == INVALID) return 0u;
-        uint decl_base = dependency_decl * 14u;
-        uint module = dependency_declaration_word(decl_base + 0u);
-        if (module >= dependency_module_count()) return 0u;
-        uint module_base = module * 2u;
-        uint segment_base = dependency_module_word(module_base + 0u);
-        uint segment_count = dependency_module_word(module_base + 1u);
-        if (segment_count != 2u) return 0u;
-        uint segment_words = segment_base * 4u;
-        uint core_id = language_name_id[LANGUAGE_SYMBOL_CORE];
-        uint range_module_id = language_name_id[LANGUAGE_SYMBOL_RANGE_MODULE];
-        if (dependency_module_segment_word(segment_words + 0u) != name_hash_lo[core_id] ||
-            dependency_module_segment_word(segment_words + 1u) != name_hash_hi[core_id] ||
-            dependency_module_segment_word(segment_words + 4u) != name_hash_lo[range_module_id] ||
-            dependency_module_segment_word(segment_words + 5u) != name_hash_hi[range_module_id])
-            return 0u;
-        uint name_lo = dependency_declaration_word(decl_base + 1u);
-        uint name_hi = dependency_declaration_word(decl_base + 2u);
-        uint range_id = language_name_id[LANGUAGE_SYMBOL_RANGE_TYPE];
-        if (name_lo == name_hash_lo[range_id] && name_hi == name_hash_hi[range_id])
-            return ITERABLE_EXCLUSIVE_RANGE;
-        uint inclusive_id = language_name_id[LANGUAGE_SYMBOL_RANGE_INCLUSIVE_TYPE];
-        if (name_lo == name_hash_lo[inclusive_id] && name_hi == name_hash_hi[inclusive_id])
-            return ITERABLE_INCLUSIVE_RANGE;
-        return 0u;
+        uint token = name_token(root);
+        uint declaration = valid_token(token) ? visible_decl[token] : INVALID;
+        if (!valid_token(declaration)) declaration = token;
+        if (!valid_token(declaration)) return false;
+        tag = decl_type_ref_tag[declaration]; payload = decl_type_ref_payload[declaration];
     }
+    else if (kind == 19u)
+    {
+        CheckedCallArtifact call = semantic_calls_by_hir[root];
+        tag = call.return_ref_tag; payload = call.return_ref_payload;
+    }
+    else if (kind == 21u)
+    {
+        uint token = compact_hir_payload[root].c;
+        if (!valid_token(token)) return false;
+        tag = member_result_ref_tag[token]; payload = member_result_ref_payload[token];
+    }
+    else if (kind == HIR_ARRAY_EXPR)
+    {
+        tag = TYPE_REF_INSTANCE; payload = contextual_array_instance(root);
+    }
+    else return false;
 
-    uint decl_token = type_instance_decl_token[instance];
-    if (!valid_token(decl_token)) return 0u;
-    uint decl = decl_id_by_name_token[decl_token];
-    if (decl == INVALID || decl >= gParams.n_hir_nodes) return 0u;
-    uint module_id = decl_module_id[decl];
-    if (module_id >= gParams.n_hir_nodes || module_key_segment_count[module_id] != 2u)
-        return 0u;
-    uint base = module_key_segment_base[module_id];
-    if (base == INVALID || base + 1u >= gParams.n_tokens) return 0u;
-    if (module_key_segment_name_id[base] != language_name_id[LANGUAGE_SYMBOL_CORE] ||
-        module_key_segment_name_id[base + 1u] != language_name_id[LANGUAGE_SYMBOL_RANGE_MODULE])
-        return 0u;
-    uint name = decl_name_id[decl];
-    if (name == language_name_id[LANGUAGE_SYMBOL_RANGE_TYPE])
-        return ITERABLE_EXCLUSIVE_RANGE;
-    if (name == language_name_id[LANGUAGE_SYMBOL_RANGE_INCLUSIVE_TYPE])
-        return ITERABLE_INCLUSIVE_RANGE;
-    return 0u;
+    return checked_index_elements(indices, type_instance_kind,
+        type_instance_elem_ref_tag, type_instance_elem_ref_payload, tag, payload);
 }
 
 uint aggregate_word_count(uint tag, uint payload)
 {
-    if (tag != TYPE_REF_INSTANCE || !valid_token(payload)) return 0u;
-    uint kind = type_instance_kind[payload];
-    if (kind == TYPE_INSTANCE_ARRAY && type_instance_len_kind[payload] == TYPE_LEN_LITERAL)
-        return type_instance_len_payload[payload];
+    if (tag != TYPE_REF_INSTANCE || !valid_instance(payload)) return 0u;
+    uint count;
+    if (native_array_count(payload, count))
+        return type_native_word_count[payload];
     return 0u;
 }
 
@@ -290,7 +315,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (core.kind == HIR_ARRAY_EXPR)
     {
         uint contextual_instance = contextual_array_instance(node);
-        if (valid_token(contextual_instance) &&
+        if (valid_instance(contextual_instance) &&
             type_instance_kind[contextual_instance] == TYPE_INSTANCE_ARRAY)
         {
             publish_array_ref(node, contextual_instance);
@@ -307,13 +332,40 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint base_node = index_node != INVALID
         ? payload.b
         : for_node ? payload.c : node;
+    base_node = forwarded_expression(base_node);
+    // The inference producer owns the binder's checked identity. Direct
+    // ranges do not have an aggregate iterable instance; named range kinds
+    // were retained while their immutable dependency page was resident.
+    if (for_node && valid_token(payload.b))
+    {
+        uint iterable_kind = semantic_iterable_kind_by_hir[node];
+        bool direct_range = valid_hir(base_node) &&
+            (compact_hir_core[base_node].kind == 14u || compact_hir_core[base_node].kind == 16u) &&
+            compact_hir_payload[base_node].a >= 30u && compact_hir_payload[base_node].a <= 35u;
+        if (direct_range || iterable_kind == ITERABLE_EXCLUSIVE_RANGE ||
+            iterable_kind == ITERABLE_INCLUSIVE_RANGE)
+        {
+            publish_ref(node, decl_type_ref_tag[payload.b], decl_type_ref_payload[payload.b]);
+            return;
+        }
+    }
     // The preceding expression-reference pass already checked projections
     // such as `region.data` and calls returning slices. A name-only lookup
     // loses their instance type (and therefore their runtime length).
     uint instance = valid_hir(base_node) &&
         semantic_expr_ref_tag_by_hir[base_node] == TYPE_REF_INSTANCE
             ? semantic_expr_ref_payload_by_hir[base_node] : INVALID;
-    if (!valid_token(instance))
+    bool nested_index_base = valid_hir(base_node) &&
+        compact_hir_core[base_node].kind == HIR_INDEX_EXPR;
+    if (nested_index_base)
+    {
+        // Resolve the whole projection from its accepted root without
+        // depending on another lane publishing the inner index first.
+        uint base_tag; uint base_payload;
+        bool resolved = checked_index_base_reference(base_node, base_tag, base_payload);
+        instance = resolved && base_tag == TYPE_REF_INSTANCE ? base_payload : INVALID;
+    }
+    if (!valid_instance(instance))
     {
         uint token = name_token(base_node);
         uint decl = valid_token(token) ? visible_decl[token] : INVALID;
@@ -321,31 +373,33 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         instance = decl_type_ref_payload[decl];
     }
-    if (!valid_token(instance)) return;
+    if (!valid_instance(instance)) return;
     uint kind = type_instance_kind[instance];
     if (for_node)
     {
-        uint iterable_kind = kind == TYPE_INSTANCE_ARRAY
-            ? ITERABLE_FIXED_ARRAY : named_iterable_kind(instance);
-        semantic_iterable_kind_by_hir[node] = iterable_kind;
-        if (iterable_kind == ITERABLE_EXCLUSIVE_RANGE ||
-            iterable_kind == ITERABLE_INCLUSIVE_RANGE)
-        {
-            publish_ref(node, type_instance_elem_ref_tag[instance],
-                type_instance_elem_ref_payload[instance]);
-            return;
-        }
+        // Reference indexing has an explicit native projection recipe. For
+        // iteration, retain the existing accepted direct-container contract.
+        if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE) return;
     }
-    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE) return;
+    uint source_instance = instance;
+    if (!checked_index_container(TYPE_REF_INSTANCE, source_instance, type_instance_kind,
+        type_instance_elem_ref_tag, type_instance_elem_ref_payload, instance)) return;
+    kind = type_instance_kind[instance];
 
     uint elem_tag = type_instance_elem_ref_tag[instance];
     uint elem_payload = type_instance_elem_ref_payload[instance];
     if (elem_tag == TYPE_REF_INVALID || elem_payload == INVALID) return;
 
-    publish_array_ref(base_node, instance);
+    // Bounds describe the terminal container; source type and layout still
+    // describe the original value. In particular, &array is one pointer, not
+    // an inline array. An inner index keeps its actual element reference too.
+    if (!nested_index_base && source_instance == instance) publish_array_ref(base_node, instance);
+    else publish_array_length(base_node, instance);
     if (for_node)
     {
         publish_ref(node, elem_tag, elem_payload);
+        semantic_aggregate_word_count_by_hir[node] = elem_tag == TYPE_REF_SCALAR && elem_payload == 7u
+            ? 0u : element_aggregate_words(elem_tag, elem_payload);
         uint element_decl = array_element_decl_token(instance);
         if (valid_token(element_decl))
             semantic_aggregate_decl_token_by_hir[node] = element_decl;
@@ -353,6 +407,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (index_node == INVALID) return;
     publish_ref(index_node, elem_tag, elem_payload);
+    uint element_container;
+    if (checked_index_container(elem_tag, elem_payload, type_instance_kind,
+        type_instance_elem_ref_tag, type_instance_elem_ref_payload, element_container))
+        publish_array_length(index_node, element_container);
+    semantic_aggregate_word_count_by_hir[index_node] = elem_tag == TYPE_REF_SCALAR && elem_payload == 7u
+        ? 0u : element_aggregate_words(elem_tag, elem_payload);
     uint element_decl = array_element_decl_token(instance);
     if (valid_token(element_decl))
         semantic_aggregate_decl_token_by_hir[index_node] = element_decl;

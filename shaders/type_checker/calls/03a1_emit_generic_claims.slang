@@ -1,17 +1,24 @@
-// Emit direct-call generic claims from compact per-argument claim spans.
-//
-// The argument collection pass marks how many generic relations each compact
-// call-argument row can contribute. A prefix scan turns those counts into claim
-// spans; this pass runs one thread per claim row and maps back to the owning
-// argument row with a logarithmic search. Wide instance arguments therefore
-// produce multiple sortable claims without one shader thread looping over every
-// type argument.
+import type_checker.constant_constraints;
+import type_checker.constant_publication;
+import type_checker.argument_context;
+import type_checker.argument_borrow;
+import type_checker.calls.explicit_call_environment;
+import type_checker.constant_parameter_slots;
+import type_checker.calls.parameter_pattern_page;
+// Emit complete generic bindings from compact per-argument claim spans.
+// Collection records each parameter pattern's slot mask. One lane per argument
+// matches its complete pattern once and publishes that span; other lanes leave
+// it untouched. All call forms use this same relation and conflict validator.
 
 import external_type_identity;
 import dependency_interface;
 import hir_records;
 import atomics;
 import hir_expr_semantics;
+import type_checker.checked_index_reference;
+import type_checker.generic_result_type_origin;
+import type_checker.concrete_type_closure;
+import type_checker.instance_arguments;
 import status;
 
 struct Params
@@ -27,6 +34,7 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_arg_row_node;
@@ -34,7 +42,11 @@ StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_param_row;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_scan_input;
+StructuredBuffer<uint> call_generic_claim_pattern_mask;
 StructuredBuffer<uint> call_generic_claim_prefix;
+StructuredBuffer<uint> call_const_claim_scan_input;
+StructuredBuffer<uint> call_const_claim_pattern_mask;
+StructuredBuffer<uint> call_const_claim_prefix;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
@@ -43,11 +55,13 @@ StructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_return_generic_slot;
-StructuredBuffer<uint> call_generic_slot_type;
+StructuredBuffer<uint> call_generic_return_arg_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> method_call_name_id;
@@ -67,6 +81,8 @@ StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
 
 RWStructuredBuffer<uint> call_generic_claim_callee;
 RWStructuredBuffer<uint> call_generic_claim_slot;
@@ -74,6 +90,15 @@ RWStructuredBuffer<uint> call_generic_claim_type;
 RWStructuredBuffer<uint> call_generic_claim_ref_tag;
 RWStructuredBuffer<uint> call_generic_claim_ref_payload;
 RWStructuredBuffer<uint> call_generic_claim_arg_row;
+RWStructuredBuffer<uint> call_arg_row_literal_context_mask;
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
+RWStructuredBuffer<uint> call_const_claim_callee;
+RWStructuredBuffer<uint> call_const_claim_slot;
+RWStructuredBuffer<uint> call_const_claim_ref_kind;
+RWStructuredBuffer<uint> call_const_claim_ref_payload;
+RWStructuredBuffer<uint> call_const_claim_identity_mode;
+RWStructuredBuffer<uint> call_const_claim_selected;
+RWStructuredBuffer<uint> call_const_claim_arg_row;
 RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> status;
 
@@ -159,6 +184,9 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 
+#include "parameter_type_pattern.slang"
+#include "argument_value_reference.slang"
+
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
@@ -172,18 +200,6 @@ uint active_token_count()
 uint active_hir_node_count()
 {
     return min(gParams.n_hir_nodes, compact_hir_count[0u]);
-}
-
-uint generic_claim_capacity()
-{
-    uint base = max(active_token_count(), active_hir_node_count());
-    uint max_base = 0xffffffffu / GENERIC_CLAIM_CAPACITY_MULTIPLIER;
-    return base > max_base ? 0xffffffffu : base * GENERIC_CLAIM_CAPACITY_MULTIPLIER;
-}
-
-uint active_claim_count()
-{
-    return min(call_generic_claim_count_out[0u], generic_claim_capacity());
 }
 
 bool valid_node(uint node)
@@ -206,743 +222,9 @@ bool is_generic_type(uint ty)
     return ty >= TY_GENERIC_BASE && ty != INVALID;
 }
 
-uint plain_generic_slot(uint ty)
-{
-    return ty >= TY_GENERIC_BASE && ty < TY_GENERIC_BASE + PARAM_CACHE_STRIDE
-        ? ty - TY_GENERIC_BASE
-        : INVALID;
-}
-
-uint array_or_slice_generic_slot(uint ty)
-{
-    return ty >= TY_ARRAY_BASE + TY_GENERIC_BASE &&
-           ty < TY_ARRAY_BASE + TY_GENERIC_BASE + PARAM_CACHE_STRIDE
-        ? ty - TY_ARRAY_BASE - TY_GENERIC_BASE
-        : INVALID;
-}
-
-uint expr_record_slot(uint node, uint slot)
-{
-    if (!valid_node(node))
-        return INVALID;
-    HirPayload payload = compact_hir_payload[node];
-    if (slot == HIR_EXPR_RECORD_FORM) return payload.a;
-    if (slot == HIR_EXPR_RECORD_LEFT) return payload.b;
-    if (slot == HIR_EXPR_RECORD_RIGHT) return payload.c;
-    return payload.d;
-}
-
-uint expr_form(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_FORM) : HIR_EXPR_NONE;
-}
-
-uint expr_value_token(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN) : INVALID;
-}
-
-uint resolve_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint current = node;
-    for (uint step = 0u; step < 32u && valid_node(current); step += 1u)
-    {
-        if (expr_form(current) != HIR_EXPR_FORWARD)
-            return current;
-        uint next = expr_record_slot(current, HIR_EXPR_RECORD_LEFT);
-        if (!valid_node(next) || next == current)
-            return current;
-        current = next;
-    }
-    return current;
-}
-
-uint visible_type_for_token(uint token)
-{
-    if (!valid_token(token))
-        return TY_UNKNOWN;
-
-    uint ty = visible_type[token];
-    if (ty != TY_UNKNOWN)
-        return ty;
-
-    uint decl = visible_decl[token];
-    if (valid_token(decl))
-    {
-        ty = visible_type[decl];
-        if (ty != TY_UNKNOWN)
-            return ty;
-    }
-
-    return call_return_type[token];
-}
-
-uint inferred_call_return_type(uint callee_token)
-{
-    if (!valid_token(callee_token))
-        return TY_UNKNOWN;
-
-    uint ret_ty = call_return_type[callee_token];
-    uint slot = plain_generic_slot(ret_ty);
-    if (slot != INVALID)
-    {
-        uint inferred = call_generic_slot_type[callee_token * PARAM_CACHE_STRIDE + slot];
-        return inferred == INVALID ? TY_UNKNOWN : inferred;
-    }
-
-    slot = array_or_slice_generic_slot(ret_ty);
-    if (slot != INVALID)
-    {
-        uint inferred = call_generic_slot_type[callee_token * PARAM_CACHE_STRIDE + slot];
-        return inferred == INVALID ? TY_UNKNOWN : TY_ARRAY_BASE + inferred;
-    }
-
-    return is_generic_type(ret_ty) ? TY_UNKNOWN : ret_ty;
-}
-
-uint callee_token_for_hir_call(uint call_node)
-{
-    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
-        return INVALID;
-
-    uint call_token = compact_hir_core[call_node].token_start;
-    uint callee_node = compact_hir_payload[call_node].a;
-    if (!valid_node(callee_node))
-        return valid_token(call_token) ? call_token : INVALID;
-
-    if (compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
-    {
-        uint member_token = compact_hir_payload[callee_node].c;
-        return valid_token(member_token) ? member_token : INVALID;
-    }
-
-    if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
-        return call_token;
-
-    uint callee_token = compact_hir_payload[callee_node].d;
-    if (!valid_token(callee_token))
-        callee_token = compact_hir_core[callee_node].token_start;
-    if (!valid_token(callee_token))
-        callee_token = compact_hir_core[call_node].token_start;
-    return valid_token(callee_token) ? callee_token : INVALID;
-}
-
-uint direct_node_type_no_nested_call(uint node)
-{
-    if (!valid_node(node))
-        return TY_UNKNOWN;
-
-    uint lit = hir_scalar_type_for_hir(compact_hir_core[node].kind, expr_form(node));
-    if (lit != TY_UNKNOWN)
-        return lit;
-
-    uint token = compact_hir_core[node].token_start;
-    if (compact_hir_core[node].kind == HIR_NAME_EXPR)
-    {
-        uint value_token = expr_value_token(node);
-        if (valid_token(value_token))
-            token = value_token;
-        return visible_type_for_token(token);
-    }
-
-    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
-    {
-        uint member_token = compact_hir_payload[node].c;
-        return visible_type_for_token(member_token);
-    }
-
-    if (compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR)
-        return visible_type_for_token(compact_hir_core[node].token_start);
-
-    if (compact_hir_core[node].kind == HIR_INDEX_EXPR ||
-        compact_hir_core[node].kind == HIR_MATCH_EXPR)
-        return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
-
-    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
-    {
-        uint callee_token = callee_token_for_hir_call(node);
-        if (!valid_token(callee_token))
-            callee_token = compact_hir_core[node].token_start;
-        return inferred_call_return_type(callee_token);
-    }
-
-    return TY_UNKNOWN;
-}
-
-uint expr_type_no_nested_call(uint result_node)
-{
-    uint node = resolve_expr(result_node);
-    if (!valid_node(node))
-        return TY_UNKNOWN;
-
-    uint direct_ty = direct_node_type_no_nested_call(node);
-    if (direct_ty != TY_UNKNOWN)
-        return direct_ty;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
-        return TY_BOOL;
-    if (form == HIR_EXPR_INT)
-        return TY_INT;
-    if (form == HIR_EXPR_FLOAT)
-        return TY_FLOAT;
-    if (form == HIR_EXPR_NAME)
-    {
-        uint token = expr_value_token(node);
-        if (!valid_token(token))
-            token = compact_hir_core[node].token_start;
-        return visible_type_for_token(token);
-    }
-
-    if (form == HIR_EXPR_NOT ||
-        form == HIR_EXPR_EQ ||
-        form == HIR_EXPR_NE ||
-        form == HIR_EXPR_LT ||
-        form == HIR_EXPR_GT ||
-        form == HIR_EXPR_LE ||
-        form == HIR_EXPR_GE ||
-        form == HIR_EXPR_AND ||
-        form == HIR_EXPR_OR)
-        return TY_BOOL;
-
-    if (form == HIR_EXPR_NEG ||
-        form == HIR_EXPR_ADD ||
-        form == HIR_EXPR_SUB ||
-        form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_DIV)
-    {
-        uint left_ty = direct_node_type_no_nested_call(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
-        uint right_ty = direct_node_type_no_nested_call(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
-        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
-    }
-
-    if (form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_BIT_OR ||
-        form == HIR_EXPR_BIT_XOR ||
-        form == HIR_EXPR_BIT_AND ||
-        form == HIR_EXPR_SHL ||
-        form == HIR_EXPR_SHR)
-        return TY_INT;
-
-    return TY_UNKNOWN;
-}
-
-uint generic_slot_for_type_ref(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_EXTERNAL_GENERIC)
-        return payload;
-    if (tag != TYPE_REF_GENERIC_PARAM || !valid_token(payload))
-        return INVALID;
-    uint slot = type_generic_param_slot_by_token[payload];
-    if (slot != INVALID)
-        return slot;
-    uint declaration = visible_decl[payload];
-    return valid_token(declaration)
-        ? type_generic_param_slot_by_token[declaration]
-        : INVALID;
-}
-
-uint leaf_type_code_for_ref(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_SCALAR)
-        return payload;
-    uint slot = generic_slot_for_type_ref(tag, payload);
-    return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
-}
-
-uint instance_arg_ref_index(uint instance_i, uint slot)
-{
-    uint start = type_instance_arg_start[instance_i];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint instance_arg_row_ref_index(uint instance_i, uint ordinal)
-{
-    uint start = type_instance_arg_row_start[instance_i];
-    uint ref_i = start == INVALID ? INVALID : start + ordinal;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool instance_arg_ref(uint instance_i, uint ordinal, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(instance_i))
-        return false;
-    if (type_instance_kind[instance_i] != TYPE_INSTANCE_NAMED)
-        return false;
-    if (ordinal >= type_instance_arg_count[instance_i])
-        return false;
-
-    uint row_ref_i = instance_arg_row_ref_index(instance_i, ordinal);
-    if (row_ref_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_ref_i];
-        payload = type_instance_arg_row_ref_payload[row_ref_i];
-        if (tag != TYPE_REF_INVALID)
-            return true;
-    }
-
-    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
-        return false;
-
-    uint fixed_ref_i = instance_arg_ref_index(instance_i, ordinal);
-    if (fixed_ref_i == INVALID)
-        return false;
-
-    tag = type_instance_arg_ref_tag[fixed_ref_i];
-    payload = type_instance_arg_ref_payload[fixed_ref_i];
-    return tag != TYPE_REF_INVALID;
-}
-
-bool param_instance_ref_for_row(uint param_row, out uint instance_i)
-{
-    instance_i = INVALID;
-    if (param_row == INVALID || call_param_row_ref_tag[param_row] != TYPE_REF_INSTANCE)
-        return false;
-
-    uint payload = call_param_row_ref_payload[param_row];
-    if (!valid_token(payload) || type_instance_kind[payload] != TYPE_INSTANCE_NAMED)
-        return false;
-
-    instance_i = payload;
-    return true;
-}
-
-uint param_array_or_slice_generic_slot_for_row(uint param_row)
-{
-    if (param_row == INVALID)
-        return INVALID;
-
-    if (call_param_row_ref_tag[param_row] == TYPE_REF_EXTERNAL_CANONICAL)
-    {
-        uint type_i = call_param_row_ref_payload[param_row];
-        uint type_count = dependency_type_count();
-        if (type_i >= type_count)
-            return INVALID;
-        uint base = type_i * INTERFACE_TYPE_WORDS;
-        uint kind = dependency_type_word(base);
-        if ((kind != INTERFACE_TYPE_ARRAY && kind != INTERFACE_TYPE_SLICE) ||
-            dependency_type_word(base + 4u) != 1u)
-            return INVALID;
-        uint edge = dependency_type_word(base + 3u);
-        if (edge >= dependency_count(5u))
-            return INVALID;
-        uint child = dependency_type_edge_word(edge);
-        if (child >= type_count ||
-            dependency_type_word(child * INTERFACE_TYPE_WORDS) !=
-                INTERFACE_TYPE_GENERIC_PARAMETER)
-            return INVALID;
-        return dependency_type_word(child * INTERFACE_TYPE_WORDS + 1u);
-    }
-
-    if (call_param_row_ref_tag[param_row] != TYPE_REF_INSTANCE)
-        return INVALID;
-
-    uint instance_i = call_param_row_ref_payload[param_row];
-    if (!valid_token(instance_i))
-        return INVALID;
-
-    uint kind = type_instance_kind[instance_i];
-    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
-        return INVALID;
-
-    return generic_slot_for_type_ref(
-        type_instance_elem_ref_tag[instance_i],
-        type_instance_elem_ref_payload[instance_i]);
-}
-
-uint param_instance_generic_slot_for_row(uint param_row, uint instance_arg_ordinal)
-{
-    uint instance_i;
-    if (!param_instance_ref_for_row(param_row, instance_i))
-        return INVALID;
-
-    uint tag;
-    uint payload;
-    if (!instance_arg_ref(instance_i, instance_arg_ordinal, tag, payload))
-        return INVALID;
-
-    return generic_slot_for_type_ref(tag, payload);
-}
-
-uint param_direct_generic_slot_for_row(uint param_row)
-{
-    if (param_row == INVALID)
-        return INVALID;
-    return generic_slot_for_type_ref(
-        call_param_row_ref_tag[param_row],
-        call_param_row_ref_payload[param_row]);
-}
-
-uint direct_name_expr_token(uint root)
-{
-    uint node = resolve_expr(root);
-    if (!valid_node(node))
-        return INVALID;
-    if (expr_form(node) != HIR_EXPR_NAME &&
-        compact_hir_core[node].kind != HIR_NAME_EXPR)
-        return INVALID;
-    uint token = expr_value_token(node);
-    if (!valid_token(token))
-        token = compact_hir_core[node].token_start;
-    return valid_token(token) ? token : INVALID;
-}
-
-bool read_decl_type_ref(uint token_i, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(token_i))
-        return false;
-
-    uint ref_token = token_i;
-    uint decl = visible_decl[token_i];
-    if (valid_token(decl))
-        ref_token = decl;
-
-    tag = decl_type_ref_tag[ref_token];
-    payload = decl_type_ref_payload[ref_token];
-    if (tag != TYPE_REF_INVALID)
-        return true;
-
-    if (ref_token != token_i)
-    {
-        tag = decl_type_ref_tag[token_i];
-        payload = decl_type_ref_payload[token_i];
-    }
-    return tag != TYPE_REF_INVALID;
-}
-
-bool arg_decl_type_ref(uint arg_node, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    uint token = direct_name_expr_token(arg_node);
-    return read_decl_type_ref(token, tag, payload);
-}
-
-bool same_named_instance_decl(uint expected_instance, uint actual_instance)
-{
-    if (!valid_token(expected_instance) || !valid_token(actual_instance))
-        return false;
-    if (type_instance_kind[expected_instance] != TYPE_INSTANCE_NAMED ||
-        type_instance_kind[actual_instance] != TYPE_INSTANCE_NAMED)
-        return false;
-
-    uint expected_decl = type_instance_decl_token[expected_instance];
-    uint actual_decl = type_instance_decl_token[actual_instance];
-    if (valid_token(expected_decl) || valid_token(actual_decl))
-        return valid_token(expected_decl) && expected_decl == actual_decl;
-    return external_type_identity_equal(expected_instance, actual_instance);
-}
-
-bool imported_variant_matches_instance(
-    uint callee, uint instance, uint arg_count, uint slot, out bool slot_used)
-{
-    slot_used = false;
-    if (!valid_token(callee) || !valid_token(instance) ||
-        !external_type_identity_valid(instance) ||
-        arg_count > PARAM_CACHE_STRIDE ||
-        type_instance_arg_count[instance] > PARAM_CACHE_STRIDE ||
-        slot >= type_instance_arg_count[instance])
-        return false;
-    uint variant = dependency_find_declaration(
-        call_dependency_library_id[callee],
-        call_dependency_unit_id[callee],
-        call_dependency_local_index[callee]);
-    if (variant >= dependency_declaration_count() ||
-        dependency_declaration_word(variant * DECL_WORDS + 6u) !=
-            HIR_ITEM_KIND_ENUM_VARIANT)
-        return false;
-    uint signature = dependency_declaration_word(variant * DECL_WORDS + 7u);
-    if (signature >= dependency_type_count() ||
-        dependency_type_word(signature * INTERFACE_TYPE_WORDS) != INTERFACE_TYPE_FUNCTION)
-        return false;
-    uint edge_start = dependency_type_word(signature * INTERFACE_TYPE_WORDS + 3u);
-    uint edge_count = dependency_type_word(signature * INTERFACE_TYPE_WORDS + 4u);
-    if (edge_count != arg_count + 1u ||
-        edge_start > dependency_count(5u) ||
-        edge_count > dependency_count(5u) - edge_start)
-        return false;
-    uint parent = dependency_declaration_word(variant * DECL_WORDS + 10u);
-    if (parent >= dependency_declaration_count() ||
-        dependency_declaration_word(parent * DECL_WORDS + 6u) != HIR_ITEM_KIND_ENUM ||
-        dependency_declaration_library_id(parent) != external_type_library_id[instance] ||
-        dependency_declaration_unit_id(parent) != external_type_unit_id[instance] ||
-        dependency_declaration_local_index(parent) != external_type_local_index[instance])
-        return false;
-    uint parent_signature = dependency_declaration_word(parent * DECL_WORDS + 7u);
-    uint return_edge = dependency_type_edge_word(edge_start + arg_count);
-    if (parent_signature >= dependency_type_count() ||
-        return_edge >= dependency_type_count() ||
-        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS) !=
-            INTERFACE_TYPE_DECLARATION ||
-        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS + 1u) !=
-            external_type_library_id[instance] ||
-        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS + 2u) !=
-            external_type_local_index[instance] ||
-        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS + 8u) !=
-            external_type_unit_id[instance])
-        return false;
-    for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
-    {
-        // Only direct scalar and generic payloads have a checked scalar
-        // relation here. Nested aggregate payloads need recursive matching.
-        uint edge = dependency_type_edge_word(edge_start + ordinal);
-        if (edge >= dependency_type_count())
-            return false;
-        uint kind = dependency_type_word(edge * INTERFACE_TYPE_WORDS);
-        if (kind == INTERFACE_TYPE_SCALAR)
-            continue;
-        if (kind != INTERFACE_TYPE_GENERIC_PARAMETER)
-            return false;
-        if (dependency_type_word(edge * INTERFACE_TYPE_WORDS + 1u) == slot)
-            slot_used = true;
-    }
-    return true;
-}
-
-uint array_or_slice_element_type_for_arg_node(uint arg_node)
-{
-    uint tag;
-    uint payload;
-    if (!arg_decl_type_ref(arg_node, tag, payload))
-        return TY_UNKNOWN;
-    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
-        return TY_UNKNOWN;
-
-    uint kind = type_instance_kind[payload];
-    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
-        return TY_UNKNOWN;
-
-    return leaf_type_code_for_ref(
-        type_instance_elem_ref_tag[payload],
-        type_instance_elem_ref_payload[payload]);
-}
-
-bool array_or_slice_element_ref_for_arg_node(
-    uint arg_node, out uint element_tag, out uint element_payload)
-{
-    element_tag = TYPE_REF_INVALID;
-    element_payload = INVALID;
-    uint tag;
-    uint payload;
-    if (!arg_decl_type_ref(arg_node, tag, payload) ||
-        tag != TYPE_REF_INSTANCE || !valid_token(payload))
-        return false;
-    uint kind = type_instance_kind[payload];
-    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
-        return false;
-    element_tag = type_instance_elem_ref_tag[payload];
-    element_payload = type_instance_elem_ref_payload[payload];
-    return element_tag != TYPE_REF_INVALID && element_payload != INVALID;
-}
-
-uint actual_instance_arg_type(uint arg_node, uint expected_instance, uint instance_arg_ordinal)
-{
-    uint actual_tag = TYPE_REF_INVALID;
-    uint actual_payload = INVALID;
-    uint node = resolve_expr(arg_node);
-    bool have_ref = valid_node(node) &&
-                    semantic_expr_ref_tag_by_hir[node] == TYPE_REF_INSTANCE;
-    if (have_ref)
-    {
-        actual_tag = TYPE_REF_INSTANCE;
-        actual_payload = semantic_expr_ref_payload_by_hir[node];
-    }
-    else if (!arg_decl_type_ref(arg_node, actual_tag, actual_payload))
-    {
-        return TY_UNKNOWN;
-    }
-    if (actual_tag != TYPE_REF_INSTANCE ||
-        !same_named_instance_decl(expected_instance, actual_payload))
-        return TY_UNKNOWN;
-
-    uint arg_tag;
-    uint arg_payload;
-    if (!instance_arg_ref(actual_payload, instance_arg_ordinal, arg_tag, arg_payload))
-        return TY_UNKNOWN;
-    return leaf_type_code_for_ref(arg_tag, arg_payload);
-}
-
-uint actual_call_return_instance_arg_type(
-    uint arg_node,
-    uint expected_instance,
-    uint instance_arg_ordinal)
-{
-    uint actual_call_node = resolve_expr(arg_node);
-    if (!valid_node(actual_call_node) ||
-        compact_hir_core[actual_call_node].kind != HIR_CALL_EXPR)
-        return TY_UNKNOWN;
-
-    uint actual_callee = callee_token_for_hir_call(actual_call_node);
-    if (!valid_token(actual_callee))
-        return TY_UNKNOWN;
-
-    uint actual_fn = call_fn_index[actual_callee];
-    if (!valid_token(actual_fn))
-        return TY_UNKNOWN;
-
-    uint return_instance = call_return_type_token[actual_fn];
-    if (!same_named_instance_decl(expected_instance, return_instance))
-    {
-        // Imported enum variants export a bare nominal return. For a direct
-        // argument, its enclosing concrete parameter supplies the missing
-        // instance. Check the variant's parent identity and every direct
-        // payload relation before publishing that instance for codegen.
-        uint arg_count = call_arg_row_count[actual_call_node];
-        bool slot_used;
-        if (imported_variant_matches_instance(
-                actual_callee, expected_instance, arg_count,
-                instance_arg_ordinal, slot_used))
-        {
-            uint expected_tag;
-            uint expected_payload;
-            uint inferred = call_generic_slot_type[
-                actual_callee * PARAM_CACHE_STRIDE + instance_arg_ordinal];
-            if (instance_arg_ref(expected_instance, instance_arg_ordinal,
-                                 expected_tag, expected_payload) &&
-                expected_tag == TYPE_REF_SCALAR && expected_payload != TY_UNKNOWN &&
-                (slot_used ? inferred == expected_payload :
-                    inferred == INVALID || inferred == expected_payload))
-            {
-                call_result_instance[actual_call_node] = expected_instance;
-                return expected_payload;
-            }
-        }
-        return TY_UNKNOWN;
-    }
-
-    uint arg_tag;
-    uint arg_payload;
-    if (!instance_arg_ref(return_instance, instance_arg_ordinal, arg_tag, arg_payload))
-        return TY_UNKNOWN;
-
-    if (arg_tag == TYPE_REF_GENERIC_PARAM)
-    {
-        uint slot = generic_slot_for_type_ref(arg_tag, arg_payload);
-        if (slot == INVALID || slot >= PARAM_CACHE_STRIDE)
-            return TY_UNKNOWN;
-        uint inferred = call_generic_slot_type[actual_callee * PARAM_CACHE_STRIDE + slot];
-        return inferred == INVALID ? TY_UNKNOWN : inferred;
-    }
-    return leaf_type_code_for_ref(arg_tag, arg_payload);
-}
-
-uint actual_instance_or_call_return_arg_type(
-    uint arg_node,
-    uint expected_instance,
-    uint instance_arg_ordinal)
-{
-    uint actual_ty = actual_instance_arg_type(
-        arg_node,
-        expected_instance,
-        instance_arg_ordinal);
-    if (actual_ty != TY_UNKNOWN)
-        return actual_ty;
-    return actual_call_return_instance_arg_type(
-        arg_node,
-        expected_instance,
-        instance_arg_ordinal);
-}
-
-bool actual_instance_or_call_return_arg_ref(
-    uint arg_node,
-    uint expected_instance,
-    uint instance_arg_ordinal,
-    out uint tag,
-    out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-
-    uint actual_tag = TYPE_REF_INVALID;
-    uint actual_payload = INVALID;
-    uint node = resolve_expr(arg_node);
-    bool have_ref = valid_node(node) &&
-                    semantic_expr_ref_tag_by_hir[node] == TYPE_REF_INSTANCE;
-    if (have_ref)
-    {
-        actual_tag = TYPE_REF_INSTANCE;
-        actual_payload = semantic_expr_ref_payload_by_hir[node];
-    }
-    else if (!arg_decl_type_ref(arg_node, actual_tag, actual_payload))
-    {
-        actual_payload = INVALID;
-    }
-
-    if (actual_tag == TYPE_REF_INSTANCE &&
-        same_named_instance_decl(expected_instance, actual_payload) &&
-        instance_arg_ref(actual_payload, instance_arg_ordinal, tag, payload))
-    {
-        return tag != TYPE_REF_INVALID && payload != INVALID;
-    }
-
-    uint actual_call_node = resolve_expr(arg_node);
-    if (!valid_node(actual_call_node) ||
-        compact_hir_core[actual_call_node].kind != HIR_CALL_EXPR)
-        return false;
-    uint actual_callee = callee_token_for_hir_call(actual_call_node);
-    if (!valid_token(actual_callee))
-        return false;
-    uint actual_fn = call_fn_index[actual_callee];
-    if (!valid_token(actual_fn))
-        return false;
-    uint return_instance = call_return_type_token[actual_fn];
-    if (!same_named_instance_decl(expected_instance, return_instance) ||
-        !instance_arg_ref(return_instance, instance_arg_ordinal, tag, payload))
-        return false;
-    if (tag == TYPE_REF_GENERIC_PARAM)
-    {
-        uint slot = generic_slot_for_type_ref(tag, payload);
-        if (slot == INVALID || slot >= PARAM_CACHE_STRIDE)
-            return false;
-        uint inferred = call_generic_slot_type[actual_callee * PARAM_CACHE_STRIDE + slot];
-        if (inferred == INVALID || inferred == TY_UNKNOWN)
-            return false;
-        tag = TYPE_REF_SCALAR;
-        payload = inferred;
-    }
-    return tag != TYPE_REF_INVALID && payload != INVALID;
-}
-
 uint call_arg_error_token(uint arg_node, uint callee_i)
 {
     return valid_node(arg_node) ? compact_hir_core[arg_node].token_start : callee_i;
-}
-
-uint call_arg_row_for_claim(uint claim_i)
-{
-    uint row_count = min(call_arg_row_count_out[0u], active_hir_node_count());
-    uint lo = 0u;
-    uint hi = row_count;
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint start = call_generic_claim_prefix[mid];
-        uint count = call_generic_claim_scan_input[mid];
-        uint end = start + count;
-        if (claim_i < start)
-        {
-            hi = mid;
-        }
-        else if (claim_i >= end)
-        {
-            lo = mid + 1u;
-        }
-        else
-        {
-            return mid;
-        }
-    }
-    return INVALID;
 }
 
 void clear_generic_claim(uint claim_i)
@@ -953,46 +235,6 @@ void clear_generic_claim(uint claim_i)
     call_generic_claim_ref_tag[claim_i] = TYPE_REF_INVALID;
     call_generic_claim_ref_payload[claim_i] = INVALID;
     call_generic_claim_arg_row[claim_i] = INVALID;
-}
-
-void emit_generic_claim(uint claim_i, uint arg_row, uint callee_i, uint slot, uint arg_ty)
-{
-    if (!valid_token(callee_i) || slot == INVALID)
-        return;
-
-    call_generic_claim_callee[claim_i] = callee_i;
-    call_generic_claim_slot[claim_i] = slot;
-    call_generic_claim_type[claim_i] = arg_ty;
-    call_generic_claim_arg_row[claim_i] = arg_row;
-    uint arg_node = arg_row < call_arg_row_count_out[0u]
-        ? call_arg_row_node[arg_row]
-        : INVALID;
-    uint tag;
-    uint payload;
-    if (valid_node(arg_node) && arg_decl_type_ref(arg_node, tag, payload))
-    {
-        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-        {
-            if (external_type_identity_valid(payload))
-            {
-                // Keep the instance carrying the stable three-part identity;
-                // the scalar column only marks this claim as concrete.
-                call_generic_claim_type[claim_i] = 1u;
-            }
-            else
-            {
-                tag = TYPE_REF_INVALID;
-                payload = INVALID;
-            }
-        }
-        call_generic_claim_ref_tag[claim_i] = tag;
-        call_generic_claim_ref_payload[claim_i] = payload;
-    }
-    else if (arg_ty != TY_UNKNOWN && arg_ty < TY_ARRAY_BASE)
-    {
-        call_generic_claim_ref_tag[claim_i] = TYPE_REF_SCALAR;
-        call_generic_claim_ref_payload[claim_i] = arg_ty;
-    }
 }
 
 void publish_generic_return_type(
@@ -1026,245 +268,153 @@ void publish_generic_return_type(
         atomic_u32_compare_exchange(call_return_type, callee_i, prior, arg_ty);
 }
 
-void emit_instance_generic_claim(
-    uint claim_i,
-    uint arg_row,
-    uint callee_i,
-    uint fn_i,
-    uint arg_node,
-    uint param_row,
-    uint instance_arg_i)
+void emit_argument_claims(uint arg_row)
 {
-    if (call_param_row_ref_tag[param_row] == TYPE_REF_EXTERNAL_CANONICAL)
-    {
-        uint type_i = call_param_row_ref_payload[param_row];
-        uint type_count = dependency_type_count();
-        if (type_i >= type_count)
-            return;
-        // Imported parameter rows already carry the canonical root.
-        uint base = type_i * INTERFACE_TYPE_WORDS;
-        if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION)
-            return;
-        uint expected_count = dependency_type_word(base + 4u);
-        uint edge_start = dependency_type_word(base + 3u);
-        if (instance_arg_i >= expected_count ||
-            edge_start > dependency_count(5u) ||
-            expected_count > dependency_count(5u) - edge_start)
-            return;
-        uint child_i = dependency_type_edge_word(edge_start + instance_arg_i);
-        if (child_i >= type_count)
-            return;
-        if (dependency_type_word(child_i * INTERFACE_TYPE_WORDS) !=
-                INTERFACE_TYPE_GENERIC_PARAMETER)
-            return;
-        uint slot = dependency_type_word(child_i * INTERFACE_TYPE_WORDS + 1u);
-
-        uint actual_tag = TYPE_REF_INVALID;
-        uint actual = INVALID;
-        uint actual_node = resolve_expr(arg_node);
-        if (valid_node(actual_node) &&
-            semantic_expr_ref_tag_by_hir[actual_node] == TYPE_REF_INSTANCE)
-        {
-            actual_tag = TYPE_REF_INSTANCE;
-            actual = semantic_expr_ref_payload_by_hir[actual_node];
-        }
-        else if (!arg_decl_type_ref(arg_node, actual_tag, actual))
-            return;
-        if (actual_tag != TYPE_REF_INSTANCE || !valid_token(actual) ||
-            type_instance_kind[actual] != TYPE_INSTANCE_NAMED ||
-            type_instance_arg_count[actual] != expected_count ||
-            !external_type_identity_valid(actual) ||
-            external_type_library_id[actual] != dependency_type_word(base + 1u) ||
-            external_type_local_index[actual] != dependency_type_word(base + 2u) ||
-            external_type_unit_id[actual] != dependency_type_word(base + 8u))
-            return;
-        uint arg_tag;
-        uint arg_payload;
-        // Nested imported type arguments need recursive claim comparison.
-        // Keep this path restricted to concrete scalar arguments for now.
-        if (!instance_arg_ref(actual, instance_arg_i, arg_tag, arg_payload) ||
-            arg_tag != TYPE_REF_SCALAR)
-            return;
-        uint arg_ty = leaf_type_code_for_ref(arg_tag, arg_payload);
-        emit_generic_claim(claim_i, arg_row, callee_i, slot, arg_ty);
-        call_generic_claim_ref_tag[claim_i] = arg_tag;
-        call_generic_claim_ref_payload[claim_i] = arg_payload;
-        return;
-    }
-
-    uint expected_instance;
-    if (!param_instance_ref_for_row(param_row, expected_instance))
-        return;
-
-    uint expected_tag;
-    uint expected_payload;
-    if (!instance_arg_ref(expected_instance, instance_arg_i, expected_tag, expected_payload))
-        return;
-
-    uint arg_ty = actual_instance_or_call_return_arg_type(
-        arg_node,
-        expected_instance,
-        instance_arg_i);
-
-    if (expected_tag == TYPE_REF_SCALAR)
-    {
-        if (arg_ty != expected_payload)
-            record_error(
-                call_arg_error_token(arg_node, callee_i),
-                ERR_ASSIGN_MISMATCH,
-                expected_payload * 256u + arg_ty);
-        return;
-    }
-
-    if (expected_tag != TYPE_REF_GENERIC_PARAM)
-        return;
-
-    uint slot = param_instance_generic_slot_for_row(param_row, instance_arg_i);
-    if (slot == INVALID)
-        return;
-
-    publish_generic_return_type(callee_i, fn_i, slot, arg_ty);
-    emit_generic_claim(claim_i, arg_row, callee_i, slot, arg_ty);
-    uint actual_tag;
-    uint actual_payload;
-    if (actual_instance_or_call_return_arg_ref(
-        arg_node,
-        expected_instance,
-        instance_arg_i,
-        actual_tag,
-        actual_payload))
-    {
-        call_generic_claim_ref_tag[claim_i] = actual_tag;
-        call_generic_claim_ref_payload[claim_i] = actual_payload;
-    }
-}
-
-void emit_claim_for_relation(uint claim_i, uint arg_row, uint relation_i)
-{
-    uint call_node = call_arg_row_call_node[arg_row];
-    uint arg_node = call_arg_row_node[arg_row];
-    if (!valid_node(call_node) || !valid_node(arg_node))
-        return;
-
-    uint callee_i = callee_token_for_hir_call(call_node);
-    if (!valid_token(callee_i) ||
-        call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
-        return;
-
-    uint fn_i = call_fn_index[callee_i];
-
-    uint param_row = arg_row < call_arg_row_count_out[0u] ? call_arg_param_row[arg_row] : INVALID;
-    if (param_row == INVALID)
-        return;
-
-    uint param_ty = call_param_row_type[param_row];
-    uint arg_token = call_arg_error_token(arg_node, callee_i);
-    uint rel = relation_i;
-
-    if (is_generic_type(param_ty))
-    {
-        uint direct_slot = param_direct_generic_slot_for_row(param_row);
-        if (direct_slot != INVALID)
-        {
-            if (rel == 0u)
-            {
-                uint arg_ty = expr_type_no_nested_call(arg_node);
-                publish_generic_return_type(callee_i, fn_i, direct_slot, arg_ty);
-                emit_generic_claim(claim_i, arg_row, callee_i, direct_slot, arg_ty);
-                return;
-            }
-            rel -= 1u;
-        }
-
-        uint array_slot = array_or_slice_generic_slot(param_ty);
-        if (array_slot != INVALID)
-        {
-            if (rel == 0u)
-            {
-                uint arg_ty = array_or_slice_element_type_for_arg_node(arg_node);
-                emit_generic_claim(claim_i, arg_row, callee_i, array_slot, arg_ty);
-                return;
-            }
-            rel -= 1u;
-        }
-    }
-
-    uint array_ref_slot = param_array_or_slice_generic_slot_for_row(param_row);
-    if (array_ref_slot != INVALID)
-    {
-        if (rel == 0u)
-        {
-            uint arg_ty = array_or_slice_element_type_for_arg_node(arg_node);
-            publish_generic_return_type(callee_i, fn_i, array_ref_slot, arg_ty);
-            emit_generic_claim(claim_i, arg_row, callee_i, array_ref_slot, arg_ty);
-            uint element_tag;
-            uint element_payload;
-            if (array_or_slice_element_ref_for_arg_node(
-                arg_node, element_tag, element_payload))
-            {
-                call_generic_claim_ref_tag[claim_i] = element_tag;
-                call_generic_claim_ref_payload[claim_i] = element_payload;
-            }
-            return;
-        }
-        rel -= 1u;
-    }
-
-    emit_instance_generic_claim(
-        claim_i,
-        arg_row,
-        callee_i,
-        fn_i,
-        arg_node,
-        param_row,
-        rel);
-}
-
-void emit_claim(uint claim_i)
-{
-    uint capacity = generic_claim_capacity();
-    if (claim_i == capacity)
-    {
-        if (call_generic_claim_count_out[0u] <= capacity)
-            return;
-
-        uint arg_row = call_arg_row_for_claim(capacity);
-        if (arg_row == INVALID)
-        {
-            record_error(0u, ERR_CALL_MISMATCH, CALL_MISMATCH_GENERIC_CLAIM_CAPACITY);
-            return;
-        }
-
-        uint call_node = call_arg_row_call_node[arg_row];
-        uint arg_node = call_arg_row_node[arg_row];
-        uint callee_i = callee_token_for_hir_call(call_node);
-        record_error(
-            call_arg_error_token(arg_node, callee_i),
-            ERR_CALL_MISMATCH,
-            CALL_MISMATCH_GENERIC_CLAIM_CAPACITY);
-        return;
-    }
-
-    if (claim_i >= active_claim_count())
-        return;
-
-    clear_generic_claim(claim_i);
-
-    uint arg_row = call_arg_row_for_claim(claim_i);
-    if (arg_row == INVALID)
-        return;
-
+    if (arg_row >= min(call_arg_row_count_out[0u], active_hir_node_count())) return;
+    uint call = call_arg_row_call_node[arg_row];
+    uint callee = callee_token_for_hir_call(call);
+    if (!valid_token(callee) || !parameter_pattern_page_contains(
+        call_dependency_library_id[callee], call_dependency_unit_id[callee],
+        call_dependency_local_index[callee])) return;
+    // The argument producer owns expression provenance. Consumers rank a
+    // claim with one row read instead of traversing HIR inside graph lookup.
+    call_arg_row_literal_context_mask[arg_row] = numeric_literal_accepts_context(
+        call_arg_row_node[arg_row], 3u, active_hir_node_count(), compact_hir_core,
+        compact_hir_payload, compact_hir_expr_parent) ? 1u : 0u;
+    if (numeric_literal_accepts_context(call_arg_row_node[arg_row], 5u,
+        active_hir_node_count(), compact_hir_core, compact_hir_payload, compact_hir_expr_parent))
+        call_arg_row_literal_context_mask[arg_row] |= 2u;
+    uint pattern_mask = call_generic_claim_pattern_mask[arg_row];
+    uint constant_pattern_mask = call_const_claim_pattern_mask[arg_row];
+    if ((pattern_mask | constant_pattern_mask) == 0u) return;
     uint start = call_generic_claim_prefix[arg_row];
     uint count = call_generic_claim_scan_input[arg_row];
-    if (claim_i < start || claim_i >= start + count)
+    uint constant_start = call_const_claim_prefix[arg_row];
+    uint constant_count = call_const_claim_scan_input[arg_row];
+    uint capacity; uint constant_capacity; uint stride;
+    call_generic_claim_callee.GetDimensions(capacity, stride);
+    call_const_claim_callee.GetDimensions(constant_capacity, stride);
+    uint node = resolve_expr(call_arg_row_node[arg_row]);
+    if (start > capacity || count > capacity - start ||
+        constant_start > constant_capacity || constant_count > constant_capacity - constant_start)
+    {
+        record_error(call_arg_error_token(node, callee), ERR_CALL_MISMATCH, CALL_MISMATCH_GENERIC_CLAIM_CAPACITY);
         return;
-
-    emit_claim_for_relation(claim_i, arg_row, claim_i - start);
+    }
+    // One argument owns both complete spans, so no lane can clear another
+    // lane's publication while inference rebuilds the relation.
+    for (uint i = 0u; i < count; i++) clear_generic_claim(start + i);
+    for (uint i = 0u; i < constant_count; i++)
+    {
+        uint row = constant_start + i;
+        call_const_claim_callee[row] = INVALID;
+        call_const_claim_slot[row] = INVALID;
+        call_const_claim_ref_kind[row] = 0u;
+        call_const_claim_ref_payload[row] = INVALID;
+        call_const_claim_identity_mode[row] = 0u;
+        call_const_claim_selected[row] = 0u;
+        call_const_claim_arg_row[row] = INVALID;
+    }
+    uint2 inferred[32]; uint inferred_mask = 0u;
+    InferredConstant constants[32]; uint constant_mask = 0u;
+    for (uint slot = 0u; slot < 32u; slot++)
+    { inferred[slot] = uint2(0u, INVALID); constants[slot] = inferred_constant_reference(uint2(0u, INVALID)); }
+    uint tag; uint payload;
+    if (argument_value_reference(node, tag, payload))
+    {
+        uint param = call_arg_param_row[arg_row];
+        // Explicit bindings are ready at claim publication, after the early
+        // parameter-pattern collector. A permitted outer borrow constrains
+        // T to its bound slice; the expression itself retains its array type.
+        uint root_slot = parameter_root_type_slot(
+            call_param_row_ref_tag[param], call_param_row_ref_payload[param]);
+        uint2 bound;
+        if (root_slot < 32u && checked_explicit_environment_argument(
+            0x80000000u | callee, root_slot, bound.x, bound.y))
+        {
+            uint kind = bound.x == 3u && bound.y < parameter_type_capacity()
+                ? type_instance_kind[bound.y] : 0u;
+            semantic_argument_mode_by_hir[node] = kind == 4u ? 3u : kind == 3u ? 2u : 1u;
+            if (checked_array_borrow_matches<ParameterTypeGraph>(
+                bound.x, bound.y, tag, payload, parameter_type_capacity()))
+            {
+                tag = bound.x;
+                payload = bound.y;
+            }
+        }
+        bool matches = parameter_argument_constraints(call_param_row_ref_tag[param],
+            call_param_row_ref_payload[param], tag, payload, inferred, inferred_mask,
+            constants, constant_mask);
+        if (!matches)
+        {
+            uint error_token = call_arg_error_token(node, callee);
+            record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
+            // Slot 32 records rejection outside either parameter domain. A
+            // return producer preserves this language error on failed closure.
+            if (count != 0u)
+            {
+                call_generic_claim_callee[start] = callee;
+                call_generic_claim_slot[start] = 32u;
+                call_generic_claim_ref_tag[start] = 4u;
+                call_generic_claim_ref_payload[start] = error_token;
+                call_generic_claim_arg_row[start] = arg_row;
+            }
+            else if (constant_count != 0u)
+            {
+                call_const_claim_callee[constant_start] = callee;
+                call_const_claim_slot[constant_start] = 32u;
+                call_const_claim_ref_payload[constant_start] = error_token;
+                call_const_claim_arg_row[constant_start] = arg_row;
+            }
+            return;
+        }
+    }
+    uint ordinal = 0u; uint constant_ordinal = 0u;
+    for (uint slot = 0u; slot < 32u; slot++)
+    {
+        if ((pattern_mask & (1u << slot)) != 0u)
+        {
+            uint row = start + ordinal++;
+            uint2 ref = (inferred_mask & (1u << slot)) != 0u ? inferred[slot] : uint2(0u, INVALID);
+            uint legacy = ref.x == 1u ? ref.y : ref.x == 3u ? 1u
+                : ref.x == 2u ? leaf_type_code_for_ref(ref.x, ref.y) : 0u;
+            call_generic_claim_callee[row] = callee;
+            call_generic_claim_slot[row] = slot;
+            call_generic_claim_arg_row[row] = arg_row;
+            call_generic_claim_type[row] = legacy;
+            call_generic_claim_ref_tag[row] = ref.x;
+            call_generic_claim_ref_payload[row] = ref.y;
+            if (ref.x == 1u) publish_generic_return_type(callee, call_fn_index[callee], slot, ref.y);
+        }
+        if ((constant_pattern_mask & (1u << slot)) != 0u)
+        {
+            uint row = constant_start + constant_ordinal++;
+            uint2 ref = uint2(0u, INVALID);
+            if ((constant_mask & (1u << slot)) != 0u &&
+                !publish_inferred_constant<ParameterTypeGraph>(constants[slot], gParams.n_tokens,
+                    uint2(call_const_claim_ref_kind[row], call_const_claim_ref_payload[row]), ref))
+            {
+                record_error(call_arg_error_token(node, callee), 6u, 0x474e0001u);
+                call_const_claim_callee[row] = callee;
+                call_const_claim_slot[row] = 32u;
+                call_const_claim_ref_kind[row] = 0u;
+                call_const_claim_ref_payload[row] = INVALID;
+                return;
+            }
+            call_const_claim_callee[row] = callee;
+            call_const_claim_slot[row] = slot;
+            call_const_claim_arg_row[row] = arg_row;
+            call_const_claim_ref_kind[row] = ref.x;
+            call_const_claim_ref_payload[row] = ref.y;
+            call_const_claim_identity_mode[row] = (constant_mask & (1u << slot)) != 0u
+                ? constants[slot].identity_mode : 0u;
+        }
+    }
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    emit_claim(linear_thread_id(dtid));
+    emit_argument_claims(linear_thread_id(dtid));
 }

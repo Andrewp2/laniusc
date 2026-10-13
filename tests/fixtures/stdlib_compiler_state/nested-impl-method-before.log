@@ -1,0 +1,18 @@
+
+running 1 test
+test structural_impl_receivers_execute_ordinary_and_nested_generic_patterns ... FAILED
+
+failures:
+
+---- structural_impl_receivers_execute_ordinary_and_nested_generic_patterns stdout ----
+
+thread 'structural_impl_receivers_execute_ordinary_and_nested_generic_patterns' (173832) panicked at tests/compiler_generic_types_execution.rs:136:29:
+ordinary structural impl receiver: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0021", title: "invalid trait implementation", category: "trait solving", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0021", message: "invalid trait implementation", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_ordinary_structural_impl_receiver_173831_0.lani", line: 2, column: 6, length: 4, byte_start: Some(33), byte_end: Some(37), source_line: Some("impl Wrap<[i32; 2]> {"), message: "inherent impl target contains an unsupported type argument" }), help: None, notes: ["use scalar, generic, or concrete non-nested target arguments here"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    structural_impl_receivers_execute_ordinary_and_nested_generic_patterns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 203 filtered out; finished in 6.79s
+

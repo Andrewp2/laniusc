@@ -1,0 +1,26 @@
+
+running 12 tests
+test imported_generic_inferred_return_arguments_execute ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+test imported_generic_reference_methods_preserve_all_receiver_arguments ... ok
+test imported_identity_aliases_reject_conflicting_body_and_call_types ... ok
+test imported_identity_aliases_specialize_complete_values_in_generic_bodies ... ok
+test inferred_returns_inside_generic_bodies_preserve_compound_values ... ok
+test inline_array_borrows_preserve_elements_and_aliases ... ok
+test lexical_method_environment_handles_reordered_impls_borrows_and_nested_calls ... ok
+test lexical_method_environment_imported_compounds_and_constants_execute ... ok
+test lexical_method_environment_imported_parameters_execute ... ok
+test lexical_method_environment_imported_rejects_missing_and_conflicting_bindings ... ok
+test slice_enum_payloads_borrow_arrays_and_preserve_following_fields ... 
+thread 'slice_enum_payloads_borrow_arrays_and_preserve_following_fields' (22318) panicked at tests/compiler_generic_types_execution.rs:161:29:
+imported enum slice payload: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0005", title: "unresolved identifier", category: "name resolution", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0005", message: "unresolved identifier", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 5, column: 19, length: 4, byte_start: Some(93), byte_end: Some(97), source_line: Some("    let wrapped = core::views::Numbers::Present(data, 7);"), message: "not found in this scope" }), help: None, notes: ["declare the value before using it or import its defining module"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    slice_enum_payloads_borrow_arrays_and_preserve_following_fields
+
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 328 filtered out; finished in 8.63s
+

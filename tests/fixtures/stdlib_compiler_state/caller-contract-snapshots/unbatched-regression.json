@@ -1,0 +1,39 @@
+{
+  "command": [
+    "target/caller-contract-tests/stdlib_gpu_perf",
+    "retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse",
+    "retained_generic_call_environments_keep_each_calls_concrete_type",
+    "retained_generic_result_environments_preserve_two_slots_and_record_layouts",
+    "retained_contextual_environments_preserve_all_thirty_two_parameters",
+    "caller_private_nominals_execute_through_imported_generic_relay",
+    "body_replay_preserves_symbolic_public_interfaces",
+    "body_replay_preserves_qualified_alias_parameter_identity",
+    "typecheck_graph_tracks_operation_workspace_lifetimes",
+    "type_checker::generic_calls::tests::",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 8.626904642998852,
+  "binary_sha256": "e240fa8111b344d942c574c070285319732959fc631d4ccc7f1834f0a5a8d65d",
+  "passed": [
+    "compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity",
+    "compiler::gpu_compiler::typecheck::tests::body_replay_preserves_symbolic_public_interfaces",
+    "compiler::gpu_compiler::x86_codegen::tests::caller_private_nominals_execute_through_imported_generic_relay",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_contextual_environments_preserve_all_thirty_two_parameters",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_generic_result_environments_preserve_two_slots_and_record_layouts",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse",
+    "type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes",
+    "type_checker::generic_calls::tests::constant_readback_preserves_binders_until_the_gpu_publishes_a_value",
+    "type_checker::generic_calls::tests::nominal_header_cache_preserves_export_identity_and_rejects_broken_ownership",
+    "type_checker::generic_calls::tests::semantic_closure_is_independent_of_native_layout_and_claim_preference",
+    "type_checker::generic_calls::tests::symbolic_graph_scoping_preserves_every_parameter_domain_and_owner"
+  ],
+  "summaries": [
+    "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 662 filtered out; finished in 8.41s"
+  ],
+  "frozen_sources_unchanged": true,
+  "source_snapshot": "before-negative-diagnostic-frozen-sources.json",
+  "shader_snapshot": "current-shader-hashes.json"
+}

@@ -1,0 +1,25 @@
+[typecheck.call_inference] round=0 changed=64
+[typecheck.call_inference] round=1 changed=12
+[typecheck.call_inference] round=2 changed=2
+[typecheck.call_inference] round=3 changed=3
+[typecheck.call_inference] round=4 changed=4
+[typecheck.call_inference] round=5 changed=3
+[typecheck.call_inference] round=6 changed=6
+[typecheck.call_inference] round=7 changed=2
+[typecheck.call_inference] round=8 changed=0
+[typecheck.call_inference] round=0 changed=64
+[typecheck.call_inference] round=1 changed=12
+[typecheck.call_inference] round=2 changed=2
+[typecheck.call_inference] round=3 changed=3
+[typecheck.call_inference] round=4 changed=4
+[typecheck.call_inference] round=5 changed=3
+[typecheck.call_inference] round=6 changed=6
+[typecheck.call_inference] round=7 changed=2
+[typecheck.call_inference] round=8 changed=0
+GPU source-pack type-check rejection: token=199 code=AssignMismatch detail=0
+error[LNC0006]: type mismatch
+ --> <source pack file 0>:14:67
+   |
+14 |     let joined = match (optional) { None -> value, Some(found) -> found };
+   |                                                                   ^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

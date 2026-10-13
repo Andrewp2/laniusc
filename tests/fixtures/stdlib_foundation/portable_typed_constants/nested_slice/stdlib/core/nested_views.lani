@@ -1,0 +1,7 @@
+module core::nested_views;
+
+pub fn view<T, const N: usize>(rows: [[T; N]]) -> [[T; N]] { return rows; }
+
+pub fn forward<T, const M: usize>(rows: [[T; M]]) -> [[T; M]] {
+    return view<T, M>(rows);
+}

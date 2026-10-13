@@ -253,6 +253,10 @@ define_token_kinds! {
     ExternAbiString,
     DotDotEqual,
     RangeInclusiveAssign,
+    MemberTypeArgGt,
+    ConstantArgumentPlus,
+    ConstantArgumentMinus,
+    ArrayLengthIdent,
 }
 
 impl TokenKind {
@@ -271,7 +275,8 @@ impl TokenKind {
             | Self::WhereIdent
             | Self::BoundTypeIdent
             | Self::RangeEndIdent
-            | Self::PathGenericIdent => Self::Ident,
+            | Self::PathGenericIdent
+            | Self::ArrayLengthIdent => Self::Ident,
             Self::CallLParen
             | Self::GroupLParen
             | Self::ParamLParen
@@ -337,12 +342,13 @@ impl TokenKind {
             Self::TypeArgLt | Self::GenericParamLt | Self::BoundTypeArgLt | Self::PathTypeArgLt => {
                 Self::Lt
             }
-            Self::TypeArgGt | Self::GenericParamGt | Self::BoundTypeArgGt | Self::PathTypeArgGt => {
+            Self::TypeArgGt | Self::GenericParamGt | Self::BoundTypeArgGt |
+            Self::PathTypeArgGt | Self::MemberTypeArgGt => {
                 Self::Gt
             }
             Self::TypeAmpersand | Self::BoundTypeAmpersand => Self::Ampersand,
-            Self::PrefixPlus | Self::InfixPlus | Self::BoundPlus => Self::Plus,
-            Self::PrefixMinus | Self::InfixMinus => Self::Minus,
+            Self::PrefixPlus | Self::InfixPlus | Self::BoundPlus | Self::ConstantArgumentPlus => Self::Plus,
+            Self::PrefixMinus | Self::InfixMinus | Self::ConstantArgumentMinus => Self::Minus,
             Self::PrefixInc | Self::PostfixInc => Self::Inc,
             Self::PrefixDec | Self::PostfixDec => Self::Dec,
             Self::ImplPub | Self::TraitPub => Self::Pub,

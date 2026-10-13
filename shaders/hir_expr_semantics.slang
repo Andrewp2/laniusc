@@ -43,3 +43,10 @@ public uint hir_scalar_type_for_hir(uint kind, uint form)
         ? hir_scalar_type_for_expr_form(form)
         : HIR_SEM_TY_UNKNOWN;
 }
+
+public bool hir_is_forward_expression(uint kind, uint form)
+{
+    // Index and call payloads use the same lane for kind-specific data.
+    // Only expression wrappers may interpret form 1 as a forwarding edge.
+    return (kind == 14u || kind == 16u || kind == 17u) && form == 1u;
+}

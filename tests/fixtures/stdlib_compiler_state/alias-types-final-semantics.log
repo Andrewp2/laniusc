@@ -1,0 +1,46 @@
+
+running 25 tests
+test trait_methods_control::type_checker_rejects_trait_impl_targets_aliasing_scalar_types_on_gpu ... GPU type-check rejection: token=9 code=InvalidTraitImplementation detail=14
+ok
+test trait_methods_control::type_checker_rejects_trait_impl_targets_aliasing_type_instances_on_gpu ... GPU type-check rejection: token=13 code=InvalidTraitImplementation detail=14
+ok
+test type_checker_accepts_associated_function_calls_beyond_cached_argument_width ... ok
+test type_checker_accepts_bounded_array_type_aliases_on_gpu ... ok
+test type_checker_accepts_bounded_nominal_type_aliases_on_gpu ... ok
+test type_checker_accepts_bounded_scalar_type_alias_chains_on_gpu ... GPU type-check rejection: token=1 code=BadHir detail=1095499781
+ok
+test type_checker_accepts_bounded_scalar_type_aliases_on_gpu ... ok
+test type_checker_normalizes_alias_predicate_type_argument_leaves_on_gpu ... GPU type-check rejection: token=55 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_normalizes_nominal_alias_predicate_type_argument_leaves_on_gpu ... GPU type-check rejection: token=71 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_normalizes_qualified_alias_predicate_type_arguments_on_gpu ... GPU source-pack type-check rejection: token=79 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_rejects_associated_function_mismatch_beyond_cached_argument_width ... GPU type-check rejection: token=69 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_associated_call_result_method_receivers ... ok
+test type_checker_resolves_associated_call_result_method_receivers_with_bound_arg ... ok
+test type_checker_resolves_associated_inherent_function_after_long_qualified_receiver_args ... ok
+test type_checker_resolves_associated_inherent_functions_on_type_paths ... ok
+test type_checker_resolves_concrete_injection_through_deep_generic_type_alias_chains ... GPU type-check rejection: token=996 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_generated_generic_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=2036 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_generated_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=330 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_generic_associated_inherent_functions_on_type_paths ... ok
+test type_checker_resolves_reordered_generic_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=996 code=AssignMismatch detail=770
+ok
+test type_checker_resolves_width_changing_generic_type_alias_chains_without_a_fixed_hop_cap ... GPU type-check rejection: token=1124 code=AssignMismatch detail=770
+ok
+test type_checker_substitutes_alias_normalized_bound_arguments_from_nonzero_slots_on_gpu ... GPU type-check rejection: token=68 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_substitutes_alias_normalized_call_arguments_into_trait_bounds_on_gpu ... GPU type-check rejection: token=62 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_substitutes_bounded_generic_type_alias_chains_on_gpu ... GPU type-check rejection: token=32 code=AssignMismatch detail=770
+ok
+test type_checker_substitutes_bounded_generic_type_aliases_on_gpu ... GPU type-check rejection: token=21 code=AssignMismatch detail=770
+ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 3.30s
+

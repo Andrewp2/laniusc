@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -45,12 +46,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     OptIrNodeCore core = opt_ir_core[row];
     OptIrNodeOperands operands = opt_ir_operands[row];
     uint op = opt_ir_op(core);
-    if (op == SEMANTIC_LIR_OP_CALL && operands.a < gParams.function_capacity)
+    bool executable = opt_ir_node_is_executable(row, total);
+    if (executable && op == SEMANTIC_LIR_OP_CALL && operands.a < gParams.function_capacity)
     {
         uint ignored;
         InterlockedAdd(x86_direct_call_count_by_function[operands.a], 1u, ignored);
     }
-    if (op == SEMANTIC_LIR_OP_VALUE_GET)
+    if (executable &&
+        (op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_ADDRESS))
     {
         uint declaration = operands.a;
         if (declaration < gParams.token_capacity)
@@ -67,10 +70,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 1u, ignored);
         }
     }
-    else if (op == SEMANTIC_LIR_OP_VALUE_SET ||
+    else if (executable && (op == SEMANTIC_LIR_OP_VALUE_SET ||
              (op == SEMANTIC_LIR_OP_STORE &&
               (core.flags & (SEMANTIC_LIR_FLAG_INDEXED |
-                             SEMANTIC_LIR_FLAG_FIELD)) == 0u))
+                             SEMANTIC_LIR_FLAG_FIELD)) == 0u)))
     {
         uint declaration = operands.a;
         if (declaration < gParams.token_capacity)
@@ -99,7 +102,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint ignored;
     InterlockedMin(x86_function_start[function_id], position, ignored);
     InterlockedMax(x86_function_end[function_id], position + 1u, ignored);
-    if (semantic_lir_is_call(op))
+    if (executable && semantic_lir_is_call(op))
         InterlockedMin(
             x86_register_analysis_by_function[function_id].first_call,
             position + 1u, ignored);

@@ -1,0 +1,6 @@
+GPU source-pack type-check rejection: token=39 code=BadHir detail=2
+error[LNC0016]: syntax error
+ --> tests/fixtures/stdlib_compiler_state/angle-close-probes/generic_identity.lani:1:22
+  |
+1 | import core::closes; fn keep<T>(v: core::closes::Id<T>) -> core::closes::Id<T> { return v; } fn main() -> i32 { return keep(42) - 42; }
+  |                      ^^ invalid syntax here

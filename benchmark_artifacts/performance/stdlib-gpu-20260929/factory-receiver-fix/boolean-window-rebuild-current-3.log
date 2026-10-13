@@ -1,0 +1,11 @@
+sample=0 ms=24.680
+sample=1 ms=24.301
+sample=2 ms=23.380
+sample=3 ms=22.171
+sample=4 ms=21.800
+sample=5 ms=20.938
+sample=6 ms=22.572
+sample=7 ms=24.324
+sample=8 ms=25.297
+sample=9 ms=23.706
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=20.938 median_ms=23.543 avg_ms=23.317 max_ms=25.297 output_verified=true

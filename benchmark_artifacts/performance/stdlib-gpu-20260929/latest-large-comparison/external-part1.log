@@ -1,0 +1,8 @@
+5000000 bytes, 1/15 zig/21: 1680.495 ms, output verified
+5000000 bytes, 2/15 cpp/20: 6613.905 ms, output verified
+5000000 bytes, 3/15 rust/22: 7530.150 ms, output verified
+5000000 bytes, 4/15 cpp/22: 7542.462 ms, output verified
+5000000 bytes, 5/15 cpp/21: 6444.203 ms, output verified
+cpp: 3 samples, median 6613.905 ms
+rust: 1 samples, median 7530.150 ms
+zig: 1 samples, median 1680.495 ms

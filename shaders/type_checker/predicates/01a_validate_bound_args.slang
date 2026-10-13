@@ -52,9 +52,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner_decl = predicate_owner_node[node];
-    uint trait_decl_i = predicate_bound_decl_id[node];
+    uint trait_decl_i = predicate_bound_reference[node];
     if (!valid_node(owner_decl) || trait_decl_i == INVALID)
         return;
+
+    if (trait_reference_is_dependency(trait_decl_i) && trait_reference_header(trait_decl_i, 2u) != 0u)
+    {
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_CONST_TRAIT;
+        return;
+    }
 
     uint arg_count;
     uint first_arg_token;
@@ -74,7 +80,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint trait_param_count = trait_decl_generic_param_count(trait_decl_i);
+    uint trait_param_count = trait_reference_parameter_count(trait_decl_i);
     if (trait_param_count != INVALID && arg_count == trait_param_count)
     {
         predicate_status[node] = PREDICATE_STATUS_OK;

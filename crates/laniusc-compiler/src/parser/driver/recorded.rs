@@ -185,7 +185,7 @@ impl GpuParser {
             "parser.recorded-ll1-hir.status",
         )?;
         let mapped = slice.get_mapped_range();
-        let words = read_u32_words(&mapped, 6)?;
+        let words = read_u32_words(&mapped, 11)?;
         drop(mapped);
         recorded.status_readback.unmap();
 

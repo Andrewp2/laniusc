@@ -1,0 +1,22 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0609]: no field `hir_expr_record_form` on type `ResidentParseResult`
+     --> tests/parser_hir_records.rs:17159:20
+      |
+17159 |     assert!(parsed.hir_expr_record_form.contains(&HIR_EXPR_FORM_GT));
+      |                    ^^^^^^^^^^^^^^^^^^^^ unknown field
+      |
+      = note: available fields are: `ll1`, `node_kind`, `parent`, `first_child`, `next_sibling` ... and 95 others
+
+error[E0609]: no field `hir_expr_record_form` on type `ResidentParseResult`
+     --> tests/parser_hir_records.rs:17160:20
+      |
+17160 |     assert!(parsed.hir_expr_record_form.contains(&HIR_EXPR_FORM_SHR));
+      |                    ^^^^^^^^^^^^^^^^^^^^ unknown field
+      |
+      = note: available fields are: `ll1`, `node_kind`, `parent`, `first_child`, `next_sibling` ... and 95 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `laniusc` (test "parser_hir_records") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

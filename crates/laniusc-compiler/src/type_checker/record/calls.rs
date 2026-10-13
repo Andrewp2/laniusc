@@ -40,6 +40,13 @@ pub(in crate::type_checker) fn record_dependency_call_counts(
     visibility: &DependencyVisibilityState,
     _hir_active_dispatch_args: &LaniusBuffer<u32>,
 ) -> Result<()> {
+    // Visibility has finished consuming its candidate table on this page.
+    // Reuse it for members of the already selected normalized parent type.
+    visibility.clear_lookup_group.record_invocation(encoder,
+        &visibility.clear_normalized_member_lookup)?;
+    visibility.build_normalized_member_lookup.record(encoder)?;
+    visibility.resolve_normalized_members.record(encoder)?;
+    visibility.project_normalized_values.record(encoder)?;
     visibility.project_calls_group.record(encoder)?;
     visibility.project_call_params_group.record(encoder)
 }

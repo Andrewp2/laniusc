@@ -1,0 +1,7 @@
+{
+  "source": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+  "alias": "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/semantic-seed-build-20-cache-alias/compiler_generic_types_execution-443177ec3361c248",
+  "same_inode": true,
+  "sha256": "aa0f190859ce5ab3959a527a534387c0d6f5197c46764614522921e8c9c60c1a",
+  "reason": "Reuse observed warm NVIDIA executable-basename cache; no executable contents changed."
+}

@@ -1,0 +1,4 @@
+module app::floating;
+const NARROW: f32 = 1.0;
+fn wide<const V: f64>() -> f64 { return V; }
+fn main() -> i32 { wide<app::floating::NARROW>(); return 0; }

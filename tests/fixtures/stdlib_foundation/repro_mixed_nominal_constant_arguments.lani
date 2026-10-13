@@ -1,0 +1,9 @@
+struct Buffer<T, const N: usize> { values: [T; N] }
+fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let original: Buffer<i32, 3> = Buffer<i32, 3> { values: [12, 20, 10] };
+    let copied: Buffer<i32, 3> = keep(original);
+    copied.values[0] = 99;
+    if (original.values[0] != 12 || copied.values[0] != 99) { return 1; }
+    return original.values[0] + original.values[1] + original.values[2];
+}

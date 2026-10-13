@@ -1,0 +1,9 @@
+
+running 4 tests
+test generic_aliases_preserve_nominal_forwarding ... ok
+test generic_aliases_preserve_slice_arguments_and_results ... ok
+test generic_aliases_substitute_reordered_record_parameters ... ok
+test transparent_aliases_preserve_scalar_and_array_values ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 4.15s
+

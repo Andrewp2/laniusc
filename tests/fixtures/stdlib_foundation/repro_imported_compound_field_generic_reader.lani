@@ -1,0 +1,14 @@
+module app::main;
+import core::five;
+
+fn first<T>(value: core::five::ArrayField<T>) -> T {
+    return value.items[0];
+}
+
+fn main() -> i32 {
+    let value: core::five::ArrayField<i32> = core::five::ArrayField { items: [-7, 42] };
+    if (first(value) != -7 || value.items[1] != 42) { return 1; }
+    value.items = [42, -7];
+    if (first(value) != 42 || value.items[1] != -7) { return 2; }
+    return 0;
+}

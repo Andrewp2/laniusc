@@ -81,6 +81,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeFieldsPas
                 b.hir_type_value_node.as_entire_binding(),
             ),
             (
+                "hir_type_len_operand".into(),
+                b.hir_type_len_operand.as_entire_binding(),
+            ),
+            (
                 "hir_type_len_token".into(),
                 b.hir_type_len_token.as_entire_binding(),
             ),

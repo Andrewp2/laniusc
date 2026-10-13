@@ -83,6 +83,7 @@ static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_LT = 12u;
 static const uint TK_GT = 13u;
+static const uint TK_SHR = 44u;
 static const uint TK_INC = 56u;
 static const uint TK_DEC = 57u;
 static const uint TK_PREFIX_PLUS = 58u;
@@ -210,6 +211,9 @@ static const uint TK_INHERENT_IMPL = 180u;
 static const uint TK_TRAIT_IMPL = 181u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
+static const uint TK_CONSTANT_ARGUMENT_PLUS = 192u;
+static const uint TK_CONSTANT_ARGUMENT_MINUS = 193u;
 static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
 static const uint TK_EXTERN_ABI_STRING = 188u;
 static const uint STATEMENT_CONTEXT_CONST_RHS = 250u;
@@ -505,6 +509,9 @@ uint raw_kind_at(uint parser_i, uint count)
     return token_words[parser_i - 1u].kind;
 }
 
+bool matching_raw_angle_open_for_close(uint close_parser_i, uint count, out uint open_i);
+uint semantic_lt_kind_for(uint parser_i, uint count);
+
 bool semantic_token_before_ends_primary(uint parser_i, uint count)
 {
     if (parser_i == 0u)
@@ -513,6 +520,14 @@ bool semantic_token_before_ends_primary(uint parser_i, uint count)
     uint prev_raw = raw_kind_at(prev_parser_i, count);
     if (semantic_token_ends_primary(prev_raw))
         return true;
+    if (prev_raw == TK_GT || prev_raw == TK_SHR)
+    {
+        uint open_i;
+        // A closed value application can be called. A comparison's `>`
+        // retains its expression role; delimiter ownership supplies the head.
+        return matching_raw_angle_open_for_close(prev_parser_i, count, open_i) &&
+               semantic_lt_kind_for(open_i + 1u, count) == TK_PATH_TYPE_ARG_LT;
+    }
     if (prev_raw != TK_RBRACE || prev_parser_i == 0u)
         return false;
 
@@ -553,12 +568,30 @@ uint raw_statement_context_kind(uint token_i)
     return token_i < gParams.token_capacity ? (statement_context_kind[token_i] & 0xffu) : 0u;
 }
 
-bool value_expression_context_before(uint parser_i)
+uint enclosing_semantic_brace_open_before(uint parser_i, uint count);
+bool matching_raw_bracket_open_before(uint parser_i, uint count, out uint open_i);
+
+bool value_expression_context_before(uint parser_i, uint count)
 {
     if (parser_i == 0u)
         return false;
     uint token_i = parser_i - 1u;
     uint raw_context = raw_statement_context_kind(token_i);
+    if (raw_context == 0u)
+    {
+        // Statement context is intentionally absent inside brackets. The
+        // bracket owner still distinguishes an array/slice type from a value
+        // expression, including through nested arrays and qualified paths.
+        uint bracket_owner;
+        if (matching_raw_bracket_open_before(parser_i, count, bracket_owner) &&
+            bracket_semantic_kind[bracket_owner] == TK_TYPE_ARRAY_LBRACKET)
+            return false;
+        // Declaration fields and enum payloads have no statement event. Their
+        // qualified applications are type paths, just like local type names.
+        uint owner = enclosing_semantic_brace_open_before(parser_i, count);
+        if (owner == TK_STRUCT_DECL_LBRACE || owner == TK_ENUM_LBRACE)
+            return false;
+    }
     if (raw_context == 0u ||
         raw_context == STATEMENT_CONTEXT_CONST_RHS ||
         raw_context == STATEMENT_CONTEXT_ASSIGN_RHS ||
@@ -962,7 +995,7 @@ bool bound_type_context_before(uint parser_i, uint count)
     return false;
 }
 
-uint semantic_lt_kind_for(uint parser_i, uint count)
+uint direct_semantic_lt_kind_for(uint parser_i, uint count)
 {
     uint prev_raw = raw_kind_at(parser_i - 1u, count);
     uint prev2_raw = raw_kind_at(parser_i - 2u, count);
@@ -984,21 +1017,32 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
     {
         return TK_TYPE_ARG_LT;
     }
+    // An enum payload's first type follows its opening parenthesis. The
+    // enclosing declaration owns that type role, just as an annotation colon
+    // does for function parameters. A value call's parenthesis supplies no
+    // such evidence and must retain comparison/application disambiguation.
+    if (prev_raw == TK_IDENT && prev2_raw == TK_LPAREN &&
+        in_enum_variant_context(parser_i - 2u, count))
+    {
+        return TK_TYPE_ARG_LT;
+    }
     if (prev_raw == TK_IDENT &&
-        value_expression_context_before(parser_i) &&
+        value_expression_context_before(parser_i, count) &&
         (prev2_raw == TK_COLON || prev2_raw == TK_PATH_COLON))
     {
         return TK_PATH_TYPE_ARG_LT;
     }
     if (prev_raw == TK_IDENT &&
-        value_expression_context_before(parser_i) &&
+        value_expression_context_before(parser_i, count) &&
         path_type_arg_open_has_value_path_tail(parser_i, count))
     {
         return TK_PATH_TYPE_ARG_LT;
     }
     if (prev_raw == TK_IDENT &&
         (prev2_raw == TK_COLON || prev2_raw == TK_ARROW || prev2_raw == TK_AMPERSAND ||
-         prev2_raw == TK_LT || prev2_raw == TK_COMMA || prev2_raw == TK_LBRACKET ||
+         prev2_raw == TK_LT || prev2_raw == TK_COMMA ||
+         (prev2_raw == TK_LBRACKET && parser_i >= 3u &&
+          bracket_semantic_kind[parser_i - 3u] == TK_TYPE_ARRAY_LBRACKET) ||
          prev2_raw == TK_PATH_COLON || impl_type_context_before(parser_i, count)))
     {
         return TK_TYPE_ARG_LT;
@@ -1006,14 +1050,34 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
     return TK_LT;
 }
 
+bool matching_raw_angle_open_before(uint parser_i, uint count, out uint open_i);
+
+uint semantic_lt_kind_for(uint parser_i, uint count)
+{
+    uint kind = direct_semantic_lt_kind_for(parser_i, count);
+    if (kind != TK_PATH_TYPE_ARG_LT && kind != TK_BOUND_TYPE_ARG_LT) return kind;
+    uint parent;
+    if (!matching_raw_angle_open_before(parser_i, count, parent)) return kind;
+    uint parent_kind = direct_semantic_lt_kind_for(parent + 1u, count);
+    // A qualified application inside a generic argument is a type path.
+    // The outer application's value context cannot turn its children into
+    // independent value applications. Raw angle ownership supplies this
+    // evidence before contextual >> splitting and identifier retagging.
+    if (kind == TK_BOUND_TYPE_ARG_LT && parent_kind == TK_GENERIC_PARAM_LT) return kind;
+    if (parent_kind == TK_TYPE_ARG_LT || parent_kind == TK_PATH_TYPE_ARG_LT ||
+        parent_kind == TK_GENERIC_PARAM_LT || parent_kind == TK_BOUND_TYPE_ARG_LT)
+        return TK_TYPE_ARG_LT;
+    return kind;
+}
+
+#include "../impl/header/context.slang"
+
 bool impl_type_context_before(uint parser_i, uint count)
 {
     if (parser_i == 0u)
         return false;
     uint token_i = parser_i - 1u;
-    return token_i < count &&
-           token_i < gParams.token_capacity &&
-           (token_impl_context_event[token_i] & 0xffu) == IMPL_HEADER_CONTEXT;
+    return token_is_in_impl_header(token_i, min(count, gParams.token_capacity));
 }
 
 bool where_clause_context_before(uint parser_i, uint count)
@@ -1026,27 +1090,12 @@ bool where_clause_context_before(uint parser_i, uint count)
            (token_where_context_event[token_i] & 0xffu) == WHERE_CLAUSE_CONTEXT;
 }
 
+#include "../value_path_type_arguments.slang"
+
 bool path_type_arg_open_has_value_path_tail(uint open_parser_i, uint count)
 {
-    if (open_parser_i == 0u)
-        return false;
-
-    uint open_i = open_parser_i - 1u;
-    if (open_i >= count || open_i >= gParams.token_capacity ||
-        raw_token_kind(open_i) != TK_LT)
-        return false;
-
-    int open_depth = angle_match_depth[open_i];
-    uint close_i = 0u;
-    if (open_depth == INF ||
-        !angle_depth_search_first_index_at_or_after(open_i + 1u, open_depth, close_i) ||
-        close_i >= count || raw_token_kind(close_i) != TK_GT ||
-        angle_match_depth[close_i] != open_depth)
-        return false;
-
-    uint next = raw_kind_at(close_i + 2u, count);
-    uint next2 = raw_kind_at(close_i + 3u, count);
-    return next == TK_LPAREN || (next == TK_COLON && next2 == TK_COLON);
+    return open_parser_i != 0u &&
+        value_path_type_arguments_have_tail(open_parser_i - 1u, count);
 }
 
 bool matching_raw_angle_open_before(uint parser_i, uint count, out uint open_i)
@@ -1103,7 +1152,8 @@ uint matching_semantic_angle_open_before(uint parser_i, uint count)
 bool matching_raw_angle_open_for_close(uint close_parser_i, uint count, out uint open_i)
 {
     open_i = 0u;
-    if (close_parser_i == 0u || raw_kind_at(close_parser_i, count) != TK_GT)
+    uint close_kind = raw_kind_at(close_parser_i, count);
+    if (close_parser_i == 0u || (close_kind != TK_GT && close_kind != TK_SHR))
         return false;
 
     uint close_i = close_parser_i - 1u;
@@ -1111,16 +1161,17 @@ bool matching_raw_angle_open_for_close(uint close_parser_i, uint count, out uint
         return false;
 
     int depth_before = global_angle_depth_before(close_parser_i, count);
+    int owner_depth = depth_before - (close_kind == TK_SHR ? 2 : 1);
     if (!depth_search_last_index_before(
             DEPTH_MODE_ANGLE,
             close_i,
-            depth_before - 1,
+            owner_depth,
             open_i))
         return false;
 
     if (open_i < count &&
         token_words[open_i].kind == TK_LT &&
-        angle_match_depth[open_i] == depth_before - 1)
+        angle_match_depth[open_i] == owner_depth)
         return true;
     return false;
 }
@@ -1135,7 +1186,13 @@ uint semantic_gt_kind_for(uint parser_i, uint count)
     if (open_kind == TK_BOUND_TYPE_ARG_LT)
         return TK_BOUND_TYPE_ARG_GT;
     if (open_kind == TK_PATH_TYPE_ARG_LT)
+    {
+        uint open_i;
+        if (matching_raw_angle_open_before(parser_i, count, open_i) && open_i >= 2u &&
+            token_words[open_i - 2u].kind == TK_DOT)
+            return TK_MEMBER_TYPE_ARG_GT;
         return TK_PATH_TYPE_ARG_GT;
+    }
     return TK_GT;
 }
 
@@ -1304,8 +1361,34 @@ bool bound_plus_context(uint parser_i, uint count)
     return raw_angle_open_can_contain_bound_colon(open_i + 1u, count);
 }
 
+// A signed scalar operand has its own syntactic role. This classification is
+// derived from the already matched opener/comma or array-length separator;
+// ordinary expression signs keep their existing prefix/infix roles.
+bool constant_argument_sign_context(uint parser_i, uint count)
+{
+    if (parser_i <= 1u) return false;
+    uint before = parser_i - 1u;
+    uint raw = raw_kind_at(before, count);
+    if (raw == TK_LT)
+    {
+        uint kind = semantic_lt_kind_for(before, count);
+        return kind == TK_TYPE_ARG_LT || kind == TK_PATH_TYPE_ARG_LT ||
+            kind == TK_BOUND_TYPE_ARG_LT;
+    }
+    if (raw == TK_COMMA)
+    {
+        uint kind = semantic_comma_kind_for(before, count);
+        return kind == TK_TYPE_ARG_COMMA || kind == TK_PATH_TYPE_ARG_COMMA ||
+            kind == TK_BOUND_TYPE_ARG_COMMA;
+    }
+    return raw == TK_SEMICOLON && before - 1u < count &&
+        bracket_semantic_kind[before - 1u] == TK_TYPE_SEMICOLON;
+}
+
 uint semantic_plus_kind_for(uint parser_i, uint count)
 {
+    if (constant_argument_sign_context(parser_i, count))
+        return TK_CONSTANT_ARGUMENT_PLUS;
     if (bound_plus_context(parser_i, count))
         return TK_BOUND_PLUS;
     return semantic_token_before_ends_primary(parser_i, count)
@@ -1316,7 +1399,16 @@ uint semantic_plus_kind_for(uint parser_i, uint count)
 uint semantic_ampersand_kind_for(uint parser_i, uint count)
 {
     if (bound_type_context_before(parser_i, count))
+    {
+        uint parent;
+        if (matching_raw_angle_open_before(parser_i, count, parent))
+        {
+            uint parent_kind = direct_semantic_lt_kind_for(parent + 1u, count);
+            if (parent_kind == TK_BOUND_TYPE_ARG_LT || parent_kind == TK_TYPE_ARG_LT ||
+                parent_kind == TK_PATH_TYPE_ARG_LT) return TK_TYPE_AMPERSAND;
+        }
         return TK_BOUND_TYPE_AMPERSAND;
+    }
     return semantic_token_before_ends_primary(parser_i, count)
         ? TK_AMPERSAND
         : TK_TYPE_AMPERSAND;
@@ -1450,7 +1542,11 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
     if (raw_kind == TK_PLUS)
         return semantic_plus_kind_for(parser_i, count);
     if (raw_kind == TK_MINUS)
+    {
+        if (constant_argument_sign_context(parser_i, count))
+            return TK_CONSTANT_ARGUMENT_MINUS;
         return semantic_token_before_ends_primary(parser_i, count) ? TK_INFIX_MINUS : TK_PREFIX_MINUS;
+    }
 
     return raw_kind;
 }

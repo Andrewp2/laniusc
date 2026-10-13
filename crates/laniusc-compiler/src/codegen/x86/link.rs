@@ -41,6 +41,25 @@ use crate::codegen::GpuLinkByteSource;
 
 pub(super) const X86_LINK_SYMBOL_IDENTITY_BYTES: usize = 12;
 
+/// A GPU-resolved call identity for which no native definition was emitted.
+#[derive(Debug)]
+pub(crate) struct GpuX86MissingSymbolDefinition {
+    pub identity: [u32; 3],
+    pub relocation_index: u32,
+}
+
+impl std::fmt::Display for GpuX86MissingSymbolDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "native function has no emitted definition (library {}, unit {}, declaration {}; relocation {})",
+            self.identity[0], self.identity[1], self.identity[2], self.relocation_index
+        )
+    }
+}
+
+impl std::error::Error for GpuX86MissingSymbolDefinition {}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct GpuX86LinkObjectRecord {
     pub text_input_start: u32,
@@ -1104,6 +1123,10 @@ mod tests {
         let unresolved = generator
             .resolve_symbol_relocations(&gpu.device, &gpu.queue, &unresolved_input)
             .expect_err("undefined symbol should fail GPU resolution");
-        assert!(unresolved.to_string().contains("status"));
+        assert!(
+            unresolved
+                .downcast_ref::<GpuX86MissingSymbolDefinition>()
+                .is_some()
+        );
     }
 }

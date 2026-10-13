@@ -1,0 +1,13 @@
+
+running 2 tests
+isolated payload record: passed
+isolated payload scalars: passed
+isolated payload strings: passed
+isolated payload slice: passed
+isolated payload pointer: passed
+test specialized_body_expression_chains_preserve_records_descriptors_and_aliases ... ok
+isolated payload empty: passed
+test specialized_body_expression_payload_isolation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 81 filtered out; finished in 30.36s
+

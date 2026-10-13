@@ -7,6 +7,7 @@
 
 import hir_records;
 import hir_expr_semantics;
+import primitive_types;
 import status;
 import type_checker.type.instances.struct_field_lookup;
 
@@ -23,18 +24,26 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> literal_context_type_by_hir;
 StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> struct_field_lookup_state;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_init_field_ordinal;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
 
 RWStructuredBuffer<uint> status;
 
@@ -49,9 +58,7 @@ static const uint TYPE_REF_INVALID = 0u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
-static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
-static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
 static const uint HIR_CALL_EXPR = 19u;
@@ -171,21 +178,15 @@ void validate_struct_field_key_row(uint row)
     }
 }
 
-bool assignable(uint dst, uint src)
+// Final scalar acceptance consumes the expression's closed inference fact.
+// Literal contexts have already been published and arithmetic has inherited
+// its checked operand type; named values retain their declared scalar type.
+uint accepted_scalar_type(uint node)
 {
-    if (dst == TY_UNKNOWN || src == TY_UNKNOWN)
-        return true;
-    if (dst == src)
-        return true;
-    if (dst == TY_INT)
-        return src == TY_UINT || src == TY_CHAR;
-    if (dst == TY_UINT)
-        return src == TY_INT || src == TY_CHAR;
-    if (dst == TY_CHAR)
-        return src == TY_INT || src == TY_UINT;
-    if (dst == TY_FLOAT)
-        return src == TY_INT || src == TY_UINT || src == TY_CHAR;
-    return false;
+    if (!valid_compact_node(node) || call_inference_result_tag[node] != 1u)
+        return TY_UNKNOWN;
+    uint scalar = call_inference_result_payload[node];
+    return scalar_is_known(scalar) ? scalar : TY_UNKNOWN;
 }
 
 uint visible_type_for_token(uint token_i)
@@ -247,10 +248,13 @@ uint direct_arithmetic_operand_type(uint node)
     uint form = compact_expr_form(node);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
-    if (form == HIR_EXPR_INT)
-        return TY_INT;
-    if (form == HIR_EXPR_FLOAT)
-        return TY_FLOAT;
+    if (form == HIR_EXPR_INT || form == HIR_EXPR_FLOAT)
+    {
+        uint context = literal_context_type_by_hir[node];
+        if ((form == HIR_EXPR_INT && scalar_is_integer(context)) ||
+            (form == HIR_EXPR_FLOAT && scalar_is_float(context))) return context;
+        return form == HIR_EXPR_FLOAT ? TY_FLOAT : TY_INT;
+    }
     if (form == HIR_EXPR_NAME)
         return visible_type_for_token(compact_expr_value_token(node));
 
@@ -290,10 +294,13 @@ uint direct_expr_record_type(uint node)
     uint form = compact_expr_form(expr);
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
-    if (form == HIR_EXPR_INT)
-        return TY_INT;
-    if (form == HIR_EXPR_FLOAT)
-        return TY_FLOAT;
+    if (form == HIR_EXPR_INT || form == HIR_EXPR_FLOAT)
+    {
+        uint context = literal_context_type_by_hir[node];
+        if ((form == HIR_EXPR_INT && scalar_is_integer(context)) ||
+            (form == HIR_EXPR_FLOAT && scalar_is_float(context))) return context;
+        return form == HIR_EXPR_FLOAT ? TY_FLOAT : TY_INT;
+    }
     if (form == HIR_EXPR_NAME)
         return visible_type_for_token(compact_expr_value_token(expr));
     if (form == HIR_EXPR_NOT ||
@@ -315,7 +322,8 @@ uint direct_expr_record_type(uint node)
         HirPayload payload = compact_hir_payload[expr];
         uint left_ty = direct_arithmetic_operand_type(payload.b);
         uint right_ty = direct_arithmetic_operand_type(payload.c);
-        return left_ty == TY_FLOAT || right_ty == TY_FLOAT ? TY_FLOAT : TY_INT;
+        return scalar_is_float(left_ty) ? left_ty : scalar_is_float(right_ty) ? right_ty :
+            scalar_is_integer(left_ty) ? left_ty : scalar_is_integer(right_ty) ? right_ty : TY_UNKNOWN;
     }
 
     if (form == HIR_EXPR_MOD ||
@@ -329,6 +337,26 @@ uint direct_expr_record_type(uint node)
     return TY_UNKNOWN;
 }
 
+uint written_struct_literal_type(uint node)
+{
+    uint declaration = INVALID;
+    uint path = path_id_by_owner_hir[node];
+    if (path < min(path_count_out[0u], gParams.n_hir_nodes))
+    {
+        uint row = resolved_type_decl[path];
+        if (row < gParams.n_tokens) declaration = decl_name_token[row];
+    }
+    if (!valid_token(declaration))
+    {
+        uint head = compact_hir_core[node].token_start;
+        declaration = valid_token(head) ? visible_decl[head] : INVALID;
+    }
+    if (!valid_token(declaration)) return TY_UNKNOWN;
+    uint owner = type_decl_hir_node_by_token[declaration];
+    return valid_compact_node(owner) && compact_hir_core[owner].kind == HIR_STRUCT_ITEM
+        ? 4096u + declaration : TY_UNKNOWN;
+}
+
 uint direct_value_type(uint node)
 {
     if (!valid_node(node))
@@ -337,6 +365,13 @@ uint direct_value_type(uint node)
     uint record_ty = direct_expr_record_type(node);
     if (record_ty != TY_UNKNOWN)
         return record_ty;
+
+    if (compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR)
+    {
+        // Compare the written constructor's resolved declaration. Using the
+        // expected context here would silently accept a different record.
+        return written_struct_literal_type(node);
+    }
 
     uint expr = node;
     uint lit = valid_compact_node(expr)
@@ -376,7 +411,11 @@ uint first_value_type_from_node(uint root, out uint value_token)
     uint ty = direct_value_type(root);
     if (ty != TY_UNKNOWN)
     {
-        uint token_i = compact_expr_value_token(root);
+        uint kind = compact_hir_core[root].kind;
+        uint token_i = kind == HIR_NAME_EXPR || kind == HIR_PATH_EXPR
+            ? compact_expr_value_token(root)
+            : kind == HIR_MEMBER_EXPR ? compact_hir_payload[root].c
+            : compact_hir_core[root].token_start;
         if (!valid_token(token_i))
             token_i = compact_hir_core[root].token_start;
         value_token = valid_token(token_i) ? token_i : INVALID;
@@ -398,7 +437,8 @@ void validate_struct_literal_field_row(uint field_row)
     uint literal_node = field.owner;
     if (!valid_compact_node(literal_node) || !valid_compact_node(value_root))
         return;
-    if (!valid_token(struct_lit_context_decl_token[literal_node]))
+    if (!valid_token(struct_lit_context_decl_token[literal_node]) &&
+        struct_init_field_ordinal[field_token] == INVALID)
         return;
     if (struct_init_field_ordinal[field_token] == INVALID)
     {
@@ -411,7 +451,16 @@ void validate_struct_literal_field_row(uint field_row)
         return;
 
     uint value_token = INVALID;
-    uint actual = first_value_type_from_node(value_root, value_token);
+    uint actual;
+    if (scalar_is_known(expected))
+    {
+        actual = accepted_scalar_type(value_root);
+        value_token = compact_hir_core[value_root].token_start;
+    }
+    else
+    {
+        actual = first_value_type_from_node(value_root, value_token);
+    }
     if (actual == TY_UNKNOWN)
     {
         value_token = valid_token(value_token) ? value_token : field_token;
@@ -419,7 +468,7 @@ void validate_struct_literal_field_row(uint field_row)
         return;
     }
 
-    if (!assignable(expected, actual))
+    if (expected != actual)
     {
         value_token = valid_token(value_token) ? value_token : field_token;
         record_error(value_token, ERR_ASSIGN_MISMATCH, expected * 256u + actual);

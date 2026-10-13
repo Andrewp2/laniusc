@@ -1,0 +1,16 @@
+
+running 11 tests
+test parser_compact_hir_member_identity_does_not_alias_comparison_operators ... ok
+test parser_compact_hir_member_identity_preserves_receiver_operand ... ok
+test parser_explicit_callable_angles_preserve_comparison_and_shift_roles ... ok
+test parser_explicit_callable_arguments_belong_to_each_path_segment ... ok
+test parser_explicit_constant_arguments_preserve_mixed_order_and_value_nodes ... ok
+test parser_explicit_dotted_arguments_belong_to_the_member_application ... ok
+test parser_explicit_record_constructor_argument_order_scales_to_thirty_two ... ok
+test parser_explicit_record_constructor_paths_preserve_type_arguments ... ok
+test parser_hir_member_after_index_uses_index_receiver ... ok
+test parser_hir_member_readback_accepts_application_after_name_token ... ok
+test parser_hir_member_readback_rejects_receiver_outside_member_span ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 2.91s
+

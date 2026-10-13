@@ -1,0 +1,26 @@
+
+running 4 tests
+test semantic_interface_exports_callable_predicate_graphs_and_scopes ... 
+thread 'semantic_interface_exports_callable_predicate_graphs_and_scopes' (86735) panicked at tests/type_checker_modules.rs:253:6:
+export complete callable bounds, including bound-only operands: GpuFrontend("semantic-interface identity recording failed: GPU resource `resolved_dependency_trait_header` is not registered")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test semantic_interface_exports_public_generic_traits ... 
+thread 'semantic_interface_exports_public_generic_traits' (86780) panicked at tests/type_checker_modules.rs:100:6:
+public generic trait must have a complete semantic interface: GpuFrontend("semantic-interface identity recording failed: GPU resource `resolved_dependency_trait_header` is not registered")
+FAILED
+test semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands ... 
+thread 'semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands' (86782) panicked at tests/type_checker_modules.rs:305:10:
+all thirty-two bound operands, including empty arrays: GpuFrontend("semantic-interface identity recording failed: GPU resource `resolved_dependency_trait_header` is not registered")
+FAILED
+test semantic_interface_rejects_public_predicate_with_unexported_trait ... ok
+
+failures:
+
+failures:
+    semantic_interface_exports_callable_predicate_graphs_and_scopes
+    semantic_interface_exports_public_generic_traits
+    semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 101 filtered out; finished in 2.06s
+

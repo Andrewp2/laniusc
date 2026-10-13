@@ -27,22 +27,25 @@ const PARAM_SCATTER_OUTPUTS: &[(&str, AccessMode)] = &[
 ];
 const ARGUMENT_MATCH_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_generic_claim_scan_input", AccessMode::Write),
-    ("call_generic_claim_callee", AccessMode::Write),
-    ("call_generic_claim_slot", AccessMode::Write),
-    ("call_generic_claim_type", AccessMode::Write),
-    ("call_generic_claim_ref_tag", AccessMode::Write),
-    ("call_generic_claim_ref_payload", AccessMode::Write),
-    ("call_const_claim_callee", AccessMode::Write),
-    ("call_const_claim_slot", AccessMode::Write),
-    ("call_const_claim_len", AccessMode::Write),
+    ("call_generic_claim_pattern_mask", AccessMode::Write),
+    ("call_const_claim_scan_input", AccessMode::Write),
+    ("call_const_claim_pattern_mask", AccessMode::Write),
 ];
 const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
+    ("call_arg_row_literal_context_mask", AccessMode::Write),
     ("call_generic_claim_callee", AccessMode::Write),
     ("call_generic_claim_slot", AccessMode::Write),
     ("call_generic_claim_type", AccessMode::Write),
     ("call_generic_claim_ref_tag", AccessMode::Write),
     ("call_generic_claim_ref_payload", AccessMode::Write),
     ("call_generic_claim_arg_row", AccessMode::Write),
+    ("call_const_claim_callee", AccessMode::Write),
+    ("call_const_claim_slot", AccessMode::Write),
+    ("call_const_claim_ref_kind", AccessMode::Write),
+    ("call_const_claim_ref_payload", AccessMode::Write),
+    ("call_const_claim_identity_mode", AccessMode::Write),
+    ("call_const_claim_selected", AccessMode::Write),
+    ("call_const_claim_arg_row", AccessMode::Write),
 ];
 
 pub(in crate::type_checker) const CALLS_CLEAR: ReflectedComputeSpec =
@@ -132,6 +135,9 @@ pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_CONSUME: ReflectedCompute
     "type_checker/calls/03a_collect_row_args"
 )
 .with_modes(ARGUMENT_MATCH_OUTPUTS)
+.with_aliases(&[
+    typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
+])
 .with_name("type_check.calls.arg_match.direct.consume");
 pub(in crate::type_checker) const CALLS_APPLY_ARGUMENTS: ReflectedComputeSpec = call_pass!(
     "arguments.apply",
@@ -190,7 +196,11 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_EMIT: ReflectedComputeSpec
     CallArguments,
     "type_checker/calls/03a1_emit_generic_claims"
 )
-.with_modes(GENERIC_CLAIM_OUTPUTS);
+.with_modes(GENERIC_CLAIM_OUTPUTS)
+.with_aliases(&[
+    typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
+])
+.with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_CLEAR: ReflectedComputeSpec =
     call_pass!(
         "generic_claims.index.clear",
@@ -229,6 +239,8 @@ pub(in crate::type_checker) const CALLS_CONTEXTUAL_RESULT_REQUESTS: ReflectedCom
         "type_checker/calls/03a4b_contextual_result_requests"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
+pub(in crate::type_checker) const CALLS_CONTEXTUAL_RESULTS_FINAL: ReflectedComputeSpec =
+    CALLS_CONTEXTUAL_RESULT_REQUESTS.with_name("type_check.calls.contextual_results.final");
 pub(in crate::type_checker) const CALLS_REQUIRED_GENERIC_MARK: ReflectedComputeSpec = call_pass!(
     "required_generics.mark",
     HirNodes,
@@ -255,7 +267,7 @@ pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_CLEAR: ReflectedComput
     "type_checker/calls/03a2_clear_claim_lookup"
 )
 .with_aliases(&[
-    typecheck_resource!("claim_count_in" => "call_arg_row_count_out", Read),
+    typecheck_resource!("claim_count_in" => "call_const_claim_count_out", Read),
     typecheck_resource!("claim_lookup_head" => "call_const_claim_lookup_head", Write),
 ])
 .with_indirect_dispatch("call_const_claim_index_dispatch_args");
@@ -265,7 +277,7 @@ pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_BUILD: ReflectedComput
     "type_checker/calls/03a3_build_claim_lookup"
 )
 .with_aliases(&[
-    typecheck_resource!("claim_count_in" => "call_arg_row_count_out", Read),
+    typecheck_resource!("claim_count_in" => "call_const_claim_count_out", Read),
     typecheck_resource!("claim_callee" => "call_const_claim_callee", Read),
     typecheck_resource!("claim_slot" => "call_const_claim_slot", Read),
     typecheck_resource!("claim_lookup_head" => "call_const_claim_lookup_head", ReadWrite),
@@ -283,3 +295,22 @@ pub(in crate::type_checker) const CALLS_GENERIC_PARAMS_ERASE: ReflectedComputeSp
     Tokens,
     "type_checker/calls/04_erase_generic_params"
 );
+
+// Own-header bindings precede call inference; the final boundary validates
+// their agreement with accepted values and receiving contexts.
+pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND: ReflectedComputeSpec =
+    call_pass!("explicit_applications.bind", HirNodes,
+        "type_checker/calls/03a0_bind_explicit_applications")
+        // Rows are write-only here. The initialized descriptor publishes the
+        // valid subset; unpublished arena cells are never read by consumers.
+        .with_modes(&[
+            ("call_explicit_binding_tag", AccessMode::Write),
+            ("call_explicit_binding_payload", AccessMode::Write),
+        ])
+        .with_indirect_dispatch("explicit_application_dispatch_args");
+pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND_INFERENCE: ReflectedComputeSpec =
+    CALLS_EXPLICIT_APPLICATIONS_BIND.with_name("type_check.calls.explicit_applications.bind.inference");
+pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: ReflectedComputeSpec =
+    call_pass!("explicit_applications.validate", HirNodes,
+        "type_checker/calls/03a8_validate_explicit_applications")
+        .with_indirect_dispatch("explicit_application_dispatch_args");

@@ -1,0 +1,11 @@
+
+running 6 tests
+test structural_impl_receivers_execute_imported_compositions ... ok
+test structural_impl_receivers_execute_local_compositions ... ok
+test structural_impl_receivers_execute_nested_generic_array_patterns ... ok
+test structural_impl_receivers_execute_ordinary_array_patterns ... ok
+test structural_impl_receivers_execute_thirty_two_parameters_imported ... ok
+test structural_impl_receivers_execute_thirty_two_parameters_locally ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 363 filtered out; finished in 5.79s
+

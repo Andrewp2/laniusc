@@ -95,8 +95,9 @@ void bind_self_token(uint self_token)
     uint receiver_payload = method_decl_receiver_ref_payload[fn_token];
     if (receiver_tag != TYPE_REF_INVALID && receiver_payload != INVALID)
     {
-        decl_type_ref_tag[self_decl] = receiver_tag;
-        decl_type_ref_payload[self_decl] = receiver_payload;
+        bool borrowed = method_decl_receiver_mode[fn_token] == 2u;
+        decl_type_ref_tag[self_decl] = borrowed ? 3u : receiver_tag;
+        decl_type_ref_payload[self_decl] = borrowed ? self_decl : receiver_payload;
     }
 }
 

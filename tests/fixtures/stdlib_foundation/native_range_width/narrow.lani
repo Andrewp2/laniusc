@@ -1,0 +1,44 @@
+fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let signed8: i8 = 127;
+    let count8: i32 = 0;
+    for value in 126..=signed8 {
+        let item: i8 = keep(value);
+        if (item < 126 || count8 > 1) { return 1; }
+        count8 += 1;
+    }
+    if (count8 != 2) { return 2; }
+    let unsigned8: u8 = 255;
+    let ucount8: i32 = 0;
+    for value in 254..=unsigned8 {
+        let item: u8 = keep(value);
+        if (item < 254 || ucount8 > 1) { return 3; }
+        ucount8 += 1;
+    }
+    if (ucount8 != 2) { return 4; }
+    let signed16: i16 = 32767;
+    let count16: i32 = 0;
+    for value in 32766..=signed16 {
+        let item: i16 = keep(value);
+        if (item < 32766 || count16 > 1) { return 5; }
+        count16 += 1;
+    }
+    if (count16 != 2) { return 6; }
+    let unsigned16: u16 = 65535;
+    let ucount16: i32 = 0;
+    for value in 65534..=unsigned16 {
+        let item: u16 = keep(value);
+        if (item < 65534 || ucount16 > 1) { return 7; }
+        ucount16 += 1;
+    }
+    if (ucount16 != 2) { return 8; }
+    let unsigned32: u32 = 4294967295;
+    let ucount32: i32 = 0;
+    for value in 4294967294..=unsigned32 {
+        let item: u32 = keep(value);
+        if (item < 4294967294 || ucount32 > 1) { return 9; }
+        ucount32 += 1;
+    }
+    if (ucount32 != 2) { return 10; }
+    return 0;
+}

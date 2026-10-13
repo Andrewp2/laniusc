@@ -1,0 +1,6 @@
+275806 openat(AT_FDCWD, "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/strict-cache-identity-probe/compiler_generic_types_execution-443177ec3361c248", O_RDONLY) = 3
+275806 openat(AT_FDCWD, "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/strict-cache-identity-probe/compiler_generic_types_execution-443177ec3361c248", O_RDONLY) = 9
+275806 openat(AT_FDCWD, "/home/andrew-peterson/.cache/nvidia/GLCache/61f5fb60d33740dc5bc6da0ef0f7e3fc/8723bb0230a3df70/f0db64b5cafd429e.toc", O_RDWR|O_CLOEXEC) = 19
+275806 openat(AT_FDCWD, "/home/andrew-peterson/.cache/nvidia/GLCache/61f5fb60d33740dc5bc6da0ef0f7e3fc/8723bb0230a3df70/f0db64b5cafd429e.bin", O_RDWR|O_CLOEXEC) = 20
+275806 openat(AT_FDCWD, "target/wgpu-pipeline-cache", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 47
+275806 openat(AT_FDCWD, "target/wgpu-pipeline-cache/wgpu_pipeline_cache_vulkan_4318_8708_laniusc-pipelines-v1_wgpu-29.0.3_key-800dca11363b24c0", O_RDONLY|O_CLOEXEC) = 47

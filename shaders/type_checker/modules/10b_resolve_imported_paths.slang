@@ -92,7 +92,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
          path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR &&
          path_kind[path_i] != PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR))
         return;
-    if (path_segment_count[path_i] != 1u || resolved_decl[path_i] != INVALID)
+    if (path_segment_count[path_i] != 1u || resolved_decl[path_i] != INVALID ||
+        resolved_status[path_i] == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT)
         return;
 
     uint owner_module = path_owner_module_id[path_i];

@@ -56,7 +56,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= total || access_id >= gParams.access_capacity) return;
 
     OptIrAccessCore access;
-    access.subject = opt_ir_operands[node].a;
+    access.subject = opt_ir_access_subject(
+        opt_ir_core[node], opt_ir_operands[node], node);
     access.block_id = opt_ir_control[node].block_id;
     opt_ir_accesses[access_id] = access;
     opt_ir_access_source_rows[access_id] = node;

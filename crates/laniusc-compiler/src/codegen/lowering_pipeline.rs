@@ -541,6 +541,7 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
+        selected_replay_hir: Option<u32>,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
@@ -550,6 +551,10 @@ impl GpuLoweringPipeline {
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
             "lowering.object.batch",
         );
+        // Each object job overwrites its scope, including ordinary/strict jobs.
+        // Like the object identity below, this upload belongs to this compiler
+        // job's command submission and is not cached by workspace identity.
+        self.semantic.set_replay_function(queue, selected_replay_hir)?;
         self.workspace.record_phase_reset(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
@@ -614,7 +619,7 @@ impl GpuLoweringPipeline {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<super::x86::GpuX86RelocatableObject> {
+    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
         self.ensure_success(device)?;
         match &self.target {
             TargetStage::X86_64(stage) => stage.finish_object(device, queue, library_id, unit_id),
@@ -644,6 +649,11 @@ impl GpuLoweringPipeline {
         };
         drop(mapped);
         self.status_readback.unmap();
+        if status.flags != 0 {
+            if let Err(error) = self.optimizer.report_failure_trace(device) {
+                eprintln!("[optimization.failure.trace] readback failed: {error:#}");
+            }
+        }
         Ok(status)
     }
 

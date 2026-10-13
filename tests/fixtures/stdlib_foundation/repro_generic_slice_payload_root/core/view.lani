@@ -1,0 +1,23 @@
+module core::view;
+
+pub fn get_or<T>(values: [T], length: i32, index: i32, fallback: T) -> T {
+    if (index < 0 || index >= length) { return fallback; }
+    return values[index];
+}
+
+pub fn fill<T>(values: [T], length: i32, value: T) -> i32 {
+    let index: i32 = 0;
+    while (index < length) {
+        values[index] = value;
+        index += 1;
+    }
+    return index;
+}
+
+pub fn swap<T>(values: [T], length: i32, left: i32, right: i32) -> bool {
+    if (left < 0 || right < 0 || left >= length || right >= length) { return false; }
+    let saved: T = values[left];
+    values[left] = values[right];
+    values[right] = saved;
+    return true;
+}

@@ -1,0 +1,7 @@
+compile_exit=1
+error[LNC0006]: type mismatch
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_call_record_literal_context.lani:3:46
+  |
+3 | fn main() -> i32 { return read(Cell { value: true }); }
+  |                                              ^^^^ value type is bool but this context expects generic parameter 0
+     = note: expected generic parameter 0, found bool; change the expression or the annotation so they agree

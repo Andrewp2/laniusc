@@ -1,0 +1,231 @@
+{
+  "previous_median_ms": 21.198,
+  "fixed_median_ms": 21.011,
+  "pooled_median_change_percent": -0.8821586942164394,
+  "runs": [
+    {
+      "revision": "previous",
+      "pair": 0,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        24.74,
+        20.046,
+        22.375,
+        21.615,
+        21.446,
+        20.84,
+        20.551,
+        20.851,
+        20.067,
+        19.762
+      ]
+    },
+    {
+      "revision": "fixed",
+      "pair": 0,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/fixed-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        20.563,
+        23.233,
+        20.33,
+        22.895,
+        20.913,
+        21.974,
+        21.39,
+        21.665,
+        20.22,
+        20.41
+      ]
+    },
+    {
+      "revision": "fixed",
+      "pair": 1,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/fixed-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        21.392,
+        23.986,
+        20.362,
+        20.098,
+        21.087,
+        20.442,
+        19.644,
+        21.737,
+        20.124,
+        20.152
+      ]
+    },
+    {
+      "revision": "previous",
+      "pair": 1,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        20.744,
+        22.153,
+        20.01,
+        22.701,
+        21.176,
+        21.945,
+        21.211,
+        21.866,
+        20.381,
+        20.415
+      ]
+    },
+    {
+      "revision": "previous",
+      "pair": 2,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        20.534,
+        25.57,
+        21.185,
+        21.51,
+        21.996,
+        20.659,
+        20.367,
+        19.971,
+        20.118,
+        21.291
+      ]
+    },
+    {
+      "revision": "fixed",
+      "pair": 2,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/fixed-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        21.406,
+        25.788,
+        21.888,
+        21.058,
+        21.282,
+        20.352,
+        22.207,
+        20.296,
+        20.757,
+        21.206
+      ]
+    },
+    {
+      "revision": "fixed",
+      "pair": 3,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/fixed-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        25.785,
+        22.18,
+        20.707,
+        20.479,
+        23.139,
+        21.084,
+        20.441,
+        20.168,
+        20.287,
+        20.964
+      ]
+    },
+    {
+      "revision": "previous",
+      "pair": 3,
+      "command": [
+        "timeout",
+        "105s",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-perf",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/previous-stdlib",
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/expected.stdout",
+        "3",
+        "10"
+      ],
+      "exit_status": 0,
+      "final_output_verified": true,
+      "samples_ms": [
+        21.87,
+        24.759,
+        21.22,
+        21.384,
+        22.278,
+        20.856,
+        21.532,
+        21.22,
+        20.627,
+        20.595
+      ]
+    }
+  ]
+}

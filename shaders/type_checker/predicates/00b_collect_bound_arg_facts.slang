@@ -1,19 +1,4 @@
-// Scatter structural predicate-bound argument facts.
-//
-// Bound predicates use a distinct parse grammar from ordinary HIR type
-// expressions, so parser `hir_type_arg_*` records do not describe these rows.
-// This pass publishes the nearest bound-argument list owner, supported ordinals,
-// and fail-closed structural statuses so predicate semantic collection can avoid
-// walking each predicate subtree.
-//
-// This is still a bounded bridge: owner and ordinal extraction below accepts
-// only direct bound-argument grammar shapes it can prove without walking a path
-// spine. If those local relations cannot prove the bound-argument
-// owner/ordinal, the pass leaves the predicate for the collector to fail closed.
-// Do not widen this bridge; replace it with parser-owned bound-argument rows
-// before claiming an unbounded predicate solver.
-
-import atomics;
+// Publish predicate syntax links from canonical HIR and ordered argument rows.
 import hir_records;
 
 struct Params
@@ -27,7 +12,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
-StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_type_arg_count;
 StructuredBuffer<HirTypeArg> compact_type_args;
@@ -62,138 +47,31 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
-uint parent_node(uint node)
-{
-    return valid_node(node) ? compact_hir_core[node].parent : INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint child = compact_hir_links[node].first_child;
-    return valid_node(child) && parent_node(child) == node && child > node
-        ? child
-        : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint sibling = compact_hir_links[node].next_sibling;
-    uint owner = parent_node(node);
-    return valid_node(owner) &&
-           valid_node(sibling) &&
-           parent_node(sibling) == owner &&
-           sibling > node
-        ? sibling
-        : INVALID;
-}
-
-bool bound_args_container(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = compact_hir_semantic_facts[node].semantic_kind;
-    return kind == HIR_SEMANTIC_BOUND_ARGUMENT_LIST ||
-           kind == HIR_SEMANTIC_BOUND_ARGUMENT_TAIL;
-}
-
-bool bound_expr_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = compact_hir_semantic_facts[node].semantic_kind;
-    return kind == HIR_SEMANTIC_BOUND_PATH || kind == HIR_SEMANTIC_BOUND_REFERENCE;
-}
-
-void publish_status(uint owner, uint status)
-{
-    if (valid_node(owner))
-        atomic_u32_min(predicate_status, owner, status);
-}
-
-uint arg_from_container(uint container)
-{
-    if (!bound_args_container(container))
-        return INVALID;
-
-    uint arg = first_child_node(container);
-    return bound_expr_node(arg) ? arg : INVALID;
-}
-
-uint direct_bound_arg_count(uint owner)
-{
-    if (!bound_expr_node(owner))
-        return 0u;
-    uint count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
-    HirRange range = compact_type_arg_ranges[owner];
-    return range.start <= count && range.count <= count - range.start ? range.count : 0u;
-}
-
-uint direct_bound_arg_node(uint owner, uint ordinal)
-{
-    uint count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
-    HirRange range = compact_type_arg_ranges[owner];
-    if (ordinal >= range.count || range.start > count || range.count > count - range.start)
-        return INVALID;
-    uint row = range.start + ordinal;
-    return compact_type_args[row].value;
-}
-
-void publish_arg_node(uint owner, uint ordinal, uint arg_node)
-{
-    if (!valid_node(owner))
-        return;
-
-    atomic_u32_max(predicate_bound_arg_count, owner, ordinal + 1u);
-    if (ordinal == 0u)
-        predicate_bound_first_arg_token[owner] = arg_node;
-    else if (ordinal == 1u)
-        predicate_bound_second_arg_token[owner] = arg_node;
-    else
-        publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH);
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node))
-        return;
-
-    // A trait implementation's trait type is an ordinary type path, whereas
-    // generic bounds use the bound-path semantic kinds handled below. Publish
-    // this relation before filtering for bound expressions; otherwise the
-    // type path can never reach the implementation-header collector.
-    if (compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PATH)
+    if (!valid_node(node)) return;
+    uint kind = compact_hir_semantic_facts[node].semantic_kind;
+    if (kind == HIR_SEMANTIC_IMPL_TRAIT)
     {
-        uint owner_parent = parent_node(node);
-        if (valid_node(owner_parent) &&
-            compact_hir_semantic_facts[owner_parent].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT)
-            atomic_u32_min(predicate_trait_impl_trait_type_node, owner_parent, node);
+        predicate_trait_impl_trait_type_node[node] = compact_hir_payload[node].b;
         return;
     }
-
-    if (!bound_expr_node(node))
-        return;
-
-    uint owner = node;
-    uint arg_count = direct_bound_arg_count(owner);
-    predicate_bound_arg_count[owner] = arg_count;
-    for (uint ordinal = 0u; ordinal < min(arg_count, 3u); ordinal += 1u)
+    if (kind != HIR_SEMANTIC_BOUND_PATH && kind != HIR_SEMANTIC_BOUND_REFERENCE) return;
+    uint total = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    HirRange range = compact_type_arg_ranges[node];
+    if (range.start > total || range.count > total - range.start)
+    { predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION; return; }
+    predicate_bound_arg_count[node] = range.count;
+    if (range.count > 32u) predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH;
+    // The two token fields are diagnostic anchors, never semantic arguments.
+    for (uint ordinal = 0u; ordinal < min(range.count, 2u); ordinal++)
     {
-        uint arg_node = direct_bound_arg_node(owner, ordinal);
-        if (!valid_node(arg_node))
-        {
-            publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION);
-            continue;
-        }
-        publish_arg_node(owner, ordinal, arg_node);
+        uint arg = compact_type_args[range.start + ordinal].value;
+        uint token = valid_node(arg) ? compact_hir_core[arg].token_start : INVALID;
+        if (ordinal == 0u) predicate_bound_first_arg_token[node] = token;
+        else predicate_bound_second_arg_token[node] = token;
     }
-    if (arg_count > 2u)
-        publish_status(owner, PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH);
-
 }

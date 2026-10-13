@@ -1,0 +1,11 @@
+sample=0 ms=77.144
+sample=1 ms=77.083
+sample=2 ms=75.311
+sample=3 ms=75.825
+sample=4 ms=75.864
+sample=5 ms=74.599
+sample=6 ms=74.517
+sample=7 ms=75.412
+sample=8 ms=75.212
+sample=9 ms=76.806
+entry=tests/fixtures/stdlib_compiler_state/alias-type-probes/deep-reordered-alias.lani rebuild_entry=true warmups=3 iters=10 output_bytes=5574 min_ms=74.517 median_ms=75.619 avg_ms=75.777 max_ms=77.144 output_verified=true

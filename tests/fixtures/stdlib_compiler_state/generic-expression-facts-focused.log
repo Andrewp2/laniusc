@@ -1,0 +1,216 @@
+    Finished `release` profile [optimized] target(s) in 0.27s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 8 tests
+test generic_inferred_compound_returns_execute ... [typecheck.call_inference] round=0 changed=2
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=2
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=0
+ok
+test imported_generic_inferred_array_return_executes ... [typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=2
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=0
+ok
+test imported_generic_inferred_compound_returns_preserve_values_copies_and_aliases ... [typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=20
+[typecheck.call_inference] round=1 changed=54
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+ok
+test imported_generic_inferred_return_arguments_execute ... [typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=2
+[typecheck.call_inference] round=1 changed=3
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=0
+[typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=0
+ok
+test inferred_field_results_supply_complete_generic_arguments ... [typecheck.call_inference] round=0 changed=43
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=4
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=4
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=4
+[typecheck.call_inference] round=4 changed=0
+ok
+test inferred_index_results_supply_complete_generic_arguments ... [typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=7
+[typecheck.call_inference] round=2 changed=6
+[typecheck.call_inference] round=3 changed=0
+[typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=7
+[typecheck.call_inference] round=2 changed=6
+[typecheck.call_inference] round=3 changed=0
+[typecheck.call_inference] round=0 changed=5
+[typecheck.call_inference] round=1 changed=7
+[typecheck.call_inference] round=2 changed=6
+[typecheck.call_inference] round=3 changed=0
+ok
+test inferred_match_results_supply_complete_generic_arguments ... [typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=4
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=4
+[typecheck.call_inference] round=4 changed=0
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=5
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=4
+[typecheck.call_inference] round=4 changed=0
+ok
+test inferred_returns_inside_generic_bodies_preserve_compound_values ... [typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=8
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=72
+[typecheck.call_inference] round=1 changed=4
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=49
+[typecheck.call_inference] round=1 changed=0
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 6.61s
+

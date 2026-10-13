@@ -222,6 +222,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             &handle.source_files,
         )?;
         let dependency_pages = self.load_semantic_interface_pages(&handle.dependencies)?;
+        let dependency_interface_count = dependency_pages.iter().map(Vec::len).sum::<usize>();
         let dependencies_loaded = started.elapsed();
         let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
         let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
@@ -266,7 +267,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                         self.target,
                         &handle.job,
                         &handle.source_files,
-                        &dependency_pages,
+                        dependency_pages.into(),
                     )
                     .await?;
                 (Some(result.value), None, result.cache_hit)
@@ -291,7 +292,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 handle.job.phase_unit_index,
                 handle.job.source_bytes,
                 handle.dependencies.artifacts.len(),
-                dependency_pages.iter().map(Vec::len).sum::<usize>(),
+                dependency_interface_count,
                 live.bytes,
                 peak.bytes,
             );
@@ -758,9 +759,10 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                                 file,
                             )
                             .map_err(|err| {
-                                source_pack_artifact_store_error(format!(
-                                    "execute x86_64 linker for {context}: {err}"
-                                ))
+                                super::x86_codegen::x86_source_pack_link_error(
+                                    &format!("execute x86_64 linker for {context}"),
+                                    err,
+                                )
                             })
                     },
                 )?;

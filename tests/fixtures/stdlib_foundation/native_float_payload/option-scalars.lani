@@ -1,0 +1,38 @@
+module app::main;
+import core::option;
+
+fn relay<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let above32: f32 = 1.00000011920928955078125;
+    let above64: f64 = 1.0000000000000002;
+    let small64: f64 = 4.9406564584124654e-324;
+    let large64: f64 = -1.0e300;
+    let narrow: core::option::Option<f32> = core::option::Some(above32);
+    let wide: core::option::Option<f64> = core::option::Some(above64);
+    let empty32: core::option::Option<f32> = core::option::None();
+    let empty64: core::option::Option<f64> = core::option::None();
+    let copied: core::option::Option<f64> = relay(wide);
+    wide = core::option::Some(large64);
+    if (!narrow.is_some() || !copied.is_some() || !empty32.is_none() || !empty64.is_none()) { return 1; }
+    if (narrow.unwrap_or(0.0) != above32 || narrow.unwrap_or(0.0) == 1.0) { return 2; }
+    if (copied.unwrap_or(0.0) != above64 || copied.unwrap_or(0.0) == 1.0) { return 3; }
+    if (wide.unwrap_or(0.0) != large64 || empty64.unwrap_or(small64) != small64) { return 4; }
+    if (core::option::unwrap_or(empty32, above32) != above32) { return 5; }
+    let preferred: core::option::Option<f64> = empty64.or(copied);
+    let next: core::option::Option<f64> = copied.and(wide);
+    let only: core::option::Option<f64> = wide.xor(empty64);
+    let neither: core::option::Option<f64> = copied.xor(wide);
+    if (preferred.unwrap_or(0.0) != above64 || next.unwrap_or(0.0) != large64 || only.unwrap_or(0.0) != large64 || !neither.is_none()) { return 6; }
+    let minus_zero: core::option::Option<f64> = core::option::Some(-0.0);
+    let recovered: f64 = relay(minus_zero).unwrap_or(1.0);
+    let one: f64 = 1.0;
+    if (recovered != 0.0 || one / recovered >= 0.0) { return 7; }
+    let zero32: f32 = 0.0;
+    let zero64: f64 = 0.0;
+    let nan32: core::option::Option<f32> = core::option::Some(zero32 / zero32);
+    let nan64: core::option::Option<f64> = core::option::Some(zero64 / zero64);
+    let read32: f32 = nan32.unwrap_or(1.0);
+    let read64: f64 = relay(nan64).unwrap_or(1.0);
+    if (!nan32.is_some() || !nan64.is_some() || read32 == read32 || read64 == read64) { return 8; }
+    return 0;
+}

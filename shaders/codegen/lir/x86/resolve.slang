@@ -69,18 +69,35 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
         {
             uint base = target_value(operands.a, total);
-            uint component = operands.c;
-            operands.a = base < total && component < total - base
-                ? base + component : INVALID;
+            if ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
+            {
+                // Both components read the same descriptor address. The
+                // emitter uses c to select its pointer or length word.
+                operands.a = base;
+            }
+            else
+            {
+                uint component = operands.c;
+                operands.a = base < total && component < total - base
+                    ? base + component : INVALID;
+                operands.c = 0u;
+            }
         }
-        operands.c = 0u;
+        // Immediate array stride retains its component tag for sign extension.
     }
+    else if (core.op == X86_LIR_OP_PLACE_STORE)
+    {
+        operands.a = target_value(operands.a, total);
+        operands.b = target_value(operands.b, total);
+    }
+    else if (core.op == X86_LIR_OP_PLACE_LOAD || core.op == X86_LIR_OP_FIELD_ADDRESS)
+        operands.a = target_value(operands.a, total);
     else if (core.op == X86_LIR_OP_STORE_LOCAL)
         operands.b = target_value(operands.b, total);
     else if (core.op == X86_LIR_OP_AGGREGATE_INIT &&
              (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
         operands.a = target_value(operands.a, total);
-    else if (core.op == X86_LIR_OP_INDEX_LOAD)
+    else if (core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_ADDRESS)
     {
         operands.a = target_value(operands.a, total);
         operands.b = target_value(operands.b, total);

@@ -1,0 +1,2 @@
+sample=0 ms=68.554
+entry=tests/fixtures/stdlib_compiler_state/explicit-slice-borrow/structural.lani rebuild_entry=true warmups=1 iters=1 output_bytes=5695 min_ms=68.554 median_ms=68.554 avg_ms=68.554 max_ms=68.554 output_verified=true

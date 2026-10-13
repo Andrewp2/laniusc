@@ -1,0 +1,35 @@
+
+running 2 tests
+[typecheck.call_inference] round=0 changed=139
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=27
+[typecheck.call_inference] round=1 changed=8
+[typecheck.call_inference] round=2 changed=2
+[typecheck.call_inference] round=3 changed=1
+[typecheck.call_inference] round=4 changed=0
+GPU source-pack type-check rejection: token=160 code=CallMismatch detail=16
+
+thread 'generic_method_lookup_uses_complete_inferred_call_results' (649808) panicked at tests/compiler_generic_types_execution.rs:115:29:
+generic call result method receivers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 14, column: 28, length: 3, byte_start: Some(481), byte_end: Some(484), source_line: Some("    let first = keep(view).get();"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test generic_method_lookup_uses_complete_inferred_call_results ... FAILED
+[typecheck.call_inference] round=0 changed=177
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=51
+[typecheck.call_inference] round=1 changed=3
+[typecheck.call_inference] round=2 changed=4
+[typecheck.call_inference] round=3 changed=0
+GPU source-pack type-check rejection: token=140 code=CallMismatch detail=43
+
+thread 'imported_generic_reference_methods_preserve_all_receiver_arguments' (649809) panicked at tests/compiler_generic_types_execution.rs:115:29:
+imported generic reference methods: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 13, column: 22, length: 6, byte_start: Some(443), byte_end: Some(449), source_line: Some("    let again = view.borrow();"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+test imported_generic_reference_methods_preserve_all_receiver_arguments ... FAILED
+
+failures:
+
+failures:
+    generic_method_lookup_uses_complete_inferred_call_results
+    imported_generic_reference_methods_preserve_all_receiver_arguments
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 119 filtered out; finished in 8.65s
+

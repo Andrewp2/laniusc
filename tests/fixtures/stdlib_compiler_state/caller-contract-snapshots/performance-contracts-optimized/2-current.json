@@ -1,0 +1,33 @@
+{
+  "version": "current",
+  "command": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+    "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+    "stdlib",
+    "-",
+    "3",
+    "10"
+  ],
+  "environment": {
+    "LANIUS_PERF_REBUILD_ENTRY": "1"
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 2.4180905030007125,
+  "binary_sha256": "47bf6a56f9adb721f9f891ba702d7b5d646b31c404f80342c2edb4514431928f",
+  "samples_ms": [
+    77.632,
+    76.62,
+    76.861,
+    74.482,
+    73.635,
+    73.627,
+    72.604,
+    76.719,
+    73.315,
+    73.584
+  ],
+  "median_ms": 74.05850000000001,
+  "output_verified": true,
+  "sources_unchanged": true,
+  "shader_link_restored": true
+}

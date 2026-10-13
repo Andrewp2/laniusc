@@ -22,27 +22,28 @@ where
     ub.as_ref().to_vec()
 }
 
-/// Allocates a valid zero-value type-check params uniform before real inputs arrive.
+/// Allocates a strict empty type-check params uniform before real inputs arrive.
 pub(super) fn zeroed_type_check_params_buffer(
     device: &wgpu::Device,
     label: &str,
 ) -> LaniusBuffer<TypeCheckParams> {
-    let byte_len = type_check_params_bytes(&TypeCheckParams {
+    let bytes = type_check_params_bytes(&TypeCheckParams {
         n_tokens: 0,
         source_len: 0,
         n_hir_nodes: 0,
         n_source_files: 0,
         parser_feature_flags: 0,
         dependency_interfaces_present: 0,
-    })
-    .len();
-    let raw = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size: byte_len as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
+        retain_callable_owners: 0,
+        trait_obligation_mode: 0,
+        authorized_replay_callable: u32::MAX,
     });
-    LaniusBuffer::new_labeled((raw, byte_len as u64), 1, label)
+    let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: &bytes,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
 }
 
 /// Decodes the four-word type-check status readback buffer.

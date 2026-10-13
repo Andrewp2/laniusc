@@ -1,0 +1,2 @@
+sample=0 ms=590.812
+entry=tests/fixtures/stdlib_compiler_state/implementation-evidence-export/reductions/spaced_annotations.lani rebuild_entry=false warmups=1 iters=1 output_bytes=53775 min_ms=590.812 median_ms=590.812 avg_ms=590.812 max_ms=590.812 output_verified=true

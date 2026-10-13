@@ -1,0 +1,2 @@
+import core::aliases;
+fn main() -> i32 { let value: core::aliases::Count = 42; return value - 42; }

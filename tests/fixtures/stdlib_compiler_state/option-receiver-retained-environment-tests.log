@@ -1,0 +1,7 @@
+
+running 2 tests
+test compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type ... ok
+test compiler::gpu_compiler::x86_codegen::tests::retained_generic_result_environments_preserve_two_slots_and_incomplete_records ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 612 filtered out; finished in 1.79s
+

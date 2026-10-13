@@ -1,0 +1,36 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+warning: unused variable: `call_arg_row_count_out`
+    --> crates/laniusc-compiler/src/type_checker/compiler_graph.rs:101:17
+     |
+ 101 |               let $var = graph_resources!(@add
+     |                   ^^^^
+...
+3993 | /     graph_resources!(graph, Workspace {
+3994 | |         call_arg_row_count_out in CallArguments => 4;
+3995 | |         generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
+3996 | |         const_claim_count_out as "call_const_claim_count_out" in CallArguments => 4;
+3997 | |     });
+     | |______- in this macro invocation
+     |
+help: `call_arg_row_count_out` is captured in macro and introduced a unused variable
+    --> crates/laniusc-compiler/src/type_checker/compiler_graph.rs:101:17
+     |
+ 101 |               let $var = graph_resources!(@add
+     |                   ^^^^
+...
+3993 | /     graph_resources!(graph, Workspace {
+3994 | |         call_arg_row_count_out in CallArguments => 4;
+3995 | |         generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
+3996 | |         const_claim_count_out as "call_const_claim_count_out" in CallArguments => 4;
+3997 | |     });
+     | |______- in this macro invocation
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+     = note: this warning originates in the macro `graph_resources` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `laniusc-compiler` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 00s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+  Executable tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)

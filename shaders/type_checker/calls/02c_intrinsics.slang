@@ -120,11 +120,10 @@ uint call_callee_token(uint call_node)
 
     HirCore callee = compact_hir_core[callee_node];
     HirPayload payload = compact_hir_payload[callee_node];
+    // Intrinsics use explicit arguments. A dotted call must be resolved as
+    // a method, even when its leaf name matches a language intrinsic.
     if (callee.kind == HIR_MEMBER_EXPR)
-    {
-        uint member_token = payload.c;
-        return valid_token(member_token) ? member_token : INVALID;
-    }
+        return INVALID;
 
     uint leaf_token = path_leaf_token_for_callee(callee_node);
     if (valid_token(leaf_token))

@@ -1,0 +1,10 @@
+
+running 5 tests
+test generic_marker_blanket_impl_executes_scalar_and_compound_forwarding ... ok
+test generic_marker_proof_dags_execute_imported_provider_with_caller_owned_base ... ok
+test generic_marker_proof_dags_execute_nested_symbolic_forwarding ... ok
+test generic_marker_proof_dags_reject_overlap_missing_base_and_cycles_before_elf ... ok
+test generic_marker_support_still_rejects_executable_generic_trait_methods ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 371 filtered out; finished in 16.21s
+

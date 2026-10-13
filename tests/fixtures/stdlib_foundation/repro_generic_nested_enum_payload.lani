@@ -1,0 +1,18 @@
+module app::main;
+
+enum Batch<T> { Items([T; 2]), Empty }
+
+fn total(value: Batch<i32>) -> i32 {
+    return match (value) {
+        Items(items) -> items[0] + items[1],
+        Empty -> 0
+    };
+}
+
+fn main() -> i32 {
+    let numbers: [i32; 2] = [-7, 42];
+    let present: Batch<i32> = Items(numbers);
+    let absent: Batch<i32> = Empty;
+    if (total(present) != 35 || total(absent) != 0) { return 1; }
+    return 0;
+}

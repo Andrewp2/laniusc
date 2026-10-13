@@ -1,0 +1,32 @@
+import core::trait_api;
+pub impl core::trait_api::Flow<[i32; 2], [i32; 3]> for bool {
+    pub fn copy(self, value: [i32; 2]) -> [i32; 2] { return value; }
+    pub fn pack(self, value: core::trait_api::Cell<[i32; 2]>) -> core::trait_api::Cell<[i32; 3]> {
+        return core::trait_api::Cell { value: [value.value[0], value.value[1], 42] };
+    }
+    pub fn inspect(&self, value: [i32; 3]) -> bool { return value[0] + value[1] == value[2]; }
+    fn empty(self, value: [core::trait_api::Cell<[i32; 2]>; 0]) -> [core::trait_api::Cell<[i32; 2]>; 0] { return value; }
+    pub fn view(self, value: [core::trait_api::Cell<i32>]) -> [core::trait_api::Cell<i32>] { return value; }
+    pub fn borrow(self, value: &core::trait_api::Cell<i32>) -> &core::trait_api::Cell<i32> { return value; }
+}
+fn keep<T>(value: T) -> T where T: core::trait_api::Flow<[i32; 2], [i32; 3]> { return value; }
+fn main() -> i32 {
+    let flag = keep(false);
+    let original = [19, 23];
+    let copied = flag.copy(original);
+    copied[0] = 41;
+    if (original[0] != 19 || copied[0] != 41) { return 1; }
+    let input: core::trait_api::Cell<[i32; 2]> = core::trait_api::Cell { value: original };
+    let packed = flag.pack(input);
+    if (!flag.inspect(packed.value)) { return 2; }
+    let empty: [core::trait_api::Cell<[i32; 2]>; 0] = [];
+    let empty_copy = flag.empty(empty);
+    let cells = [core::trait_api::Cell { value: 19 }, core::trait_api::Cell { value: 23 }];
+    let view = flag.view(cells);
+    view[0].value = 20;
+    if (cells[0].value != 20 || view[1].value != 23) { return 3; }
+    let cell = core::trait_api::Cell { value: 42 };
+    let reference = flag.borrow(cell.reference());
+    if (reference.value != 42) { return 4; }
+    return 0;
+}

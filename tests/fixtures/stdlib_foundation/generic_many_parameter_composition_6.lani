@@ -1,0 +1,48 @@
+// Executable 6-parameter composition with generated inner applications.
+module app::main;
+import std::io;
+struct Pair { number: i32, text: str }
+struct Wide<A0, A1, A2, A3, A4, A5> {
+    f0: A0,
+    f1: A1,
+    f2: A2,
+    f3: A3,
+    f4: A4,
+    f5: A5,
+}
+struct Holder<T> { child: Wide<i32, bool, str, [i32; 2], Pair, T>, sentinel: i32 }
+fn build<T>(input: T, views: [i32]) -> Holder<T> {
+    return Holder {
+        child: Wide {
+            f0: -1000,
+            f1: false,
+            f2: "Ω",
+            f3: [-7, 42],
+            f4: Pair { number: 4, text: "Ω" },
+            f5: input,
+        }, sentinel: 1234
+    };
+}
+fn last<A0, A1, A2, A3, A4, A5>(input: Wide<A0, A1, A2, A3, A4, A5>) -> A5 { return input.f5; }
+fn main() -> i32 {
+    let words: [str; 2] = ["Ω", ""];
+    let numbers: [i32; 2] = [-7, 42];
+    let value: Holder<[str; 2]> = build(words, numbers);
+    if (value.child.f0 != -1000) { return 1; }
+    if (value.child.f1) { return 2; }
+    if (std::io::println(value.child.f2) != 3) { return 3; }
+    if (value.child.f3[0] != -7 || value.child.f3[1] != 42) { return 4; }
+    if (value.child.f4.number != 4) { return 5; }
+    if (std::io::println(value.child.f4.text) != 3) { return 6; }
+    let selected: [str; 2] = last(value.child);
+    if (std::io::println(selected[0]) != 3) { return 8; }
+    if (std::io::println(selected[1]) != 1) { return 9; }
+    selected[0] = "changed";
+    if (std::io::println(value.child.f5[0]) != 3) { return 10; }
+    let duplicate: Holder<[str; 2]> = value;
+    duplicate.child.f0 = 999;
+    duplicate.child.f5[0] = "changed";
+    if (value.child.f0 != -1000 || value.sentinel != 1234) { return 11; }
+    if (std::io::println(value.child.f5[0]) != 3) { return 13; }
+    return 0;
+}

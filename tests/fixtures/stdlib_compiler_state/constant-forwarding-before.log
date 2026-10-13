@@ -1,0 +1,6 @@
+error[LNC0047]: type-check execution failed
+ --> tests/fixtures/stdlib_foundation/repro_generic_symbolic_length_forwarding.lani:4:18
+  |
+4 |     let copied = keep(values);
+  |                  ^^^^ generic type instantiation reached a compiler boundary
+     = note: a nested type application could not be instantiated from its checked environment

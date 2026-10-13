@@ -4,17 +4,29 @@
 
 import gpu_index;
 import hir_records;
+import external_type_identity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
+
+
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_lit_context_instance;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 RWStructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
@@ -32,6 +44,15 @@ bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
 }
+
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_decl_token.GetDimensions(capacity, stride);
+    return instance < capacity;
+}
+
+#include "../../checked_record_constructor_reference.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -52,17 +73,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind != HIR_STRUCT_LITERAL_EXPR) return;
 
     uint instance = struct_lit_context_instance[dense];
-    uint contextual_decl = valid_token(instance)
+    uint contextual_decl = valid_instance(instance)
         ? type_instance_decl_token[instance]
         : struct_lit_context_decl_token[dense];
     uint explicit_decl = semantic_aggregate_decl_token_by_hir[dense];
+    uint constructor = compact_hir_core[dense].token_start;
+    // Declaration-side field context also serves literals without a checked
+    // declaration-token value row. Retain their constructor reference directly.
+    uint constructor_tag; uint constructor_payload; uint constructor_decl;
+    if (semantic_expr_ref_tag_by_hir[dense] == TYPE_REF_INVALID &&
+        checked_record_constructor_reference(dense, constructor_tag, constructor_payload, constructor_decl))
+    {
+        semantic_expr_ref_tag_by_hir[dense] = constructor_tag;
+        semantic_expr_ref_payload_by_hir[dense] = constructor_payload;
+        explicit_decl = constructor_decl;
+        semantic_aggregate_decl_token_by_hir[dense] = explicit_decl;
+    }
+    bool imported_context = valid_instance(instance) && !valid_token(contextual_decl) &&
+        valid_token(constructor) && external_type_identity_equal(instance, constructor);
     // A bare generic constructor names the declaration while its arguments
     // come from the checked destination/return context. Preserve an explicit
     // instantiated constructor, but refine a matching scalar declaration to
     // the contextual instance.
-    if (valid_token(instance) &&
-        (semantic_expr_ref_tag_by_hir[dense] == TYPE_REF_INVALID ||
-         explicit_decl == contextual_decl))
+    if (valid_instance(instance) &&
+        ((valid_token(contextual_decl) &&
+          (semantic_expr_ref_tag_by_hir[dense] == TYPE_REF_INVALID || explicit_decl == contextual_decl)) ||
+         imported_context))
     {
         semantic_expr_ref_tag_by_hir[dense] = TYPE_REF_INSTANCE;
         semantic_expr_ref_payload_by_hir[dense] = instance;

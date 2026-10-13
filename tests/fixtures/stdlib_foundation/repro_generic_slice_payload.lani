@@ -1,0 +1,11 @@
+module app::main;
+import core::view;
+
+fn main() -> i32 {
+    let backing: [i32; 3] = [-7, 0, 99];
+    let value: i32 = core::view::get_or(backing, 3, 0, 42);
+    if (value != -7) { return 1; }
+    if (!core::view::swap(backing, 3, 0, 2)) { return 2; }
+    if (backing[0] != 99 || backing[2] != -7) { return 3; }
+    return 0;
+}

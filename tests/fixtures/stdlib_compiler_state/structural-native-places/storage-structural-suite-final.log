@@ -1,0 +1,16 @@
+
+running 11 tests
+test structural_inherent_adjusted_values_preserve_copy_and_argument_order ... ok
+test structural_inherent_array_parameters_copy_into_stable_places ... ok
+test structural_inherent_deep_receivers_preserve_capture_order ... ok
+test structural_inherent_imported_methods_rank_by_reference_depth ... ok
+test structural_inherent_imported_scalar_methods_execute_without_local_methods ... ok
+test structural_inherent_loop_values_keep_array_and_slice_shapes ... ok
+test structural_inherent_reference_array_indexes_reject_negative_bounds ... ok
+test structural_inherent_reference_cells_preserve_place_identity ... ok
+test structural_inherent_reference_indexes_preserve_aliases_and_stride ... ok
+test structural_inherent_reference_slice_indexes_reject_upper_bounds ... ok
+test structural_inherent_unused_receivers_preserve_following_arguments ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 360 filtered out; finished in 9.51s
+

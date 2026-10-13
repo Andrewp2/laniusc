@@ -1,0 +1,8 @@
+
+running 3 tests
+test generic_enum_constructor_headers_bind_types_and_constants ... ok
+test generic_enum_constructors_infer_complete_payload_types ... ok
+test generic_enum_constructors_reject_inconsistent_and_missing_bindings ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 263 filtered out; finished in 3.53s
+

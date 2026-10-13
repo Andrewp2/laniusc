@@ -1,0 +1,2 @@
+type Id<T> = T;
+fn keep(value: Id<i32>) -> Id<i32> { return value; } fn main() -> i32 { let value: Id<i32> = keep(42); return value - 42; }

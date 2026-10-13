@@ -1,0 +1,6 @@
+{
+  "path": "crates/laniusc-compiler/src/gpu/compiler_graph.rs",
+  "before_sha256": "ac62ad4bd6bdf1c16f27a1ae3c9e940444652f64add54cbfdbc45daa1d209bdd",
+  "after_sha256": "433f1dce9216e20ab4e6d377ffa926962efde9d532897ee57d5a08c8a35553ad",
+  "change": "Correct diagnostic-mode comment to include logical-view bounds; executable code and tests unchanged."
+}

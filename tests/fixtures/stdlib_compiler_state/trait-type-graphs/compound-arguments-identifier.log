@@ -1,0 +1,2 @@
+sample=0 ms=78.239
+entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/compound-arguments.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=78.239 median_ms=78.239 avg_ms=78.239 max_ms=78.239 output_verified=true

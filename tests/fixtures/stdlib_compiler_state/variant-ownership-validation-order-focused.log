@@ -1,0 +1,10 @@
+
+running 5 tests
+test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
+test explicit_constant_arguments_execute_constant_only_forwarding ... ok
+test explicit_constant_arguments_execute_independent_method_domains ... ok
+test qualified_enum_variants_forward_symbolic_parameters ... ok
+test qualified_enum_variants_preserve_wide_and_symbolic_parent_headers ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 280 filtered out; finished in 6.24s
+

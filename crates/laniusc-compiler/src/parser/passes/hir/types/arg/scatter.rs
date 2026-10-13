@@ -33,6 +33,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeArgScatte
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
+            ("hir_canonical_alias_to_dense".into(), b.hir_canonical_alias_to_dense.as_entire_binding()),
+            ("hir_canonical_dense_to_raw".into(), b.hir_canonical_dense_to_raw.as_entire_binding()),
+            ("hir_type_arg_application_owner".into(), b.hir_type_arg_application_owner.as_entire_binding()),
+
             (
                 "gHirType".into(),
                 b.hir_type_fields_params.as_entire_binding(),

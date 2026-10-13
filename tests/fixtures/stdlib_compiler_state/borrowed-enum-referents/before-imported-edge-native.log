@@ -1,0 +1,23 @@
+
+running 9 tests
+test borrowed_enum_concrete_methods_preserve_boolean_payloads ... ok
+test borrowed_enum_generic_methods_preserve_array_copies_and_slice_aliases ... ok
+test borrowed_enum_reference_payload_preserves_alias_and_following_boolean ... 
+thread 'borrowed_enum_reference_payload_preserves_alias_and_following_boolean' (157780) panicked at tests/compiler_generic_types_execution.rs:161:29:
+borrowed enum reference payload width, imported=true: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 19, length: 1, byte_start: Some(780), byte_end: Some(781), source_line: Some("    let borrowed: &core::unit_values::Packet = copied.borrow();"), message: "invalid syntax here" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test borrowed_enum_wildcards_preserve_multiword_and_zero_sized_payload_offsets ... ok
+test generic_match_arguments_preserve_completion_and_effect_order ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_match_results_preserve_float_and_string_representations ... ok
+test ordinary_match_in_condition_header_executes ... ok
+test qualified_enum_variants_bind_parent_applications ... ok
+
+failures:
+
+failures:
+    borrowed_enum_reference_payload_preserves_alias_and_following_boolean
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 342 filtered out; finished in 7.57s
+

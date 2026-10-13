@@ -1,0 +1,4 @@
+Executed and validated all 20 distinct generated executables.
+Source SHA-256 hashes match the retained 2026-09-30 run at every seed.
+Compiler median: 37.580354 ms. Wall median: 40.5014585 ms.
+Shader artifact digest: 88fe9f6cd1685780.

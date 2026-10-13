@@ -1,0 +1,85 @@
+{
+  "classification": "synthetic_stress",
+  "layout": "comparative-single-file",
+  "profile": "mixed-function-sizes",
+  "profile_description": "synthetic shape combining short functions with rare large functions",
+  "representative_workload": false,
+  "schema": "lanius.compiler-stress-sources.v1",
+  "seed": 20,
+  "source_sets": [
+    {
+      "expected_stdout": "3747\n",
+      "natural_lanius_bytes": 3998380,
+      "padding_bytes": 1620,
+      "profile": "mixed-function-sizes",
+      "seed": 20,
+      "sources": {
+        "c": {
+          "bytes": 3934716,
+          "path": "4000000/scaling.c",
+          "sha256": "9e6ef1c32bc9419d3d4a0daa1a00e67a2f8b0c640c261ae7e44dabace0bad0e6"
+        },
+        "cpp": {
+          "bytes": 3934708,
+          "path": "4000000/scaling.cpp",
+          "sha256": "4242a05d8c4abc044214048282dd3404a31df6e69564e65842b22e03bd1fc29b"
+        },
+        "lanius": {
+          "bytes": 4000000,
+          "path": "4000000/scaling.lani",
+          "sha256": "016869a769791cf5cec62c43ffa15faf18b03d664eb251fc27d1b096953bfd5a"
+        },
+        "rust": {
+          "bytes": 4015424,
+          "path": "4000000/scaling.rs",
+          "sha256": "fb74602b0ecc4e140e93fdf8a518d0f4ba8c851cbf4c29eb202f8d1678ece134"
+        },
+        "zig": {
+          "bytes": 4015912,
+          "path": "4000000/scaling.zig",
+          "sha256": "df759a6407b45a68138b6cc15625ba48691a280b2b4cb762d18b19cd7fc8519d"
+        }
+      },
+      "target_lanius_bytes": 4000000,
+      "workload": {
+        "all_functions_reachable": true,
+        "call_edge_count": 4482,
+        "function_body_line_summary": {
+          "count": 4483,
+          "max": 1113,
+          "mean": 25.45616774481374,
+          "min": 6,
+          "p50": 7,
+          "p90": 44,
+          "p99": 283
+        },
+        "leaf_family_counts": {
+          "array": 449,
+          "bitwise": 448,
+          "loop": 449,
+          "nested_branch": 448,
+          "struct": 448
+        },
+        "leaf_function_count": 2242,
+        "leaf_size_class_counts": {
+          "large": 30,
+          "medium": 116,
+          "short": 1632,
+          "small": 464
+        },
+        "max_call_depth": 13,
+        "operation_counts": {
+          "add": 9184,
+          "branch": 9200,
+          "mul": 9331,
+          "shift": 9051,
+          "xor": 9170
+        },
+        "profile": "mixed-function-sizes",
+        "profile_description": "synthetic shape combining short functions with rare large functions",
+        "reachable_function_count": 4483,
+        "reduction_function_count": 2241
+      }
+    }
+  ]
+}

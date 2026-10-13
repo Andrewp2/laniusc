@@ -1,0 +1,8 @@
+module app::main;
+import core::option;
+struct Pair { first: i32, second: i32 }
+fn main() -> i32 {
+    let pair: Pair = Pair { first: 4, second: 9 };
+    let value: core::option::Option<Pair> = core::option::Some(pair);
+    return 0;
+}

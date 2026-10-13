@@ -1,0 +1,21 @@
+
+running 3 tests
+test lexical_method_environment_imported_parameters_execute ... ok
+
+thread 'lexical_method_environment_imported_compounds_and_constants_execute' (808585) panicked at tests/compiler_generic_types_execution.rs:125:29:
+imported compound lexical environments: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "generic body requires matching type and constant parameters", primary_label: None, help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test lexical_method_environment_imported_compounds_and_constants_execute ... FAILED
+
+thread 'lexical_method_environment_imported_rejects_missing_and_conflicting_bindings' (808587) panicked at tests/compiler_generic_types_execution.rs:4767:20:
+incomplete or conflicting imported environments must reject before ELF publication
+test lexical_method_environment_imported_rejects_missing_and_conflicting_bindings ... FAILED
+
+failures:
+
+failures:
+    lexical_method_environment_imported_compounds_and_constants_execute
+    lexical_method_environment_imported_rejects_missing_and_conflicting_bindings
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 137 filtered out; finished in 2.50s
+

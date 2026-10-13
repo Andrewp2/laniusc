@@ -1,0 +1,92 @@
+
+running 82 tests
+test aggregate_parameter_copies_preserve_nested_borrows ... ok
+test argument_capture_preserves_slice_descriptor_values ... ok
+test call_contract_nested_method_arguments_reject_receiver_conflicts ... ok
+test concrete_nominal_parameters_reject_incompatible_arguments ... ok
+test concrete_nominal_parameters_retain_complete_return_types ... ok
+test constant_environment_rejects_conflicting_arguments_and_result_lengths ... ok
+test constant_length_inference_executes_all_32_slots_locally_and_imported ... ok
+test constant_length_inference_rejects_a_33rd_slot_explicitly ... ok
+test dependent_expression_results_preserve_slice_aliases ... ok
+test direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types ... ok
+test direct_record_literal_arguments_preserve_imported_generic_record_fields ... ok
+test enum_constructor_expected_empty_payloads_execute ... ok
+test enum_constructor_literal_conflicting_payloads_reject_after_inference ... ok
+test enum_layouts_include_unconstructed_compound_variants ... ok
+test explicit_callable_arguments_execute_32_ordered_unused_slots ... ok
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test explicit_callable_arguments_execute_scalar_and_unused_bindings ... ok
+test explicit_callable_arguments_validate_own_headers ... ok
+test explicit_constant_arguments_execute_constant_only_forwarding ... ok
+test explicit_constant_arguments_execute_literals_and_zero ... ok
+test explicit_constant_arguments_reject_noninteger_parameter_types ... ok
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test explicit_record_constructor_composed_types_execute ... ok
+test fixed_array_value_parameters_copy_before_mutation ... ok
+test generic_applications_compose_six_sixteen_and_thirty_two_parameters ... ok
+test generic_bodies_construct_nested_applications ... ok
+test generic_compound_returns_use_complete_call_environments ... ok
+test generic_constant_values_execute_in_imported_associated_array_literals ... ok
+test generic_constant_values_execute_with_declared_types_and_lexical_scope ... ok
+test generic_constant_values_reject_mutation ... ok
+test generic_inferred_compound_returns_execute ... ok
+test generic_nested_condition_headers_preserve_branches_and_loop_effects ... ok
+test generic_nested_result_conflicts_and_missing_context_reject ... ok
+test generic_nested_result_fields_execute ... ok
+test generic_nested_result_monomorphic_fields_preserve_widths_and_copies ... ok
+test generic_nominal_results_reject_conflicting_contextual_constraints ... ok
+test generic_record_literal_receiving_contexts_execute ... ok
+test generic_record_literal_receiving_contexts_reject_conflicting_fields ... ok
+test generic_reference_receivers_substitute_complete_method_return_types ... ok
+test generic_result_only_constants_execute_imported_calls ... ok
+test generic_result_only_constants_execute_symbolic_forwarding ... ok
+test generic_result_only_constants_reject_imported_conflicts ... ok
+test generic_value_arguments_are_captured_before_later_argument_effects ... ok
+test generic_value_functions_preserve_compound_slice_elements ... ok
+test imported_argument_values_are_captured_before_later_effects ... ok
+test imported_generic_compound_record_fields_execute ... ok
+test imported_generic_functions_preserve_fixed_array_element_representations ... ok
+test imported_generic_inference_closes_long_chains_and_compound_arguments ... ok
+test imported_generic_inferred_return_arguments_execute ... ok
+test imported_generic_record_constructors_check_declaration_and_fields ... ok
+test imported_generic_record_fields_reject_wrong_types_and_names ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test imported_reference_signatures_reject_incompatible_referents ... ok
+test imported_scalar_calls_accept_projected_array_elements ... ok
+test indexed_array_borrows_preserve_inner_length_and_aliases ... ok
+test inferred_array_literals_reject_incompatible_elements_and_missing_empty_types ... ok
+test inferred_match_results_supply_complete_generic_arguments ... ok
+test inline_fixed_array_call_arguments_preserve_values ... ok
+test lexical_method_environment_imported_parameters_execute ... ok
+test lexical_method_environment_rejects_conflicts_and_missing_bindings ... ok
+test literal_argument_inference_rejects_conflicting_known_types ... ok
+test local_generic_functions_preserve_fixed_array_values ... ok
+test local_generic_methods_preserve_compound_values_and_nested_calls ... ok
+test local_generic_pointer_values_preserve_addresses_and_aliases ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+test native_backed_slices_enforce_logical_bounds ... ok
+test nested_concrete_returns_preserve_complete_types_through_generic_calls ... ok
+test nested_generic_parameter_constraints_infer_complete_types ... ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... ok
+test nominal_constant_arguments_execute_thirty_two_interleaved_operands ... ok
+test nominal_constant_arguments_preserve_unused_identity_and_zero_lengths ... ok
+test nominal_constant_record_values_execute ... ok
+test ordinary_inferred_array_literals_and_contextual_empty_literals_execute ... ok
+test ordinary_match_call_arguments_execute ... ok
+test ordinary_pointer_values_preserve_addresses_and_aliases ... ok
+test ordinary_value_arguments_are_captured_before_later_argument_effects ... ok
+test scalar_literal_contexts_execute_local_imported_and_ordinary_calls ... ok
+test slice_strides_preserve_mixed_backing_across_calls_and_value_copies ... ok
+test structural_impl_receivers_execute_imported_compositions ... ok
+test structural_impl_receivers_execute_ordinary_array_patterns ... ok
+test structural_impl_receivers_reject_conflicts_and_ambiguous_patterns ... wrong nested nominal argument: LNC0027 call resolution failed
+repeated structural type parameter: LNC0027 call resolution failed
+repeated structural constant parameter: LNC0027 call resolution failed
+overlapping structural methods: LNC0027 call resolution failed
+alpha equivalent structural methods: LNC0027 call resolution failed
+ok
+test zero_sized_generic_calls_preserve_body_effects ... ok
+
+test result: ok. 82 passed; 0 failed; 0 ignored; 0 measured; 164 filtered out; finished in 33.24s
+

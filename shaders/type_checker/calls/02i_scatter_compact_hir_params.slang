@@ -20,8 +20,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> compact_param_count;
-StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_flag;
 StructuredBuffer<uint> call_param_row_count_out;
@@ -62,24 +60,16 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+#include "hir_callable_parameters.slang"
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint param_row = linear_thread_id(dtid);
-    uint param_count = min(compact_param_count[0u], gParams.n_tokens);
-    if (param_row >= param_count || call_param_row_flag[param_row] == 0u)
-        return;
-
-    HirParam parameter = compact_params[param_row];
-    uint fn_node = parameter.owner;
-    uint ordinal = parameter.ordinal;
-    if (!valid_node(fn_node))
-        return;
-
-    uint fn_token = compact_hir_payload[fn_node].b;
-    if (!valid_token(fn_token))
-        return;
+    uint fn_token; uint fn_node; uint type_node; uint ordinal; uint source_parameter;
+    if (!hir_callable_parameter(param_row, fn_token, fn_node, type_node, ordinal, source_parameter) ||
+        call_param_row_flag[param_row] == 0u) return;
 
     uint count = call_param_count[fn_token];
     uint start = call_param_row_start[fn_token];
@@ -91,7 +81,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         row >= gParams.n_hir_nodes)
         return;
 
-    call_param_row_node[row] = param_row;
+    call_param_row_node[row] = source_parameter;
     call_param_row_fn_token[row] = fn_token;
     call_param_row_ordinal[row] = ordinal;
     call_param_row_type[row] = call_param_row_node_type[param_row];

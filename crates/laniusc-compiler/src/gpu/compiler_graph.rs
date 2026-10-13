@@ -1185,10 +1185,13 @@ impl CompilerGraphWorkspace {
             .copied()
             .flatten()
             .ok_or_else(|| format!("compiler resource {} has no workspace slot", desc.name))?;
-        self.slots
+        let buffer = self.slots
             .get(slot as usize)
-            .map(|buffer| buffer.alias(count))
-            .ok_or_else(|| format!("compiler resource {} names missing slot {slot}", desc.name))
+            .ok_or_else(|| format!("compiler resource {} names missing slot {slot}", desc.name))?;
+        // Coloring shares a physical slot across logical resources of different
+        // sizes. Shader bounds and GetDimensions must see the declared resource,
+        // never the larger slot or stale storage from another resource's turn.
+        buffer.subrange(0, desc.bytes, count)
     }
 
     pub fn allocations(&self) -> CompilerGraphAllocations {
@@ -4743,9 +4746,9 @@ fn plan_graph_workspace(
 
     // This diagnostic mode is intentionally internal: it preserves the graph
     // and all pass bindings while giving every logical workspace resource a
-    // distinct allocation. A semantic difference between colored and
-    // uncolored runs therefore identifies an incomplete lifetime declaration
-    // rather than a shader or scheduling difference.
+    // distinct allocation. A semantic difference flags dependence on storage
+    // sharing, including incomplete lifetimes and shader views exposing physical
+    // slot capacity instead of declared logical bounds.
     let disable_coloring = std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some();
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
@@ -4950,6 +4953,44 @@ mod tests {
         assert_eq!(unique.len(), 1);
         assert_eq!(unique[0].byte_offset, 0);
         assert_eq!(unique[0].byte_size, 256);
+    }
+
+    #[test]
+    fn colored_workspace_views_expose_only_declared_resource_bounds() {
+        let mut builder = CompilerGraphBuilder::new();
+        let small = builder.add_storage(
+            "small", ResourceDomain::Types, ResourceClass::Workspace, 64,
+        ).unwrap();
+        let large = builder.add_storage(
+            "large", ResourceDomain::Types, ResourceClass::Workspace, 4096,
+        ).unwrap();
+        for (name, resource) in [("small.produce", small), ("large.produce", large)] {
+            builder.add_pass(PassDesc {
+                name,
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![PassAccess::write("value", resource)],
+            }).unwrap();
+        }
+        let graph = builder.build().unwrap();
+        assert_eq!(graph.workspace_plan().slots.len(), 1);
+        let device = &crate::gpu::device::global().device;
+        let workspace = CompilerGraphWorkspace::new_with_imports(
+            device, "logical_bounds_test", &graph, &[],
+        ).unwrap();
+        let small_view = workspace.alias::<u32>(&graph, small, 16).unwrap();
+        let large_view = workspace.alias::<u32>(&graph, large, 1024).unwrap();
+        assert_eq!(small_view.allocation_id(), large_view.allocation_id());
+        assert_eq!(small_view.byte_offset, large_view.byte_offset);
+        assert_eq!(small_view.byte_size, 64);
+        assert_eq!(large_view.byte_size, 4096);
+        let wgpu::BindingResource::Buffer(binding) = small_view.as_entire_binding() else {
+            panic!("expected storage binding");
+        };
+        assert_eq!(binding.size.unwrap().get(), 64);
+        let bindings = workspace.bindings(&graph).unwrap();
+        assert_eq!(bindings.buffer(small).unwrap().byte_size, 64);
+        assert_eq!(bindings.buffer(large).unwrap().byte_size, 4096);
     }
 
     #[test]

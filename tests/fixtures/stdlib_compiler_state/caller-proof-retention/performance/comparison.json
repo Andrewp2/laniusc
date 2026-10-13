@@ -1,0 +1,93 @@
+{
+  "workload": "generic_many_parameter_composition_32",
+  "order": [
+    "baseline",
+    "current",
+    "current",
+    "baseline"
+  ],
+  "binary_sha256": {
+    "baseline": "e6a66b71188399651aaf0a81e34b874a26ef1e573e327f3d349090ac9c3b437d",
+    "current": "c76bf52d1cb6a6adec588050f5fbabe1de95995906416e5924c07aef0b532081"
+  },
+  "runs": [
+    {
+      "version": "baseline",
+      "log": "tests/fixtures/stdlib_compiler_state/caller-proof-retention/performance/0-baseline.log",
+      "samples_ms": [
+        356.909,
+        355.537,
+        353.389,
+        358.328,
+        360.219,
+        362.351,
+        356.162,
+        361.133,
+        367.054,
+        357.15
+      ],
+      "median_ms": 357.739,
+      "output_verified": true
+    },
+    {
+      "version": "current",
+      "log": "tests/fixtures/stdlib_compiler_state/caller-proof-retention/performance/1-current.log",
+      "samples_ms": [
+        396.622,
+        395.4,
+        396.888,
+        397.295,
+        401.094,
+        400.638,
+        393.015,
+        398.824,
+        400.406,
+        394.691
+      ],
+      "median_ms": 397.0915,
+      "output_verified": true
+    },
+    {
+      "version": "current",
+      "log": "tests/fixtures/stdlib_compiler_state/caller-proof-retention/performance/2-current.log",
+      "samples_ms": [
+        395.09,
+        392.715,
+        394.745,
+        396.51,
+        403.126,
+        404.847,
+        396.854,
+        401.712,
+        402.418,
+        399.418
+      ],
+      "median_ms": 398.13599999999997,
+      "output_verified": true
+    },
+    {
+      "version": "baseline",
+      "log": "tests/fixtures/stdlib_compiler_state/caller-proof-retention/performance/3-baseline.log",
+      "samples_ms": [
+        355.467,
+        360.203,
+        355.945,
+        359.231,
+        360.727,
+        362.523,
+        357.225,
+        362.64,
+        362.702,
+        351.936
+      ],
+      "median_ms": 359.717,
+      "output_verified": true
+    }
+  ],
+  "medians_ms": {
+    "baseline": 358.7795,
+    "current": 397.0915
+  },
+  "change_percent": 10.678425049368755,
+  "frozen_sources_unchanged": true
+}

@@ -1,0 +1,11 @@
+sample=0 ms=386.916
+sample=1 ms=394.389
+sample=2 ms=389.954
+sample=3 ms=386.520
+sample=4 ms=381.557
+sample=5 ms=377.644
+sample=6 ms=390.376
+sample=7 ms=392.977
+sample=8 ms=404.531
+sample=9 ms=400.377
+entry=benchmark_artifacts/performance/stdlib-gpu-20261004-receiver-return-owner/receiver-32-imported.lani rebuild_entry=true warmups=3 iters=10 output_bytes=40247 min_ms=377.644 median_ms=390.165 avg_ms=390.524 max_ms=404.531 output_verified=true

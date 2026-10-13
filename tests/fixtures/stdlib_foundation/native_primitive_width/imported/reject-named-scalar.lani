@@ -1,0 +1,2 @@
+import core::primitive_values;
+fn main() -> i32 { let narrow: i32 = 7; let result: u64 = core::primitive_values::ordinary(narrow); return 0; }

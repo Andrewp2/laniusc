@@ -1,0 +1,9 @@
+
+running 4 tests
+test nominal_constant_arguments_preserve_owned_values ... ok
+test nominal_constant_arguments_preserve_unused_identity_and_zero_lengths ... ok
+test nominal_constant_first_headers_preserve_type_domains_and_owned_values ... ok
+test nominal_constant_record_values_execute ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 2.62s
+

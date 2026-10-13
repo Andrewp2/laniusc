@@ -1,0 +1,16 @@
+module app::enum_arrays;
+const TWO:u64 = 2;
+enum Value { Small(i32), Empty }
+struct Packet { values:[[Value;app::enum_arrays::TWO];2], tail:i32 }
+fn main()->i32 {
+    let packet:Packet = Packet {
+        values:[[Small(11),Empty],[Small(17),Small(23)]], tail:31,
+    };
+    let actual:i32 = match (packet.values[1][1]) {
+        Small(value) -> value,
+        Empty -> 0,
+    };
+    if (actual != 23) { return 1; }
+    if (packet.tail != 31) { return 2; }
+    return 0;
+}

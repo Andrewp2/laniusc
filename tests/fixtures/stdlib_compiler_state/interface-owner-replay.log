@@ -1,0 +1,22 @@
+
+running 3 tests
+test lexical_method_environment_imported_parameters_execute ... ok
+
+thread 'lexical_method_environment_imported_compounds_and_constants_execute' (809478) panicked at tests/compiler_generic_types_execution.rs:127:5:
+assertion `left == right` failed: imported compound lexical environments: Output { status: ExitStatus(unix_wait_status(768)), stdout: "", stderr: "" }
+  left: Some(3)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test lexical_method_environment_imported_compounds_and_constants_execute ... FAILED
+GPU source-pack type-check rejection: token=79 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=75 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=79 code=AssignMismatch detail=32768
+test lexical_method_environment_imported_rejects_missing_and_conflicting_bindings ... ok
+
+failures:
+
+failures:
+    lexical_method_environment_imported_compounds_and_constants_execute
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 137 filtered out; finished in 2.65s
+

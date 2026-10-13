@@ -1,9 +1,9 @@
 module app::main;
-import core::option_bool;
+import core::option;
 
 fn main() -> i32 {
     let count: i32 = 2;
-    let value: core::option_bool::OptionBool = core::option_bool::some(count == 2);
-    if (core::option_bool::is_some(value)) { return 0; }
+    let value: core::option::Option<bool> = core::option::Some(count == 2);
+    if (value.is_some()) { return 0; }
     return 1;
 }

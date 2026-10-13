@@ -1,3 +1,4 @@
+import semantic_interface_layout;
 // Scatter canonical module paths and public declaration identities.
 // Signature/type/member fields remain a separate typed-graph export stage.
 
@@ -63,7 +64,7 @@ StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> semantic_value_const_by_hir;
+StructuredBuffer<uint2> semantic_value_const_by_hir;
 StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint> interface_name_ref_len;
@@ -107,7 +108,8 @@ bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i
     module_i = 0u;
     segment_i = 0u;
     uint module_count = active_module_count();
-    uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+    uint segment_count = module_count_out[0u] == 0u ? 0u
+        : min(module_segment_total[0u], gParams.module_segment_capacity);
     if (slot >= segment_count || module_count == 0u)
         return false;
 
@@ -182,15 +184,20 @@ void write_decl(uint dst, uint decl, uint name_ref)
     uint hir = decl_hir_node[decl];
     interface_declaration_words[base + 11u] = 0u;
     uint kind = decl_kind[decl];
-    interface_declaration_words[base + 12u] =
+    uint value_hir = hir < gParams.hir_capacity ? compact_const_value[hir] : INVALID;
+    bool constant_present = kind == 3u && value_hir < gParams.hir_capacity &&
+        semantic_value_const_present_by_hir[value_hir] == 0x80000000u;
+    if (kind == 3u && !constant_present)
+    {
+        // A constant that did not evaluate is not an executable zero.
+        atomic_u32_or(interface_status, 0u, 4096u);
+        atomic_u32_min(interface_status, 1u, dst);
+    }
+    uint2 constant = constant_present ? semantic_value_const_by_hir[value_hir] : uint2(0u, 0u);
+    interface_declaration_words[base + 12u] = kind == 3u ? constant.x :
         (kind == 4u || kind == 5u) && hir < gParams.hir_capacity
-            ? semantic_function_host_service_by_hir[hir]
-            : INVALID;
-    uint value_hir = hir != INVALID ? compact_const_value[hir] : INVALID;
-    interface_declaration_words[base + 13u] =
-        decl_kind[decl] == 3u && value_hir < gParams.hir_capacity &&
-        semantic_value_const_present_by_hir[value_hir] == 0x80000000u
-            ? semantic_value_const_by_hir[value_hir] : 0u;
+            ? semantic_function_host_service_by_hir[hir] : INVALID;
+    interface_declaration_words[base + 13u] = kind == 3u ? constant.y : 0u;
 }
 
 [shader("compute")]
@@ -205,7 +212,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint module_count = active_module_count();
-    uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+    // An anonymous root contributes no path segments, regardless of the
+    // contents of scan scratch unused by this job.
+    uint segment_count = module_count_out[0u] == 0u ? 0u
+        : min(module_segment_total[0u], gParams.module_segment_capacity);
     uint declaration_count = min(public_decl_count[0u], gParams.decl_capacity);
 
     if (row == 0u)
@@ -230,8 +240,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < module_count)
     {
         ModuleRecord record;
-        record.first_segment = module_segment_prefix[row];
-        record.segment_count = module_key_segment_count[row];
+        // Anonymous source units publish one empty root module. No declared
+        // module row exists in this job; its scratch row can belong to the
+        // preceding named-module compilation in a reused workspace.
+        bool anonymous_root = module_count_out[0u] == 0u;
+        record.first_segment = anonymous_root ? 0u : module_segment_prefix[row];
+        record.segment_count = anonymous_root ? 0u : module_key_segment_count[row];
         interface_modules[row] = record;
     }
     uint segment_module;
@@ -270,7 +284,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else
         {
-            uint base = row * 11u;
+            uint base = row * SEMANTIC_INTERFACE_MEMBER_WORDS;
             interface_member_words[base + 3u] = name_hash_lo[name_id];
             interface_member_words[base + 4u] = name_hash_hi[name_id];
             interface_member_words[base + 5u] = interface_name_ref_prefix[name_ref];

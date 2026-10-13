@@ -1,0 +1,29 @@
+
+import core::aliases;
+import std::io;
+type Local<T> = core::aliases::Id<core::aliases::Fixed<T, 2> >;
+struct Cell<T> { value: T }
+impl<T> Cell<T> { fn borrow(&self) -> &Cell<T> { return self; } }
+fn view<T>(value: core::aliases::View<T>) -> core::aliases::Id<core::aliases::View<T> > { return value; }
+fn main() -> i32 {
+    let data: Local<i32> = [19, 23];
+    let original: core::aliases::Id<core::aliases::Nested<i32, str> > =
+        core::aliases::Pair { first: "Ω", second: data };
+    let saved = core::aliases::keep(original);
+    original.second[0] = -9;
+    let injected: core::aliases::Inject<Local<i32> > =
+        core::aliases::Pair { first: false, second: saved.second };
+    if (saved.second[0] != 19 || injected.first || injected.second[1] != 23) { return 1; }
+    let borrowed: core::aliases::Id<core::aliases::View<i32> > = view(data);
+    borrowed[0] = 20;
+    let cell: Cell<i32> = Cell { value: 19 };
+    let pointer: core::aliases::Ref<Cell<i32> > = cell.borrow();
+    cell.value = 22;
+    data[1] = pointer.value;
+    if (data[0] + data[1] != 42) { return 2; }
+    let empty: core::aliases::Id<core::aliases::Empty<bool> > = [];
+    let flag: core::aliases::Flag<Local<str> > = false;
+    if (flag) { return 3; }
+    if (std::io::println(saved.first) != 3) { return 4; }
+    return 0;
+}

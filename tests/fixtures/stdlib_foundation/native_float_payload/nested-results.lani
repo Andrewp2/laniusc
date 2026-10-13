@@ -1,0 +1,42 @@
+module app::main;
+import core::option;
+import core::result;
+
+struct Packet<T> { first: i32, value: T, last: i32 }
+fn copy<T>(value: T) -> T { return value; }
+fn wrap<T>(value: T) -> Packet<T> { return Packet { first: 31, value: value, last: 79 }; }
+fn replace_first<T>(values: [T], replacement: T) -> T { let previous: T = values[0]; values[0] = replacement; return previous; }
+fn main() -> i32 {
+    let values: [f64; 3] = [1.0000000000000002, -1.0e300, -0.0];
+    let faults: [f32; 2] = [1.00000011920928955078125, -3.5];
+    let optional: core::option::Option<[f64; 3]> = core::option::Some(values);
+    let success: core::result::Result<core::option::Option<[f64; 3]>, [f32; 2]> = core::result::Ok(optional);
+    let failure: core::result::Result<core::option::Option<[f64; 3]>, [f32; 2]> = core::result::Err(faults);
+    let record: Packet<core::result::Result<core::option::Option<[f64; 3]>, [f32; 2]>> = wrap(success);
+    let snapshot: Packet<core::result::Result<core::option::Option<[f64; 3]>, [f32; 2]>> = copy(record);
+    let errors: Packet<core::result::Result<core::option::Option<[f64; 3]>, [f32; 2]>> = wrap(failure);
+    record.value = failure;
+    let replaced: f64 = replace_first(values, 9.0);
+    if (replaced != 1.0000000000000002 || values[0] != 9.0) { return 7; }
+    faults[0] = 7.0;
+    if (snapshot.first != 31 || snapshot.last != 79 || errors.first != 31 || errors.last != 79) { return 1; }
+    if (!snapshot.value.is_ok() || !record.value.is_err() || !errors.value.is_err()) { return 2; }
+    let absent: core::option::Option<[f64; 3]> = core::option::None();
+    let recovered_option: core::option::Option<[f64; 3]> = snapshot.value.unwrap_or(absent);
+    let fallback: [f64; 3] = [0.0, 0.0, 0.0];
+    let recovered: [f64; 3] = recovered_option.unwrap_or(fallback);
+    let one: f64 = 1.0;
+    if (recovered[0] != 1.0000000000000002 || recovered[0] == one || recovered[1] != -1.0e300 || one / recovered[2] >= 0.0) { return 3; }
+    let error_fallback: [f32; 2] = [0.0, 0.0];
+    let recovered_errors: [f32; 2] = errors.value.unwrap_err_or(error_fallback);
+    if (recovered_errors[0] != 1.00000011920928955078125 || recovered_errors[1] != -3.5) { return 4; }
+    recovered[0] = 12.0;
+    recovered_errors[1] = 8.0;
+    let reread: [f64; 3] = snapshot.value.unwrap_or(absent).unwrap_or(fallback);
+    let reread_errors: [f32; 2] = errors.value.unwrap_err_or(error_fallback);
+    if (reread[0] != 1.0000000000000002 || reread_errors[1] != -3.5 || snapshot.first != 31 || snapshot.last != 79) { return 5; }
+    let fallback_result: core::result::Result<core::option::Option<[f64; 3]>, [f32; 2]> = failure.or(success);
+    let fallback_values: [f64; 3] = fallback_result.unwrap_or(absent).unwrap_or(fallback);
+    if (fallback_values[0] != 1.0000000000000002) { return 6; }
+    return 0;
+}

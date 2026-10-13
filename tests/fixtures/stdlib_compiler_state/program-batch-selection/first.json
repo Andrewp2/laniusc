@@ -1,0 +1,18 @@
+{
+  "command": [
+    "target/program-batch-tests/stdlib_gpu_perf",
+    "gpu_batch_selects_imported_callers_nested_length_implementation",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 24.25554989599914,
+  "binary_sha256": "19810fab4031d28ba0def5f80d29ac3e6a223a9ea72b2a409a72df2b7edb97e2",
+  "sources_unchanged": true,
+  "passed": [
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_selects_imported_callers_nested_length_implementation"
+  ],
+  "summaries": [
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 707 filtered out; finished in 24.03s"
+  ]
+}

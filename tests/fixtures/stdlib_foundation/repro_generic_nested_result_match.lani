@@ -1,0 +1,23 @@
+enum Length<T> { Known(usize), Values(T) }
+fn length<T, const N: usize>() -> Length<[T; N]> { return Known(N); }
+struct Flag { value: bool }
+fn pick(value: Flag) -> bool { return value.value; }
+fn read(value: Length<[str; 3]>) -> usize {
+    return match (value) { Known(n) => n, Values(v) => 99 };
+}
+fn main() -> i32 {
+    let value: Length<[str; 3]> = match (true) { true -> length(), false -> length() };
+    let items: [Length<[bool; 0]>; 2] = [
+        (match (false) { true -> length(), false -> length() }),
+        (match (true) { true -> length(), false -> length() })
+    ];
+    let n: usize = match (value) { Known(n) => n, Values(v) => 99 };
+    let a: usize = match (items[0]) { Known(n) => n, Values(v) => 99 };
+    let b: usize = match (items[1]) { Known(n) => n, Values(v) => 99 };
+    if (n != 3 || a != 0 || b != 0) { return 1; }
+    let from_argument: usize = read((match (pick(Flag { value: true })) {
+        true -> length(), false -> length()
+    }));
+    if (from_argument != 3) { return 2; }
+    return 0;
+}

@@ -1,0 +1,48 @@
+Run from /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc.
+Both versions use the same Rust production code and compiler binaries.
+Previous: factory-receiver-validated-shaders, digest 83a7f39db9e32d2a.
+Fixed: mixed-enum-layout-validated-shaders, digest ec6ad44b56155ace.
+Only codegen/lir/semantic/scatter.spv changes from the previous snapshot.
+
+Build:
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo build --locked --release --bin laniusc
+
+Focused runtime checks:
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test stdlib_option_bool_execution -- --test-threads=1
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test stdlib_foundation_execution --test stdlib_generic_enum_declaration_execution --test stdlib_generic_vec_flat_execution -- --test-threads=1
+
+65 tests passed, including the foundation's 138-entry executable gate.
+Dependencies 70 and 75 remain ignored in the Option/enum regression suite.
+The three dependency-74 tests fail with LNC0017/opcode 30 on the same binary
+when the shader root points to factory-receiver-validated-shaders.
+The dependency-75 ignored test fails with SSA reason 104 on both snapshots.
+Runtime logs, the temporary metadata probe patch, and reductions are retained
+under tests/fixtures/stdlib_compiler_state/. The probe edits were removed.
+
+Large interleaved comparison, using existing lanius_perf helpers:
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 4000000 mixed-enum-layout --previous-shaders factory-receiver-validated-shaders --fixed-shaders mixed-enum-layout-validated-shaders
+
+This run used current-shaders for the fixed version before saving the identical
+mixed-enum-layout-validated-shaders snapshot. Each version has 15 full recompiles
+over three source seeds, clearing compiled project results before each sample.
+Every measured artifact executes; native hashes match in all 15 pairs.
+No timed job creates new buffers, bind groups, or compute pipelines.
+
+Imported program: prepared target/stdlib-perf/mixed-enum-layout-perf with
+baseline/current shader symlinks and identical copies of the existing harness
+from target/stdlib-perf/build/release/examples/stdlib_gpu_perf.
+Harness SHA256: 9a3416001d5c690173106832405cdd6b227cce7c65391a6776e1e7ef31d4d135.
+boolean-window.stdout contains exactly 3 followed by newline.
+
+LANIUS_PERF_REBUILD_ENTRY=1 LANIUS_PERF_SHADER_ROOT="$PWD/target/stdlib-perf/build/laniusc-shader-artifacts/release/shaders" timeout 110s tools/run_stdlib_gpu_perf.sh target/stdlib-perf/mixed-enum-layout-perf boolean-window-rebuild entry "$PWD/sample_programs/boolean_window_checksum.lani" "$PWD/stdlib" "$PWD/target/stdlib-perf/mixed-enum-layout-perf/boolean-window.stdout"
+
+The imported harness makes 80 timed entry rebuilds over four alternating process
+pairs, with three warmups and ten samples per process. Compiled dependencies
+remain cached. Eight final process outputs execute and pass stdout/exit checks.
+It does not validate every intermediate timed output or claim zero resource
+creation. Source mtime changes, construction, warmups, and output checks are
+outside the timer. Raw timing samples have three decimal places.
+
+After the paired driver, restore the shared shader root to current-shaders.
+Canonical results are validated by the existing performance catalog command:
+timeout 110s python3 tools/lanius_perf.py catalog

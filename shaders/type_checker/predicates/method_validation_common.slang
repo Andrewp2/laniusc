@@ -1,9 +1,13 @@
+import type_checker.constant_atoms;
 // Dense-HIR method contract lookup and compact signature comparison helpers.
 // Consumers operate on method HIR ids and compact parameter rows exclusively.
 
 import hir_records;
+import type_checker.checked_type_graph;
+import type_checker.scoped_type_equality;
 import fixed.compact_method;
 import type_checker.predicates.method_contract_lookup;
+import type_checker.predicates.trait_reference;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -24,17 +28,13 @@ StructuredBuffer<uint> compact_type_arg_count;
 StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<HirRange> compact_type_arg_ranges;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_type_status;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_hir_node;
-StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_method_contract_name_token;
 StructuredBuffer<uint> predicate_method_contract_name_id;
@@ -46,6 +46,7 @@ StructuredBuffer<uint> predicate_method_contract_status;
 StructuredBuffer<uint> predicate_method_contract_owner_count;
 StructuredBuffer<uint> predicate_method_contract_lookup_head;
 StructuredBuffer<uint> predicate_method_contract_lookup_next;
+StructuredBuffer<uint> predicate_bound_reference;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
@@ -307,112 +308,56 @@ uint type_arg_for_slot(uint type_hir, uint slot)
 uint trait_decl_for_impl(uint impl_owner)
 {
     if (!trait_impl_owner_hir(impl_owner)) return INVALID;
-    uint bound = compact_hir_payload[impl_owner].b;
-    uint path = valid_hir(bound) ? path_id_by_owner_hir[bound] : INVALID;
+    // Impl collection resolves the predicate identity before method checking.
+    // Its bound is not a value type and need not own a nominal instance.
+    // Imported identities are checked against their defining interface page.
+    uint reference = predicate_bound_reference[impl_owner];
     uint decl_count = min(decl_count_out[0u], gParams.n_tokens);
-    if (path < gParams.n_hir_nodes && resolved_type_status[path] == 0u)
-    {
-        uint decl = resolved_type_decl[path];
-        uint resolved_hir = decl < decl_count ? decl_hir_node[decl] : INVALID;
-        if (trait_owner_hir(resolved_hir)) return resolved_hir;
-    }
-
-    // Retain the direct reference fallback for projected aliases and
-    // dependency-interface types that do not own a local compact path row.
-    uint tag;
-    uint payload;
-    if (!type_node_ref(bound, tag, payload)) return INVALID;
-    uint decl_token = INVALID;
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-        decl_token = type_instance_decl_token[payload];
-    if (!valid_token(decl_token))
-    {
-        uint token = compact_hir_core[bound].token_start;
-        decl_token = valid_token(token) ? visible_decl[token] : INVALID;
-    }
-    uint trait_hir = valid_token(decl_token) ? type_decl_hir_node_by_token[decl_token] : INVALID;
+    if (trait_reference_is_dependency(reference) || reference >= decl_count)
+        return INVALID;
+    uint trait_hir = decl_hir_node[reference];
     return trait_owner_hir(trait_hir) ? trait_hir : INVALID;
 }
 
-bool refs_definitely_mismatch(uint left, uint right)
+// A trait signature is interpreted under the impl's ordered trait arguments.
+// Substitution happens once: an impl argument already belongs to impl scope.
+struct TraitMethodContractGraph : IScopedTypeGraph
 {
-    uint left_tag;
-    uint left_payload;
-    uint right_tag;
-    uint right_payload;
-    if (!type_node_ref(left, left_tag, left_payload) ||
-        !type_node_ref(right, right_tag, right_payload))
-        return false;
-    if (left_tag == TYPE_REF_GENERIC_PARAM || right_tag == TYPE_REF_GENERIC_PARAM)
-        return false;
-    if (left_tag == TYPE_REF_SCALAR || right_tag == TYPE_REF_SCALAR)
-        return left_tag != right_tag || left_payload != right_payload;
-    if (left_tag == TYPE_REF_INSTANCE && right_tag == TYPE_REF_INSTANCE)
+    static bool constant_value(uint row, out uint3 value)
+    { return checked_constant_atom_value(row, value); }
+    static uint constant_parameter_scalar(uint reference)
+    { return checked_constant_parameter_scalar(reference); }
+    static bool constant_projection(uint row, out uint scalar, out uint2 child)
+    { return checked_constant_projection(row, scalar, child); }
+    static bool parameter_is_valid(uint reference, bool constant)
+    { return source_parameter_is_valid<TraitMethodContractGraph>(reference, constant); }
+    static bool substitute_type_parameter(uint environment, uint reference, out uint tag, out uint payload)
+    { return source_substitute_type_parameter<TraitMethodContractGraph>(environment, reference, tag, payload); }
+    static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
+    { return source_substitute_constant_parameter<TraitMethodContractGraph>(environment, reference, kind, value); }
+    static uint parameter_slot(uint token) { return ScopedCheckedTypeGraph.parameter_slot(token); }
+    static uint constant_parameter_slot(uint token) { return ScopedCheckedTypeGraph.constant_parameter_slot(token); }
+    static bool environment_constant(uint environment, uint slot, out uint kind, out uint value)
+    { kind = 0u; value = INVALID; return false; }
+    static uint metadata(uint instance, uint field) { return ScopedCheckedTypeGraph.metadata(instance, field); }
+    static bool argument(uint instance, uint slot, out uint tag, out uint payload)
+    { return ScopedCheckedTypeGraph.argument(instance, slot, tag, payload); }
+    static bool environment_argument(uint environment, uint slot, out uint tag, out uint payload)
     {
-        uint left_decl = valid_token(left_payload) ? type_instance_decl_token[left_payload] : INVALID;
-        uint right_decl = valid_token(right_payload) ? type_instance_decl_token[right_payload] : INVALID;
-        if (valid_token(left_decl) && valid_token(right_decl)) return left_decl != right_decl;
-        uint left_token = compact_hir_core[left].token_start;
-        uint right_token = compact_hir_core[right].token_start;
-        uint left_name = valid_token(left_token) ? name_id_by_token[left_token] : INVALID;
-        uint right_name = valid_token(right_token) ? name_id_by_token[right_token] : INVALID;
-        return left_name != INVALID && right_name != INVALID && left_name != right_name;
+        uint root = valid_hir(environment) ? compact_hir_payload[environment].b : INVALID;
+        uint type_node = type_arg_for_slot(root, slot);
+        return type_node_ref(type_node, tag, payload);
     }
-    return false;
 }
 
-bool trait_generic_slot(uint trait_type, out uint slot)
+bool complete_method_types_mismatch(uint trait_type, uint impl_type, uint impl_owner)
 {
-    slot = INVALID;
-    uint tag;
-    uint payload;
-    if (!type_node_ref(trait_type, tag, payload) || tag != TYPE_REF_GENERIC_PARAM)
-        return false;
-    slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : INVALID;
-    return slot != INVALID;
-}
-
-bool trait_generic_substitution_mismatch(uint trait_type, uint impl_type, uint impl_owner)
-{
-    uint slot;
-    if (!trait_generic_slot(trait_type, slot)) return false;
-    uint bound = trait_impl_owner_hir(impl_owner) ? compact_hir_payload[impl_owner].b : INVALID;
-    uint argument = type_arg_for_slot(bound, slot);
-    return valid_hir(argument) && refs_definitely_mismatch(argument, impl_type);
-}
-
-bool array_lengths_definitely_mismatch(uint left, uint right)
-{
-    HirPayload left_payload = compact_hir_payload[left];
-    HirPayload right_payload = compact_hir_payload[right];
-    if (left_payload.d != INVALID || right_payload.d != INVALID)
-        return left_payload.d != right_payload.d;
-    uint left_name = valid_token(left_payload.c) ? name_id_by_token[left_payload.c] : INVALID;
-    uint right_name = valid_token(right_payload.c) ? name_id_by_token[right_payload.c] : INVALID;
-    return left_name != INVALID && right_name != INVALID && left_name != right_name;
-}
-
-bool flat_type_forms_definitely_mismatch(uint trait_type, uint impl_type, uint impl_owner)
-{
-    if (trait_generic_substitution_mismatch(trait_type, impl_type, impl_owner)) return true;
-    uint trait_form = type_node_form(trait_type);
-    uint impl_form = type_node_form(impl_type);
-    if (trait_form == HIR_TYPE_FORM_NONE || impl_form == HIR_TYPE_FORM_NONE) return false;
-    if (trait_form != impl_form) return true;
-    if (trait_form == HIR_TYPE_FORM_PATH)
-        return refs_definitely_mismatch(trait_type, impl_type) ||
-               type_arg_count(trait_type) != type_arg_count(impl_type);
-    if (trait_form == HIR_TYPE_FORM_ARRAY && array_lengths_definitely_mismatch(trait_type, impl_type))
-        return true;
-    if (trait_form == HIR_TYPE_FORM_REF || trait_form == HIR_TYPE_FORM_ARRAY ||
-        trait_form == HIR_TYPE_FORM_SLICE)
-    {
-        uint trait_value = type_value_node(trait_type);
-        uint impl_value = type_value_node(impl_type);
-        return trait_generic_substitution_mismatch(trait_value, impl_value, impl_owner) ||
-               refs_definitely_mismatch(trait_value, impl_value);
-    }
-    return false;
+    uint left_tag; uint left_payload; uint right_tag; uint right_payload;
+    if (!type_node_ref(trait_type, left_tag, left_payload) ||
+        !type_node_ref(impl_type, right_tag, right_payload)) return true;
+    return !scoped_type_refs_equal<TraitMethodContractGraph>(
+        left_tag, left_payload, impl_owner, right_tag, right_payload, INVALID,
+        checked_type_capacity(), gParams.n_tokens);
 }
 
 bool method_param_signature_definitely_mismatches(
@@ -428,7 +373,7 @@ bool method_param_signature_definitely_mismatches(
     uint impl_type = method_param_type(impl_parameter);
     if (!valid_hir(trait_type) && !valid_hir(impl_type)) return false;
     if (!valid_hir(trait_type) || !valid_hir(impl_type)) return true;
-    return flat_type_forms_definitely_mismatch(trait_type, impl_type, impl_owner);
+    return complete_method_types_mismatch(trait_type, impl_type, impl_owner);
 }
 
 bool method_return_signature_definitely_mismatches(
@@ -438,5 +383,5 @@ bool method_return_signature_definitely_mismatches(
     uint impl_type = method_return_type(impl_method);
     if (!valid_hir(trait_type) && !valid_hir(impl_type)) return false;
     if (!valid_hir(trait_type) || !valid_hir(impl_type)) return true;
-    return flat_type_forms_definitely_mismatch(trait_type, impl_type, impl_owner);
+    return complete_method_types_mismatch(trait_type, impl_type, impl_owner);
 }

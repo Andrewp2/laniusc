@@ -1,0 +1,52 @@
+[
+  {
+    "path": "shaders/dependency_interface.slang",
+    "previous_sha256": "c0dd73ceb38a135238102f87e1daa2e80db9860ef2636de14ff6397b41897892",
+    "fixed_sha256": "47492719adcad348eba80f56b61f69c3c1cb4ae3d860be96fef683a6091eb3b0"
+  },
+  {
+    "path": "shaders/dependency_return_layout.slang",
+    "previous_sha256": "d56db264d052767c06da67372f17f6710aac55df5e1faa9b190ee9f760431598",
+    "fixed_sha256": "ac2afb3b46fdf3e2ded3156324600c9b6313187db920fe75c6de4ba754493b8e"
+  },
+  {
+    "path": "shaders/type_checker/dependencies/07_project_calls.slang",
+    "previous_sha256": "979bebdf1596f146680b00d39e302b9abc6195dc5ef9089d2a7de137c7741ae4",
+    "fixed_sha256": "d9363a5c5a7fa31895aa7355892b4ee09ecc018af9095d7b84a4ae9bdbf3c112"
+  },
+  {
+    "path": "shaders/type_checker/dependencies/08_validate_call_args.slang",
+    "previous_sha256": "02f3efbd662712f357fb030288a7c1b29e0905e5b30c922487d7577f36a94458",
+    "fixed_sha256": "44eeab732b806cf89793a8de1abe4affcdec41dd89d21170cfabbeb0af8817ad"
+  },
+  {
+    "path": "shaders/type_checker/dependencies/15_project_methods.slang",
+    "previous_sha256": "996566ea8db72ddbc31af0c19eef395e52f05d06d3b0065148f27761a1576046",
+    "fixed_sha256": "3d7d098a8cb1ce9a9c97851b569f443f13791246de5f1f122b2d149a3cb0bcee"
+  },
+  {
+    "path": "shaders/type_checker/interface/members/00c_method_counts.slang",
+    "previous_sha256": "aab6968cd259faccf7a74a2c744dec4692450746cb054a2e81625c3df9562947",
+    "fixed_sha256": "7440ce807348c722a9d881e76d834fbcbd8245a694ac010f28d55fe53a798af1"
+  },
+  {
+    "path": "shaders/type_checker/interface/members/02_scatter_hir.slang",
+    "previous_sha256": "0689e9fca780f3bf6254e1d9fd81e7eb9141408c4f07b6b3776c6da34e60e4c8",
+    "fixed_sha256": "9e075032e4cc66f6312e61dc3666de340990a3b13f726f3156dc47cd4f509e7c"
+  },
+  {
+    "path": "shaders/type_checker/interface/type_topology/02b_seed_params.slang",
+    "previous_sha256": "f632c309dd10c7a69e8067baad9f09fb95ce5fa46fd80f9f139ff0d7af937557",
+    "fixed_sha256": "ec3c378c24204df72fd5ab6b575b401e0102389d461553408d3e2e9153b08efd"
+  },
+  {
+    "path": "shaders/type_checker/semantic/artifact/00_calls.slang",
+    "previous_sha256": "b54ded594a407483dba55d28fa02344c7fad6d738d3a2ae4288105d7de78dd67",
+    "fixed_sha256": "acd6193f718906699de3bdba65ccda0e53fb6eb247e5001a32c9eab2de4eb7e8"
+  },
+  {
+    "path": "shaders/type_checker/interface/method_parameters.slang",
+    "previous_sha256": null,
+    "fixed_sha256": "a762dc7128c207dc2cff0745903442c05766a80cc98fa7dbc0f5cc887de5f3c5"
+  }
+]

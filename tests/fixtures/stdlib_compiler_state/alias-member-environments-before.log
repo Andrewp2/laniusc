@@ -1,0 +1,28 @@
+
+running 3 tests
+test alias_qualified_constructors_preserve_injected_and_constant_arguments ... GPU source-pack type-check rejection: token=40 code=CallMismatch detail=4294967049
+
+thread 'alias_qualified_constructors_preserve_injected_and_constant_arguments' (37794) panicked at tests/compiler_generic_types_execution.rs:151:29:
+alias qualifier injected: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_alias_qualifier_injected_37793_0.lani", line: 4, column: 14, length: 6, byte_start: Some(102), byte_end: Some(108), source_line: Some(" let value = Number<i32>::Both(42, false);"), message: "explicit callable generic argument count does not match its own header" }), help: None, notes: ["supply every parameter declared by this function or method; receiver arguments belong to the receiver header"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test alias_qualified_constructors_preserve_normalized_concrete_unit_parents ... GPU source-pack type-check rejection: token=63 code=GenericInstantiationBoundary detail=3
+
+thread 'alias_qualified_constructors_preserve_normalized_concrete_unit_parents' (37838) panicked at tests/compiler_generic_types_execution.rs:151:29:
+alias qualifier bare-unit: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_alias_qualifier_bare-unit_37793_1.lani", line: 4, column: 32, length: 6, byte_start: Some(183), byte_end: Some(189), source_line: Some("fn main() -> i32 { let value = Number::None; return check(value); }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+FAILED
+test alias_qualified_constructors_preserve_reordered_target_arguments ... GPU source-pack type-check rejection: token=52 code=AssignMismatch detail=0
+
+thread 'alias_qualified_constructors_preserve_reordered_target_arguments' (37862) panicked at tests/compiler_generic_types_execution.rs:151:29:
+alias qualifier reordered: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_alias_qualifier_reordered_37793_2.lani", line: 4, column: 36, length: 2, byte_start: Some(122), byte_end: Some(124), source_line: Some(" let value = Flip<bool, i32>::Both(42, false);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+FAILED
+
+failures:
+
+failures:
+    alias_qualified_constructors_preserve_injected_and_constant_arguments
+    alias_qualified_constructors_preserve_normalized_concrete_unit_parents
+    alias_qualified_constructors_preserve_reordered_target_arguments
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 297 filtered out; finished in 1.37s
+

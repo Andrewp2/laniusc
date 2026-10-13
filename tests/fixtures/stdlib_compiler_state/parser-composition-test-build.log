@@ -1,0 +1,19 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0609]: no field `ll1_status` on type `ResidentParseResult`
+    --> tests/parser_hir_records.rs:1717:20
+     |
+1717 |             parsed.ll1_status[0], 0,
+     |                    ^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `ll1`, `node_kind`, `parent`, `first_child`, `next_sibling` ... and 95 others
+
+error[E0609]: no field `ll1_status` on type `ResidentParseResult`
+    --> tests/parser_hir_records.rs:1718:73
+     |
+1718 |             "structural type must parse: {source}; status={:?}", parsed.ll1_status
+     |                                                                         ^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `ll1`, `node_kind`, `parent`, `first_child`, `next_sibling` ... and 95 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `laniusc` (test "parser_hir_records") due to 2 previous errors

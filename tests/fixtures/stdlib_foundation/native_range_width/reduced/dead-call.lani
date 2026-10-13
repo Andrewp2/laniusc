@@ -1,0 +1,8 @@
+fn divide(value: i32) -> i32 { return 1 / value; }
+fn main() -> i32 {
+    for value in 0..1 {
+        return 0;
+        let never: i32 = divide(0);
+    }
+    return 1;
+}

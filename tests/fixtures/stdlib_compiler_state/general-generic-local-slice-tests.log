@@ -1,0 +1,36 @@
+warning: method `compile_scalar_body_specialization` is never used
+    --> crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:1397:25
+     |
+ 125 | impl<'gpu> GpuCompiler<'gpu> {
+     | ---------------------------- method in this implementation
+...
+1397 |     pub(super) async fn compile_scalar_body_specialization(
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `laniusc-compiler` (lib) generated 1 warning
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.64s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test local_generic_value_functions_preserve_borrowed_slices ... FAILED
+
+failures:
+
+---- local_generic_value_functions_preserve_borrowed_slices stdout ----
+
+thread 'local_generic_value_functions_preserve_borrowed_slices' (677617) panicked at tests/compiler_generic_types_execution.rs:13:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "x86 legacy aggregate result has no canonical ABI layout", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_borrowed_descriptor_677616_0.lani", line: 16, column: 24, length: 6, byte_start: Some(545), byte_end: Some(551), source_line: Some("    let empty: [i32] = choose(values, other, false);"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact", "first unsupported target LIR opcode: 23"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    local_generic_value_functions_preserve_borrowed_slices
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.80s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

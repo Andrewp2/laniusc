@@ -1,0 +1,10 @@
+
+running 5 tests
+test generic_unit_values_preserve_complete_local_and_imported_types ... ok
+test generic_unit_values_reject_missing_and_incompatible_contexts ... ok
+test generic_unit_values_retain_thirty_two_context_bindings ... ok
+test generic_unit_variant_values_receive_complete_types ... ok
+test imported_nongeneric_unit_values_have_complete_types_without_annotations ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 271 filtered out; finished in 36.08s
+

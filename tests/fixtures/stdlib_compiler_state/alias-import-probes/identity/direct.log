@@ -1,0 +1,2 @@
+sample=0 ms=187.154
+entry=tests/fixtures/stdlib_compiler_state/alias-import-probes/identity/direct.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=187.154 median_ms=187.154 avg_ms=187.154 max_ms=187.154 output_verified=true

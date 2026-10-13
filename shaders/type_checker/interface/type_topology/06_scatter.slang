@@ -1,29 +1,29 @@
-// Scatter reachable types and publish HIR-to-persisted type indices.
-
+// Publish one root index per exported annotation. Each checked subtree occupies
+// its own contiguous reverse-preorder interval.
+import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<uint> interface_type_reverse_flag;
 StructuredBuffer<uint> interface_type_reverse_prefix;
-RWStructuredBuffer<uint> interface_type_hir_order;
 RWStructuredBuffer<uint> interface_type_index_by_hir;
-
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
-uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
-
+RWStructuredBuffer<uint> interface_status;
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint reverse_row = linear_thread_id(dtid);
+    uint row = dtid.x + dtid.y * 16776960u;
     uint active = min(compact_hir_count[0u], gParams.hir_capacity);
-    if (reverse_row >= active || interface_type_reverse_flag[reverse_row] == 0u)
+    if (row >= active || interface_type_reverse_flag[row] == 0u) return;
+    uint node = active - 1u - row;
+    uint start = interface_type_reverse_prefix[row];
+    uint count = interface_type_reverse_flag[row];
+    if (start >= gParams.hir_capacity || count > gParams.hir_capacity - start)
+    {
+        atomic_u32_or(interface_status, 0u, 32768u);
+        atomic_u32_min(interface_status, 1u, node);
         return;
-    uint node = active - 1u - reverse_row;
-    uint dst = interface_type_reverse_prefix[reverse_row];
-    if (dst >= gParams.hir_capacity)
-        return;
-    interface_type_hir_order[dst] = node;
-    interface_type_index_by_hir[node] = dst;
+    }
+    uint index = start + count - 1u;
+    interface_type_index_by_hir[node] = index;
 }

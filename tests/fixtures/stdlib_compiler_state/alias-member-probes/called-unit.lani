@@ -1,0 +1,4 @@
+enum Choice<T> { Some(T), None }
+type Number = Choice<i32>;
+fn check(value: Choice<i32>) -> i32 { return match (value) { Choice::None -> 0, _ -> 1 }; }
+fn main() -> i32 { let value = Number::None(); return check(value); }

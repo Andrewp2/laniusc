@@ -1,0 +1,32 @@
+
+running 4 tests
+test parser_explicit_callable_angles_preserve_comparison_and_shift_roles ... ok
+test parser_explicit_callable_arguments_belong_to_each_path_segment ... 
+thread 'parser_explicit_callable_arguments_belong_to_each_path_segment' (371332) panicked at tests/parser_hir_records.rs:17137:25:
+assertion `left == right` failed
+  left: 12
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test parser_explicit_record_constructor_argument_order_scales_to_thirty_two ... 
+thread 'parser_explicit_record_constructor_argument_order_scales_to_thirty_two' (371336) panicked at tests/parser_hir_records.rs:17089:13:
+assertion `left == right` failed
+  left: 0
+ right: 5
+FAILED
+test parser_explicit_record_constructor_paths_preserve_type_arguments ... 
+thread 'parser_explicit_record_constructor_paths_preserve_type_arguments' (371338) panicked at tests/parser_hir_records.rs:17044:13:
+assertion `left == right` failed: each constructor retains its own argument list
+  left: 0
+ right: 1
+FAILED
+
+failures:
+
+failures:
+    parser_explicit_callable_arguments_belong_to_each_path_segment
+    parser_explicit_record_constructor_argument_order_scales_to_thirty_two
+    parser_explicit_record_constructor_paths_preserve_type_arguments
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 246 filtered out; finished in 1.14s
+

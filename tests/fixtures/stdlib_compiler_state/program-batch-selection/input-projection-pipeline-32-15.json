@@ -1,0 +1,12 @@
+{
+  "command": [
+    "target/stdlib-perf/build/release/shader_pipeline_probe",
+    "target/stdlib-perf/build/laniusc-shader-artifacts/release/shaders/type_checker/program_evidence/entries/32_15_admit_calls.spv",
+    "target/stdlib-perf/build/laniusc-shader-artifacts/release/shaders/type_checker/program_evidence/entries/32_15_admit_calls.reflect.json"
+  ],
+  "seconds": 11.384266599001421,
+  "exit_code": 0,
+  "spv_bytes": 148864,
+  "spv_sha256": "20af23b31d6ad78cb314147709a148ea45bb7efca5fada44b80ff478e4541ba5",
+  "probe_binary_sha256": "7816d4d297469299829f4cc67709e74f65ea7222edece9bc92aafeb89f8201c6"
+}

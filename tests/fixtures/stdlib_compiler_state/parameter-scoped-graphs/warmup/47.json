@@ -1,0 +1,7 @@
+{
+  "index": 47,
+  "shader": "type_checker/type/instances/04b_struct_init_substitute.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.2661646679989644,
+  "sha256": "f85c35cfbb85e55215c5a36a1e7254a67df5de7eb86ac57955956c12ded4b878"
+}

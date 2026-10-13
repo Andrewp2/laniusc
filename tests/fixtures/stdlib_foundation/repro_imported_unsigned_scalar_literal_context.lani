@@ -1,0 +1,8 @@
+import core::option;
+fn main() -> i32 {
+    let wrapped: core::option::Option<u32> = core::option::Some(4294967295);
+    let fallback: u32 = 0;
+    let value: u32 = wrapped.unwrap_or(fallback);
+    if (value / 2 != 2147483647) { return 1; }
+    return 0;
+}

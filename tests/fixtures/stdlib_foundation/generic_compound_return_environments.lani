@@ -1,0 +1,69 @@
+module app::main;
+import core::five;
+import std::io;
+
+struct Pair { number: i32, text: str }
+fn fixed<A, B>(value: core::five::ReorderedFields<A, B>) -> [B; 2] { return value.fixed; }
+fn borrowed<A, B>(value: core::five::ReorderedFields<A, B>) -> [A] { return value.borrowed; }
+fn child<T>(value: core::five::NestedField<T>) -> core::five::ArrayField<T> { return value.child; }
+fn text_view(value: [str]) -> [str] { return value; }
+fn integer_view(value: [i32]) -> [i32] { return value; }
+
+fn main() -> i32 {
+    let words: [str; 2] = ["Ω", ""];
+    let numbers: [i32; 2] = [-7, 42];
+    let integer: core::five::ReorderedFields<str, i32> = core::five::ReorderedFields {
+        fixed: numbers, borrowed: text_view(words), sentinel: 99
+    };
+    let integers: [i32; 2] = fixed(integer);
+    if (integers[0] != -7 || integers[1] != 42) { return 1; }
+    integers[0] = 123;
+    if (integer.fixed[0] != -7 || numbers[0] != -7 || integer.sentinel != 99) { return 2; }
+    let text: core::five::ReorderedFields<i32, str> = core::five::ReorderedFields {
+        fixed: words, borrowed: integer_view(numbers), sentinel: -99
+    };
+    let texts: [str; 2] = fixed(text);
+    if (std::io::println(texts[0]) != 3) { return 3; }
+    if (std::io::println(texts[1]) != 1) { return 4; }
+    texts[0] = "changed";
+    if (std::io::println(text.fixed[0]) != 3) { return 5; }
+    let aliased: [i32] = borrowed(text);
+    aliased[0] = 9;
+    if (numbers[0] != 9 || text.borrowed[0] != 9 || text.sentinel != -99) { return 6; }
+    let floats: core::five::ReorderedFields<i32, f32> = core::five::ReorderedFields {
+        fixed: [2.5, -0.0], borrowed: integer_view(numbers), sentinel: 456
+    };
+    let floating: [f32; 2] = fixed(floats);
+    if (floating[0] != 2.5 || floating[1] != 0.0) { return 7; }
+    floating[0] = 3.5;
+    if (floats.fixed[0] != 2.5 || floats.sentinel != 456) { return 8; }
+    let one: Pair = Pair { number: -7, text: "Ω" };
+    let two: Pair = Pair { number: 42, text: "" };
+    let pairs: core::five::ReorderedFields<i32, Pair> = core::five::ReorderedFields {
+        fixed: [one, two], borrowed: integer_view(numbers), sentinel: -456
+    };
+    let records: [Pair; 2] = fixed(pairs);
+    if (records[0].number != -7 || records[1].number != 42) { return 9; }
+    if (std::io::println(records[0].text) != 3) { return 10; }
+    records[0].number = 100;
+    records[0].text = "changed";
+    if (pairs.fixed[0].number != -7 || one.number != -7 || pairs.sentinel != -456) { return 11; }
+    if (std::io::println(pairs.fixed[0].text) != 3) { return 12; }
+    let other_words: [str; 2] = ["", "Ω"];
+    let arrays: core::five::ReorderedFields<i32, [str; 2]> = core::five::ReorderedFields {
+        fixed: [words, other_words], borrowed: integer_view(numbers), sentinel: 789
+    };
+    let nested: [[str; 2]; 2] = fixed(arrays);
+    if (std::io::println(nested[1][1]) != 3) { return 13; }
+    nested[0][0] = "changed";
+    if (std::io::println(arrays.fixed[0][0]) != 3) { return 14; }
+    let wrapped: core::five::NestedField<str> = core::five::NestedField {
+        child: core::five::ArrayField { items: words }, sentinel: 1234
+    };
+    let returned_child: core::five::ArrayField<str> = child(wrapped);
+    if (std::io::println(returned_child.items[1]) != 1) { return 15; }
+    returned_child.items[0] = "changed";
+    if (std::io::println(wrapped.child.items[0]) != 3) { return 16; }
+    if (wrapped.sentinel != 1234) { return 17; }
+    return 0;
+}

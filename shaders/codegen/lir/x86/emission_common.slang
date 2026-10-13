@@ -1,7 +1,11 @@
+import primitive_types;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
+import codegen.lir.x86.storage_layout;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
+import codegen.lir.x86.frame_layout;
+import codegen.lir.x86.parameter_values;
 import codegen.lir.x86.safety;
 import gpu_index;
 
@@ -33,6 +37,7 @@ StructuredBuffer<SemanticLirString> semantic_lir_strings;
 StructuredBuffer<uint> semantic_lir_string_pool_len;
 StructuredBuffer<uint> semantic_lir_string_data;
 StructuredBuffer<uint> x86_decl_location_by_token;
+StructuredBuffer<uint4> x86_place_storage_by_token;
 StructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 StructuredBuffer<uint> target_byte_length;
 StructuredBuffer<uint> target_byte_offset;
@@ -71,7 +76,7 @@ void emit_u64(inout uint cursor, uint low, uint high)
     emit_u32(cursor, high);
 }
 
-uint displacement(uint slot) { return 0u - 8u * (slot + 1u); }
+uint displacement(uint slot) { return x86_native_word_displacement(slot + 1u); }
 
 void emit_stack_modrm(inout uint cursor, uint register, uint slot)
 {
@@ -337,13 +342,37 @@ void emit_inc_dec32(inout uint cursor, uint destination, bool decrement)
         (destination_gpr & 7u));
 }
 
-uint move_f32_to_xmm(uint cursor, uint location, uint destination)
+uint float_setcc_opcode(uint predicate)
+{
+    if (predicate == 0u) return 0x94u;
+    if (predicate == 1u) return 0x95u;
+    if (predicate == 2u) return 0x92u;
+    if (predicate == 3u) return 0x97u;
+    if (predicate == 4u) return 0x96u;
+    return 0x93u;
+}
+
+void emit_float_predicate_al(inout uint cursor, uint predicate)
+{
+    // UCOMISS/UCOMISD set ZF, PF, and CF for unordered operands. Combine SETcc
+    // with parity so NaN is true only for !=, regardless of result use.
+    emit_u8(cursor, 0x0fu);
+    emit_u8(cursor, predicate == 1u ? 0x9au : 0x9bu);
+    emit_u8(cursor, 0xc4u); // SETP/SETNP AH
+    emit_u8(cursor, 0x0fu);
+    emit_u8(cursor, float_setcc_opcode(predicate));
+    emit_u8(cursor, 0xc0u); // SETcc AL
+    emit_u8(cursor, predicate == 1u ? 0x08u : 0x20u);
+    emit_u8(cursor, 0xe0u); // OR/AND AL, AH
+}
+
+uint move_float_to_xmm(uint cursor, uint location, uint destination, bool wide)
 {
     if (x86_location_is_xmm(location))
     {
         uint source = x86_location_xmm(location);
         if (source == destination) return cursor;
-        emit_u8(cursor, 0xf3u);
+        emit_u8(cursor, wide ? 0xf2u : 0xf3u);
         uint rex = 0x40u | (destination >= 8u ? 4u : 0u) |
             (source >= 8u ? 1u : 0u);
         if (rex != 0x40u) emit_u8(cursor, rex);
@@ -356,7 +385,7 @@ uint move_f32_to_xmm(uint cursor, uint location, uint destination)
     {
         uint source = x86_location_payload(location);
         emit_u8(cursor, 0x66u);
-        uint rex = 0x40u | (destination >= 8u ? 4u : 0u) |
+        uint rex = (wide ? 0x48u : 0x40u) | (destination >= 8u ? 4u : 0u) |
             (source >= 8u ? 1u : 0u);
         if (rex != 0x40u) emit_u8(cursor, rex);
         emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x6eu);
@@ -364,20 +393,20 @@ uint move_f32_to_xmm(uint cursor, uint location, uint destination)
             (source & 7u));
         return cursor;
     }
-    emit_u8(cursor, 0xf3u);
+    emit_u8(cursor, wide ? 0xf2u : 0xf3u);
     if (destination >= 8u) emit_u8(cursor, 0x44u);
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x10u);
     emit_stack_modrm(cursor, destination, x86_location_payload(location));
     return cursor;
 }
 
-uint move_f32_from_xmm(uint cursor, uint source, uint location)
+uint move_float_from_xmm(uint cursor, uint source, uint location, bool wide)
 {
     if (x86_location_is_xmm(location))
     {
         uint destination = x86_location_xmm(location);
         if (source == destination) return cursor;
-        emit_u8(cursor, 0xf3u);
+        emit_u8(cursor, wide ? 0xf2u : 0xf3u);
         uint rex = 0x40u | (destination >= 8u ? 4u : 0u) |
             (source >= 8u ? 1u : 0u);
         if (rex != 0x40u) emit_u8(cursor, rex);
@@ -390,7 +419,7 @@ uint move_f32_from_xmm(uint cursor, uint source, uint location)
     {
         uint destination = x86_location_payload(location);
         emit_u8(cursor, 0x66u);
-        uint rex = 0x40u | (source >= 8u ? 4u : 0u) |
+        uint rex = (wide ? 0x48u : 0x40u) | (source >= 8u ? 4u : 0u) |
             (destination >= 8u ? 1u : 0u);
         if (rex != 0x40u) emit_u8(cursor, rex);
         emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x7eu);
@@ -398,83 +427,85 @@ uint move_f32_from_xmm(uint cursor, uint source, uint location)
             (destination & 7u));
         return cursor;
     }
-    emit_u8(cursor, 0xf3u);
+    emit_u8(cursor, wide ? 0xf2u : 0xf3u);
     if (source >= 8u) emit_u8(cursor, 0x44u);
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x11u);
     emit_stack_modrm(cursor, source, x86_location_payload(location));
     return cursor;
 }
 
-void move_f32_to_gpr(inout uint cursor, uint location, uint destination)
+void move_float_to_gpr(inout uint cursor, uint location, uint destination, bool wide)
 {
     if (!x86_location_is_xmm(location))
     {
         if (x86_location_is_register(location))
-            move32_register(cursor, x86_location_payload(location),
-                destination);
+        {
+            if (wide) move64_register(cursor, x86_location_payload(location), destination);
+            else move32_register(cursor, x86_location_payload(location), destination);
+        }
+        else if (wide) load_stack64(cursor, x86_location_payload(location), destination);
         else load_stack32(cursor, x86_location_payload(location), destination);
         return;
     }
-    cursor = move_f32_from_xmm(cursor, x86_location_xmm(location),
-        X86_LOCATION_REGISTER | destination);
+    cursor = move_float_from_xmm(cursor, x86_location_xmm(location),
+        X86_LOCATION_REGISTER | destination, wide);
 }
 
-void move_f32_from_gpr(inout uint cursor, uint source, uint location)
+void move_float_from_gpr(inout uint cursor, uint source, uint location, bool wide)
 {
     if (!x86_location_is_xmm(location))
     {
         if (x86_location_is_register(location))
-            move32_register(cursor, source, x86_location_payload(location));
+        {
+            if (wide) move64_register(cursor, source, x86_location_payload(location));
+            else move32_register(cursor, source, x86_location_payload(location));
+        }
+        else if (wide) store_stack64(cursor, source, x86_location_payload(location));
         else store_stack32(cursor, source, x86_location_payload(location));
         return;
     }
-    cursor = move_f32_to_xmm(cursor, X86_LOCATION_REGISTER | source,
-        x86_location_xmm(location));
+    cursor = move_float_to_xmm(cursor, X86_LOCATION_REGISTER | source,
+        x86_location_xmm(location), wide);
 }
 
-void move_f32_location(inout uint cursor, uint source, uint destination)
+void move_float_location(inout uint cursor, uint source, uint destination, bool wide)
 {
     if (source == destination && source != X86_LOCATION_INVALID) return;
     if (x86_location_is_xmm(destination))
-        cursor = move_f32_to_xmm(
-            cursor, source, x86_location_xmm(destination));
+        cursor = move_float_to_xmm(
+            cursor, source, x86_location_xmm(destination), wide);
     else if (x86_location_is_xmm(source))
-        cursor = move_f32_from_xmm(
-            cursor, x86_location_xmm(source), destination);
+        cursor = move_float_from_xmm(
+            cursor, x86_location_xmm(source), destination, wide);
+    else if (wide) move_location64(cursor, source, destination);
     else move_location32(cursor, source, destination);
 }
 
-bool f32_binary_commutative(uint operation)
-{
-    return operation == X86_LIR_BINARY_ADD_F32 ||
-        operation == X86_LIR_BINARY_MUL_F32;
-}
-
-void emit_f32_binary_instruction(inout uint cursor, uint operation,
-                                 uint destination, uint right)
+void emit_float_binary_instruction(inout uint cursor, uint operation,
+                                 uint destination, uint right, bool wide)
 {
     uint right_xmm = 14u;
     if (x86_location_is_xmm(right))
         right_xmm = x86_location_xmm(right);
     else if (x86_location_is_register(right))
-        cursor = move_f32_to_xmm(cursor, right, right_xmm);
-    emit_u8(cursor, 0xf3u);
+        cursor = move_float_to_xmm(cursor, right, right_xmm, wide);
+    emit_u8(cursor, wide ? 0xf2u : 0xf3u);
     uint rex = 0x40u | (destination >= 8u ? 4u : 0u) |
-        (x86_location_is_xmm(right) && right_xmm >= 8u ? 1u : 0u);
+        ((x86_location_is_xmm(right) || x86_location_is_register(right)) && right_xmm >= 8u ? 1u : 0u);
     if (rex != 0x40u) emit_u8(cursor, rex);
     emit_u8(cursor, 0x0fu);
     emit_u8(cursor,
-        operation == X86_LIR_BINARY_ADD_F32 ? 0x58u :
-        operation == X86_LIR_BINARY_SUB_F32 ? 0x5cu :
-        operation == X86_LIR_BINARY_MUL_F32 ? 0x59u : 0x5eu);
+        operation == X86_LIR_BINARY_ADD_FLOAT ? 0x58u :
+        operation == X86_LIR_BINARY_SUB_FLOAT ? 0x5cu :
+        operation == X86_LIR_BINARY_MUL_FLOAT ? 0x59u : 0x5eu);
     if (x86_location_is_xmm(right) || x86_location_is_register(right))
         emit_u8(cursor, 0xc0u | ((destination & 7u) << 3u) |
             (right_xmm & 7u));
     else emit_stack_modrm(cursor, destination, x86_location_payload(right));
 }
 
-void emit_f32_binary(inout uint cursor, uint operation, uint left, uint right,
-                     uint result)
+void emit_float_binary(inout uint cursor, uint operation, uint left, uint right,
+                     uint result, bool wide)
 {
     uint destination = x86_location_is_xmm(result)
         ? x86_location_xmm(result) : 15u;
@@ -483,7 +514,7 @@ void emit_f32_binary(inout uint cursor, uint operation, uint left, uint right,
     bool destination_is_left = x86_location_is_xmm(left) &&
         x86_location_xmm(left) == destination;
     if (destination_is_right && !destination_is_left &&
-        f32_binary_commutative(operation))
+        float_binary_commutative(operation))
     {
         uint swap = left;
         left = right;
@@ -492,23 +523,24 @@ void emit_f32_binary(inout uint cursor, uint operation, uint left, uint right,
     }
     uint compute = destination_is_right && !destination_is_left
         ? 15u : destination;
-    cursor = move_f32_to_xmm(cursor, left, compute);
-    emit_f32_binary_instruction(cursor, operation, compute, right);
-    cursor = move_f32_from_xmm(cursor, compute, result);
+    cursor = move_float_to_xmm(cursor, left, compute, wide);
+    emit_float_binary_instruction(cursor, operation, compute, right, wide);
+    cursor = move_float_from_xmm(cursor, compute, result, wide);
 }
 
-void emit_f32_compare(inout uint cursor, uint left, uint right)
+void emit_float_compare(inout uint cursor, uint left, uint right, bool wide)
 {
     uint left_xmm = x86_location_is_xmm(left)
         ? x86_location_xmm(left) : 15u;
-    cursor = move_f32_to_xmm(cursor, left, left_xmm);
+    cursor = move_float_to_xmm(cursor, left, left_xmm, wide);
     uint right_xmm = 14u;
     if (x86_location_is_xmm(right))
         right_xmm = x86_location_xmm(right);
     else if (x86_location_is_register(right))
-        cursor = move_f32_to_xmm(cursor, right, right_xmm);
+        cursor = move_float_to_xmm(cursor, right, right_xmm, wide);
+    if (wide) emit_u8(cursor, 0x66u); // UCOMISD; UCOMISS has no prefix.
     uint rex = 0x40u | (left_xmm >= 8u ? 4u : 0u) |
-        (x86_location_is_xmm(right) && right_xmm >= 8u ? 1u : 0u);
+        ((x86_location_is_xmm(right) || x86_location_is_register(right)) && right_xmm >= 8u ? 1u : 0u);
     if (rex != 0x40u) emit_u8(cursor, rex);
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x2eu);
     if (x86_location_is_xmm(right) || x86_location_is_register(right))
@@ -517,42 +549,10 @@ void emit_f32_compare(inout uint cursor, uint left, uint right)
     else emit_stack_modrm(cursor, left_xmm, x86_location_payload(right));
 }
 
-uint base_frame_slots(TargetLirFunction function, SemanticLirFunction semantic_function)
-{
-    return (function.flags & X86_TARGET_FUNCTION_FRAME_SLOT_MASK) +
-        (semantic_function.result_word_count > 2u ? 1u : 0u);
-}
-
 uint hidden_sret_slot(TargetLirFunction function,
                       SemanticLirFunction semantic_function)
 {
     return function.flags & X86_TARGET_FUNCTION_FRAME_SLOT_MASK;
-}
-
-bool frameless_function(TargetLirFunction function,
-                        SemanticLirFunction semantic_function)
-{
-    // A hidden structure-return pointer needs an addressable frame slot even
-    // when ordinary allocation found no spills.
-    return (function.flags & X86_TARGET_FUNCTION_FRAMELESS) != 0u &&
-        semantic_function.result_word_count <= 2u;
-}
-
-bool stackless_caller(TargetLirFunction function,
-                      SemanticLirFunction semantic_function)
-{
-    return (function.flags & X86_TARGET_FUNCTION_STACKLESS_CALLER) != 0u &&
-        semantic_function.result_word_count <= 2u;
-}
-
-uint implicit_footer_bytes(TargetLirFunction function,
-                           SemanticLirFunction semantic_function,
-                           uint saved_mask)
-{
-    return frameless_function(function, semantic_function) ? 3u :
-        stackless_caller(function, semantic_function) ? 4u :
-        4u + x86_saved_gpr_frame_bytes(saved_mask,
-            base_frame_slots(function, semantic_function));
 }
 
 uint frame_size(TargetLirFunction function, SemanticLirFunction semantic_function,
@@ -722,7 +722,8 @@ uint param_store_bytes(TargetLirFunction target_function,
         }
         abi_ordinal += width;
     }
-    return bytes;
+    return bytes + x86_parameter_copy_bytes(target_function, function,
+        semantic_lir_params, x86_decl_location_by_token);
 }
 
 uint prologue_bytes(TargetLirFunction target, SemanticLirFunction function, uint saved_mask)
@@ -735,4 +736,53 @@ uint prologue_bytes(TargetLirFunction target, SemanticLirFunction function, uint
         4u + (slots + x86_saved_gpr_count(saved_mask) == 0u ? 0u : 7u) +
         x86_saved_gpr_frame_bytes(saved_mask, slots)) +
         param_store_bytes(target, function, hidden);
+}
+
+uint setcc_opcode(uint predicate)
+{
+    if (predicate == 0u) return 0x94u;
+    if (predicate == 1u) return 0x95u;
+    if (predicate == 2u) return 0x9cu;
+    if (predicate == 3u) return 0x9fu;
+    if (predicate == 4u) return 0x9eu;
+    return 0x9du;
+}
+
+uint integer_setcc_opcode(uint predicate, uint type_id)
+{
+    // u32 and char use the carry-based unsigned condition codes. Equality is
+    // representation-independent and therefore shared with signed i32.
+    bool is_unsigned = scalar_is_unsigned_value(type_id);
+    if (!is_unsigned || predicate <= 1u) return setcc_opcode(predicate);
+    if (predicate == 2u) return 0x92u;
+    if (predicate == 3u) return 0x97u;
+    if (predicate == 4u) return 0x96u;
+    return 0x93u;
+}
+
+void emit_boolean_result(inout uint cursor, uint opcode, uint location,
+                         TargetLirFunction function)
+{
+    if (x86_location_is_register(location))
+    {
+        uint destination = x86_location_payload(location);
+        if (destination >= 8u) emit_u8(cursor, 0x41u);
+        else if (destination >= 4u) emit_u8(cursor, 0x40u);
+        emit_u8(cursor, 0x0fu); emit_u8(cursor, opcode);
+        emit_u8(cursor, 0xc0u | (destination & 7u));
+        if (destination >= 8u) emit_u8(cursor, 0x45u);
+        else if (destination >= 4u) emit_u8(cursor, 0x40u);
+        emit_u8(cursor, 0x0fu); emit_u8(cursor, 0xb6u);
+        emit_u8(cursor, 0xc0u | ((destination & 7u) << 3u) |
+            (destination & 7u));
+        return;
+    }
+    emit_u8(cursor, 0x0fu); emit_u8(cursor, opcode); emit_u8(cursor, 0xc0u);
+    emit_u8(cursor, 0x0fu); emit_u8(cursor, 0xb6u); emit_u8(cursor, 0xc0u);
+    store_value32(cursor, 0u, location, function);
+}
+
+uint integer_false_jcc_opcode(uint predicate, uint type_id)
+{
+    return (integer_setcc_opcode(predicate, type_id) ^ 1u) - 0x10u;
 }

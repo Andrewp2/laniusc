@@ -1,0 +1,35 @@
+{
+  "status": "verified concrete implementation export; caller evidence is next",
+  "previous_goal_turn": "progress: verified schema11 callable predicate export, independent 32-operand native execution, 67 selected checks and existing performance workloads",
+  "contract": "Portable validated implementations preserve full subject and ordered operand graphs, stable trait and implementation identity, exact contract owner, and complete required-method bindings to authoritative native callable identities. Caller solving/replay remains next; general generics goal stays intact.",
+  "schema": 12,
+  "boundaries": [
+    "GPU exporter",
+    "host validation/roundtrip/batching",
+    "fixed dependency pages",
+    "native callable symbol and retained checked method correspondence"
+  ],
+  "validation": [
+    "accepted marker and required-method implementations across compound subjects/operands",
+    "private method native symbols",
+    "32 independent operands",
+    "malformed ownership/ranges/identities",
+    "dependency page replacement and reuse",
+    "existing executable generic and method cases"
+  ],
+  "remaining": [
+    "caller evidence selection and replay forwarding",
+    "generic implementations and prerequisites",
+    "method where and generic trait methods",
+    "ordered constant trait operands"
+  ],
+  "findings": [
+    "Seven host validation tests plus two dependency-page/reuse tests pass.",
+    "32 independent implementation operand graphs and reference operand matrix export successfully.",
+    "Debug and production parser ownership probes pass; retained as investigation evidence, then removed from test suite because parser code was unchanged.",
+    "Full fixture used malformed adjacent >= in three generic annotations. Correct spacing makes full native program execute with exit0 and empty output. No type-graph change was made.",
+    "Public implementation of private trait correctly rejects with LNC0021 visibility mismatch; test now expects that boundary."
+  ],
+  "verification": "verification.json",
+  "next_contract": "Caller obligations retain selected program-catalog implementation evidence with full owned graphs and explicit replay input; private local contracts need an immutable unit-owned identity domain."
+}

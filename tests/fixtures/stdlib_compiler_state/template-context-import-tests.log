@@ -1,0 +1,17 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+    Finished `release` profile [optimized] target(s) in 54.84s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+
+running 6 tests
+test deferred_template_interfaces_still_check_payload_arguments ... ok
+test qualified_generic_scalar_returns_execute_after_substitution ... ok
+test unresolved_payload_templates_do_not_poison_imported_executable_functions ... ok
+test unused_local_payload_templates_preserve_executable_predicates ... ok
+test used_imported_payload_templates_report_missing_native_definitions ... ok
+test used_local_payload_templates_still_fail_explicitly ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.62s
+

@@ -18,8 +18,10 @@ StructuredBuffer<HirRange> hir_param_ranges;
 StructuredBuffer<uint> hir_type_arg_table_count;
 StructuredBuffer<HirTypeArg> hir_type_args;
 StructuredBuffer<HirRange> hir_type_arg_ranges;
+StructuredBuffer<HirRange> hir_path_type_arg_ranges;
 StructuredBuffer<uint> hir_generic_param_table_count;
 StructuredBuffer<HirGenericParam> hir_generic_params;
+StructuredBuffer<uint> hir_generic_param_types;
 StructuredBuffer<HirRange> hir_generic_param_ranges;
 StructuredBuffer<uint> hir_path_table_count;
 StructuredBuffer<HirPath> hir_paths;
@@ -148,13 +150,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         HirTypeArg type_arg = hir_type_args[row];
         if (type_arg.owner >= count ||
-            (hir_core[type_arg.owner].kind != 5u && hir_core[type_arg.owner].kind != 33u))
+            (hir_core[type_arg.owner].kind != 5u && hir_core[type_arg.owner].kind != 21u &&
+             hir_core[type_arg.owner].kind != 28u && hir_core[type_arg.owner].kind != 33u))
             type_arg_reason |= 8192u;
-        if (type_arg.value >= count || hir_core[type_arg.value].kind != 5u)
+        if (type_arg.value >= count ||
+            (hir_core[type_arg.value].kind != 5u &&
+             (hir_core[type_arg.value].kind != 23u || hir_payload[type_arg.value].a != 3u)))
             type_arg_reason |= 16384u;
-        if (type_arg.owner < count)
+        if (type_arg.application_token >= gCanonical.canonical_capacity)
+            type_arg_reason |= 32768u;
+        else
         {
-            HirRange range = hir_type_arg_ranges[type_arg.owner];
+            HirRange range = hir_path_type_arg_ranges[type_arg.application_token];
             if (range.start == INVALID || row < range.start || row - range.start >= range.count)
                 type_arg_reason |= 32768u;
             if (type_arg.ordinal == 0u && range.start != row)
@@ -167,7 +174,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             else
             {
                 HirTypeArg previous = hir_type_args[row - 1u];
-                if (previous.owner != type_arg.owner || previous.ordinal + 1u != type_arg.ordinal)
+                if (previous.owner != type_arg.owner || previous.application_token != type_arg.application_token || previous.ordinal + 1u != type_arg.ordinal)
                     type_arg_reason |= 32768u;
             }
         }
@@ -179,6 +186,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (parameter.owner >= count) generic_param_reason |= 65536u;
         if (parameter.name_token >= gCanonical.canonical_capacity) generic_param_reason |= 131072u;
         if (parameter.kind != 1u && parameter.kind != 2u) generic_param_reason |= 262144u;
+        uint annotation = hir_generic_param_types[row];
+        if ((parameter.kind == 1u && annotation != INVALID) ||
+            (parameter.kind == 2u &&
+             (annotation >= count || hir_core[annotation].kind != 5u)))
+            generic_param_reason |= 262144u;
         if (parameter.owner < count)
         {
             HirRange range = hir_generic_param_ranges[parameter.owner];

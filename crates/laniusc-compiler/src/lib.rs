@@ -40,3 +40,7 @@ pub(crate) mod shader_artifacts;
 
 /// Resident GPU type checking and retained semantic metadata for codegen.
 pub mod type_checker;
+
+pub(crate) mod primitive_types;
+
+pub(crate) mod constant_value;

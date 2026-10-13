@@ -1,0 +1,1 @@
+fn main() -> i32 { let value = 2147483648; if (value == 0) { return 1; } return 0; }

@@ -1,0 +1,13 @@
+module app::main;
+import core::factory_mixed;
+
+fn main() -> i32 {
+    let byte_max: u8 = 255;
+    let byte_zero: u8 = 0;
+    if (core::factory_mixed::byte_value(byte_max).read() != byte_max) { return 1; }
+    if (core::factory_mixed::byte_value(byte_zero).read() != byte_zero) { return 2; }
+    if (core::factory_mixed::bool_value(false).read()) { return 3; }
+    if (!core::factory_mixed::bool_value(true).read()) { return 4; }
+    if (core::factory_mixed::four_values().checksum() != 257) { return 5; }
+    return 0;
+}

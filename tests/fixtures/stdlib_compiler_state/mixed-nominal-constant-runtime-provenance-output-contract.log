@@ -1,0 +1,16 @@
+
+running 1 test
+test nominal_constant_arguments_preserve_owned_values ... GPU source-pack type-check rejection: token=90 code=GenericInstantiationBoundary detail=4
+
+thread 'nominal_constant_arguments_preserve_owned_values' (679607) panicked at tests/compiler_generic_types_execution.rs:141:29:
+nominal constant ordinary values: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_nominal_constant_ordinary_values_679606_0.lani", line: 5, column: 39, length: 8, byte_start: Some(252), byte_end: Some(260), source_line: Some("    let copied: Buffer<i32, 3> = keep(original);"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    nominal_constant_arguments_preserve_owned_values
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 231 filtered out; finished in 1.66s
+

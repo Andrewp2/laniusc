@@ -1,6 +1,6 @@
 module app::main;
 import core::number_i32;
-import core::option_bool;
+import core::option;
 import core::option_i32;
 import core::result_bool;
 import core::slice_bool;
@@ -12,9 +12,10 @@ fn main() -> i32 {
     if (!core::slice_bool::set(window, 5, 3, true)) { return 2; }
     if (core::slice_bool::reverse(window, 5) != 5) { return 3; }
 
-    let first: core::option_bool::OptionBool =
-        core::option_bool::some(core::slice_bool::get_or(window, 5, 0, true));
-    let checked: core::result_bool::ResultBool = core::option_bool::ok_or(first, true);
+    let first: core::option::Option<bool> =
+        core::option::Some(core::slice_bool::get_or(window, 5, 0, true));
+    if (!core::option::is_some(first) || core::option::is_none(first)) { return 5; }
+    let checked: core::result_bool::ResultBool = first.ok_or(true);
     if (!core::result_bool::contains(checked, false)) { return 4; }
 
     let total: i32 = 0;

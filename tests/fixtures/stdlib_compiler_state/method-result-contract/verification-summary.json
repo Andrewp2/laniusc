@@ -1,0 +1,18 @@
+{
+  "status": "verified",
+  "counts": {
+    "new": 5,
+    "regression_a": 54,
+    "regression_b": 54,
+    "semantic": 99,
+    "contracts": 58,
+    "parser": 4,
+    "features": 2
+  },
+  "unique_selected_checks": 276,
+  "benchmark_output_contracts": 21,
+  "frozen_sources_and_shaders_unchanged": true,
+  "temporary_shader_diagnostics_removed": true,
+  "scoped_diff_check": "passed",
+  "overall_goal": "active; remaining dependencies documented"
+}

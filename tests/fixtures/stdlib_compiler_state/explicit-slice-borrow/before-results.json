@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ordinary",
+    "exit": 0
+  },
+  {
+    "name": "structural",
+    "exit": 0
+  },
+  {
+    "name": "local",
+    "exit": 1
+  },
+  {
+    "name": "imported",
+    "exit": 1
+  },
+  {
+    "name": "alias",
+    "exit": 1
+  },
+  {
+    "name": "method",
+    "exit": 1
+  }
+]

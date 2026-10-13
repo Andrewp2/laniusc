@@ -1,11 +1,12 @@
 import hir_records;
 
-// Publish target-independent aggregate result metadata by dense call-site ID.
+// Seed complete declaration-side result references by dense call-site ID.
 //
-// This pass runs after direct, qualified, and method call resolution. Named
-// return instances do not depend on argument-row existence, so zero-argument
-// calls receive the same compact semantic fact as calls with arguments.
-// Array and slice results remain owned by their dedicated inference passes.
+// This pass runs after direct, qualified, and method call resolution. Every
+// compound return carries its checked type graph, including element types and
+// array lengths, before dependent call inference begins. Argument inference
+// accepts a seeded graph only when it is closed; symbolic return templates
+// still require materialization under the callee's accepted environment.
 
 struct Params
 {
@@ -30,7 +31,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TYPE_REF_INSTANCE = 3u;
-static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -56,17 +56,23 @@ bool valid_token(uint token)
 
 uint callee_token(uint call)
 {
+    uint callee = compact_hir_payload[call].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_hir(callee) && compact_hir_core[callee].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[callee].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
     uint call_token = compact_hir_core[call].token_start;
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee = compact_hir_payload[call].a;
     if (!valid_hir(callee))
         return valid_token(call_token) ? call_token : INVALID;
 
     HirCore core = compact_hir_core[callee];
     HirPayload payload = compact_hir_payload[callee];
-    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    uint token = payload.d;
     if (!valid_token(token))
         token = core.token_start;
     return valid_token(token) ? token : call_token;
@@ -86,7 +92,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint instance = fn_return_ref_payload[fn];
-    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_NAMED)
+    if (!valid_token(instance) || type_instance_kind[instance] == 0u)
         return;
     call_result_instance[call] = instance;
 }

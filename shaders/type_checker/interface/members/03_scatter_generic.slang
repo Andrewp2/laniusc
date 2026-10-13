@@ -1,16 +1,29 @@
+import type_checker.constant_parameter_slots;
+import semantic_interface_layout;
+import constant_value;
+import type_checker.constant_atoms;
+import type_checker.interface.scalar_leaves;
 // Scatter declaration generic parameters before ordinary members.
 import hir_records;
 import atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_generic_param_count; StructuredBuffer<HirGenericParam> compact_generic_params;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<uint> name_id_by_token; StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_const_param_slot_by_token; StructuredBuffer<uint> interface_generic_type_count_by_decl;
+StructuredBuffer<uint> interface_type_count;
+StructuredBuffer<uint> interface_generic_type_count_by_decl;
+StructuredBuffer<uint> interface_generic_scope_owner_by_hir;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> interface_signature_type_by_decl;
+RWStructuredBuffer<uint> interface_types;
+RWStructuredBuffer<uint> interface_member_cursor;
 StructuredBuffer<uint> public_decl_index_by_hir; StructuredBuffer<uint> interface_member_prefix;
 RWStructuredBuffer<uint> interface_member_words; RWStructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_member_index_by_generic_row; RWStructuredBuffer<uint> interface_member_written;
 RWStructuredBuffer<uint> interface_status;
-static const uint INVALID=0xffffffffu,MEMBER_WORDS=11u,GENERIC_TYPE=1u,GENERIC_CONST=2u;
+static const uint INVALID=0xffffffffu,MEMBER_WORDS=SEMANTIC_INTERFACE_MEMBER_WORDS,GENERIC_TYPE=1u,GENERIC_CONST=2u;
 static const uint MEMBER_GENERIC_TYPE=2u,MEMBER_GENERIC_CONST=3u,WG_SIZE=256u,MAX_GROUPS_X=65535u;
 uint linear_thread_id(uint3 d){return d.x+d.y*MAX_GROUPS_X*WG_SIZE;}
 void fail(uint d){atomic_u32_or(interface_status,0u,8192u);atomic_u32_min(interface_status,1u,d);}
@@ -19,15 +32,46 @@ void main(uint3 dtid:SV_DispatchThreadID)
 {
  uint row=linear_thread_id(dtid);if(row>=min(compact_generic_param_count[0u],gParams.hir_capacity))return;
  HirGenericParam parameter=compact_generic_params[row];
- uint owner=parameter.owner<gParams.hir_capacity?public_decl_index_by_hir[parameter.owner]:INVALID;if(owner>=gParams.decl_capacity)return;
+ uint owner=parameter.owner<gParams.hir_capacity?public_decl_index_by_hir[parameter.owner]:INVALID;
+ uint scope=0u;
+ if(owner>=gParams.decl_capacity&&parameter.owner<gParams.hir_capacity)
+ {
+  owner=interface_generic_scope_owner_by_hir[parameter.owner];
+  scope=(compact_hir_core[parameter.owner].kind==3u?0x80000000u:0xc0000000u)|parameter.owner;
+ }
+ if(owner>=gParams.decl_capacity)return;
+ HirRange parameters=compact_generic_param_ranges[parameter.owner];
+ if(parameters.start==INVALID||row<parameters.start||row-parameters.start>=parameters.count){fail(row);return;}
+ uint source_ordinal=row-parameters.start;
  uint token=parameter.name_token,kind=parameter.kind,slot=INVALID,member_kind=0u;
  if(kind==GENERIC_TYPE){slot=token<gParams.token_capacity?type_generic_param_slot_by_token[token]:INVALID;member_kind=MEMBER_GENERIC_TYPE;}
- else if(kind==GENERIC_CONST){slot=token<gParams.token_capacity?type_const_param_slot_by_token[token]:INVALID;slot=slot==INVALID?INVALID:interface_generic_type_count_by_decl[owner]+slot;member_kind=MEMBER_GENERIC_CONST;}
+ else if(kind==GENERIC_CONST){slot=token<gParams.token_capacity?type_const_param_slot_by_token[token]:INVALID;slot=slot==INVALID?INVALID:(scope==0u?interface_generic_type_count_by_decl[owner]+slot:slot);member_kind=MEMBER_GENERIC_CONST;}
  uint name_id=token<gParams.token_capacity?name_id_by_token[token]:INVALID;if(slot==INVALID||name_id==INVALID){fail(row);return;}
- uint dst=interface_member_prefix[owner]+slot,base=dst*MEMBER_WORDS;
- interface_member_words[base+0u]=owner;interface_member_words[base+1u]=member_kind;interface_member_words[base+2u]=slot;
+ uint declared_type=INVALID;
+ if(kind==GENERIC_CONST)
+ {
+  uint scalar=checked_constant_parameter_scalar(token);
+  if(!constant_scalar_is_supported(scalar)){fail(row);return;}
+  declared_type=interface_scalar_leaf_index(interface_type_count[0u],scalar);
+ }
+ uint ordinal=scope==0u?slot:atomic_u32_add(interface_member_cursor,owner,1u);
+ uint dst=interface_member_prefix[owner]+ordinal,base=dst*MEMBER_WORDS;
+ interface_member_words[base+0u]=owner;interface_member_words[base+1u]=member_kind;interface_member_words[base+2u]=ordinal;
  interface_member_words[base+3u]=0u;interface_member_words[base+4u]=0u;interface_member_words[base+5u]=0u;interface_member_words[base+6u]=0u;
- interface_member_words[base+7u]=INVALID;interface_member_words[base+8u]=0u;interface_member_words[base+9u]=0u;interface_member_words[base+10u]=INVALID;
+ interface_member_words[base+7u]=declared_type;interface_member_words[base+8u]=scope==0u?0u:slot;interface_member_words[base+9u]=scope;interface_member_words[base+10u]=INVALID;interface_member_words[base+11u]=source_ordinal;
  uint prior=atomic_u32_compare_exchange(interface_member_written,dst,0u,1u);if(prior!=0u){fail(dst);return;}
  interface_member_name_id[dst]=name_id;interface_member_index_by_generic_row[row]=dst;
+ // Each nominal header row also owns one symbolic signature leaf. Its value
+ // is the exact portable member identity, independent of parameter spelling.
+ uint owner_kind=compact_hir_core[parameter.owner].kind;
+ bool trait_owner=owner_kind==2u&&compact_hir_payload[parameter.owner].a==10u;
+ if(scope==0u&&(owner_kind==26u||owner_kind==27u||trait_owner))
+ {
+  uint root=interface_signature_type_by_decl[owner];
+  if(root==INVALID||root<parameters.count||source_ordinal>=parameters.count){fail(row);return;}
+  uint type_base=(root-1u-source_ordinal)*9u;
+  interface_types[type_base]=kind==GENERIC_TYPE?2u:8u;
+  interface_types[type_base+1u]=dst;
+  for(uint word=2u;word<9u;word++)interface_types[type_base+word]=0u;
+ }
 }

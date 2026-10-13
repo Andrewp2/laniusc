@@ -1,0 +1,41 @@
+
+running 9 tests
+test explicit_callable_arguments_execute_32_ordered_unused_slots ... ok
+test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test explicit_callable_arguments_execute_imported_own_method_headers ... FAILED
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... FAILED
+test explicit_callable_arguments_execute_scalar_and_unused_bindings ... ok
+test explicit_callable_arguments_execute_string_reference_and_slice_forms ... FAILED
+test explicit_callable_arguments_reject_value_and_result_conflicts ... ok
+test explicit_callable_arguments_validate_own_headers ... ok
+
+failures:
+
+---- explicit_callable_arguments_execute_imported_own_method_headers stdout ----
+GPU source-pack type-check rejection: token=31 code=CallMismatch detail=4294967048
+
+thread 'explicit_callable_arguments_execute_imported_own_method_headers' (428197) panicked at tests/compiler_generic_types_execution.rs:136:29:
+imported independent explicit method headers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 5, column: 18, length: 4, byte_start: Some(96), byte_end: Some(100), source_line: Some("    let result = core::explicit::Box<bool>::make<[i32; 2]>(values);"), message: "explicit callable generic arguments have no checked binding" }), help: None, notes: ["this callable must resolve to a declaration with an ordered generic parameter header"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- explicit_callable_arguments_execute_independent_receiver_and_method_headers stdout ----
+GPU source-pack type-check rejection: token=45 code=AssignMismatch detail=2097152
+
+thread 'explicit_callable_arguments_execute_independent_receiver_and_method_headers' (428199) panicked at tests/compiler_generic_types_execution.rs:136:29:
+independent receiver method headers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_independent_receiver_method_headers_426811_9.lani", line: 6, column: 12, length: 3, byte_start: Some(124), byte_end: Some(127), source_line: Some("    return Box<bool>::make<i32>(42);"), message: "value type is unknown type but this context expects generic parameter 0" }), help: None, notes: ["expected generic parameter 0, found unknown type; change the expression or the annotation so they agree"] })
+
+---- explicit_callable_arguments_execute_string_reference_and_slice_forms stdout ----
+GPU parser rejection: error_pos=0 code=4 detail=4294967288 steps=936 emit_len=0 semantic_kinds=Some([0, 67, 1, 133, 155])
+
+thread 'explicit_callable_arguments_execute_string_reference_and_slice_forms' (428204) panicked at tests/compiler_generic_types_execution.rs:136:29:
+explicit reference and slice aliases: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_explicit_reference_and_slice_aliases_426811_12.lani", line: 6, column: 37, length: 1, byte_start: Some(159), byte_end: Some(160), source_line: Some("    let borrowed: &i32 = keep<&i32>(&number);"), message: "expected one of identifier, integer literal, `!`, `(`, `[`, string literal, float literal, character literal, `+`, `-`, `)`, keyword `true`, keyword `false`, keyword `match`, or keyword `self`, found `&`" }), help: None, notes: [] })
+
+
+failures:
+    explicit_callable_arguments_execute_imported_own_method_headers
+    explicit_callable_arguments_execute_independent_receiver_and_method_headers
+    explicit_callable_arguments_execute_string_reference_and_slice_forms
+
+test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 211 filtered out; finished in 78.01s
+

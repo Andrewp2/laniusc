@@ -1,0 +1,31 @@
+module app::main;
+import core::number_i32;
+import core::option;
+import core::option_i32;
+import core::result_bool;
+import core::slice_bool;
+
+fn main() -> i32 {
+    let readings: [bool; 3] = [true, false, true];
+    let window: [bool; 5] = [false, false, false, false, false];
+    if (core::slice_bool::copy_prefix(readings, 3, window, 5) != 3) { return 1; }
+    if (!core::slice_bool::set(window, 5, 3, true)) { return 2; }
+    if (core::slice_bool::reverse(window, 5) != 5) { return 3; }
+
+    let first: core::option::Option<bool> =
+        core::option::Some(core::slice_bool::get_or(window, 5, 0, true));
+    let checked: core::result_bool::ResultBool = first.ok_or(true);
+    if (!core::result_bool::contains(checked, false)) { return 4; }
+
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < 5) {
+        if (core::slice_bool::get_or(window, 5, index, false)) {
+            total = core::number_i32::saturating_add(total, 1);
+        }
+        index += 1;
+    }
+    let checksum: core::option_i32::OptionI32 = core::option_i32::some(total);
+    print(core::option_i32::unwrap_or(checksum, -1));
+    return 0;
+}

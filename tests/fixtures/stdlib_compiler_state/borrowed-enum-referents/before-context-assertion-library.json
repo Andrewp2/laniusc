@@ -1,0 +1,19 @@
+{
+  "command": [
+    "target/borrowed-enum-tests/stdlib_gpu_perf",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type",
+    "physical_gpu_semantic_projection_rejects_capacity_overflow",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 101,
+  "elapsed_seconds": 51.38877123699967,
+  "binary_sha256": "561332b303c30ac5356de7e1663e8eb234e35e2ddb232b8458ae6da7db003aa6",
+  "passed": [
+    "codegen::lowering::tests::physical_gpu_semantic_projection_rejects_capacity_overflow"
+  ],
+  "summaries": [
+    "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 668 filtered out; finished in 51.11s"
+  ],
+  "frozen_sources_unchanged": true
+}

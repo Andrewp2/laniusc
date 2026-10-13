@@ -1,0 +1,101 @@
+// Turn the GPU-collected semantic feature summary into indirect dispatch grids.
+// Optional semantic families receive zero workgroups when no relevant HIR was
+// observed. Predicate lookup helpers get their exact enabled grids as well.
+
+struct Params
+{
+    uint n_tokens;
+    uint source_len;
+    uint n_hir_nodes;
+    uint n_source_files;
+};
+
+ConstantBuffer<Params> gParams;
+
+StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> hir_active_count;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<uint> compact_predicate_count;
+StructuredBuffer<uint> semantic_feature_flags;
+RWStructuredBuffer<uint> method_token_dispatch_args;
+RWStructuredBuffer<uint> method_hir_dispatch_args;
+RWStructuredBuffer<uint> method_compact_dispatch_args;
+RWStructuredBuffer<uint> method_token_hir_dispatch_args;
+RWStructuredBuffer<uint> predicate_token_dispatch_args;
+RWStructuredBuffer<uint> predicate_hir_dispatch_args;
+RWStructuredBuffer<uint> predicate_compact_dispatch_args;
+RWStructuredBuffer<uint> predicate_single_dispatch_args;
+RWStructuredBuffer<uint> match_hir_dispatch_args;
+RWStructuredBuffer<uint> explicit_application_dispatch_args;
+
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
+static const uint SEMANTIC_FEATURE_METHODS = 1u << 0u;
+static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
+static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
+
+bool feature_enabled(uint feature)
+{
+    return (semantic_feature_flags[0u] & feature) != 0u;
+}
+
+uint active_token_count()
+{
+    return min(gParams.n_tokens, token_count[0u]);
+}
+
+uint active_hir_node_count()
+{
+    return min(gParams.n_hir_nodes, hir_active_count[0u]);
+}
+
+void write_record_args(RWStructuredBuffer<uint> args, uint records, bool enabled)
+{
+    uint groups = enabled ? (records + WG_SIZE - 1u) / WG_SIZE : 0u;
+    args[0u] = min(groups, MAX_GROUPS_X);
+    args[1u] = groups == 0u ? 0u : (groups + MAX_GROUPS_X - 1u) / MAX_GROUPS_X;
+    args[2u] = groups == 0u ? 0u : 1u;
+}
+
+void write_fixed_args(RWStructuredBuffer<uint> args, uint groups, bool enabled)
+{
+    uint active_groups = enabled ? groups : 0u;
+    args[0u] = active_groups;
+    args[1u] = active_groups == 0u ? 0u : 1u;
+    args[2u] = active_groups == 0u ? 0u : 1u;
+}
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    if (dtid.x != 0u || dtid.y != 0u || dtid.z != 0u)
+        return;
+
+    uint active_tokens = active_token_count();
+    uint active_hir = active_hir_node_count();
+    uint active_methods = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint active_predicates = min(compact_predicate_count[0u], gParams.n_hir_nodes);
+    bool methods = feature_enabled(SEMANTIC_FEATURE_METHODS);
+    bool predicates = feature_enabled(SEMANTIC_FEATURE_PREDICATES);
+    // Method-contract validation shares the predicate-family lookup and HIR
+    // passes, but a trait declaration can have methods without producing any
+    // compact predicate rows. Keep that scheduling dependency explicit.
+    bool predicate_or_method_work = predicates || methods;
+    bool match_syntax = feature_enabled(SEMANTIC_FEATURE_MATCH);
+
+    write_record_args(method_token_dispatch_args, active_tokens, methods);
+    write_record_args(method_hir_dispatch_args, active_hir, methods);
+    write_record_args(method_compact_dispatch_args, active_methods, methods);
+    write_record_args(method_token_hir_dispatch_args, max(active_tokens, active_hir), methods);
+    write_record_args(predicate_token_dispatch_args, active_tokens, predicates);
+    write_record_args(predicate_hir_dispatch_args, active_hir, predicate_or_method_work);
+    write_record_args(predicate_compact_dispatch_args, active_predicates, predicates);
+    write_fixed_args(predicate_single_dispatch_args, 1u, predicate_or_method_work);
+    write_record_args(match_hir_dispatch_args, active_hir, match_syntax);
+    // Lexical declaration features cannot prove the absence of explicit
+    // arguments on an imported or nongeneric callable. Consume parser facts.
+    write_record_args(explicit_application_dispatch_args, active_hir,
+        compact_type_arg_count[0u] != 0u);
+}

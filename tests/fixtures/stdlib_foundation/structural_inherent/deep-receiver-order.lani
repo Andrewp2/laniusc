@@ -1,0 +1,101 @@
+// Acceptance candidate; not compiled or executed by this author.
+// Expected exit 0, with empty stdout and stderr.
+// Each reference borrows a distinct local cell that remains live in main.
+struct Item { value: i32, guard: i32 }
+impl Item {
+    fn borrow(&self) -> &Item { return self; }
+    fn snapshot(self, effect: i32) -> i32 {
+        if (effect != 1 || self.guard != 71) { return -1; }
+        return self.value;
+    }
+}
+
+// Exact reference-root methods add one caller-owned reference cell.
+impl & Item { fn borrow_next(&self) -> & & Item { return self; } }
+impl & & Item { fn borrow_next(&self) -> & & & Item { return self; } }
+impl & & & Item { fn borrow_next(&self) -> & & & & Item { return self; } }
+impl & & & & Item { fn borrow_next(&self) -> & & & & & Item { return self; } }
+impl & & & & & Item { fn borrow_next(&self) -> & & & & & & Item { return self; } }
+impl & & & & & & Item { fn borrow_next(&self) -> & & & & & & & Item { return self; } }
+impl & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & Item { return self; } }
+impl & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+
+impl & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+impl & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { fn borrow_next(&self) -> & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item { return self; } }
+
+fn change_original(value: &Item) -> i32 {
+    value.value = 97;
+    return 1;
+}
+
+fn main() -> i32 {
+    let original: Item = Item { value: 17, guard: 71 };
+    let other: Item = Item { value: 113, guard: 71 };
+    let r1: &Item = original.borrow();
+    let r2: & & Item = r1.borrow_next();
+    let r3: & & & Item = r2.borrow_next();
+    let r4: & & & & Item = r3.borrow_next();
+    let r5: & & & & & Item = r4.borrow_next();
+    let r6: & & & & & & Item = r5.borrow_next();
+    let r7: & & & & & & & Item = r6.borrow_next();
+    let r8: & & & & & & & & Item = r7.borrow_next();
+    let r9: & & & & & & & & & Item = r8.borrow_next();
+    let r10: & & & & & & & & & & Item = r9.borrow_next();
+    let r11: & & & & & & & & & & & Item = r10.borrow_next();
+    let r12: & & & & & & & & & & & & Item = r11.borrow_next();
+    let r13: & & & & & & & & & & & & & Item = r12.borrow_next();
+    let r14: & & & & & & & & & & & & & & Item = r13.borrow_next();
+    let r15: & & & & & & & & & & & & & & & Item = r14.borrow_next();
+    let r16: & & & & & & & & & & & & & & & & Item = r15.borrow_next();
+    let r17: & & & & & & & & & & & & & & & & & Item = r16.borrow_next();
+    let r18: & & & & & & & & & & & & & & & & & & Item = r17.borrow_next();
+    let r19: & & & & & & & & & & & & & & & & & & & Item = r18.borrow_next();
+    let r20: & & & & & & & & & & & & & & & & & & & & Item = r19.borrow_next();
+    let r21: & & & & & & & & & & & & & & & & & & & & & Item = r20.borrow_next();
+    let r22: & & & & & & & & & & & & & & & & & & & & & & Item = r21.borrow_next();
+    let r23: & & & & & & & & & & & & & & & & & & & & & & & Item = r22.borrow_next();
+    let r24: & & & & & & & & & & & & & & & & & & & & & & & & Item = r23.borrow_next();
+    let r25: & & & & & & & & & & & & & & & & & & & & & & & & & Item = r24.borrow_next();
+    let r26: & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r25.borrow_next();
+    let r27: & & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r26.borrow_next();
+    let r28: & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r27.borrow_next();
+
+    let r29: & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r28.borrow_next();
+    let r30: & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r29.borrow_next();
+    let r31: & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r30.borrow_next();
+    let r32: & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & & Item = r31.borrow_next();
+
+    // Complete all 32 receiver dereferences and the value copy before
+    // evaluating the later argument that writes through an alias.
+    let captured: i32 = r32.snapshot(change_original(r1));
+    if (captured != 17) { return 1; }
+    if (original.value != 97 || original.guard != 71) { return 2; }
+    if (r32.snapshot(1) != 97) { return 3; }
+
+    // The chain still observes the innermost reference cell itself.
+    r1 = other.borrow();
+    if (r32.snapshot(1) != 113) { return 4; }
+    if (original.value != 97 || other.guard != 71) { return 5; }
+    return 0;
+}

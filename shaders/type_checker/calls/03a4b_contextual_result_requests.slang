@@ -1,193 +1,162 @@
-// Match a direct call's declared aggregate result against the aggregate type
-// required by its enclosing declaration or return statement. One lane emits
-// one variable-width comparison request; the existing prefix scan expands the
-// type arguments so contextual generic inference remains parallel.
-
-import external_type_identity;
-import atomics;
+import type_checker.constant_constraints;
+// Match local call returns against their complete receiving context. Each
+// call owns its accepted result constraints. Inference publishes
+// all ordered bindings only after the entire graph has matched.
 import hir_records;
+import hir_expr_semantics;
 import gpu_index;
 import status;
+import type_checker.calls.checked_call_type_graph;
+import type_checker.checked_type_graph;
+import type_checker.calls.contextual_call_environment;
+import type_checker.scoped_type_constraints;
+import type_checker.argument_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
-
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
+StructuredBuffer<uint> struct_init_field_expected_ref_tag;
+StructuredBuffer<uint> struct_init_field_expected_ref_payload;
+StructuredBuffer<uint> struct_init_field_expected_context_instance;
+StructuredBuffer<uint> type_instance_lookup_head;
+StructuredBuffer<uint> type_instance_lookup_next;
+StructuredBuffer<uint> compact_array_element_start;
+StructuredBuffer<uint> compact_array_element_count;
+StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
+StructuredBuffer<uint> argument_expected_ref_tag;
+StructuredBuffer<uint> argument_expected_ref_payload;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> visible_decl;
-RWStructuredBuffer<uint> call_generic_slot_type;
-RWStructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_inference_state;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 RWStructuredBuffer<uint> call_result_instance;
-
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
-RWStructuredBuffer<uint> aggregate_compare_expected_instance;
-RWStructuredBuffer<uint> aggregate_compare_actual_instance;
-RWStructuredBuffer<uint> aggregate_compare_error_token;
-RWStructuredBuffer<uint> aggregate_compare_error_detail;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
+bool valid_hir(uint node) { return node < active_hir_count(); }
+bool valid_token(uint token) { return token < gParams.n_tokens; }
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
-static const uint HIR_CALL_EXPR = 19u;
-static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_STMT_LET = 1u;
-static const uint HIR_STMT_RETURN = 2u;
-static const uint HIR_STMT_CONST = 4u;
-static const uint TYPE_REF_INSTANCE = 3u;
-static const uint TYPE_REF_SCALAR = 1u;
-static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_INSTANCE_NAMED = 1u;
-static const uint TYPE_INSTANCE_SLICE = 3u;
-static const uint TY_ARRAY_BASE = 128u;
-static const uint PARAM_CACHE_STRIDE = 4u;
-static const uint ERR_ASSIGN_MISMATCH = 3u;
-static const uint DISPATCH_X_STRIDE = 16776960u;
-
-uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
-bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
-bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
+#include "../result_expression_context.slang"
 
 uint callee_token(uint call)
 {
-    uint call_token = compact_hir_core[call].token_start;
-    if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
-        return call_token;
     uint callee = compact_hir_payload[call].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_hir(callee) && compact_hir_core[callee].kind == 21u)
+    {
+        uint member_token = compact_hir_payload[callee].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
+    uint token = compact_hir_core[call].token_start;
+    if (valid_token(token) && valid_token(call_fn_index[token])) return token;
     if (!valid_hir(callee)) return INVALID;
-    HirCore core = compact_hir_core[callee];
-    HirPayload payload = compact_hir_payload[callee];
-    uint token = core.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
-    if (!valid_token(token)) token = core.token_start;
+    token = compact_hir_payload[callee].d;
+    if (!valid_token(token)) token = compact_hir_core[callee].token_start;
     return valid_token(token) ? token : INVALID;
-}
-
-bool same_named_identity(uint expected, uint actual)
-{
-    uint expected_decl = type_instance_decl_token[expected];
-    uint actual_decl = type_instance_decl_token[actual];
-    if (valid_token(expected_decl) || valid_token(actual_decl))
-        return valid_token(expected_decl) && expected_decl == actual_decl;
-    return external_type_identity_equal(expected, actual);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint node = linear_dispatch_thread_id_2d(dtid, 16776960u);
     if (!valid_hir(node)) return;
-    HirCore core = compact_hir_core[node];
-    HirPayload stmt = compact_hir_payload[node];
-    if (core.kind != HIR_STMT && core.kind != HIR_LET_STMT &&
-        core.kind != HIR_RETURN_STMT)
-        return;
-
-    uint call = INVALID;
-    uint expected_tag = 0u;
-    uint expected = INVALID;
-    if (stmt.a == HIR_STMT_LET || stmt.a == HIR_STMT_CONST)
+    uint kind = compact_hir_core[node].kind;
+    if (kind == HIR_STMT || kind == HIR_LET_STMT || kind == HIR_RETURN_STMT)
     {
-        call = stmt.c;
-        if (valid_hir(stmt.d))
+        // The complete matcher replaces legacy comparisons for direct local
+        // aggregate results. A statement lane only owns its comparison row;
+        // all result environments are published by the call lane below.
+        HirPayload statement = compact_hir_payload[node];
+        uint root = statement.a == 2u ? statement.b : statement.c;
+        root = argument_context_root(root, active_hir_count(), compact_hir_core, compact_hir_payload);
+        uint2 reference;
+        if (valid_hir(root) && compact_hir_core[root].kind == 19u &&
+            statement_expression_context(root, node, reference))
         {
-            uint type_token = compact_hir_core[stmt.d].token_start;
-            if (valid_token(type_token))
-            {
-                expected_tag = type_expr_ref_tag[type_token];
-                expected = type_expr_ref_payload[type_token];
-            }
+            uint token = callee_token(root);
+            uint function = valid_token(token) ? call_fn_index[token] : INVALID;
+            if (valid_token(function) && fn_return_ref_tag[function] != 0u && fn_return_ref_tag[function] != 1u)
+                aggregate_compare_scan_input[node] = 0u;
         }
-    }
-    else if (stmt.a == HIR_STMT_RETURN)
-    {
-        call = stmt.b;
-        uint fn_node = compact_hir_nearest_fn[node];
-        if (valid_hir(fn_node))
-        {
-            uint fn = compact_hir_payload[fn_node].b;
-            if (valid_token(fn))
-            {
-                expected_tag = fn_return_ref_tag[fn];
-                expected = fn_return_ref_payload[fn];
-            }
-        }
-    }
-    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR ||
-        expected_tag != TYPE_REF_INSTANCE || !valid_token(expected))
         return;
-
+    }
+    if (kind != 19u) return;
+    uint call = node;
     uint callee = callee_token(call);
-    uint fn = valid_token(callee) ? call_fn_index[callee] : INVALID;
-    if (!valid_token(fn) || fn_return_ref_tag[fn] != TYPE_REF_INSTANCE)
-        return;
-    uint actual = fn_return_ref_payload[fn];
-    uint expected_kind = type_instance_kind[expected];
-    uint actual_kind = valid_token(actual) ? type_instance_kind[actual] : 0u;
-    bool matches = valid_token(actual) &&
-        expected_kind == actual_kind &&
-        type_instance_arg_count[expected] == type_instance_arg_count[actual] &&
-        (expected_kind != TYPE_INSTANCE_NAMED ||
-         same_named_identity(expected, actual));
-    if (!matches)
+    bool raw_view = valid_token(callee) && call_intrinsic_tag[callee] == 7u;
+    uint function = valid_token(callee) ? call_fn_index[callee] : INVALID;
+    if (!raw_view && (!valid_token(function) || fn_return_ref_tag[function] == 0u || fn_return_ref_tag[function] == 1u)) return;
+    uint2 reference;
+    // Receiving fields resolve under their nominal owner's environment. The
+    // resulting reference is already in caller scope; only the return-pattern
+    // matcher below suppresses provisional bindings of the called function.
+    if (!result_expression_context<ScopedCheckedTypeGraph>(call, checked_type_capacity(), reference)) return;
+    uint tag = reference.x; uint expected = reference.y;
+    if (tag == 0u || expected == INVALID || (tag == 3u && expected >= checked_type_capacity())) return;
+    if (raw_view)
     {
-        record_min_token_error(status, compact_hir_core[call].token_start,
-                               ERR_ASSIGN_MISMATCH, 0u);
+        // A raw view has no typed input from which to infer its element. The
+        // receiving context owns its complete result, as for an empty array.
+        if (tag == 3u && type_instance_kind[expected] == 3u) call_result_instance[call] = expected;
+        else if (call_inference_state[0u] == 0u)
+            record_min_token_error(status, compact_hir_core[call].token_start, 3u, 0u);
         return;
     }
-    if (expected_kind == TYPE_INSTANCE_SLICE &&
-        type_instance_elem_ref_tag[expected] == TYPE_REF_SCALAR &&
-        type_instance_elem_ref_tag[actual] == TYPE_REF_GENERIC_PARAM)
+    uint2 inferred[32]; uint mask; InferredConstant constants[32]; uint constant_mask;
+    if (!scoped_type_and_constant_constraints<ScopedDeclaredResultTypeGraph>(
+        fn_return_ref_tag[function], fn_return_ref_payload[function], 0x80000000u | callee,
+        tag, expected, checked_type_capacity(), gParams.n_tokens, inferred, mask,
+        constants, constant_mask, true))
     {
-        // A caller annotation such as `[i32]` can supply the element of a
-        // local generic `[T]` result even when no argument mentions T.
-        uint generic_token = type_instance_elem_ref_payload[actual];
-        uint slot = valid_token(generic_token)
-            ? type_generic_param_slot_by_token[generic_token] : INVALID;
-        if (slot == INVALID && valid_token(generic_token))
-        {
-            uint declaration = visible_decl[generic_token];
-            if (valid_token(declaration))
-                slot = type_generic_param_slot_by_token[declaration];
-        }
-        uint element_type = type_instance_elem_ref_payload[expected];
-        if (slot < PARAM_CACHE_STRIDE && element_type != 0u &&
-            element_type < TY_ARRAY_BASE)
-        {
-            uint state_i = callee * PARAM_CACHE_STRIDE + slot;
-            uint prior = atomic_u32_compare_exchange(
-                call_generic_slot_type, state_i, INVALID, element_type);
-            if (prior != INVALID && prior != element_type)
-            {
-                record_min_token_error(status,
-                    compact_hir_core[call].token_start,
-                    ERR_ASSIGN_MISMATCH, 0u);
-                return;
-            }
-            call_return_type[callee] = TY_ARRAY_BASE + element_type;
-            call_result_instance[call] = expected;
-            return;
-        }
+        // Parameter contexts can still change while their enclosing call's
+        // argument facts settle. A failed provisional comparison publishes
+        // nothing; the final invocation diagnoses against the closed facts.
+        if (call_inference_state[0u] == 0u)
+            record_min_token_error(status, compact_hir_core[call].token_start, 3u, 0u);
+        return;
     }
-    uint count = type_instance_arg_count[expected];
-    if (count == 0u) return;
-    aggregate_compare_scan_input[node] = count;
-    aggregate_compare_expected_instance[node] = expected;
-    aggregate_compare_actual_instance[node] = actual;
-    aggregate_compare_error_token[node] = compact_hir_core[call].token_start;
-    aggregate_compare_error_detail[node] = 0u;
+    for (uint slot = 0u; slot < 32u; slot++)
+        if ((mask & (1u << slot)) != 0u)
+        {
+            call_context_ref_tag[call * 32u + slot] = inferred[slot].x;
+            call_context_ref_payload[call * 32u + slot] = inferred[slot].y;
+        }
+    call_context_arg_mask[call] |= mask;
+    if (!publish_context_constants<ScopedDeclaredResultTypeGraph>(call, constants, constant_mask, gParams.n_tokens))
+    { record_min_token_error(status, compact_hir_core[call].token_start, 6u, 0x474e0001u); return; }
+    call_context_owner_by_token[callee] = call;
+    uint callee_node = compact_hir_payload[call].a;
+    // A dotted call's leading tokens belong to its receiver expression.
+    // Only nonmember calls publish their existing qualified-owner aliases.
+    if (valid_hir(callee_node) && compact_hir_core[callee_node].kind != 21u)
+    {
+        uint head = compact_hir_core[callee_node].token_start;
+        uint call_token = compact_hir_core[call].token_start;
+        if (valid_token(head)) call_context_owner_by_token[head] = call;
+        if (valid_token(call_token)) call_context_owner_by_token[call_token] = call;
+    }
+    if (tag == 3u) call_result_instance[call] = expected;
 }

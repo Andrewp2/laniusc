@@ -1,0 +1,2 @@
+sample=0 ms=141.547
+entry=tests/fixtures/stdlib_compiler_state/explicit-slice-borrow/ordinary.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2957 min_ms=141.547 median_ms=141.547 avg_ms=141.547 max_ms=141.547 output_verified=true

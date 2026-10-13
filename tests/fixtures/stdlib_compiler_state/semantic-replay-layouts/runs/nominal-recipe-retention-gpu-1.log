@@ -1,0 +1,7 @@
+
+running 2 tests
+test compiler::gpu_compiler::x86_codegen::tests::checked_nominal_recipes_replay_reuses_the_original_symbolic_snapshot ... ok
+test compiler::gpu_compiler::x86_codegen::tests::checked_nominal_recipes_retain_private_public_payloads_without_calls_or_predicates ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 740 filtered out; finished in 2.90s
+

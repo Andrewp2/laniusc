@@ -1,0 +1,23 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... FAILED
+
+failures:
+
+---- generated_imported_receivers_preserve_more_than_four_type_arguments stdout ----
+
+thread 'generated_imported_receivers_preserve_more_than_four_type_arguments' (264149) panicked at tests/compiler_generic_types_execution.rs:197:6:
+compile generated receiver applications with more than four arguments: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0001", title: "missing source-root module", category: "package/import loading", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0001", message: "missing source-root module core::five::Five", primary_label: Some(DiagnosticLabel { path: "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_generic_generated_receiver_arguments.lani", line: 2, column: 1, length: 24, byte_start: None, byte_end: None, source_line: Some("import core::five::Five;"), message: "imported here" }), help: None, notes: ["searched /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_generated_receiver_root/core/five/Five.lani"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    generated_imported_receivers_preserve_more_than_four_type_arguments
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

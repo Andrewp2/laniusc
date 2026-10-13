@@ -1,0 +1,30 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 6.34s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/parser_hir_records.rs (target/stdlib-perf/build/release/deps/parser_hir_records-2944f17b789eeed0)
+
+running 13 tests
+test parser_compact_hir_nested_array_types_preserve_delimiters ... ok
+test parser_compact_hir_nested_index_preserves_each_base_operand ... ok
+test parser_compact_nested_literals_keep_each_owners_field_range_contiguous ... ok
+test parser_hir_call_argument_records_have_contiguous_owners_and_ordinals ... ok
+test parser_hir_chained_member_records_link_previous_member_as_receiver ... ok
+test parser_hir_chained_method_call_receiver_records_link_inner_call_as_receiver ... ok
+test parser_hir_member_after_index_uses_index_receiver ... ok
+test parser_hir_zero_argument_calls_publish_callee_without_argument_rows ... ok
+test parser_semantic_tokens_classify_index_after_struct_literal ... ok
+test parser_semantic_tokens_classify_nested_postfix_chain_around_struct_literal ... ok
+test parser_semantic_tokens_qualified_declaration_applications_are_types ... ok
+test parser_semantic_tokens_qualified_generic_constructor_value_path ... ok
+test parser_semantic_tokens_restore_array_context_after_struct_literals ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 226 filtered out; finished in 1.54s
+
+     Running tests/type_checker_modules.rs (target/stdlib-perf/build/release/deps/type_checker_modules-dc4471308128c7a8)
+
+running 1 test
+test type_checker_compares_nested_imported_generic_trees_without_a_depth_cap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out; finished in 1.47s
+

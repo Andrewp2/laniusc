@@ -1,0 +1,10 @@
+module app::main;
+import core::relay;
+
+fn main() -> i32 {
+    let values = core::relay::duplicate(42);
+    if (values[0] != 42 || values[1] != 42) { return 1; }
+    values[0] = -7;
+    if (values[0] != -7 || values[1] != 42) { return 2; }
+    return 0;
+}

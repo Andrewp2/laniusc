@@ -43,6 +43,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalArra
                 "element_owner".into(),
                 b.hir_array_element_parent_lit.as_entire_binding(),
             ),
+            ("element_ordinal".into(), b.hir_array_element_ordinal.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "candidate_raw_by_anchor".into(),

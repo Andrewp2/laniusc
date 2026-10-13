@@ -1,0 +1,36 @@
+
+running 16 tests
+test generic_nested_result_arguments_execute ... ok
+test generic_nested_result_array_elements_execute ... ok
+test generic_nested_result_conflicts_and_missing_context_reject ... ok
+test generic_nested_result_contexts_preserve_thirty_two_type_bindings ... ok
+test generic_nested_result_fields_execute ... ok
+test generic_nested_result_imported_contexts_and_methods_execute ... ok
+test generic_nested_result_match_arms_execute ... 
+thread 'generic_nested_result_match_arms_execute' (21397) panicked at tests/compiler_generic_types_execution.rs:136:29:
+nested match result context: compile: GpuCodegen("GPU lowering failed (flags=0x400, semantic row=4294967295, OptIR row=220, source HIR=4294967295, target opcode=4294967295, required capacity=0, available capacity=4294967295, diagnostic reason=17, diagnostic detail kind=0, diagnostic detail=4294967295)")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test generic_nested_result_monomorphic_fields_preserve_widths_and_copies ... 
+thread 'generic_nested_result_monomorphic_fields_preserve_widths_and_copies' (21399) panicked at tests/compiler_generic_types_execution.rs:139:5:
+assertion `left == right` failed: monomorphic record concrete generic fields: Output { status: ExitStatus(unix_wait_status(0)), stdout: "keep\nchanged\nc\nkeep\na\nc\n", stderr: "" }
+  left: [107, 101, 101, 112, 10, 99, 104, 97, 110, 103, 101, 100, 10, 99, 10, 107, 101, 101, 112, 10, 97, 10, 99, 10]
+ right: [107, 101, 101, 112, 10, 99, 104, 97, 110, 103, 101, 100, 10, 99, 10, 101, 100, 105, 116, 101, 100, 10, 107, 101, 101, 112, 10, 97, 10, 99, 10, 206, 179, 10]
+FAILED
+test generic_nested_result_symbolic_contexts_and_call_chains_execute ... ok
+test generic_result_only_constants_execute_imported_calls ... ok
+test generic_result_only_constants_execute_local_calls ... ok
+test generic_result_only_constants_execute_method_environments ... ok
+test generic_result_only_constants_execute_symbolic_forwarding ... ok
+test generic_result_only_constants_preserve_thirty_two_bindings_and_replay ... ok
+test generic_result_only_constants_reject_conflicting_constraints ... ok
+test generic_result_only_constants_reject_imported_conflicts ... ok
+
+failures:
+
+failures:
+    generic_nested_result_match_arms_execute
+    generic_nested_result_monomorphic_fields_preserve_widths_and_copies
+
+test result: FAILED. 14 passed; 2 failed; 0 ignored; 0 measured; 174 filtered out; finished in 8.48s
+

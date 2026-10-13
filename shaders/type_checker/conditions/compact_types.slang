@@ -1,11 +1,17 @@
+import type_checker.concrete_type_equality;
+import type_checker.constant_atoms_identity;
+import primitive_types;
+import type_checker.constant_parameter_slots;
 // Validate resolved type references from dense compact HIR. Method-contract
 // generic failures are classified through the compact method family rather
 // than raw production IDs or raw ancestor links.
 
 import hir_records;
+import type_checker.calls.explicit_call_environment;
 import fixed.compact_method;
 import gpu_index;
 import status;
+import type_checker.checked_array_counts;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 struct TokenIn { uint kind; uint start; uint len; };
@@ -22,8 +28,8 @@ StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_state;
 StructuredBuffer<uint> type_instance_len_payload;
 RWStructuredBuffer<uint> status;
 
@@ -34,10 +40,10 @@ static const uint TK_BOUND_TYPE_IDENT = 174u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_ERROR = 4u;
-static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_INVALID_ARRAY_LENGTH = 22u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -72,6 +78,18 @@ bool record_method_generic_error(uint token)
     return true;
 }
 
+bool checked_array_operand_role(uint node)
+{
+    uint parent = compact_hir_core[node].parent;
+    if (!valid_hir(parent) || compact_hir_core[parent].kind != HIR_TYPE) return false;
+    HirPayload array = compact_hir_payload[parent];
+    uint token = compact_hir_core[parent].token_start;
+    return array.a == HIR_TYPE_FORM_ARRAY && array.d == node && valid_token(token) &&
+        type_instance_state[token] == 1u &&
+        checked_source_array_length_valid(type_instance_len_kind[token], type_instance_len_payload[token],
+            gParams.n_tokens);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -83,6 +101,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(token) || predicate_syntax_token[token] != 0u ||
         token_words[token].kind == TK_BOUND_TYPE_IDENT)
         return;
+
+    // A bare application operand remains syntactically a path until the
+    // declaration supplies its kind. A checked constant is not a type use.
+    uint constant_kind; uint constant_payload;
+    if (checked_source_constant_operand(node, constant_kind, constant_payload))
+    {
+        ConstantReferenceDescriptor operand;
+        if (inspect_constant_reference<CheckedSourceConstantGraph, CheckedSourceConstantEnvironment>(
+            uint3(constant_kind, constant_payload, 0u), gParams.n_tokens, operand)) return;
+    }
+    if (checked_array_operand_role(node)) return;
+    if (compact_hir_payload[node].a == HIR_TYPE_FORM_ARRAY &&
+        !checked_source_array_length_valid(type_instance_len_kind[token],
+            type_instance_len_payload[token], gParams.n_tokens))
+    {
+        uint anchor = compact_hir_payload[node].c;
+        record_min_token_error(status, valid_token(anchor) ? anchor : token, ERR_INVALID_ARRAY_LENGTH, 0u);
+        return;
+    }
 
     uint tag = type_expr_ref_tag[token];
     uint payload = type_expr_ref_payload[token];
@@ -104,11 +141,4 @@ void main(uint3 dtid: SV_DispatchThreadID)
             record_min_token_error(status, token, ERR_UNRESOLVED_IDENT, 0u);
     }
 
-    if (compact_hir_payload[node].a == HIR_TYPE_FORM_ARRAY &&
-        type_instance_len_kind[token] == TYPE_LEN_CONST_PARAM)
-    {
-        uint len_token = type_instance_len_payload[token];
-        if (!valid_token(len_token) || type_const_param_slot_by_token[len_token] == INVALID)
-            record_min_token_error(status, token, ERR_UNRESOLVED_IDENT, len_token);
-    }
 }

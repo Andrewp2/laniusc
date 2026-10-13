@@ -1,0 +1,80 @@
+{
+  "status": "verified_export_contract_checkpoint",
+  "overall_goal": "active",
+  "schema_version": 10,
+  "checks": {
+    "final-interface-checks.log": [
+      "semantic_interface_export_preserves_transitive_dependency_nominal_identity",
+      "semantic_interface_exports_arbitrary_depth_module_segments",
+      "semantic_interface_exports_public_checked_graph_on_gpu",
+      "semantic_interface_exports_public_generic_traits",
+      "semantic_interface_preserves_all_thirty_two_trait_parameters",
+      "semantic_interface_preserves_trait_method_shapes_and_parent_scopes",
+      "semantic_interface_variant_rows_do_not_alias_dense_hir_declarations",
+      "type_checker_enforces_stdlib_trait_where_obligations_from_source_pack",
+      "type_checker_rejects_leaf_name_trait_impl_for_different_qualified_bound",
+      "type_checker_rejects_unqualified_trait_impl_for_different_module_bound",
+      "type_checker_resolves_qualified_trait_bounds",
+      "type_checker_resolves_trait_bounds_beyond_the_legacy_path_depth"
+    ],
+    "host-interface-contracts.log": [
+      "compiler::semantic_interface::dependency_batch::tests::dependency_batch_is_library_ordered_and_rebases_only_flat_storage",
+      "compiler::semantic_interface::dependency_batch::tests::dependency_batch_distinguishes_units_of_one_library",
+      "compiler::semantic_interface::dependency_batch::tests::dependency_batch_keeps_constant_array_lengths_with_their_declarations",
+      "compiler::semantic_interface::dependency_batch::tests::dependency_batch_rejects_self_and_duplicate_units",
+      "compiler::semantic_interface::tests::associated_method_receiver_type_roundtrips_and_must_name_its_owner",
+      "compiler::semantic_interface::tests::semantic_interface_binary_roundtrip_preserves_canonical_typed_graph",
+      "compiler::semantic_interface::tests::semantic_interface_constants_cannot_be_value_roots_or_elements",
+      "compiler::semantic_interface::tests::semantic_interface_nominal_constant_payloads_are_canonical",
+      "compiler::semantic_interface::tests::semantic_interface_generic_order_is_independent_of_binding_slots",
+      "compiler::semantic_interface::tests::semantic_interface_nominal_constants_roundtrip_and_rebase_by_role",
+      "compiler::semantic_interface::tests::semantic_interface_nominal_types_carry_library_identity_and_generic_edges",
+      "compiler::semantic_interface::tests::semantic_interface_rejects_hash_only_or_out_of_range_identity_records",
+      "compiler::semantic_interface::tests::semantic_interface_rejects_trailing_or_truncated_binary_payloads",
+      "compiler::semantic_interface::tests::semantic_interface_trait_contract_roundtrip_and_validation"
+    ],
+    "native-method-regressions.log": [
+      "explicit_callable_arguments_execute_imported_own_method_headers",
+      "imported_alias_associated_methods_preserve_complete_receiver_and_own_arguments",
+      "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+      "lexical_method_environment_imported_compounds_and_constants_execute",
+      "lexical_method_environment_imported_parameters_execute",
+      "lexical_method_environment_imported_rejects_missing_and_conflicting_bindings",
+      "ordinary_trait_methods_execute_alongside_generic_value_calls"
+    ],
+    "portable-values-runtime.log": [
+      "imported_trait_contract_records_preserve_ordinary_generic_execution"
+    ]
+  },
+  "unique_selected_checks": 34,
+  "runtime_target": "x86_64 Linux ELF emitted by GPU compiler",
+  "runtime_scope": "Generic values and methods continue to execute from modules carrying trait contracts; imported trait implementation/bound resolution remains open.",
+  "source_sha256": {
+    "tests/type_checker_modules.rs": "9e9548901aa3088dc9eeec4bbb7e20a45e11a6830b52875a80e490ee21c1a069",
+    "crates/laniusc-compiler/src/compiler/semantic_interface.rs": "c8408d4bde8e481571e1bdd5cc3072acca77fd8d1ee8edd2d41dfa02ed12950f",
+    "shaders/type_checker/interface/method_parameters.slang": "67e5ffd7c56cdcfbea97a876ec46ed59b52e5787511af5de98a4a071f243ff13",
+    "shaders/type_checker/interface/members/02_scatter_hir.slang": "45e54d7cdc9b84cd531d1c00c13c67bf6f7ec754b52d6dc682843b195ac5a574",
+    "shaders/type_checker/interface/members/00c_method_counts.slang": "69adf31dbfe52ee6297fbfaefa30257e092dab3cb5bd6a319a3947f3b8d5af30",
+    "shaders/type_checker/interface/members/03_scatter_generic.slang": "052ae76a1eed7256f36f4d9864054449d6b80e656bdeec195ebc64467abd5d04",
+    "shaders/type_checker/interface/signature/00_flags.slang": "1276ae7bec580e255f502a0f5a617145f0a11544eecafc261bc10625695ff9bc",
+    "shaders/type_checker/interface/type_topology/02b_seed_params.slang": "dbcf78ee6dfacab3923e1b8ed3a82fb10a040224a8a413723c3f92e9de7badd0",
+    "shaders/type_checker/interface/type_topology/02_seed_declarations.slang": "ce363e888c8cbdae574919dc9694f7134d2cfd7272f43d4b479bf9d56e386454",
+    "tests/compiler_generic_types_execution.rs": "8f296ff388512be5444a438a85cc4484ac779fbab800485bf7cd2bb59f2cae08",
+    "tests/fixtures/stdlib_compiler_state/imported-trait-contract/portable-values.lani": "62acda5b6657ee9d2e3fab3d86f33de5a9b91298686f5bd278adcc62e0de8a7a",
+    "tests/fixtures/stdlib_compiler_state/imported-trait-contract/stdlib/core/portable.lani": "93cccabcfaabc3939b306e3b5cca5799a5cdbf48b5a5f0827aa18ae63f178aaa"
+  },
+  "fixture_corrections": [
+    "Runtime fixture uses existing borrow methods and array-to-slice call coercion; address-of expressions and implicit let coercion were not valid fixture syntax/context.",
+    "Existing stdlib trait test now supplies number_u32/wide_u64/wide_i64 dependencies and uses Unhashed as its negative case; bool has Eq and Hash implementations. Negative asserts LNC0008."
+  ],
+  "performance": "Not remeasured for this export-only checkpoint. Run canonical/generic workloads after imported trait enforcement is complete; no performance claim for this change.",
+  "remaining_dependency_rechecked": "after-export-probes.json: both imported trait repros still fail with LNC0021 detail 2; not counted as passes.",
+  "tested_sources_unchanged_after_cli_rebuild": true,
+  "current_executables": {
+    "interface_tests": "7c82120a014c8b54d373050e4cfa1b60a2c5a13c689ff28260794a9d3ef2a267",
+    "runtime_tests": "8c03125b5329d0931607742af1103dabdf75f309dc9eddcb8d44263ca8565bc5",
+    "library_tests": "5e63d2bec01ead6e84f15a98bb4e5dd79f05a6cd9a87e6f8ed9e69d1566ef285",
+    "cli": "153a6df1f2c2f0ee16348d576b0bb5fabe3898f099c679b353a5ec63127fc19d",
+    "runtime_driver": "ca626897297886dc45b523b77533a28114d788f1b39d34bee6efadcb59d9827b"
+  }
+}

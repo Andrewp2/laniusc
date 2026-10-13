@@ -3,7 +3,10 @@
 // row; variable-length type arguments are expanded by the downstream scan and
 // aggregate_args pass, never walked serially here.
 
-import external_type_identity;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.concrete_type_equality;
+import type_checker.scoped_type_equality;
 import hir_records;
 import gpu_index;
 import status;
@@ -15,6 +18,11 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
+StructuredBuffer<uint> struct_init_field_expected_ref_tag;
+StructuredBuffer<uint> struct_init_field_expected_ref_payload;
+StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -25,15 +33,7 @@ StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_const_param_slot_by_token;
+StructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> aggregate_compare_expected_instance;
 RWStructuredBuffer<uint> aggregate_compare_actual_instance;
@@ -121,62 +121,40 @@ bool resolved_dependency_call(uint node)
     return valid_token(token) && call_dependency_library_id[token] != INVALID;
 }
 
-bool same_generic_slot(uint lhs, uint rhs, bool is_const)
-{
-    if (!valid_token(lhs) || !valid_token(rhs)) return false;
-    uint lhs_slot = is_const
-        ? type_const_param_slot_by_token[lhs]
-        : type_generic_param_slot_by_token[lhs];
-    uint rhs_slot = is_const
-        ? type_const_param_slot_by_token[rhs]
-        : type_generic_param_slot_by_token[rhs];
-    return lhs_slot != INVALID && lhs_slot == rhs_slot;
-}
-
-bool same_leaf_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
-{
-    if (lhs_tag != rhs_tag) return false;
-    if (lhs_tag == TYPE_REF_GENERIC_PARAM)
-        return same_generic_slot(lhs_payload, rhs_payload, false);
-    return lhs_payload == rhs_payload;
-}
-
-bool same_length(uint lhs, uint rhs)
-{
-    uint lhs_kind = type_instance_len_kind[lhs];
-    uint rhs_kind = type_instance_len_kind[rhs];
-    if (lhs_kind != rhs_kind) return false;
-    uint lhs_payload = type_instance_len_payload[lhs];
-    uint rhs_payload = type_instance_len_payload[rhs];
-    return lhs_kind == TYPE_LEN_CONST_PARAM
-        ? same_generic_slot(lhs_payload, rhs_payload, true)
-        : lhs_payload == rhs_payload;
-}
-
 bool same_named_identity(uint lhs, uint rhs)
 {
     uint lhs_decl = type_instance_decl_token[lhs];
     uint rhs_decl = type_instance_decl_token[rhs];
     if (valid_token(lhs_decl) || valid_token(rhs_decl))
         return valid_token(lhs_decl) && lhs_decl == rhs_decl;
-    return external_type_identity_equal(lhs, rhs);
+    return external_type_library_id[lhs] != INVALID &&
+        external_type_unit_id[lhs] != INVALID && external_type_local_index[lhs] != INVALID &&
+        external_type_library_id[lhs] == external_type_library_id[rhs] &&
+        external_type_unit_id[lhs] == external_type_unit_id[rhs] &&
+        external_type_local_index[lhs] == external_type_local_index[rhs];
 }
 
 bool prepare_instance_compare(uint node, uint expected, uint actual, uint error_token)
 {
     if (expected == actual) return true;
-    if (!valid_token(expected) || !valid_token(actual)) return false;
+    // Concrete structural children can have different source rows, and body
+    // replay can introduce private graph IDs. Compare their full checked
+    // identities before the symbolic request path, including nested elements.
+    if (checked_instance_is_closed(expected) &&
+        checked_instance_is_closed(actual))
+        return concrete_type_refs_equal<ScopedCheckedTypeGraph>(
+            TYPE_REF_INSTANCE, expected, TYPE_REF_INSTANCE, actual, checked_type_capacity());
+    if (expected >= checked_type_capacity() || actual >= checked_type_capacity()) return false;
     uint kind = type_instance_kind[expected];
     if (kind == 0u || kind != type_instance_kind[actual]) return false;
-    if (kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE)
+    if (kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE || kind == 4u)
     {
-        if (!same_leaf_ref(
-                type_instance_elem_ref_tag[expected],
-                type_instance_elem_ref_payload[expected],
-                type_instance_elem_ref_tag[actual],
-                type_instance_elem_ref_payload[actual]))
-            return false;
-        return kind != TYPE_INSTANCE_ARRAY || same_length(expected, actual);
+        // Symbolic children are complete graphs too. Their source rows may
+        // differ even when they name the same lexical parameter/application.
+        return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+            TYPE_REF_INSTANCE, expected, INVALID,
+            TYPE_REF_INSTANCE, actual, INVALID,
+            checked_type_capacity(), gParams.n_tokens);
     }
     if (kind != TYPE_INSTANCE_NAMED || !same_named_identity(expected, actual))
         return false;
@@ -194,10 +172,27 @@ bool prepare_instance_compare(uint node, uint expected, uint actual, uint error_
 }
 
 void validate_refs(uint node, uint expected_tag, uint expected_payload,
-                   uint actual_tag, uint actual_payload, uint error_token)
+                   uint actual_tag, uint actual_payload, uint error_token,
+                   uint expected_node, uint actual_node)
 {
     if (expected_tag == TYPE_REF_INVALID || actual_tag == TYPE_REF_INVALID) return;
-    if (expected_tag != TYPE_REF_INSTANCE && actual_tag != TYPE_REF_INSTANCE) return;
+    if (expected_tag != TYPE_REF_INSTANCE && actual_tag != TYPE_REF_INSTANCE)
+    {
+        // Monomorphic nominal values retain legacy scalar reference tags.
+        // Their stable declaration identities still constrain assignments;
+        // equal field widths or scalar-shaped tags cannot make them equal.
+        if (expected_tag == 1u && actual_tag == 1u)
+        {
+            uint expected_decl = valid_hir(expected_node)
+                ? semantic_aggregate_decl_token_by_hir[expected_node] : INVALID;
+            uint actual_decl = valid_hir(actual_node)
+                ? semantic_aggregate_decl_token_by_hir[actual_node] : INVALID;
+            if ((valid_token(expected_decl) || valid_token(actual_decl)) &&
+                (!valid_token(expected_decl) || expected_decl != actual_decl))
+                record_min_token_error(status, error_token, ERR_ASSIGN_MISMATCH, 0u);
+        }
+        return;
+    }
     bool matches = expected_tag == actual_tag;
     if (matches && expected_tag == TYPE_REF_INSTANCE)
         matches = prepare_instance_compare(
@@ -208,6 +203,31 @@ void validate_refs(uint node, uint expected_tag, uint expected_payload,
             valid_token(error_token) ? error_token : 0u,
             ERR_ASSIGN_MISMATCH,
             0u);
+}
+
+// Every literal field has its own checked expectation. Comparing only the
+// enclosing nominal type loses disagreements inside fields such as Cell<T>.
+void validate_struct_literal_fields(uint node)
+{
+    HirPayload literal = compact_hir_payload[node];
+    uint start = literal.b;
+    uint count = literal.c;
+    uint total = min(compact_field_count[0u], gParams.n_tokens);
+    if (start >= total || count > total - start) return;
+    for (uint ordinal = 0u; ordinal < count; ordinal++)
+    {
+        HirField field = compact_fields[start + ordinal];
+        if (field.owner != node || !valid_token(field.name_token) || !valid_hir(field.value)) continue;
+        uint expected_tag = struct_init_field_expected_ref_tag[field.name_token];
+        uint expected_payload = struct_init_field_expected_ref_payload[field.name_token];
+        uint actual_tag; uint actual_payload;
+        expression_ref(field.value, actual_tag, actual_payload);
+        if (expected_tag != TYPE_REF_INSTANCE || actual_tag == TYPE_REF_INVALID ||
+            !checked_instance_is_closed(expected_payload)) continue;
+        if (!concrete_type_refs_equal<ScopedCheckedTypeGraph>(expected_tag, expected_payload,
+            actual_tag, actual_payload, checked_type_capacity()))
+            record_min_token_error(status, field.name_token, ERR_ASSIGN_MISMATCH, 0u);
+    }
 }
 
 [shader("compute")]
@@ -221,6 +241,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     HirCore core = compact_hir_core[node];
     HirPayload stmt = compact_hir_payload[node];
+    if (core.kind == 28u)
+    {
+        validate_struct_literal_fields(node);
+        return;
+    }
     if (core.kind != HIR_STMT && core.kind != HIR_LET_STMT &&
         core.kind != HIR_RETURN_STMT && core.kind != HIR_ASSIGN_EXPR)
         return;
@@ -230,10 +255,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint actual_tag = TYPE_REF_INVALID;
     uint actual_payload = INVALID;
     uint error_token = core.token_start;
+    uint expected_node = INVALID;
 
     if (stmt.a == HIR_STMT_LET ||
         (core.kind == HIR_STMT && stmt.a == HIR_STMT_CONST))
     {
+        // An unannotated binding still has an accepted declaration type. Its
+        // own dense semantic row carries that nominal identity; an absent
+        // annotation row cannot be used as the expected identity.
+        expected_node = valid_hir(stmt.d) ? stmt.d : node;
         type_node_ref(stmt.d, expected_tag, expected_payload);
         if (expected_tag == TYPE_REF_INVALID)
             declaration_ref(stmt.b, expected_tag, expected_payload);
@@ -242,6 +272,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (stmt.a == HIR_STMT_ASSIGN)
     {
+        expected_node = stmt.b;
         expression_ref(stmt.b, expected_tag, expected_payload);
         expression_ref(stmt.c, actual_tag, actual_payload);
         if (valid_hir(stmt.c)) error_token = compact_hir_core[stmt.c].token_start;
@@ -255,6 +286,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (!valid_token(fn_token)) return;
         expected_tag = fn_return_ref_tag[fn_token];
         expected_payload = fn_return_ref_payload[fn_token];
+        uint return_tag;
+        uint return_payload;
+        expected_node = compact_fn_return_type[fn];
+        type_node_ref(compact_fn_return_type[fn], return_tag, return_payload);
+        if (return_tag != TYPE_REF_INVALID)
+        {
+            expected_tag = return_tag;
+            expected_payload = return_payload;
+        }
         expression_ref(stmt.b, actual_tag, actual_payload);
         if (valid_hir(stmt.b)) error_token = compact_hir_core[stmt.b].token_start;
     }
@@ -275,5 +315,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         expected_payload,
         actual_tag,
         actual_payload,
-        error_token);
+        error_token,
+        expected_node,
+        expression_node);
 }

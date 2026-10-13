@@ -1,0 +1,421 @@
+import type_checker.constant_parameter_slots;
+import semantic_interface_layout;
+import type_checker.calls.explicit_dependency_binding;
+// Project imported member calls against the associated-method records in the
+// active semantic-interface page.  Associated methods are intentionally not
+// ordinary declaration rows: the owner declaration and method name identify a
+// member, while its value fields carry the call ABI and stable object symbol.
+
+import dependency_interface;
+import dependency_return_layout;
+import hir_records;
+import gpu_index;
+import type_checker.instance_arguments;
+import type_checker.scoped_type_equality;
+import type_checker.dependencies.canonical_field_types;
+
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
+struct Params
+{
+    uint declaration_count;
+    uint import_capacity;
+    uint visible_capacity;
+    uint lookup_capacity;
+    uint source_len;
+    uint path_capacity;
+    uint namespace;
+    uint hir_capacity;
+};
+
+ConstantBuffer<Params> gParams;
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
+StructuredBuffer<uint> declaration_field_count;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> name_hash_lo;
+StructuredBuffer<uint> name_hash_hi;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> decl_imported_type_token;
+RWStructuredBuffer<uint> method_call_receiver_ref_tag;
+RWStructuredBuffer<uint> method_call_receiver_ref_payload;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> module_value_path_associated_method_token;
+StructuredBuffer<uint> module_value_path_associated_receiver_token;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint4> resolved_value_qualifier_binding;
+StructuredBuffer<uint> path_owner_token;
+RWStructuredBuffer<uint> external_type_library_id;
+RWStructuredBuffer<uint> external_type_unit_id;
+RWStructuredBuffer<uint> external_type_local_index;
+
+RWStructuredBuffer<uint> call_dependency_library_id;
+RWStructuredBuffer<uint> call_dependency_generic_requirements;
+RWStructuredBuffer<uint> call_dependency_unit_id;
+RWStructuredBuffer<uint> call_dependency_local_index;
+RWStructuredBuffer<uint> call_dependency_host_service;
+RWStructuredBuffer<uint> call_param_count;
+RWStructuredBuffer<uint> call_return_type;
+RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_return_aggregate_word_count;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
+
+static const uint INVALID = 0xffffffffu;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint TYPE_KIND_SCALAR = 1u;
+static const uint TYPE_KIND_GENERIC_PARAMETER = 2u;
+static const uint TYPE_KIND_DECLARATION = 3u;
+static const uint TYPE_WORDS = 9u;
+static const uint MEMBER_WORDS =SEMANTIC_INTERFACE_MEMBER_WORDS;
+static const uint MEMBER_ASSOCIATED_METHOD = 6u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
+
+#include "../methods/receiver_graph.slang"
+
+uint associated_receiver_declaration(uint path)
+{
+    if (path >= gParams.path_capacity) return INVALID;
+    uint4 parent = resolved_value_qualifier_binding[path];
+    return parent.x == 2u ? dependency_find_declaration(parent.y, parent.z, parent.w) : INVALID;
+}
+
+uint active_hir_count()
+{
+    return min(gParams.hir_capacity, compact_hir_count[0u]);
+}
+
+bool valid_hir(uint node)
+{
+    return node != INVALID && node < active_hir_count();
+}
+
+uint path_node_for_callee(uint callee)
+{
+    if (!valid_hir(callee)) return INVALID;
+    if (compact_hir_core[callee].kind == HIR_PATH_EXPR) return callee;
+    if (compact_hir_core[callee].kind != HIR_NAME_EXPR) return INVALID;
+    uint child = compact_hir_links[callee].first_child;
+    return valid_hir(child) && compact_hir_core[child].kind == HIR_PATH_EXPR
+        ? child : INVALID;
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.visible_capacity;
+}
+
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_arg_count.GetDimensions(capacity, stride);
+    return instance < capacity;
+}
+
+bool external_identity(uint token, out uint library_id, out uint unit_id, out uint local_id)
+{
+    library_id = INVALID;
+    unit_id = INVALID;
+    local_id = INVALID;
+    if (!valid_instance(token))
+        return false;
+    library_id = external_type_library_id[token];
+    unit_id = external_type_unit_id[token];
+    local_id = external_type_local_index[token];
+    return library_id != INVALID && unit_id != INVALID && local_id != INVALID;
+}
+
+uint receiver_identity_token(uint receiver_tag, uint receiver_payload, uint raw_receiver)
+{
+    // A checked local nominal is authoritative; a raw expression token may
+    // also have participated in unrelated provisional dependency projection.
+    if (receiver_tag == TYPE_REF_INSTANCE && valid_instance(receiver_payload) &&
+        type_instance_decl_token[receiver_payload] != INVALID) return INVALID;
+    // Generic imported instances retain their external identity at the
+    // instance token. A canonical external reference retains it at the raw
+    // expression token. Prefer the ref payload, then the raw receiver.
+    if (receiver_tag == 3u && valid_instance(receiver_payload) &&
+        external_type_library_id[receiver_payload] != INVALID)
+        return receiver_payload;
+    if (receiver_tag == TYPE_REF_EXTERNAL_CANONICAL && valid_token(raw_receiver))
+    {
+        uint declaration = visible_decl[raw_receiver];
+        uint identity = valid_token(declaration)
+            ? decl_imported_type_token[declaration] : INVALID;
+        if (valid_token(identity) && external_type_library_id[identity] != INVALID)
+            return identity;
+    }
+    if (receiver_tag == TYPE_REF_EXTERNAL_CANONICAL && valid_token(raw_receiver) &&
+        external_type_library_id[raw_receiver] != INVALID)
+        return raw_receiver;
+    return valid_token(raw_receiver) && external_type_library_id[raw_receiver] != INVALID
+               ? raw_receiver
+               : INVALID;
+}
+
+bool receiver_type_matches(
+    uint receiver_type, uint owner_declaration, uint receiver_tag, uint receiver_payload)
+{
+    uint type_count = dependency_type_count();
+    if (receiver_type >= type_count) return false;
+    uint root = canonical_type_roots[receiver_type];
+    if (root >= type_count) return false;
+    uint base = root * TYPE_WORDS;
+    if (dependency_type_word(base) != TYPE_KIND_DECLARATION ||
+        dependency_type_word(base + 1u) != dependency_declaration_library_id(owner_declaration) ||
+        dependency_type_word(base + 2u) != dependency_declaration_local_index(owner_declaration) ||
+        dependency_type_word(base + 8u) != dependency_declaration_unit_id(owner_declaration)) return false;
+    uint expected_count = dependency_type_word(base + 4u);
+    uint actual_count = receiver_tag == TYPE_REF_INSTANCE && valid_instance(receiver_payload)
+        ? type_instance_arg_count[receiver_payload] : 0u;
+    if (expected_count != actual_count) return false;
+    // Owner identity above also covers legacy scalar references to a bare
+    // imported declaration. Parameterized applications have complete graphs.
+    if (expected_count == 0u) return true;
+    uint2 inferred[32]; uint inferred_mask;
+    uint2 constants[32]; uint constant_mask;
+    return canonical_type_and_constant_constraints<MethodReceiverGraph>(INVALID,
+        root, receiver_tag, receiver_payload, method_receiver_type_capacity(),
+        gParams.visible_capacity, true, inferred, inferred_mask,
+        constants, constant_mask, true);
+}
+
+uint associated_method_member(
+    uint owner_declaration,
+    uint method_name_lo,
+    uint method_name_hi,
+    uint receiver_tag,
+    uint receiver_payload,
+    bool dotted_call)
+{
+    uint count = dependency_member_count();
+    uint match = INVALID;
+    for (uint row = 0u; row < count; row += 1u)
+    {
+        uint base = row * MEMBER_WORDS;
+        if (dependency_member_word(base + 0u) != owner_declaration ||
+            dependency_member_word(base + 1u) != MEMBER_ASSOCIATED_METHOD ||
+            dependency_member_word(base + 3u) != method_name_lo ||
+            dependency_member_word(base + 4u) != method_name_hi ||
+            !receiver_type_matches(dependency_member_word(base + 10u), owner_declaration,
+                receiver_tag, receiver_payload))
+            continue;
+        // A typed first parameter is consumed by a dotted call only when it
+        // matches the receiver. It remains explicit in a qualified static call.
+        uint first_parameter = dependency_method_parameter_type(row, 0u);
+        if (dotted_call && first_parameter != INVALID &&
+            !receiver_type_matches(first_parameter, owner_declaration,
+                receiver_tag, receiver_payload))
+            continue;
+        if (match != INVALID)
+            return INVALID;
+        match = row;
+    }
+    return match;
+}
+
+void publish_method_result(
+    uint method_token,
+    uint member_i,
+    uint owner_declaration,
+    bool dotted_call)
+{
+    uint member_base = member_i * MEMBER_WORDS;
+    // The callable identity and arity do not depend on return-type
+    // canonicalization. Publish them first so a malformed return record cannot
+    // turn an otherwise resolved dependency method into a local lookup miss.
+    uint method_local_index = dependency_member_word(member_base + 9u);
+    if (method_local_index == INVALID)
+        return;
+    call_dependency_library_id[method_token] =
+        dependency_declaration_library_id(owner_declaration);
+    call_dependency_unit_id[method_token] =
+        dependency_declaration_unit_id(owner_declaration);
+    call_dependency_local_index[method_token] = method_local_index;
+    call_dependency_host_service[method_token] = INVALID;
+    call_dependency_generic_requirements[method_token] =
+        dependency_method_type_count(member_i) |
+        (dependency_method_constant_count(member_i) << 16u);
+    call_param_count[method_token] = dependency_method_parameter_count(member_i);
+    if (dotted_call && call_param_count[method_token] != 0u &&
+        dependency_method_parameter_type(member_i, 0u) != INVALID)
+        call_param_count[method_token] -= 1u;
+
+    uint return_type_i = dependency_member_word(member_base + 7u);
+    uint type_count = dependency_type_count();
+    if (return_type_i >= type_count)
+        return;
+    uint return_root = canonical_type_roots[return_type_i];
+    if (return_root >= type_count)
+        return;
+    uint return_base = return_root * TYPE_WORDS;
+    uint return_kind = dependency_type_word(return_base + 0u);
+    call_return_aggregate_word_count[method_token] = dependency_aggregate_word_count(
+        return_root, canonical_type_roots, declaration_field_count);
+
+    if (return_kind == TYPE_KIND_SCALAR)
+    {
+        uint scalar = dependency_type_word(return_base + 1u);
+        call_return_type[method_token] = scalar;
+        call_return_type_token[method_token] = INVALID;
+        decl_type_ref_tag[method_token] = TYPE_REF_SCALAR;
+        decl_type_ref_payload[method_token] = scalar;
+    }
+    else
+    {
+        call_return_type[method_token] = 0u;
+        call_return_type_token[method_token] = method_token;
+        // This page-local signature is provisional. The complete call
+        // materializer applies accepted type/constant bindings in caller scope.
+        decl_type_ref_tag[method_token] = TYPE_REF_EXTERNAL_CANONICAL;
+        decl_type_ref_payload[method_token] = return_root;
+        if (return_kind == TYPE_KIND_DECLARATION)
+        {
+            external_type_library_id[method_token] =
+                dependency_type_word(return_base + 1u);
+            external_type_local_index[method_token] =
+                dependency_type_word(return_base + 2u);
+            external_type_unit_id[method_token] =
+                dependency_type_word(return_base + 8u);
+        }
+        if (dependency_empty_struct_result(return_root, canonical_type_roots))
+            call_return_type[method_token] = 1u;
+    }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint call = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR)
+        return;
+
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee))
+        return;
+
+    HirCore callee_core = compact_hir_core[callee];
+    HirPayload callee_payload = compact_hir_payload[callee];
+    uint method_token = INVALID;
+    uint raw_receiver = INVALID;
+    uint receiver_declaration = INVALID;
+    uint qualified_owner_token = INVALID;
+    if (callee_core.kind == HIR_MEMBER_EXPR)
+    {
+        method_token = callee_payload.c;
+        raw_receiver = callee_payload.d;
+    }
+    else
+    {
+        uint path_node = path_node_for_callee(callee);
+        uint path = valid_hir(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
+        uint owner_token = path < gParams.path_capacity
+            ? path_owner_token[path] : callee_core.token_start;
+        qualified_owner_token = owner_token;
+        if (valid_token(owner_token))
+            method_token = module_value_path_associated_method_token[owner_token];
+        if (valid_token(method_token))
+            raw_receiver = module_value_path_associated_receiver_token[method_token];
+        receiver_declaration = associated_receiver_declaration(path);
+        if (receiver_declaration == INVALID) return;
+    }
+    if (!valid_token(method_token))
+        return;
+
+    uint receiver_tag = method_call_receiver_ref_tag[method_token];
+    uint receiver_payload = method_call_receiver_ref_payload[method_token];
+    if (valid_token(qualified_owner_token))
+    {
+        // Nominal projection owns the parent type before method lookup. This
+        // path occurrence has private source storage even for a bare parent.
+        if (!valid_token(raw_receiver) || type_instance_kind[raw_receiver] != 1u ||
+            type_instance_decl_token[raw_receiver] != INVALID) return;
+        receiver_tag = TYPE_REF_INSTANCE;
+        receiver_payload = raw_receiver;
+    }
+    if (receiver_tag == TYPE_REF_INVALID && valid_token(raw_receiver) &&
+        type_instance_arg_count[raw_receiver] > 0u)
+    {
+        receiver_tag = TYPE_REF_INSTANCE;
+        receiver_payload = raw_receiver;
+    }
+    uint owner_declaration = receiver_declaration;
+    if (owner_declaration == INVALID)
+    {
+        uint identity_token = receiver_identity_token(receiver_tag, receiver_payload, raw_receiver);
+        uint library_id;
+        uint unit_id;
+        uint local_id;
+        if (!external_identity(identity_token, library_id, unit_id, local_id))
+            return;
+        owner_declaration = dependency_find_declaration(library_id, unit_id, local_id);
+    }
+    if (owner_declaration == INVALID)
+        return;
+    uint name_id = name_id_by_token[method_token];
+    if (name_id == INVALID || name_id >= gParams.visible_capacity)
+        return;
+    uint member_i = associated_method_member(
+        owner_declaration,
+        name_hash_lo[name_id],
+        name_hash_hi[name_id],
+        receiver_tag,
+        receiver_payload,
+        callee_core.kind == HIR_MEMBER_EXPR);
+    if (member_i == INVALID)
+        return;
+    // Persist the accepted complete receiver used by candidate matching. A
+    // receiver introduced by a qualified call may have no earlier method row.
+    // Return inference and required-slot validation must consume this same fact.
+    method_call_receiver_ref_tag[method_token] = receiver_tag;
+    method_call_receiver_ref_payload[method_token] = receiver_payload;
+    if (valid_token(qualified_owner_token))
+    {
+        method_call_receiver_ref_tag[qualified_owner_token] = receiver_tag;
+        method_call_receiver_ref_payload[qualified_owner_token] = receiver_payload;
+    }
+    if (callee_core.kind == HIR_MEMBER_EXPR && valid_hir(callee_payload.b))
+    {
+        uint parameter = dependency_method_parameter_type(member_i, 0u);
+        if (parameter < dependency_type_count())
+        {
+            uint kind = dependency_type_word(canonical_type_roots[parameter] * 9u);
+            semantic_argument_mode_by_hir[callee_payload.b] = kind == 6u ? 3u : 1u;
+        }
+    }
+    bind_dependency_explicit_application(method_token, owner_declaration,
+        dependency_member_word(member_i * MEMBER_WORDS + 9u));
+    publish_method_result(
+        method_token, member_i, owner_declaration,
+        callee_core.kind == HIR_MEMBER_EXPR);
+    // The checked call artifact reads a path call at its callee owner token,
+    // while method lookup uses the final segment token. Keep both views of
+    // the same resolved imported method in sync.
+    if (valid_token(qualified_owner_token) && qualified_owner_token != method_token)
+        publish_method_result(
+            qualified_owner_token, member_i, owner_declaration,
+            callee_core.kind == HIR_MEMBER_EXPR);
+}

@@ -1,0 +1,7 @@
+{
+  "index": 20,
+  "shader": "type_checker/dependencies/08_validate_call_args.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.5660801119993266,
+  "sha256": "82893d3ceccd3f7faef2b5e2d08107398458c38c3fd0f5cbbd9788f7ecc17dcd"
+}

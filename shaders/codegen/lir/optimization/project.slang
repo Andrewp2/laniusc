@@ -18,6 +18,7 @@ RWStructuredBuffer<OptIrNodeControl> opt_ir_control;
 RWStructuredBuffer<OptIrNodeResults> opt_ir_results;
 RWStructuredBuffer<uint> opt_ir_semantic_row;
 RWStructuredBuffer<uint> opt_ir_source_hir;
+RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -29,7 +30,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint total = min(gParams.semantic_capacity, semantic_lir_total[0u]);
     if (row == 0u)
+    {
+        // Bounded workspaces may process a prefix for diagnostics, but that
+        // prefix is never a successful compilation of the complete program.
+        uint required = semantic_lir_total[0u];
+        if (required > gParams.semantic_capacity)
+        {
+            InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_SEMANTIC_CAPACITY);
+            InterlockedMax(lowering_status[0u].required_capacity, required);
+            InterlockedMin(lowering_status[0u].available_capacity, gParams.semantic_capacity);
+        }
         opt_ir_total[0u] = total;
+    }
     if (row >= total) return;
 
     OptIrNodeControl control;

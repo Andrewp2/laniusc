@@ -61,12 +61,12 @@ import_tail   [import_string] -> 'ImportString' 'ImportSemicolon';
 module_item   [module]       -> 'Module' path 'ModuleSemicolon';
 path          [path]         -> path_segment path_tail;
 path_segment  [path_ident]   -> 'Ident';
-path_segment  [path_ident_args] -> 'PathGenericIdent' 'PathTypeArgLt' type_expr path_type_arg_tail 'PathTypeArgGt';
+path_segment  [path_ident_args] -> 'PathGenericIdent' 'PathTypeArgLt' generic_argument path_type_arg_tail 'PathTypeArgGt';
 path_tail     [path_more]    -> 'PathColon' 'PathColon' path_segment path_tail;
 path_tail     [path_end]     -> ;
 path_type_arg_tail [path_type_args_more] -> 'PathTypeArgComma' path_type_arg_tail_after_comma;
 path_type_arg_tail [path_type_args_end] -> ;
-path_type_arg_tail_after_comma [path_type_args_after_comma_more] -> type_expr path_type_arg_tail;
+path_type_arg_tail_after_comma [path_type_args_after_comma_more] -> generic_argument path_type_arg_tail;
 path_type_arg_tail_after_comma [path_type_args_after_comma_trailing] -> ;
 
 type_path     [type_path]    -> type_path_segment type_path_tail;
@@ -205,7 +205,7 @@ unary        [base]          -> postfix;
 postfix                      -> primary postfix_tail;
 postfix_tail [postfix_call]  -> 'CallLParen' arg_list_opt 'CallRParen' postfix_tail;
 postfix_tail [postfix_index] -> 'IndexLBracket' expr 'IndexRBracket' postfix_tail;
-postfix_tail [postfix_member] -> 'Dot' 'MemberIdent' postfix_tail;
+postfix_tail [postfix_member] -> 'Dot' 'MemberIdent' member_type_args_opt postfix_tail;
 postfix_tail [postfix_end]   -> ;
 
 # --- Optional arguments for calls (BNF, no EBNF sugar) ---
@@ -275,10 +275,10 @@ enum_variant_tail [enum_variants_end] -> ;
 enum_variant_tail_after_comma [enum_variants_after_comma_more] -> enum_variant enum_variant_tail;
 enum_variant_tail_after_comma [enum_variants_after_comma_trailing] -> ;
 type_args_opt [type_args_none] -> ;
-type_args_opt [type_args_some] -> 'TypeArgLt' type_expr type_arg_tail 'TypeArgGt';
+type_args_opt [type_args_some] -> 'TypeArgLt' generic_argument type_arg_tail 'TypeArgGt';
 type_arg_tail [type_args_more] -> 'TypeArgComma' type_arg_tail_after_comma;
 type_arg_tail [type_args_end] -> ;
-type_arg_tail_after_comma [type_args_after_comma_more] -> type_expr type_arg_tail;
+type_arg_tail_after_comma [type_args_after_comma_more] -> generic_argument type_arg_tail;
 type_arg_tail_after_comma [type_args_after_comma_trailing] -> ;
 enum_type_params_opt [enum_type_params_none] -> ;
 enum_type_params_opt [enum_type_params_some] -> 'GenericParamLt' enum_type_param enum_type_param_tail 'GenericParamGt';
@@ -296,10 +296,10 @@ bound_type_path_segment [bound_type_path_ident] -> 'BoundTypeIdent';
 bound_type_path_tail [bound_type_path_more] -> 'PathColon' 'PathColon' bound_type_path_segment bound_type_path_tail;
 bound_type_path_tail [bound_type_path_end] -> ;
 bound_type_args_opt [bound_type_args_none] -> ;
-bound_type_args_opt [bound_type_args_some] -> 'BoundTypeArgLt' bound_type_expr bound_type_arg_tail 'BoundTypeArgGt';
+bound_type_args_opt [bound_type_args_some] -> 'BoundTypeArgLt' generic_argument bound_type_arg_tail 'BoundTypeArgGt';
 bound_type_arg_tail [bound_type_args_more] -> 'BoundTypeArgComma' bound_type_arg_tail_after_comma;
 bound_type_arg_tail [bound_type_args_end] -> ;
-bound_type_arg_tail_after_comma [bound_type_args_after_comma_more] -> bound_type_expr bound_type_arg_tail;
+bound_type_arg_tail_after_comma [bound_type_args_after_comma_more] -> generic_argument bound_type_arg_tail;
 bound_type_arg_tail_after_comma [bound_type_args_after_comma_trailing] -> ;
 enum_type_param_tail [enum_type_params_more] -> 'GenericParamComma' enum_type_param_tail_after_comma;
 enum_type_param_tail [enum_type_params_end] -> ;
@@ -334,7 +334,34 @@ struct_lit_field_tail_after_comma [struct_lit_fields_after_comma_trailing] -> ;
 type_bracket_tail [type_array_tail] -> 'TypeSemicolon' type_array_len 'TypeArrayRBracket';
 type_bracket_tail [type_slice_tail] -> 'TypeArrayRBracket';
 type_expr [type_ref] -> 'TypeAmpersand' type_expr;
-type_array_len [type_array_len_int] -> 'Int';
-type_array_len [type_array_len_name] -> 'Ident';
+# An array length is a scalar operand, never a nested type expression. The
+# checker enforces the nonnegative integer/count domain after literal typing.
+type_array_len [type_array_len_name] -> array_length_path;
+array_length_path [array_length_path] -> array_length_path_segment array_length_path_tail;
+array_length_path_segment [array_length_path_ident] -> 'ArrayLengthIdent';
+array_length_path_tail [array_length_path_more] -> 'PathColon' 'PathColon' array_length_path_segment array_length_path_tail;
+array_length_path_tail [array_length_path_end] -> ;
+type_array_len [type_array_len_constant] -> scalar_constant_argument;
 param_tail_after_comma [params_after_comma_more] -> param param_tail;
 param_tail_after_comma [params_after_comma_trailing] -> ;
+
+# Application operands retain their syntax. The declaration decides whether a
+# bare name denotes a type or a scoped constant parameter; integers are values.
+# The parser table and production IDs are regenerated together.
+generic_argument [generic_argument_type] -> type_expr;
+generic_argument [generic_argument_constant] -> scalar_constant_argument;
+scalar_constant_argument [generic_argument_integer] -> 'Int';
+
+member_type_args_opt [member_type_args_none] -> ;
+member_type_args_opt [member_type_args_some] -> 'PathTypeArgLt' generic_argument path_type_arg_tail 'MemberTypeArgGt';
+
+# Contextual sign tokens distinguish a scalar application/length operand from
+# expression unary syntax. The HIR is still unary over a literal child.
+scalar_constant_argument [generic_argument_negative] -> 'ConstantArgumentMinus' generic_argument_magnitude;
+scalar_constant_argument [generic_argument_positive] -> 'ConstantArgumentPlus' generic_argument_magnitude;
+generic_argument_magnitude [generic_argument_magnitude_integer] -> 'Int';
+generic_argument_magnitude [generic_argument_magnitude_float] -> 'Float';
+scalar_constant_argument [generic_argument_true] -> 'True';
+scalar_constant_argument [generic_argument_false] -> 'False';
+scalar_constant_argument [generic_argument_char] -> 'Char';
+scalar_constant_argument [generic_argument_float] -> 'Float';

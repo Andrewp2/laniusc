@@ -1,0 +1,9 @@
+
+running 4 tests
+test explicit_record_constructor_actual_arguments_reject_context_conflicts ... ok
+test explicit_record_constructor_composed_types_execute ... ok
+test explicit_record_constructor_imported_five_arguments_execute ... ok
+test explicit_record_constructor_thirty_two_parameters_execute ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 199 filtered out; finished in 3.69s
+

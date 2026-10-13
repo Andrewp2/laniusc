@@ -3,6 +3,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -56,14 +57,17 @@ void report_structure_failure(uint node)
 
 uint expected_value(uint node, uint node_total, uint value_total)
 {
-    return node < node_total && opt_ir_results[node].value_out < value_total
+    return opt_ir_node_is_executable(node, node_total) &&
+        opt_ir_results[node].value_out < value_total
         ? opt_ir_results[node].value_out : INVALID;
 }
 
 bool active_call_argument(uint row, SemanticLirCallArg argument,
     uint node_total)
 {
-    if (argument.call_instruction >= node_total) return false;
+    if (!opt_ir_node_is_executable(argument.call_instruction, node_total) ||
+        !semantic_lir_is_call(opt_ir_op(opt_ir_core[argument.call_instruction])))
+        return false;
     uint hir = opt_ir_source_hir[argument.call_instruction];
     if (hir >= gParams.hir_capacity) return false;
     uint start = semantic_lir_call_arg_start_by_hir[hir];
@@ -82,6 +86,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (row < node_total)
     {
+        bool executable = opt_ir_node_is_executable(row, node_total);
         OptIrNodeCore core = opt_ir_core[row];
         OptIrNodeOperands source = opt_ir_operands[row];
         OptIrNodeOperands rewritten = opt_ir_ssa_operands[row];
@@ -90,7 +95,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         for (uint ordinal = 0u; ordinal < 3u; ++ordinal)
         {
             uint original = opt_ir_operand(source, ordinal);
-            uint expected = opt_ir_operand_is_value(core, ordinal)
+            uint expected = !executable ? INVALID
+                : opt_ir_operand_is_value(core, ordinal)
                 ? expected_value(original, node_total, value_total)
                 : original;
             valid = valid && opt_ir_operand(rewritten, ordinal) == expected;
@@ -101,14 +107,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < gParams.call_argument_capacity)
     {
         SemanticLirCallArg argument = semantic_lir_call_args[row];
-        if (active_call_argument(row, argument, node_total))
-        {
-            uint expected = expected_value(argument.value_instruction,
-                node_total, value_total);
-            if (expected == INVALID ||
-                opt_ir_ssa_call_argument_values[row] != expected)
-                report_structure_failure(argument.call_instruction);
-        }
+        bool active = active_call_argument(row, argument, node_total);
+        uint expected = active
+            ? expected_value(argument.value_instruction, node_total, value_total)
+            : INVALID;
+        if ((active && expected == INVALID) ||
+            opt_ir_ssa_call_argument_values[row] != expected)
+            report_structure_failure(argument.call_instruction);
     }
 
     uint aggregate_total = min(
@@ -118,7 +123,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         SemanticLirAggregateElement element =
             semantic_lir_aggregate_elements[row];
-        bool active = element.aggregate_instruction < node_total &&
+        bool active = opt_ir_node_is_executable(
+            element.aggregate_instruction, node_total) &&
+            opt_ir_op(opt_ir_core[element.aggregate_instruction]) ==
+                SEMANTIC_LIR_OP_AGGREGATE_NEW &&
             element.value_instruction < node_total;
         uint expected = active
             ? expected_value(element.value_instruction,

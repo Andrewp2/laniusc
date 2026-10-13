@@ -1,0 +1,2 @@
+import core::aliases;
+fn main() -> i32 { let value: core::aliases::Swap<bool, i32> = core::aliases::Pair { first: 42, second: false }; if (value.second) { return 1; } return value.first - 42; }

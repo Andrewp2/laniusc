@@ -1,0 +1,67 @@
+module app::main;
+import std::io;
+struct Cell<T> { value: T, sentinel: i32 }
+struct Empty {}
+enum Choice<T> { Some(T), None }
+impl<T> Cell<T> {
+    fn borrow(&self) -> &Cell<T> { return self; }
+    fn get(&self) -> T { return self.value; }
+}
+impl i32 {
+    fn pair(self: i32, value: Cell<[i32; 2]>) -> Cell<[i32; 2]> { return value; }
+    fn words(self: i32, value: Cell<[str; 2]>) -> Cell<[str; 2]> { return value; }
+    fn reference(self: i32, value: &Cell<[i32; 2]>) -> &Cell<[i32; 2]> { return value; }
+    fn view(self: i32, value: [i32]) -> [i32] { return value; }
+    fn empty(self: i32, value: Cell<[Empty; 0]>) -> Cell<[Empty; 0]> { return value; }
+    fn choice(self: i32, value: Choice<Cell<[i32; 2]>>) -> Choice<Cell<[i32; 2]>> { return value; }
+    fn matrix<T, const N: usize>(self: i32, value: Cell<[T; N]>) -> Cell<[T; N]> { return value; }
+}
+fn keep<T>(value: T) -> T { return value; }
+fn receiver<T>(value: T) -> i32 { return 0; }
+fn relay<T>(value: T, input: Cell<[i32; 2]>) -> Cell<[i32; 2]> {
+    let n = receiver(value);
+    let copy = n.pair(input);
+    return keep(copy);
+}
+fn exercise(values: [i32], empty: [i32]) -> i32 {
+    let n = receiver(false);
+    let original: Cell<[i32; 2]> = Cell { value: [19, 23], sentinel: 77 };
+    let copy = keep(n.pair(original));
+    copy.value[0] = -1;
+    if (original.value[0] != 19 || copy.value[0] != -1 || copy.sentinel != 77) { return 1; }
+    let forwarded = relay('Q', original);
+    if (forwarded.value[1] != 23 || forwarded.sentinel != 77) { return 2; }
+    let reference = n.reference(original.borrow());
+    reference.value[0] = 21;
+    if (original.value[0] != 21 || reference.sentinel != 77) { return 3; }
+    let view = keep(n.view(values));
+    view[0] = 42;
+    if (values[0] != 42) { return 4; }
+    let zero_view = n.view(empty);
+    let z: Cell<[Empty; 0]> = Cell { value: [], sentinel: 91 };
+    let zcopy = keep(n.empty(z));
+    if (zcopy.sentinel != 91) { return 5; }
+    let selected: Choice<Cell<[i32; 2]>> = Some(original);
+    let selected_copy = n.choice(selected);
+    let payload = match (selected_copy) { Some(v) -> v, None -> original };
+    payload.value[1] = 25;
+    if (original.value[1] != 23 || payload.value[0] + payload.value[1] != 46) { return 6; }
+    let nested: Cell<[[bool; 2]; 2]> = Cell { value: [[true, false], [false, true]], sentinel: 15 };
+    let matrix = n.matrix(nested);
+    if (!matrix.value[0][0] || matrix.value[0][1] || matrix.value[1][0] || !matrix.value[1][1]) { return 7; }
+    let text: Cell<[str; 2]> = Cell { value: ["before λ", "Ω"], sentinel: 9 };
+    let text_copy = n.words(text);
+    text.value[0] = "changed";
+    std::io::println(text_copy.value[0]);
+    std::io::println(text_copy.value[1]);
+    std::io::println(text.value[0]);
+    return 0;
+}
+fn main() -> i32 {
+    let values: [i32; 2] = [10, 20];
+    let empty: [i32; 0] = [];
+    let status = exercise(values, empty);
+    if (status != 0) { return status; }
+    if (values[0] != 42 || values[1] != 20) { return 8; }
+    return 0;
+}

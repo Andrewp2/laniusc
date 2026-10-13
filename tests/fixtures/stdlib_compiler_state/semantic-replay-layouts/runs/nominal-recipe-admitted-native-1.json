@@ -1,0 +1,14 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "generic_trait_operands_and_results_execute_imported_compound_copies",
+    "generic_trait_methods_execute_imported_impl_bounds_from_caller"
+  ],
+  "exit_code": 0,
+  "seconds": 4.421298465000291,
+  "binary_sha256": "63ce973ac3224910aeb1cc112f48c5c5d7d1966bce3aa483a09bb09906b9aa3a",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

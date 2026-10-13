@@ -82,6 +82,8 @@ pub(crate) struct GpuX86LirStage {
     count_pages: Vec<ComputeOperation>,
     pages: Vec<X86LirPage>,
     decl_slots_scatter: ComputeOperation,
+    place_words: ComputeOperation,
+    place_scan: GpuResidentExclusiveScan,
     frame_finalize: ComputeOperation,
     analysis_clear: ComputeOperation,
     analysis_index: ComputeOperation,
@@ -104,6 +106,10 @@ pub(crate) struct GpuX86LirStage {
     _stack_words: LaniusBuffer<u32>,
     _stack_prefix: LaniusBuffer<u32>,
     _stack_total: LaniusBuffer<u32>,
+    _place_words: LaniusBuffer<u32>,
+    _place_prefix: LaniusBuffer<u32>,
+    _place_total: LaniusBuffer<u32>,
+    _place_count: LaniusBuffer<u32>,
     _counts: LaniusBuffer<u32>,
     _offsets: LaniusBuffer<u32>,
     #[cfg(test)]
@@ -183,6 +189,10 @@ impl GpuX86LirStage {
         let stack_words = alias_u32("lir.x86.stack_words_by_position", semantic_capacity)?;
         let stack_prefix = alias_u32("lir.x86.stack_prefix_by_position", semantic_capacity)?;
         let stack_total = alias_u32("lir.x86.stack_word_total", 1)?;
+        let place_words_buffer = alias_u32("lir.x86.place_words_by_local", capacities.local_capacity())?;
+        let place_prefix = alias_u32("lir.x86.place_prefix_by_local", capacities.local_capacity())?;
+        let place_total = alias_u32("lir.x86.place_word_total", 1)?;
+        let place_count = alias_u32("lir.semantic.local_total", 1)?;
         let core = workspace
             .alias(graph, resource("lir.x86.core")?, target_page_rows as usize)
             .map_err(anyhow::Error::msg)?;
@@ -262,6 +272,11 @@ impl GpuX86LirStage {
             kernels,
             "lir.x86.inline.analyze",
             "codegen/lir/x86/inline_analyze",
+        )?;
+        let place_words_pass = load(
+            kernels,
+            "lir.x86.place.words",
+            "codegen/lir/x86/place_words",
         )?;
         let decl_slots_scatter_pass = load(
             kernels,
@@ -492,6 +507,29 @@ impl GpuX86LirStage {
             opt.count,
         )
         .context("construct x86 target-function table")?;
+        let place_words = ComputeOperation::direct_with_uniform(
+            device, &context, &resources, "lir.x86.place.words",
+            &place_words_pass, &decl_slot_params, capacities.local_capacity(),
+        )?;
+        let place_scan = GpuResidentExclusiveScan::new(
+            device, kernels, graph, workspace, &allocations,
+            GraphScanContract {
+                local_pass: "lir.x86.place_scan.local",
+                up_pass: "lir.x86.place_scan.hierarchy_up",
+                down_pass: "lir.x86.place_scan.hierarchy_down",
+                apply_pass: "lir.x86.place_scan.apply",
+                count: "lir.semantic.local_total",
+                input: "lir.x86.place_words_by_local",
+                local: "lir.x86.place_scan_local",
+                block_sum: "lir.x86.place_scan_block_sum",
+                block_prefix: "lir.x86.place_scan_block_prefix",
+                hierarchy: "lir.x86.place_scan_hierarchy",
+                output: "lir.x86.place_prefix_by_local",
+                total: "lir.x86.place_word_total",
+            },
+            capacities.local_capacity(), &place_count, &place_words_buffer,
+            &place_prefix, &place_total,
+        ).context("construct parallel x86 declaration-place scan")?;
         let decl_slots_scatter = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -501,7 +539,7 @@ impl GpuX86LirStage {
             &decl_slot_params,
             capacities
                 .parameters
-                .max(capacities.semantic_instructions)
+                .max(capacities.local_capacity())
                 .max(1),
         )
         .context("construct x86 declaration-slot scatter")?;
@@ -668,6 +706,8 @@ impl GpuX86LirStage {
             count_pages,
             pages,
             decl_slots_scatter,
+            place_words,
+            place_scan,
             frame_finalize,
             analysis_clear,
             analysis_index,
@@ -690,6 +730,10 @@ impl GpuX86LirStage {
             _stack_words: stack_words,
             _stack_prefix: stack_prefix,
             _stack_total: stack_total,
+            _place_words: place_words_buffer,
+            _place_prefix: place_prefix,
+            _place_total: place_total,
+            _place_count: place_count,
             _counts: counts,
             _offsets: offsets,
             #[cfg(test)]
@@ -741,6 +785,8 @@ impl GpuX86LirStage {
             self.allocation_locations.record(encoder)?;
             self.allocation_functions.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.allocation.parallel.done");
+            self.place_words.record(encoder)?;
+            self.place_scan.record(encoder)?;
             self.decl_slots_scatter.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.decl_slots.done");
             self.inline_analyze.record(encoder)?;
@@ -871,7 +917,7 @@ impl GpuX86LirStage {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<super::x86::GpuX86RelocatableObject> {
+    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
         self.object
             .as_ref()
             .context("x86 object projection was not allocated for this lowering job")?
@@ -1242,6 +1288,13 @@ mod tests {
             |_| true,
         )
         .unwrap();
+        let place_storage_by_token = storage_ro_from_u32s(
+            &gpu.device,
+            "test.place_storage_by_token",
+            &vec![0u32; capacities.declaration_capacity() as usize * 4],
+        );
+        let param_value_layout =
+            storage_ro_from_u32s(&gpu.device, "test.parameter_value_layout", &[0u32; 128]);
         let semantic = GpuSemanticLirView {
             count: &total,
             core: &page_core,
@@ -1262,6 +1315,8 @@ mod tests {
             functions: &functions,
             function_count: &function_count,
             params: &params,
+            param_value_layout: &param_value_layout,
+            place_storage_by_token: &place_storage_by_token,
             param_count: &param_count,
             locals: &locals,
             local_count: &local_count,

@@ -1,0 +1,15 @@
+
+running 1 test
+test imported_option_bool_factory_result_supports_method_calls ... 
+thread 'imported_option_bool_factory_result_supports_method_calls' (566123) panicked at tests/stdlib_option_bool_execution.rs:147:6:
+compile imported generic factory result as a receiver: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 10, column: 37, length: 8, byte_start: Some(441), byte_end: Some(449), source_line: Some("    if (!core::option::ok(ok_false).contains(false)) { return 1; }"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_option_bool_factory_result_supports_method_calls
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 1.06s
+

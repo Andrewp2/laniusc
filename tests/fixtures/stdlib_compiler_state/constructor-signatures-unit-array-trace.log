@@ -1,0 +1,9 @@
+[typecheck.call_inference] round=0 changed=7
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=33 code=AssignMismatch detail=0
+stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/unit-array-context.lani: error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_compiler_state/unit-array-context.lani:3:33
+  |
+3 |  let array: [Maybe<bool>; 2] = [Missing, Value(false)];
+  |                                 ^^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

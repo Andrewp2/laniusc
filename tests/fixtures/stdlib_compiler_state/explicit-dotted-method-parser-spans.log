@@ -1,0 +1,15 @@
+
+running 1 test
+test parser_explicit_dotted_arguments_belong_to_the_member_application ... 
+thread 'parser_explicit_dotted_arguments_belong_to_the_member_application' (92663) panicked at tests/parser_hir_records.rs:17171:17:
+the closing delimiter belongs to the member: member=138 span=10..60, argument=0 span=56..60
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    parser_explicit_dotted_arguments_belong_to_the_member_application
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 251 filtered out; finished in 0.75s
+

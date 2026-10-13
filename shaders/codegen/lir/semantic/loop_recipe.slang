@@ -9,11 +9,14 @@ static const uint SEMANTIC_LOOP_RECIPE_ARRAY = 3u;
 static const uint SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO = 4u;
 static const uint SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE = 5u;
 static const uint SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO = 6u;
+static const uint SEMANTIC_LOOP_RECIPE_SLICE = 7u;
 
 struct SemanticLoopRecipe
 {
     uint kind;
     uint row_count;
+    // Three tail rows test exhaustion before the induction increment.
+    uint exhaustion_row;
 }
 
 static const uint LOOP_OPERAND_NONE = 0u;
@@ -25,6 +28,8 @@ static const uint LOOP_OPERAND_SYNTHETIC_DECL = 5u;
 static const uint LOOP_OPERAND_RANGE_START = 6u;
 static const uint LOOP_OPERAND_RANGE_END = 7u;
 static const uint LOOP_OPERAND_ARRAY_LENGTH = 8u;
+static const uint LOOP_OPERAND_INTEGER_MAX_LO = 9u;
+static const uint LOOP_OPERAND_INTEGER_MAX_HI = 10u;
 static const uint LOOP_OPERAND_ROW_BASE = 256u;
 
 struct SemanticLoopOperandRecipe
@@ -42,10 +47,11 @@ bool semantic_lir_is_for(HirCore core, HirPayload payload)
 
 SemanticLoopRecipe semantic_loop_recipe(HirCore core, HirPayload payload,
                                         uint iterable_form, uint iterable_kind,
-                                        uint array_length)
+                                        uint array_length, uint iterable_type_kind)
 {
     SemanticLoopRecipe recipe;
     recipe.kind = SEMANTIC_LOOP_RECIPE_NONE;
+    recipe.exhaustion_row = LIR_INVALID;
     recipe.row_count = semantic_lir_row_count(core, payload);
     if (!semantic_lir_is_for(core, payload)) return recipe;
 
@@ -61,7 +67,12 @@ SemanticLoopRecipe semantic_loop_recipe(HirCore core, HirPayload payload,
         recipe.kind = SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
     else if (iterable_kind == 1u || iterable_kind == 2u)
         recipe.kind = SEMANTIC_LOOP_RECIPE_RANGE_VALUE;
-    else if (iterable_kind == 3u || array_length != LIR_INVALID)
+    // Reference expressions can carry their terminal container's bounds.
+    // This recipe currently consumes only direct array/slice values.
+    else if (iterable_type_kind == 3u && array_length == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        recipe.kind = SEMANTIC_LOOP_RECIPE_SLICE;
+    else if (iterable_type_kind == 2u && array_length != LIR_INVALID &&
+             array_length != SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
         recipe.kind = SEMANTIC_LOOP_RECIPE_ARRAY;
     else
         return recipe;
@@ -74,10 +85,50 @@ SemanticLoopRecipe semantic_loop_recipe(HirCore core, HirPayload payload,
         ? 12u
         : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO
         ? 13u : 21u;
+    bool inclusive = iterable_form == HIR_EXPR_RANGE_INCLUSIVE ||
+        iterable_form == HIR_EXPR_RANGE_TO_INCLUSIVE || iterable_kind == 2u;
+    if (recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE)
+        recipe.exhaustion_row = 6u;
+    else if (recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO)
+        recipe.exhaustion_row = 7u;
+    else if (inclusive)
+        recipe.exhaustion_row = recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE ? 11u
+            : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO ? 12u
+            : recipe.kind == SEMANTIC_LOOP_RECIPE_RANGE_VALUE ? 15u : LIR_INVALID;
+    if (recipe.exhaustion_row != LIR_INVALID) recipe.row_count += 3u;
     return recipe;
 }
 
-uint semantic_loop_recipe_op(uint recipe, uint row)
+// The original recipe owns every non-exhaustion row. Remap its row identities
+// once, including branch targets, so insertion cannot leave stale offsets.
+uint semantic_loop_original_row(SemanticLoopRecipe recipe, uint row)
+{
+    if (recipe.exhaustion_row == LIR_INVALID || row < recipe.exhaustion_row) return row;
+    return row < recipe.exhaustion_row + 3u ? LIR_INVALID : row - 3u;
+}
+
+uint semantic_loop_expanded_row(SemanticLoopRecipe recipe, uint row)
+{
+    return recipe.exhaustion_row != LIR_INVALID && row >= recipe.exhaustion_row ? row + 3u : row;
+}
+
+uint semantic_loop_continue_row(SemanticLoopRecipe recipe)
+{
+    uint original = recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE ? 9u
+        : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO ? 10u
+        : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE ? 4u
+        : recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO ? 5u
+        : 14u;
+    return semantic_loop_expanded_row(recipe, original);
+}
+
+bool semantic_loop_max_limit(SemanticLoopRecipe recipe)
+{
+    return recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE ||
+        recipe.kind == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO;
+}
+
+uint semantic_loop_base_op(uint recipe, uint row)
 {
     static const uint direct_range_ops[17] = {
         SEMANTIC_LIR_OP_VALUE_SET,
@@ -193,6 +244,21 @@ uint semantic_loop_recipe_op(uint recipe, uint row)
         SEMANTIC_LIR_OP_CONTROL_END,
         SEMANTIC_LIR_OP_CONTROL_END,
     };
+    // Capture the descriptor once, before entering the loop. The induction
+    // value and every element load use that original data/length pair.
+    static const uint slice_ops[21] = {
+        SEMANTIC_LIR_OP_CONST_I32, SEMANTIC_LIR_OP_VALUE_SET,
+        SEMANTIC_LIR_OP_VALUE_GET, SEMANTIC_LIR_OP_LOAD,
+        SEMANTIC_LIR_OP_BLOCK_BEGIN, SEMANTIC_LIR_OP_LOOP_BEGIN,
+        SEMANTIC_LIR_OP_VALUE_GET, SEMANTIC_LIR_OP_COMPARE,
+        SEMANTIC_LIR_OP_BRANCH_IF, SEMANTIC_LIR_OP_BLOCK_BEGIN,
+        SEMANTIC_LIR_OP_VALUE_GET, SEMANTIC_LIR_OP_LOAD,
+        SEMANTIC_LIR_OP_VALUE_SET, SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_VALUE_GET, SEMANTIC_LIR_OP_CONST_I32,
+        SEMANTIC_LIR_OP_ADD, SEMANTIC_LIR_OP_STORE,
+        SEMANTIC_LIR_OP_BRANCH, SEMANTIC_LIR_OP_CONTROL_END,
+        SEMANTIC_LIR_OP_CONTROL_END,
+    };
 
     if (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE && row < 17u)
         return direct_range_ops[row];
@@ -206,10 +272,12 @@ uint semantic_loop_recipe_op(uint recipe, uint row)
         return direct_unbounded_range_from_zero_ops[row];
     if (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row < 21u)
         return array_ops[row];
+    if (recipe == SEMANTIC_LOOP_RECIPE_SLICE && row < 21u)
+        return slice_ops[row];
     return SEMANTIC_LIR_OP_INVALID;
 }
 
-SemanticLoopOperandRecipe semantic_loop_operand_recipe(uint recipe, uint row)
+SemanticLoopOperandRecipe semantic_loop_base_operands(uint recipe, uint row)
 {
     static const uint direct_a[17] = {
         LOOP_OPERAND_BINDING_DECL, LOOP_OPERAND_SYNTHETIC_DECL,
@@ -366,6 +434,36 @@ SemanticLoopOperandRecipe semantic_loop_operand_recipe(uint recipe, uint row)
         LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
         LOOP_OPERAND_NONE,
     };
+    static const uint slice_a[21] = {
+        LOOP_OPERAND_ZERO, LOOP_OPERAND_SYNTHETIC_DECL,
+        LOOP_OPERAND_ITERABLE_DECL, LOOP_OPERAND_ROW_BASE + 2u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_SYNTHETIC_DECL,
+        LOOP_OPERAND_ROW_BASE + 6u, LOOP_OPERAND_ROW_BASE + 7u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_SYNTHETIC_DECL,
+        LOOP_OPERAND_ROW_BASE + 2u, LOOP_OPERAND_BINDING_DECL,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_SYNTHETIC_DECL, LOOP_OPERAND_ONE,
+        LOOP_OPERAND_ROW_BASE + 14u, LOOP_OPERAND_SYNTHETIC_DECL,
+        LOOP_OPERAND_ROW_BASE + 5u, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint slice_b[21] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 0u, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_ONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 3u, LOOP_OPERAND_ONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 10u,
+        LOOP_OPERAND_ROW_BASE + 11u, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 15u,
+        LOOP_OPERAND_ROW_BASE + 16u, LOOP_OPERAND_ZERO,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
+    static const uint slice_c[21] = {
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_ROW_BASE + 20u,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+        LOOP_OPERAND_NONE, LOOP_OPERAND_NONE, LOOP_OPERAND_NONE,
+    };
 
     SemanticLoopOperandRecipe result;
     result.a = LOOP_OPERAND_NONE;
@@ -403,12 +501,21 @@ SemanticLoopOperandRecipe semantic_loop_operand_recipe(uint recipe, uint row)
     {
         result.a = array_a[row]; result.b = array_b[row]; result.c = array_c[row];
     }
+    else if (recipe == SEMANTIC_LOOP_RECIPE_SLICE && row < 21u)
+    {
+        result.a = slice_a[row]; result.b = slice_b[row]; result.c = slice_c[row];
+    }
     return result;
 }
 
-uint semantic_loop_recipe_flags(uint recipe, uint row)
+uint semantic_loop_base_flags(uint recipe, uint row)
 {
     uint flags = SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL;
+    if (recipe == SEMANTIC_LOOP_RECIPE_SLICE)
+    {
+        if (row == 3u) flags |= SEMANTIC_LIR_FLAG_FIELD;
+        if (row == 11u) flags |= SEMANTIC_LIR_FLAG_INDEXED;
+    }
     if (recipe == SEMANTIC_LOOP_RECIPE_RANGE_VALUE && (row == 1u || row == 4u))
         flags |= SEMANTIC_LIR_FLAG_FIELD;
     if (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 11u)
@@ -418,17 +525,66 @@ uint semantic_loop_recipe_flags(uint recipe, uint row)
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE && row == 7u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO && row == 8u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_RANGE_VALUE && row == 11u) ||
-        (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 7u);
+        (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 7u) ||
+        (recipe == SEMANTIC_LOOP_RECIPE_SLICE && row == 8u);
     bool back_edge =
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE && row == 14u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_RANGE_FROM_ZERO && row == 15u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE && row == 9u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_DIRECT_UNBOUNDED_RANGE_FROM_ZERO && row == 10u) ||
         (recipe == SEMANTIC_LOOP_RECIPE_RANGE_VALUE && row == 18u) ||
-        (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 18u);
+        (recipe == SEMANTIC_LOOP_RECIPE_ARRAY && row == 18u) ||
+        (recipe == SEMANTIC_LOOP_RECIPE_SLICE && row == 18u);
     if (conditional_branch || back_edge)
         flags |= SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID;
     if (conditional_branch)
         flags |= SEMANTIC_LIR_FLAG_BRANCH_FALSE;
+    return flags;
+}
+
+uint semantic_loop_recipe_op(SemanticLoopRecipe recipe, uint row)
+{
+    uint original = semantic_loop_original_row(recipe, row);
+    if (original != LIR_INVALID) return semantic_loop_base_op(recipe.kind, original);
+    uint phase = row - recipe.exhaustion_row;
+    return phase == 0u ? (semantic_loop_max_limit(recipe) ? SEMANTIC_LIR_OP_CONST_I32 : SEMANTIC_LIR_OP_VALUE_GET)
+        : phase == 1u ? SEMANTIC_LIR_OP_COMPARE : SEMANTIC_LIR_OP_BRANCH_IF;
+}
+
+uint semantic_loop_expand_operand(SemanticLoopRecipe recipe, uint operand)
+{
+    return operand >= LOOP_OPERAND_ROW_BASE
+        ? LOOP_OPERAND_ROW_BASE + semantic_loop_expanded_row(recipe, operand - LOOP_OPERAND_ROW_BASE)
+        : operand;
+}
+
+SemanticLoopOperandRecipe semantic_loop_operand_recipe(SemanticLoopRecipe recipe, uint row)
+{
+    uint original = semantic_loop_original_row(recipe, row);
+    SemanticLoopOperandRecipe result;
+    if (original != LIR_INVALID)
+    {
+        result = semantic_loop_base_operands(recipe.kind, original);
+        result.a = semantic_loop_expand_operand(recipe, result.a);
+        result.b = semantic_loop_expand_operand(recipe, result.b);
+        result.c = semantic_loop_expand_operand(recipe, result.c);
+        return result;
+    }
+    uint phase = row - recipe.exhaustion_row;
+    result.a = phase == 0u ? (semantic_loop_max_limit(recipe) ? LOOP_OPERAND_INTEGER_MAX_LO : LOOP_OPERAND_SYNTHETIC_DECL)
+        : LOOP_OPERAND_ROW_BASE + (phase == 1u ? recipe.exhaustion_row - 1u : recipe.exhaustion_row + 1u);
+    result.b = phase == 0u ? (semantic_loop_max_limit(recipe) ? LOOP_OPERAND_INTEGER_MAX_HI : LOOP_OPERAND_NONE)
+        : phase == 1u ? LOOP_OPERAND_ROW_BASE + recipe.exhaustion_row : LOOP_OPERAND_ONE;
+    result.c = phase == 2u ? LOOP_OPERAND_ROW_BASE + recipe.row_count - 1u : LOOP_OPERAND_NONE;
+    return result;
+}
+
+uint semantic_loop_recipe_flags(SemanticLoopRecipe recipe, uint row)
+{
+    uint original = semantic_loop_original_row(recipe, row);
+    if (original != LIR_INVALID) return semantic_loop_base_flags(recipe.kind, original);
+    uint flags = SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL;
+    if (row == recipe.exhaustion_row + 2u)
+        flags |= SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID | SEMANTIC_LIR_FLAG_BRANCH_FALSE;
     return flags;
 }

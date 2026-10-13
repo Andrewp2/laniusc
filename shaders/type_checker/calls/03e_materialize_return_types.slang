@@ -1,0 +1,238 @@
+import type_checker.dependencies.constant_view;
+import type_checker.constant_atoms_identity;
+import type_checker.calls.explicit_call_environment;
+import semantic_interface_layout;
+// Instantiate complete call returns using the same producer as record
+// fields. Argument claims retain the type of known values; result constraints
+// fill missing bindings. A receiving context must not rewrite a known value
+// and then feed that rewritten result back into its caller's argument claims.
+#include "../type/instances/materialize_application_inputs.slang"
+import type_checker.calls.mutable_checked_call_types;
+import type_checker.calls.checked_call_environment;
+import type_checker.calls.checked_constant_environment;
+import type_checker.calls.contextual_call_environment;
+import type_checker.scoped_type_equality;
+import type_checker.scoped_type_hash;
+import type_checker.checked_pattern_use;
+import type_checker.concrete_type_closure;
+#include "../type/instances/materialize_application.slang"
+
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_dependency_unit_id;
+StructuredBuffer<uint> call_dependency_local_index;
+StructuredBuffer<uint> method_call_receiver_ref_tag;
+StructuredBuffer<uint> method_call_receiver_ref_payload;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> type_decl_generic_param_count;
+StructuredBuffer<uint> path_owner_hir;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
+StructuredBuffer<uint> module_value_path_call_head;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
+RWStructuredBuffer<uint> call_result_instance;
+RWStructuredBuffer<uint> struct_lit_context_decl_token;
+RWStructuredBuffer<uint> struct_lit_context_instance;
+RWStructuredBuffer<uint> call_return_type;
+RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
+// [defer missing bindings, number of newly published type facts].
+RWStructuredBuffer<uint> call_inference_state;
+RWStructuredBuffer<uint> call_inference_result_tag;
+RWStructuredBuffer<uint> call_inference_result_payload;
+
+#include "callable_header.slang"
+
+void publish_imported_result(uint token, uint callee, uint2 result, uint legacy)
+{
+    if (token >= gParams.n_tokens ||
+        call_dependency_library_id[token] != call_dependency_library_id[callee] ||
+        call_dependency_unit_id[token] != call_dependency_unit_id[callee] ||
+        call_dependency_local_index[token] != call_dependency_local_index[callee]) return;
+    decl_type_ref_tag[token] = result.x;
+    decl_type_ref_payload[token] = result.y;
+    call_return_type[token] = legacy;
+    call_return_type_token[token] = result.x == 3u ? token : INVALID;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint call = dtid.x + dtid.y * 16776960u;
+    if (call >= hir_count()) return;
+    bool record = compact_hir_core[call].kind == 28u;
+    bool unit = compact_hir_core[call].kind == 33u;
+    if (!record && !unit && compact_hir_core[call].kind != 19u) return;
+    uint callee = record || unit ? call : compact_hir_payload[call].a;
+    if (callee >= hir_count()) return;
+    uint kind = compact_hir_core[callee].kind;
+    if (!record && kind != 21u && kind != 22u && kind != 33u) return;
+    uint token = record || unit ? compact_hir_core[call].token_start
+        : kind == 21u ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
+    if (token >= gParams.n_tokens) token = compact_hir_core[callee].token_start;
+    if (token >= gParams.n_tokens) return;
+    uint application_owner = checked_call_application_owner(token);
+    uint environment = 0x80000000u | token;
+    uint tag; uint payload;
+    bool imported = !record && !unit && call_dependency_library_id[token] != INVALID;
+    if (unit)
+    {
+        // A nongeneric imported unit is a complete zero-argument application.
+        // Materialize it while the owning dependency page is resident, using
+        // the same graph producer and field expansion as other applications.
+        uint path = path_id_by_owner_hir[call];
+        if (path >= min(path_count_out[0u], gParams.n_hir_nodes) ||
+            path_owner_hir[path] != call || resolved_dependency_value_metadata[path * 4u] != 9u ||
+            module_value_path_call_head[token] != 0u ||
+            checked_token_in_match_pattern(token, hir_count(), compact_hir_core,
+                compact_match_arm_count, compact_match_arms)) return;
+        uint declaration = dependency_find_declaration(external_type_library_id[token],
+            external_type_unit_id[token], external_type_local_index[token]);
+        if (declaration >= dependency_declaration_count()) return;
+        payload = canonical_field_root(dependency_declaration_word(declaration * 14u + 7u));
+        tag = 5u;
+    }
+    else if (record)
+    {
+        // Explicit/receiving applications already own their complete type.
+        // Only field-bound literals ask this shared producer to create one.
+        if (struct_lit_context_instance[call] < mutable_type_capacity() ||
+            call_context_owner_by_token[token] != call) return;
+        if (external_type_library_id[token] != INVALID)
+        {
+            uint declaration = dependency_find_declaration(external_type_library_id[token],
+                external_type_unit_id[token], external_type_local_index[token]);
+            if (declaration >= dependency_declaration_count()) return;
+            payload = canonical_field_root(dependency_declaration_word(declaration * 14u + 7u));
+            tag = 5u;
+        }
+        else
+        {
+            payload = struct_lit_context_decl_token[call];
+            if (payload >= gParams.n_tokens || type_instance_kind[payload] != 1u) return;
+            tag = 3u;
+        }
+    }
+    else if (imported)
+    {
+        // Read page-local types while their declaration page is resident.
+        // Completed output uses stable checked references in caller scope.
+        uint method = dependency_find_method(call_dependency_library_id[token],
+            call_dependency_unit_id[token], call_dependency_local_index[token]);
+        bool imported_method = method < dependency_member_count();
+        if (imported_method)
+        {
+            uint receiver = method_call_receiver_ref_payload[application_owner];
+            if (method_call_receiver_ref_tag[application_owner] != 3u || receiver >= mutable_type_capacity()) return;
+            payload = canonical_field_root(dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 7u));
+        }
+        else
+        {
+            uint declaration = dependency_find_declaration(call_dependency_library_id[token],
+                call_dependency_unit_id[token], call_dependency_local_index[token]);
+            if (declaration >= dependency_declaration_count()) return;
+            uint signature = canonical_field_root(dependency_declaration_word(declaration * 14u + 7u));
+            if (signature == INVALID || dependency_type_word(signature * 9u) != 7u) return;
+            uint start = dependency_type_word(signature * 9u + 3u);
+            uint count = dependency_type_word(signature * 9u + 4u);
+            uint edges = dependency_count(5u);
+            if (count == 0u || start > edges || count > edges - start) return;
+            payload = canonical_field_root(dependency_type_edge_word(start + count - 1u));
+        }
+        if (payload == INVALID) return;
+        // Every imported signature publishes its complete caller-side result.
+        // A concrete scalar needs no substitution, but its legacy return code
+        // alone is not the accepted expression reference consumed by callers.
+        tag = 5u;
+    }
+    else
+    {
+        uint declaration = call_fn_index[token];
+        if (declaration >= gParams.n_tokens) return;
+        uint header = callable_header_token(declaration);
+        if (header >= gParams.n_tokens) return;
+        if (type_decl_generic_param_count[header] > ARG_LIMIT)
+        { record_min_token_error(status, token, 6u, 0x474e0002u); return; }
+        tag = fn_return_ref_tag[declaration]; payload = fn_return_ref_payload[declaration];
+        // A target may resolve only after its receiver is inferred. Every
+        // resolved signature must reach the accepted result relation, even
+        // if the earlier declaration-result seed could not see this call.
+        // Closed graphs require no substitution or application allocation;
+        // symbolic graphs use the accepted callable/impl environment.
+        if (tag == 3u && concrete_instance_is_closed<MutableCheckedTypeGraph, CheckedSourceConstantGraph, CheckedSourceConstantEnvironment>(payload, mutable_type_capacity(), gParams.n_tokens))
+            environment = INVALID;
+    }
+    if (tag == 0u || payload == INVALID) return;
+    uint created[DEPTH_LIMIT]; uint count = 0u; uint failure;
+    uint2 result;
+    if (!materialize<MutableCheckedCallTypeGraph>(uint3(tag, payload, environment),
+        created, count, result, failure))
+    {
+        if (checked_call_environment_rejected(token) || checked_call_constant_environment_rejected(token)) return;
+        // Missing environment entries may become known from earlier call
+        // results. They are still diagnosed by the final, nondeferred pass.
+        if (call_inference_state[0u] == 0u || (failure != 3u && failure != 4u))
+            record_min_token_error(status, token, 6u, 0x474e0000u | failure);
+        return;
+    }
+    if (record)
+    {
+        if (result.x != 3u || result.y >= mutable_type_capacity())
+        { record_min_token_error(status, token, 6u, 0x474e0003u); return; }
+        struct_lit_context_instance[call] = result.y;
+        struct_lit_context_decl_token[call] = type_instance_decl_token[result.y];
+    }
+    if (unit)
+    {
+        decl_type_ref_tag[token] = result.x;
+        decl_type_ref_payload[token] = result.y;
+    }
+    uint legacy = result.x == 1u ? result.y : 0u;
+    if (result.x == 3u)
+    {
+        // Completed substitution is in caller scope. A following producer
+        // expands its declaration fields under nominal receiver environments.
+        call_result_instance[call] = result.y;
+        uint result_kind = type_instance_kind[result.y];
+        if (result_kind == 4u) legacy = 8u;
+        uint element = type_instance_elem_ref_payload[result.y];
+        if ((result_kind == 2u || result_kind == 3u) &&
+            type_instance_elem_ref_tag[result.y] == 1u && element < 128u)
+            legacy = 128u + element;
+        call_return_type[token] = legacy;
+    }
+    else if (result.x == 1u)
+    {
+        call_result_instance[call] = INVALID;
+        call_return_type[token] = result.y;
+    }
+    if (imported)
+    {
+        // Only qualified calls own their leading-token aliases. A member's
+        // source span starts at its receiver, which can be a different call
+        // even when both calls select the same callable declaration.
+        if (kind != 21u)
+        {
+            publish_imported_result(compact_hir_core[callee].token_start, token, result, legacy);
+            publish_imported_result(compact_hir_core[call].token_start, token, result, legacy);
+        }
+        publish_imported_result(token, token, result, legacy);
+    }
+    // Provisional scalar caches and contextual result rows can be reset by
+    // earlier passes. Progress belongs to a stable complete-type relation.
+    uint previous_tag = call_inference_result_tag[call];
+    uint previous_payload = call_inference_result_payload[call];
+    bool changed = !scoped_type_refs_equal<MutableCheckedTypeGraph>(
+        previous_tag, previous_payload, INVALID, result.x, result.y, INVALID,
+        mutable_type_capacity(), gParams.n_tokens);
+    call_inference_result_tag[call] = result.x;
+    call_inference_result_payload[call] = result.y;
+    if (changed)
+    {
+        uint ignored;
+        InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    }
+}

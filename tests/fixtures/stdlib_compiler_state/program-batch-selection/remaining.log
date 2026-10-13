@@ -1,0 +1,11 @@
+
+running 6 tests
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_empty_deltas_get_fresh_receipts_and_reject_unused_bad_roots ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_forwards_hypotheses_and_keeps_two_replay_occurrences_separate ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_missing_and_wrong_inner_implementations_are_semantic_failures ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_authentic_evidence_for_a_different_replay_goal ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_retained_witness_before_replay ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_unused_replay_binding_despite_matching_predicate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 702 filtered out; finished in 26.76s
+

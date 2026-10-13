@@ -1,0 +1,19 @@
+
+running 5 tests
+test lexical_method_environment_handles_reordered_impls_borrows_and_nested_calls ... ok
+test lexical_method_environment_rejects_conflicts_and_missing_bindings ... ok
+
+thread 'lexical_method_environment_imported_parameters_execute' (790702) panicked at tests/compiler_generic_types_execution.rs:125:29:
+imported method-local generic environment: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 4, column: 16, length: 4, byte_start: Some(134), byte_end: Some(138), source_line: Some("    if (!owner.keep(true) || owner.keep(42) != 42) { return 1; }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test lexical_method_environment_imported_parameters_execute ... FAILED
+test lexical_method_environment_keeps_impl_and_method_arguments_distinct ... ok
+test lexical_method_environment_supports_ordinary_owners_and_constant_results ... ok
+
+failures:
+
+failures:
+    lexical_method_environment_imported_parameters_execute
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 133 filtered out; finished in 4.88s
+

@@ -1,3 +1,5 @@
+import native_value_layout;
+import type_checker.checked_array_counts;
 // Compute the by-value machine-word layout of each fixed struct. One lane owns
 // one declaration and writes only that declaration's direct field rows. Nested
 // declarations are traversed read-only, so independent layouts remain parallel.
@@ -14,6 +16,10 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> type_instance_native_words;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> semantic_aggregate_decl_token;
 StructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 StructuredBuffer<uint> semantic_struct_field_start_by_hir;
@@ -82,11 +88,25 @@ uint nested_struct(uint type_node, uint hir_count)
 
 uint array_length(uint type_node, uint hir_count)
 {
-    if (type_node >= hir_count || compact_hir_core[type_node].kind != HIR_TYPE)
-        return 1u;
-    HirPayload payload = compact_hir_payload[type_node];
-    return payload.a == HIR_TYPE_FORM_ARRAY && payload.d != INVALID
-        ? payload.d : 1u;
+    if (type_node >= hir_count) return INVALID;
+    if (semantic_expr_ref_tag[type_node] == 3u)
+    {
+        uint instance = semantic_expr_ref_payload[type_node];
+        uint capacity; uint stride;
+        type_instance_kind.GetDimensions(capacity, stride);
+        if (instance >= capacity) return INVALID;
+        if (type_instance_kind[instance] == 2u)
+        {
+            uint count;
+            return checked_source_array_count(type_instance_len_kind[instance],
+                type_instance_len_payload[instance], gParams.n_tokens, count) &&
+                count < 0xfffffffeu ? count : INVALID;
+        }
+    }
+    // A syntactic fixed array without its checked instance has no length.
+    // HIR payload.d names an operand node; it is never an inline count.
+    return compact_hir_core[type_node].kind == HIR_TYPE &&
+        compact_hir_payload[type_node].a == HIR_TYPE_FORM_ARRAY ? INVALID : 1u;
 }
 
 uint array_element_type(uint type_node, uint hir_count)
@@ -166,6 +186,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
 
+        // Complete checked field applications already have their concrete
+        // layout. A generic enum/record declaration's pending cache cannot
+        // override a concrete application, including a zero-word array.
+        if (field.value < hir_count && semantic_expr_ref_tag[field.value] == 3u)
+        {
+            uint instance = semantic_expr_ref_payload[field.value];
+            uint capacity; uint stride;
+            type_instance_native_words.GetDimensions(capacity, stride);
+            uint words = instance < capacity ? type_instance_native_words[instance] : INVALID;
+            if (words == INVALID || stack_total[depth] >= INVALID - words)
+            {
+                semantic_struct_word_count_by_hir[root] = INVALID;
+                return;
+            }
+            if (depth == 0u)
+            {
+                semantic_struct_field_word_offset_by_row[field_row] = stack_total[0u];
+                semantic_struct_field_word_count_by_row[field_row] = words;
+            }
+            stack_total[depth] += words;
+            continue;
+        }
+
         bool slice_field = field.value < hir_count &&
             compact_hir_core[field.value].kind == HIR_TYPE &&
             compact_hir_payload[field.value].a == HIR_TYPE_FORM_SLICE;
@@ -175,15 +218,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
             semantic_struct_word_count_by_hir[root] = INVALID;
             return;
         }
-        uint multiplier = slice_field ? 2u
+        uint multiplier = slice_field ? NATIVE_SLICE_WORDS
             : array_length(field.value, hir_count);
+        if (multiplier == INVALID)
+        {
+            semantic_struct_word_count_by_hir[root] = INVALID;
+            return;
+        }
         uint element_type = array_element_type(field.value, hir_count);
-        // A slice owns a pointer-and-length pair, not an inline copy of its
+        if (!slice_field && element_type < hir_count &&
+            semantic_expr_ref_tag[element_type] == 2u)
+        {
+            // Declaration layouts cannot guess one word for an unbound T.
+            // Every containing record and field offset waits for its concrete
+            // receiver environment, even when the accessed result is scalar.
+            semantic_struct_word_count_by_hir[root] = INVALID;
+            return;
+        }
+        // A slice owns a three-word descriptor, not an inline copy of its
         // element type (even when that element is a nominal struct).
         uint child = slice_field ? INVALID
             : nested_struct(element_type, hir_count);
         if (child == INVALID)
         {
+            // A str field stores its existing pointer-and-length descriptor.
+            // Its checked scalar code is not a one-word scalar layout.
+            if (!slice_field && element_type < hir_count &&
+                semantic_expr_ref_tag[element_type] == TYPE_REF_SCALAR &&
+                semantic_expr_ref_payload[element_type] == 7u)
+            {
+                if (multiplier > (INVALID - 1u) / 2u)
+                {
+                    semantic_struct_word_count_by_hir[root] = INVALID;
+                    return;
+                }
+                multiplier *= 2u;
+            }
             // Only enum fields cache a complete non-struct layout between
             // passes. A cached struct width already includes its child and
             // must not become the child's multiplier on the second pass.

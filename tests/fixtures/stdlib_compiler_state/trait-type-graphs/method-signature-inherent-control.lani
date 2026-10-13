@@ -1,0 +1,5 @@
+struct Cell<T>{value:T}
+type Pair = [i32;2];
+trait Echo<T>{fn echo(self:i32, v:Cell<T>)->Cell<T>;}
+impl i32 {fn echo(self:i32, v:Cell<[i32;2]>)->Cell<[i32;2]>{return v;}}
+fn main()->i32 {let n=0; let c:Cell<[i32;2]> = Cell{value:[19,23]}; let v=n.echo(c); return v.value[0]+v.value[1]-42;}

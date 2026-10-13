@@ -1,0 +1,32 @@
+
+running 18 tests
+test compiler::gpu_compiler::program_evidence::packet::tests::admitted_call_handles_require_the_exact_arena_and_terminal_admission ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::arena_growth_preserves_old_graph_references_after_physical_moves ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::every_empty_submission_resets_and_requires_its_own_receipt ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::every_original_unit_and_source_occurrence_is_required ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::foreign_packet_submissions_and_evidence_cannot_authorize_replay ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::program_failure_diagnostics_require_an_exact_retained_file_span ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_cannot_normalize_a_changed_ordinary_helper ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_rejects_a_nonselected_generic_definition_or_native_call ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_rejects_missing_or_conflicting_native_ownership ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_emission_restores_only_omitted_template_facts_and_preserves_selected_calls ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_inherits_every_origin_binding_and_reuses_only_admitted_siblings ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_occurrences_do_not_upgrade_an_original_symbolic_call_handle ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_reuses_equal_sibling_facts_and_paths_but_rejects_changes ... ok
+test compiler::gpu_compiler::program_evidence::packet::tests::replay_routing_and_provenance_are_checked_before_call_iteration ... ok
+test compiler::gpu_compiler::typecheck::tests::native_call_ownership_retains_ordinary_calls_and_repeated_inlined_sites ... ok
+test compiler::gpu_compiler::unit_cache::tests::fallback_cache_keeps_diagnostic_paths_in_its_identity ... ok
+test compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_retain_nongeneric_imported_caller_owner ... ok
+test compiler::gpu_compiler::x86_codegen::tests::scalar_body_specialization_executes_both_variants_and_clears_between_jobs ... 
+thread 'compiler::gpu_compiler::x86_codegen::tests::scalar_body_specialization_executes_both_variants_and_clears_between_jobs' (75345) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs:2822:18:
+link the concrete generic body: native function has no emitted definition (library 7, unit 2, declaration 2; relocation 4)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::x86_codegen::tests::scalar_body_specialization_executes_both_variants_and_clears_between_jobs
+
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 700 filtered out; finished in 3.08s
+

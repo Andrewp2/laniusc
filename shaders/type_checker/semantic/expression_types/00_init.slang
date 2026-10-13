@@ -1,3 +1,4 @@
+import primitive_types;
 // Resolve one checked scalar result-type record per dense compact-HIR expression.
 //
 // Leaves consume type-checker facts directly. Operators whose result type is
@@ -8,6 +9,7 @@
 import hir_records;
 import gpu_index;
 import checked_semantic_artifact;
+import type_checker.checked_index_reference;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -19,6 +21,8 @@ StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -26,6 +30,7 @@ StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> call_generic_return_arg_node;
 RWStructuredBuffer<uint> compact_expr_scalar_type_out;
+StructuredBuffer<uint> literal_context_type_by_hir;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_EXPR = 14u;
@@ -76,8 +81,6 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
-static const uint SCALAR_TYPE_SHIFT = 28u;
-static const uint SCALAR_TYPE_LINK_MASK = 0x0fffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
@@ -86,7 +89,7 @@ bool valid_token(uint token) { return token != INVALID && token < gParams.n_toke
 
 uint checked_scalar_type(uint ty)
 {
-    return ty <= 8u ? ty : TY_UNKNOWN;
+    return scalar_is_known(ty) ? ty : TY_UNKNOWN;
 }
 
 uint visible_type_for_token(uint token)
@@ -134,19 +137,13 @@ uint compact_index_result_type(uint index_node)
 {
     if (!valid_hir(index_node) || compact_hir_core[index_node].kind != HIR_INDEX_EXPR)
         return TY_UNKNOWN;
-    uint base = compact_hir_payload[index_node].b;
-    uint token = name_token_for_hir(base);
-    uint decl = valid_token(token) ? visible_decl[token] : INVALID;
-    if (!valid_token(decl) || decl_type_ref_tag[decl] != TYPE_REF_INSTANCE)
-        return TY_UNKNOWN;
-    uint instance = decl_type_ref_payload[decl];
-    if (!valid_token(instance)) return TY_UNKNOWN;
-    uint kind = type_instance_kind[instance];
-    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
-        return TY_UNKNOWN;
-    return scalar_type_from_ref(
-        type_instance_elem_ref_tag[instance],
-        type_instance_elem_ref_payload[instance]);
+    uint tag; uint payload;
+    if (!checked_value_index_reference(index_node, active_hir_count(), gParams.n_tokens,
+        compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
+        decl_type_ref_payload, member_result_ref_tag, member_result_ref_payload,
+        semantic_calls_by_hir, type_instance_kind, type_instance_elem_ref_tag,
+        type_instance_elem_ref_payload, tag, payload)) return TY_UNKNOWN;
+    return scalar_type_from_ref(tag, payload);
 }
 
 uint pack_scalar_type(uint ty, uint link)
@@ -180,7 +177,19 @@ uint direct_result_type(uint node)
     if (core.kind == HIR_CALL_EXPR)
         return compact_call_result_type(node);
     if (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR)
-        return visible_type_for_token(payload.d);
+    {
+        // A field assignment can leave a scalar in the token visibility cache.
+        // The named value still has its declaration's complete checked type;
+        // never turn a nominal/array/slice parameter into that field's scalar.
+        uint token = core.kind == HIR_PATH_EXPR ? core.token_start : payload.d;
+        uint declaration = valid_token(token) ? visible_decl[token] : INVALID;
+        if (!valid_token(declaration)) declaration = token;
+        uint tag = valid_token(declaration) ? decl_type_ref_tag[declaration] : 0u;
+        if (tag == TYPE_REF_INSTANCE) return TY_UNKNOWN;
+        if (tag == TYPE_REF_SCALAR)
+            return checked_scalar_type(decl_type_ref_payload[declaration]);
+        return visible_type_for_token(token);
+    }
     if (core.kind == HIR_MEMBER_EXPR)
         return visible_type_for_token(payload.c);
     if (core.kind == HIR_INDEX_EXPR)
@@ -235,21 +244,6 @@ uint inherited_result_link(uint node)
     if (kind != HIR_EXPR && kind != HIR_BINARY_EXPR && kind != HIR_UNARY_EXPR)
         return INVALID;
     HirPayload payload = compact_hir_payload[node];
-    if ((kind == HIR_EXPR || kind == HIR_BINARY_EXPR) &&
-        (payload.a == HIR_EXPR_ADD || payload.a == HIR_EXPR_SUB ||
-         payload.a == HIR_EXPR_MUL || payload.a == HIR_EXPR_MOD ||
-         payload.a == HIR_EXPR_DIV || payload.a == HIR_EXPR_BIT_OR ||
-         payload.a == HIR_EXPR_BIT_XOR || payload.a == HIR_EXPR_BIT_AND) &&
-        valid_hir(payload.b) && valid_hir(payload.c) &&
-        compact_hir_core[payload.b].kind == HIR_LITERAL_EXPR &&
-        compact_hir_payload[payload.b].a == HIR_EXPR_INT &&
-        inherited_operand_type(payload.c) == TY_UINT)
-    {
-        // An unsuffixed integer literal takes a checked u32 operand's type.
-        // Inheriting i32 from the literal makes a u32 remainder use signed
-        // division even when its right operand is u32.
-        return payload.c;
-    }
     return inherited_scalar_form(payload.a) &&
                    valid_hir(payload.b) && payload.b != node
                ? payload.b
@@ -282,6 +276,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
 
         ty = direct_result_type(current);
+        if (compact_hir_core[current].kind == HIR_LITERAL_EXPR &&
+            (compact_hir_payload[current].a == HIR_EXPR_INT || compact_hir_payload[current].a == HIR_EXPR_FLOAT))
+        {
+            uint context = literal_context_type_by_hir[current];
+            if ((compact_hir_payload[current].a == HIR_EXPR_INT && scalar_is_integer(context)) ||
+                (compact_hir_payload[current].a == HIR_EXPR_FLOAT && scalar_is_float(context))) ty = context;
+        }
         if (ty != TY_UNKNOWN || !valid_hir(link)) break;
         current = link;
         visited += 1u;

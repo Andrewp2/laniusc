@@ -1,0 +1,349 @@
+# grammar/lanius.bnf
+# BNF-with-tags (no EBNF sugar). One production per line, ending with ';'
+# Nonterminals are bare identifiers. Terminals are token kind names in single quotes.
+# Optional production tag: LhsName [tag] -> ... ;
+# Start directive: %start NonTerminal;
+
+%start file;
+
+# ----- File, items, functions -----
+
+file                         -> item_list;
+item_list     [items_more]   -> item item_list;
+item_list     [items_end]    -> ;
+
+item          [item_pub]     -> 'Pub' pub_item;
+item          [item_fn]      -> fn_item;
+item          [item_extern_fn] -> extern_fn_item;
+item          [item_import]  -> import_item;
+item          [item_module]  -> module_item;
+item          [item_type_alias] -> type_alias_item;
+item          [item_impl]    -> impl_item;
+item          [item_trait]   -> trait_item;
+
+fn_item       [fn]           -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt fn_block;
+fn_block      [fn_block]     -> 'FnBlockLBrace' stmt_list 'FnBlockRBrace';
+impl_fn_item  [impl_fn]      -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt impl_fn_block;
+impl_fn_block [impl_fn_block] -> 'ImplFnBlockLBrace' stmt_list 'ImplFnBlockRBrace';
+extern_fn_item [extern_fn]   -> 'Extern' extern_abi_opt 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt 'ExternSemicolon';
+type_alias_item [type_alias] -> 'Type' 'TypeAliasNameIdent' enum_type_params_opt where_clause_opt 'TypeAliasAssign' type_expr 'TypeAliasSemicolon';
+impl_item     [impl_inherent] -> 'InherentImpl' enum_type_params_opt type_expr where_clause_opt 'ImplLBrace' impl_method_list_opt 'ImplRBrace';
+impl_item     [impl_trait]   -> 'TraitImpl' enum_type_params_opt type_expr 'ImplFor' type_expr where_clause_opt 'ImplLBrace' impl_method_list_opt 'ImplRBrace';
+impl_method_list_opt [impl_methods_none] -> ;
+impl_method_list_opt [impl_methods_some] -> impl_method impl_method_tail;
+impl_method   [impl_method]  -> impl_fn_item;
+impl_method   [impl_method_pub] -> 'ImplPub' impl_fn_item;
+impl_method_tail [impl_methods_more] -> impl_method impl_method_tail;
+impl_method_tail [impl_methods_end] -> ;
+trait_item    [trait]        -> 'Trait' 'TraitNameIdent' enum_type_params_opt where_clause_opt 'TraitLBrace' trait_method_list_opt 'TraitRBrace';
+trait_method_list_opt [trait_methods_none] -> ;
+trait_method_list_opt [trait_methods_some] -> trait_method trait_method_tail;
+trait_method  [trait_method] -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt 'TraitMethodSemicolon';
+trait_method  [trait_method_pub] -> 'TraitPub' 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt 'TraitMethodSemicolon';
+trait_method_tail [trait_methods_more] -> trait_method trait_method_tail;
+trait_method_tail [trait_methods_end] -> ;
+extern_abi_opt [extern_abi]  -> 'ExternAbiString';
+extern_abi_opt [extern_abi_none] -> ;
+return_type_opt [ret_type]   -> 'ReturnArrow' type_expr;
+return_type_opt [ret_void]   -> ;
+
+where_clause_opt [where_none] -> ;
+where_clause_opt [where_some] -> 'Where' where_predicate where_predicate_tail;
+where_predicate [where_type_bound] -> 'WhereIdent' 'BoundColon' type_param_bound_list;
+where_predicate_tail [where_predicates_more] -> 'WhereComma' where_predicate_tail_after_comma;
+where_predicate_tail [where_predicates_end] -> ;
+where_predicate_tail_after_comma [where_predicate_more_after_comma] -> where_predicate where_predicate_tail;
+where_predicate_tail_after_comma [where_predicate_trailing] -> ;
+
+import_item   [import]       -> 'Import' import_tail;
+import_tail   [import_path]  -> path 'ImportSemicolon';
+import_tail   [import_string] -> 'ImportString' 'ImportSemicolon';
+module_item   [module]       -> 'Module' path 'ModuleSemicolon';
+path          [path]         -> path_segment path_tail;
+path_segment  [path_ident]   -> 'Ident';
+path_segment  [path_ident_args] -> 'PathGenericIdent' 'PathTypeArgLt' generic_argument path_type_arg_tail 'PathTypeArgGt';
+path_tail     [path_more]    -> 'PathColon' 'PathColon' path_segment path_tail;
+path_tail     [path_end]     -> ;
+path_type_arg_tail [path_type_args_more] -> 'PathTypeArgComma' path_type_arg_tail_after_comma;
+path_type_arg_tail [path_type_args_end] -> ;
+path_type_arg_tail_after_comma [path_type_args_after_comma_more] -> generic_argument path_type_arg_tail;
+path_type_arg_tail_after_comma [path_type_args_after_comma_trailing] -> ;
+
+type_path     [type_path]    -> type_path_segment type_path_tail;
+type_path_segment [type_path_ident] -> 'TypeIdent';
+type_path_tail [type_path_more] -> 'PathColon' 'PathColon' type_path_segment type_path_tail;
+type_path_tail [type_path_end] -> ;
+
+param_list_opt [params_none] -> ;
+param_list_opt [params_some] -> param param_tail;
+param          [param_named] -> 'ParamIdent' 'TypeColon' type_expr;
+param          [param_self]  -> 'ParamSelfValue' self_param_tail;
+param          [param_self_ref] -> 'TypeAmpersand' 'ParamSelfRefValue';
+self_param_tail [self_param_typed] -> 'TypeColon' type_expr;
+self_param_tail [self_param_plain] -> ;
+param_tail     [params_more] -> 'ParamComma' param_tail_after_comma;
+param_tail     [params_end]  -> ;
+
+type_expr      [type_ident]  -> type_path type_args_opt;
+type_expr      [type_array]  -> 'TypeArrayLBracket' type_expr type_bracket_tail;
+
+# ----- Blocks and statements -----
+
+block         [block]        -> 'LBrace' stmt_list 'RBrace';
+if_block      [if_block]     -> 'IfLBrace' stmt_list 'IfRBrace';
+stmt_list     [stmts_more]   -> stmt stmt_list;
+stmt_list     [stmts_end]    -> ;
+
+stmt          [let_stmt]     -> 'Let' 'LetIdent' let_type_opt let_init_opt 'LetSemicolon';
+stmt          [return_stmt]  -> 'Return' return_value_opt 'ReturnSemicolon';
+stmt          [if_stmt]      -> 'If' 'GroupLParen' expr 'GroupRParen' if_block else_tail;
+else_tail     [else_stmt]    -> 'Else' block;
+else_tail     [else_none]    -> ;
+stmt          [while_stmt]   -> 'While' 'GroupLParen' expr 'GroupRParen' block;
+stmt          [for_stmt]     -> 'For' 'Ident' 'In' for_iterable block;
+stmt          [break_stmt]   -> 'Break' 'BreakSemicolon';
+stmt          [continue_stmt] -> 'Continue' 'ContinueSemicolon';
+stmt          [block_stmt]   -> block;
+stmt          [expr_stmt]    -> expr 'ExprSemicolon';
+
+let_type_opt  [let_type]     -> 'TypeColon' type_expr;
+let_type_opt  [let_type_none] -> ;
+let_init_opt  [let_init]     -> 'LetAssign' expr;
+let_init_opt  [let_init_none] -> ;
+return_value_opt [return_value] -> expr;
+return_value_opt [return_void] -> ;
+# ----- Expressions -----
+
+for_iterable  [for_iter_path] -> path;
+for_iterable  [for_iter_range_from_start] -> range_start range_start_tail;
+for_iterable  [for_iter_range_to] -> 'DotDot' range_bound_opt;
+for_iterable  [for_iter_range_to_inclusive] -> 'DotDotEqual' 'RangeInclusiveAssign' range_bound;
+range_start   [range_start_int] -> 'Int';
+range_start_tail [range_exclusive] -> 'DotDot' range_bound_opt;
+range_start_tail [range_inclusive] -> 'DotDotEqual' 'RangeInclusiveAssign' range_bound;
+range_bound   [range_bound_name] -> range_bound_ident postfix_tail;
+range_bound   [range_bound_int] -> 'Int';
+range_bound_ident [range_bound_ident] -> 'RangeEndIdent';
+range_bound_opt [range_bound] -> range_bound;
+range_bound_opt [range_unbounded] -> ;
+
+expr                         -> assign;
+
+# Assignment is right-associative.
+
+assign                       -> orexpr assign_tail;
+assign_tail  [assign_set]    -> 'Assign' assign;
+assign_tail  [assign_add]    -> 'PlusAssign' assign;
+assign_tail  [assign_sub]    -> 'MinusAssign' assign;
+assign_tail  [assign_mul]    -> 'StarAssign' assign;
+assign_tail  [assign_div]    -> 'SlashAssign' assign;
+assign_tail  [assign_mod]    -> 'PercentAssign' assign;
+assign_tail  [assign_xor]    -> 'CaretAssign' assign;
+assign_tail  [assign_shl]    -> 'ShlAssign' assign;
+assign_tail  [assign_shr]    -> 'ShrAssign' assign;
+assign_tail  [assign_band]   -> 'AmpAssign' assign;
+assign_tail  [assign_bor]    -> 'PipeAssign' assign;
+assign_tail  [assign_end]    -> ;
+
+# ----- Binary operators (right-recursive parser shape; rewrite later for associativity) -----
+
+orexpr                       -> andexpr orexpr_tail;
+orexpr_tail  [or_tail]       -> 'OrOr' andexpr orexpr_tail;
+orexpr_tail  [or_end]        -> ;
+
+andexpr                      -> bit_or andexpr_tail;
+andexpr_tail [and_tail]      -> 'AndAnd' bit_or andexpr_tail;
+andexpr_tail [and_end]       -> ;
+
+bit_or                       -> bit_xor bit_or_tail;
+bit_or_tail  [bor_tail]      -> 'Pipe' bit_xor bit_or_tail;
+bit_or_tail  [bor_end]       -> ;
+
+bit_xor                      -> bit_and bit_xor_tail;
+bit_xor_tail [xor_tail]      -> 'Caret' bit_and bit_xor_tail;
+bit_xor_tail [xor_end]       -> ;
+
+bit_and                      -> equality bit_and_tail;
+bit_and_tail [band_tail]     -> 'Ampersand' equality bit_and_tail;
+bit_and_tail [band_end]      -> ;
+
+equality                     -> compare equality_tail;
+equality_tail [eq_tail]      -> 'EqEq' compare equality_tail;
+equality_tail [ne_tail]      -> 'NotEqual' compare equality_tail;
+equality_tail [eq_end]       -> ;
+
+compare                      -> shift compare_tail;
+compare_tail [lt_tail]       -> 'Lt' shift compare_tail;
+compare_tail [gt_tail]       -> 'Gt' shift compare_tail;
+compare_tail [le_tail]       -> 'Le' shift compare_tail;
+compare_tail [ge_tail]       -> 'Ge' shift compare_tail;
+compare_tail [compare_end]   -> ;
+
+shift                        -> add shift_tail;
+shift_tail   [shl_tail]      -> 'Shl' add shift_tail;
+shift_tail   [shr_tail]      -> 'Shr' add shift_tail;
+shift_tail   [shift_end]     -> ;
+
+add                          -> mul add_tail;
+add_tail     [add_tail]      -> 'InfixPlus' mul add_tail;
+add_tail     [sub_tail]      -> 'InfixMinus' mul add_tail;
+add_tail     [add_end]       -> ;
+
+mul                          -> unary mul_tail;
+mul_tail     [mul_tail]      -> 'Star' unary mul_tail;
+mul_tail     [div_tail]      -> 'Slash' unary mul_tail;
+mul_tail     [mod_tail]      -> 'Percent' unary mul_tail;
+mul_tail     [mul_end]       -> ;
+
+# ----- Unary and postfix -----
+
+unary        [pos]           -> 'PrefixPlus' unary;
+unary        [neg]           -> 'PrefixMinus' unary;
+unary        [not]           -> 'Not' unary;
+unary        [base]          -> postfix;
+
+postfix                      -> primary postfix_tail;
+postfix_tail [postfix_call]  -> 'CallLParen' arg_list_opt 'CallRParen' postfix_tail;
+postfix_tail [postfix_index] -> 'IndexLBracket' expr 'IndexRBracket' postfix_tail;
+postfix_tail [postfix_member] -> 'Dot' 'MemberIdent' member_type_args_opt postfix_tail;
+postfix_tail [postfix_end]   -> ;
+
+# --- Optional arguments for calls (BNF, no EBNF sugar) ---
+
+arg_list_opt [args_none]     -> ;
+arg_list_opt [args_some]     -> expr arg_tail;
+arg_tail     [args_more]     -> 'ArgComma' arg_tail_after_comma;
+arg_tail     [args_end]      -> ;
+arg_tail_after_comma [args_after_comma_more] -> expr arg_tail;
+arg_tail_after_comma [args_after_comma_trailing] -> ;
+
+# ----- Primary -----
+
+primary      [array_lit]     -> 'ArrayLBracket' array_elems_opt 'ArrayRBracket';
+primary      [group]         -> 'GroupLParen' expr 'GroupRParen';
+primary      [ident]         -> path primary_ident_tail;
+primary      [self_value]    -> 'SelfValue';
+primary      [int]           -> 'Int';
+primary      [float]         -> 'Float';
+primary      [string]        -> 'String';
+primary      [char]          -> 'Char';
+array_elems_opt [array_none] -> ;
+array_elems_opt [array_some] -> expr array_elems_tail;
+array_elems_tail [array_more] -> 'ArrayComma' array_elems_tail_after_comma;
+array_elems_tail [array_end] -> ;
+array_elems_tail_after_comma [array_after_comma_more] -> expr array_elems_tail;
+array_elems_tail_after_comma [array_after_comma_trailing] -> ;
+primary      [true]          -> 'True';
+primary      [false]         -> 'False';
+primary      [match_expr]    -> 'Match' 'GroupLParen' expr 'GroupRParen' 'MatchLBrace' match_arm_list_opt 'MatchRBrace';
+match_arm_list_opt [match_arms_none] -> ;
+match_arm_list_opt [match_arms_some] -> match_arm match_arm_tail;
+match_arm    [match_arm]     -> pattern 'MatchArrow' expr;
+match_arm_tail [match_arms_more] -> 'MatchArmComma' match_arm_tail_after_comma;
+match_arm_tail [match_arms_end] -> ;
+match_arm_tail_after_comma [match_arms_after_comma_more] -> match_arm match_arm_tail;
+match_arm_tail_after_comma [match_arms_after_comma_trailing] -> ;
+pattern      [pattern_ident] -> path pattern_ident_tail;
+pattern      [pattern_int]   -> 'Int';
+pattern      [pattern_true]  -> 'True';
+pattern      [pattern_false] -> 'False';
+pattern_ident_tail [pattern_plain] -> ;
+pattern_ident_tail [pattern_tuple] -> 'PatternLParen' pattern_list_opt 'PatternRParen';
+pattern_list_opt [patterns_none] -> ;
+pattern_list_opt [patterns_some] -> pattern pattern_tail;
+pattern_tail [patterns_more] -> 'PatternComma' pattern_tail_after_comma;
+pattern_tail [patterns_end] -> ;
+pattern_tail_after_comma [patterns_after_comma_more] -> pattern pattern_tail;
+pattern_tail_after_comma [patterns_after_comma_trailing] -> ;
+item         [item_const]    -> const_item;
+const_item   [const]         -> 'Const' 'Ident' 'TypeColon' type_expr 'ConstAssign' expr 'ConstSemicolon';
+item         [item_enum]     -> enum_item;
+enum_item    [enum]          -> 'Enum' 'Ident' enum_type_params_opt where_clause_opt 'EnumLBrace' enum_variant_list_opt 'EnumRBrace';
+enum_variant_list_opt [enum_variants_none] -> ;
+enum_variant_list_opt [enum_variants_some] -> enum_variant enum_variant_tail;
+enum_variant [enum_variant] -> 'Ident' enum_variant_payload_opt;
+enum_variant_payload_opt [enum_variant_unit] -> ;
+enum_variant_payload_opt [enum_variant_tuple] -> 'EnumPayloadLParen' enum_variant_fields_opt 'EnumPayloadRParen';
+enum_variant_fields_opt [enum_variant_fields_none] -> ;
+enum_variant_fields_opt [enum_variant_fields_some] -> type_expr enum_variant_fields_tail;
+enum_variant_fields_tail [enum_variant_fields_more] -> 'EnumFieldComma' enum_variant_fields_tail_after_comma;
+enum_variant_fields_tail [enum_variant_fields_end] -> ;
+enum_variant_fields_tail_after_comma [enum_variant_fields_after_comma_more] -> type_expr enum_variant_fields_tail;
+enum_variant_fields_tail_after_comma [enum_variant_fields_after_comma_trailing] -> ;
+enum_variant_tail [enum_variants_more] -> 'EnumVariantComma' enum_variant_tail_after_comma;
+enum_variant_tail [enum_variants_end] -> ;
+enum_variant_tail_after_comma [enum_variants_after_comma_more] -> enum_variant enum_variant_tail;
+enum_variant_tail_after_comma [enum_variants_after_comma_trailing] -> ;
+type_args_opt [type_args_none] -> ;
+type_args_opt [type_args_some] -> 'TypeArgLt' generic_argument type_arg_tail 'TypeArgGt';
+type_arg_tail [type_args_more] -> 'TypeArgComma' type_arg_tail_after_comma;
+type_arg_tail [type_args_end] -> ;
+type_arg_tail_after_comma [type_args_after_comma_more] -> generic_argument type_arg_tail;
+type_arg_tail_after_comma [type_args_after_comma_trailing] -> ;
+enum_type_params_opt [enum_type_params_none] -> ;
+enum_type_params_opt [enum_type_params_some] -> 'GenericParamLt' enum_type_param enum_type_param_tail 'GenericParamGt';
+enum_type_param [enum_type_param] -> 'GenericParamIdent' type_param_bound_opt;
+enum_type_param [enum_const_param] -> 'Const' 'Ident' 'TypeColon' type_expr;
+type_param_bound_opt [type_param_bound] -> 'BoundColon' type_param_bound_list;
+type_param_bound_opt [type_param_bound_none] -> ;
+type_param_bound_list [type_param_bound_list] -> bound_type_expr type_param_bound_tail;
+type_param_bound_tail [type_param_bound_more] -> 'BoundPlus' bound_type_expr type_param_bound_tail;
+type_param_bound_tail [type_param_bound_end] -> ;
+bound_type_expr [bound_type_ident] -> bound_type_path bound_type_args_opt;
+bound_type_expr [bound_type_ref] -> 'BoundTypeAmpersand' bound_type_expr;
+bound_type_path [bound_type_path] -> bound_type_path_segment bound_type_path_tail;
+bound_type_path_segment [bound_type_path_ident] -> 'BoundTypeIdent';
+bound_type_path_tail [bound_type_path_more] -> 'PathColon' 'PathColon' bound_type_path_segment bound_type_path_tail;
+bound_type_path_tail [bound_type_path_end] -> ;
+bound_type_args_opt [bound_type_args_none] -> ;
+bound_type_args_opt [bound_type_args_some] -> 'BoundTypeArgLt' bound_type_expr bound_type_arg_tail 'BoundTypeArgGt';
+bound_type_arg_tail [bound_type_args_more] -> 'BoundTypeArgComma' bound_type_arg_tail_after_comma;
+bound_type_arg_tail [bound_type_args_end] -> ;
+bound_type_arg_tail_after_comma [bound_type_args_after_comma_more] -> bound_type_expr bound_type_arg_tail;
+bound_type_arg_tail_after_comma [bound_type_args_after_comma_trailing] -> ;
+enum_type_param_tail [enum_type_params_more] -> 'GenericParamComma' enum_type_param_tail_after_comma;
+enum_type_param_tail [enum_type_params_end] -> ;
+enum_type_param_tail_after_comma [enum_type_params_after_comma_more] -> enum_type_param enum_type_param_tail;
+enum_type_param_tail_after_comma [enum_type_params_after_comma_trailing] -> ;
+item         [item_struct]   -> struct_item;
+struct_item  [struct]        -> 'Struct' 'Ident' enum_type_params_opt where_clause_opt 'StructDeclLBrace' struct_field_list_opt 'StructDeclRBrace';
+struct_field_list_opt [struct_fields_none] -> ;
+struct_field_list_opt [struct_fields_some] -> struct_field struct_field_tail;
+struct_field [struct_field]  -> 'Ident' 'TypeColon' type_expr;
+struct_field_tail [struct_fields_more] -> 'StructFieldComma' struct_field_tail_after_comma;
+struct_field_tail [struct_fields_end] -> ;
+struct_field_tail_after_comma [struct_fields_after_comma_more] -> struct_field struct_field_tail;
+struct_field_tail_after_comma [struct_fields_after_comma_trailing] -> ;
+pub_item [pub_fn]            -> fn_item;
+pub_item [pub_extern_fn]     -> extern_fn_item;
+pub_item [pub_const]         -> const_item;
+pub_item [pub_type_alias]    -> type_alias_item;
+pub_item [pub_enum]          -> enum_item;
+pub_item [pub_struct]        -> struct_item;
+pub_item [pub_impl]          -> impl_item;
+pub_item [pub_trait]         -> trait_item;
+primary_ident_tail [ident_plain] -> ;
+primary_ident_tail [struct_lit] -> 'StructLitLBrace' struct_lit_field_list_opt 'StructLitRBrace';
+struct_lit_field_list_opt [struct_lit_fields_none] -> ;
+struct_lit_field_list_opt [struct_lit_fields_some] -> struct_lit_field struct_lit_field_tail;
+struct_lit_field [struct_lit_field] -> 'Ident' 'Colon' expr;
+struct_lit_field_tail [struct_lit_fields_more] -> 'StructLitComma' struct_lit_field_tail_after_comma;
+struct_lit_field_tail [struct_lit_fields_end] -> ;
+struct_lit_field_tail_after_comma [struct_lit_fields_after_comma_more] -> struct_lit_field struct_lit_field_tail;
+struct_lit_field_tail_after_comma [struct_lit_fields_after_comma_trailing] -> ;
+type_bracket_tail [type_array_tail] -> 'TypeSemicolon' type_array_len 'TypeArrayRBracket';
+type_bracket_tail [type_slice_tail] -> 'TypeArrayRBracket';
+type_expr [type_ref] -> 'TypeAmpersand' type_expr;
+type_array_len [type_array_len_int] -> 'Int';
+type_array_len [type_array_len_name] -> 'Ident';
+param_tail_after_comma [params_after_comma_more] -> param param_tail;
+param_tail_after_comma [params_after_comma_trailing] -> ;
+
+# Application operands retain their syntax. The declaration decides whether a
+# bare name denotes a type or a scoped constant parameter; integers are values.
+# Append tags to preserve all existing production identities.
+generic_argument [generic_argument_type] -> type_expr;
+generic_argument [generic_argument_integer] -> 'Int';
+
+member_type_args_opt [member_type_args_none] -> ;
+member_type_args_opt [member_type_args_some] -> 'PathTypeArgLt' generic_argument path_type_arg_tail 'MemberTypeArgGt';

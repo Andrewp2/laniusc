@@ -1,0 +1,132 @@
+[
+  {
+    "shader": "14_validate_contexts",
+    "bytes": 139896,
+    "functions": 94,
+    "stored_instructions": 8848,
+    "hypothetical_fully_inlined_instructions": 130020,
+    "largest": [
+      [
+        "%main",
+        130020
+      ],
+      [
+        "%pev_batch_validate_contexts",
+        129989
+      ],
+      [
+        "%pev_validate_context",
+        124149
+      ],
+      [
+        "%pev_equal_admitted_goals",
+        59774
+      ],
+      [
+        "%pev_equal_admitted_goal_roots",
+        59658
+      ],
+      [
+        "%scoped_type_refs_equal",
+        57552
+      ],
+      [
+        "%pev_admit_and_hash_goal",
+        54160
+      ],
+      [
+        "%pev_hash_root",
+        50231
+      ],
+      [
+        "%scoped_type_ref_hash",
+        30068
+      ],
+      [
+        "%pev_admit_root",
+        18540
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        18531
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        13296
+      ],
+      [
+        "%scoped_constant_length",
+        5329
+      ],
+      [
+        "%scoped_constant_length_0",
+        5329
+      ]
+    ]
+  },
+  {
+    "shader": "17_select_obligations",
+    "bytes": 103824,
+    "functions": 78,
+    "stored_instructions": 6532,
+    "hypothetical_fully_inlined_instructions": 79446,
+    "largest": [
+      [
+        "%main",
+        79446
+      ],
+      [
+        "%pev_batch_select_obligations",
+        79415
+      ],
+      [
+        "%pev_select_obligation",
+        77372
+      ],
+      [
+        "%pev_select_goal_evidence",
+        68629
+      ],
+      [
+        "%pev_equal_admitted_goals",
+        59774
+      ],
+      [
+        "%pev_equal_admitted_goal_roots",
+        59658
+      ],
+      [
+        "%scoped_type_refs_equal",
+        57552
+      ],
+      [
+        "%scoped_constant_length",
+        5329
+      ],
+      [
+        "%scoped_constant_length_0",
+        5329
+      ],
+      [
+        "%ProgramEvidenceTypeGraph_substitute_type_parameter",
+        4342
+      ],
+      [
+        "%pev_obligation_goal",
+        4159
+      ],
+      [
+        "%ProgramEvidenceTypeGraph_substitute_constant_parameter",
+        3863
+      ],
+      [
+        "%ProgramEvidenceTypeGraph_substitute_constant_parameter_0",
+        3863
+      ],
+      [
+        "%pev_admitted_environment_binding",
+        2430
+      ]
+    ]
+  }
+]

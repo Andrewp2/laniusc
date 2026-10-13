@@ -1,6 +1,7 @@
 import codegen.lowering_ir;
 import codegen.lir.wasm.host_abi;
 import gpu_index;
+import primitive_types;
 
 struct Params { uint function_capacity; uint param_capacity; uint local_capacity; uint n_tokens; };
 ConstantBuffer<Params> gParams;
@@ -13,6 +14,7 @@ StructuredBuffer<uint> semantic_lir_local_total;
 StructuredBuffer<uint> wasm_local_prefix;
 StructuredBuffer<uint> wasm_local_value_total;
 RWStructuredBuffer<WasmLirFunction> wasm_lir_functions;
+RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -35,6 +37,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint function_count = min(semantic_lir_function_total[0u], gParams.function_capacity);
     if (function_id >= function_count) return;
     SemanticLirFunction source = semantic_lir_functions[function_id];
+    if (source.result_type == SCALAR_F64)
+    {
+        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
+        InterlockedMin(lowering_status[0u].first_unsupported_hir, source.hir_function);
+    }
     uint param_count = min(semantic_lir_param_total[0u], gParams.param_capacity);
     uint local_count = min(semantic_lir_local_total[0u], gParams.local_capacity);
     WasmLirFunction result;

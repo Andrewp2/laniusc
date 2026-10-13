@@ -1,0 +1,2 @@
+fn narrow<const V: f32>() -> f32 { return V; }
+fn main() -> i32 { narrow<1.0e300>(); return 0; }

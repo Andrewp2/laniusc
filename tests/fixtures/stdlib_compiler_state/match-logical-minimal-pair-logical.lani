@@ -1,0 +1,7 @@
+pub enum Pair { Empty, Both(bool, i32) }
+fn main() -> i32 {
+    let input: Pair = Both(true, 7);
+    let good: bool = match (input) { Empty -> false, Both(flag, value) -> flag && value == 7 };
+    if (!good) { return 1; }
+    return 0;
+}

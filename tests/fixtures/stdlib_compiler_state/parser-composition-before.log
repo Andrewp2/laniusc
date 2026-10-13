@@ -1,0 +1,24 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized + debuginfo] target(s) in 7.70s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/parser_hir_records.rs (target/stdlib-perf/build/release/deps/parser_hir_records-6a4a7d077edcca4f)
+
+running 1 test
+test parser_qualified_type_applications_inside_structural_types ... 
+thread 'parser_qualified_type_applications_inside_structural_types' (141989) panicked at tests/parser_hir_records.rs:1705:9:
+assertion `left == right` failed: qualified array element must retain its type-argument role: fn main() -> i32 { let values: [core::option::Option<i32>; 2] = [core::option::None(), core::option::None()]; return 0; }
+["Unknown(0)", "Fn", "Ident", "ParamLParen", "ParamRParen", "ReturnArrow", "TypeIdent", "FnBlockLBrace", "Let", "LetIdent", "TypeColon", "TypeArrayLBracket", "TypeIdent", "PathColon", "PathColon", "TypeIdent", "PathColon", "PathColon", "TypeIdent", "PathTypeArgLt", "TypeIdent", "PathTypeArgGt", "TypeSemicolon", "Int", "TypeArrayRBracket", "LetAssign", "ArrayLBracket", "Ident", "PathColon", "PathColon", "Ident", "PathColon", "PathColon", "Ident", "CallLParen", "CallRParen", "ArrayComma", "Ident", "PathColon", "PathColon", "Ident", "PathColon", "PathColon", "Ident", "CallLParen", "CallRParen", "ArrayRBracket", "LetSemicolon", "Return", "Int", "ReturnSemicolon", "FnBlockRBrace", "Unknown(0)"]
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    parser_qualified_type_applications_inside_structural_types
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 252 filtered out; finished in 0.86s
+
+error: test failed, to rerun pass `--test parser_hir_records`

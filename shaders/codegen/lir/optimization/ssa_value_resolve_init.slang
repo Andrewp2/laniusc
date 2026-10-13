@@ -4,6 +4,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -41,7 +42,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= total) return;
 
     uint op = opt_ir_op(opt_ir_core[row]);
-    bool produces = semantic_lir_produces_value(op);
+    bool produces = opt_ir_node_is_executable(row, total) &&
+        semantic_lir_produces_value(op);
     uint link = 0u;
     if (produces && op != SEMANTIC_LIR_OP_VALUE_GET)
     {

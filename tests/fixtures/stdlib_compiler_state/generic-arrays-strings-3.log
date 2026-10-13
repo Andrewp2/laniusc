@@ -1,0 +1,53 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 51.53s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 17 tests
+test direct_record_descriptor_fields_have_exact_types ... ok
+test direct_string_slice_access_preserves_descriptors ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... ok
+test generic_slice_operations_preserve_record_element_layouts ... ok
+test generic_slice_operations_preserve_string_element_descriptors ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... ok
+test imported_generic_functions_preserve_fixed_array_values ... FAILED
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_functions_preserve_fixed_array_values ... FAILED
+test local_generic_functions_preserve_nested_enum_values ... ok
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+
+failures:
+
+---- imported_generic_functions_preserve_fixed_array_values stdout ----
+
+thread 'imported_generic_functions_preserve_fixed_array_values' (89960) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 25; relocation 0)"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_imported_fixed_array_values_89908_17.lani
+
+---- local_generic_functions_preserve_fixed_array_values stdout ----
+kept temp artifact /tmp/laniusc_sample_x86_generic_types_89908_25
+
+thread 'local_generic_functions_preserve_fixed_array_values' (89975) panicked at tests/compiler_generic_types_execution.rs:19:5:
+assertion `left == right` failed: local fixed array values: Output { status: ExitStatus(unix_wait_status(256)), stdout: "", stderr: "" }
+  left: Some(1)
+ right: Some(0)
+kept temp artifact /tmp/generic_types_local_fixed_array_values_89908_24.lani
+
+
+failures:
+    imported_generic_functions_preserve_fixed_array_values
+    local_generic_functions_preserve_fixed_array_values
+
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.29s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

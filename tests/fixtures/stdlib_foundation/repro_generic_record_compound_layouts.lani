@@ -1,0 +1,57 @@
+module app::main;
+import core::mem;
+import core::option;
+import std::io;
+struct Pair { left: i32, right: i32 }
+struct Cell<T> { value: T, sentinel: i32 }
+fn slices(values: [i32], empty: [i32]) -> i32 {
+    let source: Cell<[i32]> = Cell { value: values, sentinel: 123 };
+    let copied: Cell<[i32]> = core::mem::identity(source);
+    if (copied.sentinel != 123 || copied.value[0] != -7 || copied.value[2] != 42) { return 5; }
+    copied.value[1] = 99;
+    if (values[1] != 99) { return 6; }
+    if (source.value[1] != 99) { return 8; }
+    let absent: Cell<[i32]> = Cell { value: empty, sentinel: -11 };
+    let absent_copy: Cell<[i32]> = core::mem::identity(absent);
+    let empty_view: [i32] = absent_copy.value;
+    let count: i32 = 0;
+    for value in empty_view { count += 1; }
+    if (count != 0 || absent_copy.sentinel != -11) { return 7; }
+    return 0;
+}
+fn main() -> i32 {
+    let pair: Pair = Pair { left: -7, right: 42 };
+    let source: Cell<Pair> = Cell { value: pair, sentinel: 99 };
+    let copied: Cell<Pair> = core::mem::identity(source);
+    if (copied.value.left != -7 || copied.value.right != 42 || copied.sentinel != 99) { return 1; }
+    copied.value.left = 123;
+    if (source.value.left != -7 || copied.value.left != 123) { return 2; }
+    let nested: Cell<Cell<Pair>> = Cell { value: source, sentinel: -11 };
+    let nested_copy: Cell<Cell<Pair>> = core::mem::identity(nested);
+    if (nested_copy.value.value.left != -7 || nested_copy.value.value.right != 42 ||
+        nested_copy.value.sentinel != 99 || nested_copy.sentinel != -11) { return 9; }
+    let deeper: Cell<Cell<Cell<Pair>>> = Cell { value: nested, sentinel: 57 };
+    let deeper_copy: Cell<Cell<Cell<Pair>>> = core::mem::identity(deeper);
+    if (deeper_copy.value.value.value.left != -7 || deeper_copy.value.value.value.right != 42 ||
+        deeper_copy.value.value.sentinel != 99 || deeper_copy.value.sentinel != -11 ||
+        deeper_copy.sentinel != 57) { return 11; }
+    let present: core::option::Option<Cell<Pair>> = core::option::Some(source);
+    let absent: core::option::Option<Cell<Pair>> = core::option::None();
+    let selected: Cell<Pair> = core::option::unwrap_or(present, copied);
+    let fallback: Cell<Pair> = absent.unwrap_or(copied);
+    if (selected.value.left != -7 || selected.value.right != 42 || selected.sentinel != 99 ||
+        fallback.value.left != 123 || fallback.value.right != 42 || fallback.sentinel != 99) { return 10; }
+    let text: Cell<str> = Cell { value: "Ω", sentinel: 17 };
+    let empty_text: Cell<str> = Cell { value: "", sentinel: -9 };
+    let text_copy: Cell<str> = core::mem::identity(text);
+    let empty_copy: Cell<str> = core::mem::identity(empty_text);
+    if (text_copy.sentinel != 17 || empty_copy.sentinel != -9) { return 3; }
+    std::io::println(text_copy.value);
+    std::io::println(empty_copy.value);
+    let boolean: Cell<bool> = Cell { value: false, sentinel: 57 };
+    let bool_copy: Cell<bool> = core::mem::identity(boolean);
+    if (bool_copy.value || bool_copy.sentinel != 57) { return 4; }
+    let data: [i32; 3] = [-7, 0, 42];
+    let none: [i32; 0] = [];
+    return slices(data, none);
+}

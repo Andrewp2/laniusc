@@ -1,0 +1,20 @@
+
+running 2 tests
+test nominal_constant_arguments_preserve_owned_values ... 
+thread 'nominal_constant_arguments_preserve_owned_values' (684983) panicked at tests/compiler_generic_types_execution.rs:141:29:
+nominal constant ordinary values: compile: GpuFrontend("semantic-interface readback failed: semantic-interface GPU export failed: status=0x00000080, detail=1, name_id=4294967295, name_len=4294967295")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test nominal_constant_record_values_execute ... 
+thread 'nominal_constant_record_values_execute' (685117) panicked at tests/compiler_generic_types_execution.rs:141:29:
+nominal constant record storage: compile: GpuFrontend("semantic-interface readback failed: semantic-interface GPU export failed: status=0x00000080, detail=1, name_id=4294967295, name_len=4294967295")
+FAILED
+
+failures:
+
+failures:
+    nominal_constant_arguments_preserve_owned_values
+    nominal_constant_record_values_execute
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 231 filtered out; finished in 3.85s
+

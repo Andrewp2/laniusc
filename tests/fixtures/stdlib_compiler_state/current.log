@@ -1,0 +1,9 @@
+step 0 sample_programs/character_inventory.lani: 39721 native bytes
+
+thread 'main' (469450) panicked at examples/stdlib_compile_sequence.rs:15:33:
+step 1 sample_programs/halfword_window_total.lani: error[LNC0016]: syntax error
+ --> <source pack file 4>:102:1
+    |
+102 | }
+    | ^ expected one of keyword `fn`, `}`, or keyword `pub`, found `}`
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

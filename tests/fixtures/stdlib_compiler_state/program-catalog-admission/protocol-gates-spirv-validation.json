@@ -1,0 +1,156 @@
+[
+  {
+    "key": "00_initialize",
+    "bytes": 164440,
+    "sha256": "8b4da3d180fe2d04e1dd59b4076926066e1a23433b1a899c1384945493a1cb4d",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "01_clear_atom_index",
+    "bytes": 80640,
+    "sha256": "65fa3b2a1c308555995607908262a357c9f0b055ae514a3141b449b4a352457b",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_00_admit_snapshots",
+    "bytes": 31428,
+    "sha256": "08f2cadc094d02f74a8bf7f27ac0f075b82b535ec231f09e2453f5fba29b8cf8",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_01_admit_atoms",
+    "bytes": 54556,
+    "sha256": "93210038d5263f83a61ce963f7dab3f54cc5e3eed3f833d8cff6d406ea129741",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_02_admit_owners",
+    "bytes": 72988,
+    "sha256": "6649573ce12930954690af34249aab6e3cefdadac7951ef08e5eceae3e8c7f72",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_03_admit_parameters",
+    "bytes": 84628,
+    "sha256": "f31c2ae9301904947579aa248a898954c414c1581cc20a5c6604a9e9a438d3f3",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_04_admit_callables",
+    "bytes": 84252,
+    "sha256": "04c45e76b93d367c25fc14f44e62a0b5e285a065cacace9d9e8f0289d64981ce",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_05_admit_nodes",
+    "bytes": 63348,
+    "sha256": "9f54eb1dd9eea8700d4721977e3cf5773c5d8df6391e68b126bf694caa6a7b5f",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_06_admit_edges",
+    "bytes": 49292,
+    "sha256": "f437076b7ceba786b814f2189a994bc5064321114e21146618edd07048168d3a",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_07_admit_roots",
+    "bytes": 49292,
+    "sha256": "651e71ae534258ed6861c77db369dca0b1d0e74982889b398a23d7cd496c4e4b",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_08_admit_predicates",
+    "bytes": 149056,
+    "sha256": "cf0cec8599263f585573fff66b7805030e6d39199dfca736df22699601abe5cf",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_09_admit_implementations",
+    "bytes": 157316,
+    "sha256": "65311e24af7ccd87848428958666d238bd0624528feea099e7f28d45e4b9b72d",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "02_10_admit_methods",
+    "bytes": 82052,
+    "sha256": "55440725b608482666187b693cb3c2f813189b82e6f71d58d90895224134cc32",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "03_build_atom_index",
+    "bytes": 30284,
+    "sha256": "205abcb817e7552a6a8f3af84d51b737ce3dfd81239ddd2e346543c10158bbd4",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "04_check_atom_identity",
+    "bytes": 110500,
+    "sha256": "0837e7673bafb0f453ae530690f8f030a181fe7d5775315e7608a76630e24960",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "05_map_callables",
+    "bytes": 104112,
+    "sha256": "86571092ee6add11857fbec111153e2eb33d399dc6e31462086fb1a42cf5e967",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "06_map_definition_identities",
+    "bytes": 117656,
+    "sha256": "0eccc0a3fffb5ebfc96cc13b09a6118452ff544b4777cf114b4f8d3af989561b",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "07_check_method_targets",
+    "bytes": 84760,
+    "sha256": "3b61bdb81b3199ba7b69b69cfd6c6520d380ddb6ea88a2e1f76c9c1ff7ba84d5",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "08_clear_implementation_index",
+    "bytes": 80640,
+    "sha256": "3ee032eef0044772521083837cfc96773d3d2953a63557897e4f93a2a1c4e9f0",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "09_build_implementation_index",
+    "bytes": 99740,
+    "sha256": "a9aa313471255aee30aa77013a4171de7372bc6d725a90b6c84f54b1f58372e6",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "10_check_coherence",
+    "bytes": 110296,
+    "sha256": "32387d612fbf00c9e919d77415aaf387b8c365e5de7e39c2e0c7fb85a2b1200a",
+    "exit_code": 0,
+    "error": ""
+  },
+  {
+    "key": "11_freeze_catalog",
+    "bytes": 14144,
+    "sha256": "9fad946bf109c3930079944f5c3fdff66964af2430e95e1a8c6d139fd6395a56",
+    "exit_code": 0,
+    "error": ""
+  }
+]

@@ -3,5 +3,5 @@ import core::maybe;
 
 fn main() -> i32 {
     let present = core::maybe::Some(7);
-    return 0;
+    return match (present) { core::maybe::Some(value) -> value - 7, _ -> 1 };
 }

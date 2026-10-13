@@ -1,0 +1,12 @@
+module app::main;
+import core::result;
+import core::mem;
+
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 3);
+    let value: core::result::Result<[i32], str> = core::result::Ok(view);
+    if (!core::result::is_ok(value)) { return 1; }
+    if (core::result::is_err(value)) { return 2; }
+    return 0;
+}

@@ -1,0 +1,8 @@
+
+running 3 tests
+test explicit_dotted_arguments_execute_compounds_constants_and_symbolic_scopes ... ok
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test explicit_dotted_arguments_reject_conflicts_and_wrong_headers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 3.46s
+

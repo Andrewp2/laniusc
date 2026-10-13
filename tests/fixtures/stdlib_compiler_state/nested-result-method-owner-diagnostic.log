@@ -1,0 +1,16 @@
+
+running 1 test
+test generic_method_lookup_uses_complete_inferred_call_results ... GPU source-pack type-check rejection: token=145 code=AssignMismatch detail=1129840641
+
+thread 'generic_method_lookup_uses_complete_inferred_call_results' (66869) panicked at tests/compiler_generic_types_execution.rs:136:29:
+generic call result method receivers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 13, column: 21, length: 8, byte_start: Some(434), byte_end: Some(442), source_line: Some("    let view = keep(original.borrow());"), message: "value type is void but this context expects generic parameter 4405248" }), help: None, notes: ["expected generic parameter 4405248, found void; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_method_lookup_uses_complete_inferred_call_results
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 189 filtered out; finished in 17.97s
+

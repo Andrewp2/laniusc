@@ -1,0 +1,10 @@
+
+running 5 tests
+test imported_generic_inferred_return_arguments_execute ... ok
+test indexed_array_arguments_preserve_inner_length_and_value ... ok
+test indexed_array_borrows_preserve_inner_length_and_aliases ... ok
+test inferred_returns_inside_generic_bodies_preserve_compound_values ... ok
+test nested_ordinary_slice_returns_supply_generic_arguments ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out; finished in 5.44s
+

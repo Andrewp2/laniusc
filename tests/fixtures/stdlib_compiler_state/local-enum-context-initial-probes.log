@@ -1,0 +1,52 @@
+=== nullary_field_call.lani exit 0 seconds 4.09 ===
+[typecheck.call_inference] round=0 changed=13
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=13
+[typecheck.call_inference] round=1 changed=0
+sample=0 ms=176.120
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_field_call.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2489 min_ms=176.120 median_ms=176.120 avg_ms=176.120 max_ms=176.120 output_verified=true
+
+=== nullary_direct_call.lani exit 0 seconds 2.09 ===
+[typecheck.call_inference] round=0 changed=9
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=9
+[typecheck.call_inference] round=1 changed=0
+sample=0 ms=140.182
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_direct_call.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2381 min_ms=140.182 median_ms=140.182 avg_ms=140.182 max_ms=140.182 output_verified=true
+
+=== generic_assignment_contexts.lani exit 0 seconds 2.82 ===
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=284
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=304
+[typecheck.call_inference] round=1 changed=0
+sample=0 ms=302.748
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/generic_assignment_contexts.lani rebuild_entry=false warmups=1 iters=1 output_bytes=78188 min_ms=302.748 median_ms=302.748 avg_ms=302.748 max_ms=302.748 output_verified=true
+

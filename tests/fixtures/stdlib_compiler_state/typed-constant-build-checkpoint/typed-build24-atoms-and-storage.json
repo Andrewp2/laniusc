@@ -1,0 +1,17 @@
+{
+  "environment": {},
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "gpu::constant_value_tests::physical_gpu_typed_constant_atoms_preserve_complete_values_and_checked_counts",
+    "gpu::readback::lifecycle_tests",
+    "gpu_evidence_workspace_leases_isolate_live_arenas_and_trim_returns",
+    "gpu_evidence_workspace_reuses_capacity_preserving_transfer_order_and_zero_state"
+  ],
+  "exit_code": 0,
+  "seconds": 0.9153669480001554,
+  "binary_sha256": "0fb16a11bb6a4fa09d2facf7a1338b581ed5b4b69b115db040fd45f03741a450",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

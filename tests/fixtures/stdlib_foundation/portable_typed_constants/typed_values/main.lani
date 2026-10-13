@@ -1,0 +1,23 @@
+import core::portable_values;
+
+fn main() -> i32 {
+    let named = core::portable_values::forward<
+        core::portable_values::U32_MAXIMUM,
+        core::portable_values::HIGH_LIMB,
+        core::portable_values::U64_MAXIMUM,
+        core::portable_values::I64_MINIMUM,
+        core::portable_values::ENABLED,
+        core::portable_values::LETTER>();
+    if (named.small != 4294967295 || named.wide != 18446744073709551615 ||
+        named.signed != -9223372036854775808 || !named.flag || named.letter != 'Ω' ||
+        named.nested.value != 4294967296) { return 1; }
+
+    let direct = core::portable_values::forward<
+        4294967295, 8589934592, 18446744073709551615,
+        -9223372036854775808, true, 'Ω'>();
+    if (direct.small != 4294967295 || direct.wide != 18446744073709551615 ||
+        direct.signed != -9223372036854775808 || !direct.flag || direct.letter != 'Ω' ||
+        direct.nested.value != 8589934592) { return 2; }
+    if (named.nested.value != 4294967296 || named.letter != 'Ω') { return 3; }
+    return 0;
+}

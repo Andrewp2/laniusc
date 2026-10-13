@@ -1,0 +1,3 @@
+module core::aliases;
+pub enum Choice<T> { Some(T), None }
+pub type Maybe<T> = Choice<T>;

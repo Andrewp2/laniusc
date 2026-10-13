@@ -19,6 +19,8 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<uint> compact_predicate_count;
 RWStructuredBuffer<uint> semantic_feature_flags;
@@ -29,6 +31,7 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint SEMANTIC_FEATURE_METHODS = 1u << 0u;
 static const uint SEMANTIC_FEATURE_PREDICATES = 1u << 1u;
 static const uint SEMANTIC_FEATURE_MATCH = 1u << 2u;
+static const uint SEMANTIC_FEATURE_QUALIFIED_VALUES = 1u << 3u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -69,6 +72,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // HIR nodes.
     if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
         flags |= SEMANTIC_FEATURE_METHODS;
+    // A concrete imported alias can bind a constructor's complete parent
+    // without any written type operands in this source unit.
+    if (node < compact_path_count[0u])
+    {
+        HirPath path = compact_paths[node];
+        if (path.segment_count > 1u && path.owner < active_hir_node_count() &&
+            compact_hir_core[path.owner].kind == 33u)
+            flags |= SEMANTIC_FEATURE_QUALIFIED_VALUES;
+    }
     if (flags != 0u)
         atomic_u32_or(semantic_feature_flags, 0u, flags);
 }

@@ -1,0 +1,36 @@
+module app::main;
+import core::option;
+import std::io;
+
+fn main() -> i32 {
+    let present: core::option::Option<str> = core::option::Some("payload");
+    let empty: core::option::Option<str> = core::option::Some("");
+    let absent: core::option::Option<str> = core::option::None();
+    let value: str = present.unwrap_or("missing");
+    let fallback: str = absent.unwrap_or("fallback");
+    let empty_value: str = empty.unwrap_or("missing");
+    if (std::io::println(value) != 8 || std::io::println(fallback) != 9 || std::io::println(empty_value) != 1) { return 1; }
+
+    let preferred: core::option::Option<str> = present.or(absent);
+    let fallback_option: core::option::Option<str> = absent.or(present);
+    let selected: core::option::Option<str> = present.and(present);
+    let rejected: core::option::Option<str> = absent.and(present);
+    let left_only: core::option::Option<str> = present.xor(absent);
+    let right_only: core::option::Option<str> = absent.xor(present);
+    let both: core::option::Option<str> = present.xor(present);
+    let neither: core::option::Option<str> = absent.xor(absent);
+    if (!preferred.is_some() || !fallback_option.is_some() || !selected.is_some()) { return 2; }
+    if (!rejected.is_none() || !both.is_none() || !neither.is_none()) { return 3; }
+    let from_or: str = preferred.unwrap_or("missing");
+    let from_and: str = selected.unwrap_or("missing");
+    let from_xor: str = right_only.unwrap_or("missing");
+    if (std::io::println(from_or) != 8 || std::io::println(from_and) != 8 || std::io::println(from_xor) != 8) { return 4; }
+    let left_value: str = left_only.unwrap_or("");
+    let fallback_value: str = fallback_option.unwrap_or("");
+    if (std::io::println(left_value) != 8 || std::io::println(fallback_value) != 8) { return 5; }
+    let original: str = present.unwrap_or("missing");
+    let still_empty: str = empty.unwrap_or("missing");
+    if (std::io::println(original) != 8 || std::io::println(still_empty) != 1) { return 6; }
+    if (!present.is_some() || !empty.is_some() || !absent.is_none()) { return 7; }
+    return 0;
+}

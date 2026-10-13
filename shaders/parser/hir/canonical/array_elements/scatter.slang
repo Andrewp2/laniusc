@@ -45,13 +45,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint anchor = tid(dtid);
     uint total = inclusive_scan_total(block_count(), family_block_prefix);
     if (anchor == 0u) family_count[0u] = total;
-    if (anchor >= gCanonical.canonical_capacity || family_flag[anchor] == 0u) return;
+    if (anchor >= gCanonical.canonical_capacity) return;
     uint encoded = candidate_raw_by_anchor[anchor];
     uint raw = encoded == 0u ? INVALID : encoded - 1u;
     if (raw >= gCanonical.raw_capacity) return;
-    uint block = anchor / 256u;
+    uint owner = element_owner[raw];
+    uint owner_anchor = owner < gCanonical.raw_capacity ? hir_token_pos[owner] : INVALID;
+    if (owner_anchor >= gCanonical.canonical_capacity ||
+        element_ordinal[raw] >= family_flag[owner_anchor]) return;
+    uint block = owner_anchor / 256u;
     uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
-    uint row = base + family_local_prefix[anchor];
+    uint row = base + family_local_prefix[owner_anchor] + element_ordinal[raw];
     if (row >= gCanonical.canonical_capacity)
     {
         uint ignored;

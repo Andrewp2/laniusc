@@ -1,0 +1,25 @@
+
+running 7 tests
+test generic_result_only_constants_execute_imported_calls ... ok
+test generic_result_only_constants_execute_local_calls ... ok
+test generic_result_only_constants_execute_method_environments ... FAILED
+test generic_result_only_constants_execute_symbolic_forwarding ... ok
+test generic_result_only_constants_preserve_thirty_two_bindings_and_replay ... ok
+test generic_result_only_constants_reject_conflicting_constraints ... ok
+test generic_result_only_constants_reject_imported_conflicts ... ok
+
+failures:
+
+---- generic_result_only_constants_execute_method_environments stdout ----
+GPU source-pack type-check rejection: token=258 code=AssignMismatch detail=0
+
+thread 'generic_result_only_constants_execute_method_environments' (176155) panicked at tests/compiler_generic_types_execution.rs:136:29:
+method result constant replay: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 20, column: 67, length: 7, byte_start: Some(767), byte_end: Some(774), source_line: Some("    let c: core::result_methods::Length<[[str; 0]; 2]> = imported.forward();"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    generic_result_only_constants_execute_method_environments
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 174 filtered out; finished in 3.79s
+

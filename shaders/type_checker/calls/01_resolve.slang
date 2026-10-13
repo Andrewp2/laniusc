@@ -1,4 +1,5 @@
 import gpu_index;
+import type_checker.calls.contextual_call_environment;
 
 struct Params
 {
@@ -9,8 +10,19 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
 RWStructuredBuffer<uint> call_fn_index;
+RWStructuredBuffer<uint> call_dependency_generic_requirements;
+RWStructuredBuffer<uint> call_generic_claim_count_out;
+RWStructuredBuffer<uint> call_const_claim_count_out;
 RWStructuredBuffer<uint> fn_start_token_by_decl_token;
+RWStructuredBuffer<uint> fn_hir_by_decl_token;
+RWStructuredBuffer<uint> call_explicit_application_status;
+RWStructuredBuffer<uint> call_explicit_application_owner_by_token;
+RWStructuredBuffer<uint> call_explicit_arg_slot;
+RWStructuredBuffer<uint4> call_explicit_environment;
+RWStructuredBuffer<uint> call_explicit_binding_count;
+RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> backend_call_fn_index;
 RWStructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> call_return_type;
@@ -25,7 +37,6 @@ RWStructuredBuffer<uint> call_param_row_start;
 RWStructuredBuffer<uint> call_param_row_count;
 RWStructuredBuffer<uint> call_generic_slot_type;
 RWStructuredBuffer<uint> call_generic_slot_ordinal;
-RWStructuredBuffer<uint> call_const_slot_len;
 RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
@@ -94,10 +105,48 @@ void clear_call_param_slot(uint token_i, uint param_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
+    // Optional claim passes can be skipped in the next workspace job. Counts
+    // belong to this job and cannot expose a previous generic unit's rows.
+    if (i == 0u)
+    {
+        call_generic_claim_count_out[0u] = 0u;
+        call_const_claim_count_out[0u] = 0u;
+        call_explicit_binding_count[0u] = 0u;
+    }
+    // Body replay scans the accepted reference column. Zero every unpublished
+    // tag, including the spare capacity retained from a larger workspace job.
+    uint binding_capacity; uint binding_stride;
+    call_explicit_binding_tag.GetDimensions(binding_capacity, binding_stride);
+    if (i < binding_capacity / 8u)
+        for (uint row = 0u; row < 8u; row++) call_explicit_binding_tag[i * 8u + row] = 0u;
+    if (i < gParams.n_hir_nodes)
+    {
+        semantic_argument_mode_by_hir[i] = 0u;
+        call_explicit_arg_slot[i] = INVALID;
+    }
+    uint context_capacity; uint context_stride;
+    call_context_owner_by_token.GetDimensions(context_capacity, context_stride);
+    if (i < gParams.n_tokens && i < context_capacity) call_context_owner_by_token[i] = INVALID;
+    call_context_arg_mask.GetDimensions(context_capacity, context_stride);
+    if (i < gParams.n_hir_nodes && i < context_capacity)
+    {
+        call_context_arg_mask[i] = 0u;
+        call_context_constant_mask[i] = 0u;
+        for (uint slot = 0u; slot < 32u; slot++)
+        {
+            call_context_ref_tag[i * 32u + slot] = 0u;
+            call_context_ref_payload[i * 32u + slot] = INVALID;
+        }
+    }
     if (i < gParams.n_tokens)
     {
         call_fn_index[i] = INVALID;
+        call_dependency_generic_requirements[i] = 0u;
         fn_start_token_by_decl_token[i] = INVALID;
+        fn_hir_by_decl_token[i] = INVALID;
+        call_explicit_application_status[i] = 0u;
+        call_explicit_application_owner_by_token[i] = INVALID;
+        call_explicit_environment[i] = uint4(0u, 0u, 0u, 0u);
         backend_call_fn_index[i] = INVALID;
         call_intrinsic_tag[i] = 0u;
         call_return_type[i] = TY_UNKNOWN;
@@ -122,7 +171,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         call_generic_slot_type[i] = INVALID;
         call_generic_slot_ordinal[i] = INVALID;
-        call_const_slot_len[i] = INVALID;
     }
 
     if (i < lookup_capacity())

@@ -1,0 +1,48 @@
+--- a/shaders/codegen/lir/semantic/materialize.slang
++++ b/shaders/codegen/lir/semantic/materialize.slang
+@@ -656,10 +656,11 @@
+         {
+             schedule.execution_region = hir.token_end > hir.token_start
+                 ? hir.token_end - 1u : hir.token_end;
+-            // The closing token holds the unmatched trap, branch merge, and
+-            // result read in that order.
+-            schedule.execution_rank = 0u;
+-            schedule.execution_tie = local_row - (local_count - 3u);
++            // A compound final arm may share this closing boundary. Its
++            // result store, branch, and IF_END use the final rank with ties
++            // 0..2. Close the match only after that arm has finished.
++            schedule.execution_rank = 0xffffffffu;
++            schedule.execution_tie = 3u + local_row - (local_count - 3u);
+             return schedule;
+         }
+         if (local_row <= 1u)
+@@ -741,7 +742,8 @@
+             // its field/element expressions. A direct literal assignment
+             // must not schedule its store at the literal's opening token.
+             if (rhs_core.kind == HIR_ARRAY_EXPR ||
+-                rhs_core.kind == HIR_STRUCT_LITERAL_EXPR)
++                rhs_core.kind == HIR_STRUCT_LITERAL_EXPR ||
++                rhs_core.kind == HIR_MATCH_EXPR)
+                 schedule.execution_region = rhs_core.token_end > rhs_core.token_start
+                     ? rhs_core.token_end - 1u : rhs_core.token_end;
+         }
+@@ -751,7 +753,9 @@
+         // This is observable for side effects and is also the stack contract
+         // required by Wasm's non-commutative binary instructions.
+         schedule.execution_rank = compound_lhs_read ? 0u : 0xffffffffu;
+-        schedule.execution_tie = local_row;
++        schedule.execution_tie = !compound_lhs_read && rhs_root < hir_count &&
++            compact_hir_core[rhs_root].kind == HIR_MATCH_EXPR
++            ? 0xffffffffu : local_row;
+         return schedule;
+     }
+     if (root == LIR_INVALID || root >= hir_count)
+@@ -797,7 +801,7 @@
+     // than its parent; equal right boundaries are broken child-before-parent
+     // by reversed expression depth. Statement effects share the result root's
+     // end boundary and occupy the final tie value.
+-    schedule.execution_rank = expression_row
++    schedule.execution_rank = completed_match_root ? 0xffffffffu : expression_row
+         ? hir.token_end
+         : root != LIR_INVALID && root < hir_count
+             ? compact_hir_core[root].token_end : hir.token_end;

@@ -1,0 +1,1 @@
+enum Maybe<T> { Value(T), Missing } fn main() -> i32 { let value: Maybe<bool> = Maybe::Missing(); return match (value) { Missing -> 42, _ -> 1 }; }

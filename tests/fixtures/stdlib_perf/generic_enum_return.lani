@@ -1,0 +1,10 @@
+// Previously rejected concrete generic enum return; runtime checks Some(false).
+pub enum Maybe<T> { Some(T), None }
+fn preserve(value: Maybe<bool>) -> Maybe<bool> { return value; }
+fn main() -> i32 {
+    let value: Maybe<bool> = Some(false);
+    let returned: Maybe<bool> = preserve(value);
+    let payload: bool = match (returned) { Some(inner) -> inner, None -> true };
+    if (payload) { return 1; }
+    return 0;
+}

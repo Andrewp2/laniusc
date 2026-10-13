@@ -1,0 +1,105 @@
+{
+  "alias_comparison_median_ms": {
+    "alias-chain": 75.619,
+    "direct-equivalent": 79.767
+  },
+  "removed_shader_payloads": [
+    "type_checker/conditions/type_subtree.reflect.json",
+    "type_checker/conditions/type_subtree.spv",
+    "type_checker/modules/10e0_clear_type_alias_forwarding.reflect.json",
+    "type_checker/modules/10e0_clear_type_alias_forwarding.spv",
+    "type_checker/modules/10e0a_init_type_alias_forwarding.reflect.json",
+    "type_checker/modules/10e0a_init_type_alias_forwarding.spv",
+    "type_checker/modules/10e0b_validate_type_alias_forwarding_args.reflect.json",
+    "type_checker/modules/10e0b_validate_type_alias_forwarding_args.spv",
+    "type_checker/modules/10e0c_clear_type_alias_equivalence.reflect.json",
+    "type_checker/modules/10e0c_clear_type_alias_equivalence.spv",
+    "type_checker/modules/10e0d_init_type_alias_decl_edges.reflect.json",
+    "type_checker/modules/10e0d_init_type_alias_decl_edges.spv",
+    "type_checker/modules/10e0e_init_type_alias_arg_edges.reflect.json",
+    "type_checker/modules/10e0e_init_type_alias_arg_edges.spv",
+    "type_checker/modules/10e0f_hook_type_alias_equivalence.reflect.json",
+    "type_checker/modules/10e0f_hook_type_alias_equivalence.spv",
+    "type_checker/modules/10e0g_jump_type_alias_equivalence.reflect.json",
+    "type_checker/modules/10e0g_jump_type_alias_equivalence.spv",
+    "type_checker/modules/10e0h_select_type_alias_generic_sources.reflect.json",
+    "type_checker/modules/10e0h_select_type_alias_generic_sources.spv",
+    "type_checker/modules/10e0i_select_type_alias_concrete_sources.reflect.json",
+    "type_checker/modules/10e0i_select_type_alias_concrete_sources.spv",
+    "type_checker/modules/10e0j_finalize_type_alias_equivalence.reflect.json",
+    "type_checker/modules/10e0j_finalize_type_alias_equivalence.spv",
+    "type_checker/modules/10e1_init_type_alias_roots.reflect.json",
+    "type_checker/modules/10e1_init_type_alias_roots.spv",
+    "type_checker/modules/10e1a_jump_type_alias_roots.reflect.json",
+    "type_checker/modules/10e1a_jump_type_alias_roots.spv",
+    "type_checker/modules/10e2_project_type_aliases.reflect.json",
+    "type_checker/modules/10e2_project_type_aliases.spv"
+  ],
+  "source_count": 3191,
+  "shader_payload_count": 1462,
+  "frozen_sources_and_shaders_unchanged": true,
+  "measured_binary_identities": {
+    "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248": "c1375be9f4d1920ff72d1884b439d4380dd69f79687220fc585571d450415a8d",
+    "target/stdlib-perf/build/release/deps/type_checker_semantics-62096f05155dc389": "840dbe897ef076918d8cb203670394834fc25f9113778cdaf659da0cb54b372d",
+    "target/stdlib-perf/build/release/deps/parser_hir_records-6a4a7d077edcca4f": "c530debe95b51ea06d09cc3fcf044ffd41ae4381532d3328048e62924651654f",
+    "target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66": "0af0d2bbcfce3b3254eee6bec649438514dbe60ed6e16af85bedda3721e6eeee",
+    "target/stdlib-perf/build/release/examples/stdlib_gpu_perf": "e57a5159e90b9897f821a94f8e417e61d3087f4740c4110ab5b4225ade34e5a3",
+    "target/stdlib-perf/build/release/laniusc": "b8d372b755295e418172f79582d753bbcab71c011851439c72ceb1fbab35fb92"
+  },
+  "canonical_cli_rebuild_binary_transitions": {
+    "target/stdlib-perf/build/release/laniusc": {
+      "before": "fe9d626ee32841f0a5966e605a97d6b37f66794f15704cca3b0360a8fbda356d",
+      "after": "b8d372b755295e418172f79582d753bbcab71c011851439c72ceb1fbab35fb92"
+    }
+  },
+  "shader_metadata": "shader-artifact-digest: 0ae6f4d4aaa54a11\nshader-artifact-count: 731\nshader-artifact-max-bytes: 504704\nshader-artifact-max-name: codegen/lir/x86/emit\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nshader-compile-timeout-ms: 120000",
+  "changed_spv": 19,
+  "changed_reflection": 13,
+  "canonical_compiler_median_ms": 36.339085999999995,
+  "canonical_wall_median_ms": 39.180688,
+  "generic_32_median_ms": 395.587,
+  "canonical_elf_count": 20,
+  "canonical_source_hashes_match_baseline": true,
+  "canonical_seeds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39
+  ],
+  "canonical_source_bytes": 1000000,
+  "canonical_cache_hits": 0,
+  "canonical_resource_creations": 0,
+  "recorded_compute_dispatches": [
+    1462
+  ],
+  "recorded_compute_passes": [
+    98
+  ],
+  "tracked_live_bytes": [
+    1621659451
+  ],
+  "tracked_allocations": [
+    268
+  ],
+  "excluded_raw_buffers": [
+    5
+  ],
+  "canonical_runner_status": "saved_report_then_existing_catalogue_list_get_exception",
+  "generic_32_final_elf_verified": true
+}

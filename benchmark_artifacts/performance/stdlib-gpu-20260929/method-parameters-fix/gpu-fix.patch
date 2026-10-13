@@ -1,0 +1,547 @@
+--- a/shaders/dependency_interface.slang
++++ b/shaders/dependency_interface.slang
+@@ -301,3 +301,53 @@
+         ? lo
+         : 0xffffffffu;
+ }
++
++// Associated-method parameters are ordinary typed Parameter members of the
++// public receiver declaration. value_hi identifies the stable method symbol;
++// value_lo is the source parameter ordinal. Syntactic self / &self is omitted;
++// its remaining parameters start at one. Typed first parameters start at zero
++// and can be passed explicitly or consumed by a dotted receiver call.
++uint dependency_find_method(uint library_id, uint unit_id, uint method_symbol)
++{
++    if (method_symbol == 0xffffffffu || (method_symbol & 0x80000000u) == 0u)
++        return 0xffffffffu;
++    uint count = dependency_member_count();
++    for (uint row = 0u; row < count; row += 1u)
++    {
++        uint base = row * 11u;
++        if (dependency_member_word(base + 1u) != 6u ||
++            dependency_member_word(base + 9u) != method_symbol)
++            continue;
++        uint owner = dependency_member_word(base);
++        if (owner < dependency_declaration_count() &&
++            dependency_declaration_library_id(owner) == library_id &&
++            dependency_declaration_unit_id(owner) == unit_id)
++            return row;
++    }
++    return 0xffffffffu;
++}
++
++uint dependency_method_parameter_type(uint method_row, uint ordinal)
++{
++    if (method_row >= dependency_member_count()) return 0xffffffffu;
++    uint method_base = method_row * 11u;
++    uint owner = dependency_member_word(method_base);
++    if (owner >= dependency_declaration_count()) return 0xffffffffu;
++    uint start = dependency_declaration_word(owner * 14u + 8u);
++    uint count = dependency_declaration_word(owner * 14u + 9u);
++    uint total = dependency_member_count();
++    if (start > total || count > total - start) return 0xffffffffu;
++    uint symbol = dependency_member_word(method_base + 9u);
++    uint found = 0xffffffffu;
++    for (uint row = start; row < start + count; row += 1u)
++    {
++        uint base = row * 11u;
++        if (dependency_member_word(base + 1u) != 1u ||
++            dependency_member_word(base + 9u) != symbol ||
++            dependency_member_word(base + 8u) != ordinal)
++            continue;
++        if (found != 0xffffffffu) return 0xffffffffu;
++        found = dependency_member_word(base + 7u);
++    }
++    return found < dependency_type_count() ? found : 0xffffffffu;
++}
+--- a/shaders/dependency_return_layout.slang
++++ b/shaders/dependency_return_layout.slang
+@@ -14,6 +14,41 @@
+ static const uint RETURN_LAYOUT_ENUM = 7u;
+ static const uint RETURN_LAYOUT_FIELD = 4u;
+ static const uint RETURN_LAYOUT_VARIANT = 5u;
++
++// Empty monomorphic structs have the existing zero-word result ABI. Prove
++// emptiness from the complete declaration while its interface page is active;
++// a zero projected width alone can also mean an unsupported aggregate layout.
++public bool dependency_empty_struct_result(
++    uint type_i, StructuredBuffer<uint> canonical_type_roots)
++{
++    uint total = dependency_type_count();
++    if (type_i >= total) return false;
++    uint root = canonical_type_roots[type_i];
++    if (root >= total) return false;
++    uint base = root * RETURN_LAYOUT_TYPE_WORDS;
++    if (dependency_type_word(base) != RETURN_LAYOUT_DECLARATION ||
++        dependency_type_word(base + 4u) != 0u)
++        return false;
++    uint declaration = dependency_find_declaration(
++        dependency_type_word(base + 1u), dependency_type_word(base + 8u),
++        dependency_type_word(base + 2u));
++    if (declaration >= dependency_declaration_count()) return false;
++    uint declaration_base = declaration * RETURN_LAYOUT_DECL_WORDS;
++    if (dependency_declaration_word(declaration_base + 6u) != RETURN_LAYOUT_STRUCT)
++        return false;
++    uint start = dependency_declaration_word(declaration_base + 8u);
++    uint count = dependency_declaration_word(declaration_base + 9u);
++    uint members = dependency_member_count();
++    if (start > members || count > members - start) return false;
++    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
++    {
++        uint kind = dependency_member_word(
++            (start + ordinal) * RETURN_LAYOUT_MEMBER_WORDS + 1u);
++        if (kind == RETURN_LAYOUT_FIELD || kind == 2u || kind == 3u)
++            return false;
++    }
++    return true;
++}
+ 
+ public bool dependency_flat_payload_word_count(
+     uint type_i,
+--- a/shaders/type_checker/dependencies/07_project_calls.slang
++++ b/shaders/type_checker/dependencies/07_project_calls.slang
+@@ -168,6 +168,10 @@
+             external_type_local_index[token] = dependency_type_word(return_base + 2u);
+         }
+         call_return_type_token[token] = token;
++        // Keep the nominal reference for semantic validation. The separate
++        // concrete machine type uses unit for a proven zero-word struct result.
++        if (dependency_empty_struct_result(return_root, canonical_type_roots))
++            call_return_type[token] = 1u;
+     }
+     else
+     {
+--- a/shaders/type_checker/dependencies/08_validate_call_args.slang
++++ b/shaders/type_checker/dependencies/08_validate_call_args.slang
+@@ -34,6 +34,7 @@
+ StructuredBuffer<uint> visible_type;
+ StructuredBuffer<uint> visible_decl;
+ StructuredBuffer<uint> call_return_type;
++StructuredBuffer<uint> call_param_count;
+ StructuredBuffer<uint> decl_type_ref_tag;
+ StructuredBuffer<uint> decl_type_ref_payload;
+ StructuredBuffer<uint> external_type_library_id;
+@@ -43,9 +44,11 @@
+ StructuredBuffer<uint> type_instance_arg_count;
+ StructuredBuffer<uint> type_instance_arg_start;
+ StructuredBuffer<uint> type_instance_arg_ref_tag;
++StructuredBuffer<uint> type_instance_arg_ref_payload;
+ StructuredBuffer<uint> type_instance_arg_row_start;
+ StructuredBuffer<uint> type_instance_arg_row_count_out;
+ StructuredBuffer<uint> type_instance_arg_row_ref_tag;
++StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+ StructuredBuffer<uint> type_instance_len_kind;
+ StructuredBuffer<uint> type_instance_len_payload;
+ StructuredBuffer<uint> canonical_type_roots;
+@@ -272,6 +275,53 @@
+     return end_ordinal > begin_ordinal ? end_ordinal - begin_ordinal : INVALID;
+ }
+ 
++bool concrete_instance_scalar_arguments_match(uint expected_root, uint instance)
++{
++    uint type_count = dependency_type_count();
++    if (expected_root >= type_count || instance >= gParams.visible_capacity)
++        return false;
++    uint base = expected_root * TYPE_WORDS;
++    uint count = dependency_type_word(base + 4u);
++    uint start = dependency_type_word(base + 3u);
++    uint edges = dependency_count(5u);
++    if (count != type_instance_arg_count[instance] ||
++        start > edges || count > edges - start)
++        return false;
++    uint local_start = type_instance_arg_row_start[instance];
++    uint local_total = type_instance_arg_row_count_out[0u];
++    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
++    {
++        uint child = dependency_type_edge_word(start + ordinal);
++        if (child >= type_count) return false;
++        child = canonical_type_roots[child];
++        if (child >= type_count ||
++            dependency_type_word(child * TYPE_WORDS) != INTERFACE_TYPE_SCALAR)
++            return false;
++        uint tag;
++        uint scalar;
++        if (local_start != INVALID)
++        {
++            if (local_start > local_total || ordinal >= local_total - local_start)
++                return false;
++            tag = type_instance_arg_row_ref_tag[local_start + ordinal];
++            scalar = type_instance_arg_row_ref_payload[local_start + ordinal];
++        }
++        else
++        {
++            uint legacy_start = type_instance_arg_start[instance];
++            if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE || legacy_start == INVALID ||
++                legacy_start / TYPE_INSTANCE_ARG_REF_STRIDE >= gParams.visible_capacity)
++                return false;
++            tag = type_instance_arg_ref_tag[legacy_start + ordinal];
++            scalar = type_instance_arg_ref_payload[legacy_start + ordinal];
++        }
++        if (tag != TYPE_REF_SCALAR ||
++            scalar != dependency_type_word(child * TYPE_WORDS + 1u))
++            return false;
++    }
++    return true;
++}
++
+ [shader("compute")]
+ [numthreads(256, 1, 1)]
+ void main(uint3 dtid: SV_DispatchThreadID)
+@@ -287,19 +337,43 @@
+         call_dependency_library_id[callee],
+         call_dependency_unit_id[callee],
+         call_dependency_local_index[callee]);
+-    if (declaration_i == INVALID)
+-        return;
+-
+-    uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
+-    uint signature_base = signature_i * TYPE_WORDS;
+-    if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION)
+-        return;
+-    uint first_edge = dependency_type_word(signature_base + 3u);
+-    uint edge_count = dependency_type_word(signature_base + 4u);
+-    uint ordinal = arg.ordinal;
+-    if (edge_count == 0u || ordinal >= edge_count - 1u)
+-        return;
+-    uint expected_type_i = canonical_type_roots[dependency_type_edge_word(first_edge + ordinal)];
++    uint expected_type = INVALID;
++    uint first_edge = INVALID;
++    uint edge_count = 0u;
++    uint callable_return_type = INVALID;
++    if (declaration_i != INVALID)
++    {
++        uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
++        uint signature_base = signature_i * TYPE_WORDS;
++        if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION) return;
++        first_edge = dependency_type_word(signature_base + 3u);
++        edge_count = dependency_type_word(signature_base + 4u);
++        if (edge_count == 0u || arg.ordinal >= edge_count - 1u) return;
++        expected_type = dependency_type_edge_word(first_edge + arg.ordinal);
++        callable_return_type = dependency_type_edge_word(first_edge + edge_count - 1u);
++    }
++    else
++    {
++        uint method = dependency_find_method(call_dependency_library_id[callee],
++            call_dependency_unit_id[callee], call_dependency_local_index[callee]);
++        if (method == INVALID) return; // The callable belongs to another page.
++        edge_count = dependency_member_word(method * 11u + 8u) + 1u;
++        callable_return_type = dependency_member_word(method * 11u + 7u);
++        uint call_callee = compact_hir_payload[arg.call].a;
++        bool dotted_call = valid_hir(call_callee) &&
++            compact_hir_core[call_callee].kind == HIR_MEMBER_EXPR;
++        expected_type = dependency_method_parameter_type(
++            method, arg.ordinal + (dotted_call ? 1u : 0u));
++        // A resolved method without a complete parameter record must not
++        // silently accept an argument of any type.
++        if (expected_type == INVALID || arg.ordinal >= call_param_count[callee])
++        {
++            record_min_token_error(status, callee, ERR_ASSIGN_MISMATCH, 0u);
++            return;
++        }
++    }
++    if (expected_type >= dependency_type_count()) return;
++    uint expected_type_i = canonical_type_roots[expected_type];
+     uint expected_base = expected_type_i * TYPE_WORDS;
+     uint expected_kind = dependency_type_word(expected_base);
+ 
+@@ -366,15 +440,20 @@
+                         ? dependency_type_edge_word(child_edge) : INVALID;
+                     uint child = child_i < type_count
+                         ? canonical_type_roots[child_i] : INVALID;
+-                    uint return_i = dependency_type_edge_word(
+-                        first_edge + edge_count - 1u);
++                    uint return_i = callable_return_type;
+                     uint return_root = return_i < type_count
+                         ? canonical_type_roots[return_i] : INVALID;
+                     // The type instance on a qualified constructor call is
+                     // owned by a value path, so it has no annotation subtree.
+                     // One scalar generic parameter and a scalar result have
+                     // no cross-argument or result claim to compare.
+-                    matches = compact_hir_core[expr_node].kind == HIR_CALL_EXPR &&
++                    // Projected factory results retain their concrete scalar
++                    // arguments without an annotation subtree. Compare those
++                    // checked references directly before the generic-inference
++                    // case, which applies only to symbolic parameter children.
++                    matches = concrete_instance_scalar_arguments_match(
++                        expected_type_i, actual_payload) ||
++                        (compact_hir_core[expr_node].kind == HIR_CALL_EXPR &&
+                         edge_count == 2u && expected_count == 1u &&
+                         child < type_count &&
+                         dependency_type_word(child * TYPE_WORDS) ==
+@@ -382,7 +461,7 @@
+                         return_root < type_count &&
+                         dependency_type_word(return_root * TYPE_WORDS) ==
+                             INTERFACE_TYPE_SCALAR &&
+-                        single_scalar_instance_argument(actual_payload);
++                        single_scalar_instance_argument(actual_payload));
+                 }
+             }
+         }
+--- a/shaders/type_checker/dependencies/15_project_methods.slang
++++ b/shaders/type_checker/dependencies/15_project_methods.slang
+@@ -289,14 +289,13 @@
+     return tag != TYPE_REF_INVALID;
+ }
+ 
+-bool method_receiver_matches(
+-    uint member_base,
++bool receiver_type_matches(
++    uint receiver_type,
+     uint owner_declaration,
+     uint receiver_tag,
+     uint receiver_payload)
+ {
+     uint type_count = dependency_type_count();
+-    uint receiver_type = dependency_member_word(member_base + 10u);
+     if (receiver_type >= type_count)
+         return false;
+     uint root = canonical_type_roots[receiver_type];
+@@ -353,7 +352,8 @@
+     uint method_name_lo,
+     uint method_name_hi,
+     uint receiver_tag,
+-    uint receiver_payload)
++    uint receiver_payload,
++    bool dotted_call)
+ {
+     uint count = dependency_member_count();
+     uint match = INVALID;
+@@ -364,7 +364,14 @@
+             dependency_member_word(base + 1u) != MEMBER_ASSOCIATED_METHOD ||
+             dependency_member_word(base + 3u) != method_name_lo ||
+             dependency_member_word(base + 4u) != method_name_hi ||
+-            !method_receiver_matches(base, owner_declaration,
++            !receiver_type_matches(dependency_member_word(base + 10u), owner_declaration,
++                receiver_tag, receiver_payload))
++            continue;
++        // A typed first parameter is consumed by a dotted call only when it
++        // matches the receiver. It remains explicit in a qualified static call.
++        uint first_parameter = dependency_method_parameter_type(row, 0u);
++        if (dotted_call && first_parameter != INVALID &&
++            !receiver_type_matches(first_parameter, owner_declaration,
+                 receiver_tag, receiver_payload))
+             continue;
+         if (match != INVALID)
+@@ -434,7 +441,8 @@
+     uint member_i,
+     uint owner_declaration,
+     uint receiver_tag,
+-    uint receiver_payload)
++    uint receiver_payload,
++    bool dotted_call)
+ {
+     uint member_base = member_i * MEMBER_WORDS;
+     // The callable identity and arity do not depend on return-type
+@@ -450,6 +458,9 @@
+     call_dependency_local_index[method_token] = method_local_index;
+     call_dependency_host_service[method_token] = INVALID;
+     call_param_count[method_token] = dependency_member_word(member_base + 8u);
++    if (dotted_call && call_param_count[method_token] != 0u &&
++        dependency_method_parameter_type(member_i, 0u) != INVALID)
++        call_param_count[method_token] -= 1u;
+ 
+     uint return_type_i = dependency_member_word(member_base + 7u);
+     uint type_count = dependency_type_count();
+@@ -494,6 +505,8 @@
+             external_type_unit_id[method_token] =
+                 dependency_type_word(return_base + 8u);
+         }
++        if (dependency_empty_struct_result(return_root, canonical_type_roots))
++            call_return_type[method_token] = 1u;
+     }
+ }
+ 
+@@ -565,7 +578,8 @@
+         name_hash_lo[name_id],
+         name_hash_hi[name_id],
+         receiver_tag,
+-        receiver_payload);
++        receiver_payload,
++        callee_core.kind == HIR_MEMBER_EXPR);
+     if (member_i == INVALID)
+         return;
+     if (qualified_owner_token != INVALID && receiver_tag == TYPE_REF_INSTANCE &&
+@@ -579,12 +593,13 @@
+             dependency_declaration_local_index(owner_declaration);
+     }
+     publish_method_result(
+-        method_token, member_i, owner_declaration, receiver_tag, receiver_payload);
++        method_token, member_i, owner_declaration, receiver_tag, receiver_payload,
++        callee_core.kind == HIR_MEMBER_EXPR);
+     // The checked call artifact reads a path call at its callee owner token,
+     // while method lookup uses the final segment token. Keep both views of
+     // the same resolved imported method in sync.
+     if (valid_token(qualified_owner_token) && qualified_owner_token != method_token)
+         publish_method_result(
+             qualified_owner_token, member_i, owner_declaration,
+-            receiver_tag, receiver_payload);
+-}
++            receiver_tag, receiver_payload, callee_core.kind == HIR_MEMBER_EXPR);
++}
+--- a/shaders/type_checker/interface/members/00c_method_counts.slang
++++ b/shaders/type_checker/interface/members/00c_method_counts.slang
+@@ -11,6 +11,7 @@
+ StructuredBuffer<HirMethodCore> compact_method_cores;
+ StructuredBuffer<HirMethodSignature> compact_method_signatures;
+ StructuredBuffer<HirCore> compact_hir_core;
++StructuredBuffer<HirRange> compact_param_ranges;
+ StructuredBuffer<uint> interface_type_local_decl_by_hir;
+ StructuredBuffer<uint> public_decl_index_by_local;
+ RWStructuredBuffer<uint> interface_member_count;
+@@ -40,5 +41,10 @@
+  uint row=linear_thread_id(dtid);
+  uint owner=method_owner(row);
+  if(owner==INVALID||owner>=gParams.decl_capacity)return;
+- atomic_u32_add(interface_member_count,owner,1u);
++ uint method_node=compact_method_cores[row].node;
++ if(method_node>=gParams.hir_capacity)return;
++ uint params=compact_param_ranges[method_node].count;
++ uint mode=compact_method_signatures[row].receiver_mode;
++ if((mode==1u||mode==2u)&&params!=0u)params-=1u;
++ atomic_u32_add(interface_member_count,owner,1u+params);
+ }
+--- a/shaders/type_checker/interface/members/02_scatter_hir.slang
++++ b/shaders/type_checker/interface/members/02_scatter_hir.slang
+@@ -1,6 +1,7 @@
+ // Scatter compact parameters, fields, and enum variants by semantic ordinal.
+ import hir_records;
+ import atomics;
++import type_checker.interface.method_parameters;
+ struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
+ ConstantBuffer<Params> gParams;
+ StructuredBuffer<uint> compact_param_count;
+@@ -74,6 +75,26 @@
+    uint type_index=param.type_node<gParams.hir_capacity?interface_type_index_by_hir[param.type_node]:INVALID;
+    if(name_id==INVALID||type_index==INVALID)fail(row);else emit(owner,MEMBER_PARAMETER,param.ordinal+generic_count,name_id,type_index,0u,0u,row);
+   }
++  else
++  {
++   uint method=interface_method_for_function(param.owner,
++       min(compact_method_count[0u],gParams.hir_capacity),compact_method_cores);
++   if(method!=INVALID)
++   {
++    HirMethodSignature signature=compact_method_signatures[method];
++    uint parameter_ordinal=interface_method_parameter_ordinal(signature,param.ordinal);
++    uint method_owner_id=method_owner(method);
++    if(method_owner_id<gParams.decl_capacity&&parameter_ordinal!=INVALID)
++    {
++     uint name_id=param.name_token<gParams.token_capacity?name_id_by_token[param.name_token]:INVALID;
++     uint type_index=param.type_node<gParams.hir_capacity?interface_type_index_by_hir[param.type_node]:INVALID;
++     uint ordinal=atomic_u32_add(interface_member_cursor,method_owner_id,1u);
++     if(name_id==INVALID||type_index==INVALID)fail(row);
++     else emit(method_owner_id,MEMBER_PARAMETER,ordinal,name_id,type_index,
++         parameter_ordinal,INTERFACE_METHOD_SYMBOL|param.owner,row);
++    }
++   }
++  }
+  }
+  if(row<min(compact_field_count[0u],gParams.hir_capacity))
+  {
+@@ -118,7 +139,7 @@
+    uint receiver_type_index=signature.impl_receiver_type<gParams.hir_capacity
+        ?interface_type_index_by_hir[signature.impl_receiver_type]:INVALID;
+    uint param_count=compact_param_ranges[method.node].count;
+-   if(signature.receiver_mode!=0u&&param_count!=0u)param_count-=1u;
++   if((signature.receiver_mode==1u||signature.receiver_mode==2u)&&param_count!=0u)param_count-=1u;
+    uint ordinal=atomic_u32_add(interface_member_cursor,owner,1u);
+    uint generic_count=interface_generic_type_count_by_decl[owner]+interface_generic_const_count_by_decl[owner];
+    if(ordinal<generic_count) { fail(row); return; }
+--- a/shaders/type_checker/interface/type_topology/02b_seed_params.slang
++++ b/shaders/type_checker/interface/type_topology/02b_seed_params.slang
+@@ -2,12 +2,16 @@
+ 
+ import hir_records;
+ import atomics;
++import type_checker.interface.method_parameters;
+ struct Params { uint hir_capacity; uint decl_capacity; };
+ ConstantBuffer<Params> gParams;
+ StructuredBuffer<uint> compact_hir_count;
+ StructuredBuffer<HirCore> compact_hir_core;
+ StructuredBuffer<uint> compact_param_count;
+ StructuredBuffer<HirParam> compact_params;
++StructuredBuffer<uint> compact_method_count;
++StructuredBuffer<HirMethodCore> compact_method_cores;
++StructuredBuffer<HirMethodSignature> compact_method_signatures;
+ StructuredBuffer<uint> public_decl_index_by_hir;
+ StructuredBuffer<uint> interface_type_parent;
+ RWStructuredBuffer<uint> interface_type_seed_owner;
+@@ -36,5 +40,20 @@
+     if (row >= min(compact_param_count[0u], gParams.hir_capacity)) return;
+     HirParam param = compact_params[row];
+     uint owner = param.owner < active_hir_count() ? public_decl_index_by_hir[param.owner] : INVALID;
++    if (owner == INVALID)
++    {
++        uint method = interface_method_for_function(param.owner,
++            min(compact_method_count[0u], gParams.hir_capacity), compact_method_cores);
++        if (method == INVALID) return;
++        HirMethodSignature signature = compact_method_signatures[method];
++        if (!interface_public_inherent_method(signature) ||
++            interface_method_parameter_ordinal(signature, param.ordinal) == INVALID)
++            return;
++        // The preceding declaration-seeding pass has already attached this
++        // public method's receiver type to its exported owner declaration.
++        uint receiver = signature.impl_receiver_type;
++        owner = receiver < active_hir_count()
++            ? interface_type_seed_owner[receiver] : INVALID;
++    }
+     if (owner < gParams.decl_capacity) seed(param.type_node, owner, row);
+ }
+--- a/shaders/type_checker/semantic/artifact/00_calls.slang
++++ b/shaders/type_checker/semantic/artifact/00_calls.slang
+@@ -252,6 +252,17 @@
+                 if (instance_words != 0u)
+                     semantic_aggregate_word_count_by_hir[row] = instance_words;
+             }
++            // Dependency projection proved this monomorphic struct empty
++            // while retaining its nominal type for all semantic checks. The
++            // backend consumes its unit machine representation, rather than
++            // truncating an external-canonical tag and treating a page row
++            // number as a scalar/aggregate type code.
++            if (call.return_type == 1u && call.return_ref_tag == 5u &&
++                semantic_aggregate_word_count_by_hir[row] == 0u)
++            {
++                call.return_ref_tag = 1u;
++                call.return_ref_payload = 1u;
++            }
+         }
+         call.receiver_hir = valid_hir(callee) &&
+                             compact_hir_core[callee].kind == HIR_MEMBER_EXPR
+--- /dev/null
++++ b/shaders/type_checker/interface/method_parameters.slang
+@@ -0,0 +1,36 @@
++import hir_records;
++
++static const uint INTERFACE_METHOD_INVALID = 0xffffffffu;
++static const uint INTERFACE_METHOD_SYMBOL = 0x80000000u;
++
++// Canonical method rows are scattered in increasing compact HIR order.
++uint interface_method_for_function(
++    uint function_node, uint count, StructuredBuffer<HirMethodCore> methods)
++{
++    uint lo = 0u;
++    uint hi = count;
++    while (lo < hi)
++    {
++        uint mid = lo + (hi - lo) / 2u;
++        if (methods[mid].node < function_node) lo = mid + 1u;
++        else hi = mid;
++    }
++    return lo < count && methods[lo].node == function_node
++        ? lo : INTERFACE_METHOD_INVALID;
++}
++
++bool interface_public_inherent_method(HirMethodSignature signature)
++{
++    return ((signature.metadata >> 16u) & 4u) != 0u &&
++        (signature.metadata & 0xffffu) == 1u;
++}
++
++uint interface_method_parameter_ordinal(
++    HirMethodSignature signature, uint source_ordinal)
++{
++    // Mode 3 is a typed first-parameter candidate, including ordinary static
++    // constructors. Preserve it. Only syntactic self / &self is implicit.
++    bool implicit_self = signature.receiver_mode == 1u || signature.receiver_mode == 2u;
++    return implicit_self && source_ordinal == 0u
++        ? INTERFACE_METHOD_INVALID : source_ordinal;
++}

@@ -1,0 +1,6 @@
+
+running 1 test
+test compiler::gpu_compiler::typecheck::tests::semantic_replay_materializes_local_nominal_and_array_without_width_witnesses ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 737 filtered out; finished in 3.07s
+

@@ -1,0 +1,333 @@
+diff --git a/crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs b/crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs
+--- a/crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs
++++ b/crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs
+@@ -142,6 +142,329 @@
+ #[cfg(test)]
+ mod tests {
+     use super::{super::typecheck::CompiledSourcePackObject, *};
++
++    #[test]
++    fn checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse() {
++        use crate::type_checker::{
++            CheckedBinderIdentity, CheckedGenericApplicationArgument as Argument,
++            CheckedGenericConstantValue as Constant, CheckedGenericType as Type,
++            CheckedNominalIdentity, CheckedParameterDomain,
++        };
++        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
++        let source = r#"
++module checkpoint::contracts;
++pub struct Cell<T, const L:usize> { value:T }
++pub trait Rel<A> {}
++trait HiddenRel<A> {}
++pub trait Visible<T> { pub fn visible(self, value:T)->T; }
++trait Hidden<T> { fn hidden(self, value:T)->T; }
++pub impl Visible<[i32;2]> for bool {
++    pub fn visible(self, value:[i32;2])->[i32;2] { return value; }
++}
++impl Hidden<[bool;0]> for i32 {
++    fn hidden(self, value:[bool;0])->[bool;0] { return value; }
++}
++pub impl Rel<&[Cell<i32,2>;2]> for Cell<[i32;2],2> {}
++pub fn exposed<T,U,const N:usize>(v:T, values:[U;N])->T
++    where T:Rel<Cell<[U;N],N>> { return v; }
++fn private_bound<T,U,const N:usize>(v:T, values:[U;N])->T
++    where T:HiddenRel<Cell<[U;N],N>> { return v; }
++pub fn reference<T,U>(v:T)->T where T:Rel<&[Cell<U,2>;2]> { return v; }
++pub fn view<T,U>(v:T)->T where T:Rel<[U]> { return v; }
++fn main()->i32 { return 0; }
++"#;
++        let unit = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
++            vec![source.to_owned()].into(), 31, 4, Vec::new().into(),
++            SourcePackArtifactTarget::X86_64,
++        )).expect("retain accepted contracts without generic calls");
++        assert!(unit.generic_calls.is_empty());
++        let contracts = unit.checked_contracts.as_ref();
++        assert_eq!(contracts.source_unit, Some([31, 4]));
++        assert_eq!(contracts.predicates.len(), 4);
++        assert_eq!(contracts.implementations.len(), 3);
++        let owner = |index: u32| contracts.binders.get(index as usize)
++            .expect("contract owner indexes the shared immutable owner table");
++        let declaration = |name: &[u8]| {
++            unit.interface.declarations.iter().position(|declaration| {
++                let start = declaration.name_byte_start as usize;
++                &unit.interface.name_bytes[start..start + declaration.name_byte_len as usize] == name
++            }).expect("exported declaration") as u32
++        };
++        let public_predicate = |name: &[u8]| {
++            let owner = declaration(name);
++            contracts.predicates.iter().find(|predicate| predicate.public_index.is_some_and(|index| {
++                unit.interface.predicates[index as usize].owner_ref == owner
++            })).expect("snapshot aliases the actual exported predicate row")
++        };
++        let exposed = public_predicate(b"exposed");
++        let hidden = contracts.predicates.iter().find(|predicate| predicate.public_index.is_none())
++            .expect("private callable predicate is retained");
++        assert_eq!(owner(exposed.owner).binder, CheckedBinderIdentity::Public {
++            owner: declaration(b"exposed"), scope: 0,
++        });
++        assert!(matches!(owner(hidden.owner).binder, CheckedBinderIdentity::SourceLocal { .. }));
++        assert_ne!(owner(exposed.owner).source_hir, owner(hidden.owner).source_hir);
++        assert!(matches!(hidden.trait_identity, CheckedNominalIdentity::SourceLocal {
++            unit: [31, 4], declaration_token,
++        } if declaration_token != u32::MAX));
++        assert_eq!(exposed.trait_identity,
++            CheckedNominalIdentity::Public([31, 4, declaration(b"Rel")]));
++        let parameter = |ty: &Type| match ty {
++            Type::Parameter(parameter) => *parameter,
++            other => panic!("expected a declaration-owned parameter: {other:?}"),
++        };
++        for predicate in [exposed, hidden] {
++            let owner = owner(predicate.owner);
++            assert_eq!(owner.parameters.len(), 3);
++            let parameters = &owner.parameters;
++            for (index, (domain, ordinal, slot)) in [
++                (CheckedParameterDomain::Type, 0, 0),
++                (CheckedParameterDomain::Type, 1, 1),
++                (CheckedParameterDomain::Constant, 2, 0),
++            ].into_iter().enumerate() {
++                let retained = parameters[index];
++                assert_eq!(retained.identity.unit, [31, 4]);
++                assert_eq!(retained.identity.binder, owner.binder);
++                assert_eq!(retained.identity.domain, domain);
++                assert_eq!(retained.identity.source_ordinal, ordinal);
++                assert_eq!(retained.binding_slot, slot);
++            }
++            assert_eq!(parameter(&predicate.subject), parameters[0]);
++            let [Argument::Type(Type::Nominal { identity, arguments, words, .. })] =
++                predicate.arguments.as_slice() else { panic!("complete nominal operand: {predicate:?}") };
++            assert_eq!(*identity, CheckedNominalIdentity::Public([31, 4, declaration(b"Cell")]));
++            assert_eq!(*words, None);
++            let [Argument::Type(Type::Array { element, length, words }), Argument::Constant(value)] =
++                arguments.as_slice() else { panic!("ordered nested type/constant operands: {arguments:?}") };
++            assert_eq!(parameter(element), parameters[1]);
++            assert_eq!(*length, Constant::Parameter(parameters[2]));
++            assert_eq!(*value, Constant::Parameter(parameters[2]));
++            assert_eq!(*words, None);
++        }
++        assert_ne!(parameter(&exposed.subject).identity, parameter(&hidden.subject).identity,
++            "same spelling and slots in separate binders must remain distinct");
++        let reference = public_predicate(b"reference");
++        let [Argument::Type(Type::Reference(array))] = reference.arguments.as_slice()
++            else { panic!("reference graph: {reference:?}") };
++        let Type::Array { element, length: Constant::Literal(2), .. } = array.as_ref()
++            else { panic!("reference retains array graph: {array:?}") };
++        let Type::Nominal { identity, arguments, .. } = element.as_ref()
++            else { panic!("array retains nominal graph: {element:?}") };
++        assert_eq!(*identity, CheckedNominalIdentity::Public([31, 4, declaration(b"Cell")]));
++        assert_eq!(arguments, &vec![
++            Argument::Type(Type::Parameter(owner(reference.owner).parameters[1])),
++            Argument::Constant(Constant::Literal(2)),
++        ]);
++        let view = public_predicate(b"view");
++        assert_eq!(view.arguments, vec![Argument::Type(Type::Slice(Box::new(
++            Type::Parameter(owner(view.owner).parameters[1]),
++        )))]);
++
++        assert_eq!(unit.interface.implementations.len(), 2,
++            "private implementation is not a fabricated public interface row");
++        let private_impl = contracts.implementations.iter()
++            .find(|implementation| implementation.public_index.is_none())
++            .expect("private implementation survives the accepted-unit boundary");
++        assert_eq!(private_impl.subject, Type::Scalar(3));
++        assert!(matches!(private_impl.trait_identity, CheckedNominalIdentity::SourceLocal {
++            unit: [31, 4], declaration_token,
++        } if declaration_token != u32::MAX));
++        let [Argument::Type(Type::Array { element, length: Constant::Literal(0), .. })] =
++            private_impl.arguments.as_slice() else { panic!("private complete graph: {private_impl:?}") };
++        assert_eq!(element.as_ref(), &Type::Scalar(2));
++        let compound = contracts.implementations.iter().find(|implementation| {
++            matches!(implementation.subject, Type::Nominal { .. })
++        }).expect("compound implementation subject");
++        let Type::Nominal { identity, arguments, .. } = &compound.subject else { unreachable!() };
++        assert_eq!(*identity, CheckedNominalIdentity::Public([31, 4, declaration(b"Cell")]));
++        assert!(matches!(arguments.as_slice(), [
++            Argument::Type(Type::Array { element, length: Constant::Literal(2), .. }),
++            Argument::Constant(Constant::Literal(2)),
++        ] if element.as_ref() == &Type::Scalar(3)));
++        assert!(matches!(compound.arguments.as_slice(), [Argument::Type(Type::Reference(_))]));
++        let object = unit.object.clone().into_x86_64().expect("native object");
++        let bindings = contracts.implementations.iter().flat_map(|implementation| {
++            let implementation_owner = owner(implementation.owner);
++            assert!(implementation_owner.parameters.is_empty(),
++                "these concrete implementations have no generic header");
++            if let Some(index) = implementation.public_index {
++                let exported = unit.interface.implementations[index as usize];
++                assert_eq!(implementation.trait_identity, CheckedNominalIdentity::Public([
++                    exported.trait_library_id, exported.trait_unit_id, exported.trait_declaration_index,
++                ]));
++                let start = exported.first_method_binding as usize;
++                let exported_bindings = &unit.interface.implementation_method_bindings[
++                    start..start + exported.method_binding_count as usize
++                ];
++                assert_eq!(implementation.method_bindings.len(), exported_bindings.len());
++                for (binding, exported_binding) in implementation.method_bindings.iter().zip(exported_bindings) {
++                    let member = unit.interface.members[exported_binding.implementation_method_member as usize];
++                    assert_eq!(binding.required_symbol, exported_binding.required_method_symbol);
++                    assert_eq!(binding.receiver_mode, member.trait_method_receiver_mode());
++                    assert_eq!(binding.method_hir, member.value_hi & 0x7fff_ffff);
++                }
++            }
++            &implementation.method_bindings
++        }).collect::<Vec<_>>();
++        assert_eq!(bindings.len(), 2);
++        for binding in bindings {
++            assert_eq!(&binding.target[..2], &[31, 4]);
++            assert_eq!(object.symbols.iter().filter(|symbol| {
++                symbol.section == x86::GpuX86ObjectSection::Text
++                    && x86_object_symbol_identity(&object, symbol) == binding.target
++            }).count(), 1, "required binding names one executable callable: {binding:?}");
++        }
++        let retained = contracts.clone();
++        let empty = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
++            vec!["module checkpoint::empty; fn main()->i32{return 0;}".to_owned()].into(),
++            31, 4, Vec::new().into(), SourcePackArtifactTarget::X86_64,
++        )).expect("reuse workspace with no contracts or generic calls");
++        assert!(empty.generic_calls.is_empty());
++        assert!(empty.checked_contracts.predicates.is_empty());
++        assert!(empty.checked_contracts.implementations.is_empty());
++        assert!(empty.checked_contracts.binders.is_empty());
++        assert!(empty.checked_call_owners.is_empty());
++        assert_eq!(unit.checked_contracts.as_ref(), &retained);
++        let changed = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
++            vec![source.replace("[i32;2]", "[i32;3]")].into(),
++            31, 4, Vec::new().into(), SourcePackArtifactTarget::X86_64,
++        )).expect("reuse workspace with new accepted contract graphs");
++        assert!(changed.generic_calls.is_empty());
++        assert_eq!(changed.checked_contracts.implementations.len(), 3);
++        assert_ne!(changed.checked_contracts.implementations, retained.implementations);
++        assert_eq!(unit.checked_contracts.as_ref(), &retained,
++            "old graphs and private identities belong to their immutable source snapshot");
++    }
++
++    #[test]
++    fn checked_unit_contracts_keep_actual_callers_and_execute_after_workspace_reuse() {
++        use crate::type_checker::{CheckedGenericTarget, CheckedGenericType as Type};
++        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
++        let unit = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
++            vec![r#"
++module checkpoint::callers;
++pub trait Mark {}
++pub impl Mark for i32 {}
++pub trait Visible { pub fn visible(self)->i32; }
++trait Hidden { fn hidden(self)->i32; }
++pub impl Visible for bool { pub fn visible(self)->i32 { return 23; } }
++impl Hidden for i32 { fn hidden(self)->i32 { return self; } }
++pub fn keep<T>(value:T)->T { return value; }
++pub fn relay<T>(value:T)->T where T:Mark { return keep(value); }
++struct Cell<T> { value:T }
++impl<T> Cell<T> { fn through(&self)->T { return keep(self.value); } }
++fn concrete()->i32 {
++    let flag=keep(false);
++    if (flag) { return 1; }
++    return keep(19);
++}
++fn main()->i32 {
++    let cell:Cell<i32> = Cell{value:23};
++    if (concrete()!=19 || relay(19)!=19 || cell.through()!=23) { return 1; }
++    let flag=false;
++    if (flag.visible()!=23) { return 2; }
++    let value=23;
++    if (value.hidden()!=23) { return 3; }
++    return 0;
++}
++"#.to_owned()].into(), 32, 5, Vec::new().into(), SourcePackArtifactTarget::X86_64,
++        )).expect("retain exact callers beside accepted local contracts");
++        let declaration = |name: &[u8]| {
++            unit.interface.declarations.iter().position(|declaration| {
++                let start = declaration.name_byte_start as usize;
++                &unit.interface.name_bytes[start..start + declaration.name_byte_len as usize] == name
++            }).expect("public callable") as u32
++        };
++        let contracts = unit.checked_contracts.as_ref();
++        assert_eq!(contracts.source_unit, Some([32, 5]));
++        let owner_for = |call_hir| {
++            let owners = unit.checked_call_owners.iter().filter(|owner| owner.call_hir == call_hir)
++                .collect::<Vec<_>>();
++            assert_eq!(owners.len(), 1, "each retained call has one exact enclosing callable");
++            assert_ne!(owners[0].function_hir, u32::MAX);
++            owners[0].function_hir
++        };
++        let keep = declaration(b"keep");
++        let keep_binder = contracts.binders.iter().find(|owner| matches!(owner.binder,
++            crate::type_checker::CheckedBinderIdentity::Public { owner, scope: 0 } if owner == keep
++        )).expect("unbounded generic helper still owns a retained binder");
++        assert_eq!(keep_binder.parameters.len(), 1);
++        let calls = unit.generic_calls.iter().filter(|call| {
++            matches!(call.target, CheckedGenericTarget::Local { native_symbol, .. } if native_symbol == keep)
++        }).collect::<Vec<_>>();
++        assert_eq!(calls.len(), 4);
++        let relay = contracts.predicates.iter().find(|predicate| predicate.public_index.is_some_and(|index| {
++            unit.interface.predicates[index as usize].owner_ref == declaration(b"relay")
++        })).expect("generic relay's own bound");
++        let relay_owner = contracts.binders.get(relay.owner as usize)
++            .expect("relay predicate references the shared owner table");
++        let relay_call = calls.iter().find(|call| matches!(&call.arguments[0].ty,
++            Type::Parameter(parameter) if parameter.identity.binder == relay_owner.binder))
++            .expect("generic caller retains its own parameter");
++        assert_eq!(owner_for(relay_call.call_hir), relay_owner.source_hir);
++        let method_hir = unit.generic_calls.iter().find_map(|call| match call.target {
++            CheckedGenericTarget::Local { specialization_symbol, .. }
++                if specialization_symbol & 0x8000_0000 != 0 => Some(specialization_symbol & 0x7fff_ffff),
++            _ => None,
++        }).expect("main invokes the nongeneric method in a generic impl");
++        let method_call = calls.iter().find(|call| matches!(&call.arguments[0].ty,
++            Type::Parameter(parameter) if parameter.identity.binder != relay_owner.binder))
++            .expect("method uses its enclosing impl parameter");
++        assert_eq!(owner_for(method_call.call_hir), method_hir,
++            "the enclosing callable is the method, not its generic impl");
++        let Type::Parameter(method_parameter) = &method_call.arguments[0].ty else { unreachable!() };
++        let (impl_owner_index, impl_binder) = contracts.binders.iter().enumerate()
++            .find(|(_, owner)| owner.binder == method_parameter.identity.binder)
++            .expect("the generic impl binder survives independently of predicate rows");
++        assert!(impl_binder.parameters.contains(method_parameter));
++        assert_ne!(method_hir, impl_binder.source_hir,
++            "the parameter's generic owner is distinct from the call's enclosing method");
++        let method_owner = contracts.binders.iter().find(|owner| owner.source_hir == method_hir)
++            .expect("nongeneric method retains its own lexical owner row");
++        assert!(method_owner.parameters.is_empty(),
++            "the method must not recapture its impl's generic parameters");
++        assert_eq!(method_owner.enclosing_owner, Some(impl_owner_index as u32),
++            "method scope points to its exact generic impl in the same owner table");
++        assert_ne!(method_hir, relay_owner.source_hir);
++        let concrete_calls = calls.iter().filter(|call| matches!(call.arguments[0].ty, Type::Scalar(_)))
++            .collect::<Vec<_>>();
++        assert_eq!(concrete_calls.len(), 2);
++        let concrete_owner = owner_for(concrete_calls[0].call_hir);
++        assert_eq!(owner_for(concrete_calls[1].call_hir), concrete_owner);
++        assert_ne!(concrete_owner, method_hir);
++        assert_ne!(concrete_owner, relay_owner.source_hir,
++            "nongeneric free caller must not inherit another function's generic owner");
++        let relay_symbol = declaration(b"relay");
++        let main_call = unit.generic_calls.iter().find(|call| matches!(call.target,
++            CheckedGenericTarget::Local { native_symbol, .. } if native_symbol == relay_symbol
++        )).expect("main invokes the generic relay");
++        assert_ne!(concrete_owner, owner_for(main_call.call_hir),
++            "calls nested in concrete must not be attributed to main");
++        assert_eq!(contracts.implementations.len(), 3);
++        assert_eq!(contracts.implementations.iter().filter(|implementation| implementation.public_index.is_none()).count(), 1);
++        let retained = contracts.clone();
++        let retained_call_owners = unit.checked_call_owners.to_vec();
++        let overwritten = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
++            vec!["module checkpoint::scratch; fn main()->i32{return 7;}".to_owned()].into(),
++            32, 5, Vec::new().into(), SourcePackArtifactTarget::X86_64,
++        )).expect("replace frontend and lowering workspace");
++        assert!(overwritten.checked_contracts.predicates.is_empty());
++        assert!(overwritten.checked_contracts.implementations.is_empty());
++        assert!(overwritten.checked_contracts.binders.is_empty());
++        assert!(overwritten.checked_call_owners.is_empty());
++        assert_eq!(unit.checked_contracts.as_ref(), &retained);
++        assert_eq!(unit.checked_call_owners.as_ref(), retained_call_owners.as_slice());
++        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
++            .expect("specialize local calls after accepted snapshots outlive scratch");
++        let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
++            .expect("prepare local contract control");
++        let linked = compiler.x86_linker().expect("x86 linker")
++            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
++            .expect("link local contract control");
++        assert_x86_main_exit(&linked, "checked-unit-contracts-after-reuse", 0);
++        assert_eq!(unit.checked_contracts.as_ref(), &retained);
++        assert_eq!(unit.checked_call_owners.as_ref(), retained_call_owners.as_slice());
++    }
+ 
+     #[test]
+     fn implementation_evidence_targets_defined_public_and_private_native_methods() {

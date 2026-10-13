@@ -1,4 +1,8 @@
-// Declaration seed for recoverable results.
+// Recoverable results preserve successful and failed payloads independently.
+// Tag predicates and concrete membership helpers execute without allocation.
+// Generic free and receiver payload functions specialize on the resident native path for
+// tested scalar arguments and selected record/slice fallback extractions.
+// See docs/stdlib-result.md for executable operations and target limits.
 
 module core::result;
 
@@ -19,6 +23,39 @@ pub fn is_err<T, E>(value: Result<T, E>) -> bool {
         Ok(inner) -> false,
         Err(error) -> true,
     };
+}
+
+pub impl<T, E> Result<T, E> {
+    pub fn is_ok(self) -> bool {
+        return match (self) { Ok(_) -> true, Err(_) -> false };
+    }
+
+    pub fn is_err(self) -> bool {
+        return match (self) { Ok(_) -> false, Err(_) -> true };
+    }
+
+    // Both fallbacks are explicit. Reading either branch preserves the receiver.
+    pub fn unwrap_or(self, fallback: T) -> T {
+        return match (self) { Ok(inner) -> inner, Err(_) -> fallback };
+    }
+
+    pub fn unwrap_err_or(self, fallback: E) -> E {
+        return match (self) { Ok(_) -> fallback, Err(error) -> error };
+    }
+
+    // A successful left value wins; two failures select the fallback error.
+    pub fn or(self, fallback: Result<T, E>) -> Result<T, E> {
+        let successful: bool = match (self) { Ok(_) -> true, Err(_) -> false };
+        if (successful) { return self; }
+        return fallback;
+    }
+
+    // The next value follows success; a failed left value retains its error.
+    pub fn and(self, next: Result<T, E>) -> Result<T, E> {
+        let successful: bool = match (self) { Ok(_) -> true, Err(_) -> false };
+        if (successful) { return next; }
+        return self;
+    }
 }
 
 pub fn contains_i32<E>(value: Result<i32, E>, expected: i32) -> bool {
@@ -82,6 +119,10 @@ pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T {
         Ok(inner) -> inner,
         Err(error) -> fallback,
     };
+}
+
+pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E {
+    return match (value) { Ok(_) -> fallback, Err(error) -> error };
 }
 
 pub fn or<T, E>(value: Result<T, E>, fallback: Result<T, E>) -> Result<T, E> {

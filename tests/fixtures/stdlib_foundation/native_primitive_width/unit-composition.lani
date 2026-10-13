@@ -1,0 +1,32 @@
+import std::io;
+struct UnitPacket<T> { head: i32, value: T, tail: i32 }
+fn effect(mark: i32) { std::io::print_i32(mark); return; }
+fn returned_effect(mark: i32) { return effect(mark); }
+fn echo<T>(value: T, mark: i32) -> T {
+    std::io::print_i32(mark);
+    return value;
+}
+fn packet<T>(value: T) -> UnitPacket<T> {
+    return UnitPacket { head: 19, value: value, tail: 23 };
+}
+fn stack_unit<T>(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32,
+    value: T, tail: i32) -> i32 {
+    echo(value, 17);
+    return a + b + c + d + e + f + tail;
+}
+fn main() -> i32 {
+    let unit = echo(returned_effect(11), 12);
+    let original = packet(unit);
+    let copied = echo(original, 13);
+    original.head = 101;
+    original.tail = 103;
+    if (copied.head != 19 || copied.tail != 23) { return 1; }
+    if (original.head != 101 || original.tail != 103) { return 2; }
+    let returned = echo(copied.value, 14);
+    let rebuilt = packet(returned);
+    if (rebuilt.head != 19 || rebuilt.tail != 23) { return 3; }
+    let value = echo(rebuilt.value, 15);
+    if (stack_unit(1, 2, 3, 4, 5, 6, value, 21) != 42) { return 4; }
+    if (copied.head != 19 || copied.tail != 23) { return 5; }
+    return 0;
+}

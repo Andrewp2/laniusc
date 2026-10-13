@@ -12,6 +12,7 @@ struct Params
     uint n_tokens;
     uint n_blocks;
     uint scan_step;
+    uint match_tree_leaf_base;
 };
 
 ConstantBuffer<Params> gParams;
@@ -99,7 +100,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
     public static uint leaf_base()
     {
-        return range_search_leaf_base_for_block_count(gParams.n_blocks);
+        return gParams.match_tree_leaf_base;
     }
 
     public static int leaf_value(uint block)

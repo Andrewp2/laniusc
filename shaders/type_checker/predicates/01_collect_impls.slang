@@ -13,34 +13,7 @@ StructuredBuffer<uint> visible_type;
 RWStructuredBuffer<uint> predicate_impl_lookup_head;
 RWStructuredBuffer<uint> predicate_impl_lookup_next;
 
-static const uint IMPL_TYPE_REF_SCALAR = 1u;
-static const uint IMPL_TYPE_REF_GENERIC_PARAM = 2u;
-static const uint IMPL_TY_UNKNOWN = 0u;
-static const uint IMPL_TY_GENERIC_BASE = 8192u;
 static const uint HIR_IMPL = 35u;
-
-uint impl_type_code_for_token(uint token)
-{
-    if (!valid_token(token))
-        return IMPL_TY_UNKNOWN;
-    uint tag = type_expr_ref_tag[token];
-    uint payload = type_expr_ref_payload[token];
-    if (tag == IMPL_TYPE_REF_SCALAR)
-        return payload;
-    if (tag == IMPL_TYPE_REF_GENERIC_PARAM)
-    {
-        uint slot = type_generic_param_slot_by_token[token];
-        return slot == INVALID ? IMPL_TY_UNKNOWN : IMPL_TY_GENERIC_BASE + slot;
-    }
-    return visible_type[token];
-}
-
-uint impl_type_code(uint value)
-{
-    return value != INVALID && (value & PREDICATE_ARG_TYPE_CODE_BIT) != 0u
-        ? value & ~PREDICATE_ARG_TYPE_CODE_BIT
-        : impl_type_code_for_token(value);
-}
 
 void index_trait_impl(uint node)
 {
@@ -48,20 +21,21 @@ void index_trait_impl(uint node)
     if (predicate_count == 0u || predicate_status[node] != PREDICATE_STATUS_OK)
         return;
 
+    // This index proves closed, unconditional local leaves only. Generic
+    // definitions and their prerequisites belong to the complete program gate.
+    if (compact_generic_param_ranges[node].count != 0u) return;
+
     uint arg_count = predicate_bound_arg_count[node];
-    uint arg0_type = arg_count >= 1u
-        ? impl_type_code(predicate_bound_first_arg_token[node])
-        : IMPL_TY_UNKNOWN;
-    uint arg1_type = arg_count >= 2u
-        ? impl_type_code(predicate_bound_second_arg_token[node])
-        : IMPL_TY_UNKNOWN;
-    uint bucket = predicate_impl_lookup_bucket(
-        predicate_bound_decl_id[node],
-        impl_type_code(predicate_subject_token[node]),
-        arg_count,
-        arg0_type,
-        arg1_type,
-        predicate_count);
+    uint root = predicate_trait_impl_trait_type_node[node];
+    uint2 subject = predicate_type_reference(impl_receiver_type_node(node));
+    uint hash;
+    if (!predicate_key_hash<ScopedCheckedTypeGraph>(subject, root, arg_count, INVALID, hash))
+    {
+        predicate_status[node] = PREDICATE_STATUS_INVALID_IMPL_ARG;
+        return;
+    }
+    uint bucket = predicate_impl_lookup_bucket(predicate_bound_reference[node],
+        arg_count, hash, predicate_count);
     uint prior = predicate_impl_lookup_head[bucket];
     for (;;)
     {

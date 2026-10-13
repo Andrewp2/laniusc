@@ -1,0 +1,41 @@
+struct Item { value: i32 }
+impl Item { fn borrow(&self) -> &Item { return self; } }
+fn empty(v: [i32; 0]) -> usize { return 0; }
+fn use_slice(values: [i32]) -> i32 {
+    let view: Wrap<[i32]> = Wrap<[i32]> { value: values };
+    if (view.first_slice() != 7) { return 1; }
+    values[0] = 11;
+    if (view.first_slice() != 11) { return 2; }
+    return 0;
+}
+fn main() -> i32 {
+    let numbers: Wrap<[i32; 2]> = Wrap<[i32; 2]> { value: [7, 9] };
+    if (numbers.first() != 7 || numbers.number() != 9 || numbers.length() != 2) { return 1; }
+    let flags: Wrap<[bool; 2]> = Wrap<[bool; 2]> { value: [false, true] };
+    if (flags.first() || flags.length() != 2) { return 2; }
+    let words: Wrap<[str; 2]> = Wrap<[str; 2]> { value: ["Ω", "λ"] };
+    let first: str = words.first();
+    let copied: [str; 2] = words.copy();
+    words.value[0] = "changed";
+    std::io::println(first);
+    std::io::println(copied[0]);
+    std::io::println(copied[1]);
+    let relayed: [str; 2] = numbers.relay(copied);
+    copied[0] = "replacement";
+    std::io::println(relayed[0]);
+    let nested: Wrap<Cell<[i32; 2]>> = Wrap<Cell<[i32; 2]>> { value: Cell<[i32; 2]> { value: [13, 17] } };
+    let own: [i32; 2] = nested.inner();
+    nested.value.value[0] = 99;
+    if (own[0] != 13 || own[1] != 17) { return 3; }
+    let item: Item = Item { value: 19 };
+    let borrowed: Wrap<Cell<&Item>> = Wrap<Cell<&Item>> { value: Cell<&Item> { value: item.borrow() } };
+    let reference: &Item = borrowed.inner();
+    item.value = 23;
+    if (reference.value != 23) { return 4; }
+    let zero: Wrap<[bool; 0]> = Wrap<[bool; 0]> { value: [] };
+    if (zero.length() != 0) { return 5; }
+    let zero_elements: Wrap<[[i32; 0]; 2]> = Wrap<[[i32; 0]; 2]> { value: [[], []] };
+    if (zero_elements.length() != 2 || empty(zero_elements.first()) != 0) { return 6; }
+    if (use_slice([7, 9]) != 0) { return 7; }
+    return 0;
+}

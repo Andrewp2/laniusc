@@ -18,6 +18,7 @@ RWStructuredBuffer<HirRange> match_arm_ranges;
 RWStructuredBuffer<uint> match_pattern_to_arm;
 RWStructuredBuffer<HirRange> param_ranges;
 RWStructuredBuffer<HirRange> type_arg_ranges;
+RWStructuredBuffer<HirRange> path_type_arg_ranges;
 
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
@@ -35,6 +36,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         canonical_status[1u] = total;
         canonical_status[2u] = gCanonical.canonical_capacity;
         if (total > gCanonical.canonical_capacity) canonical_status[0u] = 1u;
+    }
+    if (node < gCanonical.canonical_capacity) {
+        HirRange empty_range;
+        empty_range.start = 0xffffffffu; empty_range.count = 0u;
+        path_type_arg_ranges[node] = empty_range;
     }
     if (node >= gCanonical.raw_capacity) return;
     uint block = node / 256u;

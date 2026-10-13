@@ -1,0 +1,23 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "compiler::gpu_compiler::program_evidence::packet::tests::replay_"
+  ],
+  "exit_code": 0,
+  "seconds": 5.22299004800152,
+  "binary_sha256": "4f3862fdc3193e3e71952920d0f2ac11fbd7c6ab81e0e26ba0aa7b1fe3875179",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true,
+  "passed_tests": 8,
+  "evidence_label": "trait-replay-publication-host-2",
+  "sources_manifest": {
+    "file": "manifests/sources-f4e424b910f903d71b7f2cc9668e8a5665461bf4dec05e2b50ad12aaf13b970e.json",
+    "sha256": "f4e424b910f903d71b7f2cc9668e8a5665461bf4dec05e2b50ad12aaf13b970e"
+  },
+  "shaders_manifest": {
+    "file": "manifests/shaders-2114125862a87bbcd8820e964197621f70d9433ac3706cdc202c0494e5d08b23.json",
+    "sha256": "2114125862a87bbcd8820e964197621f70d9433ac3706cdc202c0494e5d08b23"
+  }
+}

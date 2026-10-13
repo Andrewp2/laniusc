@@ -95,9 +95,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     HirCore owner_core = compact_hir_core[parameter.owner];
     HirPayload owner_payload = compact_hir_payload[parameter.owner];
-    uint owner_token = valid_token(owner_payload.b)
-        ? owner_payload.b
-        : owner_core.token_start;
+    uint owner_token = hir_generic_owner_token(owner_core, owner_payload, gParams.n_tokens);
     if (!valid_token(owner_token))
     {
         record_min_token_error(status,

@@ -1,3 +1,4 @@
+import primitive_types;
 // Project one canonical checked type reference per dense expression HIR row.
 // Downstream validation consumes this artifact instead of reconstructing an
 // expression's type from token-keyed declaration and call work tables.
@@ -6,6 +7,13 @@ import hir_records;
 import gpu_index;
 import checked_semantic_artifact;
 
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_decl_token.GetDimensions(capacity, stride);
+    return instance < capacity;
+}
+
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -13,6 +21,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_expr_scalar_type;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_native_word_count;
 StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -61,28 +70,16 @@ static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_CONST = 2u;
-static const uint SCALAR_TYPE_SHIFT = 28u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
+#include "../../named_expression_reference.slang"
 void name_token_ref(uint token, out uint tag, out uint payload)
 {
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(token)) return;
-
-    uint decl = visible_decl[token];
-    if (!valid_token(decl)) decl = token;
-    tag = decl_type_ref_tag[decl];
-    payload = decl_type_ref_payload[decl];
-    if (tag != TYPE_REF_INVALID) return;
-
-    tag = type_expr_ref_tag[token];
-    payload = type_expr_ref_payload[token];
-
+    named_expression_reference(token, tag, payload);
 }
 
 uint name_decl_token(uint token)
@@ -126,6 +123,11 @@ uint resolved_path_decl_token(uint node)
     return valid_token(token) ? token : INVALID;
 }
 
+uint checked_instance_words(uint instance)
+{
+    return valid_instance(instance) ? type_native_word_count[instance] : 0u;
+}
+
 uint scalar_nominal_decl_token(uint payload)
 {
     uint hir_count = active_hir_count();
@@ -135,8 +137,7 @@ uint scalar_nominal_decl_token(uint payload)
         if (valid_token(token))
         {
             uint declaration = type_decl_hir_node_by_token[token];
-            if (declaration < hir_count &&
-                compact_hir_core[declaration].kind == HIR_STRUCT_ITEM)
+            if (declaration < hir_count && compact_hir_core[declaration].kind == HIR_STRUCT_ITEM)
                 return token;
         }
     }
@@ -146,8 +147,7 @@ uint scalar_nominal_decl_token(uint payload)
         if (valid_token(token))
         {
             uint declaration = type_decl_hir_node_by_token[token];
-            if (declaration < hir_count &&
-                compact_hir_core[declaration].kind == HIR_ENUM_ITEM)
+            if (declaration < hir_count && compact_hir_core[declaration].kind == HIR_ENUM_ITEM)
                 return token;
         }
     }
@@ -161,7 +161,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     if (node >= gParams.n_hir_nodes) return;
     semantic_member_field_ordinal_by_hir[node] = INVALID;
-    semantic_iterable_kind_by_hir[node] = 0u;
+    // For kinds were checked across every dependency page during inference.
+    // Preserve them here; the once-per-job type clear owns initialization.
+    bool for_node = valid_hir(node) && (compact_hir_core[node].kind == 30u ||
+        (compact_hir_core[node].kind == HIR_STMT && compact_hir_payload[node].a == 7u));
+    if (!for_node) semantic_iterable_kind_by_hir[node] = 0u;
     semantic_function_result_word_count_by_hir[node] = 0u;
 
     uint tag = TYPE_REF_INVALID;
@@ -172,7 +176,46 @@ void main(uint3 dtid: SV_DispatchThreadID)
         HirCore core = compact_hir_core[node];
         HirPayload hir_payload = compact_hir_payload[node];
         uint scalar = compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT;
-        if (scalar != 0u)
+        // Nominal scalar codes omit generic arguments. Type nodes must keep
+        // their checked instance, especially concrete function return types.
+        uint type_token = core.kind == HIR_TYPE ? type_head_token(node) : INVALID;
+        uint type_tag = valid_token(type_token) ? type_expr_ref_tag[type_token] : TYPE_REF_INVALID;
+        bool concrete_type_ref = type_tag == TYPE_REF_SCALAR || type_tag == TYPE_REF_INSTANCE;
+        uint call_tag = core.kind == HIR_CALL_EXPR
+            ? semantic_calls_by_hir[node].return_ref_tag : TYPE_REF_INVALID;
+        bool concrete_call_ref = call_tag == TYPE_REF_SCALAR || call_tag == TYPE_REF_INSTANCE;
+        uint member_tag = core.kind == HIR_MEMBER_EXPR && valid_token(hir_payload.c)
+            ? member_result_ref_tag[hir_payload.c] : TYPE_REF_INVALID;
+        // Field projection already substituted the complete receiver type.
+        // A cached native scalar (for example pointer code 8 for &T) cannot
+        // replace that checked identity before assignment or argument checks.
+        bool checked_member_ref = member_tag != TYPE_REF_INVALID;
+        uint declaration_tag = TYPE_REF_INVALID;
+        uint declaration_payload = INVALID;
+        if (core.kind == HIR_NAME_EXPR)
+            name_token_ref(hir_payload.d, declaration_tag, declaration_payload);
+        else if (core.kind == HIR_PATH_EXPR)
+            name_token_ref(core.token_start, declaration_tag, declaration_payload);
+        else if ((core.kind == HIR_LET_STMT || core.kind == HIR_STMT) &&
+                 (hir_payload.a == HIR_STMT_LET || hir_payload.a == HIR_STMT_CONST))
+            name_token_ref(hir_payload.b, declaration_tag, declaration_payload);
+        // Body specialization updates checked references after ordinary
+        // expression typing. Its scalar cache may still describe symbolic T;
+        // a concrete declaration reference is authoritative for storage and
+        // reads, including str's two-word descriptor.
+        bool concrete_declaration_ref = declaration_tag == TYPE_REF_SCALAR ||
+            declaration_tag == TYPE_REF_INSTANCE;
+        uint match_tag = core.kind == 34u && valid_token(core.token_start)
+            ? decl_type_ref_tag[core.token_start] : TYPE_REF_INVALID;
+        bool concrete_match_ref = match_tag == TYPE_REF_SCALAR ||
+            match_tag == TYPE_REF_INSTANCE;
+        if (concrete_match_ref)
+        {
+            tag = match_tag;
+            payload = decl_type_ref_payload[core.token_start];
+        }
+        else if (scalar != 0u && !concrete_type_ref && !concrete_call_ref &&
+                 !concrete_declaration_ref && !checked_member_ref)
         {
             tag = TYPE_REF_SCALAR;
             payload = scalar;
@@ -288,7 +331,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // `TokenScan`; preferring resolved_path_decl_token here reintroduced the
     // alias declaration and erased the aggregate ABI width.
     uint canonical_aggregate_decl =
-        tag == TYPE_REF_INSTANCE && valid_token(payload)
+        tag == TYPE_REF_INSTANCE && valid_instance(payload)
             ? type_instance_decl_token[payload]
         : tag == TYPE_REF_SCALAR ? scalar_nominal_decl_token(payload) : INVALID;
     // A primitive scalar's source token names its spelling, not an aggregate
@@ -307,11 +350,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? explicit_aggregate_decl
         : valid_token(canonical_aggregate_decl) ? canonical_aggregate_decl
         : fallback_aggregate_decl;
+    uint instance_words = tag == TYPE_REF_INSTANCE ? checked_instance_words(payload) : 0u;
+    // A complete instance owns its layout, including a known zero width.
+    // The provisional call cache may still describe the symbolic body; taking
+    // its maximum with the concrete width preserves stale or unknown layouts.
     semantic_aggregate_word_count_by_hir[node] =
-        valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
-            ? semantic_aggregate_word_count_by_hir[node]
-            : tag == TYPE_REF_INSTANCE && valid_token(payload)
-                ? type_instance_aggregate_word_count[payload]
+        tag == TYPE_REF_INSTANCE && valid_instance(payload) ? instance_words
+            : valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
+                ? semantic_aggregate_word_count_by_hir[node]
             : tag == TYPE_REF_EXTERNAL_CANONICAL && valid_hir(node) &&
               compact_hir_core[node].kind == HIR_TYPE
                 ? external_type_path_width(node) : 0u;

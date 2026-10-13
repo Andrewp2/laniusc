@@ -1,0 +1,29 @@
+module app::main;
+import core::mem;
+import std::io;
+
+struct Pair { left: i32, right: i32 }
+struct Text { label: str, marker: i32 }
+fn keep<T>(value: T) -> T { return value; }
+
+fn main() -> i32 {
+    let first: Pair = Pair { left: -7, right: 42 };
+    let second: Pair = Pair { left: 99, right: -11 };
+    let pairs: [Pair; 2] = [first, second];
+    let copied: [Pair; 2] = core::mem::identity(pairs);
+    let forwarded: [Pair; 2] = keep(copied);
+    if (forwarded[0].left != -7 || forwarded[0].right != 42 || forwarded[1].left != 99 || forwarded[1].right != -11) { return 1; }
+    forwarded[0].left = 123;
+    if (pairs[0].left != -7 || copied[0].left != -7 || first.left != -7 || forwarded[0].left != 123) { return 2; }
+    let text: Text = Text { label: "Ω", marker: -7 };
+    let empty: Text = Text { label: "", marker: 99 };
+    let texts: [Text; 2] = [text, empty];
+    let text_copy: [Text; 2] = core::mem::identity(texts);
+    let text_forwarded: [Text; 2] = keep(text_copy);
+    if (text_forwarded[0].marker != -7 || text_forwarded[1].marker != 99) { return 3; }
+    if (std::io::println(text_forwarded[0].label) != 3 || std::io::println(text_forwarded[1].label) != 1) { return 4; }
+    text_forwarded[0].label = "backup";
+    if (std::io::println(text_forwarded[0].label) != 7 || text_forwarded[0].marker != -7) { return 5; }
+    if (std::io::println(texts[0].label) != 3 || std::io::println(text_copy[0].label) != 3) { return 6; }
+    return 0;
+}

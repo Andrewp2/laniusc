@@ -20,6 +20,8 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
@@ -162,6 +164,19 @@ void publish_function_return_ref(uint fn_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
+    if (node < min(compact_variant_count[0u], gParams.n_hir_nodes))
+    {
+        HirVariant variant = compact_variants[node];
+        if (valid_hir(variant.owner) && valid_token(variant.name_token))
+        {
+            uint declaration = compact_hir_payload[variant.owner].b;
+            if (valid_token(declaration))
+            {
+                fn_return_ref_tag[variant.name_token] = TYPE_REF_INSTANCE;
+                fn_return_ref_payload[variant.name_token] = declaration;
+            }
+        }
+    }
     if (!valid_hir(node) || compact_hir_core[node].kind != HIR_FN)
         return;
     publish_function_return_ref(node);

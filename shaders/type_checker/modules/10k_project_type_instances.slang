@@ -24,19 +24,24 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint4> resolved_value_qualifier_binding;
+StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_decl_generic_param_count;
+StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> type_instance_decl_token;
 RWStructuredBuffer<uint> type_instance_state;
+RWStructuredBuffer<uint> type_instance_len_kind;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -66,21 +71,36 @@ uint leaf_token_for_path(uint path_i)
     return slot < gParams.n_tokens ? path_segment_token[slot] : INVALID;
 }
 
-bool bind_resolved_named_instance(uint owner_token, uint leaf_token, uint decl_token)
+bool bind_resolved_named_instance(uint owner_token, uint leaf_token, uint decl_token, bool qualified_parent)
 {
     if (!valid_token(owner_token) || !valid_token(leaf_token) || !valid_token(decl_token))
         return false;
     if (type_instance_kind[leaf_token] != TYPE_INSTANCE_NAMED)
-        return false;
+    {
+        // A bare parent uses the declaration's symbolic application. Alias
+        // normalization will publish its complete target before member lookup.
+        if (!qualified_parent || type_instance_kind[decl_token] != TYPE_INSTANCE_NAMED) return false;
+        type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
+        type_expr_ref_payload[owner_token] = decl_token;
+        type_expr_ref_tag[leaf_token] = TYPE_REF_INSTANCE;
+        type_expr_ref_payload[leaf_token] = decl_token;
+        return true;
+    }
 
     uint actual_count = type_instance_arg_count[leaf_token];
-    uint expected_count = type_decl_generic_param_count[decl_token];
+    uint expected_count = type_decl_generic_param_count[decl_token] +
+        type_decl_const_param_count_by_owner_token[decl_token];
     if (actual_count != expected_count)
     {
         type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
         return false;
     }
 
+    // Bind the declaration before operand collection. That later pass validates
+    // each type/constant domain and publishes the complete ordered metadata.
+    type_instance_len_kind[leaf_token] =
+        (type_instance_len_kind[leaf_token] & 0x80000000u) |
+        type_decl_generic_param_count[decl_token];
     type_instance_decl_token[leaf_token] = decl_token;
     type_instance_state[leaf_token] = TYPE_INSTANCE_RESOLVED;
     type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
@@ -95,15 +115,25 @@ bool bind_resolved_named_instance(uint owner_token, uint leaf_token, uint decl_t
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint path_i = linear_thread_id(dtid);
-    if (path_i >= gParams.n_hir_nodes)
+    if (path_i >= min(path_count_out[0u], gParams.n_hir_nodes))
         return;
 
     uint decl_i = resolved_type_decl[path_i];
+    uint leaf_token = leaf_token_for_path(path_i);
+    uint4 parent = resolved_value_qualifier_binding[path_i];
+    uint count = path_segment_count[path_i];
+    bool qualified_parent = path_kind[path_i] == 3u && count >= 2u && parent.x == 1u;
+    if (qualified_parent)
+    {
+        // Parent identity is independent of member availability, including
+        // alias targets whose enum family is known only after normalization.
+        decl_i = parent.y;
+        leaf_token = path_segment_token[path_segment_base[path_i] + count - 2u];
+    }
     if (decl_i >= gParams.n_hir_nodes)
         return;
 
     uint owner_token = path_owner_token[path_i];
-    uint leaf_token = leaf_token_for_path(path_i);
     uint decl_token = decl_name_token[decl_i];
-    bind_resolved_named_instance(owner_token, leaf_token, decl_token);
+    bind_resolved_named_instance(owner_token, leaf_token, decl_token, qualified_parent);
 }

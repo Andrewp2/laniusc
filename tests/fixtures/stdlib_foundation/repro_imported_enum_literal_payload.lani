@@ -1,0 +1,7 @@
+import core::option;
+fn main() -> i32 {
+    let packet: core::option::Option<[i32; 2]> = core::option::Some([40, 2]);
+    let values: [i32; 2] = packet.unwrap_or([0, 0]);
+    if (values[0] != 40 || values[1] != 2) { return 1; }
+    return 0;
+}

@@ -1,0 +1,30 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+error[E0609]: no field `hir_expr_form` on type `ResidentParseResult`
+     --> tests/parser_hir_records.rs:17180:35
+      |
+17180 |                 assert_eq!(parsed.hir_expr_form[raw], HIR_EXPR_FORM_INT);
+      |                                   ^^^^^^^^^^^^^ unknown field
+      |
+help: a field with a similar name exists
+      |
+17180 -                 assert_eq!(parsed.hir_expr_form[raw], HIR_EXPR_FORM_INT);
+17180 +                 assert_eq!(parsed.hir_type_form[raw], HIR_EXPR_FORM_INT);
+      |
+
+error[E0609]: no field `hir_expr_int_value` on type `ResidentParseResult`
+     --> tests/parser_hir_records.rs:17181:35
+      |
+17181 |                 assert_eq!(parsed.hir_expr_int_value[raw], ordinal as u32);
+      |                                   ^^^^^^^^^^^^^^^^^^ unknown field
+      |
+help: a field with a similar name exists
+      |
+17181 -                 assert_eq!(parsed.hir_expr_int_value[raw], ordinal as u32);
+17181 +                 assert_eq!(parsed.hir_type_len_value[raw], ordinal as u32);
+      |
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `laniusc` (test "parser_hir_records") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

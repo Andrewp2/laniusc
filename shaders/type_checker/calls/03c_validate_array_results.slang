@@ -1,3 +1,7 @@
+import type_checker.checked_array_counts;
+import type_checker.constant_atoms;
+import type_checker.constant_parameter_slots;
+import type_checker.calls.checked_constant_environment;
 // Compact-HIR array call-result validation.
 //
 // This pass runs after bounded generic array call inference. It keeps
@@ -10,6 +14,12 @@
 // closed before bounded cache slots are consumed.
 
 import hir_records;
+import external_type_identity;
+import type_checker.concrete_type_equality;
+import type_checker.instance_arguments;
+import type_checker.calls.claim_lookup;
+import type_checker.calls.checked_call_environment;
+import type_checker.scoped_type_equality;
 import status;
 
 struct Params
@@ -25,27 +35,20 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint4> call_arg_record;
-StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_row_ordinal;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_arg_param_row;
-StructuredBuffer<uint> call_result_instance;
+RWStructuredBuffer<uint> call_result_instance;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_ref_tag;
 StructuredBuffer<uint> call_param_row_ref_payload;
 StructuredBuffer<uint> call_generic_slot_type;
-StructuredBuffer<uint> call_const_slot_len;
-StructuredBuffer<uint> call_generic_claim_callee;
-StructuredBuffer<uint> call_generic_claim_slot;
 StructuredBuffer<uint> call_generic_claim_type;
-StructuredBuffer<uint> call_const_claim_callee;
-StructuredBuffer<uint> call_const_claim_slot;
-StructuredBuffer<uint> call_const_claim_len;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> decl_type_ref_tag;
@@ -53,13 +56,23 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> method_call_name_id;
+
+StructuredBuffer<uint> call_return_generic_slot;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> call_return_type;
@@ -86,8 +99,6 @@ static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 
-static const uint TYPE_LEN_LITERAL = 1u;
-static const uint TYPE_LEN_CONST_PARAM = 2u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_ARRAY_BASE = 128u;
@@ -97,6 +108,58 @@ static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+
+public struct CheckedConcreteTypeGraph : IScopedTypeGraph
+{
+    public static bool constant_value(uint row, out uint3 value)
+    { return checked_constant_atom_value(row, value); }
+    public static uint constant_parameter_scalar(uint reference)
+    { return checked_constant_parameter_scalar(reference); }
+    public static bool constant_projection(uint row, out uint scalar, out uint2 child)
+    { return checked_constant_projection(row, scalar, child); }
+    public static bool parameter_is_valid(uint reference, bool constant)
+    { return source_parameter_is_valid<CheckedConcreteTypeGraph>(reference, constant); }
+    public static bool substitute_type_parameter(uint environment, uint reference, out uint tag, out uint payload)
+    { return source_substitute_type_parameter<CheckedConcreteTypeGraph>(environment, reference, tag, payload); }
+    public static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
+    { return source_substitute_constant_parameter<CheckedConcreteTypeGraph>(environment, reference, kind, value); }
+    public static uint constant_parameter_slot(uint token) { return type_const_param_slot_by_token[token]; }
+    public static bool environment_constant(uint environment, uint slot, out uint kind, out uint value)
+    { return checked_call_environment_constant_ref(environment, slot, kind, value); }
+    public static uint parameter_slot(uint token)
+    { return type_generic_param_slot_by_token[token]; }
+    public static bool environment_argument(uint environment, uint slot, out uint tag, out uint payload)
+    { return checked_call_environment_argument(environment, slot, tag, payload); }
+    public static uint metadata(uint instance, uint field)
+    {
+        switch (field)
+        {
+        case 0u: return type_instance_kind[instance];
+        case 1u: return type_instance_decl_token[instance];
+        case 2u: return type_instance_arg_count[instance];
+        case 3u: return type_instance_elem_ref_tag[instance];
+        case 4u: return type_instance_elem_ref_payload[instance];
+        case 5u: return type_instance_len_kind[instance];
+        case 6u: return type_instance_len_payload[instance];
+        case 7u: return external_type_library_id[instance];
+        case 8u: return external_type_unit_id[instance];
+        case 9u: return external_type_local_index[instance];
+        default: return INVALID;
+        }
+    }
+
+    public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
+    {
+        uint source_capacity; uint stride;
+        type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
+        return checked_instance_argument(instance, slot, source_capacity,
+            type_instance_arg_count, type_instance_arg_start,
+            type_instance_arg_ref_tag, type_instance_arg_ref_payload,
+            type_instance_arg_row_start, type_instance_arg_row_count_out,
+            type_instance_arg_row_ref_tag, type_instance_arg_row_ref_payload, tag, payload);
+    }
+}
+
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -117,6 +180,15 @@ bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
 }
+
+uint type_capacity()
+{
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return capacity;
+}
+
+bool valid_instance(uint instance) { return instance < type_capacity(); }
 
 uint stmt_slot(uint node, uint slot)
 {
@@ -174,17 +246,23 @@ uint call_callee_token(uint call_node)
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
+    uint callee_node = compact_hir_payload[call_node].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[callee_node].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
     uint call_token = compact_hir_core[call_node].token_start;
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
     HirCore callee = compact_hir_core[callee_node];
     HirPayload payload = compact_hir_payload[callee_node];
-    uint token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    uint token = payload.d;
     if (!valid_token(token)) token = callee.token_start;
     return valid_token(token) ? token : INVALID;
 }
@@ -252,13 +330,13 @@ bool call_window_fits_cache(uint callee_token, uint call_node)
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
 {
-    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+    if (tag != TYPE_REF_INSTANCE || !valid_instance(payload))
         return INVALID;
     if (type_instance_kind[payload] != TYPE_INSTANCE_ARRAY)
         return INVALID;
 
     uint len_kind = type_instance_len_kind[payload];
-    if (len_kind != TYPE_LEN_LITERAL && len_kind != TYPE_LEN_CONST_PARAM)
+    if (!checked_source_array_length_valid(len_kind, type_instance_len_payload[payload], gParams.n_tokens))
         return INVALID;
     return payload;
 }
@@ -327,7 +405,7 @@ bool concrete_array_elem_ref(uint tag, uint payload)
         return true;
     if (tag == TYPE_REF_GENERIC_PARAM)
         return false;
-    return tag == TYPE_REF_INSTANCE && valid_token(payload);
+    return tag == TYPE_REF_INSTANCE && valid_instance(payload);
 }
 
 uint type_code_for_ref(uint tag, uint payload)
@@ -344,7 +422,7 @@ uint type_code_for_ref(uint tag, uint payload)
 
 uint array_type_code_from_instance(uint instance)
 {
-    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
+    if (!valid_instance(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
         return TY_UNKNOWN;
     uint elem_ty = type_code_for_ref(
         type_instance_elem_ref_tag[instance],
@@ -354,29 +432,18 @@ uint array_type_code_from_instance(uint instance)
 
 bool same_array_len(uint lhs, uint rhs)
 {
-    uint lhs_kind = type_instance_len_kind[lhs];
-    uint rhs_kind = type_instance_len_kind[rhs];
-    if (lhs_kind != rhs_kind)
-        return false;
-    if (lhs_kind == TYPE_LEN_LITERAL)
-        return type_instance_len_payload[lhs] == type_instance_len_payload[rhs];
-    if (lhs_kind == TYPE_LEN_CONST_PARAM)
-    {
-        uint lhs_payload = type_instance_len_payload[lhs];
-        uint rhs_payload = type_instance_len_payload[rhs];
-        uint lhs_slot = valid_token(lhs_payload) ? type_const_param_slot_by_token[lhs_payload] : INVALID;
-        uint rhs_slot = valid_token(rhs_payload) ? type_const_param_slot_by_token[rhs_payload] : INVALID;
-        return lhs_slot != INVALID && lhs_slot == rhs_slot;
-    }
-    return false;
+    return checked_source_array_lengths_equal(
+        uint2(type_instance_len_kind[lhs], type_instance_len_payload[lhs]),
+        uint2(type_instance_len_kind[rhs], type_instance_len_payload[rhs]), gParams.n_tokens);
 }
 
 bool concrete_bounded_array_instance(uint instance)
 {
-    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
+    if (!valid_instance(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
         return false;
-    if (type_instance_len_kind[instance] != TYPE_LEN_LITERAL)
-        return false;
+    uint count;
+    if (!checked_source_array_count(type_instance_len_kind[instance],
+        type_instance_len_payload[instance], gParams.n_tokens, count)) return false;
     return concrete_array_elem_ref(
         type_instance_elem_ref_tag[instance],
         type_instance_elem_ref_payload[instance]);
@@ -384,22 +451,16 @@ bool concrete_bounded_array_instance(uint instance)
 
 bool same_bounded_array_instance(uint lhs, uint rhs)
 {
-    if (!valid_token(lhs) || !valid_token(rhs))
+    if (!valid_instance(lhs) || !valid_instance(rhs))
         return false;
     if (type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
         type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY)
         return false;
-    if (!same_array_len(lhs, rhs))
-        return false;
-    return same_type_ref(
-        type_instance_elem_ref_tag[lhs],
-        type_instance_elem_ref_payload[lhs],
-        type_instance_elem_ref_tag[rhs],
-        type_instance_elem_ref_payload[rhs]);
+    return concrete_type_refs_equal<CheckedConcreteTypeGraph>(
+        TYPE_REF_INSTANCE, lhs, TYPE_REF_INSTANCE, rhs, type_capacity());
 }
 
-bool array_elem_matches_call_state(
-    uint row,
+bool array_elem_matches_call_environment(
     uint callee_token,
     uint expected_instance,
     uint actual_instance)
@@ -409,34 +470,12 @@ bool array_elem_matches_call_state(
     uint actual_tag = type_instance_elem_ref_tag[actual_instance];
     uint actual_payload = type_instance_elem_ref_payload[actual_instance];
 
-    if (expected_tag == TYPE_REF_SCALAR)
-        return actual_tag == TYPE_REF_SCALAR && actual_payload == expected_payload;
-
-    if (expected_tag != TYPE_REF_GENERIC_PARAM)
-        return false;
-
-    uint slot = valid_token(expected_payload)
-        ? type_generic_param_slot_by_token[expected_payload]
-        : INVALID;
-    if (slot == INVALID)
-        return false;
-
-    uint actual_ty = type_code_for_ref(actual_tag, actual_payload);
-    if (actual_ty == TY_UNKNOWN)
-        return false;
-
-    if (slot < PARAM_CACHE_STRIDE)
-    {
-        uint inferred = call_generic_slot_type[callee_token * PARAM_CACHE_STRIDE + slot];
-        if (inferred == INVALID || inferred == TY_UNKNOWN)
-            return true;
-        return actual_ty == inferred;
-    }
-
-    return row < call_arg_row_count_out[0] &&
-           call_generic_claim_callee[row] == callee_token &&
-           call_generic_claim_slot[row] == slot &&
-           call_generic_claim_type[row] == actual_ty;
+    // Parameter inference has accepted complete bindings. Compare the entire
+    // element under that environment, including nominal arguments and nested
+    // array/slice elements; scalar cache codes cannot represent these facts.
+    return scoped_type_refs_equal<CheckedConcreteTypeGraph>(
+        expected_tag, expected_payload, 0x80000000u | callee_token,
+        actual_tag, actual_payload, INVALID, type_capacity(), gParams.n_tokens);
 }
 
 bool array_len_matches_call_state(
@@ -445,36 +484,11 @@ bool array_len_matches_call_state(
     uint expected_instance,
     uint actual_instance)
 {
-    uint expected_kind = type_instance_len_kind[expected_instance];
-    uint expected_payload = type_instance_len_payload[expected_instance];
-    uint actual_kind = type_instance_len_kind[actual_instance];
-    uint actual_payload = type_instance_len_payload[actual_instance];
-
-    if (expected_kind == TYPE_LEN_LITERAL)
-        return actual_kind == TYPE_LEN_LITERAL && actual_payload == expected_payload;
-
-    if (expected_kind != TYPE_LEN_CONST_PARAM)
-        return false;
-
-    uint slot = valid_token(expected_payload)
-        ? type_const_param_slot_by_token[expected_payload]
-        : INVALID;
-    if (slot == INVALID)
-        return false;
-
-    if (slot >= PARAM_CACHE_STRIDE)
-    {
-        return row < call_arg_row_count_out[0] &&
-               call_const_claim_callee[row] == callee_token &&
-               call_const_claim_slot[row] == slot &&
-               call_const_claim_len[row] == actual_payload;
-    }
-
-    uint inferred = call_const_slot_len[callee_token * PARAM_CACHE_STRIDE + slot];
-    if (inferred == INVALID)
-        return true;
-
-    return actual_kind == TYPE_LEN_LITERAL && actual_payload == inferred;
+    return scoped_constant_counts_equal<CheckedConcreteTypeGraph, CheckedConcreteTypeGraph>(
+        uint3(type_instance_len_kind[expected_instance], type_instance_len_payload[expected_instance],
+            0x80000000u | callee_token),
+        uint3(type_instance_len_kind[actual_instance], type_instance_len_payload[actual_instance], INVALID),
+        gParams.n_tokens);
 }
 
 bool array_instance_matches_call_state(
@@ -483,14 +497,14 @@ bool array_instance_matches_call_state(
     uint expected_instance,
     uint actual_instance)
 {
-    if (!valid_token(expected_instance) || !valid_token(actual_instance))
+    if (!valid_instance(expected_instance) || !valid_instance(actual_instance))
         return false;
     if (type_instance_kind[expected_instance] != TYPE_INSTANCE_ARRAY ||
         type_instance_kind[actual_instance] != TYPE_INSTANCE_ARRAY)
         return false;
     if (!concrete_bounded_array_instance(actual_instance))
         return false;
-    return array_elem_matches_call_state(row, callee_token, expected_instance, actual_instance) &&
+    return array_elem_matches_call_environment(callee_token, expected_instance, actual_instance) &&
            array_len_matches_call_state(row, callee_token, expected_instance, actual_instance);
 }
 
@@ -529,6 +543,30 @@ void validate_array_call_arg_row(uint row)
         TY_ARRAY_BASE * 256u + TY_UNKNOWN);
 }
 
+uint direct_generic_array_result(uint callee)
+{
+    uint function = call_fn_index[callee];
+    if (!valid_token(function)) return INVALID;
+    uint slot = call_return_generic_slot[function];
+    uint count = call_generic_claim_count_out[0u];
+    if (slot == INVALID || count == 0u) return INVALID;
+    uint link = call_generic_claim_lookup_head[call_claim_lookup_bucket(callee, slot, count)];
+    uint accepted = INVALID;
+    for (uint step = 0u; step < count && link != 0u; step++)
+    {
+        uint row = link - 1u;
+        if (row >= count) break;
+        if (call_generic_claim_callee[row] == callee && call_generic_claim_slot[row] == slot &&
+            call_generic_claim_ref_tag[row] == TYPE_REF_INSTANCE)
+            accepted = min(accepted, row);
+        link = call_generic_claim_lookup_next[row];
+    }
+    if (accepted == INVALID) return INVALID;
+    uint instance = call_generic_claim_ref_payload[accepted];
+    return valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY
+        ? instance : INVALID;
+}
+
 void validate_array_call_let(uint node)
 {
     if (!valid_node(node) ||
@@ -559,6 +597,31 @@ void validate_array_call_let(uint node)
         return;
     if (!call_window_fits_cache(callee_token, call_node))
         return;
+    uint checked_result = call_result_instance[call_node];
+    if (expected_instance != INVALID && valid_instance(checked_result) &&
+        type_instance_kind[checked_result] == TYPE_INSTANCE_ARRAY)
+    {
+        // Complete local/imported return materialization is authoritative.
+        // A dependency callee has no local fn_return_ref row to compare.
+        if (!concrete_type_refs_equal<CheckedConcreteTypeGraph>(TYPE_REF_INSTANCE, expected_instance,
+            TYPE_REF_INSTANCE, checked_result, type_capacity()))
+            record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
+                TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
+        return;
+    }
+    uint generic_instance = direct_generic_array_result(callee_token);
+    if (generic_instance != INVALID && expected_instance != INVALID)
+    {
+        if (concrete_type_refs_equal<CheckedConcreteTypeGraph>(TYPE_REF_INSTANCE, expected_instance,
+                TYPE_REF_INSTANCE, generic_instance, type_capacity()))
+        {
+            call_result_instance[call_node] = generic_instance;
+            return;
+        }
+        record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
+            TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
+        return;
+    }
     if (!is_array_type(call_return_type[callee_token]))
         return;
 

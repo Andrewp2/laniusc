@@ -1,3 +1,4 @@
+import primitive_types;
 import hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
@@ -17,6 +18,9 @@ StructuredBuffer<uint> semantic_local_prefix;
 StructuredBuffer<uint> semantic_function_id;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_tag;
+StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> semantic_iterable_kind;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 RWStructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 
@@ -81,6 +85,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.type_id = short_circuit ? 2u
             : match_result && local == 1u ? SEMANTIC_LIR_TY_POINTER
             : local == 0u ? semantic_value_type_by_hir[hir] : 3u;
+        HirCore core = compact_hir_core[hir];
+        HirPayload payload = compact_hir_payload[hir];
+        bool for_loop = core.kind == HIR_FOR_STMT ||
+            (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
+        uint scalar = semantic_expr_ref_tag[hir] == 1u ? semantic_expr_ref_payload[hir] : 0u;
+        if (for_loop && scalar_is_known(scalar))
+        {
+            uint form = payload.c < hir_count ? compact_hir_payload[payload.c].a : 0u;
+            bool range_loop = (form >= HIR_EXPR_RANGE && form <= HIR_EXPR_RANGE_TO_INCLUSIVE) ||
+                semantic_iterable_kind[hir] == 1u || semantic_iterable_kind[hir] == 2u;
+            if (local == 0u || range_loop) result.type_id = scalar;
+        }
         semantic_lir_locals[row + local] = result;
     }
 }

@@ -1,0 +1,31 @@
+struct Cell<T> { guard: i32, value: T }
+struct Envelope<T> { head: i32, payload: T, tail: i32 }
+enum Payload<T> { Filled(T), Empty }
+fn keep<T>(value: T) -> T { return value; }
+fn wrap<T>(value: T) -> Payload<T> { return Filled(value); }
+fn unwrap<T>(value: Payload<T>, fallback: T) -> T {
+    return match (value) { Filled(item) => item, Empty => fallback };
+}
+fn make(value: u64) -> Cell<u64> { return Cell { guard: 37, value: value }; }
+fn main() -> i32 {
+    let words: [u64; 3] = [4294967296, 10000000000, 18446744073709551615];
+    let original: Envelope<Cell<[u64; 3]>> = Envelope { head: 13, payload: Cell { guard: 29, value: words }, tail: 41 };
+    let copied: Envelope<Cell<[u64; 3]>> = keep(original);
+    original.payload.value[1] = 7;
+    if (copied.head != 13 || copied.tail != 41 || copied.payload.guard != 29) { return 1; }
+    if ((copied.payload.value[0] >> 32) != 1 || (copied.payload.value[0] & 4294967295) != 0) { return 2; }
+    if ((copied.payload.value[1] >> 32) != 2 || (copied.payload.value[1] & 4294967295) != 1410065408) { return 3; }
+    if ((copied.payload.value[2] >> 32) != 4294967295 || (copied.payload.value[2] & 4294967295) != 4294967295) { return 4; }
+    let tagged: Payload<Envelope<Cell<[u64; 3]>>> = wrap(copied);
+    let recovered: Envelope<Cell<[u64; 3]>> = unwrap(keep(tagged), original);
+    if (recovered.payload.value[1] != 10000000000 || recovered.tail != 41) { return 5; }
+    let ordinary: Cell<u64> = make(9223372036854775815);
+    let generic: Cell<u64> = unwrap(wrap(ordinary), make(0));
+    if ((generic.value >> 32) != 2147483648 || (generic.value & 4294967295) != 7 || generic.guard != 37) { return 6; }
+    let negative: [i64; 2] = [-9223372036854775808, -4294967297];
+    let negative_copy: [i64; 2] = keep(negative);
+    negative[0] = 1;
+    if ((negative_copy[0] >> 63) != -1 || (negative_copy[0] & 4294967295) != 0) { return 7; }
+    if ((negative_copy[1] >> 32) != -2 || (negative_copy[1] & 4294967295) != 4294967295) { return 8; }
+    return 0;
+}

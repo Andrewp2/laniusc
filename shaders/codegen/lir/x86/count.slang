@@ -1,7 +1,10 @@
+import native_value_layout;
+import primitive_types;
 import codegen.lir.x86.common;
 import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params { uint semantic_capacity; uint semantic_start; uint page_capacity; uint reserved; };
@@ -48,15 +51,11 @@ bool constant_i32_value(uint row, uint total, out uint value)
         return false;
     uint left = opt_ir_operands[operands.a].a;
     uint right = opt_ir_operands[operands.b].a;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_ADD) value = left + right;
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_SUB) value = left - right;
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_MUL) value = left * right;
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_REM && right != 0u)
-        value = uint(int(left) % int(right));
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_DIV && right != 0u)
-        value = uint(int(left) / int(right));
-    else return false;
-    return true;
+    // Static diagnostics use the same admitted32-bit fold contract as
+    // target selection. Narrow arithmetic must wrap at its own width and
+    // wide arithmetic must retain both limbs; neither can use this cache.
+    return x86_fold_integer_binary(opt_ir_op(core), core.type_id,
+        operands.c, left, right, value);
 }
 
 void report_diagnostic(uint reason, uint detail_kind, uint detail, uint hir,
@@ -100,7 +99,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint semantic_row = semantic_schedule_order[scheduled_row];
-    if (semantic_row >= total || x86_live_by_semantic[semantic_row] == 0u)
+    if (!opt_ir_node_is_executable(semantic_row, total) ||
+        x86_live_by_semantic[semantic_row] == 0u)
     {
         target_lir_count[scheduled_row] = 0u;
         return;
@@ -144,15 +144,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     for (uint arg_i = 0u; arg_i < argument_count; arg_i += 1u)
     {
         SemanticLirCallArg argument = semantic_lir_call_args[argument_start + arg_i];
-        argument_rows +=
-            (argument.value_metadata &
-             (SEMANTIC_LIR_VALUE_STRING | SEMANTIC_LIR_VALUE_ARRAY_PAIR)) != 0u
-                ? 2u : 1u;
+        argument_rows += x86_abi_argument_width(argument.value_metadata);
     }
     OptIrNodeOperands operands = opt_ir_operands[semantic_row];
     uint constant_rhs = 0u;
     if ((opt_ir_op(core) == SEMANTIC_LIR_OP_DIV || opt_ir_op(core) == SEMANTIC_LIR_OP_REM) &&
-        core.type_id != 5u &&
+        !scalar_is_float(core.type_id) &&
         constant_i32_value(operands.b, total, constant_rhs) && constant_rhs == 0u)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_ZERO_DIVISOR,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
@@ -221,14 +218,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
             ? x86_imported_call_result_words(core) :
         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        intrinsic_slice_from_raw_parts(operands.a) ? 2u : 0u;
+        intrinsic_slice_from_raw_parts(operands.a) ? NATIVE_SLICE_WORDS : 0u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && operands.a >= function_count)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_TARGET,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
     if (((opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
           operands.a < function_count) ||
          opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) &&
-        result_words == 0u && x86_semantic_type_is_aggregate(core))
+        result_words == 0u && core.value_word_count != 0u &&
+        x86_semantic_type_is_aggregate(core))
         report_diagnostic(core.value_word_count != 0u
                 ? LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT
                 : opt_ir_type_ref_tag(core) == SEMANTIC_TYPE_REF_INSTANCE
@@ -249,12 +247,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
-        (operands.a == INVALID || operands.b == INVALID || operands.c == INVALID))
+        ((operands.a == INVALID) != (operands.b == INVALID) || operands.c == INVALID))
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
     uint return_words = opt_ir_op(core) == SEMANTIC_LIR_OP_RETURN && owner < function_count
-        ? semantic_lir_functions[owner].result_word_count : 0u;
+        ? semantic_lir_functions[owner].result_type == SEMANTIC_LIR_TY_STRING
+            ? 2u : semantic_lir_functions[owner].result_word_count
+        : 0u;
     uint copy_words = 0u;
+    // Invalid checked layouts must not enter unsigned expansion arithmetic.
+    // INVALID + the call row would wrap to zero and remove a live call.
+    if (core.value_word_count == INVALID || result_words == INVALID || return_words == INVALID)
+    {
+        report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT,
+            LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
+        target_lir_count[scheduled_row] = 0u;
+        return;
+    }
     // Field and index stores own their destination directly. Only a local
     // declaration store needs extra rows to copy an aggregate value.
     if (x86_lir_opcode(core) == X86_LIR_OP_STORE_LOCAL &&
@@ -267,7 +276,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? semantic_lir_functions[value_operands.a].result_word_count : 0u;
         uint value_words = max(call_words,
             x86_aggregate_value_word_count(value_core, value_operands));
-        if (x86_semantic_type_is_aggregate(core) || value_words != 0u)
+        if (!x86_direct_array_pair(value_core) &&
+            (x86_semantic_type_is_aggregate(core) || value_words != 0u))
             copy_words = max(core.value_word_count, value_words);
     }
     uint operation_rows = x86_lir_count(core, operands);
@@ -282,6 +292,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
     }
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY)
+        operation_rows = 1u + core.value_word_count;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         uint element_total = semantic_lir_aggregate_element_total[0u];
@@ -305,6 +317,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint value_words = max(call_words,
             x86_aggregate_value_word_count(value_core, value_operands));
         operation_rows = max(operation_rows, value_words);
+        if (core.type_id == SEMANTIC_LIR_TY_STRING) operation_rows = max(operation_rows, 2u);
+        if (x86_direct_array_pair(value_core)) operation_rows = max(operation_rows, NATIVE_SLICE_WORDS);
+        if (core.value_word_count == 0u && x86_semantic_type_is_aggregate(core))
+            operation_rows = 0u;
     }
     target_lir_count[scheduled_row] = operation_rows +
         argument_rows + result_words + return_words + copy_words;

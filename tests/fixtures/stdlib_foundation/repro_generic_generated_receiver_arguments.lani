@@ -1,0 +1,16 @@
+module app::main;
+import core::five;
+
+struct Holder<T> { child: core::five::Five<i32, bool, char, u32, T>, sentinel: i32 }
+
+fn main() -> i32 {
+    // The concrete Five application is implied by Holder<i32>, never annotated.
+    let value: Holder<i32> = Holder {
+        child: core::five::Five { first: 11, second: false, third: 'Ω', fourth: 4294967295, fifth: -7 },
+        sentinel: 99,
+    };
+    if (value.child.last() != -7 || value.sentinel != 99) { return 1; }
+    if (value.child.first_value() != 11 || value.child.second_value() ||
+        value.child.third_value() != 'Ω' || value.child.fourth_value() != 4294967295) { return 2; }
+    return 0;
+}

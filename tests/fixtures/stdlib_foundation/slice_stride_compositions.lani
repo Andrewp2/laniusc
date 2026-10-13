@@ -1,0 +1,34 @@
+import core::mem;
+import core::option;
+import std::io;
+
+struct Container { before: i32, values: [i32; 3], after: i32 }
+struct View { before: i32, values: [i32], after: i32 }
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn cross(first: [i32], label: str, second: [i32], number: i32) -> [i32] {
+    std::io::println(label);
+    first[1] = number;
+    second[2] = number + 1;
+    return second;
+}
+fn main() -> i32 {
+    let packed: [i32; 3] = [1, 2, 3];
+    let owner: Container = Container { before: -7, values: [11, 22, 33], after: 99 };
+    let native: [i32] = keep(cross(packed, "native", owner.values, 41));
+    let forward: [i32] = cross(owner.values, "packed", packed, 51);
+    let option: core::option::Option<[i32]> = core::option::Some(keep(forward));
+    let selected: [i32] = core::option::unwrap_or(keep(option), native);
+    if (native[1] != 51 || native[2] != 42 || selected[1] != 41 || selected[2] != 52) { return 1; }
+    let views: [[i32]; 2] = [native, selected];
+    views[0] = selected;
+    views[0][0] = 7;
+    if (packed[0] != 7 || native[0] != 11) { return 2; }
+    let original: View = View { before: -9, values: native, after: 101 };
+    let copy: View = keep(original);
+    copy.values[0] = -11;
+    copy.values = selected;
+    copy.values[0] = 8;
+    if (owner.values[0] != -11 || original.values[0] != -11 || packed[0] != 8) { return 3; }
+    if (owner.before != -7 || owner.after != 99 || copy.before != -9 || copy.after != 101) { return 4; }
+    return 0;
+}

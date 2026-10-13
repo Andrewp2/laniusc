@@ -1,0 +1,11 @@
+
+running 6 tests
+test generic_record_field_constraints_reject_conflicts_and_missing_bindings ... ok
+test generic_record_fields_infer_complete_types ... ok
+test generic_record_fields_infer_constant_and_symbolic_parameters ... ok
+test generic_record_fields_infer_thirty_two_bindings ... ok
+test generic_record_literal_receiving_contexts_compose_values_and_scopes ... ok
+test generic_record_literal_receiving_contexts_preserve_imported_identity ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 266 filtered out; finished in 8.14s
+

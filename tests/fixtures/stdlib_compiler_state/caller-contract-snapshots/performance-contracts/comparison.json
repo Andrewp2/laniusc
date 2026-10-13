@@ -1,0 +1,116 @@
+{
+  "status": "unbatched snapshot reader; retained for comparison",
+  "order": [
+    "baseline",
+    "current",
+    "baseline"
+  ],
+  "runs": [
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/caller-contract-snapshot-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.3181103079987224,
+      "binary_sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
+      "samples_ms": [
+        66.747,
+        64.189,
+        65.302,
+        63.185,
+        61.127,
+        61.864,
+        63.123,
+        64.601,
+        64.729,
+        65.499
+      ],
+      "median_ms": 64.395,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 3.619779111002572,
+      "binary_sha256": "6856fec5184d67f760df0d2a6b662e7f3b8bf626c7fd9a35ba6ab731950c2ea4",
+      "samples_ms": [
+        167.594,
+        162.032,
+        163.064,
+        163.214,
+        164.916,
+        164.095,
+        161.412,
+        162.11,
+        165.603,
+        163.567
+      ],
+      "median_ms": 163.3905,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/caller-contract-snapshot-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.3682886509996024,
+      "binary_sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
+      "samples_ms": [
+        66.834,
+        67.107,
+        66.553,
+        64.711,
+        61.628,
+        61.529,
+        61.307,
+        61.39,
+        63.301,
+        65.094
+      ],
+      "median_ms": 64.006,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    }
+  ],
+  "pooled_median_ms": {
+    "baseline": 64.395,
+    "current": 163.3905
+  },
+  "current_change_percent": 153.7316561844864,
+  "source_snapshot": "unbatched-sources.json",
+  "baseline_limitations": "This example precedes the final imported structural-edge scheduling fix and capacity diagnostic change. Shader sources are identical to completed borrowed checkpoint; do not call it an exact immediate pre-snapshot baseline. No timing or correctness run performed at preservation."
+}

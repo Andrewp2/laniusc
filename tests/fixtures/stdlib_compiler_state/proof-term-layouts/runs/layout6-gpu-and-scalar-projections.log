@@ -1,0 +1,38 @@
+
+running 7 tests
+test codegen::lowering::tests::physical_gpu_lowers_scalar_dependency_graph ... ok
+test codegen::lowering::tests::physical_gpu_materializes_control_events_and_unsupported_rows ... ok
+test codegen::lowering::tests::physical_gpu_preserves_unowned_family_shapes_without_executable_rows ... ok
+test codegen::lowering::tests::physical_gpu_projects_dense_function_abi ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_native_layout_binds_gapped_parameter_identities_in_declared_operand_order ... [laniusc][pipeline-timing] label=codegen_x86_link_symbol_partition_clear total_ms=100.314 shader_module_ms=0.005 pipeline_layout_ms=0.030 compute_pipeline_ms=100.279
+[laniusc][pipeline-timing] label=type_checker/calls/02_functions total_ms=102.788 shader_module_ms=0.133 pipeline_layout_ms=0.208 compute_pipeline_ms=102.447
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/02_05_admit_nodes total_ms=953.372 shader_module_ms=0.100 pipeline_layout_ms=0.034 compute_pipeline_ms=953.238
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/02_06_admit_edges total_ms=318.840 shader_module_ms=0.062 pipeline_layout_ms=0.063 compute_pipeline_ms=318.715
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/02_07_admit_roots total_ms=323.823 shader_module_ms=0.062 pipeline_layout_ms=0.056 compute_pipeline_ms=323.705
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/02_08_admit_predicates total_ms=909.477 shader_module_ms=0.118 pipeline_layout_ms=0.056 compute_pipeline_ms=909.304
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/02_09_admit_implementations total_ms=3954.865 shader_module_ms=0.205 pipeline_layout_ms=0.066 compute_pipeline_ms=3954.594
+[laniusc][pipeline-timing] label=type_checker/program_evidence/native_layout/entries/03_admit_recipe_groups total_ms=214.607 shader_module_ms=0.168 pipeline_layout_ms=0.054 compute_pipeline_ms=214.385
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/14_validate_contexts total_ms=2894.282 shader_module_ms=0.196 pipeline_layout_ms=0.038 compute_pipeline_ms=2894.048
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/15_build_assumption_index total_ms=1554.256 shader_module_ms=0.137 pipeline_layout_ms=0.074 compute_pipeline_ms=1554.045
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/18_reduce_calls total_ms=906.814 shader_module_ms=0.145 pipeline_layout_ms=0.082 compute_pipeline_ms=906.588
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_05_admit_nodes total_ms=346.777 shader_module_ms=0.345 pipeline_layout_ms=0.060 compute_pipeline_ms=346.372
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_06_admit_edges total_ms=194.196 shader_module_ms=0.210 pipeline_layout_ms=0.066 compute_pipeline_ms=193.920
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_07_admit_roots total_ms=251.228 shader_module_ms=0.282 pipeline_layout_ms=0.086 compute_pipeline_ms=250.860
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_11_admit_environments total_ms=2562.847 shader_module_ms=0.223 pipeline_layout_ms=0.071 compute_pipeline_ms=2562.553
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_12_admit_bindings total_ms=237.832 shader_module_ms=0.278 pipeline_layout_ms=0.069 compute_pipeline_ms=237.485
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_13_admit_contexts total_ms=2100.074 shader_module_ms=0.208 pipeline_layout_ms=0.064 compute_pipeline_ms=2099.803
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/32_15_admit_calls total_ms=8923.397 shader_module_ms=0.180 pipeline_layout_ms=0.033 compute_pipeline_ms=8923.184
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/41_normalize_original total_ms=1307.003 shader_module_ms=0.154 pipeline_layout_ms=0.030 compute_pipeline_ms=1306.818
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/42_normalize_prerequisite total_ms=1408.829 shader_module_ms=0.162 pipeline_layout_ms=0.083 compute_pipeline_ms=1408.584
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/43_validate_original_normalization total_ms=1469.539 shader_module_ms=0.207 pipeline_layout_ms=0.077 compute_pipeline_ms=1469.255
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/44_validate_prerequisite_normalization total_ms=1503.093 shader_module_ms=0.208 pipeline_layout_ms=0.072 compute_pipeline_ms=1502.813
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/46_hash_normalized_goals total_ms=1144.387 shader_module_ms=0.182 pipeline_layout_ms=0.044 compute_pipeline_ms=1144.162
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/52_resolve_work total_ms=630.275 shader_module_ms=0.109 pipeline_layout_ms=0.031 compute_pipeline_ms=630.135
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/54_admit_binding_rows total_ms=141.699 shader_module_ms=0.167 pipeline_layout_ms=0.055 compute_pipeline_ms=141.478
+[laniusc][pipeline-timing] label=type_checker/program_evidence/entries/64_publish_roots total_ms=2593.220 shader_module_ms=0.196 pipeline_layout_ms=0.031 compute_pipeline_ms=2592.993
+ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_native_layout_materializes_nested_compositions_and_terminal_descriptors ... ok
+test compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_native_layout_rejects_capacity_and_foreign_lexical_bindings_then_recovers ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 744 filtered out; finished in 41.09s
+

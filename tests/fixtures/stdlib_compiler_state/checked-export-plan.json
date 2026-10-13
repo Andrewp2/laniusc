@@ -1,0 +1,42 @@
+{
+  "status": "checked imported alias targets and interface export verified; overall generics goal remains active",
+  "evidence": [
+    "alias-import-initial-target-execution.log: five imported alias/direct controls pass",
+    "alias-import-composition-execution.log: symbolic local/imported alias body environments pass",
+    "alias-import-composition-execution2.log: nine invalid applications reject",
+    "alias-import-reexport-execution.log: identity reexport fails lexical member lookup; constant array reexport loses injected element type; reordered nominal same-header control passes",
+    "alias-import-paged-contracts.log: graph and lowering contracts pass; page test stops at reexport before page-order execution"
+  ],
+  "contract": "Export source annotation roots by traversing their complete checked type references. Parameter leaves retain exact lexical declaration identity and are translated to portable member identities. No source-tree reconstruction of alias targets. Serialized trees keep the existing bounded contiguous reverse-preorder format.",
+  "bounds": "Depth 64, nominal arguments 32, total serialized checked nodes bounded by the existing HIR-domain export capacity with explicit failure on exhaustion.",
+  "pending": [
+    "Finish imported alias-qualified value/member lookup.",
+    "Isolate and fix the retained adjacent >> parser failure.",
+    "Remaining broad generics limitations documented in docs/compiler-generic-types.md remain outside this checkpoint."
+  ],
+  "final_evidence": {
+    "integration": {
+      "tests": 45,
+      "seconds": 45.61,
+      "log": "checked-export-final-generic.log"
+    },
+    "interfaces": {
+      "tests": 9,
+      "seconds": 2.08,
+      "log": "checked-export-final-interface.log"
+    },
+    "page_template_and_compiler_contracts": {
+      "tests": 4,
+      "seconds": 3.33,
+      "log": "checked-export-final-contracts.log"
+    },
+    "performance": "benchmark_artifacts/performance/stdlib-gpu-20261010-imported-aliases/checkpoint-metadata.json"
+  },
+  "resolved": [
+    "Complete checked type export replaces source-tree reconstruction.",
+    "Structural annotations preserve their outer array/slice/reference node.",
+    "Concrete body replay retains the original template interface and skips exporting concrete signatures.",
+    "Flat, reversed and empty-interleaved dependency pages execute and reject wrong lengths.",
+    "Seven obsolete export kernels and their unused resources removed."
+  ]
+}

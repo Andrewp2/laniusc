@@ -1,0 +1,5 @@
+trait Marker {}
+impl Marker for &i32 {}
+struct Cell<T> { value:T }
+impl Marker for &Cell<i32> {}
+fn keep<T, Count>(v:T, x:Count)->T where T: core::types::Rel<core::types::Count> { return v; }

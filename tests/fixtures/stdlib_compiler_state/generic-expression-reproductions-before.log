@@ -1,0 +1,41 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 3 tests
+test inferred_field_results_supply_complete_generic_arguments ... [typecheck.call_inference] round=0 changed=43
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=0
+GPU source-pack type-check rejection: token=118 code=GenericInstantiationBoundary detail=3
+
+thread 'inferred_field_results_supply_complete_generic_arguments' (634209) panicked at tests/compiler_generic_types_execution.rs:105:29:
+inferred field generic argument: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 20, length: 4, byte_start: Some(362), byte_end: Some(366), source_line: Some("    let selected = keep(wrapped.value);"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test inferred_index_results_supply_complete_generic_arguments ... [typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+GPU source-pack type-check rejection: token=119 code=GenericInstantiationBoundary detail=3
+
+thread 'inferred_index_results_supply_complete_generic_arguments' (634265) panicked at tests/compiler_generic_types_execution.rs:105:29:
+inferred index generic argument: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 18, length: 4, byte_start: Some(367), byte_end: Some(371), source_line: Some("    let direct = keep(duplicate(original)[0]);"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+FAILED
+test inferred_match_results_supply_complete_generic_arguments ... [typecheck.call_inference] round=0 changed=0
+GPU parser rejection: error_pos=0 code=4 detail=4 steps=1830 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'inferred_match_results_supply_complete_generic_arguments' (634267) panicked at tests/compiler_generic_types_execution.rs:105:29:
+inferred match generic argument: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 16, column: 41, length: 1, byte_start: Some(504), byte_end: Some(505), source_line: Some("    let selected = keep(match (wrapped) { None -> backup, Some(value) -> value });"), message: "expected `{`, found `{`" }), help: None, notes: [] })
+FAILED
+
+failures:
+
+failures:
+    inferred_field_results_supply_complete_generic_arguments
+    inferred_index_results_supply_complete_generic_arguments
+    inferred_match_results_supply_complete_generic_arguments
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 59 filtered out; finished in 1.75s
+
+error: test failed, to rerun pass `-p laniusc --test compiler_generic_types_execution`

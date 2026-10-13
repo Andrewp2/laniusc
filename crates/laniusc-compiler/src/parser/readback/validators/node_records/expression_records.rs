@@ -529,7 +529,11 @@ pub fn validate_hir_call_argument_records(
         }
         if token_pos[child] < token_pos[owner] || token_end[child] > token_end[owner] {
             return Err(anyhow!(
-                "parser HIR call row {owner} published {label} row {child} outside the call expression span"
+                "parser HIR call row {owner} published {label} row {child} outside the call expression span (owner={}..{}, operand={}..{})",
+                token_pos[owner],
+                token_end[owner],
+                token_pos[child],
+                token_end[child]
             ));
         }
         Ok(())
@@ -1036,11 +1040,9 @@ pub fn validate_hir_member_records(
                 "parser HIR member row {row} member-name token is outside the member expression span"
             ));
         }
-        if token_end[row] != member_token + 1 {
-            return Err(anyhow!(
-                "parser HIR member row {row} member expression span does not end at the member-name token"
-            ));
-        }
+        // A member application can extend past its name through explicit type
+        // and constant operands. These records validate receiver/name containment;
+        // the parser's argument records own the application and its operand spans.
     }
 
     Ok(())

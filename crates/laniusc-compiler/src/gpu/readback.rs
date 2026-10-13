@@ -10,6 +10,34 @@ use super::{
 /// daemon residency therefore depends on the page size, not worst-case output.
 pub(crate) struct PagedReadback {
     staging: LaniusBuffer<u8>,
+    #[cfg(test)]
+    map_wait_override: Option<ReadbackMapWait>,
+}
+
+#[cfg(test)]
+type ReadbackMapWait = fn(&wgpu::Device, &wgpu::BufferSlice<'_>, &str) -> Result<()>;
+
+/// Owns the map attempt, including the period before its callback completes.
+/// Declare mapped views after this guard so they drop before unmapping on unwind.
+struct ReadbackMapping<'a> {
+    device: &'a wgpu::Device,
+    buffer: &'a wgpu::Buffer,
+    completed: bool,
+}
+
+impl Drop for ReadbackMapping<'_> {
+    fn drop(&mut self) {
+        if self.completed {
+            self.buffer.unmap();
+        } else {
+            // unmap cancels a pending map and resets wgpu's host map context.
+            // A failed callback may already have reset the backend to Idle;
+            // wgpu then reports NotMapped. Suppress only cleanup validation so
+            // it cannot replace the original map error or panic during unwind.
+            let _cleanup_scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            self.buffer.unmap();
+        }
+    }
 }
 
 /// One logical GPU-buffer range in a batched readback. The range retains the
@@ -50,11 +78,37 @@ impl PagedReadback {
         let page_bytes = page_bytes.max(4).next_multiple_of(4);
         Self {
             staging: readback_bytes(device, label, page_bytes, page_bytes),
+            #[cfg(test)]
+            map_wait_override: None,
         }
     }
 
     pub(crate) fn from_staging(staging: LaniusBuffer<u8>) -> Self {
-        Self { staging }
+        Self {
+            staging,
+            #[cfg(test)]
+            map_wait_override: None,
+        }
+    }
+
+    fn map_staging<'a>(
+        &'a self,
+        device: &'a wgpu::Device,
+        slice: &wgpu::BufferSlice<'_>,
+        label: &str,
+    ) -> Result<ReadbackMapping<'a>> {
+        let mut mapping = ReadbackMapping {
+            device,
+            buffer: &self.staging.buffer,
+            completed: false,
+        };
+        #[cfg(test)]
+        let wait = self.map_wait_override.unwrap_or(map_readback_blocking);
+        #[cfg(not(test))]
+        let wait = map_readback_blocking;
+        wait(device, slice, label)?;
+        mapping.completed = true;
+        Ok(mapping)
     }
 
     pub(crate) fn read(
@@ -82,11 +136,11 @@ impl PagedReadback {
             queue.submit(Some(encoder.finish()));
 
             let slice = self.staging.buffer.slice(..copy_len as u64);
-            map_readback_blocking(device, &slice, label)?;
+            let mapping = self.map_staging(device, &slice, label)?;
             let mapped = slice.get_mapped_range();
             output.extend_from_slice(&mapped[..logical_len]);
             drop(mapped);
-            self.staging.unmap();
+            drop(mapping);
         }
         Ok(output)
     }
@@ -180,13 +234,13 @@ impl PagedReadback {
             queue.submit(Some(encoder.finish()));
 
             let slice = self.staging.buffer.slice(..page_cursor as u64);
-            map_readback_blocking(device, &slice, label)?;
+            let mapping = self.map_staging(device, &slice, label)?;
             let mapped = slice.get_mapped_range();
             for (index, offset, logical_len) in page_copies {
                 outputs[index].extend_from_slice(&mapped[offset..offset + logical_len]);
             }
             drop(mapped);
-            self.staging.unmap();
+            drop(mapping);
         }
 
         Ok(outputs)
@@ -227,4 +281,124 @@ pub fn read_i32_words<const N: usize>(bytes: &[u8], context: &str) -> Result<[i3
         *word = i32::from_le_bytes(bytes[start..start + 4].try_into()?);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use crate::gpu::device;
+
+    fn source(device: &wgpu::Device) -> LaniusBuffer<u8> {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback lifecycle source"),
+            size: 16,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        LaniusBuffer::new_labeled((buffer, 16), 16, "readback lifecycle source")
+    }
+
+    fn fail_pending_map(
+        _device: &wgpu::Device,
+        slice: &wgpu::BufferSlice<'_>,
+        _label: &str,
+    ) -> Result<()> {
+        // Start a real map, then simulate a poll/timeout error without polling.
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        Err(anyhow!("injected pending-map failure"))
+    }
+
+    fn fail_already_cancelled_map(
+        device: &wgpu::Device,
+        slice: &wgpu::BufferSlice<'_>,
+        label: &str,
+    ) -> Result<()> {
+        // Model a failed callback that has already restored backend Idle.
+        let _ = fail_pending_map(device, slice, label);
+        slice.buffer().unmap();
+        Err(anyhow!("injected completed-map failure"))
+    }
+
+    #[test]
+    fn gpu_paged_readback_cancels_failed_maps_before_staging_reuse() {
+        let gpu = device::global();
+        let source = source(&gpu.device);
+        let mut readback = PagedReadback::new(&gpu.device, "readback lifecycle page", 8);
+        let staging_id = readback.staging.allocation_id();
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let waiters: [ReadbackMapWait; 2] = [fail_pending_map, fail_already_cancelled_map];
+        for (iteration, wait) in waiters.into_iter().enumerate() {
+            let old_bytes = [iteration as u8; 16];
+            let new_bytes = [iteration as u8 + 17; 16];
+            source.write(&gpu.queue, 0, &old_bytes);
+            readback.map_wait_override = Some(wait);
+            let error = readback
+                .read(
+                    &gpu.device,
+                    &gpu.queue,
+                    &source.buffer,
+                    0,
+                    16,
+                    "injected read",
+                )
+                .expect_err("map fault must fail the read");
+            assert!(error.to_string().starts_with("injected "));
+
+            readback.map_wait_override = None;
+            source.write(&gpu.queue, 0, &new_bytes);
+            assert_eq!(
+                readback
+                    .read_buffer(&gpu.device, &gpu.queue, &source, 0, 16, "read retry")
+                    .unwrap(),
+                new_bytes,
+                "both pages must be copied again after the failed map"
+            );
+
+            let regions = [
+                ReadbackRegion::from_buffer(&source, 0, 4, "first region").unwrap(),
+                ReadbackRegion::from_buffer(&source, 4, 12, "second region").unwrap(),
+            ];
+            readback.map_wait_override = Some(wait);
+            let error = readback
+                .read_regions(&gpu.device, &gpu.queue, &regions, "injected regions")
+                .expect_err("map fault must fail the batched read");
+            assert!(error.to_string().starts_with("injected "));
+            readback.map_wait_override = None;
+            source.write(&gpu.queue, 0, &old_bytes);
+            assert_eq!(
+                readback
+                    .read_regions(&gpu.device, &gpu.queue, &regions, "regions retry")
+                    .unwrap(),
+                vec![old_bytes[..4].to_vec(), old_bytes[4..].to_vec()]
+            );
+            assert_eq!(readback.staging.allocation_id(), staging_id);
+        }
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
+
+    #[test]
+    fn gpu_paged_readback_unmaps_after_host_copy_unwinds() {
+        let gpu = device::global();
+        let source = source(&gpu.device);
+        let readback = PagedReadback::new(&gpu.device, "readback unwind page", 8);
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let slice = readback.staging.buffer.slice(..8);
+            let _mapping = readback
+                .map_staging(&gpu.device, &slice, "unwind map")
+                .unwrap();
+            let _mapped = slice.get_mapped_range();
+            panic!("injected host-copy panic");
+        }));
+        assert!(unwind.is_err());
+        let expected = [31u8; 16];
+        source.write(&gpu.queue, 0, &expected);
+        assert_eq!(
+            readback
+                .read_buffer(&gpu.device, &gpu.queue, &source, 0, 16, "unwind retry")
+                .unwrap(),
+            expected
+        );
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
 }

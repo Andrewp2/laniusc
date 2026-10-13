@@ -55,6 +55,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 b.hir_canonical_anchor_owner.as_entire_binding(),
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "token_file_id".into(),
@@ -75,6 +76,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
             (
                 "hir_generic_params".into(),
                 b.hir_generic_param_rows.as_entire_binding(),
+            ),
+            (
+                "hir_generic_param_types".into(),
+                b.hir_generic_param_types.as_entire_binding(),
             ),
             (
                 "generic_param_ranges".into(),

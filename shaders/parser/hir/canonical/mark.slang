@@ -144,14 +144,10 @@ uint member_name_token(uint member_node)
 {
     if (!valid_node(member_node) || node_kind[member_node] != PROD_POSTFIX_MEMBER)
         return INVALID;
-    uint tail = direct_child(member_node);
-    uint tail_token = valid_node(tail) ? hir_token_pos[tail] : INVALID;
-    if (tail_token != INVALID && tail_token > hir_token_pos[member_node])
-        return tail_token - 1u;
-    uint end = hir_token_end[member_node];
-    return end != INVALID && end > hir_token_pos[member_node]
-        ? end - 1u
-        : INVALID;
+    uint arguments = direct_child(member_node);
+    uint argument_token = valid_node(arguments) ? hir_token_pos[arguments] : INVALID;
+    return argument_token != INVALID && argument_token > hir_token_pos[member_node]
+        ? argument_token - 1u : INVALID;
 }
 
 bool direct_expression_kind(uint kind)
@@ -216,18 +212,10 @@ uint anchor_for(uint node)
     uint member_token = kind == HIR_MEMBER_EXPR ? member_name_token(node) : INVALID;
     if (member_token != INVALID)
         token_end = member_token + 1u;
-    // `start..` initially spans into the following block because its empty
-    // postfix tail is anchored at the next token. Match the later range-span
-    // normalization now so the operator cannot collide with that block.
-    if (expr_form == HIR_EXPR_RANGE_FROM)
-    {
-        uint left = hir_expr_record[node * 4u + 1u];
-        uint left_end = valid_node(left) ? hir_token_end[left] : INVALID;
-        if (left_end < token_end)
-            token_end = left_end + 1u;
-    }
+    uint left = hir_expr_record[node * 4u + 1u];
+    uint left_end = valid_node(left) ? hir_token_end[left] : INVALID;
     uint operator_token = canonical_hir_operator_anchor(
-        identity_kind, expr_form, right_start, token_end,
+        identity_kind, expr_form, left_end, right_start,
         gCanonical.canonical_capacity);
     uint value_token = hir_expr_record[node * 4u + 3u];
     return canonical_hir_anchor(

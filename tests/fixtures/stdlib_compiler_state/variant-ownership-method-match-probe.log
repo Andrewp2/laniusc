@@ -1,0 +1,18 @@
+
+running 1 test
+test explicit_dotted_arguments_reject_conflicts_and_wrong_headers ... GPU source-pack type-check rejection: token=84 code=BadHir detail=336601344
+
+thread 'explicit_dotted_arguments_reject_conflicts_and_wrong_headers' (282026) panicked at tests/compiler_generic_types_execution.rs:7881:9:
+assertion `left == right` failed: known boolean conflicts with explicit integer: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source>", line: 7, column: 87, length: 4, byte_start: Some(250), byte_end: Some(254), source_line: Some("fn main() -> i32 { let value: Boxed<bool> = Boxed { value: false }; let wrong = value.keep<i32>(false); return 0; }"), message: "invalid syntax here" }), help: None, notes: [] })
+  left: "LNC0016"
+ right: "LNC0006"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    explicit_dotted_arguments_reject_conflicts_and_wrong_headers
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 284 filtered out; finished in 1.66s
+

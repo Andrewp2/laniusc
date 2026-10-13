@@ -230,7 +230,7 @@ pub struct ParserReadbacks {
     pub hir_type_form: wgpu::Buffer,
     pub hir_type_value_node: wgpu::Buffer,
     pub hir_type_len_token: wgpu::Buffer,
-    pub hir_type_len_value: wgpu::Buffer,
+    pub hir_type_len_operand: wgpu::Buffer,
     pub hir_type_file_id: wgpu::Buffer,
     pub hir_type_path_leaf_node: wgpu::Buffer,
     pub hir_type_arg_start: wgpu::Buffer,
@@ -376,9 +376,9 @@ impl ParserReadbacks {
             "rb.parser.hir_type_len_token",
             bufs.hir_type_len_token.byte_size as u64,
         );
-        let hir_type_len_value = mk(
-            "rb.parser.hir_type_len_value",
-            bufs.hir_type_len_value.byte_size as u64,
+        let hir_type_len_operand = mk(
+            "rb.parser.hir_type_len_operand",
+            bufs.hir_type_len_operand.byte_size as u64,
         );
         let hir_type_file_id = mk(
             "rb.parser.hir_type_file_id",
@@ -656,7 +656,7 @@ impl ParserReadbacks {
             hir_type_form,
             hir_type_value_node,
             hir_type_len_token,
-            hir_type_len_value,
+            hir_type_len_operand,
             hir_type_file_id,
             hir_type_path_leaf_node,
             hir_type_arg_start,
@@ -885,11 +885,11 @@ impl ParserReadbacks {
             bufs.hir_type_len_token.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
-            &bufs.hir_type_len_value,
+            &bufs.hir_type_len_operand,
             0,
-            &self.hir_type_len_value,
+            &self.hir_type_len_operand,
             0,
-            bufs.hir_type_len_value.byte_size as u64,
+            bufs.hir_type_len_operand.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_type_file_id,
@@ -1374,7 +1374,7 @@ pub struct DecodedParserReadbacks {
     pub hir_type_form: Vec<u32>,
     pub hir_type_value_node: Vec<u32>,
     pub hir_type_len_token: Vec<u32>,
-    pub hir_type_len_value: Vec<u32>,
+    pub hir_type_len_operand: Vec<u32>,
     pub hir_type_file_id: Vec<u32>,
     pub hir_type_path_leaf_node: Vec<u32>,
     pub hir_type_arg_start: Vec<u32>,
@@ -1486,7 +1486,7 @@ impl DecodedParserReadbacks {
         map("hir_type_form", &rb.hir_type_form);
         map("hir_type_value_node", &rb.hir_type_value_node);
         map("hir_type_len_token", &rb.hir_type_len_token);
-        map("hir_type_len_value", &rb.hir_type_len_value);
+        map("hir_type_len_operand", &rb.hir_type_len_operand);
         map("hir_type_file_id", &rb.hir_type_file_id);
         map("hir_type_path_leaf_node", &rb.hir_type_path_leaf_node);
         map("hir_type_arg_start", &rb.hir_type_arg_start);
@@ -1642,7 +1642,7 @@ impl DecodedParserReadbacks {
         let hir_type_form = read_u32_vec(&rb.hir_type_form, tree_len);
         let hir_type_value_node = read_u32_vec(&rb.hir_type_value_node, tree_len);
         let hir_type_len_token = read_u32_vec(&rb.hir_type_len_token, tree_len);
-        let hir_type_len_value = read_u32_vec(&rb.hir_type_len_value, tree_len);
+        let hir_type_len_operand = read_u32_vec(&rb.hir_type_len_operand, tree_len);
         let hir_type_file_id = read_u32_vec(&rb.hir_type_file_id, tree_len);
         let hir_type_path_leaf_node = read_u32_vec(&rb.hir_type_path_leaf_node, tree_len);
         let hir_type_arg_start = read_u32_vec(&rb.hir_type_arg_start, tree_len);
@@ -1753,7 +1753,7 @@ impl DecodedParserReadbacks {
             hir_type_form,
             hir_type_value_node,
             hir_type_len_token,
-            hir_type_len_value,
+            hir_type_len_operand,
             hir_type_file_id,
             hir_type_path_leaf_node,
             hir_type_arg_start,

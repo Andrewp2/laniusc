@@ -1,6 +1,7 @@
 // Marks the first row of each declaration in the stable access ordering.
 // Memory accesses occupy the following radix domain and are intentionally
-// excluded: they become effect chains rather than SSA declaration values.
+// excluded from declaration SSA. Their source schedule remains authoritative;
+// no memory-version graph or cross-effect load reuse is implemented here.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;

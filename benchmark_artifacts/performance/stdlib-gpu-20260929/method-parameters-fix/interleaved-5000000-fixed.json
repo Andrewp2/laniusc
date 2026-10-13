@@ -1,0 +1,1461 @@
+{
+  "machine": {
+    "cpu": "x86_64",
+    "gpu": "NVIDIA GeForce RTX 3090, 595.91.07, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "before_each_sample": {
+          "command": "clear-project-compiled-unit-cache"
+        },
+        "capacity_primer_counts_by_seed": {
+          "19": 1,
+          "20": 2,
+          "21": 1,
+          "22": 1
+        },
+        "daemon_start": {
+          "argv": [
+            "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/release/laniusc",
+            "daemon",
+            "--stdio",
+            "--backend",
+            "x86_64",
+            "--stdlib-root",
+            "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+            "--idle-buffer-timeout-ms",
+            "0"
+          ],
+          "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+          "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/release/laniusc daemon --stdio --backend x86_64 --stdlib-root /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib --idle-buffer-timeout-ms 0",
+          "environment_overrides": {}
+        },
+        "sample_compile_requests": [
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-0",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-0.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-1",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-1.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-2",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-2.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-3",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-3.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-4",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-4.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-5",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-5.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-6",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-6.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-7",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-7.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-8",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-8.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-9",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-9.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-10",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-10.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-11",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-11.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-12",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-12.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-13",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-13.bin"
+          },
+          {
+            "command": "compile",
+            "emit": "x86_64",
+            "id": "measure-14",
+            "input": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20/5000000/scaling.lani",
+            "output": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/scaling/method-parameters-5000000-paired/fixed-14.bin"
+          }
+        ]
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "laniusc 0.1.0\nlanguage-edition: unstable-alpha\nedition-policy: no stable production language edition yet; accepts the current alpha slice only\ntargets: x86_64, wasm\ndefault-target: x86_64\ntarget-triples: x86_64-unknown-linux-gnu, wasm32-unknown-unknown\nx86_64: bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics\nformatter: unstable-alpha lexical full-document formatter\nrelease-channel: source-worktree\ndistribution-status: not-production-release; no stable install artifact or package manager channel\nlsp-capabilities-schema-name: laniusc.lsp.capabilities\nlsp-capabilities-schema: 15\nlsp-experimental-schema-name: laniusc.lsp.experimental\nlsp-experimental-schema: 13\nlsp-error-data-schema-name: laniusc.lsp.error-data\nlsp-error-data-schema: 2\nslangc: 2026.2\nwgpu: 29.0.3\nbuild-profile: release\nshader-artifact-digest: 1398ae75ba780012\nshader-artifact-count: 713\nshader-artifact-max-bytes: 522600\nshader-artifact-max-name: codegen/lir/x86/emit\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nslangc-version-timeout-ms: 2000\nshader-compile-timeout-ms: 120000"
+      },
+      "configuration": "daemon_warm_workspace",
+      "daemon_ready_samples": [
+        {
+          "compute_pipelines_created": 696,
+          "event": "ready",
+          "idle_buffer_timeout_ms": null,
+          "pid": 654135,
+          "recorded_compute_dispatches": 0,
+          "recorded_compute_passes": 0,
+          "resident_set_bytes": 418275328,
+          "schema": "lanius.compiler-daemon.v1",
+          "startup_ms": 630.628631,
+          "targets": [
+            "x86_64"
+          ],
+          "tracked_gpu_buffers": {
+            "allocations": 5,
+            "bytes": 80,
+            "peak_allocations": 5,
+            "peak_bytes": 80,
+            "phase_snapshots": [],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 0,
+            "user_owned_wgpu_buffers": 5
+          },
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 5,
+              "released_from_user": 0
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          }
+        }
+      ],
+      "id": "lanius-x86_64-daemon_warm_workspace",
+      "measurement_semantics": {
+        "compiled_unit_results_reused": false,
+        "daemon_start_order": [
+          "previous",
+          "fixed"
+        ],
+        "daemon_started_before_timer": true,
+        "driver_shader_cache": "ambient machine state",
+        "gpu_workspace_preallocated": true,
+        "process": "two separately primed daemons; alternate shader order within each paired source compile",
+        "project_compiled_unit_results_reused": false,
+        "sample_programs": "three distinct seeds, five recompiles per seed; alternating shader order per pair",
+        "simultaneously_resident_daemons": 2,
+        "source_manifest_metadata_may_be_resident": true
+      },
+      "samples": [
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 227.110405,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 0,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 227.110405,
+            "load": 11.176787000000001,
+            "write": 1.867384
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 22,
+          "source_bytes": 5000000,
+          "source_sloc": 155082,
+          "wall_ms": 240.408256,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 235.17140799999999,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 1,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 235.17140799999999,
+            "load": 12.891778,
+            "write": 1.820546
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 21,
+          "source_bytes": 5000000,
+          "source_sloc": 154190,
+          "wall_ms": 250.176101,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 226.229673,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 2,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 226.229673,
+            "load": 12.061732000000001,
+            "write": 1.388823
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 20,
+          "source_bytes": 5000000,
+          "source_sloc": 154838,
+          "wall_ms": 239.922657,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 220.573051,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 3,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 220.573051,
+            "load": 12.955115,
+            "write": 1.687922
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 22,
+          "source_bytes": 5000000,
+          "source_sloc": 155082,
+          "wall_ms": 235.470698,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 211.921604,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 4,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 211.921604,
+            "load": 11.136059,
+            "write": 1.372955
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 20,
+          "source_bytes": 5000000,
+          "source_sloc": 154838,
+          "wall_ms": 224.656327,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 220.739406,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 5,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 220.739406,
+            "load": 11.11242,
+            "write": 1.412133
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 22,
+          "source_bytes": 5000000,
+          "source_sloc": 155082,
+          "wall_ms": 233.510389,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 225.022764,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 6,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 225.022764,
+            "load": 10.874459,
+            "write": 2.075366
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 21,
+          "source_bytes": 5000000,
+          "source_sloc": 154190,
+          "wall_ms": 238.223799,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 223.914059,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 7,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 223.914059,
+            "load": 0.050547999999999996,
+            "write": 1.587415
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 21,
+          "source_bytes": 5000000,
+          "source_sloc": 154190,
+          "wall_ms": 225.799093,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 209.46610600000002,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 8,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 209.46610600000002,
+            "load": 11.83305,
+            "write": 2.71391
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 20,
+          "source_bytes": 5000000,
+          "source_sloc": 154838,
+          "wall_ms": 224.546645,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 209.047163,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 9,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 209.047163,
+            "load": 11.075412,
+            "write": 1.465501
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 22,
+          "source_bytes": 5000000,
+          "source_sloc": 155082,
+          "wall_ms": 221.822586,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 215.57223,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 10,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 215.57223,
+            "load": 11.85097,
+            "write": 1.6953420000000001
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 21,
+          "source_bytes": 5000000,
+          "source_sloc": 154190,
+          "wall_ms": 229.418779,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 211.104671,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 11,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 211.104671,
+            "load": 10.931927,
+            "write": 2.181852
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 20,
+          "source_bytes": 5000000,
+          "source_sloc": 154838,
+          "wall_ms": 224.524858,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 213.808913,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 12,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 213.808913,
+            "load": 11.282014,
+            "write": 1.97846
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 22,
+          "source_bytes": 5000000,
+          "source_sloc": 155082,
+          "wall_ms": 227.339516,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 228.70310999999998,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 13,
+          "paired_order_index": 0,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 228.70310999999998,
+            "load": 10.980645,
+            "write": 1.437272
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 21,
+          "source_bytes": 5000000,
+          "source_sloc": 154190,
+          "wall_ms": 241.329899,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        },
+        {
+          "compiled_unit_cache": {
+            "entries_after_job": 0,
+            "evictions_during_job": 0,
+            "hits_during_job": 0,
+            "misses_during_job": 0,
+            "resident_bytes_after_job": 0
+          },
+          "compiler_ms": 210.889602,
+          "gpu_memory": {
+            "allocations": 239,
+            "bytes": 8126059975,
+            "peak_allocations": 239,
+            "peak_bytes": 8126059975,
+            "phase_snapshots": [
+              {
+                "allocations": 239,
+                "bytes": 8126059975,
+                "phase": "compact_hir_materialized"
+              }
+            ],
+            "scope": "live LaniusBuffer allocation identities and bytes; untracked_allocations counts raw user-owned wgpu buffers whose byte sizes are unavailable",
+            "untracked_allocations": 5,
+            "user_owned_wgpu_buffers": 244
+          },
+          "index": 14,
+          "paired_order_index": 1,
+          "recorded_compute_dispatches": 1619,
+          "recorded_compute_passes": 95,
+          "request_phases_ms": {
+            "compile": 210.889602,
+            "load": 12.136199,
+            "write": 1.5910760000000002
+          },
+          "resources_created": {
+            "bind_groups": 0,
+            "buffers": 0,
+            "compute_pipelines": 0
+          },
+          "seed": 20,
+          "source_bytes": 5000000,
+          "source_sloc": 154838,
+          "wall_ms": 224.897495,
+          "wgpu_resources": {
+            "bind_groups": {
+              "kept_from_user": 995,
+              "released_from_user": 0
+            },
+            "buffers": {
+              "kept_from_user": 244,
+              "released_from_user": 114
+            },
+            "command_buffers": {
+              "kept_from_user": 0,
+              "released_from_user": 1
+            },
+            "command_encoders": {
+              "kept_from_user": 0,
+              "released_from_user": 2
+            },
+            "compute_pipelines": {
+              "kept_from_user": 696,
+              "released_from_user": 0
+            },
+            "query_sets": {
+              "kept_from_user": 0,
+              "released_from_user": 0
+            }
+          },
+          "workspace_request_kind": "retained_capacity"
+        }
+      ],
+      "source": {
+        "bytes": 5000000,
+        "file_records": [
+          {"bytes":5000000,"lines":159914,"path":"target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21/5000000/scaling.lani","sloc":154190}
+        ],
+        "files": 1,
+        "kilobytes": 5000.0,
+        "largest_file_bytes": 5000000,
+        "megabytes": 5.0,
+        "physical_lines": 159914,
+        "sloc": 154190,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": {
+          "histogram": {
+            "counts": [
+              7,
+              2,
+              4,
+              2
+            ],
+            "edges": [
+              209.047163,
+              215.57822425,
+              222.1092855,
+              228.64034675,
+              235.17140799999999
+            ],
+            "unit": "ms"
+          },
+          "mad": 6.764138000000003,
+          "maximum": 235.17140799999999,
+          "mean": 219.28494433333333,
+          "median": 220.573051,
+          "minimum": 209.047163,
+          "p95": 230.64359939999997,
+          "samples": 15
+        },
+        "median_bytes_per_second": 21794205.434246514,
+        "median_sloc_per_second": 672089.707181294,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              7,
+              3,
+              4,
+              1
+            ],
+            "edges": [
+              221.822586,
+              228.91096475,
+              235.9993435,
+              243.08772224999998,
+              250.176101
+            ],
+            "unit": "ms"
+          },
+          "mad": 4.893921000000006,
+          "maximum": 250.176101,
+          "mean": 232.1364732,
+          "median": 229.418779,
+          "minimum": 221.822586,
+          "p95": 243.98375959999998,
+          "samples": 15
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifact_bytes": 5045023,
+        "artifacts_validated": true,
+        "compile_exit_status": 0
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "c37d38b8d55d52ef12b86d904a5dbd244276a2ac",
+    "git_dirty": true,
+    "id": "stdlib-shader-paired-method-parameters-fixed-5000000",
+    "recorded_at": "2026-09-30T02:50:01.515274+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "classification": "synthetic compiler stress with a realistic function-size distribution",
+    "comparison_group": "compiler-stress/comparative-single-file/mixed-function-sizes/5000000/seeds-20,21,22",
+    "generation_commands": [
+      {
+        "argv": [
+          "/home/andrew-peterson/bin/python3",
+          "tools/generate_compiler_stress.py",
+          "--out",
+          "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20",
+          "--layout",
+          "comparative-single-file",
+          "--sizes",
+          "5000000",
+          "--seed",
+          "20",
+          "--profile",
+          "mixed-function-sizes"
+        ],
+        "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+        "display": "/home/andrew-peterson/bin/python3 tools/generate_compiler_stress.py --out /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-20 --layout comparative-single-file --sizes 5000000 --seed 20 --profile mixed-function-sizes",
+        "environment_overrides": {}
+      },
+      {
+        "argv": [
+          "/home/andrew-peterson/bin/python3",
+          "tools/generate_compiler_stress.py",
+          "--out",
+          "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21",
+          "--layout",
+          "comparative-single-file",
+          "--sizes",
+          "5000000",
+          "--seed",
+          "21",
+          "--profile",
+          "mixed-function-sizes"
+        ],
+        "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+        "display": "/home/andrew-peterson/bin/python3 tools/generate_compiler_stress.py --out /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-21 --layout comparative-single-file --sizes 5000000 --seed 21 --profile mixed-function-sizes",
+        "environment_overrides": {}
+      },
+      {
+        "argv": [
+          "/home/andrew-peterson/bin/python3",
+          "tools/generate_compiler_stress.py",
+          "--out",
+          "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22",
+          "--layout",
+          "comparative-single-file",
+          "--sizes",
+          "5000000",
+          "--seed",
+          "22",
+          "--profile",
+          "mixed-function-sizes"
+        ],
+        "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+        "display": "/home/andrew-peterson/bin/python3 tools/generate_compiler_stress.py --out /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-22 --layout comparative-single-file --sizes 5000000 --seed 22 --profile mixed-function-sizes",
+        "environment_overrides": {}
+      },
+      {
+        "argv": [
+          "/home/andrew-peterson/bin/python3",
+          "tools/generate_compiler_stress.py",
+          "--out",
+          "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-19",
+          "--layout",
+          "comparative-single-file",
+          "--sizes",
+          "5000000",
+          "--seed",
+          "19",
+          "--profile",
+          "mixed-function-sizes"
+        ],
+        "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+        "display": "/home/andrew-peterson/bin/python3 tools/generate_compiler_stress.py --out /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/lanius-perf-workloads/single-file-custom-5000000-seed-20-x86_64/seed-19 --layout comparative-single-file --sizes 5000000 --seed 19 --profile mixed-function-sizes",
+        "environment_overrides": {}
+      }
+    ],
+    "generator": "tools/generate_compiler_stress.py",
+    "id": "single-file-custom-5000000-seed-20-x86_64",
+    "kind": "single_file",
+    "measured_seeds": [
+      20,
+      21,
+      22
+    ],
+    "preset": null,
+    "primer_seed": 19,
+    "profile": "mixed-function-sizes",
+    "sample_policy": "three distinct seeds, five recompiles per seed; alternating shader order per pair",
+    "target_source_bytes": 5000000
+  }
+}

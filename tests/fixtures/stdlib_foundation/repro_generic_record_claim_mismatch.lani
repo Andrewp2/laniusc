@@ -1,0 +1,12 @@
+module app::main;
+import core::maybe;
+
+struct Pair { first: i32, second: i32 }
+struct Other { first: i32, second: i32 }
+
+fn main() -> i32 {
+    let left: core::maybe::Maybe<Pair> = core::maybe::None();
+    let right: core::maybe::Maybe<Other> = core::maybe::None();
+    core::maybe::prefer(left, right);
+    return 0;
+}

@@ -1,3 +1,4 @@
+import type_checker.methods.candidate;
 struct Params
 {
     uint n_tokens;
@@ -17,6 +18,13 @@ RWStructuredBuffer<uint> method_decl_param_offset;
 RWStructuredBuffer<uint> method_decl_receiver_mode;
 RWStructuredBuffer<uint> method_decl_visibility;
 RWStructuredBuffer<uint> method_decl_signature_flags;
+RWStructuredBuffer<MethodCandidate> method_candidate;
+RWStructuredBuffer<uint> method_call_source_ref_tag;
+RWStructuredBuffer<uint> method_call_source_ref_payload;
+RWStructuredBuffer<uint> method_call_receiver_hir;
+RWStructuredBuffer<uint> method_call_selection_owned;
+RWStructuredBuffer<uint> method_call_parameter_ref_tag;
+RWStructuredBuffer<uint> method_call_parameter_ref_payload;
 RWStructuredBuffer<uint> method_call_receiver_ref_tag;
 RWStructuredBuffer<uint> method_call_receiver_ref_payload;
 RWStructuredBuffer<uint> method_call_name_id;
@@ -49,6 +57,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         method_decl_receiver_mode[i] = 0u;
         method_decl_visibility[i] = 0u;
         method_decl_signature_flags[i] = 0u;
+        method_candidate[i] = method_candidate_empty();
+        method_call_source_ref_tag[i] = TYPE_REF_INVALID;
+        method_call_source_ref_payload[i] = INVALID;
+        method_call_receiver_hir[i] = INVALID;
+        method_call_selection_owned[i] = 0u;
+        method_call_parameter_ref_tag[i] = TYPE_REF_INVALID;
+        method_call_parameter_ref_payload[i] = INVALID;
         method_call_receiver_ref_tag[i] = TYPE_REF_INVALID;
         method_call_receiver_ref_payload[i] = INVALID;
         method_call_name_id[i] = INVALID;

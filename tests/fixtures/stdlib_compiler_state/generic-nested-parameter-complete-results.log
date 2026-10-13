@@ -1,0 +1,34 @@
+    Finished `release` profile [optimized] target(s) in 0.16s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 4 tests
+test imported_nested_parameter_inference_preserves_copies_and_aliases ... GPU source-pack type-check rejection: token=143 code=AssignMismatch detail=0
+
+thread 'imported_nested_parameter_inference_preserves_copies_and_aliases' (608215) panicked at tests/compiler_generic_types_execution.rs:723:10:
+compile complete imported nested parameter constraints: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 16, length: 4, byte_start: Some(419), byte_end: Some(423), source_line: Some("    let copy = core::relay::read_nested(wrapped);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test nested_generic_parameter_constraints_infer_complete_types ... GPU source-pack type-check rejection: token=336 code=AssignMismatch detail=0
+
+thread 'nested_generic_parameter_constraints_infer_complete_types' (608548) panicked at tests/compiler_generic_types_execution.rs:105:29:
+nested parameter values copies and aliases: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 23, column: 24, length: 4, byte_start: Some(1046), byte_end: Some(1050), source_line: Some("    let generic_copy = read(record);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+FAILED
+test nested_parameter_constraints_reject_conflicts_and_missing_bindings ... GPU source-pack type-check rejection: token=92 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=116 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=119 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=2097408
+ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... ok
+
+failures:
+
+failures:
+    imported_nested_parameter_inference_preserves_copies_and_aliases
+    nested_generic_parameter_constraints_infer_complete_types
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 55 filtered out; finished in 47.28s
+
+error: test failed, to rerun pass `-p laniusc --test compiler_generic_types_execution`

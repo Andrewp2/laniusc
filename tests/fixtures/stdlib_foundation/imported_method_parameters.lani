@@ -1,0 +1,18 @@
+module app::main;
+import core::checker;
+
+fn main() -> i32 {
+    let seven: core::checker::Checker = core::checker::Checker::new(7, true);
+    let zero: core::checker::Checker = core::checker::Checker::new(7, false);
+    if (!seven.accepts(7, true)) { return 1; }
+    if (seven.accepts(8, true)) { return 2; }
+    if (seven.accepts(7, false)) { return 3; }
+    if (!zero.accepts(0, true)) { return 4; }
+    let left: core::checker::Checker = seven.choose(seven, zero, true);
+    let right: core::checker::Checker = seven.choose(seven, zero, false);
+    if (!left.accepts(7, true)) { return 5; }
+    if (!right.accepts(0, true)) { return 6; }
+    if (seven.biased(3, true) != 10 || zero.biased(3, false) != 0) { return 7; }
+    if (core::checker::Checker::biased(seven, 4, true) != 11) { return 8; }
+    return 0;
+}

@@ -1,0 +1,22 @@
+
+running 2 tests
+test inline_array_borrows_preserve_elements_and_aliases ... 
+thread 'inline_array_borrows_preserve_elements_and_aliases' (103331) panicked at tests/compiler_generic_types_execution.rs:141:29:
+inline array borrowed storage: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "operation is not implemented by the x86 backend", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 105, column: 12, length: 20, byte_start: Some(3393), byte_end: Some(3413), source_line: Some("    return slice_from_raw_parts(data, length);"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact", "first unsupported target LIR opcode: 43"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test ordinary_inline_array_borrows_preserve_elements_and_aliases ... 
+thread 'ordinary_inline_array_borrows_preserve_elements_and_aliases' (103487) panicked at tests/compiler_generic_types_execution.rs:143:5:
+assertion `left == right` failed: ordinary inline array borrowed storage: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+FAILED
+
+failures:
+
+failures:
+    inline_array_borrows_preserve_elements_and_aliases
+    ordinary_inline_array_borrows_preserve_elements_and_aliases
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 242 filtered out; finished in 22.10s
+

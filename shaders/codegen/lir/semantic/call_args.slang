@@ -1,4 +1,9 @@
+import primitive_types;
+import type_checker.concrete_type_equality;
+import type_checker.constant_atoms_identity;
 import hir_records;
+import type_checker.checked_array_counts;
+import checked_semantic_artifact;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
 import gpu_index;
@@ -18,32 +23,96 @@ StructuredBuffer<uint> semantic_call_arg_prefix_by_hir;
 StructuredBuffer<uint> semantic_expr_type;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> semantic_array_length;
-StructuredBuffer<uint> semantic_aggregate_word_count;
+StructuredBuffer<uint2> semantic_argument_value_layout;
 StructuredBuffer<uint> semantic_lir_count;
+StructuredBuffer<uint> semantic_place_original_count;
+StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> semantic_lir_offset;
 StructuredBuffer<SemanticLirCore> semantic_lir_core;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<SemanticLirParam> semantic_lir_params;
 RWStructuredBuffer<SemanticLirCallArg> semantic_lir_call_args;
+RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint SEMANTIC_CALL_FUNCTION = 1u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+void invalid_array_contract(uint node)
+{
+    InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_SEMANTIC);
+    InterlockedMin(lowering_status[0u].first_unsupported_hir, node);
+}
+
+bool array_contract_length(uint instance, out uint length)
+{
+    length = INVALID;
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    if (instance >= capacity) return false;
+    uint kind = type_instance_kind[instance];
+    if (kind == 3u)
+    {
+        length = SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME;
+        return true;
+    }
+    if (kind != 2u) return false;
+    // This pass has no token-count parameter. The producer clears the entire
+    // scalar buffer before publishing active declarations, so its physical
+    // capacity is a safe bound and inactive declarations remain inadmissible.
+    uint tokens = checked_source_constant_parameter_capacity();
+    uint count;
+    if (checked_source_array_count(type_instance_len_kind[instance],
+        type_instance_len_payload[instance], tokens, count))
+    {
+        if (count >= SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME) return false;
+        length = count;
+        return true;
+    }
+    // Deferred original generic bodies retain ARRAY_PAIR + INVALID. The
+    // function-publication closure gate must discharge this contract before
+    // a selected executable body can publish a native definition.
+    ConstantReferenceDescriptor descriptor;
+    return inspect_constant_reference<CheckedSourceConstantGraph, CheckedSourceConstantEnvironment>(
+        uint3(type_instance_len_kind[instance], type_instance_len_payload[instance], 0u),
+        tokens, descriptor) && descriptor.disposition == CONSTANT_REFERENCE_SYMBOLIC &&
+        scalar_is_integer(descriptor.terminal_scalar);
+}
+
+uint array_length_for_hir(uint node)
+{
+    if (node >= gParams.n_hir_nodes) return INVALID;
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    uint instance = semantic_expr_ref_payload[node];
+    if (semantic_expr_ref_tag[node] != 3u || instance >= capacity ||
+        (type_instance_kind[instance] != 2u && type_instance_kind[instance] != 3u))
+        return semantic_array_length[node];
+    uint length;
+    if (!array_contract_length(instance, length)) invalid_array_contract(node);
+    return length;
+}
+
 uint lir_for_hir(uint node)
 {
     if (node == INVALID || node >= gParams.n_hir_nodes ||
-        semantic_lir_count[node] == 0u)
+        semantic_place_original_count[node] == 0u)
         return INVALID;
     uint first = semantic_lir_offset[node];
     // This must use the same HIR-to-value convention as semantic
     // materialization. Most expression identities name their first row;
     // structured match and short-circuit recipes publish a final VALUE_GET.
-    return compact_hir_core[node].kind == HIR_MATCH_EXPR ||
+    return semantic_argument_value_layout[node].x != 0u ||
+        compact_hir_core[node].kind == HIR_MATCH_EXPR ||
         semantic_lir_is_short_circuit(
             compact_hir_core[node], compact_hir_payload[node])
-        ? first + semantic_lir_count[node] - 1u : first;
+        ? first + semantic_place_original_count[node] - 1u : first;
 }
 
 uint value_metadata_for_hir(uint node)
@@ -65,10 +134,18 @@ uint value_metadata_for_hir(uint node)
     bool slice_pair = instruction < gParams.lir_capacity &&
         (semantic_lir_core[instruction].flags &
             SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u;
-    bool array_value = materialized_type >= 128u &&
+    uint instance = semantic_expr_ref_payload[node];
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    // Copy rows preserve the complete checked reference even when the legacy
+    // scalar cache has no code for a native array (e.g. [str; N]). Its type
+    // graph, not that cache, determines the pointer/length call contract.
+    bool checked_array = semantic_expr_ref_tag[node] == 3u &&
+        instance < capacity && type_instance_kind[instance] == 2u;
+    bool array_value = checked_array || (materialized_type >= 128u &&
         materialized_type < 4096u &&
-        compact_hir_core[node].kind != HIR_INDEX_EXPR && !indexed_scalar;
-    if (slice_pair ||
+        compact_hir_core[node].kind != HIR_INDEX_EXPR && !indexed_scalar);
+    if (slice_pair || checked_array ||
         (array_value && semantic_array_length[node] != INVALID))
         // Arrays cross function boundaries as a view, not as an aggregate
         // pointer. Keeping these two ABI categories disjoint also keeps the
@@ -85,6 +162,9 @@ uint value_metadata_for_hir(uint node)
             semantic_lir_core[instruction].value_word_count != 0u)
             result |= SEMANTIC_LIR_VALUE_AGGREGATE;
     }
+    if (semantic_expr_ref_tag[node] == 3u && instance < capacity &&
+        type_instance_kind[instance] == 4u)
+        return SEMANTIC_LIR_TY_POINTER;
     return result;
 }
 
@@ -132,18 +212,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint destination = semantic_call_arg_prefix_by_hir[source.call] +
                 receiver_shift + source.ordinal;
             SemanticLirCallArg result;
-            result.call_instruction = lir_for_hir(source.call);
+            result.call_instruction = semantic_lir_offset[source.call];
             result.value_instruction = lir_for_hir(source.value);
             result.ordinal = source.ordinal + receiver_shift;
             result.value_metadata = value_metadata_for_parameter(
                 source.call, result.ordinal,
                 value_metadata_for_hir(source.value));
-            result.array_length = source.value < gParams.n_hir_nodes
-                ? semantic_array_length[source.value] : INVALID;
-            if (result.array_length == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
-                source.value < gParams.n_hir_nodes &&
-                semantic_aggregate_word_count[source.value] != 0u)
-                result.array_length = semantic_aggregate_word_count[source.value];
+            result.array_length = array_length_for_hir(source.value);
+            // A descriptor's storage width is not its element count. Keep the
+            // runtime marker so target lowering reads the actual length;
+            // fixed arrays already carry their checked literal length here.
             if (destination < gParams.n_call_args)
                 semantic_lir_call_args[destination] = result;
         }
@@ -155,18 +233,44 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint destination = semantic_call_arg_prefix_by_hir[row];
         SemanticLirCallArg receiver;
-        receiver.call_instruction = lir_for_hir(row);
-        receiver.value_instruction = lir_for_hir(semantic_call_receiver[row]);
+        receiver.call_instruction = semantic_lir_offset[row];
+        uint source = semantic_call_receiver[row];
+        if (source >= gParams.n_hir_nodes)
+        {
+            invalid_array_contract(row);
+            return;
+        }
+        CheckedCallArtifact checked = semantic_calls_by_hir[row];
+        bool adjusted = semantic_lir_count[source] > semantic_place_original_count[source];
+        receiver.value_instruction = adjusted
+            ? semantic_lir_offset[source] + semantic_lir_count[source] - 1u
+            : lir_for_hir(source);
         receiver.ordinal = 0u;
         receiver.value_metadata = value_metadata_for_parameter(
             row, 0u, value_metadata_for_hir(semantic_call_receiver[row]));
-        receiver.array_length = semantic_call_receiver[row] < gParams.n_hir_nodes
-            ? semantic_array_length[semantic_call_receiver[row]] : INVALID;
-        if (receiver.array_length == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
-            semantic_call_receiver[row] < gParams.n_hir_nodes &&
-            semantic_aggregate_word_count[semantic_call_receiver[row]] != 0u)
-            receiver.array_length =
-                semantic_aggregate_word_count[semantic_call_receiver[row]];
+        receiver.array_length = array_length_for_hir(source);
+        if (checked.receiver_adjustment_kind == 2u)
+        {
+            receiver.value_metadata = SEMANTIC_LIR_TY_POINTER;
+            receiver.array_length = INVALID;
+        }
+        else if (checked.receiver_deref_count != 0u)
+        {
+            uint tag = checked.receiver_parameter_ref_tag;
+            uint instance = checked.receiver_parameter_ref_payload;
+            uint capacity; uint stride;
+            type_instance_kind.GetDimensions(capacity, stride);
+            uint kind = tag == 3u && instance < capacity ? type_instance_kind[instance] : 0u;
+            if (kind == 4u) receiver.value_metadata = SEMANTIC_LIR_TY_POINTER;
+            else if (kind == 2u || kind == 3u)
+            {
+                receiver.value_metadata = 128u | SEMANTIC_LIR_VALUE_ARRAY_PAIR;
+                if (!array_contract_length(instance, receiver.array_length))
+                    invalid_array_contract(row);
+            }
+            else receiver.value_metadata = semantic_lir_value_metadata(
+                tag == 1u ? instance : 4096u, tag, instance);
+        }
         if (destination < gParams.n_call_args)
             semantic_lir_call_args[destination] = receiver;
     }

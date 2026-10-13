@@ -1,0 +1,107 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn view(values: [i32]) -> [i32] { return values; }
+fn row_count(rows: [[i32]]) -> i32 {
+    let count: i32 = 0;
+    for row in rows { count += 1; }
+    return count;
+}
+fn element_count(values: [i32]) -> i32 {
+    let count: i32 = 0;
+    for value in values { count += 1; }
+    return count;
+}
+fn word_count(values: [str]) -> i32 {
+    let count: i32 = 0;
+    for value in values { count += 1; }
+    return count;
+}
+fn word_view(values: [str]) -> [str] { return values; }
+fn exercise_words(rows: [[str]], backup: [str]) -> i32 {
+    let first: [str] = core::slice::first(rows);
+    let last: [str] = core::slice::get_or(rows, 2, 1, backup);
+    if (word_count(first) != 2 || word_count(last) != 0) { return 15; }
+    std::io::println(first[0]);
+    std::io::println(first[1]);
+    if (!core::slice::swap(rows, 2, 0, 1)) { return 16; }
+    if (word_count(rows[0]) != 0 || word_count(rows[1]) != 2) { return 17; }
+    std::io::println(rows[1][0]);
+    if (!core::slice::set(rows, 2, 0, backup)) { return 18; }
+    if (word_count(rows[0]) != 1) { return 19; }
+    std::io::println(rows[0][0]);
+    rows[1][1] = "changed";
+    std::io::println(first[1]);
+    return 0;
+}
+fn exercise(rows: [[i32]], empty: [[i32]], backup: [i32]) -> i32 {
+    let copied: [[i32]] = keep(rows);
+    if (row_count(copied) != 3 || row_count(keep(copied)) != 3 || row_count(keep(empty)) != 0) { return 1; }
+    let first: [i32] = core::slice::first(copied);
+    let last: [i32] = core::slice::get_or(copied, 3, 2, backup);
+    let missing: [i32] = core::slice::get_or(copied, 3, -1, backup);
+    if (element_count(first) != 2 || element_count(last) != 0 || element_count(missing) != 3) { return 2; }
+    std::io::print_i32(first[0]);
+    std::io::print_i32(missing[2]);
+
+    let some: core::option::Option<[[i32]]> = core::option::Some(copied);
+    let none: core::option::Option<[[i32]]> = core::option::None();
+    let empty_some: core::option::Option<[[i32]]> = core::option::Some(empty);
+    if (!core::option::is_some(empty_some)) { return 3; }
+    let present: [[i32]] = core::option::unwrap_or(keep(some), empty);
+    let absent: [[i32]] = none.unwrap_or(copied);
+    let present_empty: [[i32]] = empty_some.unwrap_or(copied);
+    if (row_count(present) != 3 || row_count(absent) != 3 || row_count(present_empty) != 0) { return 4; }
+
+    let ok: core::result::Result<[[i32]], [i32]> = core::result::Ok(copied);
+    let err: core::result::Result<[[i32]], [i32]> = core::result::Err(backup);
+    let success: [[i32]] = core::result::unwrap_or(keep(ok), empty);
+    let failure: [[i32]] = err.unwrap_or(copied);
+    let error_values: [i32] = core::result::unwrap_err_or(err, first);
+    if (row_count(success) != 3 || row_count(failure) != 3 || element_count(error_values) != 3) { return 5; }
+    success[0][1] = 123;
+    if (rows[0][1] != 123 || present[0][1] != 123 || first[1] != 123) { return 6; }
+    std::io::print_i32(absent[0][1]);
+
+    if (!core::slice::swap(copied, 3, 0, 2)) { return 7; }
+    if (element_count(rows[0]) != 0) { return 8; }
+    if (element_count(rows[2]) != 2) { return 13; }
+    if (rows[2][1] != 123) { return 14; }
+    if (!core::slice::set(copied, 3, 1, backup) || core::slice::set(copied, 3, 3, first)) { return 9; }
+    if (element_count(rows[1]) != 3 || rows[1][2] != 11) { return 10; }
+    rows[1][0] = 321;
+    if (backup[0] != 321 || error_values[0] != 321) { return 11; }
+    std::io::print_i32(failure[1][0]);
+    return 0;
+}
+fn main() -> i32 {
+    let numbers: [i32; 2] = [-7, 42];
+    let singleton: [i32; 1] = [99];
+    let no_numbers: [i32; 0] = [];
+    let fallback: [i32; 3] = [-11, 0, 11];
+    let first: [i32] = view(numbers);
+    let second: [i32] = view(singleton);
+    let last: [i32] = view(no_numbers);
+    let backup: [i32] = view(fallback);
+    let rows: [[i32]; 3] = [first, second, last];
+    let empty: [[i32]; 0] = [];
+    let status: i32 = exercise(rows, empty, backup);
+    if (status != 0) { return status; }
+    if (numbers[1] != 123 || singleton[0] != 99 || fallback[0] != 321) { return 12; }
+    let words: [str; 2] = ["Ω", ""];
+    let no_words: [str; 0] = [];
+    let word_backup: [str; 1] = ["backup"];
+    let populated: [str] = word_view(words);
+    let absent: [str] = word_view(no_words);
+    let fallback_words: [str] = word_view(word_backup);
+    let word_rows: [[str]; 2] = [populated, absent];
+    let word_status: i32 = exercise_words(word_rows, fallback_words);
+    if (word_status != 0) { return word_status; }
+    std::io::println(words[1]);
+    return 0;
+}

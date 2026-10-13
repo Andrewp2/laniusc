@@ -1,0 +1,55 @@
+module core::relay;
+
+pub fn keep<T>(value: T) -> T { return value; }
+
+pub fn forward<T>(value: T) -> T { return keep(value); }
+
+pub fn choose<T>(left: T, right: T, first: bool) -> T {
+    if (first) { return left; }
+    return right;
+}
+
+pub fn forward_array<T>(value: [T; 2]) -> [T; 2] { return value; }
+
+pub fn duplicate<T>(value: T) -> [T; 2] { return [value, value]; }
+
+pub struct Wrapped<T> { value: T, sentinel: i32 }
+
+pub fn wrap<T>(value: T) -> Wrapped<T> {
+    return Wrapped { value: value, sentinel: 1234 };
+}
+
+pub fn read_nested<T>(value: Wrapped<Wrapped<T>>) -> T {
+    return value.value.value;
+}
+
+pub enum Equal<A, B> { Empty, Pair(A, B) }
+
+pub fn absent<T>() -> Equal<T, T> { return Empty(); }
+
+pub fn is_empty<T>(value: Equal<T, T>) -> bool {
+    return match (value) { Empty -> true, Pair(left, right) -> false };
+}
+
+// References retain their referent through explicit imported signatures.
+pub fn keep_ref<T>(value: &T) -> &T { return value; }
+
+pub fn same_ref<T>(left: &T, right: &T) -> &T { return left; }
+
+pub struct View<T> { value: &T, sentinel: i32 }
+
+pub fn wrap_ref<T>(value: &T) -> View<T> {
+    return View { value: value, sentinel: 1234 };
+}
+
+pub fn read_ref<T>(view: View<T>) -> &T { return view.value; }
+
+// Type and constant domains stay independent across imported body replay.
+pub fn keep_length<T, const M: usize>(value: [T; M]) -> [T; M] { return value; }
+pub fn forward_length<T, const N: usize>(value: [T; N]) -> [T; N] {
+    return keep_length(value);
+}
+pub fn keep_matrix<T, const N: usize, const M: usize>(value: [[T; N]; M]) -> [[T; N]; M] {
+    return value;
+}
+pub fn square<const N: usize>(value: [[i32; N]; N]) -> [[i32; N]; N] { return value; }

@@ -32,6 +32,7 @@ StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> decl_lookup_state;
 
 RWStructuredBuffer<uint> resolved_decl;
@@ -61,16 +62,16 @@ uint active_path_count()
     return min(path_count_out[0], gParams.capacity);
 }
 
-uint find_decl(uint module_id, uint name_id)
+DeclLookupResult find_decl(uint module_id, uint name_id)
 {
     uint namespace_id = gParams.key_step == 0u
         ? HIR_ITEM_NAMESPACE_TYPE
         : HIR_ITEM_NAMESPACE_VALUE;
-    return decl_lookup_find(
-        module_id, namespace_id, name_id,
+    return decl_lookup_query(
+        module_id, namespace_id, name_id, DECL_LOOKUP_ANY_PARENT,
         min(decl_count_out[0], gParams.capacity),
         decl_module_id, decl_namespace, decl_name_id,
-        decl_lookup_state);
+        decl_parent_type_decl, decl_lookup_state);
 }
 
 [shader("compute")]
@@ -100,7 +101,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint name_id = path_segment_name_id[path_segment_base[path_i]];
-    uint decl_i = find_decl(owner_module, name_id);
+    DeclLookupResult found = find_decl(owner_module, name_id);
+    uint decl_i = found.unique();
+    if (found.matches > 1u)
+    {
+        resolved_status[path_i] = 4u; // Ambiguous visible name.
+        return;
+    }
     if (decl_i == INVALID)
     {
         resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED;

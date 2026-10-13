@@ -1,0 +1,52 @@
+
+running 47 tests
+test bare_nominal_compositions_preserve_copies_and_aliases ... ok
+test checked_window_program_executes_generic_values_and_portable_utilities ... ok
+test concrete_nominal_parameters_preserve_all_nested_type_arguments ... ok
+test concrete_nominal_parameters_reject_incompatible_arguments ... ok
+test concrete_nominal_parameters_reject_incompatible_returns ... ok
+test concrete_nominal_parameters_retain_complete_return_types ... ok
+test enum_constructor_expected_empty_payloads_execute ... ok
+test enum_constructor_expected_unsigned_payloads_execute ... ok
+test enum_layouts_include_unconstructed_compound_variants ... ok
+test explicit_generic_arguments_preserve_unrelated_member_comparisons ... ok
+test generic_assignment_contexts_preserve_slice_descriptors_and_aliases ... ok
+test generic_assignment_destinations_reject_conflicting_payloads ... ok
+test generic_assignment_destinations_supply_complete_result_contexts ... ok
+test generic_enum_constructor_headers_bind_types_and_constants ... ok
+test generic_enum_constructors_infer_complete_payload_types ... ok
+test generic_enum_constructors_infer_thirty_two_bindings_from_payloads ... ok
+test generic_enum_constructors_reject_inconsistent_and_missing_bindings ... ok
+test generic_nested_result_arguments_execute ... ok
+test generic_nested_result_array_elements_execute ... ok
+test generic_nested_result_conflicts_and_missing_context_reject ... ok
+test generic_nested_result_fields_execute ... ok
+test generic_nested_result_match_arms_execute ... ok
+test generic_record_field_constraints_reject_conflicts_and_missing_bindings ... ok
+test generic_record_fields_infer_complete_types ... ok
+test generic_record_fields_infer_constant_and_symbolic_parameters ... ok
+test generic_record_fields_infer_thirty_two_bindings ... ok
+test generic_unit_values_preserve_complete_local_and_imported_types ... ok
+test generic_unit_values_reject_missing_and_incompatible_contexts ... ok
+test generic_unit_values_retain_thirty_two_context_bindings ... ok
+test generic_unit_variant_values_receive_complete_types ... ok
+test imported_bare_nominal_annotations_preserve_composed_values ... ok
+test imported_enum_constructor_wrappers_preserve_symbolic_payloads ... ok
+test imported_enum_constructor_wrappers_reject_unrelated_parameters ... ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... ok
+test imported_generic_record_fields_execute_in_the_importing_module ... ok
+test imported_generic_record_fields_preserve_native_slice_bounds ... ok
+test imported_generic_record_fields_reject_wrong_types_and_names ... ok
+test imported_nongeneric_unit_values_have_complete_types_without_annotations ... ok
+test imported_reference_fields_preserve_pointer_layout_and_aliases ... ok
+test local_enum_constructor_contexts_preserve_nongeneric_nominal_identity ... ok
+test local_enum_constructor_contexts_reject_conflicting_payloads ... ok
+test local_enum_constructors_receive_nested_expression_types ... ok
+test local_generic_enums_substitute_nested_payload_types ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nominal_declaration_identity_is_independent_of_source_positions ... ok
+test zero_sized_generic_calls_retain_distinct_complete_type_identities ... ok
+
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 54.61s
+

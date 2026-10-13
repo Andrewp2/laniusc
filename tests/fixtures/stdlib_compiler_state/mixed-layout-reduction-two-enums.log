@@ -1,0 +1,8 @@
+error[LNC0017]: operation is not implemented by the x86 backend
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/mixed-reduction/two-enums.lani:7:43
+  |
+7 |     let value: Quad<bool, u8, i32, u32> = Item(false, byte, signed, unsigned);
+  |                                           ^^^^ not supported by the native x86 backend yet
+     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
+     = note: the native x86 backend rejected this program before emitting an artifact
+     = note: first unsupported target LIR opcode: 30

@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import primitive_types;
 
 static const uint WASM_LIR_INVALID = 0xffffffffu;
 static const uint TY_FLOAT = 5u;
@@ -61,6 +62,7 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
 
 uint wasm_compare_opcode(uint predicate, uint type_id)
 {
+    if (type_id == SCALAR_F64) return WASM_LIR_OP_UNREACHABLE;
     if (type_id == TY_FLOAT)
     {
         if (predicate == 0u) return WASM_LIR_OP_F32_EQ;
@@ -89,6 +91,7 @@ uint wasm_compare_opcode(uint predicate, uint type_id)
 
 uint wasm_scalar_opcode(OptIrNodeCore core, OptIrNodeOperands operands)
 {
+    if (core.type_id == SCALAR_F64) return WASM_LIR_OP_UNREACHABLE;
     bool f32 = core.type_id == TY_FLOAT;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I32) return WASM_LIR_OP_I32_CONST;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_F32) return WASM_LIR_OP_F32_CONST;
@@ -129,6 +132,8 @@ uint wasm_scalar_opcode(OptIrNodeCore core, OptIrNodeOperands operands)
 
 bool wasm_lir_supported(OptIrNodeCore core)
 {
+    // Native f64 support does not imply a Wasm value or ABI representation.
+    if (core.type_id == SCALAR_F64) return false;
     uint op = opt_ir_op(core);
     return op == SEMANTIC_LIR_OP_CONST_I32 || op == SEMANTIC_LIR_OP_CONST_F32 ||
         op == SEMANTIC_LIR_OP_CONST_STRING ||

@@ -1,0 +1,24 @@
+struct Bounds<T> { values: T }
+fn relay<T>(value: T) -> T { return value; }
+fn make(calls: [i32]) -> [i32; 2] {
+    calls[0] += 1;
+    return [2, 4];
+}
+fn main() -> i32 {
+    let bounds: Bounds<[[i32; 2]; 2]> = Bounds { values: [[1, 3], [2, 4]] };
+    let slots: [i32; 2] = [0, 1];
+    let sum: i32 = 0;
+    for value in 0..bounds.values[slots[0]][slots[1]] {
+        bounds.values[0][1] = 0;
+        sum += value;
+    }
+    if (sum != 3 || bounds.values[0][1] != 0) { return 1; }
+    let calls: [i32; 1] = [0];
+    sum = 0;
+    for value in 0..relay(make(calls))[slots[1]] {
+        slots[1] = 0;
+        sum += value;
+    }
+    if (sum != 6 || calls[0] != 1 || slots[1] != 0) { return 2; }
+    return 0;
+}

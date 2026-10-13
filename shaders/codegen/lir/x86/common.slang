@@ -1,3 +1,5 @@
+import primitive_types;
+import native_value_layout;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 
@@ -9,6 +11,7 @@ bool x86_semantic_type_is_aggregate(OptIrNodeCore core)
     // aggregates instead carry TYPE_REF_INSTANCE. Keep the invalid-reference
     // fallback only for partially projected producers that still have a
     // checked concrete type code.
+    if (core.type_id == SEMANTIC_LIR_TY_POINTER) return false;
     uint type_ref_tag = opt_ir_type_ref_tag(core);
     return type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
         (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR &&
@@ -22,7 +25,7 @@ uint x86_imported_call_result_words(OptIrNodeCore core)
     // in value_word_count. Only its checked result type may authorize an
     // aggregate result slot and the hidden sret ABI argument.
     if (!x86_semantic_type_is_aggregate(core) &&
-        core.type_id != 0u && core.type_id <= SEMANTIC_LIR_TY_POINTER)
+        scalar_is_known(core.type_id))
         return 0u;
     return core.value_word_count;
 }
@@ -56,11 +59,18 @@ uint x86_aggregate_value_word_count(OptIrNodeCore core,
     // Intrinsics do not have a SemanticLirFunction row from which the x86
     // lowering can recover an aggregate result width. Keep their value-shape
     // contract here so every aggregate consumer (counting, scattering, local
-    // copies, and returns) sees the same pointer-and-length pair.
+    // copies, and returns) sees the same three-word slice descriptor.
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
         intrinsic_slice_from_raw_parts(operands.a))
-        return 2u;
+        return NATIVE_SLICE_WORDS;
     return core.value_word_count;
+}
+
+bool x86_direct_array_pair(OptIrNodeCore core)
+{
+    return (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
+            opt_ir_op(core) == SEMANTIC_LIR_OP_PLACE_LOAD) &&
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u;
 }
 
 static const uint X86_LIR_TY_FLOAT = 5u;
@@ -76,7 +86,12 @@ bool x86_scalar_float(uint metadata)
         X86_LIR_METADATA_WIDE | X86_LIR_METADATA_STRING_PAIR |
         X86_LIR_METADATA_ARRAY_PAIR | X86_LIR_METADATA_PACKED_I32_ARRAY;
     return (metadata & non_scalar) == 0u &&
-        (metadata & 0xffu) == X86_LIR_TY_FLOAT;
+        scalar_is_float(metadata & 0xffu);
+}
+
+bool x86_scalar_f64(uint metadata)
+{
+    return x86_scalar_float(metadata) && (metadata & 0xffu) == SCALAR_F64;
 }
 
 bool x86_scalar_immediate_type(uint type_id)
@@ -127,10 +142,7 @@ uint x86_parameter_abi_ordinal(SemanticLirFunction function, uint ordinal)
 bool x86_integer_immediate_operation(uint semantic_op, uint type_id,
                                      uint immediate)
 {
-    if (type_id == X86_LIR_TY_FLOAT ||
-        type_id == SEMANTIC_LIR_TY_POINTER ||
-        type_id == SEMANTIC_LIR_TY_STRING)
-        return false;
+    if (!x86_scalar_immediate_type(type_id)) return false;
     if (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
         semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT)
         return immediate <= 31u;
@@ -169,10 +181,7 @@ bool x86_fold_integer_binary(uint semantic_op, uint type_id, uint predicate,
                              uint left, uint right, out uint value)
 {
     value = 0u;
-    if (type_id == X86_LIR_TY_FLOAT ||
-        type_id == SEMANTIC_LIR_TY_POINTER ||
-        type_id == SEMANTIC_LIR_TY_STRING)
-        return false;
+    if (!x86_scalar_immediate_type(type_id)) return false;
     bool is_unsigned = type_id == 4u || type_id == 6u;
     if (semantic_op == SEMANTIC_LIR_OP_ADD) value = left + right;
     else if (semantic_op == SEMANTIC_LIR_OP_SUB) value = left - right;
@@ -241,10 +250,7 @@ bool x86_fold_integer_unary(uint semantic_op, uint type_id, uint input,
                             out uint value)
 {
     value = 0u;
-    if (type_id == X86_LIR_TY_FLOAT ||
-        type_id == SEMANTIC_LIR_TY_POINTER ||
-        type_id == SEMANTIC_LIR_TY_STRING)
-        return false;
+    if (!x86_scalar_immediate_type(type_id)) return false;
     if (semantic_op == SEMANTIC_LIR_OP_NEGATE)
         value = 0u - input;
     else if (semantic_op == SEMANTIC_LIR_OP_LOGICAL_NOT)
@@ -258,6 +264,7 @@ uint x86_constant_divisor_kind(uint semantic_op, uint type_id, uint divisor)
     if ((semantic_op != SEMANTIC_LIR_OP_DIV &&
          semantic_op != SEMANTIC_LIR_OP_REM) || divisor == 0u)
         return X86_CONSTANT_DIVISOR_NONE;
+    if (!x86_scalar_immediate_type(type_id)) return X86_CONSTANT_DIVISOR_NONE;
     bool power_of_two = (divisor & (divisor - 1u)) == 0u;
     bool is_unsigned = type_id == 4u || type_id == 6u;
     if (power_of_two && (is_unsigned || int(divisor) > 0))
@@ -274,12 +281,14 @@ uint x86_lir_count(OptIrNodeCore core, OptIrNodeOperands operands)
     // row has the same two-row target representation, whether its source is
     // rodata or a declaration read.
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING ||
-        (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
+        ((opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
+          (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
+           (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)) &&
          core.type_id == SEMANTIC_LIR_TY_STRING))
         return 2u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
         (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
-        return 2u;
+        return NATIVE_SLICE_WORDS;
     return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW
         ? 1u + core.value_word_count
         : 1u;
@@ -290,18 +299,24 @@ uint x86_abi_type_width(uint type_id)
     return type_id == SEMANTIC_LIR_TY_STRING ? 2u : 1u;
 }
 
+uint x86_abi_argument_width(uint metadata)
+{
+    return (metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u ? NATIVE_SLICE_WORDS
+        : (metadata & SEMANTIC_LIR_VALUE_STRING) != 0u ? 2u : 1u;
+}
+
 uint x86_abi_param_width(SemanticLirParam param)
 {
     return (param.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u
-        ? 2u : x86_abi_type_width(param.type_id);
+        ? NATIVE_SLICE_WORDS : x86_abi_type_width(param.type_id);
 }
 
-// Declarations use a fixed two-word home. This keeps component locations a
+// Declarations use a fixed three-word home. This keeps component locations a
 // pure arithmetic projection and avoids a per-function prefix table. Scalar
-// declarations use the first word; strings use both words.
+// declarations use the first word; strings use two and slices use all three.
 uint x86_declaration_slot_offset(uint logical_ordinal)
 {
-    return logical_ordinal * 2u;
+    return logical_ordinal * NATIVE_SLICE_WORDS;
 }
 
 uint x86_declaration_slot_count(uint param_count, uint local_count)
@@ -309,13 +324,15 @@ uint x86_declaration_slot_count(uint param_count, uint local_count)
     return x86_declaration_slot_offset(param_count + local_count);
 }
 
+// Floating arithmetic tags identify operations; checked scalar metadata
+// selects single or double precision in their emitter.
 uint x86_binary_payload(OptIrNodeCore core)
 {
-    bool f32 = core.type_id == X86_LIR_TY_FLOAT;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_ADD) return f32 ? X86_LIR_BINARY_ADD_F32 : X86_LIR_BINARY_ADD_I32;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_SUB) return f32 ? X86_LIR_BINARY_SUB_F32 : X86_LIR_BINARY_SUB_I32;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_MUL) return f32 ? X86_LIR_BINARY_MUL_F32 : X86_LIR_BINARY_MUL_I32;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_DIV) return f32 ? X86_LIR_BINARY_DIV_F32 : X86_LIR_BINARY_DIV_I32;
+    bool floating = scalar_is_float(core.type_id);
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_ADD) return floating ? X86_LIR_BINARY_ADD_FLOAT : X86_LIR_BINARY_ADD_I32;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_SUB) return floating ? X86_LIR_BINARY_SUB_FLOAT : X86_LIR_BINARY_SUB_I32;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_MUL) return floating ? X86_LIR_BINARY_MUL_FLOAT : X86_LIR_BINARY_MUL_I32;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_DIV) return floating ? X86_LIR_BINARY_DIV_FLOAT : X86_LIR_BINARY_DIV_I32;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_REM) return X86_LIR_BINARY_REM_I32;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_BIT_AND) return X86_LIR_BINARY_BIT_AND_I32;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_BIT_OR) return X86_LIR_BINARY_BIT_OR_I32;
@@ -329,6 +346,29 @@ uint x86_binary_payload(OptIrNodeCore core)
 
 uint x86_lir_opcode(OptIrNodeCore core)
 {
+    // Floating arithmetic has no integer fallback. Remainder, bitwise and
+    // implicit conversions require their own checked semantics and lowering.
+    uint semantic_op = opt_ir_op(core);
+    // Literal payload format is owned by its semantic opcode. A type change
+    // cannot reinterpret integer bits or a rounded f32 payload as f64.
+    if ((semantic_op == SEMANTIC_LIR_OP_CONST_F32 && core.type_id != SCALAR_F32) ||
+        (semantic_op == SEMANTIC_LIR_OP_CONST_F64 && core.type_id != SCALAR_F64) ||
+        ((semantic_op == SEMANTIC_LIR_OP_CONST_I32 || semantic_op == SEMANTIC_LIR_OP_CONST_I64) &&
+         scalar_is_float(core.type_id))) return 0u;
+    if (scalar_is_float(core.type_id) &&
+        (semantic_op == SEMANTIC_LIR_OP_REM ||
+         (semantic_op >= SEMANTIC_LIR_OP_BIT_AND && semantic_op <= SEMANTIC_LIR_OP_SHIFT_RIGHT) ||
+         semantic_op == SEMANTIC_LIR_OP_CONVERT ||
+         semantic_op == SEMANTIC_LIR_OP_LOGICAL_NOT ||
+         semantic_op == SEMANTIC_LIR_OP_LOGICAL_AND || semantic_op == SEMANTIC_LIR_OP_LOGICAL_OR))
+        return 0u;
+    if (semantic_op == SEMANTIC_LIR_OP_CONST_I64 || semantic_op == SEMANTIC_LIR_OP_CONST_F64)
+        return X86_LIR_OP_IMM_I64;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_ADDRESS) return X86_LIR_OP_DECL_ADDRESS;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_FIELD_ADDRESS) return X86_LIR_OP_FIELD_ADDRESS;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_INDEX_ADDRESS) return X86_LIR_OP_INDEX_ADDRESS;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_PLACE_LOAD) return X86_LIR_OP_PLACE_LOAD;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_PLACE_STORE) return X86_LIR_OP_PLACE_STORE;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I32 || opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_F32)
         return X86_LIR_OP_IMM_I32;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET) return X86_LIR_OP_ALIAS;
@@ -349,7 +389,9 @@ uint x86_lir_opcode(OptIrNodeCore core)
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_HOST) return X86_LIR_OP_CALL_HOST;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) return X86_LIR_OP_CALL_SYMBOL;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC) return X86_LIR_OP_PRINT_I32;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW) return X86_LIR_OP_AGGREGATE_ADDR;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW ||
+        opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY)
+        return X86_LIR_OP_AGGREGATE_ADDR;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
         return X86_LIR_OP_INDEX_LOAD;
@@ -378,4 +420,83 @@ bool x86_lir_supported(OptIrNodeCore core)
     // intrinsics likewise validate their stable tag there.
     return x86_lir_opcode(core) != 0u &&
         opt_ir_op(core) != SEMANTIC_LIR_OP_CALL_HOST;
+}
+
+// Scalar bodies selected here have one emitter and one count owner. Prologues,
+// guards and footers retain their independent byte ranges; the existing
+// ordered count pass combines body bytes with independently emitted guards.
+bool x86_is_specialized_integer_instruction(X86LirCore core, X86LirOperands operands)
+{
+    uint type = operands.metadata & 0xffu;
+    if ((operands.metadata & (X86_LIR_METADATA_AGGREGATE |
+        X86_LIR_METADATA_STRING_PAIR | X86_LIR_METADATA_ARRAY_PAIR |
+        X86_LIR_METADATA_PACKED_I32_ARRAY)) != 0u) return false;
+    if (core.op == X86_LIR_OP_IMM_I64) return scalar_is_wide_integer(type);
+    if ((core.op == X86_LIR_OP_COMPARE || core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE) &&
+        scalar_uses_64bit_gpr(type)) return true;
+    if (core.op == X86_LIR_OP_BINARY && type == SCALAR_PTR)
+        return operands.a == X86_LIR_BINARY_ADD_I32 || operands.a == X86_LIR_BINARY_SUB_I32;
+    if (!scalar_is_wide_integer(type) && !scalar_is_narrow_integer(type)) return false;
+    if (core.op == X86_LIR_OP_UNARY) return operands.a == X86_LIR_UNARY_NEG_I32;
+    return core.op == X86_LIR_OP_BINARY &&
+        ((operands.a >= X86_LIR_BINARY_ADD_I32 && operands.a <= X86_LIR_BINARY_MUL_I32) ||
+         (operands.a >= X86_LIR_BINARY_REM_I32 && operands.a <= X86_LIR_BINARY_SHR_I32));
+}
+
+// Scalar float bodies share the existing specialized pass so the main emitter
+// does not grow another arithmetic family. Copies, calls and storage remain in
+// their existing owners; this predicate never classifies aggregate addresses.
+bool x86_is_specialized_float_instruction(X86LirCore core, X86LirOperands operands)
+{
+    if (!x86_scalar_float(operands.metadata)) return false;
+    if (core.op == X86_LIR_OP_IMM_I64) return x86_scalar_f64(operands.metadata);
+    if (core.op == X86_LIR_OP_COMPARE || core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE) return true;
+    if (core.op == X86_LIR_OP_UNARY) return operands.a == X86_LIR_UNARY_NEG_FLOAT;
+    return core.op == X86_LIR_OP_BINARY &&
+        operands.a >= X86_LIR_BINARY_ADD_FLOAT && operands.a <= X86_LIR_BINARY_DIV_FLOAT;
+}
+
+bool x86_is_specialized_scalar_instruction(X86LirCore core, X86LirOperands operands)
+{
+    return x86_is_specialized_integer_instruction(core, operands) ||
+        x86_is_specialized_float_instruction(core, operands);
+}
+
+// Both emitters must agree on the sole writer of each instruction.
+bool x86_is_specialized_instruction(X86LirCore core,
+                                   X86LirOperands operands)
+{
+    if (x86_is_specialized_scalar_instruction(core, operands)) return true;
+    if (core.op == X86_LIR_OP_DECL_ADDRESS || core.op == X86_LIR_OP_FIELD_ADDRESS ||
+        core.op == X86_LIR_OP_INDEX_ADDRESS || core.op == X86_LIR_OP_PLACE_LOAD ||
+        core.op == X86_LIR_OP_PLACE_STORE) return true;
+    return core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
+        core.op == X86_LIR_OP_PRINT_I32 ||
+        core.op == X86_LIR_OP_INTRINSIC_IDENTITY ||
+        (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD &&
+         (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u) ||
+        ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_STRING &&
+         (core.op == X86_LIR_OP_CALL ||
+          core.op == X86_LIR_OP_CALL_SYMBOL ||
+          core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)) ||
+        (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u ||
+        ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
+         (core.op == X86_LIR_OP_COMPARE ||
+          core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
+          core.op == X86_LIR_OP_SELECT_STORE)) ||
+        (operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u ||
+        (core.op == X86_LIR_OP_CALL_ARG &&
+         (operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u) ||
+        (core.op == X86_LIR_OP_FIELD_STORE &&
+         (operands.metadata & (X86_LIR_METADATA_FIELD_AGGREGATE_WORD |
+             X86_LIR_METADATA_STRING_PAIR | X86_LIR_METADATA_ARRAY_PAIR)) != 0u) ||
+        (core.op == X86_LIR_OP_STORE_LOCAL &&
+         (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u) ||
+        core.op == X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS;
+}
+
+bool float_binary_commutative(uint operation)
+{
+    return operation == X86_LIR_BINARY_ADD_FLOAT ||
+        operation == X86_LIR_BINARY_MUL_FLOAT;
 }

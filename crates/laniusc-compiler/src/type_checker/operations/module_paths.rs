@@ -21,6 +21,8 @@ pub(in crate::type_checker) const PATH_STATE_CLEAR: ReflectedComputeSpec = typec
         "path_id_by_owner_hir",
         "path_id_by_owner_token",
         "path_max_segment_count",
+        "resolved_value_type_qualifier_token",
+        "resolved_value_qualifier_binding",
     ]
 );
 
@@ -687,179 +689,28 @@ pub(in crate::type_checker) const TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES: Re
 pub(in crate::type_checker) const TYPE_PATHS_PROJECT_AFTER_ALIAS_EQUIVALENCE: ReflectedComputeSpec =
     type_path_projection("type_check.modules.project_type_paths.after_alias_equivalence");
 
-pub(in crate::type_checker) const TYPE_ALIAS_FORWARDING_CLEAR: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.clear_type_alias_forwarding",
-    HirNodes,
-    "type_checker/modules/10e0_clear_type_alias_forwarding";
-    writes [
-        "alias_forwarding",
-        "alias_forwarding_target_decl",
-        "alias_forwarding_valid_arg_count",
-        "alias_decl_by_target_hir",
-    ]
-);
-pub(in crate::type_checker) const TYPE_ALIAS_FORWARDING_INITIALIZE: ReflectedComputeSpec =
+pub(in crate::type_checker) const TYPE_ALIASES_NORMALIZE: ReflectedComputeSpec =
     typecheck_pass!(
-        "type_check.modules.init_type_alias_forwarding",
-        Declarations,
-        "type_checker/modules/10e0a_init_type_alias_forwarding"
+        "type_check.modules.normalize_type_aliases",
+        Tokens,
+        "type_checker/modules/10e0l_normalize_type_aliases"
     )
-    .with_indirect_dispatch("decl_key_radix_dispatch_args");
-pub(in crate::type_checker) const TYPE_ALIAS_FORWARDING_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
-    "type_check.modules.validate_type_alias_forwarding_args",
-    HirNodes,
-    "type_checker/modules/10e0b_validate_type_alias_forwarding_args"
-);
-
-const TYPE_ALIAS_ROOT_INITIALIZE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] =
-    &[typecheck_resource!("alias_root_decl" => "alias_root_a", Write)];
-pub(in crate::type_checker) const TYPE_ALIAS_ROOT_INITIALIZE: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.init_type_alias_roots",
-        Declarations,
-        "type_checker/modules/10e1_init_type_alias_roots"
-    )
-    .with_aliases(TYPE_ALIAS_ROOT_INITIALIZE_ALIASES)
-    .with_indirect_dispatch("decl_key_radix_dispatch_args");
-
-const TYPE_ALIAS_ROOT_JUMP_A_TO_B_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] =
-    &[
-        typecheck_resource!("alias_root_decl_in" => "alias_root_a", Read),
-        typecheck_resource!("alias_root_decl_out" => "alias_root_b", Write),
-    ];
-const TYPE_ALIAS_ROOT_JUMP_B_TO_A_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] =
-    &[
-        typecheck_resource!("alias_root_decl_in" => "alias_root_b", Read),
-        typecheck_resource!("alias_root_decl_out" => "alias_root_a", Write),
-    ];
-pub(in crate::type_checker) const TYPE_ALIAS_ROOT_JUMP_A_TO_B: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.jump_type_alias_roots.a_to_b",
-        Declarations,
-        "type_checker/modules/10e1a_jump_type_alias_roots"
-    )
-    .with_aliases(TYPE_ALIAS_ROOT_JUMP_A_TO_B_ALIASES)
-    .with_indirect_dispatch("decl_key_radix_dispatch_args");
-pub(in crate::type_checker) const TYPE_ALIAS_ROOT_JUMP_B_TO_A: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.jump_type_alias_roots.b_to_a",
-        Declarations,
-        "type_checker/modules/10e1a_jump_type_alias_roots"
-    )
-    .with_aliases(TYPE_ALIAS_ROOT_JUMP_B_TO_A_ALIASES)
-    .with_indirect_dispatch("decl_key_radix_dispatch_args");
-pub(in crate::type_checker) const TYPE_ALIAS_ROOT_JUMP_FINAL_A_TO_B: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.jump_type_alias_roots.final_a_to_b",
-        Declarations,
-        "type_checker/modules/10e1a_jump_type_alias_roots"
-    )
-    .with_aliases(TYPE_ALIAS_ROOT_JUMP_A_TO_B_ALIASES)
-    .with_indirect_dispatch("decl_key_radix_dispatch_args");
-
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_CLEAR: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.clear_type_alias_equivalence",
-    HirNodes,
-    "type_checker/modules/10e0c_clear_type_alias_equivalence";
-    writes [
-        "alias_equiv_parent_a",
-        "alias_equiv_parent_b",
-        "alias_equiv_edge_0",
-        "alias_equiv_edge_1",
-        "alias_equiv_component_source",
-        "alias_normalized_source",
-    ]
-);
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_DECL_EDGES_INITIALIZE:
-    ReflectedComputeSpec = typecheck_pass!(
-    "type_check.modules.init_type_alias_decl_edges",
-    Declarations,
-    "type_checker/modules/10e0d_init_type_alias_decl_edges"
-)
-.with_indirect_dispatch("decl_key_radix_dispatch_args");
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_ARG_EDGES_INITIALIZE:
-    ReflectedComputeSpec = typecheck_pass!(
-    "type_check.modules.init_type_alias_arg_edges",
-    HirNodes,
-    "type_checker/modules/10e0e_init_type_alias_arg_edges"
-);
-
-const TYPE_ALIAS_EQUIVALENCE_HOOK_A_ALIASES:
-    &[crate::gpu::compiler_graph::ReflectedResourceAlias] =
-    &[typecheck_resource!("alias_equiv_parent" => "alias_equiv_parent_a", ReadWrite)];
-const TYPE_ALIAS_EQUIVALENCE_HOOK_B_ALIASES:
-    &[crate::gpu::compiler_graph::ReflectedResourceAlias] =
-    &[typecheck_resource!("alias_equiv_parent" => "alias_equiv_parent_b", ReadWrite)];
-const TYPE_ALIAS_EQUIVALENCE_JUMP_A_TO_B_ALIASES:
-    &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-    typecheck_resource!("alias_equiv_parent_in" => "alias_equiv_parent_a", Read),
-    typecheck_resource!("alias_equiv_parent_out" => "alias_equiv_parent_b", Write),
-];
-const TYPE_ALIAS_EQUIVALENCE_JUMP_B_TO_A_ALIASES:
-    &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-    typecheck_resource!("alias_equiv_parent_in" => "alias_equiv_parent_b", Read),
-    typecheck_resource!("alias_equiv_parent_out" => "alias_equiv_parent_a", Write),
-];
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_HOOK_A: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.hook_type_alias_equivalence.a",
-        HirNodes,
-        "type_checker/modules/10e0f_hook_type_alias_equivalence"
-    )
-    .with_aliases(TYPE_ALIAS_EQUIVALENCE_HOOK_A_ALIASES);
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_JUMP_A_TO_B: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.jump_type_alias_equivalence.a_to_b",
-        HirNodes,
-        "type_checker/modules/10e0g_jump_type_alias_equivalence"
-    )
-    .with_aliases(TYPE_ALIAS_EQUIVALENCE_JUMP_A_TO_B_ALIASES);
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_HOOK_B: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.hook_type_alias_equivalence.b",
-        HirNodes,
-        "type_checker/modules/10e0f_hook_type_alias_equivalence"
-    )
-    .with_aliases(TYPE_ALIAS_EQUIVALENCE_HOOK_B_ALIASES);
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_JUMP_B_TO_A: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.jump_type_alias_equivalence.b_to_a",
-        HirNodes,
-        "type_checker/modules/10e0g_jump_type_alias_equivalence"
-    )
-    .with_aliases(TYPE_ALIAS_EQUIVALENCE_JUMP_B_TO_A_ALIASES);
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_FINAL_HOOK_A: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.hook_type_alias_equivalence.final_a",
-        HirNodes,
-        "type_checker/modules/10e0f_hook_type_alias_equivalence"
-    )
-    .with_aliases(TYPE_ALIAS_EQUIVALENCE_HOOK_A_ALIASES);
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_FINAL_JUMP_A_TO_B: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.jump_type_alias_equivalence.final_a_to_b",
-        HirNodes,
-        "type_checker/modules/10e0g_jump_type_alias_equivalence"
-    )
-    .with_aliases(TYPE_ALIAS_EQUIVALENCE_JUMP_A_TO_B_ALIASES);
-
-pub(in crate::type_checker) const TYPE_ALIAS_GENERIC_SOURCES_SELECT_PASS: &str =
-    "type_check.modules.select_type_alias_generic_sources";
-pub(in crate::type_checker) const TYPE_ALIAS_CONCRETE_SOURCES_SELECT_PASS: &str =
-    "type_check.modules.select_type_alias_concrete_sources";
-pub(in crate::type_checker) const TYPE_ALIAS_EQUIVALENCE_FINALIZE_PASS: &str =
-    "type_check.modules.finalize_type_alias_equivalence";
-pub(in crate::type_checker) const TYPE_ALIAS_PROJECT_PASS: &str =
-    "type_check.modules.project_type_aliases";
-pub(in crate::type_checker) const TYPE_ALIAS_PROJECT_AFTER_PROJECTED_REFS_PASS: &str =
-    "type_check.modules.project_type_aliases.after_projected_refs";
+    .with_indirect_dispatch("token_active_dispatch_args");
 pub(in crate::type_checker) const TYPE_ALIAS_INSTANCES_PROJECT: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.modules.project_type_alias_instances",
-        HirNodes,
+        Tokens,
         "type_checker/modules/10e0k_project_type_alias_instances"
     )
-    .with_indirect_dispatch("hir_active_dispatch_args");
+    .with_indirect_dispatch("token_active_dispatch_args");
+
+pub(in crate::type_checker) const NORMALIZED_VALUE_MEMBERS_RESOLVE: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.modules.resolve_normalized_value_members",
+        HirNodes,
+        "type_checker/modules/10l_resolve_normalized_value_members"
+    )
+    .with_indirect_dispatch("path_dispatch_args");
 
 pub(in crate::type_checker) const TYPE_INSTANCES_PROJECT: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.project_type_instances",
@@ -933,6 +784,11 @@ pub(in crate::type_checker) const VALUE_ENUM_UNITS_CONSUME: ReflectedComputeSpec
 )
 .with_indirect_dispatch("path_dispatch_args");
 
+pub(in crate::type_checker) const VALUE_ENUM_UNITS_CONSUME_INFERENCE: ReflectedComputeSpec =
+    VALUE_ENUM_UNITS_CONSUME.with_name("type_check.modules.consume_value_enum_units.inference");
+pub(in crate::type_checker) const VALUE_ENUM_UNITS_CONSUME_AFTER_INFERENCE: ReflectedComputeSpec =
+    VALUE_ENUM_UNITS_CONSUME.with_name("type_check.modules.consume_value_enum_units.after_inference");
+
 pub(in crate::type_checker) const MATCH_PATTERNS_BIND: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.bind_match_patterns",
     HirNodes,
@@ -955,18 +811,18 @@ pub(in crate::type_checker) const MATCH_PAYLOADS_TYPE: ReflectedComputeSpec = ty
 )
 .with_indirect_dispatch("match_hir_dispatch_args");
 
+pub(in crate::type_checker) const MATCH_PAYLOADS_TYPE_INFERENCE: ReflectedComputeSpec =
+    MATCH_PAYLOADS_TYPE.with_name("type_check.modules.type_match_payloads.inference");
+
+pub(in crate::type_checker) const MATCH_PAYLOADS_TYPE_AFTER_CALLS: ReflectedComputeSpec =
+    MATCH_PAYLOADS_TYPE.with_name("type_check.modules.type_match_payloads.after_calls");
+
 pub(in crate::type_checker) const VALUE_ENUM_CALLS_CONSUME: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.consume_value_enum_calls",
     HirNodes,
     "type_checker/modules/10l_consume_value_enum_calls"
 )
 .with_indirect_dispatch("path_dispatch_args");
-
-pub(in crate::type_checker) const VALUE_ENUM_CALL_PAYLOADS_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
-    "type_check.modules.validate_value_enum_call_payloads",
-    HirNodes,
-    "type_checker/modules/10l2_validate_value_enum_call_payloads"
-);
 
 pub(in crate::type_checker) const VALUE_ENUM_CALLS_FINALIZE: ReflectedComputeSpec =
     typecheck_pass!(
@@ -976,12 +832,22 @@ pub(in crate::type_checker) const VALUE_ENUM_CALLS_FINALIZE: ReflectedComputeSpe
     )
     .with_indirect_dispatch("path_dispatch_args");
 
+pub(in crate::type_checker) const VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE: ReflectedComputeSpec =
+    VALUE_ENUM_CALLS_CONSUME
+        .with_name("type_check.modules.consume_value_enum_calls.after_inference");
+pub(in crate::type_checker) const VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE: ReflectedComputeSpec =
+    VALUE_ENUM_CALLS_FINALIZE
+        .with_name("type_check.modules.finalize_value_enum_calls.after_inference");
+
 pub(in crate::type_checker) const MATCH_EXPRS_TYPE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.type_match_exprs",
     HirNodes,
     "type_checker/modules/10n_type_match_exprs"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
+
+pub(in crate::type_checker) const MATCH_EXPRS_TYPE_INFERENCE: ReflectedComputeSpec =
+    MATCH_EXPRS_TYPE.with_name("type_check.modules.type_match_exprs.inference");
 
 const RECORD_FLAG_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
     typecheck_resource!("record_family_bits" => "module_record_family_bits", Read),

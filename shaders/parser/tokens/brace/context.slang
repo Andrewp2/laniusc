@@ -1,3 +1,4 @@
+import parser.tokens.statement.parameter_keywords;
 // Top-level brace semantic kinds for token retagging.
 
 import prefix_scan;
@@ -148,6 +149,8 @@ uint statement_event_for(
 {
     if (global_bracket_depth_before != 0)
         return 0u;
+    uint previous = token_i != 0u ? token_words[token_i - 1u].kind : 0u;
+    if (statement_keyword_is_const_parameter(kind, previous)) return 0u;
     if (is_statement_starter(kind))
         return ((token_i + 1u) << 8u) | (kind & 0xffu);
     if ((kind == TK_LBRACE || kind == TK_RBRACE) && global_paren_depth_before != 0)

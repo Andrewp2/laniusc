@@ -1,0 +1,26 @@
+pub enum Pair { Empty, Both(bool, i32) }
+pub enum Quad<A, B, C, D> { Nil, Item(A, B, C, D) }
+
+fn guarded(input: Pair) -> bool {
+    return match (input) { Empty -> false, Both(flag, divisor) -> flag && 10 / divisor > 0 };
+}
+
+fn quad_check(input: Quad<bool, u8, i32, u32>) -> bool {
+    return match (input) { Nil -> false, Item(flag, byte, signed, unsigned) -> !flag && byte == 255 && signed == -7 && unsigned == 9 };
+}
+
+fn main() -> i32 {
+    let empty: Pair = Empty;
+    let valid: Pair = Both(true, 2);
+    let short_circuited: Pair = Both(false, 0);
+    if (guarded(empty)) { return 1; }
+    if (!guarded(valid)) { return 2; }
+    if (guarded(short_circuited)) { return 3; }
+    let nil: Quad<bool, u8, i32, u32> = Nil;
+    let valid_quad: Quad<bool, u8, i32, u32> = Item(false, 255, -7, 9);
+    let invalid_quad: Quad<bool, u8, i32, u32> = Item(false, 254, -7, 9);
+    if (quad_check(nil)) { return 4; }
+    if (!quad_check(valid_quad)) { return 5; }
+    if (quad_check(invalid_quad)) { return 6; }
+    return 0;
+}

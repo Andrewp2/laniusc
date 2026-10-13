@@ -1,0 +1,11 @@
+{
+  "source": "shaders/type_checker/predicates/collect_common.slang",
+  "kind": "three-line stale comment replaced by one-line inherent-impl classification comment",
+  "shader_payloads_byte_identical_to_gate": 1458,
+  "version_changes": [
+    [
+      "shader-artifact-digest: 27be2bf855ebe52c",
+      "shader-artifact-digest: 29dac6e2cf9b2aa4"
+    ]
+  ]
+}

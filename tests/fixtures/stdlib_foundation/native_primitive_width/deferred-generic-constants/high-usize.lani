@@ -1,0 +1,1 @@
+fn value<const N: usize>() -> usize { return N; } fn main() -> i32 { if (value<4294967296>() != 4294967296) { return 1; } return 0; }

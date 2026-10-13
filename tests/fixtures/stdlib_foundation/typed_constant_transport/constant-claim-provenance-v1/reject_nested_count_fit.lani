@@ -1,0 +1,4 @@
+fn narrow<const N:u8>(values:[i32;N])->[i32;N] { return values; }
+fn pair<const N:u64>(first:[i32;N],second:[i32;N])->i32 { return first[0]+second[0]; }
+fn invalid(values:[i32;256])->i32 { return pair(values,narrow(values)); }
+fn main()->i32 { return 0; }

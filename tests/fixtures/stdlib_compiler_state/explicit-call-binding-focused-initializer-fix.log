@@ -1,0 +1,38 @@
+
+running 7 tests
+test explicit_callable_arguments_execute_32_ordered_unused_slots ... ok
+test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test explicit_callable_arguments_execute_independent_receiver_and_method_headers ... FAILED
+test explicit_callable_arguments_execute_scalar_and_unused_bindings ... ok
+test explicit_callable_arguments_reject_value_and_result_conflicts ... ok
+test explicit_callable_arguments_validate_own_headers ... FAILED
+
+failures:
+
+---- explicit_callable_arguments_execute_independent_receiver_and_method_headers stdout ----
+GPU source-pack type-check rejection: token=45 code=AssignMismatch detail=0
+
+thread 'explicit_callable_arguments_execute_independent_receiver_and_method_headers' (422588) panicked at tests/compiler_generic_types_execution.rs:136:29:
+independent receiver method headers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_independent_receiver_method_headers_422539_7.lani", line: 6, column: 12, length: 3, byte_start: Some(124), byte_end: Some(127), source_line: Some("    return Box<bool>::make<i32>(42);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- explicit_callable_arguments_validate_own_headers stdout ----
+GPU source-pack type-check rejection: token=22 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=27 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=25 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=25 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=45 code=AssignMismatch detail=0
+
+thread 'explicit_callable_arguments_validate_own_headers' (422641) panicked at tests/compiler_generic_types_execution.rs:7278:9:
+assertion `left == right` failed: receiver slots are not own method slots: Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source>", line: 1, column: 105, length: 3, byte_start: Some(104), byte_end: Some(107), source_line: Some("struct Box<T> { v: T } impl<T> Box<T> { fn make<U>(v: U) -> U { return v; } } fn main() -> i32 { return Box<bool>::make<i32, bool>(42); }"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] }
+  left: "LNC0006"
+ right: "LNC0027"
+
+
+failures:
+    explicit_callable_arguments_execute_independent_receiver_and_method_headers
+    explicit_callable_arguments_validate_own_headers
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 211 filtered out; finished in 8.65s
+

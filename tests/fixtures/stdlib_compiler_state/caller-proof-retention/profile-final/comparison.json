@@ -1,0 +1,90 @@
+{
+  "order": [
+    "baseline",
+    "current"
+  ],
+  "binary_sha256": {
+    "baseline": "e6a66b71188399651aaf0a81e34b874a26ef1e573e327f3d349090ac9c3b437d",
+    "current": "eae2923ed4d01e2e10727bdd99e70efbb49c6cb609bc1b34b35db779d6e2d942"
+  },
+  "command_arguments": [
+    "tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani",
+    "stdlib",
+    "benchmark_artifacts/performance/stdlib-gpu-20261010-implementation-evidence/generic-32.expected.txt",
+    "1",
+    "1"
+  ],
+  "environment": {
+    "LANIUS_PERF_REBUILD_ENTRY": "1",
+    "LANIUS_GPU_COMPILE_HOST_TIMING": "1",
+    "LANIUS_GPU_PIPELINE_PROGRESS": "1"
+  },
+  "source_snapshot": "optimized-sources.json",
+  "runs": [
+    {
+      "version": "baseline",
+      "log": "tests/fixtures/stdlib_compiler_state/caller-proof-retention/profile-final/0-baseline.log",
+      "samples_ms": [
+        278.633
+      ],
+      "median_ms": 278.633,
+      "output_verified": true,
+      "readback_counts": {
+        "parser.partial_parse_tree_capacity.status": 2,
+        "type_check.call_inference": 22,
+        "parser.recorded-ll1-hir.status": 11,
+        "type_check.status": 11,
+        "semantic-interface artifact metadata": 3,
+        "semantic-interface artifact": 3,
+        "lowering status readback": 11,
+        "x86 object metadata readback": 11,
+        "x86 object payload readback": 11,
+        "generic call counts": 11,
+        "generic call claims": 11,
+        "generic call rows": 85,
+        "result context masks": 11,
+        "generic argument type": 96,
+        "checked nominal arguments": 12,
+        "checked contextual arguments": 6,
+        "codegen.x86.link.symbol_partition.status": 2,
+        "codegen.x86.link.symbol_partition.values": 2,
+        "codegen.x86.link.layout_chunk": 2,
+        "codegen.x86.link.page": 2
+      },
+      "total_readbacks": 325
+    },
+    {
+      "version": "current",
+      "log": "tests/fixtures/stdlib_compiler_state/caller-proof-retention/profile-final/1-current.log",
+      "samples_ms": [
+        270.335
+      ],
+      "median_ms": 270.335,
+      "output_verified": true,
+      "readback_counts": {
+        "parser.partial_parse_tree_capacity.status": 2,
+        "type_check.call_inference": 22,
+        "parser.recorded-ll1-hir.status": 11,
+        "type_check.status": 11,
+        "semantic-interface artifact metadata": 3,
+        "semantic-interface artifact": 3,
+        "lowering status readback": 11,
+        "x86 object metadata readback": 11,
+        "x86 object payload readback": 11,
+        "generic call counts": 11,
+        "generic call claims": 11,
+        "generic call rows": 85,
+        "result context masks": 11,
+        "generic argument type": 96,
+        "checked nominal arguments": 12,
+        "checked contextual arguments": 6,
+        "codegen.x86.link.symbol_partition.status": 2,
+        "codegen.x86.link.symbol_partition.values": 2,
+        "codegen.x86.link.layout_chunk": 2,
+        "codegen.x86.link.page": 2
+      },
+      "total_readbacks": 325
+    }
+  ],
+  "frozen_sources_unchanged": true
+}

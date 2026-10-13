@@ -1,0 +1,4 @@
+lanius_perf: building the release compiler
+lanius_perf: single-file-1mb-x86_64 daemon_warm_workspace (20 samples)
+lanius_perf: cataloged 204 result files (0 invalid)
+/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/canonical/current-1mb-integration.json

@@ -1,0 +1,2 @@
+fn flag<const B:bool>()->bool { return B; }
+fn main()->i32 { if (flag<1>()) { return 1; } return 0; }

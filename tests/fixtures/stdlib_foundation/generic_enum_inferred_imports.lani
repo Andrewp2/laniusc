@@ -1,0 +1,31 @@
+import core::option;
+import core::mem;
+struct Empty {}
+fn wrap<T>(value: T) -> core::option::Option<T> {
+    let inferred = core::option::Some(value);
+    return core::mem::identity(inferred);
+}
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let number = core::option::Some(42);
+    let flag = core::option::Some(false);
+    if (core::option::unwrap_or(number, 0) != 42 || core::option::unwrap_or(flag, true)) { return 1; }
+    let nested = core::option::Some(core::option::Some([41, 43]));
+    let inner = core::option::unwrap_or(nested, core::option::None<[i32; 2]>());
+    let values = core::option::unwrap_or(inner, [0, 0]);
+    values[0] = 47;
+    let original = core::option::unwrap_or(inner, [0, 0]);
+    if (original[0] != 41 || original[1] != 43 || values[0] != 47) { return 2; }
+    let data: [i32; 2] = [51, 61];
+    let alias = core::option::Some(view(data));
+    let slice: [i32] = core::option::unwrap_or(alias, view(data));
+    slice[1] = 71;
+    if (data[0] != 51 || data[1] != 71) { return 3; }
+    let empty: [Empty; 0] = [];
+    let present = core::option::Some(empty);
+    if (!present.is_some()) { return 4; }
+    let replayed = wrap([31, 37]);
+    let replay_values = core::option::unwrap_or(replayed, [0, 0]);
+    if (replay_values[0] != 31 || replay_values[1] != 37) { return 5; }
+    return 0;
+}

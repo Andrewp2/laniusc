@@ -1,0 +1,2 @@
+sample=0 ms=147.379
+entry=tests/fixtures/stdlib_compiler_state/method-result-contract/ordinary-array.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2851 min_ms=147.379 median_ms=147.379 avg_ms=147.379 max_ms=147.379 output_verified=true

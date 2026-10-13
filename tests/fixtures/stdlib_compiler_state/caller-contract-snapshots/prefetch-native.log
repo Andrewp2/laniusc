@@ -1,0 +1,7 @@
+
+running 2 tests
+test nested_symbolic_nominal_constants_in_trait_bounds_execute ... ok
+test nested_symbolic_nominal_constants_in_trait_bounds_reject_wrong_bindings ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 2.23s
+

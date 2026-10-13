@@ -1,0 +1,16 @@
+case=boolean-window-rebuild revision=baseline pair=0
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=21.625 median_ms=23.054 avg_ms=23.606 max_ms=27.305 output_verified=true
+case=boolean-window-rebuild revision=current pair=0
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=20.359 median_ms=22.941 avg_ms=22.857 max_ms=24.662 output_verified=true
+case=boolean-window-rebuild revision=current pair=1
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=19.514 median_ms=21.002 avg_ms=21.092 max_ms=23.306 output_verified=true
+case=boolean-window-rebuild revision=baseline pair=1
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=20.245 median_ms=20.650 avg_ms=21.423 max_ms=24.842 output_verified=true
+case=boolean-window-rebuild revision=baseline pair=2
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=20.312 median_ms=22.070 avg_ms=22.120 max_ms=24.609 output_verified=true
+case=boolean-window-rebuild revision=current pair=2
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=20.216 median_ms=20.934 avg_ms=21.427 max_ms=24.822 output_verified=true
+case=boolean-window-rebuild revision=current pair=3
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=21.061 median_ms=22.496 avg_ms=22.496 max_ms=25.375 output_verified=true
+case=boolean-window-rebuild revision=baseline pair=3
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=20.136 median_ms=20.791 avg_ms=21.350 max_ms=24.628 output_verified=true

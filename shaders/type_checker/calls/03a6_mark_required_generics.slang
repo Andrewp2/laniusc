@@ -2,7 +2,7 @@ import hir_records;
 
 // Mark per-call required generic-parameter rows.
 //
-// Each direct call contributes one validation relation per declared function
+// Each resolved call contributes one validation relation per declared function
 // generic parameter. The following scan gives each call a compact requirement
 // span so validation can run one thread per required slot instead of unrolling
 // a fixed cache width in the call thread.
@@ -23,7 +23,6 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
-StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
 
 RWStructuredBuffer<uint> call_required_generic_scan_input;
@@ -62,13 +61,21 @@ bool valid_token(uint token)
     return token != INVALID && token < active_token_count();
 }
 
+#include "callable_generic_requirements.slang"
+
 uint callee_token_for_hir_call(uint call_node)
 {
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_token = compact_hir_core[call_node].token_start;
     uint callee_node = compact_hir_payload[call_node].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[callee_node].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
+    uint call_token = compact_hir_core[call_node].token_start;
     if (!valid_node(callee_node))
         return valid_token(call_token) ? call_token : INVALID;
 
@@ -77,7 +84,7 @@ uint callee_token_for_hir_call(uint call_node)
 
     HirCore callee = compact_hir_core[callee_node];
     HirPayload payload = compact_hir_payload[callee_node];
-    uint callee_token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    uint callee_token = payload.d;
     if (!valid_token(callee_token))
         callee_token = callee.token_start;
     if (!valid_token(callee_token))
@@ -85,31 +92,21 @@ uint callee_token_for_hir_call(uint call_node)
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
-bool call_record_is_member_call(uint call_node)
-{
-    if (!valid_node(call_node))
-        return false;
-    uint callee_node = compact_hir_payload[call_node].a;
-    return valid_node(callee_node) &&
-        compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR;
-}
-
 uint required_generic_count_for_call(uint call_node)
 {
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return 0u;
-    if (call_record_is_member_call(call_node))
-        return 0u;
 
     uint callee_i = callee_token_for_hir_call(call_node);
     if (!valid_token(callee_i) ||
-        call_dependency_library_id[callee_i] != INVALID ||
-        method_call_name_id[callee_i] != INVALID ||
         call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return 0u;
 
-    uint fn_i = call_fn_index[callee_i];
-    return valid_token(fn_i) ? type_decl_generic_param_count[fn_i] : 0u;
+    uint2 counts = required_callable_generic_counts(callee_i);
+    // Requirement rows carry type slots followed by independent constant slots.
+    // The accepted call environment already contains argument/receiver/context
+    // bindings. The same validation consumes local and retained imported counts.
+    return counts.x + counts.y;
 }
 
 [shader("compute")]

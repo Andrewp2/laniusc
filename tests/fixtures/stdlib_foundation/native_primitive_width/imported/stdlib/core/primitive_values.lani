@@ -1,0 +1,80 @@
+module core::primitive_values;
+
+pub const UNSIGNED_MAX: u64 = 18446744073709551615;
+pub const STEP: u64 = 4294967296;
+pub const TEN_BILLION: u64 = 10000000000;
+pub const CARRY: u64 = 4294967295 + 1;
+pub const SIGNED_MIN: i64 = -9223372036854775808;
+pub const SIGNED_MAX: i64 = 9223372036854775807;
+pub const NEGATIVE_STEP: i64 = -4294967296;
+pub const NEGATIVE_BYTE: i8 = -37;
+pub const BYTE_MIN: i8 = -128;
+pub const NEGATIVE_SHORT: i16 = -12345;
+pub const SHORT_MIN: i16 = -32768;
+
+pub struct Packet {
+    prefix: i32,
+    words: [u64; 3],
+    signed: i64,
+    suffix: i32,
+}
+
+pub struct Envelope<T> { prefix: i32, value: T, suffix: i32 }
+
+pub fn make_packet() -> Packet {
+    return Packet {
+        prefix: 17,
+        words: [4294967296, 10000000000, 9223372036854775808],
+        signed: -4294967296,
+        suffix: 29,
+    };
+}
+
+pub fn copy_packet(value: Packet) -> Packet { return value; }
+pub fn copy_words(values: [u64; 3]) -> [u64; 3] { return values; }
+pub fn keep<T>(value: T) -> T { return value; }
+pub fn wrap<T>(value: T) -> Envelope<T> {
+    return Envelope { prefix: 41, value: value, suffix: 53 };
+}
+
+pub fn replace_middle(values: [u64], replacement: u64) -> u64 {
+    let previous: u64 = values[1];
+    values[1] = replacement;
+    return previous;
+}
+
+// Six leading scalar values occupy the integer argument registers. Distinct
+// trailing values expose a wrong stack offset as well as a lost high word.
+pub fn seventh_unsigned(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64,
+    seventh: u64, eighth: i64) -> u64 {
+    if (a != 1 || b != 2 || c != 3 || d != 4 || e != 5 || f != 6) { return 0; }
+    if (eighth != -4294967296) { return 0; }
+    return seventh;
+}
+
+pub fn eighth_signed(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64,
+    seventh: u64, eighth: i64) -> i64 {
+    if (a != 1 || b != 2 || c != 3 || d != 4 || e != 5 || f != 6) { return 0; }
+    if (seventh != 18446744073709551615) { return 0; }
+    return eighth;
+}
+
+pub fn seventh_generic<T>(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64,
+    seventh: T, eighth: T) -> T {
+    if (a != 1 || b != 2 || c != 3 || d != 4 || e != 5 || f != 6) { return eighth; }
+    return seventh;
+}
+
+pub fn eighth_generic<T>(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64,
+    seventh: T, eighth: T) -> T {
+    if (a != 1 || b != 2 || c != 3 || d != 4 || e != 5 || f != 6) { return seventh; }
+    return eighth;
+}
+
+pub fn narrow_stack(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64,
+    seventh: i8, eighth: i16) -> bool {
+    if (a != 1 || b != 2 || c != 3 || d != 4 || e != 5 || f != 6) { return false; }
+    return seventh == -37 && seventh < 0 && eighth == -12345 && eighth < 0;
+}
+
+pub fn ordinary(value: u64) -> u64 { return value; }

@@ -1,0 +1,224 @@
+import type_checker.constant_parameter_slots;
+import hir_records;
+import type_checker.concrete_type_equality;
+import type_checker.calls.explicit_constant_operand;
+
+// Scatter named generic argument refs from the compact type-argument family.
+
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_type_alias_target;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<uint> compact_generic_param_count;
+StructuredBuffer<HirGenericParam> compact_generic_params;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+RWStructuredBuffer<uint> call_explicit_arg_constant_kind;
+RWStructuredBuffer<uint> call_explicit_arg_constant_payload;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
+StructuredBuffer<HirRange> compact_path_type_arg_ranges;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
+
+RWStructuredBuffer<uint> type_instance_len_kind;
+RWStructuredBuffer<uint> type_instance_len_payload;
+RWStructuredBuffer<uint> type_instance_arg_start;
+RWStructuredBuffer<uint> type_instance_arg_count;
+RWStructuredBuffer<uint> type_instance_arg_ref_tag;
+RWStructuredBuffer<uint> type_instance_arg_ref_payload;
+RWStructuredBuffer<uint> type_instance_arg_row_start;
+RWStructuredBuffer<uint> type_instance_arg_row_count_out;
+RWStructuredBuffer<uint> type_instance_arg_row_ref_tag;
+RWStructuredBuffer<uint> type_instance_arg_row_ref_payload;
+RWStructuredBuffer<uint> type_instance_state;
+RWStructuredBuffer<uint> type_expr_ref_tag;
+RWStructuredBuffer<uint> type_expr_ref_payload;
+
+static const uint INVALID = 0xffffffffu;
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_ERROR = 4u;
+static const uint TYPE_INSTANCE_UNSUPPORTED = 3u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
+
+uint linear_thread_id(uint3 dtid)
+{
+    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+}
+
+uint active_hir_count()
+{
+    return min(compact_hir_count[0u], gParams.n_hir_nodes);
+}
+
+bool valid_compact_node(uint node)
+{
+    return node != INVALID && node < active_hir_count();
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.n_tokens;
+}
+
+#include "named_application_owner.slang"
+
+void mark_instance_unsupported(uint owner, uint leaf_token)
+{
+    if (valid_token(leaf_token))
+        type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
+    uint owner_token = valid_compact_node(owner) &&
+        (compact_hir_core[owner].kind == HIR_TYPE || compact_hir_core[owner].kind == HIR_RECORD_APPLICATION_OWNER)
+        ? compact_hir_core[owner].token_start
+        : INVALID;
+    if (valid_token(owner_token))
+    {
+        type_expr_ref_tag[owner_token] = TYPE_REF_ERROR;
+        type_expr_ref_payload[owner_token] = leaf_token;
+    }
+    if (valid_token(leaf_token))
+    {
+        type_expr_ref_tag[leaf_token] = TYPE_REF_ERROR;
+        type_expr_ref_payload[leaf_token] = leaf_token;
+    }
+}
+
+// Declaration templates and source applications share the same compact edge
+// arena. Parameter rows own the former; explicit-operand rows own the latter.
+void publish_declaration_argument(uint row)
+{
+    if (row >= min(compact_generic_param_count[0u], gParams.n_hir_nodes)) return;
+    HirGenericParam parameter = compact_generic_params[row];
+    if (!valid_compact_node(parameter.owner) || !valid_token(parameter.name_token)) return;
+    uint kind = compact_hir_core[parameter.owner].kind;
+    if (kind != 26u && kind != 27u &&
+        compact_type_alias_target[parameter.owner] >= active_hir_count()) return;
+    uint token = compact_hir_payload[parameter.owner].b;
+    if (!valid_token(token)) return;
+    HirRange header = compact_generic_param_ranges[parameter.owner];
+    if (header.count > 32u || row < header.start || row - header.start >= header.count ||
+        type_instance_arg_count[token] != header.count) return;
+    uint ordinal = row - header.start;
+    uint start = type_instance_arg_row_start[token];
+    if (start == INVALID || start + ordinal >= type_instance_arg_row_count_out[0u]) return;
+    uint tag = parameter.kind == 1u ? 2u : parameter.kind == 2u ? APPLICATION_CONSTANT_ARGUMENT | 2u : 0u;
+    if (tag == 0u) return;
+    type_instance_arg_row_ref_tag[start + ordinal] = tag;
+    type_instance_arg_row_ref_payload[start + ordinal] = parameter.name_token;
+    if (ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
+    {
+        type_instance_arg_ref_tag[token * TYPE_INSTANCE_ARG_REF_STRIDE + ordinal] = tag;
+        type_instance_arg_ref_payload[token * TYPE_INSTANCE_ARG_REF_STRIDE + ordinal] = parameter.name_token;
+    }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint arg_i = linear_thread_id(dtid);
+    publish_declaration_argument(arg_i);
+    uint arg_count = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    if (arg_i >= arg_count)
+        return;
+
+    HirTypeArg arg = compact_type_args[arg_i];
+    if (!valid_compact_node(arg.owner) || !valid_compact_node(arg.value))
+        return;
+    uint leaf_token = instance_token_for_owner(arg.owner);
+    if (!valid_token(leaf_token) || arg.application_token != leaf_token) return;
+    HirRange owner_args = compact_path_type_arg_ranges[leaf_token];
+    if (owner_args.count > 32u || owner_args.start > arg_count ||
+        owner_args.count > arg_count - owner_args.start ||
+        arg.ordinal >= owner_args.count ||
+        type_instance_arg_count[leaf_token] != owner_args.count)
+    {
+        mark_instance_unsupported(arg.owner, leaf_token);
+        return;
+    }
+
+    uint row_start = type_instance_arg_row_start[leaf_token];
+    uint row_i = row_start == INVALID ? INVALID : row_start + arg.ordinal;
+    uint arg_token = compact_hir_core[arg.value].token_start;
+    if (row_i == INVALID || row_i >= type_instance_arg_row_count_out[0u] || !valid_token(arg_token))
+    {
+        mark_instance_unsupported(arg.owner, leaf_token);
+        return;
+    }
+    uint tag = type_expr_ref_tag[arg_token];
+    uint payload = type_expr_ref_payload[arg_token];
+    uint constant_kind; uint constant_payload;
+    bool constant = checked_explicit_constant_operand(arg.value, constant_kind, constant_payload);
+    uint declaration = type_instance_decl_token[leaf_token];
+    uint owner = valid_token(declaration) ? type_decl_hir_node_by_token[declaration] : INVALID;
+    if (valid_compact_node(owner))
+    {
+        HirRange header = compact_generic_param_ranges[owner];
+        uint total = compact_generic_param_count[0u];
+        if (header.count != owner_args.count || header.start > total || header.count > total - header.start)
+        { mark_instance_unsupported(arg.owner, leaf_token); return; }
+        HirGenericParam parameter = compact_generic_params[header.start + arg.ordinal];
+        if (parameter.owner != owner || (parameter.kind != 1u && parameter.kind != 2u) ||
+            (parameter.kind == 2u) != constant || parameter.name_token >= gParams.n_tokens)
+        { mark_instance_unsupported(arg.owner, leaf_token); return; }
+        uint slot = constant ? type_const_param_slot_by_token[parameter.name_token]
+            : type_generic_param_slot_by_token[parameter.name_token];
+        if (slot >= 32u) { mark_instance_unsupported(arg.owner, leaf_token); return; }
+        uint ordinal = slot + (constant ? type_decl_generic_param_count_by_owner_token[declaration] : 0u);
+        if (ordinal >= owner_args.count) { mark_instance_unsupported(arg.owner, leaf_token); return; }
+    }
+    // One operand lane owns the complete domain metadata. It reads immutable
+    // source roles, so callable operands reused as a nominal result cannot keep
+    // the initializer's provisional type-only count. Declaration projection may
+    // refine the count but must preserve this published order and position mask.
+    if (arg.ordinal == 0u)
+    {
+        uint types = 0u; uint constants = 0u; bool saw_constant = false; bool interleaved = false;
+        for (uint i = 0u; i < owner_args.count; i++)
+        {
+            uint kind; uint value;
+            if (checked_explicit_constant_operand(compact_type_args[owner_args.start + i].value, kind, value))
+            { constants |= 1u << i; saw_constant = true; }
+            else { types++; interleaved = interleaved || saw_constant; }
+        }
+        type_instance_len_kind[leaf_token] = types | (interleaved ? APPLICATION_INTERLEAVED_DOMAINS : 0u);
+        type_instance_len_payload[leaf_token] = constants;
+    }
+    if (constant)
+    {
+        tag = APPLICATION_CONSTANT_ARGUMENT | constant_kind; payload = constant_payload;
+        // Retain the source operand's lexical binding across native body
+        // projection. The nominal edge below uses the current specialized
+        // value; a later collection must not rewrite the call's source binding.
+        if (call_explicit_arg_constant_kind[arg.value] == 0u)
+        {
+            call_explicit_arg_constant_kind[arg.value] = constant_kind;
+            call_explicit_arg_constant_payload[arg.value] = constant_payload;
+        }
+    }
+    if (tag == TYPE_REF_INVALID)
+    { mark_instance_unsupported(arg.owner, leaf_token); return; }
+    type_instance_arg_row_ref_tag[row_i] = tag;
+    type_instance_arg_row_ref_payload[row_i] = payload;
+    uint source_ordinal = row_i - row_start;
+    if (source_ordinal < TYPE_INSTANCE_ARG_REF_STRIDE)
+    {
+        uint legacy_i = leaf_token * TYPE_INSTANCE_ARG_REF_STRIDE + source_ordinal;
+        type_instance_arg_ref_tag[legacy_i] = tag;
+        type_instance_arg_ref_payload[legacy_i] = payload;
+    }
+}

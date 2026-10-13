@@ -1,0 +1,8 @@
+struct Pair { left: i32, right: i32 }
+fn main() -> i32 {
+    for value in 0..1 {
+        return 0;
+        let never: Pair = Pair { left: 1, right: 2 };
+    }
+    return 1;
+}

@@ -1,8 +1,10 @@
+import type_checker.constant_parameter_slots;
 // Project already-evaluated local constant roots onto their name/path uses.
 // This is deliberately ordered after expression evaluation: combining the two
 // would make a reference's result depend on cross-workgroup scheduling.
 
 import hir_records;
+import type_checker.semantic.artifact.constant_reference;
 import gpu_index;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; uint parser_feature_flags; };
@@ -15,7 +17,8 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_hir_node;
-RWStructuredBuffer<uint> semantic_value_const_by_hir;
+RWStructuredBuffer<uint2> semantic_value_const_by_hir;
+RWStructuredBuffer<uint> semantic_expr_scalar_type_by_hir;
 RWStructuredBuffer<uint> semantic_value_const_present_by_hir;
 
 static const uint INVALID = 0xffffffffu;
@@ -42,6 +45,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!name_reference || payload.d >= gParams.n_tokens) return;
 
     uint declaration_token = visible_decl[payload.d];
+    // This name/path projection owns constant uses, including parser path
+    // wrappers. Concrete replay publishes selected parameter values once;
+    // symbolic parameters retain their type without an executable value.
+    if (declaration_token < gParams.n_tokens &&
+        type_const_param_slot_by_token[declaration_token] < 32u)
+    {
+        uint4 constant = project_checked_constant_value(2u, declaration_token, gParams.n_tokens);
+        semantic_value_const_by_hir[row] = constant.yz;
+        if (constant.w != 0u) semantic_expr_scalar_type_by_hir[row] = constant.x;
+        // The presence column is a tagged fact: a literal value, an imported
+        // variant ordinal, or an unbound constant-parameter declaration. The
+        // last case keeps the checked body symbolic until concrete replay.
+        semantic_value_const_present_by_hir[row] = constant.w;
+        return;
+    }
     uint decl = declaration_token < gParams.n_tokens
         ? decl_id_by_name_token[declaration_token] : INVALID;
     if (decl >= gParams.n_hir_nodes || decl_kind[decl] != HIR_ITEM_KIND_CONST)

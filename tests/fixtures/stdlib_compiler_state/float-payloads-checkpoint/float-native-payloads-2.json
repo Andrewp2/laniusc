@@ -1,0 +1,14 @@
+{
+  "environment": {},
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "native_float_payload_"
+  ],
+  "exit_code": 101,
+  "seconds": 5.923209077001957,
+  "binary_sha256": "7cddb400a98324e502ffecbf99f02fde13c140903078032cf118e04342bda486",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

@@ -1,0 +1,13 @@
+
+running 4 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::body_replay_preserves_symbolic_public_interfaces ... ok
+test compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order ... GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+ok
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 633 filtered out; finished in 4.04s
+

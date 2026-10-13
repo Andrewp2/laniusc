@@ -1,0 +1,61 @@
+--- a/shaders/codegen/lir/semantic/materialize.slang
++++ b/shaders/codegen/lir/semantic/materialize.slang
+@@ -400,16 +400,33 @@
+     return found ? maximum : 0u;
+ }
+ 
++uint enum_constructor_owner(uint node, uint hir_count)
++{
++    if (node >= hir_count || semantic_call_kind[node] != 5u)
++        return LIR_INVALID;
++    // The call target is a discriminant ordinal within its enum, not a row
++    // in compact_variants. Resolve the checked result declaration instead.
++    uint token = semantic_aggregate_decl_token[node];
++    uint owner = token < gParams.n_tokens
++        ? semantic_aggregate_hir_by_name_token[token] : LIR_INVALID;
++    if (owner < hir_count && compact_hir_core[owner].kind == 26u)
++        return owner;
++    uint result_type = semantic_call_result_type[node];
++    if (result_type < 6144u) return LIR_INVALID;
++    token = result_type - 6144u;
++    owner = token < gParams.n_tokens
++        ? semantic_aggregate_hir_by_name_token[token] : LIR_INVALID;
++    return owner < hir_count && compact_hir_core[owner].kind == 26u
++        ? owner : LIR_INVALID;
++}
++
+ uint contextual_enum_instance(uint node, uint hir_count)
+ {
+     if (node >= hir_count) return LIR_INVALID;
+     if (semantic_expr_ref_tag[node] == TYPE_REF_INSTANCE)
+         return semantic_expr_ref_payload[node];
+     if (semantic_call_kind[node] != 5u) return LIR_INVALID;
+-    uint variant_i = semantic_call_target[node];
+-    if (variant_i >= min(compact_variant_count[0u], gParams.n_hir_nodes))
+-        return LIR_INVALID;
+-    uint owner = compact_variants[variant_i].owner;
++    uint owner = enum_constructor_owner(node, hir_count);
+     if (owner >= hir_count) return LIR_INVALID;
+     uint root = compact_expr_root[node];
+     if (root >= hir_count) root = node;
+@@ -1190,15 +1207,11 @@
+                 ? projected_words
+             : hir.kind == HIR_CALL_EXPR
+                 ? enum_constructor_word_count(node, payload, hir_count) : 1u;
+-        uint variant = semantic_call_target[node];
+-        if (variant < min(compact_variant_count[0u], gParams.n_hir_nodes))
+-        {
+-            uint owner = compact_variants[variant].owner;
+-            if (owner < hir_count &&
+-                semantic_struct_word_count_by_hir[owner] == LIR_INVALID &&
+-                concrete_words == 0u)
+-                core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+-        }
++        uint owner = enum_constructor_owner(node, hir_count);
++        if (owner < hir_count &&
++            semantic_struct_word_count_by_hir[owner] == LIR_INVALID &&
++            concrete_words == 0u)
++            core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+     }
+     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
+         (hir.kind == HIR_INDEX_EXPR || assignment_indexed))

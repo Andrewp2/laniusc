@@ -1,0 +1,11 @@
+
+running 6 tests
+test explicit_callable_arguments_execute_imported_bindings ... ok
+test imported_generic_aliases_preserve_nested_local_and_imported_compositions ... ok
+test imported_generic_aliases_preserve_symbolic_type_and_constant_environments ... ok
+test reexported_generic_aliases_preserve_constant_array_targets ... ok
+test reexported_generic_aliases_preserve_identity_targets ... ok
+test reexported_generic_aliases_preserve_reordered_nominal_targets ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 309 filtered out; finished in 2.89s
+

@@ -2,6 +2,7 @@ use super::super::*;
 
 pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
     pub claim_scan: PrefixScanOperation,
+    pub const_scan: PrefixScanOperation,
     pub emit_claims: ComputeOperation,
     pub generic_index: CallClaimIndexOperation,
     pub validate_generic: ComputeOperation,
@@ -14,14 +15,15 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
     pub validate_const: ComputeOperation,
 }
 
-/// Compiled GPU operation that validates all generic and const-generic claims
-/// emitted by compact call-argument rows.
+/// Compiled GPU operation that collects provisional call claims and validates
+/// complete generic bindings after expression inference closes.
 ///
-/// Prefix scans, exact-index construction, dispatch generation, and validation kernels are
-/// private implementation steps. A caller provides only the active HIR
-/// dispatch domain and cannot record an incomplete validation sequence.
+/// Prefix scans, exact indexes, and dispatch generation are private steps.
+/// The recorder schedules claim collection during inference and strict type and constant
+/// conflicts and required bindings together after closure.
 pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
     claim_scan: PrefixScanOperation,
+    const_scan: PrefixScanOperation,
     emit_claims: ComputeOperation,
     generic_index: CallClaimIndexOperation,
     validate_generic: ComputeOperation,
@@ -38,6 +40,7 @@ impl CallGenericClaimValidationOperation {
     pub(in crate::type_checker) fn new(build: CallGenericClaimValidationBuild) -> Self {
         Self {
             claim_scan: build.claim_scan,
+            const_scan: build.const_scan,
             emit_claims: build.emit_claims,
             generic_index: build.generic_index,
             validate_generic: build.validate_generic,
@@ -54,22 +57,24 @@ impl CallGenericClaimValidationOperation {
     pub(in crate::type_checker) fn record_claims(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        pages: &DependencyPatternReplay<'_>,
     ) -> Result<()> {
         self.claim_scan.record(encoder)?;
-        self.emit_claims.record(encoder)?;
+        self.const_scan.record(encoder)?;
+        pages.record(encoder, |encoder| self.emit_claims.record(encoder))?;
         self.generic_index.record(encoder)?;
-        self.validate_generic.record(encoder)?;
         self.mark_required.record(encoder)?;
         self.required_scan.record(encoder)?;
         self.required_dispatch.record(encoder)?;
-        self.const_index.record(encoder)?;
-        self.validate_const.record(encoder)
+        self.const_index.record(encoder)
     }
 
     pub(in crate::type_checker) fn record_required(
         &self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
+        self.validate_generic.record(encoder)?;
+        self.validate_const.record(encoder)?;
         self.validate_required.record(encoder)
     }
 }

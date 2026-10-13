@@ -1,0 +1,6 @@
+fn length<const N: usize>() -> usize { return N; }
+fn relay<const N: usize>() -> usize { return length<N>(); }
+fn main() -> i32 {
+    if (relay<0>() != 0 || relay<3>() != 3) { return 1; }
+    return 42;
+}

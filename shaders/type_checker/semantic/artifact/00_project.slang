@@ -1,12 +1,27 @@
+import primitive_types;
 import hir_records;
+import parser.token_features;
+import type_checker.calls.explicit_call_environment;
+import type_checker.semantic.artifact.constant_reference;
+import type_checker.type.instances.generic_param_lookup;
 import gpu_index;
 
 // Projection columns are sparse by their compact semantic domain. Value,
 // enclosing-function, control-depth, and expression-type columns cover every
 // active HIR row. Function metadata covers HIR_FN/HIR_CONST_ITEM rows, type
 // identity covers HIR_TYPE rows, and parameter types cover compact parameter
-// rows. Consumers must establish the corresponding compact-row identity before
+// rows. Native symbols cover HIR_FN rows for retained source units or predicate
+// jobs; subject parameters cover accepted callable and implementation bounds in
+// predicate-bearing units.
+// Consumers must establish the corresponding compact-row identity before
 // reading a sparse column; inactive workspace tails are never initialized.
+
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return instance < capacity;
+}
 
 struct Params
 {
@@ -16,6 +31,7 @@ struct Params
     uint n_source_files;
     uint parser_feature_flags;
     uint dependency_interfaces_present;
+    uint retain_callable_owners;
 };
 
 
@@ -32,8 +48,31 @@ StructuredBuffer<uint> compact_path_segment_count;
 StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
+StructuredBuffer<HirMethodSignature> compact_method_signatures;
+StructuredBuffer<uint> public_decl_index_by_hir;
+StructuredBuffer<uint> compact_predicate_count;
+StructuredBuffer<HirPredicate> compact_predicates;
+StructuredBuffer<uint> predicate_owner_node;
+StructuredBuffer<uint> predicate_subject_token;
+StructuredBuffer<uint> predicate_bound_reference;
+StructuredBuffer<uint> predicate_bound_arg_count;
+StructuredBuffer<uint> predicate_status;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_token;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_lookup_state;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> name_id_by_token;
@@ -48,13 +87,16 @@ StructuredBuffer<uint> external_type_unit_id;
 StructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> semantic_value_decl_by_hir;
 RWStructuredBuffer<uint> semantic_value_type_by_hir;
-RWStructuredBuffer<uint> semantic_value_const_by_hir;
+RWStructuredBuffer<uint2> semantic_value_const_by_hir;
 RWStructuredBuffer<uint> semantic_value_const_present_by_hir;
-RWStructuredBuffer<uint> semantic_param_type_by_row;
+RWStructuredBuffer<uint> semantic_param_ref_tag_by_row;
+RWStructuredBuffer<uint> semantic_param_ref_payload_by_row;
 RWStructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 RWStructuredBuffer<uint> semantic_function_return_type_by_hir;
 RWStructuredBuffer<uint> semantic_function_entrypoint_by_hir;
 RWStructuredBuffer<uint> semantic_function_host_service_by_hir;
+RWStructuredBuffer<uint> semantic_function_native_symbol_by_hir;
+RWStructuredBuffer<uint> semantic_predicate_subject_parameter_token_by_hir;
 RWStructuredBuffer<uint> semantic_control_depth_by_hir;
 RWStructuredBuffer<uint> semantic_expr_scalar_type_by_hir;
 RWStructuredBuffer<uint> semantic_type_ref_tag_by_hir;
@@ -64,8 +106,12 @@ RWStructuredBuffer<uint> semantic_type_external_library_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 
+#include "../../../codegen/lir/semantic/function_method.slang"
+#include "../../type/instances/lexical_parameter_lookup.slang"
+
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;
+static const uint HIR_IMPL = 35u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -104,6 +150,10 @@ bool token_is_wildcard(uint token)
 
 uint type_leaf_token(uint row, HirCore core, HirPayload payload)
 {
+    // Only a path type uses the final path segment as its identity. For an
+    // array, slice, or reference, payload.b is the child type: looking up its
+    // path would discard the checked outer node from the semantic artifact.
+    if (payload.a != 1u) return core.token_start;
     uint path_count = min(compact_path_count[0u], gParams.n_hir_nodes);
     uint path = row < gParams.n_hir_nodes ? path_id_by_owner_hir[row] : INVALID;
     if (path >= path_count)
@@ -133,6 +183,39 @@ uint host_service_for_function(HirPayload payload)
     return INVALID;
 }
 
+void project_accepted_bound_subject(uint row, uint hir_count)
+{
+    uint count = min(compact_predicate_count[0u], hir_count);
+    if (row >= count) return;
+    HirPredicate predicate = compact_predicates[row];
+    if ((predicate.metadata & 255u) != 1u || predicate.bound >= hir_count) return;
+
+    uint bound = predicate.bound;
+    semantic_predicate_subject_parameter_token_by_hir[bound] = INVALID;
+    uint owner = predicate.owner;
+    // Predicate collection admits callable and implementation owners. Preserve
+    // that accepted domain; struct/enum/trait/alias bounds remain unsupported.
+    // Status and exact owner equality below retain the validator's authority.
+    if (owner >= hir_count ||
+        (compact_hir_core[owner].kind != HIR_FN && compact_hir_core[owner].kind != HIR_IMPL) ||
+        predicate_owner_node[bound] != owner || predicate_status[bound] != 0u ||
+        predicate_bound_reference[bound] == INVALID || predicate_bound_arg_count[bound] > 32u)
+        return;
+    uint subject = predicate_subject_token[bound];
+    if (subject != predicate.subject || !valid_token(subject)) return;
+
+    // Generic-owner rows have no producer in units without generic parameters.
+    // Resolve the accepted subject lexically only after establishing that domain;
+    // its declaration token preserves shadowing independently of binding slots.
+    uint parameter_count = min(generic_param_count_out[0u], gParams.n_tokens);
+    if (parameter_count == 0u) return;
+    uint parameter = lexical_parameter_row(bound, subject, 1u);
+    if (parameter >= parameter_count) return;
+    uint declaration_token = generic_param_token[parameter];
+    if (valid_token(declaration_token))
+        semantic_predicate_subject_parameter_token_by_hir[bound] = declaration_token;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -146,7 +229,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirPayload payload = compact_hir_payload[row];
     uint declaration = INVALID;
     uint type_id = 0u;
-    uint const_value = 0u;
+    uint2 const_value = uint2(0u, 0u);
     uint const_present = 0u;
     if ((core.kind == HIR_NAME_EXPR || payload.a == HIR_EXPR_NAME) &&
         valid_token(payload.d))
@@ -177,11 +260,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint path = path_id_by_owner_hir[row];
         if (path != INVALID && path < gParams.n_hir_nodes)
         {
-            uint value_base = path * 3u;
+            uint value_base = path * 4u;
             if (resolved_dependency_value_metadata[value_base] == HIR_ITEM_KIND_CONST)
             {
                 type_id = resolved_dependency_value_metadata[value_base + 1u];
-                const_value = resolved_dependency_value_metadata[value_base + 2u];
+                const_value = uint2(resolved_dependency_value_metadata[value_base + 2u],
+                    resolved_dependency_value_metadata[value_base + 3u]);
                 const_present = CONST_PRESENT;
             }
             else if (resolved_dependency_value_metadata[value_base] ==
@@ -193,13 +277,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
                       valid_token(core.token_start) &&
                       visible_decl[core.token_start] == core.token_start))
             {
-                const_value = resolved_dependency_value_metadata[value_base + 2u];
-                // This lane carries an imported pattern's checked ordinal.
-                // A payload constructor call uses its call artifact instead.
+                const_value = uint2(resolved_dependency_value_metadata[value_base + 2u],
+                    resolved_dependency_value_metadata[value_base + 3u]);
+                // Unit values and imported patterns carry the resolver's
+                // checked ordinal. Payload calls use their call artifact.
                 const_present = IMPORTED_UNIT_VARIANT_PRESENT;
             }
         }
     }
+    // Concrete body references are projected after specialization; the old
+    // visible-type cache still describes the unspecialized declaration.
+    uint checked_tag = semantic_expr_ref_tag_by_hir[row];
+    uint checked_payload = semantic_expr_ref_payload_by_hir[row];
+    if (checked_tag == 1u && scalar_is_known(checked_payload))
+        type_id = checked_payload;
+    if (checked_tag == 3u && valid_instance(checked_payload) &&
+        type_instance_kind[checked_payload] == 2u &&
+        type_instance_elem_ref_tag[checked_payload] == 1u &&
+        scalar_is_known(type_instance_elem_ref_payload[checked_payload]))
+        type_id = 128u + type_instance_elem_ref_payload[checked_payload];
+    if (checked_tag == 3u && valid_instance(checked_payload) &&
+        type_instance_kind[checked_payload] == 4u)
+        type_id = 8u;
     semantic_value_decl_by_hir[row] = declaration;
     semantic_value_type_by_hir[row] = type_id;
     semantic_value_const_by_hir[row] = const_value;
@@ -216,9 +315,30 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? fn_entrypoint_tag[token] : 0u;
         semantic_function_host_service_by_hir[row] = host_service_for_function(payload);
     }
+    // Use the native definition policy; method visibility and lexical scope
+    // are distinct identities. Predicate-only columns retain their own gate.
+    if (core.kind == HIR_FN && (gParams.retain_callable_owners != 0u ||
+        (gParams.parser_feature_flags & PARSER_FEATURE_PREDICATES) != 0u))
+        semantic_function_native_symbol_by_hir[row] = local_function_symbol(
+            row, hir_count, public_decl_index_by_hir[row], token);
+    if ((gParams.parser_feature_flags & PARSER_FEATURE_PREDICATES) != 0u)
+        project_accepted_bound_subject(row, hir_count);
     semantic_control_depth_by_hir[row] = valid_token(token)
         ? uint(max(if_depth[token], 0)) : 0u;
     semantic_expr_scalar_type_by_hir[row] = compact_expr_scalar_type[row];
+
+    // A constant passed in an application is a consumed value dependency,
+    // even when the callee's signature is entirely scalar. Preserve that
+    // dependency for shared body-closure checks. Replay replaces the symbolic
+    // parameter with the selected concrete value before this projection.
+    uint operand_kind; uint operand_payload;
+    if (checked_source_constant_operand(row, operand_kind, operand_payload))
+    {
+        uint4 constant = project_checked_constant_value(operand_kind, operand_payload, gParams.n_tokens);
+        semantic_value_const_by_hir[row] = constant.yz;
+        if (constant.w != 0u) semantic_expr_scalar_type_by_hir[row] = constant.x;
+        semantic_value_const_present_by_hir[row] = constant.w;
+    }
 
     if (core.kind == HIR_TYPE)
     {
@@ -235,6 +355,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             type_tag = type_expr_ref_tag[identity_token];
             type_payload = type_expr_ref_payload[identity_token];
+            // Declaration-owned generic slots survive concrete body replay.
+            // Interface export needs the symbolic signature independently of
+            // the concrete references consumed by native body lowering.
+            generic_param_slot = type_generic_param_slot_by_token[identity_token];
         }
         if ((type_tag == INVALID || type_tag == 0u) && valid_token(head))
         {
@@ -250,7 +374,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint external_token = valid_token(identity_token) &&
             external_type_library_id[identity_token] != INVALID
             ? identity_token : INVALID;
-        if (external_token == INVALID && valid_token(type_payload) &&
+        if (external_token == INVALID && type_tag == 3u && valid_instance(type_payload) &&
             external_type_library_id[type_payload] != INVALID)
             external_token = type_payload;
         if (external_token == INVALID && valid_token(head) &&
@@ -273,9 +397,40 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint param_count = min(compact_param_count[0u], gParams.n_hir_nodes);
     if (row < param_count)
     {
-        uint param_type_id = 0u;
-        uint param_token = compact_params[row].name_token;
-        if (valid_token(param_token)) param_type_id = visible_type[param_token];
-        semantic_param_type_by_row[row] = param_type_id;
+        HirParam parameter = compact_params[row];
+        uint param_token = parameter.name_token;
+        uint ref_tag = 0u;
+        uint ref_payload = INVALID;
+        if (parameter.type_node < hir_count)
+        {
+            // Written parameters use the same completed type identity that
+            // native lowering previously consumed through the type HIR.
+            ref_tag = semantic_expr_ref_tag_by_hir[parameter.type_node];
+            ref_payload = semantic_expr_ref_payload_by_hir[parameter.type_node];
+        }
+        else if (parameter.ordinal == 0u)
+        {
+            uint method = method_row_for_function(parameter.owner, hir_count);
+            if (method != INVALID)
+            {
+                HirMethodSignature signature = compact_method_signatures[method];
+                if (signature.first_param_token == param_token &&
+                    signature.receiver_mode == 1u && signature.impl_receiver_type < hir_count)
+                {
+                    ref_tag = semantic_expr_ref_tag_by_hir[signature.impl_receiver_type];
+                    ref_payload = semantic_expr_ref_payload_by_hir[signature.impl_receiver_type];
+                }
+                else if (signature.first_param_token == param_token &&
+                         signature.receiver_mode == 2u && valid_token(param_token))
+                {
+                    // The checked method binder owns this reference instance.
+                    // Publish the signature even when the body never uses self.
+                    ref_tag = 3u;
+                    ref_payload = param_token;
+                }
+            }
+        }
+        semantic_param_ref_tag_by_row[row] = ref_tag;
+        semantic_param_ref_payload_by_row[row] = ref_payload;
     }
 }

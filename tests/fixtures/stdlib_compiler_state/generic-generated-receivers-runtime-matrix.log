@@ -1,0 +1,39 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 53.31s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 3 tests
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... FAILED
+test imported_compound_declaration_fields_report_an_explicit_boundary ... ok
+test imported_generic_record_constructors_check_declaration_and_fields ... FAILED
+
+failures:
+
+---- generated_imported_receivers_preserve_more_than_four_type_arguments stdout ----
+
+thread 'generated_imported_receivers_preserve_more_than_four_type_arguments' (280219) panicked at tests/compiler_generic_types_execution.rs:300:33:
+generated bool receiver: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0004", title: "source-root escape", category: "package/import loading", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0004", message: "source-root module std::io escapes stdlib root", primary_label: Some(DiagnosticLabel { path: "/tmp/generated_receivers_generated_bool_receiver_280218_3.lani", line: 4, column: 1, length: 15, byte_start: None, byte_end: None, source_line: Some("import std::io;"), message: "imported here" }), help: None, notes: ["/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib/std/io.lani resolves outside stdlib root /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_generated_receiver_root"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- imported_generic_record_constructors_check_declaration_and_fields stdout ----
+GPU source-pack type-check rejection: token=88 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=76 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=104 code=CallMismatch detail=35
+
+thread 'imported_generic_record_constructors_check_declaration_and_fields' (280247) panicked at tests/compiler_generic_types_execution.rs:357:9:
+assertion `left == right` failed: foreign wrong declaration: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 21, length: 4, byte_start: Some(419), byte_end: Some(423), source_line: Some("    if (value.child.last() != -7 || value.sentinel != 99) { return 1; }"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+  left: "LNC0027"
+ right: "LNC0006"
+
+
+failures:
+    generated_imported_receivers_preserve_more_than_four_type_arguments
+    imported_generic_record_constructors_check_declaration_and_fields
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 33 filtered out; finished in 2.33s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

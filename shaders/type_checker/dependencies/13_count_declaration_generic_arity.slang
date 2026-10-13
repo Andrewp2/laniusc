@@ -1,3 +1,4 @@
+import semantic_interface_layout;
 // Count generic type and const parameters with one lane per canonical member.
 
 import dependency_interface;
@@ -15,9 +16,10 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> declaration_generic_arity;
+RWStructuredBuffer<uint> dependency_declaration_constant_arity;
 RWStructuredBuffer<uint> declaration_field_count;
 
-static const uint MEMBER_WORDS = 11u;
+static const uint MEMBER_WORDS =SEMANTIC_INTERFACE_MEMBER_WORDS;
 static const uint MEMBER_GENERIC_TYPE_PARAMETER = 2u;
 static const uint MEMBER_GENERIC_CONST_PARAMETER = 3u;
 static const uint MEMBER_FIELD = 4u;
@@ -36,8 +38,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner = dependency_member_word(base);
     if (owner >= dependency_declaration_count())
         return;
-    if (kind == MEMBER_GENERIC_TYPE_PARAMETER || kind == MEMBER_GENERIC_CONST_PARAMETER)
+    if ((kind == MEMBER_GENERIC_TYPE_PARAMETER || kind == MEMBER_GENERIC_CONST_PARAMETER) &&
+        dependency_member_word(base + 9u) == 0u)
+    {
         atomic_u32_add(declaration_generic_arity, owner, 1u);
+        if (kind == MEMBER_GENERIC_CONST_PARAMETER)
+            atomic_u32_add(dependency_declaration_constant_arity, owner, 1u);
+    }
     else if (kind == MEMBER_FIELD)
         atomic_u32_add(declaration_field_count, owner, 1u);
 }

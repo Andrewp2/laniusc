@@ -104,6 +104,7 @@ uint type_code_for_non_alias_ref(uint tag, uint payload)
     if (tag == TYPE_REF_INSTANCE && valid_token(payload))
     {
         uint instance_kind = type_instance_kind[payload];
+        if (instance_kind == 4u) return 8u;
         if (instance_kind == TYPE_INSTANCE_ARRAY || instance_kind == TYPE_INSTANCE_SLICE)
         {
             uint elem_tag = type_instance_elem_ref_tag[payload];
@@ -211,6 +212,7 @@ uint type_code_for_ref(uint tag, uint payload)
     if (tag == TYPE_REF_INSTANCE && valid_token(payload))
     {
         uint instance_kind = type_instance_kind[payload];
+        if (instance_kind == 4u) return 8u;
         if (instance_kind == TYPE_INSTANCE_ARRAY || instance_kind == TYPE_INSTANCE_SLICE)
         {
             uint elem_tag = type_instance_elem_ref_tag[payload];

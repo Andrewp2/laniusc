@@ -1,0 +1,38 @@
+[
+  {
+    "label": "first",
+    "tests": [
+      "imported_argument_values_are_captured_before_later_effects",
+      "imported_generic_aliases_preserve_nested_local_and_imported_compositions",
+      "imported_generic_aliases_preserve_symbolic_type_and_constant_environments",
+      "imported_generic_aliases_reject_type_length_and_header_conflicts",
+      "imported_generic_aliases_substitute_array_targets",
+      "imported_generic_aliases_substitute_identity_targets",
+      "imported_generic_aliases_substitute_reordered_record_targets",
+      "imported_generic_aliases_substitute_slice_targets",
+      "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+      "imported_generic_functions_preserve_enum_values_and_nested_options",
+      "imported_generic_inferred_compound_returns_preserve_values_copies_and_aliases",
+      "slice_enum_payloads_borrow_arrays_and_preserve_following_fields"
+    ],
+    "exit": 101
+  },
+  {
+    "label": "second",
+    "tests": [
+      "imported_generic_inferred_return_arguments_execute",
+      "imported_generic_methods_and_results_preserve_compound_payloads",
+      "imported_generic_reference_methods_preserve_all_receiver_arguments",
+      "imported_identity_aliases_reject_conflicting_body_and_call_types",
+      "imported_identity_aliases_specialize_complete_values_in_generic_bodies",
+      "inferred_returns_inside_generic_bodies_preserve_compound_values",
+      "inline_array_borrows_preserve_elements_and_aliases",
+      "lexical_method_environment_handles_reordered_impls_borrows_and_nested_calls",
+      "lexical_method_environment_imported_compounds_and_constants_execute",
+      "lexical_method_environment_imported_parameters_execute",
+      "lexical_method_environment_imported_rejects_missing_and_conflicting_bindings",
+      "slice_enum_payloads_borrow_arrays_and_preserve_following_fields"
+    ],
+    "exit": 101
+  }
+]

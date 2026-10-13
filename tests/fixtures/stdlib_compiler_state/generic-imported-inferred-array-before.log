@@ -1,0 +1,21 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.32s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test imported_generic_inferred_array_return_executes ... 
+thread 'imported_generic_inferred_array_return_executes' (537475) panicked at tests/compiler_generic_types_execution.rs:648:6:
+compile imported generic array return without a result annotation: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "unsupported x86 dynamic array index", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 6, column: 16, length: 1, byte_start: Some(118), byte_end: Some(119), source_line: Some("    if (values[0] != 42 || values[1] != 42) { return 1; }"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    imported_generic_inferred_array_return_executes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 47 filtered out; finished in 1.44s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

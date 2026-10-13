@@ -1,0 +1,46 @@
+
+running 6 tests
+test explicit_callable_arguments_execute_imported_bindings ... GPU type-check detail: Gpu(compiler resource semantic_interface.type.path_classification has no producing pass)
+
+thread 'explicit_callable_arguments_execute_imported_bindings' (124557) panicked at tests/compiler_generic_types_execution.rs:161:29:
+imported explicit bindings: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module core::relay;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test imported_generic_aliases_preserve_nested_local_and_imported_compositions ... GPU type-check detail: Gpu(compiler resource semantic_interface.type.path_classification has no producing pass)
+
+thread 'imported_generic_aliases_preserve_nested_local_and_imported_compositions' (124575) panicked at tests/compiler_generic_types_execution.rs:161:29:
+nested imported alias compositions: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module core::aliases;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+FAILED
+test imported_generic_aliases_preserve_symbolic_type_and_constant_environments ... GPU type-check detail: Gpu(compiler resource semantic_interface.type.path_classification has no producing pass)
+
+thread 'imported_generic_aliases_preserve_symbolic_type_and_constant_environments' (124577) panicked at tests/compiler_generic_types_execution.rs:161:29:
+imported aliases in generic bodies: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module core::aliases;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+FAILED
+test reexported_generic_aliases_preserve_constant_array_targets ... GPU type-check detail: Gpu(compiler resource semantic_interface.type.path_classification has no producing pass)
+
+thread 'reexported_generic_aliases_preserve_constant_array_targets' (124579) panicked at tests/compiler_generic_types_execution.rs:161:29:
+reexported alias: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module core::aliases;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+FAILED
+test reexported_generic_aliases_preserve_identity_targets ... GPU type-check detail: Gpu(compiler resource semantic_interface.type.path_classification has no producing pass)
+
+thread 'reexported_generic_aliases_preserve_identity_targets' (124581) panicked at tests/compiler_generic_types_execution.rs:161:29:
+reexported alias: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module core::aliases;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+FAILED
+test reexported_generic_aliases_preserve_reordered_nominal_targets ... GPU type-check detail: Gpu(compiler resource semantic_interface.type.path_classification has no producing pass)
+
+thread 'reexported_generic_aliases_preserve_reordered_nominal_targets' (124583) panicked at tests/compiler_generic_types_execution.rs:161:29:
+reexported alias: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("module core::aliases;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+FAILED
+
+failures:
+
+failures:
+    explicit_callable_arguments_execute_imported_bindings
+    imported_generic_aliases_preserve_nested_local_and_imported_compositions
+    imported_generic_aliases_preserve_symbolic_type_and_constant_environments
+    reexported_generic_aliases_preserve_constant_array_targets
+    reexported_generic_aliases_preserve_identity_targets
+    reexported_generic_aliases_preserve_reordered_nominal_targets
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 309 filtered out; finished in 1.52s
+

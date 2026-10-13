@@ -3,6 +3,7 @@
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> interface_type_parent;
+RWStructuredBuffer<uint> interface_generic_scope_owner_by_hir;
 RWStructuredBuffer<uint> interface_type_child_ordinal;
 RWStructuredBuffer<uint> interface_type_seed_owner;
 RWStructuredBuffer<uint> interface_type_index_by_hir;
@@ -18,6 +19,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
     if (node >= gParams.hir_capacity) return;
+    interface_generic_scope_owner_by_hir[node] = INVALID;
     interface_type_parent[node] = INVALID;
     interface_type_child_ordinal[node] = INVALID;
     interface_type_seed_owner[node] = INVALID;

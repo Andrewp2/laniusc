@@ -1,0 +1,17 @@
+
+running 2 tests
+test qualified_enum_variants_forward_symbolic_parameters ... GPU source-pack type-check rejection: token=63 code=AssignMismatch detail=57345
+
+thread 'qualified_enum_variants_forward_symbolic_parameters' (271756) panicked at tests/compiler_generic_types_execution.rs:141:29:
+symbolic Packet<T, N, F>::Data(values, flag), imported=false: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 4, column: 12, length: 6, byte_start: Some(156), byte_end: Some(162), source_line: Some("    return Packet<T, N, F>::Data(values, flag);"), message: "value type is void but this context expects array of an unsupported type" }), help: None, notes: ["expected array of an unsupported type, found void; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test qualified_enum_variants_preserve_wide_and_symbolic_parent_headers ... ok
+
+failures:
+
+failures:
+    qualified_enum_variants_forward_symbolic_parameters
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 283 filtered out; finished in 4.87s
+

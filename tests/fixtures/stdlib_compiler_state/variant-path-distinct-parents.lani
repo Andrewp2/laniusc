@@ -1,0 +1,1 @@
+enum A<T> { Value(T), Missing } enum B<T> { Value(T), Missing } fn main() -> i32 { let first: A<bool> = A::Missing(); let second = B::Value(42); return match(second) { B::Value(v) -> v, _ -> 1 }; }

@@ -1,0 +1,210 @@
+
+running 1 test
+test generic_constant_values_execute_in_expressions ... [laniusc][x86-link] link_layout_scan_local.pipeline.start
+[laniusc][x86-link] link_layout_scan_local.pipeline.done
+[laniusc][x86-link] link_layout_scan_blocks.pipeline.start
+[laniusc][x86-link] link_layout_scan_blocks.pipeline.done
+[laniusc][x86-link] link_layout.pipeline.start
+[laniusc][x86-link] link_layout.pipeline.done
+[laniusc][x86-link] link_copy_sections.pipeline.start
+[laniusc][x86-link] link_copy_sections.pipeline.done
+[laniusc][x86-link] link_symbol_partition_clear.pipeline.start
+[laniusc][x86-link] link_symbol_partition_clear.pipeline.done
+[laniusc][x86-link] link_symbol_partition_insert.pipeline.start
+[laniusc][x86-link] link_symbol_partition_insert.pipeline.done
+[laniusc][x86-link] link_symbol_partition_define.pipeline.start
+[laniusc][x86-link] link_symbol_partition_define.pipeline.done
+[laniusc][x86-link] link_symbol_partition_resolve.pipeline.start
+[laniusc][x86-link] link_symbol_partition_resolve.pipeline.done
+[laniusc][x86-link] link_relocate.pipeline.start
+[laniusc][x86-link] link_relocate.pipeline.done
+[laniusc][x86-link] elf_write.pipeline.start
+[laniusc][x86-link] elf_write.pipeline.done
+[laniusc][gpu-progress] submit.start :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] submit.done :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] map.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] map.queued :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.done :: lex.source-pack.resident.count
+[laniusc][gpu-progress] submit.start :: parser.partial-parse-tree-capacity
+[laniusc][gpu-progress] submit.done :: parser.partial-parse-tree-capacity
+[laniusc][gpu-progress] map.start :: parser.partial_parse_tree_capacity.status
+[laniusc][gpu-progress] map.queued :: parser.partial_parse_tree_capacity.status
+[laniusc][gpu-progress] map.done :: parser.partial_parse_tree_capacity.status elapsed_ms=1
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=5
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=1
+[x86_object_identity] set library=0 unit=0
+[x86_object_identity] bytes=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+[laniusc][gpu-progress] submit.start :: compile.source-pack.after-token-count
+[laniusc][gpu-progress] submit.done :: compile.source-pack.after-token-count
+[laniusc][gpu-progress] map.start :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.queued :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.done :: parser.recorded-ll1-hir.status elapsed_ms=0
+[laniusc][gpu-progress] map.start :: type_check.status
+[laniusc][gpu-progress] map.queued :: type_check.status
+[laniusc][gpu-progress] map.done :: type_check.status elapsed_ms=4
+[laniusc][gpu-progress] map.start :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.done :: semantic-interface artifact metadata elapsed_ms=0
+[laniusc][gpu-progress] map.start :: semantic-interface artifact
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact
+[laniusc][gpu-progress] map.done :: semantic-interface artifact elapsed_ms=1
+[laniusc][gpu-progress] map.start :: lowering status readback
+[laniusc][gpu-progress] map.queued :: lowering status readback
+[laniusc][gpu-progress] map.done :: lowering status readback elapsed_ms=0
+[x86_object_identity] finish requested library=0 unit=0
+[laniusc][gpu-progress] map.start :: x86 object metadata readback
+[laniusc][gpu-progress] map.queued :: x86 object metadata readback
+[laniusc][gpu-progress] map.done :: x86 object metadata readback elapsed_ms=0
+[x86_object_identity] counts relocations=4 symbols=4 definitions=1
+[laniusc][gpu-progress] map.start :: x86 object payload readback
+[laniusc][gpu-progress] map.queued :: x86 object payload readback
+[laniusc][gpu-progress] map.done :: x86 object payload readback elapsed_ms=0
+[x86_object_identity] definition_identities=[[0, 0, 1073741881]]
+[x86_object_identity] relocation_words=[2, 1, 166, 2, 0, 0, 4294967292, 4294967295, 2, 1, 271, 2, 1, 0, 4294967292, 4294967295, 2, 1, 347, 2, 2, 0, 4294967292, 4294967295, 2, 1, 482, 2, 3, 0, 4294967292, 4294967295]
+[x86_object_identity] undefined_words=[0, 0, 1073741824, 0, 0, 0, 1073741824, 0, 0, 0, 1073741850, 0, 0, 0, 1073741850, 0]
+[laniusc][gpu-progress] map.start :: generic call counts
+[laniusc][gpu-progress] map.queued :: generic call counts
+[laniusc][gpu-progress] map.done :: generic call counts elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call claims
+[laniusc][gpu-progress] map.queued :: generic call claims
+[laniusc][gpu-progress] map.done :: generic call claims elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: concrete body claim
+[laniusc][gpu-progress] map.queued :: concrete body claim
+[laniusc][gpu-progress] map.done :: concrete body claim elapsed_ms=0
+[laniusc][gpu-progress] submit.start :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] submit.done :: lex.source-pack.resident-count-boundary
+[laniusc][gpu-progress] map.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] map.queued :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.start :: lex.source-pack.resident.count
+[laniusc][gpu-progress] poll.done :: lex.source-pack.resident.count
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=4
+[laniusc][gpu-progress] submit.start :: type-check call inference
+[laniusc][gpu-progress] submit.done :: type-check call inference
+[laniusc][gpu-progress] map.start :: type_check.call_inference
+[laniusc][gpu-progress] map.queued :: type_check.call_inference
+[laniusc][gpu-progress] map.done :: type_check.call_inference elapsed_ms=1
+[x86_object_identity] set library=0 unit=0
+[x86_object_identity] bytes=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+[laniusc][gpu-progress] submit.start :: compile.source-pack.after-token-count
+[laniusc][gpu-progress] submit.done :: compile.source-pack.after-token-count
+[laniusc][gpu-progress] map.start :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.queued :: parser.recorded-ll1-hir.status
+[laniusc][gpu-progress] map.done :: parser.recorded-ll1-hir.status elapsed_ms=0
+[laniusc][gpu-progress] map.start :: type_check.status
+[laniusc][gpu-progress] map.queued :: type_check.status
+[laniusc][gpu-progress] map.done :: type_check.status elapsed_ms=4
+[laniusc][gpu-progress] map.start :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact metadata
+[laniusc][gpu-progress] map.done :: semantic-interface artifact metadata elapsed_ms=0
+[laniusc][gpu-progress] map.start :: semantic-interface artifact
+[laniusc][gpu-progress] map.queued :: semantic-interface artifact
+[laniusc][gpu-progress] map.done :: semantic-interface artifact elapsed_ms=1
+[laniusc][gpu-progress] map.start :: lowering status readback
+[laniusc][gpu-progress] map.queued :: lowering status readback
+[laniusc][gpu-progress] map.done :: lowering status readback elapsed_ms=0
+[x86_object_identity] finish requested library=0 unit=0
+[laniusc][gpu-progress] map.start :: x86 object metadata readback
+[laniusc][gpu-progress] map.queued :: x86 object metadata readback
+[laniusc][gpu-progress] map.done :: x86 object metadata readback elapsed_ms=0
+[x86_object_identity] counts relocations=4 symbols=4 definitions=2
+[laniusc][gpu-progress] map.start :: x86 object payload readback
+[laniusc][gpu-progress] map.queued :: x86 object payload readback
+[laniusc][gpu-progress] map.done :: x86 object payload readback elapsed_ms=0
+[x86_object_identity] definition_identities=[[0, 0, 0], [0, 0, 1073741881]]
+[x86_object_identity] relocation_words=[2, 1, 166, 2, 0, 0, 4294967292, 4294967295, 2, 1, 271, 2, 1, 0, 4294967292, 4294967295, 2, 1, 347, 2, 2, 0, 4294967292, 4294967295, 2, 1, 482, 2, 3, 0, 4294967292, 4294967295]
+[x86_object_identity] undefined_words=[0, 0, 1073741824, 0, 0, 0, 1073741824, 0, 0, 0, 1073741850, 0, 0, 0, 1073741850, 0]
+[laniusc][gpu-progress] map.start :: generic call counts
+[laniusc][gpu-progress] map.queued :: generic call counts
+[laniusc][gpu-progress] map.done :: generic call counts elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call claims
+[laniusc][gpu-progress] map.queued :: generic call claims
+[laniusc][gpu-progress] map.done :: generic call claims elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=0
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: generic call rows
+[laniusc][gpu-progress] map.queued :: generic call rows
+[laniusc][gpu-progress] map.done :: generic call rows elapsed_ms=1
+[laniusc][gpu-progress] map.start :: concrete body claim
+[laniusc][gpu-progress] map.queued :: concrete body claim
+[laniusc][gpu-progress] map.done :: concrete body claim elapsed_ms=0
+
+thread 'generic_constant_values_execute_in_expressions' (159306) panicked at tests/compiler_generic_types_execution.rs:131:29:
+constant values in generic bodies: compile: GpuCodegen("concrete body replay produced no native definition for Local { function_start_token: 0, generic_parameter_count: 1, native_symbol: 1073741824, specialization_symbol: 1073741824 } with [CheckedGenericArgument { slot: 0, ty: Scalar(2) }]")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_constant_values_execute_in_expressions
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 164 filtered out; finished in 1.72s
+

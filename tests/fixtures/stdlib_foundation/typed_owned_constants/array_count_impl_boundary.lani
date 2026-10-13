@@ -1,0 +1,10 @@
+// Executable probe: expected exit0 after source/GPU/native integration.
+trait Rel<A> {}
+impl<const N: u8> Rel<[i32; N]> for bool {}
+fn zero<T>(value: T) -> T where T: Rel<[i32; 0]> { return value; }
+fn boundary<T>(value: T) -> T where T: Rel<[i32; 255]> { return value; }
+fn main() -> i32 {
+    if (zero(false)) { return 1; }
+    if (boundary(false)) { return 2; }
+    return 0;
+}

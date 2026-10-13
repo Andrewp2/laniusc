@@ -1,0 +1,29 @@
+    Finished `release` profile [optimized] target(s) in 0.23s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 4 tests
+test imported_nested_parameter_inference_preserves_copies_and_aliases ... ok
+test nested_generic_parameter_constraints_infer_complete_types ... GPU source-pack type-check rejection: token=682 code=InvalidMemberAccess detail=0
+
+thread 'nested_generic_parameter_constraints_infer_complete_types' (620729) panicked at tests/compiler_generic_types_execution.rs:105:29:
+nested parameter values copies and aliases: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0042", title: "invalid member access", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0042", message: "invalid member access", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 49, column: 69, length: 5, byte_start: Some(2197), byte_end: Some(2202), source_line: Some("    let total = match (extracted) { None -> 0, Some(value) -> value.first + value.last };"), message: "this value does not have the requested field" }), help: None, notes: ["field access is only valid for structs that declare a field with this name"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test nested_parameter_constraints_reject_conflicts_and_missing_bindings ... GPU source-pack type-check rejection: token=92 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=116 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=119 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=2097408
+ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... ok
+
+failures:
+
+failures:
+    nested_generic_parameter_constraints_infer_complete_types
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 55 filtered out; finished in 3.01s
+
+error: test failed, to rerun pass `-p laniusc --test compiler_generic_types_execution`

@@ -1,0 +1,30 @@
+
+running 7 tests
+test alias_qualified_constructors_preserve_injected_and_constant_arguments ... ok
+test alias_qualified_constructors_preserve_normalized_concrete_unit_parents ... ok
+test alias_qualified_constructors_preserve_reordered_target_arguments ... ok
+test generic_unit_values_preserve_complete_local_and_imported_types ... ok
+test qualified_enum_variants_bind_parent_applications ... ok
+test qualified_enum_variants_forward_symbolic_parameters ... ok
+test qualified_enum_variants_reject_conflicting_parent_applications ... GPU source-pack type-check rejection: token=67 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967051
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=71 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967051
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967051
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 293 filtered out; finished in 8.03s
+

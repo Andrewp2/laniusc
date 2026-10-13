@@ -14,6 +14,9 @@ ConstantBuffer<Params> gHirType;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_arg_owner_a;
+StructuredBuffer<uint> hir_type_arg_application_owner;
+StructuredBuffer<uint> hir_canonical_alias_to_dense;
+StructuredBuffer<uint> hir_canonical_dense_to_raw;
 StructuredBuffer<uint> hir_type_arg_rank_a;
 StructuredBuffer<uint> hir_type_arg_previous;
 
@@ -26,6 +29,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_TYPE = 5u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 
 uint linear_thread_id(uint3 dtid)
@@ -46,7 +50,8 @@ bool valid_node(uint node)
 bool valid_type_arg_owner(uint node)
 {
     return valid_node(node) &&
-           (hir_kind[node] == HIR_TYPE || hir_kind[node] == HIR_PATH_EXPR);
+           (hir_kind[node] == HIR_TYPE || hir_kind[node] == HIR_PATH_EXPR ||
+            hir_kind[node] == HIR_MEMBER_EXPR);
 }
 
 [shader("compute")]
@@ -59,17 +64,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint node = linear_thread_id(dtid);
-    if (node >= gHirType.n || !valid_node(node) || hir_kind[node] != HIR_TYPE)
+    if (node >= gHirType.n || !valid_node(node) ||
+        (hir_kind[node] != HIR_TYPE && hir_kind[node] != 23u))
         return;
 
-    uint owner = hir_type_arg_owner_a[node];
-    if (!valid_type_arg_owner(owner))
-        return;
+    uint seed = hir_type_arg_owner_a[node];
+    uint owner = valid_node(seed) ? hir_type_arg_application_owner[seed] : INVALID;
+    if (!valid_type_arg_owner(owner)) return;
+    if (hir_kind[owner] == HIR_PATH_EXPR)
+    {
+        uint dense = hir_canonical_alias_to_dense[owner];
+        uint capacity; uint stride;
+        hir_canonical_dense_to_raw.GetDimensions(capacity, stride);
+        uint canonical_raw = dense < capacity ? hir_canonical_dense_to_raw[dense] : INVALID;
+        // Constructor paths alias a record literal. Other value paths keep
+        // their separate headers only in the token-owned compact relation.
+        if (!valid_node(canonical_raw) || hir_kind[canonical_raw] != 28u) return;
+    }
 
     uint ordinal = hir_type_arg_rank_a[node];
     uint previous = hir_type_arg_previous[node];
     atomic_u32_min(hir_type_arg_start, owner, node);
     atomic_u32_max(hir_type_arg_count, owner, ordinal + 1u);
-    if (valid_node(previous) && hir_kind[previous] == HIR_TYPE)
+    if (valid_node(previous) && (hir_kind[previous] == HIR_TYPE || hir_kind[previous] == 23u))
         hir_type_arg_next[previous] = node;
 }

@@ -1,4 +1,7 @@
-// Publish imported function parameter counts from compact call-argument rows.
+// Allocate dependency parameter spans before target resolution. Ordinary
+// functions already have a signature. Member/associated targets resolve later;
+// reserve their supplied argument rows now and publish checked patterns only
+// after resolving the target on its active interface page.
 
 import dependency_interface;
 import hir_records;
@@ -32,6 +35,7 @@ static const uint TYPE_WORDS = 9u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint hir_count() { return min(gParams.hir_capacity, compact_hir_count[0u]); }
@@ -62,7 +66,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_dependency_library_id[token],
         call_dependency_unit_id[token],
         call_dependency_local_index[token]);
-    if (declaration_i == INVALID) return;
+    if (declaration_i == INVALID)
+    {
+        uint callee = compact_hir_payload[arg.call].a;
+        if (!valid_hir(callee)) return;
+        uint kind = compact_hir_core[callee].kind;
+        if (kind == HIR_MEMBER_EXPR || kind == HIR_PATH_EXPR)
+        {
+            uint prior;
+            InterlockedMax(call_param_count[token], arg.ordinal + 1u, prior);
+        }
+        return;
+    }
     uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
     uint signature_base = signature_i * TYPE_WORDS;
     if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION) return;

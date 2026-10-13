@@ -1,0 +1,43 @@
+
+running 13 tests
+test trait_methods_control::type_checker_enforces_imported_generic_trait_where_clauses_on_gpu ... ok
+test trait_methods_control::type_checker_enforces_imported_nonzero_slot_trait_where_clauses_on_gpu ... ok
+test trait_methods_control::type_checker_rejects_generic_trait_impl_arguments_until_predicate_rows_carry_param_refs_on_gpu ... 
+thread 'trait_methods_control::type_checker_rejects_generic_trait_impl_arguments_until_predicate_rows_carry_param_refs_on_gpu' (208258) panicked at tests/type_checker_semantics.rs:36:10:
+source should fail GPU type checking: ()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test trait_methods_control::type_checker_rejects_trait_impl_targets_that_resolve_to_traits_on_gpu ... 
+thread 'trait_methods_control::type_checker_rejects_trait_impl_targets_that_resolve_to_traits_on_gpu' (208260) panicked at tests/type_checker_semantics.rs:39:13:
+assertion `left == right` failed
+  left: "LNC0007"
+ right: "LNC0021"
+FAILED
+test type_checker_rejects_bounds_that_do_not_resolve_to_traits_on_gpu ... ok
+test type_checker_rejects_private_bound_type_arguments_across_modules ... 
+thread 'type_checker_rejects_private_bound_type_arguments_across_modules' (208264) panicked at tests/type_checker_semantics.rs:61:13:
+assertion `left == right` failed
+  left: "LNC0007"
+ right: "LNC0008"
+FAILED
+test type_checker_rejects_symbolic_generic_trait_obligations_without_concrete_impl_key ... ok
+test type_checker_rejects_trait_bounds_on_const_generic_subjects_on_gpu ... ok
+test type_checker_rejects_trait_bounds_on_non_callable_generic_declarations_on_gpu ... ok
+test type_checker_rejects_unknown_bound_type_arguments_on_gpu ... ok
+test type_checker_reports_unapplied_generic_trait_bound_arguments_on_gpu ... 
+thread 'type_checker_reports_unapplied_generic_trait_bound_arguments_on_gpu' (208275) panicked at tests/type_checker_semantics.rs:36:10:
+source should fail GPU type checking: ()
+FAILED
+test type_checker_resolves_qualified_two_arg_trait_bounds_by_decl_identity ... ok
+test type_checker_substitutes_alias_normalized_bound_arguments_from_nonzero_slots_on_gpu ... ok
+
+failures:
+
+failures:
+    trait_methods_control::type_checker_rejects_generic_trait_impl_arguments_until_predicate_rows_carry_param_refs_on_gpu
+    trait_methods_control::type_checker_rejects_trait_impl_targets_that_resolve_to_traits_on_gpu
+    type_checker_rejects_private_bound_type_arguments_across_modules
+    type_checker_reports_unapplied_generic_trait_bound_arguments_on_gpu
+
+test result: FAILED. 9 passed; 4 failed; 0 ignored; 0 measured; 243 filtered out; finished in 1.83s
+

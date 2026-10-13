@@ -1,0 +1,33 @@
+{
+  "size": 1000000,
+  "seeds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39
+  ],
+  "warm_seed": 19,
+  "workload_profile": "pareas-common-subset",
+  "order_seed": 1741061,
+  "rust_frontend_threads": 16,
+  "lanes": [
+    "o0",
+    "default"
+  ]
+}

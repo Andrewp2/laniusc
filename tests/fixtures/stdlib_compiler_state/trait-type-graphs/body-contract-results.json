@@ -1,0 +1,22 @@
+[
+  {
+    "case": "imported-mismatch",
+    "exit": 1,
+    "tail": "GPU source-pack type-check rejection: token=45 code=TraitBoundUnsatisfied detail=9\nstdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_205980.lani: error[LNC0008]: unsatisfied trait bound\n --> <source pack file 0>:5:13\n  |\n5 | pub fn keep<T,U,const N:usize>(v:T, values:[U;N])->T where T:Rel<Cell<[U;N]>> {return v;}\n  |             ^ no matching impl satisfies this call\n     = note: the trait solver found no concrete impl for the call's inferred type arguments\n"
+  },
+  {
+    "case": "imported",
+    "exit": 0,
+    "tail": "sample=0 ms=193.419\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/imported.lani rebuild_entry=true warmups=1 iters=1 output_bytes=6286 min_ms=193.419 median_ms=193.419 avg_ms=193.419 max_ms=193.419 output_verified=true\n"
+  },
+  {
+    "case": "symbolic-forwarding",
+    "exit": 0,
+    "tail": "sample=0 ms=102.498\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/symbolic-forwarding.lani rebuild_entry=true warmups=1 iters=1 output_bytes=6284 min_ms=102.498 median_ms=102.498 avg_ms=102.498 max_ms=102.498 output_verified=true\n"
+  },
+  {
+    "case": "symbolic-arguments",
+    "exit": 0,
+    "tail": "sample=0 ms=74.761\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/symbolic-arguments.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4409 min_ms=74.761 median_ms=74.761 avg_ms=74.761 max_ms=74.761 output_verified=true\n"
+  }
+]

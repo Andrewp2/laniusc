@@ -1,0 +1,8 @@
+import core::option;
+struct Cell<T> { value: T }
+fn main() -> i32 {
+    let value: core::option::Option<Cell<bool>> = core::option::Some(Cell { value: true });
+    let flag: bool = match (value) { core::option::Some(v) -> v.value, core::option::None -> false };
+    if (flag) { return 0; }
+    return 1;
+}

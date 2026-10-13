@@ -1,0 +1,62 @@
+struct Slot<T> { value: T, sentinel: i32 }
+struct Empty {}
+enum Maybe<T> { Value(T), Missing }
+
+fn wrap<T>(value: T) -> Slot<Maybe<T>> {
+    return Slot { value: Value(value), sentinel: 97 };
+}
+fn blank<T>() -> Slot<Maybe<T>> {
+    return Slot { value: Missing(), sentinel: 89 };
+}
+fn recover<T>(value: Maybe<T>, fallback: T) -> T {
+    return match (value) { Value(inner) -> inner, Missing -> fallback };
+}
+fn number(value: Maybe<i32>) -> i32 { return recover(value, 42); }
+fn view<T>(values: [T]) -> [T] { return values; }
+
+fn main() -> i32 {
+    let slot: Slot<Maybe<bool>> = Slot { value: Missing(), sentinel: 79 };
+    slot.value = Value(true);
+    if (!recover(slot.value, false) || slot.sentinel != 79) { return 1; }
+    slot.value = match (false) { true -> Value(true), false -> Missing() };
+    if (recover(slot.value, false) || slot.sentinel != 79) { return 2; }
+
+    let rows: [Slot<Maybe<[i32; 2]>>; 2] = [
+        Slot { value: Missing(), sentinel: 73 },
+        Slot { value: Value([11, 22]), sentinel: 71 }
+    ];
+    rows[0].value = Value([31, 41]);
+    let copied: [i32; 2] = recover(rows[0].value, [0, 0]);
+    copied[0] = 51;
+    let original: [i32; 2] = recover(rows[0].value, [0, 0]);
+    let second: [i32; 2] = recover(rows[1].value, [0, 0]);
+    if (original[0] != 31 || original[1] != 41 || second[0] != 11 || second[1] != 22 ||
+        rows[0].sentinel != 73 || rows[1].sentinel != 71) { return 3; }
+
+    let flags: [Maybe<bool>; 2] = [Missing(), Value(false)];
+    view(flags)[0] = Value(true);
+    flags[1] = Missing();
+    if (!recover(flags[0], false) || recover(flags[1], false)) { return 4; }
+
+    let wrapped: Slot<Maybe<[i32; 2]>> = wrap([61, 67]);
+    let missing: Slot<Maybe<[i32; 2]>> = blank();
+    let wrapped_values: [i32; 2] = recover(wrapped.value, [0, 0]);
+    let missing_values: [i32; 2] = recover(missing.value, [81, 83]);
+    if (wrapped_values[0] != 61 || wrapped_values[1] != 67 || wrapped.sentinel != 97 ||
+        missing_values[0] != 81 || missing_values[1] != 83 || missing.sentinel != 89) { return 5; }
+
+    if (number(Missing()) != 42 || recover(Missing(), 43) != 43) { return 6; }
+    let inferred_payload: [i32; 2] = recover(Value([7, 8]), [0, 0]);
+    if (inferred_payload[0] != 7 || inferred_payload[1] != 8) { return 7; }
+
+    let empty: Slot<Maybe<[Empty; 0]>> = Slot { value: Value([]), sentinel: 59 };
+    let empty_value: [Empty; 0] = recover(empty.value, []);
+    if (empty.sentinel != 59) { return 8; }
+
+    let storage: Slot<[i32; 2]> = Slot { value: [91, 93], sentinel: 53 };
+    let borrowed: Slot<Maybe<[i32]>> = Slot { value: Value(view(storage.value)), sentinel: 47 };
+    let values: [i32] = recover(borrowed.value, view(storage.value));
+    values[1] = 95;
+    if (storage.value[0] != 91 || storage.value[1] != 95 || storage.sentinel != 53 || borrowed.sentinel != 47) { return 9; }
+    return 0;
+}

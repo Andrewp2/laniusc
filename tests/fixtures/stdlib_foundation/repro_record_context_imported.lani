@@ -1,0 +1,15 @@
+import core::record_context;
+import core::option;
+import std::io;
+fn main() -> i32 {
+    if (core::record_context::flag(core::record_context::ImportedCell { value: false })) { return 1; }
+    if (core::record_context::number(core::record_context::ImportedCell { value: 4294967295 }) != 4294967295) { return 2; }
+    let text: str = core::record_context::envelope(core::record_context::ImportedEnvelope {
+        child: core::record_context::ImportedCell { value: "Ω" }
+    });
+    std::io::println(text);
+    let made: core::option::Option<core::record_context::ImportedCell<bool>> = core::record_context::make(false);
+    let flag: bool = match (made) { core::option::Some(v) -> v.value, core::option::None -> true };
+    if (flag) { return 3; }
+    return 0;
+}

@@ -1,0 +1,87 @@
+module app::main;
+import core::option;
+import std::io;
+
+fn main() -> i32 {
+    let absent: core::option::Option<i32> = core::option::None();
+    let present: core::option::Option<i32> = core::option::Some(-2147483648);
+    let zero: core::option::Option<i32> = core::option::Some(0);
+    if (core::option::unwrap_or(absent, 99) != 99) { return 1; }
+    if (core::option::unwrap_or(present, 99) != -2147483648) { return 2; }
+    if (core::option::unwrap_or(zero, 99) != 0) { return 3; }
+    let preferred: core::option::Option<i32> = core::option::or(present, zero);
+    let fallback: core::option::Option<i32> = core::option::or(absent, zero);
+    let both_absent: core::option::Option<i32> = core::option::or(absent, absent);
+    if (core::option::unwrap_or(preferred, 99) != -2147483648) { return 4; }
+    if (core::option::unwrap_or(fallback, 99) != 0 || !both_absent.is_none()) { return 5; }
+    let next: core::option::Option<i32> = core::option::and(present, zero);
+    let next_absent: core::option::Option<i32> = core::option::and(present, absent);
+    let first_absent: core::option::Option<i32> = core::option::and(absent, present);
+    if (core::option::unwrap_or(next, 99) != 0) { return 6; }
+    if (!next_absent.is_none() || !first_absent.is_none()) { return 7; }
+    let left: core::option::Option<i32> = core::option::xor(present, absent);
+    let right: core::option::Option<i32> = core::option::xor(absent, zero);
+    let both: core::option::Option<i32> = core::option::xor(present, zero);
+    let neither: core::option::Option<i32> = core::option::xor(absent, absent);
+    if (core::option::unwrap_or(left, 99) != -2147483648) { return 8; }
+    if (core::option::unwrap_or(right, 99) != 0 || !both.is_none() || !neither.is_none()) { return 9; }
+    if (present.unwrap_or(99) != -2147483648 || zero.unwrap_or(99) != 0 || !absent.is_none()) { return 10; }
+
+    let no_bool: core::option::Option<bool> = core::option::None();
+    let false_value: core::option::Option<bool> = core::option::Some(false);
+    if (core::option::unwrap_or(false_value, true) || !core::option::unwrap_or(no_bool, true)) { return 11; }
+    let boolean_or: core::option::Option<bool> = core::option::or(no_bool, false_value);
+    let boolean_and: core::option::Option<bool> = core::option::and(false_value, no_bool);
+    let boolean_xor: core::option::Option<bool> = core::option::xor(no_bool, false_value);
+    if (!boolean_or.contains(false) || !boolean_xor.contains(false) || !boolean_and.is_none()) { return 12; }
+
+    let high: u32 = 4294967295;
+    let unsigned_zero: u32 = 0;
+    let unsigned: core::option::Option<u32> = core::option::Some(high);
+    let no_unsigned: core::option::Option<u32> = core::option::None();
+    let unsigned_or: core::option::Option<u32> = core::option::or(no_unsigned, unsigned);
+    let unsigned_and: core::option::Option<u32> = core::option::and(unsigned, unsigned);
+    let unsigned_xor: core::option::Option<u32> = core::option::xor(unsigned, no_unsigned);
+    if (core::option::unwrap_or(unsigned, unsigned_zero) != high || core::option::unwrap_or(no_unsigned, high) != high) { return 13; }
+    if (!unsigned_or.contains(high) || !unsigned_and.contains(high) || !unsigned_xor.contains(high)) { return 14; }
+
+    let floating: core::option::Option<f32> = core::option::Some(-2.5);
+    let no_float: core::option::Option<f32> = core::option::None();
+    let float_or: core::option::Option<f32> = core::option::or(no_float, floating);
+    let float_and: core::option::Option<f32> = core::option::and(floating, floating);
+    let float_xor: core::option::Option<f32> = core::option::xor(floating, no_float);
+    if (core::option::unwrap_or(floating, 99.0) != -2.5 || core::option::unwrap_or(no_float, -2.5) != -2.5) { return 15; }
+    if (!float_or.contains(-2.5) || !float_and.contains(-2.5) || !float_xor.contains(-2.5)) { return 16; }
+    let negative_zero: core::option::Option<f32> = core::option::Some(-0.0);
+    let recovered_zero: f32 = core::option::unwrap_or(negative_zero, 99.0);
+    if (recovered_zero != 0.0 || 1.0 / recovered_zero >= 0.0) { return 17; }
+    let nan: f32 = 0.0 / 0.0;
+    let not_number: core::option::Option<f32> = core::option::Some(nan);
+    let recovered_nan: f32 = core::option::unwrap_or(not_number, 99.0);
+    if (recovered_nan == recovered_nan) { return 18; }
+
+    let letter: core::option::Option<char> = core::option::Some('Ω');
+    let no_char: core::option::Option<char> = core::option::None();
+    let char_or: core::option::Option<char> = core::option::or(no_char, letter);
+    let char_and: core::option::Option<char> = core::option::and(letter, letter);
+    let char_xor: core::option::Option<char> = core::option::xor(letter, no_char);
+    if (core::option::unwrap_or(letter, '\0') != 'Ω' || core::option::unwrap_or(no_char, '\0') != '\0') { return 19; }
+    if (!char_or.contains('Ω') || !char_and.contains('Ω') || !char_xor.contains('Ω')) { return 20; }
+
+    let text: core::option::Option<str> = core::option::Some("payload");
+    let no_text: core::option::Option<str> = core::option::None();
+    let empty: core::option::Option<str> = core::option::Some("");
+    let text_or: core::option::Option<str> = core::option::or(no_text, text);
+    let text_and: core::option::Option<str> = core::option::and(text, text);
+    let text_xor: core::option::Option<str> = core::option::xor(text, no_text);
+    let value: str = core::option::unwrap_or(text, "missing");
+    let fallback_text: str = core::option::unwrap_or(no_text, "fallback");
+    let empty_text: str = core::option::unwrap_or(empty, "missing");
+    let from_or: str = core::option::unwrap_or(text_or, "missing");
+    let from_and: str = core::option::unwrap_or(text_and, "missing");
+    let from_xor: str = core::option::unwrap_or(text_xor, "missing");
+    if (std::io::println(value) != 8 || std::io::println(fallback_text) != 9) { return 21; }
+    if (std::io::println(empty_text) != 1 || !empty.is_some()) { return 22; }
+    if (std::io::println(from_or) != 8 || std::io::println(from_and) != 8 || std::io::println(from_xor) != 8) { return 23; }
+    return 0;
+}

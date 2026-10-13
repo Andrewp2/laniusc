@@ -1,0 +1,7 @@
+module core::layouts;
+pub enum Envelope<A, B> {
+    Present(A, B),
+    Reserved([B; 3]),
+    Nested([[B; 0]; 2]),
+    Absent
+}

@@ -1,0 +1,9 @@
+// Dependency: the compiler currently gives u8 and u32 the same type identity.
+pub enum Maybe<T> { Some(T), None }
+pub impl Maybe<u32> {
+    pub fn present(&self) -> bool { return true; }
+}
+pub impl Maybe<u8> {
+    pub fn present(&self) -> bool { return true; }
+}
+fn main() -> i32 { return 0; }

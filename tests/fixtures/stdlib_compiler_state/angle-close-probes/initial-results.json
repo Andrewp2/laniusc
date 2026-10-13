@@ -1,0 +1,37 @@
+[
+  {
+    "name": "local",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/local.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2310 min_ms=173.751 median_ms=173.751 avg_ms=173.751 max_ms=173.751 output_verified=true"
+  },
+  {
+    "name": "qualified_constant",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_constant.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4308 min_ms=154.830 median_ms=154.830 avg_ms=154.830 max_ms=154.830 output_verified=true"
+  },
+  {
+    "name": "qualified_constant_spaced",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_constant_spaced.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4308 min_ms=172.365 median_ms=172.365 avg_ms=172.365 max_ms=172.365 output_verified=true"
+  },
+  {
+    "name": "qualified_type",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_type.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=170.477 median_ms=170.477 avg_ms=170.477 max_ms=170.477 output_verified=true"
+  },
+  {
+    "name": "qualified_type_spaced",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_type_spaced.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=175.635 median_ms=175.635 avg_ms=175.635 max_ms=175.635 output_verified=true"
+  },
+  {
+    "name": "qualified_annotation",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_annotation.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=179.963 median_ms=179.963 avg_ms=179.963 max_ms=179.963 output_verified=true"
+  },
+  {
+    "name": "qualified_annotation_spaced",
+    "exit": 0,
+    "diagnostic": "entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_annotation_spaced.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=186.703 median_ms=186.703 avg_ms=186.703 max_ms=186.703 output_verified=true"
+  }
+]

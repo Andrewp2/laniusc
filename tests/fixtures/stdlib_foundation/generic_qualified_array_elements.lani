@@ -1,0 +1,27 @@
+import core::option;
+import core::mem;
+
+struct Owner { values: [core::option::Option<i32>; 2], sentinel: i32 }
+fn rewrite(values: [core::option::Option<i32>]) {
+    values[1] = core::option::Some(42);
+}
+fn main() -> i32 {
+    let values: [core::option::Option<i32>; 2] = [core::option::Some(11), core::option::None()];
+    rewrite(values);
+    let copied: [core::option::Option<i32>; 2] = core::mem::identity(values);
+    values[0] = core::option::None();
+    if (!core::option::is_none(values[0]) || core::option::unwrap_or(copied[0], 0) != 11 ||
+        core::option::unwrap_or(copied[1], 0) != 42) { return 1; }
+
+    let owner: Owner = Owner { values: copied, sentinel: 97 };
+    owner.values[1] = core::option::None();
+    rewrite(owner.values);
+    if (core::option::unwrap_or(owner.values[1], 0) != 42 || owner.sentinel != 97) { return 2; }
+
+    let nested: [[core::option::Option<[i32; 2]>; 1]; 1] = [[core::option::Some([31, 41])]];
+    let pair: [i32; 2] = core::option::unwrap_or(nested[0][0], [0, 0]);
+    pair[0] = 99;
+    let original: [i32; 2] = core::option::unwrap_or(nested[0][0], [0, 0]);
+    if (pair[0] != 99 || original[0] != 31 || original[1] != 41) { return 3; }
+    return 0;
+}

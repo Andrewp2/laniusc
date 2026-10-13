@@ -1,0 +1,10 @@
+
+running 5 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values ... ok
+test compiler::gpu_compiler::typecheck::tests::qualified_variant_import_ambiguity_is_independent_of_source_pack_membership ... ok
+test compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay ... ok
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 629 filtered out; finished in 5.81s
+

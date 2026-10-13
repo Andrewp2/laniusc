@@ -54,20 +54,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint anchor = tid(dtid);
     uint total = inclusive_scan_total(block_count(), family_block_prefix);
     if (anchor == 0u) family_count[0u] = total;
-    if (anchor >= gCanonical.canonical_capacity || family_flag[anchor] == 0u) return;
+    if (anchor >= gCanonical.canonical_capacity) return;
     uint encoded = candidate_raw_by_anchor[anchor];
     uint raw = encoded == 0u ? INVALID : encoded - 1u;
     if (raw >= gCanonical.raw_capacity) return;
-    uint block = anchor / 256u;
-    uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
-    uint row = base + family_local_prefix[anchor];
-    if (row >= gCanonical.canonical_capacity)
-    {
-        uint ignored;
-        InterlockedMax(canonical_status[0u], 3u, ignored);
-        InterlockedMax(canonical_status[3u], raw + 1u, ignored);
-        return;
-    }
     bool declaration = node_kind[raw] == PROD_STRUCT_FIELD;
     uint literal_row = gCanonical.records_use_token_rows != 0u ? anchor : raw;
     HirField field;
@@ -77,6 +67,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint raw_value = declaration ? decl_type[raw] : literal_value[literal_row];
     field.value = declaration ? mapped(raw_value) : mapped_expression(raw_value);
     field.ordinal = declaration ? decl_ordinal[raw] : literal_ordinal[raw];
+    if (field.owner >= gCanonical.canonical_capacity || field.ordinal == INVALID ||
+        field.ordinal >= family_flag[field.owner]) return;
+    uint block = field.owner / 256u;
+    uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
+    uint row = base + family_local_prefix[field.owner] + field.ordinal;
+    if (row >= gCanonical.canonical_capacity)
+    {
+        uint ignored;
+        InterlockedMax(canonical_status[0u], 3u, ignored);
+        InterlockedMax(canonical_status[3u], raw + 1u, ignored);
+        return;
+    }
     hir_fields[row] = field;
     if (!declaration && field.owner != INVALID &&
         field.owner < gCanonical.canonical_capacity && field.ordinal != INVALID)

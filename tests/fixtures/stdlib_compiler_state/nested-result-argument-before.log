@@ -1,0 +1,6 @@
+error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_foundation/repro_generic_nested_result_argument.lani:7:14
+  |
+7 |     if (read(length()) != 3) { return 1; }
+  |              ^^^^^^ value type is unknown type but this context expects generic parameter 0
+     = note: expected generic parameter 0, found unknown type; change the expression or the annotation so they agree

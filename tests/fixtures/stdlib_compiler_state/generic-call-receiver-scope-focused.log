@@ -1,0 +1,31 @@
+
+running 9 tests
+GPU source-pack type-check rejection: token=187 code=GenericInstantiationBoundary detail=3
+
+thread 'generic_method_lookup_uses_complete_inferred_call_results' (653222) panicked at tests/compiler_generic_types_execution.rs:115:29:
+generic call result method receivers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 16, column: 17, length: 4, byte_start: Some(561), byte_end: Some(565), source_line: Some("    let words = make([\"one\", \"two λ\"]).get();"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["a nested type application could not be instantiated from its checked environment"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test generic_method_lookup_uses_complete_inferred_call_results ... FAILED
+test generic_reference_receivers_substitute_complete_method_return_types ... ok
+test local_generic_methods_preserve_compound_values_and_nested_calls ... ok
+test local_generic_methods_use_lexical_impl_parameter_order ... ok
+test imported_reference_fields_preserve_pointer_layout_and_aliases ... ok
+test reference_receivers_preserve_identity_through_method_calls ... ok
+test imported_generic_reference_methods_preserve_all_receiver_arguments ... ok
+test imported_reference_signatures_preserve_aliases_and_infer_referents ... ok
+GPU source-pack type-check rejection: token=99 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=104 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=98 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=107 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=115 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=115 code=AssignMismatch detail=0
+test imported_reference_signatures_reject_incompatible_referents ... ok
+
+failures:
+
+failures:
+    generic_method_lookup_uses_complete_inferred_call_results
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 112 filtered out; finished in 5.40s
+

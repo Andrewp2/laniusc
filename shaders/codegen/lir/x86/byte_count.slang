@@ -1,9 +1,14 @@
+import primitive_types;
+import native_value_layout;
+import codegen.lir.x86.index_address_layout;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
+import codegen.lir.x86.storage_layout;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.location_common;
-import codegen.lir.x86.safety;
+import codegen.lir.x86.frame_layout;
+import codegen.lir.x86.parameter_values;
 import gpu_index;
 
 struct Params
@@ -33,6 +38,7 @@ StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<SemanticLirParam> semantic_lir_params;
 StructuredBuffer<uint> x86_decl_location_by_token;
+StructuredBuffer<uint4> x86_place_storage_by_token;
 StructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 RWStructuredBuffer<uint> target_byte_length;
 RWStructuredBuffer<LoweringStatus> lowering_status;
@@ -58,27 +64,6 @@ uint declaration_location(uint token)
     uint location = token < gParams.token_capacity
         ? x86_decl_location_by_token[token] : X86_LOCATION_INVALID;
     return location == X86_LOCATION_INVALID ? 0u : location;
-}
-
-bool frameless_function(TargetLirFunction function,
-                        SemanticLirFunction semantic_function)
-{
-    return (function.flags & X86_TARGET_FUNCTION_FRAMELESS) != 0u &&
-        semantic_function.result_word_count <= 2u;
-}
-
-bool stackless_caller(TargetLirFunction function,
-                      SemanticLirFunction semantic_function)
-{
-    return (function.flags & X86_TARGET_FUNCTION_STACKLESS_CALLER) != 0u &&
-        semantic_function.result_word_count <= 2u;
-}
-
-uint base_frame_slots(TargetLirFunction function,
-                      SemanticLirFunction semantic_function)
-{
-    return (function.flags & X86_TARGET_FUNCTION_FRAME_SLOT_MASK) +
-        (semantic_function.result_word_count > 2u ? 1u : 0u);
 }
 
 uint hidden_sret_slot(TargetLirFunction function)
@@ -108,7 +93,8 @@ uint param_store_bytes(TargetLirFunction target_function,
         }
         abi_ordinal += width;
     }
-    return bytes;
+    return bytes + x86_parameter_copy_bytes(target_function, function,
+        semantic_lir_params, x86_decl_location_by_token);
 }
 
 uint function_abi_param_count(SemanticLirFunction function)
@@ -120,70 +106,6 @@ uint function_abi_param_count(SemanticLirFunction function)
     return count;
 }
 
-bool f32_binary_commutative(uint operation)
-{
-    return operation == X86_LIR_BINARY_ADD_F32 ||
-        operation == X86_LIR_BINARY_MUL_F32;
-}
-
-uint f32_binary_instruction_bytes(uint destination, uint right)
-{
-    if (x86_location_is_xmm(right))
-        return 4u + (destination >= 8u ||
-            x86_location_xmm(right) >= 8u ? 1u : 0u);
-    if (x86_location_is_register(right))
-        return x86_move_f32_to_xmm_bytes(right, 14u) +
-            5u;
-    return x86_stack_xmm32_operand_bytes(x86_location_payload(right)) +
-        (destination >= 8u ? 1u : 0u);
-}
-
-uint f32_binary_bytes(uint operation, uint left, uint right, uint result)
-{
-    uint destination = x86_location_is_xmm(result)
-        ? x86_location_xmm(result) : 15u;
-    bool destination_is_right = x86_location_is_xmm(right) &&
-        x86_location_xmm(right) == destination;
-    bool destination_is_left = x86_location_is_xmm(left) &&
-        x86_location_xmm(left) == destination;
-    if (destination_is_right && !destination_is_left &&
-        f32_binary_commutative(operation))
-    {
-        uint swap = left;
-        left = right;
-        right = swap;
-        destination_is_right = false;
-    }
-    uint compute = destination_is_right && !destination_is_left
-        ? 15u : destination;
-    return x86_move_f32_to_xmm_bytes(left, compute) +
-        f32_binary_instruction_bytes(compute, right) +
-        x86_move_f32_from_xmm_bytes(compute, result);
-}
-
-uint f32_compare_instruction_bytes(uint left, uint right)
-{
-    uint left_xmm = x86_location_is_xmm(left)
-        ? x86_location_xmm(left) : 15u;
-    uint bytes = x86_move_f32_to_xmm_bytes(left, left_xmm);
-    if (x86_location_is_xmm(right))
-        bytes += 3u + (left_xmm >= 8u ||
-            x86_location_xmm(right) >= 8u ? 1u : 0u);
-    else if (x86_location_is_register(right))
-        bytes += x86_move_f32_to_xmm_bytes(right, 14u) +
-            4u;
-    else
-        bytes += 3u + x86_stack_displacement_bytes(
-            x86_location_payload(right)) + (left_xmm >= 8u ? 1u : 0u);
-    return bytes;
-}
-
-uint f32_compare_bytes(uint left, uint right, uint result)
-{
-    return f32_compare_instruction_bytes(left, right) + 11u +
-        x86_move32_from_fixed_bytes(0u, result);
-}
-
 uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                        X86LirLocations locations,
                        TargetLirFunction function,
@@ -193,6 +115,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     bool frameless = frameless_function(function, semantic_function);
     uint restore_bytes = x86_saved_gpr_frame_bytes(saved_mask,
         base_frame_slots(function, semantic_function));
+    if (x86_is_specialized_scalar_instruction(core, operands)) return 0u;
     if (core.op == X86_LIR_OP_IMM_I32)
         return (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT
             ? x86_imm_f32_to_location_bytes(operands.a, locations.result)
@@ -204,23 +127,87 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             ? operands.c : 0u;
         uint source = declaration_location(operands.a) + component;
         return x86_scalar_float(operands.metadata)
-            ? x86_move_f32_between_bytes(source, locations.result)
+            ? x86_move_float_between_bytes(source, locations.result, x86_scalar_f64(operands.metadata))
             : x86_alias_uses_64_bits(operands.metadata)
             ? x86_move64_between_bytes(source, locations.result)
             : x86_move32_between_bytes(source, locations.result);
+    }
+    if (core.op == X86_LIR_OP_DECL_ADDRESS)
+        return operands.a < gParams.token_capacity
+            ? x86_stack64_operand_bytes(x86_place_storage_by_token[operands.a].x) +
+                x86_move64_from_fixed_bytes(0u, locations.result) : 0u;
+    if (core.op == X86_LIR_OP_FIELD_ADDRESS)
+        return x86_move64_to_fixed_bytes(locations.a, 0u) + 7u +
+            x86_move64_from_fixed_bytes(0u, locations.result);
+    if (core.op == X86_LIR_OP_INDEX_ADDRESS)
+        return x86_index_address_bytes(core, operands, locations, operands.c) +
+            x86_move64_from_fixed_bytes(0u, locations.result);
+    if (core.op == X86_LIR_OP_PLACE_LOAD)
+    {
+        bool aggregate = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
+        uint descriptor = (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u ? 3u :
+            (operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u ? 2u : 0u;
+        if (aggregate)
+            return x86_move64_to_fixed_bytes(locations.a, 2u) +
+                x86_stack64_operand_bytes(x86_location_payload(locations.result) + 1u) +
+                x86_move64_from_fixed_bytes(0u, locations.result) +
+                (operands.c == 0u ? 0u : 50u);
+        uint bytes = x86_move64_to_fixed_bytes(locations.a, 0u);
+        if (descriptor != 0u)
+        {
+            for (uint word = 0u; word < descriptor; word++)
+                bytes += word == 1u ? 6u + x86_move32_from_fixed_bytes(1u, locations.result + word)
+                    : 7u + x86_move64_from_fixed_bytes(1u, locations.result + word);
+            return bytes;
+        }
+        bool wide = scalar_uses_64bit_gpr(operands.metadata & 0xffu) ||
+            x86_scalar_f64(operands.metadata);
+        return bytes + (wide ? 3u : 2u) +
+            (x86_scalar_float(operands.metadata) ? x86_move_float_from_gpr_bytes(0u, locations.result, x86_scalar_f64(operands.metadata))
+                : wide ? x86_move64_from_fixed_bytes(0u, locations.result)
+                : x86_move32_from_fixed_bytes(0u, locations.result));
+    }
+    if (core.op == X86_LIR_OP_PLACE_STORE)
+    {
+        uint bytes = x86_move64_to_fixed_bytes(locations.a, 0u);
+        uint descriptor = (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u ? 3u :
+            (operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u ? 2u : 0u;
+        if ((operands.metadata & (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_INDIRECT_ARRAY_PAIR)) != 0u)
+            return bytes + x86_move64_to_fixed_bytes(locations.b, 2u) +
+                ((operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u
+                    ? operands.c * 13u : (descriptor != 0u || operands.c != 0u) ? 50u : 0u);
+        if (descriptor != 0u)
+        {
+            for (uint word = 0u; word < descriptor; word++)
+                bytes += (word == 1u ? x86_move32_to_fixed_bytes(locations.b + word, 1u)
+                    : x86_move64_to_fixed_bytes(locations.b + word, 1u)) + 7u;
+            return bytes;
+        }
+        bool wide = scalar_uses_64bit_gpr(operands.metadata & 0xffu) ||
+            x86_scalar_f64(operands.metadata);
+        return bytes + (x86_scalar_float(operands.metadata) ? x86_move_float_to_gpr_bytes(locations.b, 1u, x86_scalar_f64(operands.metadata))
+            : wide ? x86_move64_to_fixed_bytes(locations.b, 1u)
+            : x86_move32_to_fixed_bytes(locations.b, 1u)) + (wide ? 3u : 2u);
     }
     if (core.op == X86_LIR_OP_STORE_LOCAL)
     {
         uint destination = declaration_location(operands.a);
         if ((operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u)
-            return x86_move64_to_fixed_bytes(locations.b, 0u) + 3u +
-                x86_move64_from_fixed_bytes(1u, destination) + 7u +
-                x86_move64_from_fixed_bytes(1u, destination + 1u);
+        {
+            bool indirect = (operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u;
+            uint bytes = indirect ? x86_move64_to_fixed_bytes(locations.b, 0u) : 0u;
+            for (uint component = 0u; component < NATIVE_SLICE_WORDS; component++)
+                bytes += (indirect ? 7u : component == NATIVE_SLICE_LENGTH
+                    ? x86_move32_to_fixed_bytes(locations.b + component, 1u)
+                    : x86_move64_to_fixed_bytes(locations.b + component, 1u)) +
+                    x86_move64_from_fixed_bytes(1u, destination + component);
+            return bytes;
+        }
         if ((operands.metadata & X86_LIR_METADATA_STRING_PAIR) != 0u)
             return x86_move64_between_bytes(locations.b, destination) +
                 x86_move32_between_bytes(locations.c, destination + 1u);
         bool wide = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u ||
-            (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
+            scalar_uses_64bit_gpr(operands.metadata & 0xffu);
         return (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
             ? x86_stack64_operand_bytes(
                 x86_location_payload(locations.result) +
@@ -228,15 +215,12 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                         ? operands.c : 1u)) +
                 x86_move64_from_fixed_bytes(0u, destination)
             : x86_scalar_float(operands.metadata)
-            ? x86_move_f32_between_bytes(locations.b, destination)
+            ? x86_move_float_between_bytes(locations.b, destination, x86_scalar_f64(operands.metadata))
             : wide ? x86_move64_between_bytes(locations.b, destination)
             : x86_move32_between_bytes(locations.b, destination);
     }
     if (core.op == X86_LIR_OP_BINARY)
     {
-        if (operands.a >= X86_LIR_BINARY_ADD_F32 && operands.a <= X86_LIR_BINARY_DIV_F32)
-            return f32_binary_bytes(operands.a, locations.b, locations.c,
-                locations.result);
         if (x86_const_pow2_binary(operands.a))
             return x86_const_pow2_binary_bytes(operands.a, operands.c,
                 operands.metadata & 0xffu, locations.b, locations.result);
@@ -246,10 +230,6 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             return x86_binary_immediate_bytes(operands.a, operands.c,
                 locations.b, locations.result);
-        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
-            return x86_move64_to_fixed_bytes(locations.b, 0u) +
-                x86_move32_to_fixed_bytes(locations.c, 1u) + 3u +
-                x86_move64_from_fixed_bytes(0u, locations.result);
         if (operands.a == X86_LIR_BINARY_ADD_I32 &&
             x86_lea_add32_preferred(locations.b, locations.c,
                 locations.result))
@@ -279,19 +259,10 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             return x86_compare_immediate_bytes(
                 operands.c, locations.b, locations.result);
-        if (x86_scalar_float(operands.metadata))
-            return f32_compare_bytes(locations.b, locations.c,
-                locations.result);
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
             return x86_compare_aggregate_word_bytes(
                 locations.b, locations.c) + 6u +
                 x86_move32_from_fixed_bytes(0u, locations.result);
-        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
-            return x86_move64_to_fixed_bytes(locations.b, 0u) +
-                ((operands.metadata & X86_LIR_METADATA_RHS_NARROW) != 0u
-                    ? x86_move32_to_fixed_bytes(locations.c, 1u)
-                    : x86_move64_to_fixed_bytes(locations.c, 1u)) + 3u +
-                x86_boolean_result_bytes(locations.result);
         return x86_compare32_instruction_bytes(locations.b, locations.c) +
             x86_boolean_result_bytes(locations.result);
     }
@@ -300,20 +271,10 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             return x86_compare_immediate_instruction_bytes(
                 operands.b, locations.a) + 6u;
-        if (x86_scalar_float(operands.metadata))
-            return f32_compare_instruction_bytes(
-                locations.a, locations.b) + 16u;
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
             return x86_compare_aggregate_word_bytes(
                 locations.a, locations.b) + 6u;
-        bool pointer = (operands.metadata & 0xffu) ==
-            SEMANTIC_LIR_TY_POINTER;
-        return (pointer
-            ? x86_move64_to_fixed_bytes(locations.a, 0u) +
-                ((operands.metadata & X86_LIR_METADATA_RHS_NARROW) != 0u
-                    ? x86_move32_to_fixed_bytes(locations.b, 1u)
-                    : x86_move64_to_fixed_bytes(locations.b, 1u)) + 3u
-            : x86_compare32_instruction_bytes(locations.a, locations.b)) + 6u;
+        return x86_compare32_instruction_bytes(locations.a, locations.b) + 6u;
     }
     if (core.op == X86_LIR_OP_SELECT_STORE)
     {
@@ -346,9 +307,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
              : operands.a == X86_LIR_UNARY_NOT_BOOL
              ? x86_move32_to_fixed_bytes(locations.b, 0u) + 8u +
                x86_move32_from_fixed_bytes(0u, locations.result)
-             : operands.a == X86_LIR_UNARY_NEG_F32
-             ? x86_move_f32_to_gpr_bytes(locations.b, 0u) + 5u +
-               x86_move_f32_from_gpr_bytes(0u, locations.result)
+
              : 0u;
     }
     if (core.op == X86_LIR_OP_TRAP) return 2u;
@@ -359,9 +318,9 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                 : 0u) + restore_bytes +
                 (frameless ? 1u : 2u)
             : (operands.a == INVALID ? 2u :
-               (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT
-                   ? x86_move_f32_to_gpr_bytes(locations.a, 0u)
-                   : (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
+               x86_scalar_float(operands.metadata)
+                   ? x86_move_float_to_gpr_bytes(locations.a, 0u, x86_scalar_f64(operands.metadata))
+                   : scalar_uses_64bit_gpr(operands.metadata & 0xffu)
                    ? x86_move64_to_fixed_bytes(locations.a, 0u)
                    : x86_move32_to_fixed_bytes(locations.a, 0u)) +
               restore_bytes + (frameless ? 1u : 2u);
@@ -369,7 +328,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         return 2u + restore_bytes + (frameless ? 1u : 2u);
     if (core.op == X86_LIR_OP_INLINE_RESULT)
         return x86_scalar_float(operands.metadata)
-            ? x86_move_f32_between_bytes(locations.a, locations.result)
+            ? x86_move_float_between_bytes(locations.a, locations.result, x86_scalar_f64(operands.metadata))
             : x86_alias_uses_64_bits(operands.metadata)
                 ? x86_move64_between_bytes(locations.a, locations.result)
                 : x86_move32_between_bytes(locations.a, locations.result);
@@ -380,11 +339,12 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         if (operands.b >= 6u)
         {
             uint load = (operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
-                ? x86_imm32_to_location_bytes(operands.a, X86_LOCATION_REGISTER)
+                ? ((operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u && operands.c == NATIVE_SLICE_STRIDE
+                    ? 7u : x86_imm32_to_location_bytes(operands.a, X86_LOCATION_REGISTER))
                 : indirect_array_pair
                 ? x86_move64_to_fixed_bytes(locations.a, 0u) + 7u
                 : x86_scalar_float(operands.metadata)
-                ? x86_move_f32_to_gpr_bytes(locations.a, 0u)
+                ? x86_move_float_to_gpr_bytes(locations.a, 0u, x86_scalar_f64(operands.metadata))
                 : (operands.metadata & (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u
                 ? x86_move64_to_fixed_bytes(locations.a, 0u)
                 : x86_move32_to_fixed_bytes(locations.a, 0u);
@@ -392,17 +352,18 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         }
         uint destination = X86_LOCATION_REGISTER | x86_abi_argument_register(operands.b);
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
-            return x86_imm32_to_location_bytes(operands.a, destination);
+            return (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u && operands.c == NATIVE_SLICE_STRIDE
+                ? 7u : x86_imm32_to_location_bytes(operands.a, destination);
         if (indirect_array_pair)
             return x86_move64_to_fixed_bytes(locations.a, 0u) + 7u +
-                (operands.c == 0u
+                (operands.c != NATIVE_SLICE_LENGTH
                     ? x86_move64_between_bytes(X86_LOCATION_REGISTER, destination)
                     : x86_move32_between_bytes(X86_LOCATION_REGISTER, destination));
         bool wide = (operands.metadata &
             (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u;
         return x86_scalar_float(operands.metadata)
-                    ? x86_move_f32_to_gpr_bytes(
-                        locations.a, x86_location_payload(destination))
+                    ? x86_move_float_to_gpr_bytes(
+                        locations.a, x86_location_payload(destination), x86_scalar_f64(operands.metadata))
                     : wide ? x86_move64_between_bytes(locations.a, destination)
                     : x86_move32_between_bytes(locations.a, destination);
     }
@@ -414,10 +375,10 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             operands.metadata, result_words, locations.result);
     }
     if (core.op == X86_LIR_OP_CALL_HOST && operands.a == HOST_SERVICE_I32_TO_F32)
-        return 4u + x86_move_f32_from_xmm_bytes(0u, locations.result);
+        return 4u + x86_move_float_from_xmm_bytes(0u, locations.result, false);
     if (core.op == X86_LIR_OP_CALL_HOST && x86_runtime_service_supported(operands.a))
         return x86_runtime_service_has_result(operands.a)
-            ? 5u + ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
+            ? 5u + (scalar_uses_64bit_gpr(operands.metadata & 0xffu)
                 ? x86_move64_from_fixed_bytes(0u, locations.result)
                 : x86_move32_from_fixed_bytes(0u, locations.result)) : 5u;
     if (core.op == X86_LIR_OP_PRINT_I32 &&
@@ -428,7 +389,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     {
         uint storage_slot = x86_location_payload(locations.result) + 1u;
         return x86_stack64_operand_bytes(storage_slot) + 2u +
-            x86_stack64_operand_bytes(storage_slot + 1u) +
+            x86_stack64_operand_bytes(storage_slot + 1u) + 7u +
+            x86_stack64_operand_bytes(storage_slot + NATIVE_SLICE_STRIDE) +
             x86_stack64_operand_bytes(storage_slot) +
             x86_move64_from_fixed_bytes(0u, locations.result);
     }
@@ -442,10 +404,13 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     {
         bool packed_i32 = (operands.metadata &
             X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u;
+        if (packed_i32 && (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
+            return x86_move64_to_fixed_bytes(locations.a, 0u) + 6u +
+                x86_move64_from_fixed_bytes(0u, locations.c);
         uint source_bytes = (operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
             ? 5u
             : x86_scalar_float(operands.metadata)
-            ? x86_move_f32_to_gpr_bytes(locations.a, 0u)
+            ? x86_move_float_to_gpr_bytes(locations.a, 0u, x86_scalar_f64(operands.metadata))
             : packed_i32
             ? x86_move32_to_fixed_bytes(locations.a, 0u)
             : x86_move64_to_fixed_bytes(locations.a, 0u);
@@ -457,9 +422,9 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                 allocation_slot + operands.c, core.local_ordinal - 1u, 0u);
         }
         return ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
-                ? 5u
+                ? ((operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u && operands.b == NATIVE_SLICE_STRIDE ? 7u : 5u)
                 : x86_scalar_float(operands.metadata)
-                ? x86_move_f32_to_gpr_bytes(locations.a, 0u)
+                ? x86_move_float_to_gpr_bytes(locations.a, 0u, x86_scalar_f64(operands.metadata))
                 : x86_move64_to_fixed_bytes(locations.a, 0u)) +
             ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
              (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) == 0u
@@ -468,20 +433,18 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     }
     if (core.op == X86_LIR_OP_INDEX_LOAD)
     {
-        bool aggregate =
-            (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
-        bool f32 = !aggregate &&
-            (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT;
-        bool packed_i32 = !aggregate &&
-            (operands.metadata & 0xffu) == 3u;
-        return x86_move64_to_fixed_bytes(locations.a, 0u) +
-            x86_move32_to_fixed_bytes(locations.b, 1u) +
-            ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u
-                ? 3u : 0u) +
-            (packed_i32 ? 3u : aggregate ? 14u : f32 ? 6u : 7u) +
-            (packed_i32 ? x86_move32_from_fixed_bytes(0u, locations.result)
-                 : f32 ? x86_move_f32_from_gpr_bytes(0u, locations.result)
-                 : x86_move64_from_fixed_bytes(0u, locations.result));
+        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_STRING)
+            return x86_index_address_bytes(core, operands, locations, 2u) + 6u +
+                x86_move64_from_fixed_bytes(2u, locations.result) +
+                x86_move32_from_fixed_bytes(1u, locations.result + 1u);
+        bool aggregate = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
+        bool f32 = !aggregate && (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT;
+        bool packed = !aggregate && (operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u;
+        return x86_index_address_bytes(core, operands, locations, aggregate ? operands.c : 1u) +
+            (aggregate ? 0u : packed || f32 ? 2u : 3u) +
+            (packed ? x86_move32_from_fixed_bytes(0u, locations.result)
+                : x86_scalar_float(operands.metadata) ? x86_move_float_from_gpr_bytes(0u, locations.result, x86_scalar_f64(operands.metadata))
+                : x86_move64_from_fixed_bytes(0u, locations.result));
     }
     if (core.op == X86_LIR_OP_FIELD_LOAD)
     {
@@ -491,39 +454,71 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT;
         return x86_move64_to_fixed_bytes(locations.a, 0u) +
             (f32 ? 6u : 7u) +
-            (f32 ? x86_move_f32_from_gpr_bytes(0u, locations.result)
+            (x86_scalar_float(operands.metadata) ? x86_move_float_from_gpr_bytes(0u, locations.result, x86_scalar_f64(operands.metadata))
                  : x86_move64_from_fixed_bytes(0u, locations.result));
     }
     if (core.op == X86_LIR_OP_INDEX_STORE)
     {
         if ((operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u)
-            return x86_move64_to_fixed_bytes(locations.a, 0u) +
-                x86_move32_to_fixed_bytes(locations.b, 1u) +
-                x86_move64_to_fixed_bytes(locations.c, 2u) +
-                ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u
-                    ? 3u : 0u) + 64u;
-        return x86_move64_to_fixed_bytes(locations.a, 0u) +
-            x86_move32_to_fixed_bytes(locations.b, 1u) +
-            ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT
-                ? x86_move_f32_to_gpr_bytes(locations.c, 2u)
-                : x86_move32_to_fixed_bytes(locations.c, 2u)) +
-            ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u
-                ? 3u : 0u) +
-            ((operands.metadata & 0xffu) == 3u ? 3u : 7u);
+            return core.result_or_target == 0u ? 0u :
+                x86_index_address_bytes(core, operands, locations, core.result_or_target) +
+                x86_move64_to_fixed_bytes(locations.c, 2u) + 50u;
+        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_STRING ||
+            (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u)
+        {
+            uint words = (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u ? NATIVE_SLICE_WORDS : 2u;
+            uint bytes = x86_index_address_bytes(core, operands, locations, words);
+            for (uint component = 0u; component < words; component++)
+                bytes += (component == 1u ? x86_move32_to_fixed_bytes(locations.c + component, 2u)
+                    : x86_move64_to_fixed_bytes(locations.c + component, 2u)) + 7u;
+            return bytes;
+        }
+        bool packed = (operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u;
+        return x86_index_address_bytes(core, operands, locations, 1u) +
+            (x86_scalar_float(operands.metadata)
+                ? x86_move_float_to_gpr_bytes(locations.c, 2u, x86_scalar_f64(operands.metadata))
+                : packed ? x86_move32_to_fixed_bytes(locations.c, 2u)
+                : x86_move64_to_fixed_bytes(locations.c, 2u)) + (packed ? 2u : 3u);
     }
     if (core.op == X86_LIR_OP_FIELD_STORE)
     {
+        if ((operands.metadata & (X86_LIR_METADATA_STRING_PAIR | X86_LIR_METADATA_ARRAY_PAIR)) != 0u)
+            return x86_move64_to_fixed_bytes(locations.a, 0u) +
+                (core.local_ordinal == NATIVE_SLICE_LENGTH
+                    ? x86_move32_to_fixed_bytes(locations.c + core.local_ordinal, 1u)
+                    : x86_move64_to_fixed_bytes(locations.c + core.local_ordinal, 1u)) + 7u;
         if ((operands.metadata & X86_LIR_METADATA_FIELD_AGGREGATE_WORD) != 0u)
             return x86_move64_to_fixed_bytes(locations.a, 0u) +
                 x86_move64_to_fixed_bytes(locations.c, 1u) +
-                (core.local_ordinal == 0u ? 3u : 7u) + 7u;
+                ((operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u
+                    ? x86_base_i32_load_bytes(x86_packed_i32_element_offset(core.local_ordinal))
+                    : core.local_ordinal == 0u ? 3u : 7u) + 7u;
         return x86_move64_to_fixed_bytes(locations.a, 0u) +
-            ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT
-                ? x86_move_f32_to_gpr_bytes(locations.c, 1u)
-                : x86_move32_to_fixed_bytes(locations.c, 1u)) + 7u;
+            (x86_scalar_float(operands.metadata)
+                ? x86_move_float_to_gpr_bytes(locations.c, 1u, x86_scalar_f64(operands.metadata))
+                : x86_move64_to_fixed_bytes(locations.c, 1u)) + 7u;
     }
     if (core.op == X86_LIR_OP_AGGREGATE_RESULT_SLOT) return 0u;
     if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
+    {
+        if ((operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u)
+            return operands.c <= 2u
+                ? operands.b == 0u ? x86_move64_to_fixed_bytes(locations.a, 0u) +
+                    (operands.c == 2u ? 3u : 0u) + 2u : 0u
+                : x86_move64_to_fixed_bytes(locations.a, 0u) +
+                    x86_stack64_operand_bytes(hidden_sret_slot(function)) +
+                    x86_base_i32_load_bytes(x86_packed_i32_element_offset(operands.b)) +
+                    (operands.b == 0u ? 3u : 7u);
+        if ((operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u)
+            return (operands.b == NATIVE_SLICE_LENGTH
+                ? x86_move32_to_fixed_bytes(locations.a + operands.b, 1u)
+                : x86_move64_to_fixed_bytes(locations.a + operands.b, 1u)) +
+                x86_stack64_operand_bytes(hidden_sret_slot(function)) + 7u;
+        if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_STRING)
+            return operands.b == 0u
+                ? x86_move32_to_fixed_bytes(locations.a + 1u, 2u) +
+                    x86_move64_to_fixed_bytes(locations.a, 0u)
+                : 0u;
         return operands.c > 2u
             ? x86_move64_to_fixed_bytes(locations.a, 0u) +
                 x86_stack64_operand_bytes(hidden_sret_slot(function)) +
@@ -532,6 +527,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                 ? x86_move64_to_fixed_bytes(locations.a, 0u) +
                     (operands.c == 2u ? 7u : 0u) + 3u
                 : 0u;
+    }
     if (core.op == X86_LIR_OP_AGGREGATE_COPY_WORD)
     {
         if ((operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u)
@@ -539,7 +535,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             uint allocation_slot = x86_location_payload(locations.result) -
                 operands.b - 1u;
             return x86_move64_to_fixed_bytes(locations.a, 0u) +
-                x86_base_i32_load_bytes(operands.b * 4u) +
+                x86_base_i32_load_bytes((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u
+                    ? x86_native_word_displacement(operands.b) : x86_packed_i32_element_offset(operands.b)) +
                 x86_packed_i32_stack_operand_bytes(
                     allocation_slot + operands.c, operands.b, 1u);
         }
@@ -587,25 +584,48 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool frameless = frameless_function(function, semantic_function);
     bool stackless = stackless_caller(function, semantic_function);
     uint bytes = instruction_bytes(core, operands, locations, function,
-        semantic_function, saved_mask) +
-        x86_safety_guard_bytes(core, operands, locations);
+        semantic_function, saved_mask);
     bool zero_binary_identity = core.op == X86_LIR_OP_BINARY &&
         (operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u &&
         x86_binary_immediate_identity(operands.a, operands.c) &&
         locations.b == locations.result;
-    bool supported_zero = core.op == X86_LIR_OP_LABEL ||
+    bool supported_zero = x86_is_specialized_scalar_instruction(core, operands) ||
+        core.op == X86_LIR_OP_LABEL ||
         core.op == X86_LIR_OP_AGGREGATE_RESULT_SLOT ||
         core.op == X86_LIR_OP_ALIAS ||
         core.op == X86_LIR_OP_STORE_LOCAL ||
         core.op == X86_LIR_OP_CALL_ARG ||
         core.op == X86_LIR_OP_INLINE_RESULT ||
         core.op == X86_LIR_OP_INTRINSIC_IDENTITY ||
+        (core.op == X86_LIR_OP_INDEX_STORE &&
+         (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u &&
+         core.result_or_target == 0u) ||
         (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD &&
          operands.c == 2u && operands.b == 1u) || zero_binary_identity;
     if (bytes == 0u && !supported_zero)
     {
         report_unsupported(page_row, core.source_hir);
     }
+    if (core.op == X86_LIR_OP_DECL_ADDRESS)
+    {
+        uint4 storage = operands.a < gParams.token_capacity ? x86_place_storage_by_token[operands.a]
+            : uint4(INVALID, 0u, 0u, 0u);
+        uint frame = function.flags & X86_TARGET_FUNCTION_FRAME_SLOT_MASK;
+        uint words = max(storage.y, 1u);
+        if (storage.z == 0u || storage.z > 3u || storage.x >= frame || words > frame - storage.x ||
+            locations.result == X86_LOCATION_INVALID || frame >= 0x10000000u)
+            report_unsupported(page_row, core.source_hir);
+    }
+    if ((core.op == X86_LIR_OP_FIELD_ADDRESS || core.op == X86_LIR_OP_PLACE_LOAD) &&
+        (operands.a >= total || locations.a == X86_LOCATION_INVALID || locations.result == X86_LOCATION_INVALID))
+        report_unsupported(page_row, core.source_hir);
+    if (core.op == X86_LIR_OP_PLACE_STORE &&
+        (operands.a >= total || operands.b >= total || locations.a == X86_LOCATION_INVALID || locations.b == X86_LOCATION_INVALID))
+        report_unsupported(page_row, core.source_hir);
+    if (core.op == X86_LIR_OP_INDEX_ADDRESS &&
+        (operands.a >= total || operands.b >= total || locations.a == X86_LOCATION_INVALID ||
+         locations.b == X86_LOCATION_INVALID || locations.result == X86_LOCATION_INVALID || core.local_ordinal == INVALID))
+        report_unsupported(page_row, core.source_hir);
     if (core.op == X86_LIR_OP_CALL_ARG &&
         (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
         operands.a >= total)
@@ -651,7 +671,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         report_unsupported(page_row, core.source_hir);
     }
     if (core.op == X86_LIR_OP_CALL_SYMBOL &&
-        (operands.a == INVALID || operands.b == INVALID || operands.c == INVALID))
+        ((operands.a == INVALID) != (operands.b == INVALID) || operands.c == INVALID))
     {
         report_unsupported(page_row, core.source_hir);
     }
@@ -680,8 +700,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP;
     if (row + 1u == function.instruction_start + function.instruction_count &&
         !final_explicit_return)
-        bytes += frameless ? 3u : stackless ? 4u :
-            4u + x86_saved_gpr_frame_bytes(saved_mask,
-                base_frame_slots(function, semantic_function));
+        bytes += implicit_footer_bytes(function, semantic_function, saved_mask);
     target_byte_length[row] = bytes;
 }

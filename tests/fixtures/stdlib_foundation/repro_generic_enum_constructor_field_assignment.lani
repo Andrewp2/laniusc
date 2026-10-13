@@ -1,0 +1,7 @@
+enum Packet<T> { Payload(T) }
+struct Item { value: Packet<str> }
+fn main() -> i32 {
+    let item: Item = Item { value: Payload("before") };
+    item.value = Payload("after");
+    return 0;
+}

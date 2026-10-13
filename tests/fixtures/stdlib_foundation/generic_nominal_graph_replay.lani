@@ -1,0 +1,46 @@
+module app::main;
+import core::relay;
+import std::io;
+
+struct Cell<T> { value: T, sentinel: i32 }
+struct Two<A, B> { first: A, second: B }
+enum Branch<T> { Payload(T), Empty }
+fn view(values: [i32]) -> [i32] { return values; }
+
+fn main() -> i32 {
+    let words: [str; 2] = ["Ω", ""];
+    let text: Cell<[str; 2]> = Cell { value: words, sentinel: 99 };
+    let copied: Cell<[str; 2]> = core::relay::forward(text);
+    if (copied.sentinel != 99 || std::io::println(copied.value[0]) != 3 ||
+        std::io::println(copied.value[1]) != 1) { return 1; }
+    copied.value[0] = "changed";
+    if (std::io::println(text.value[0]) != 3) { return 2; }
+
+    let left: Two<i32, bool> = Two { first: -7, second: false };
+    let right: Two<bool, i32> = Two { first: true, second: 42 };
+    let left_copy: Two<i32, bool> = core::relay::forward(left);
+    let right_copy: Two<bool, i32> = core::relay::forward(right);
+    if (left_copy.first != -7 || left_copy.second || !right_copy.first ||
+        right_copy.second != 42) { return 3; }
+
+    let payload: Branch<Cell<[str; 2]>> = Payload(text);
+    let copied_payload: Branch<Cell<[str; 2]>> = core::relay::forward(payload);
+    let extracted: Cell<[str; 2]> = match (copied_payload) {
+        Payload(value) -> value,
+        Empty -> copied
+    };
+    if (extracted.sentinel != 99 || std::io::println(extracted.value[0]) != 3) { return 4; }
+
+    let backing: [i32; 2] = [-7, 42];
+    let borrowed: Cell<[i32]> = Cell { value: view(backing), sentinel: 77 };
+    let borrowed_copy: Cell<[i32]> = core::relay::forward(borrowed);
+    borrowed_copy.value[0] = 123;
+    if (backing[0] != 123 || borrowed.value[0] != 123 || borrowed_copy.sentinel != 77) { return 5; }
+
+    let texts: [Cell<[str; 2]>; 2] = [text, text];
+    let texts_copy: [Cell<[str; 2]>; 2] = core::relay::forward_array(texts);
+    texts_copy[0].value[0] = "replaced";
+    if (std::io::println(texts[0].value[0]) != 3 ||
+        std::io::println(texts_copy[1].value[0]) != 3) { return 6; }
+    return 0;
+}

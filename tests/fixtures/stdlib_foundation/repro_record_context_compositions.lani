@@ -1,0 +1,46 @@
+import core::option;
+import std::io;
+struct Cell<T> { value: T }
+struct Envelope<T> { child: Cell<T> }
+struct Item { value: i32 }
+impl Item { fn borrow(&self) -> &Item { return self; } }
+fn number(value: Cell<u32>) -> u32 { return value.value; }
+fn flag(value: Cell<bool>) -> bool { return value.value; }
+fn strings(value: Cell<[str; 2]>) -> Cell<[str; 2]> { return value; }
+fn empty(value: Cell<[[str; 0]; 1]>) -> usize { return 1; }
+fn pointer(value: Cell<&Item>) -> i32 { return value.value.value; }
+fn view(value: [i32]) -> [i32] { return value; }
+fn mutate(value: Cell<[i32]>) -> i32 { value.value[1] = 12; return value.value[0]; }
+fn envelope(value: Envelope<bool>) -> bool { return value.child.value; }
+fn flags(value: [Cell<bool>; 2]) -> bool { return value[0].value || value[1].value; }
+fn witnessed<T>(value: Cell<T>, witness: T) -> T { return value.value; }
+fn make<T>(value: T) -> core::option::Option<Cell<T>> {
+    return core::option::Some(Cell { value: value });
+}
+fn main() -> i32 {
+    if (number(Cell { value: 4294967295 }) != 4294967295) { return 1; }
+    if (flag(Cell { value: false })) { return 2; }
+    let words: Cell<[str; 2]> = strings(Cell { value: ["left", "Ω"] });
+    std::io::println(words.value[0]); std::io::println(words.value[1]);
+    if (empty(Cell { value: [[]] }) != 1) { return 3; }
+    let item: Item = Item { value: 9 };
+    if (pointer(Cell { value: item.borrow() }) != 9) { return 4; }
+    let values: [i32; 3] = [1, 2, 3];
+    let borrowed: [i32] = view(values);
+    if (mutate(Cell { value: borrowed }) != 1 || values[1] != 12) { return 5; }
+    if (envelope(Envelope { child: Cell { value: false } })) { return 6; }
+    if (!flags([Cell { value: false }, Cell { value: true }])) { return 7; }
+    if (witnessed(Cell { value: false }, true)) { return 8; }
+    let picked: core::option::Option<Cell<bool>> = core::option::Some((match (true) {
+        true -> Cell { value: false }, false -> Cell { value: true }
+    }));
+    let selected: bool = match (picked) { core::option::Some(v) -> v.value, core::option::None -> true };
+    if (selected) { return 9; }
+    let made_flag: core::option::Option<Cell<bool>> = make(false);
+    let made_text: core::option::Option<Cell<str>> = make("λ");
+    let kept: bool = match (made_flag) { core::option::Some(v) -> v.value, core::option::None -> true };
+    let text: str = match (made_text) { core::option::Some(v) -> v.value, core::option::None -> "wrong" };
+    if (kept) { return 10; }
+    std::io::println(text);
+    return 0;
+}

@@ -1,0 +1,9 @@
+
+running 4 tests
+test semantic_interface_checks_inherited_impl_prerequisites_at_method_calls ... ok
+test semantic_interface_checks_method_body_bounds_in_exact_lexical_scopes ... ok
+test semantic_interface_checks_method_prerequisites_in_distinct_lexical_domains ... ok
+test semantic_interface_retains_inherent_method_predicates_with_exact_owner_scope ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 109 filtered out; finished in 2.42s
+

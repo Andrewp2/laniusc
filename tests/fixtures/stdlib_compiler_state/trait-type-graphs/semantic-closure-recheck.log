@@ -1,0 +1,36 @@
+
+running 8 tests
+test trait_methods_control::type_checker_accepts_concrete_inherent_method_calls_on_gpu ... 
+thread 'trait_methods_control::type_checker_accepts_concrete_inherent_method_calls_on_gpu' (212212) panicked at tests/type_checker_semantics.rs:8:49:
+source should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source>", line: 26, column: 15, length: 8, byte_start: Some(439), byte_end: Some(447), source_line: Some("    if (range.contains(2)) {"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test trait_methods_control::type_checker_accepts_reference_trait_impl_targets ... 
+thread 'trait_methods_control::type_checker_accepts_reference_trait_impl_targets' (212268) panicked at tests/type_checker_semantics.rs:8:49:
+source should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0007", title: "unknown type", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0007", message: "unknown type", primary_label: Some(DiagnosticLabel { path: "<source>", line: 5, column: 1, length: 4, byte_start: Some(19), byte_end: Some(23), source_line: Some("impl Marker for &i32 {"), message: "type not found" }), help: None, notes: ["declare the type before using it or import its defining module"] })
+FAILED
+test trait_methods_control::type_checker_validates_trait_impl_generic_instance_signatures_on_gpu ... ok
+test type_checker_normalizes_qualified_alias_predicate_type_arguments_on_gpu ... 
+thread 'type_checker_normalizes_qualified_alias_predicate_type_arguments_on_gpu' (212273) panicked at tests/type_checker_semantics.rs:22:10:
+source pack should pass GPU type checking: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0007", title: "unknown type", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0007", message: "unknown type", primary_label: Some(DiagnosticLabel { path: "<source pack file 1>", line: 4, column: 75, length: 4, byte_start: Some(88), byte_end: Some(92), source_line: Some("fn keep<T, Count>(value: T, shadow: Count) -> T where T: core::types::Rel<core::types::Count> {"), message: "type not found" }), help: None, notes: ["declare the type before using it or import its defining module"] })
+FAILED
+test type_checker_points_generic_trait_impl_argument_diagnostics_at_argument_token ... ok
+test type_checker_rejects_calls_beyond_gpu_predicate_obligation_window ... ok
+test type_checker_reports_unapplied_generic_trait_bound_arguments_on_gpu ... 
+thread 'type_checker_reports_unapplied_generic_trait_bound_arguments_on_gpu' (212279) panicked at tests/type_checker_semantics.rs:39:13:
+assertion `left == right` failed
+  left: "LNC0007"
+ right: "LNC0008"
+FAILED
+test type_checker_resolves_unqualified_imported_trait_predicates_by_module_visibility ... ok
+
+failures:
+
+failures:
+    trait_methods_control::type_checker_accepts_concrete_inherent_method_calls_on_gpu
+    trait_methods_control::type_checker_accepts_reference_trait_impl_targets
+    type_checker_normalizes_qualified_alias_predicate_type_arguments_on_gpu
+    type_checker_reports_unapplied_generic_trait_bound_arguments_on_gpu
+
+test result: FAILED. 4 passed; 4 failed; 0 ignored; 0 measured; 248 filtered out; finished in 3.38s
+

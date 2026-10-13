@@ -1,0 +1,15 @@
+struct Tag<const N:u64> { values:[i32;N] }
+fn narrow<const N:u8>(values:[i32;N])->[i32;N] { return values; }
+fn mixed<const N:u64>(a:[i32;N],b:[i32;N],tag:Tag<N>)->i32 {
+    return a[0]+b[1]+tag.values[0];
+}
+fn reverse<const N:u64>(tag:Tag<N>,b:[i32;N],a:[i32;N])->i32 {
+    return a[0]+b[1]+tag.values[0];
+}
+fn outer<const K:u64>(values:[i32;K],tag:Tag<K>)->i32 {
+    return mixed(values,narrow(values),tag)+reverse(tag,narrow(values),values);
+}
+fn main()->i32 {
+    let tag:Tag<2> = Tag { values:[11,13] };
+    return outer([17,23],tag)-102;
+}

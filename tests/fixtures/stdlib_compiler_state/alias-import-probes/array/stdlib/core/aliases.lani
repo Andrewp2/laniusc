@@ -1,0 +1,2 @@
+module core::aliases;
+pub type Fixed<T, const N: usize> = [T; N];

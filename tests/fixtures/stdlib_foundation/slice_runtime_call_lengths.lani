@@ -1,0 +1,28 @@
+// Descriptor width is two words, but views have independent runtime lengths.
+module app::main;
+import core::mem;
+
+fn count_values(values: [i32]) -> i32 {
+    let count: i32 = 0;
+    for value in values { count = count + 1; }
+    return count;
+}
+
+fn forward(values: [i32]) -> i32 { return count_values(values); }
+
+fn main() -> i32 {
+    let backing: [i32; 7] = [4, 7, -9, 1, 2, 3, 5];
+    let data: ptr = core::mem::i32_array_data_ptr(backing);
+    let empty: [i32] = core::mem::i32_slice_from_raw_parts(data, 0);
+    let one: [i32] = core::mem::i32_slice_from_raw_parts(data, 1);
+    let two: [i32] = core::mem::i32_slice_from_raw_parts(data, 2);
+    let three: [i32] = core::mem::i32_slice_from_raw_parts(data, 3);
+    let seven: [i32] = core::mem::i32_slice_from_raw_parts(data, 7);
+    if (count_values(empty) != 0 || forward(empty) != 0) { return 1; }
+    if (count_values(one) != 1 || forward(one) != 1) { return 2; }
+    if (count_values(two) != 2 || forward(two) != 2) { return 3; }
+    if (count_values(three) != 3 || forward(three) != 3) { return 4; }
+    if (count_values(seven) != 7 || forward(seven) != 7) { return 5; }
+    if (count_values(backing) != 7) { return 6; }
+    return 0;
+}

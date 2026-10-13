@@ -1,0 +1,26 @@
+struct Cell<A, B> { value: A, extra: B }
+impl<A, B> Cell<A, B> { fn as_ref(&self) -> &Cell<A, B> { return self; } }
+type Fixed<T, const N: usize> = [T; N];
+type Packed<T, const N: usize> = Cell<Fixed<T, N>, bool>;
+type Borrow<T> = &T;
+type View<T> = [T];
+fn keep<T, const N: usize>(value: Packed<T, N>) -> Packed<T, N> { return value; }
+fn borrow<T>(value: Borrow<T>) -> Borrow<T> { return value; }
+fn view<T>(value: View<T>) -> View<T> { return value; }
+fn main() -> i32 {
+    let source: Packed<i32, 2> = Cell { value: [19, 23], extra: false };
+    let copied: Packed<i32, 2> = keep(source);
+    source.value[0] = 0;
+    let address: Borrow<Packed<i32, 2>> = borrow(copied.as_ref());
+    if (address.value[0] != 19 || address.value[1] != 23 || address.extra) { return 1; }
+    copied.extra = true;
+    if (!address.extra) { return 4; }
+    let window: View<i32> = view(source.value);
+    window[1] = 29;
+    if (source.value[1] != 29 || copied.value[1] != 23) { return 2; }
+    let empty: Packed<i32, 0> = Cell { value: [], extra: true };
+    let empty_copy: Packed<i32, 0> = keep(empty);
+    empty.extra = false;
+    if (!empty_copy.extra || empty.extra) { return 3; }
+    return 0;
+}

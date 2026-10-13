@@ -128,8 +128,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_inherent_method_level_generics_on_gpu() {
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_inherent_method_level_generics_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
 struct Boxed {
     value: i32,
@@ -145,12 +145,6 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "fn wrap<T>(value: T) -> T {",
-            "trait method-level generics are not supported here",
-        ],
     );
 }
 
@@ -295,7 +289,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "impl Reads<Left> for Left {",
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types",
+            "match each implemented method's complete parameter and return types",
         ],
     );
 }
@@ -348,8 +342,8 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make<T>(value: T) -> T {",
-            "trait method-level generics are not supported here",
-            "move the generic parameter to the trait or impl receiver type",
+            "generic executable trait methods are not supported here",
+            "a trait method's own generic header requires a method-level substitution contract",
         ],
     );
 }
@@ -376,8 +370,8 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make<U>(value: i32) -> i32 {",
-            "trait method-level generics are not supported here",
-            "move the generic parameter to the trait or impl receiver type",
+            "generic executable trait methods are not supported here",
+            "a trait method's own generic header requires a method-level substitution contract",
         ],
     );
 }
@@ -702,7 +696,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "impl Eq<Target> for Target {",
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types",
+            "match each implemented method's complete parameter and return types",
         ],
     );
 }
@@ -734,7 +728,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "impl Measure<Target> for Target {",
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types",
+            "match each implemented method's complete parameter and return types",
         ],
     );
 }
@@ -767,7 +761,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "impl Ops<i32> for i32 {",
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types",
+            "match each implemented method's complete parameter and return types",
         ],
     );
 }
@@ -1044,8 +1038,8 @@ fn main() {{
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "trait method-level generics are not supported here",
-            "move the generic parameter to the trait or impl receiver type",
+            "generic executable trait methods are not supported here",
+            "a trait method's own generic header requires a method-level substitution contract",
         ],
     );
 }
@@ -1329,7 +1323,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "impl TakeWide for Target {",
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types",
+            "match each implemented method's complete parameter and return types",
         ],
     );
 
@@ -1564,9 +1558,9 @@ fn main() {
 }
 
 #[test]
-fn type_checker_reports_unsupported_trait_impl_argument_shapes_as_impl_diagnostics_on_gpu() {
-    assert_gpu_type_check_diagnostic(
-        r#"
+fn type_checker_accepts_wide_and_nested_trait_impl_arguments_on_gpu() {
+    assert_gpu_type_check_ok(
+r#"
 trait Wide<Left, Middle, Right> {
 }
 
@@ -1577,17 +1571,10 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl Wide<i32, bool, i32> for i32 {",
-            "trait impl header exceeds the current trait argument limit",
-            "supports at most two trait type arguments in a trait impl",
-        ],
     );
 
-    assert_gpu_type_check_diagnostic(
-        r#"
+    assert_gpu_type_check_ok(
+r#"
 struct Boxed<T> {
     value: T,
 }
@@ -1602,13 +1589,6 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl Rel<Boxed<i32>> for i32 {",
-            "trait impl header uses an unsupported trait argument shape",
-            "nested generic arguments are rejected rather than matching only the outer type name",
-        ],
     );
 }
 
@@ -1636,9 +1616,9 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_generic_trait_impl_arguments_until_predicate_rows_carry_param_refs_on_gpu()
-{
-    assert_gpu_type_check_diagnostic(
+fn type_checker_accepts_owned_generic_trait_impl_operand_on_gpu() {
+    // The impl binder owns T even when a nominal declaration has the same name.
+    assert_gpu_type_check_ok(
         r#"
 struct T {
     value: i32,
@@ -1654,13 +1634,6 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl<T> Rel<T> for i32 {",
-            "trait impl header uses generic trait arguments that are not supported here",
-            "use concrete non-nested trait arguments in impl headers for now",
-        ],
     );
 }
 
@@ -1689,9 +1662,9 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_reference_trait_impl_targets_with_stable_diagnostic() {
-    let err = crate::common::type_check_source_with_timeout(
-        r#"
+fn type_checker_accepts_reference_trait_impl_targets() {
+    assert_gpu_type_check_ok(
+r#"
 trait Marker {
 }
 
@@ -1702,26 +1675,7 @@ fn main() {
     return 0;
 }
 "#,
-    )
-    .expect_err("reference trait-impl targets should fail trait validation");
-
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0021");
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("diagnostic should identify the unsupported target type");
-            assert_eq!(label.source_line.as_deref(), Some("impl Marker for &i32 {"));
-            assert_eq!(label.column, 1);
-            assert_eq!(label.length, 4);
-
-            let rendered = diagnostic.render();
-            assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
-            assert!(rendered.contains("trait impl target type is not supported here"));
-        }
-        other => panic!("expected reference trait impl target diagnostic, got {other:?}"),
-    }
+    );
 }
 
 #[test]
@@ -1741,9 +1695,9 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
+        "LNC0007",
         &[
-            "error[LNC0021]: invalid trait implementation",
+            "error[LNC0007]: unknown type",
             "impl Marker for Target {",
         ],
     );
@@ -1775,9 +1729,9 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_generic_trait_impl_targets_until_target_args_are_recorded_on_gpu() {
-    assert_gpu_type_check_diagnostic(
-        r#"
+fn type_checker_accepts_concrete_generic_trait_impl_targets_on_gpu() {
+    assert_gpu_type_check_ok(
+r#"
 struct Boxed<T> {
     value: T,
 }
@@ -1796,18 +1750,13 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl Marker for Boxed<i32> {",
-        ],
     );
 }
 
 #[test]
-fn type_checker_rejects_trait_impl_targets_aliasing_type_instances_on_gpu() {
-    assert_gpu_type_check_diagnostic(
-        r#"
+fn type_checker_accepts_trait_impl_targets_aliasing_type_instances_on_gpu() {
+    assert_gpu_type_check_ok(
+r#"
 type Four = [i32; 4];
 
 trait Marker {
@@ -1820,18 +1769,13 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl Marker for Four {",
-        ],
     );
 }
 
 #[test]
-fn type_checker_rejects_trait_impl_targets_aliasing_scalar_types_on_gpu() {
-    assert_gpu_type_check_diagnostic(
-        r#"
+fn type_checker_accepts_trait_impl_targets_aliasing_scalar_types_on_gpu() {
+    assert_gpu_type_check_ok(
+r#"
 type Count = i32;
 
 trait Marker {
@@ -1844,11 +1788,6 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0021",
-        &[
-            "error[LNC0021]: invalid trait implementation",
-            "impl Marker for Count {",
-        ],
     );
 }
 
@@ -2292,10 +2231,10 @@ fn keep<T>(value: T) -> T where T: Rel<a::b::c::d::e::f::g::h::i::j> {
             assert_eq!(label.source_line.as_deref(), Some(source_line));
             assert_eq!(
                 label.column,
-                source_line.rfind('j').unwrap() + 1,
+                source_line.find("a::").unwrap() + 1,
                 "{rendered}"
             );
-            assert_eq!(label.length, "j".len());
+            assert_eq!(label.length, "a".len());
 
             assert!(rendered.contains("error[LNC0007]: unknown type"));
             assert!(rendered.contains("type not found"));

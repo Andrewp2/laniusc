@@ -1,4 +1,7 @@
+import primitive_types;
 import hir_records;
+import status;
+import constant_value;
 
 // HIR declaration type-reference projection.
 //
@@ -22,6 +25,9 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_const_type;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<uint> compact_generic_param_count;
+StructuredBuffer<HirGenericParam> compact_generic_params;
+StructuredBuffer<uint> compact_generic_param_types;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -32,6 +38,8 @@ StructuredBuffer<uint> type_instance_elem_ref_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> decl_imported_type_token;
+RWStructuredBuffer<uint> status;
+RWStructuredBuffer<uint> type_const_param_scalar_by_token_out;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -195,4 +203,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     publish_compact_item_decl_ref(node);
     publish_compact_stmt_decl_ref(node);
     publish_param_decl_ref(node);
+    uint parameter_count = min(compact_generic_param_count[0u], gParams.n_tokens);
+    if (node < parameter_count && compact_generic_params[node].kind == 2u)
+    {
+        publish_compact_decl_ref(compact_generic_params[node].name_token,
+            compact_generic_param_types[node]);
+        // This final signature check is authoritative after alias and path
+        // resolution. Early operand binding reads the same scalar relation.
+        uint parameter = compact_generic_params[node].name_token;
+        uint tag = valid_token(parameter) ? decl_type_ref_tag[parameter] : 0u;
+        uint scalar = valid_token(parameter) ? decl_type_ref_payload[parameter] : INVALID;
+        bool valid = tag == 1u && constant_scalar_is_supported(scalar);
+        if (valid_token(parameter)) type_const_param_scalar_by_token_out[parameter] = valid ? scalar : 0u;
+        if (!valid) record_min_token_error(status, parameter, 3u, 0u);
+    }
 }

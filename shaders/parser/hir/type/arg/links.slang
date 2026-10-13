@@ -1,8 +1,8 @@
 // Seed generic type-argument links from grammar tree records.
 //
 // Type argument lists are right-recursive. First arguments seed the owning type
-// expression, and later arguments point at their previous argument. A separate
-// pointer-jump pass computes owners and ordinals.
+// expression and path segment, and later arguments point at their previous
+// argument. Pointer jumping preserves the list identity and computes ordinals.
 
 import generated_parse_production_ids;
 
@@ -32,6 +32,8 @@ StructuredBuffer<uint> hir_type_path_owner_by_leaf;
 StructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 
 RWStructuredBuffer<uint> hir_type_arg_owner_a;
+RWStructuredBuffer<uint> hir_type_arg_application_owner;
+RWStructuredBuffer<uint> hir_type_arg_application_token;
 RWStructuredBuffer<uint> hir_type_arg_link_a;
 RWStructuredBuffer<uint> hir_type_arg_rank_a;
 RWStructuredBuffer<uint> hir_type_arg_previous;
@@ -42,6 +44,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_TYPE = 5u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 
@@ -97,7 +100,10 @@ bool is_type_arg_container(uint prod)
     return prod == PROD_TYPE_ARGS_SOME ||
            prod == PROD_TYPE_ARGS_AFTER_COMMA_MORE ||
            prod == PROD_BOUND_TYPE_ARGS_SOME ||
-           prod == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE;
+           prod == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE ||
+           prod == PROD_PATH_IDENT_ARGS ||
+           prod == PROD_MEMBER_TYPE_ARGS_SOME ||
+           prod == PROD_PATH_TYPE_ARGS_AFTER_COMMA_MORE;
 }
 
 bool is_type_path_container(uint prod)
@@ -114,19 +120,32 @@ bool is_type_path_segment(uint prod)
            prod == PROD_BOUND_TYPE_PATH_IDENT;
 }
 
+bool is_constant_operand_root(uint prod)
+{
+    return prod == PROD_GENERIC_ARGUMENT_INTEGER || prod == PROD_GENERIC_ARGUMENT_NEGATIVE ||
+        prod == PROD_GENERIC_ARGUMENT_POSITIVE || prod == PROD_GENERIC_ARGUMENT_TRUE ||
+        prod == PROD_GENERIC_ARGUMENT_FALSE || prod == PROD_GENERIC_ARGUMENT_CHAR ||
+        prod == PROD_GENERIC_ARGUMENT_FLOAT;
+}
+
 uint arg_from_container(uint container)
 {
     if (!valid_node(container) || !is_type_arg_container(node_kind[container]))
         return INVALID;
     uint arg = first_child_node(container);
-    return valid_node(arg) && hir_kind[arg] == HIR_TYPE ? arg : INVALID;
+    if (valid_node(arg) && (node_kind[arg] == PROD_GENERIC_ARGUMENT_TYPE ||
+        node_kind[arg] == PROD_GENERIC_ARGUMENT_CONSTANT))
+        arg = first_child_node(arg);
+    return valid_node(arg) && (hir_kind[arg] == HIR_TYPE ||
+        is_constant_operand_root(node_kind[arg])) ? arg : INVALID;
 }
 
 uint previous_arg_for_after_comma(uint container)
 {
     if (!valid_node(container) ||
         node_kind[container] != PROD_TYPE_ARGS_AFTER_COMMA_MORE &&
-        node_kind[container] != PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
+        node_kind[container] != PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE &&
+        node_kind[container] != PROD_PATH_TYPE_ARGS_AFTER_COMMA_MORE)
         return INVALID;
     uint more = parent_node(container);
     uint previous_container = parent_node(more);
@@ -159,8 +178,10 @@ bool valid_path_type_owner(uint owner, uint leaf)
 uint owner_seed_for_path_arg(uint node, uint container)
 {
     if (!valid_node(container) ||
-        (!is_type_arg_container(node_kind[container]) &&
-         node_kind[container] != PROD_PATH_IDENT_ARGS))
+        (node_kind[container] != PROD_TYPE_ARGS_SOME &&
+         node_kind[container] != PROD_BOUND_TYPE_ARGS_SOME &&
+         node_kind[container] != PROD_PATH_IDENT_ARGS &&
+         node_kind[container] != PROD_MEMBER_TYPE_ARGS_SOME))
         return INVALID;
     uint leaf = previous_sibling_node(node);
     uint owner = INVALID;
@@ -187,11 +208,14 @@ uint owner_seed_for_path_arg(uint node, uint container)
 
     // Generic arguments in value paths, such as `Vec<T>::new`, have no
     // enclosing HIR_TYPE row. Their nearest semantic owner is the compact
-    // HIR_PATH_EXPR that represents the whole callee path.
+    // HIR_PATH_EXPR that represents the whole callee path, or the member
+    // expression for a receiver call. The applying segment owns the list.
     uint row = hir_node_dense_id[node];
     uint owner_row = row < active_node_count() ? hir_semantic_parent[row] : INVALID;
     owner = owner_row < active_node_count() ? hir_semantic_dense_node[owner_row] : INVALID;
-    return valid_node(owner) && hir_kind[owner] == HIR_PATH_EXPR ? owner : INVALID;
+    return valid_node(owner) &&
+        (hir_kind[owner] == HIR_PATH_EXPR || hir_kind[owner] == HIR_MEMBER_EXPR)
+        ? owner : INVALID;
 }
 
 uint first_arg_for_type_owner(uint owner)
@@ -201,7 +225,11 @@ uint first_arg_for_type_owner(uint owner)
 
     uint leaf = hir_type_path_leaf_node[owner];
     uint first = next_sibling_node(leaf);
-    return valid_node(first) && hir_kind[first] == HIR_TYPE ? first : INVALID;
+    if (valid_node(first) && (node_kind[first] == PROD_GENERIC_ARGUMENT_TYPE ||
+        node_kind[first] == PROD_GENERIC_ARGUMENT_CONSTANT))
+        first = first_child_node(first);
+    return valid_node(first) && (hir_kind[first] == HIR_TYPE ||
+        is_constant_operand_root(node_kind[first])) ? first : INVALID;
 }
 
 [shader("compute")]
@@ -213,30 +241,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     hir_type_arg_owner_a[node] = INVALID;
+    hir_type_arg_application_owner[node] = INVALID;
+    hir_type_arg_application_token[node] = INVALID;
     hir_type_arg_link_a[node] = INVALID;
     hir_type_arg_rank_a[node] = 0u;
     hir_type_arg_previous[node] = INVALID;
 
-    if (!valid_node(node) || hir_kind[node] != HIR_TYPE)
+    if (!valid_node(node) || (hir_kind[node] != HIR_TYPE &&
+        !is_constant_operand_root(node_kind[node])))
         return;
 
     uint container = parent_node(node);
+    if (valid_node(container) && (node_kind[container] == PROD_GENERIC_ARGUMENT_TYPE ||
+        node_kind[container] == PROD_GENERIC_ARGUMENT_CONSTANT))
+        container = parent_node(container);
     uint prod = valid_node(container) ? node_kind[container] : INVALID;
     uint path_owner = owner_seed_for_path_arg(node, container);
-    if (valid_node(path_owner))
+    uint owner = valid_node(path_owner) ? path_owner
+        : owner_seed_for_arg_container(container);
+    if (valid_node(owner))
     {
-        hir_type_arg_owner_a[node] = path_owner;
-        return;
-    }
-
-    if (prod == PROD_TYPE_ARGS_SOME || prod == PROD_BOUND_TYPE_ARGS_SOME)
-    {
-        hir_type_arg_owner_a[node] = owner_seed_for_arg_container(container);
+        uint leaf = hir_kind[owner] == HIR_TYPE ? hir_type_path_leaf_node[owner] : INVALID;
+        uint token = prod == PROD_PATH_IDENT_ARGS ? hir_token_pos[container]
+            : (prod == PROD_MEMBER_TYPE_ARGS_SOME ? hir_token_pos[container] - 1u
+                : (valid_node(leaf) ? hir_token_pos[leaf] : INVALID));
+        if (token == INVALID) return;
+        // A path may have multiple applications. The first argument is the
+        // list identity; its owner/token facts survive pointer-jump ranking.
+        hir_type_arg_owner_a[node] = node;
+        hir_type_arg_application_owner[node] = owner;
+        hir_type_arg_application_token[node] = token;
         return;
     }
 
     if (prod == PROD_TYPE_ARGS_AFTER_COMMA_MORE ||
-        prod == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
+        prod == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE ||
+        prod == PROD_PATH_TYPE_ARGS_AFTER_COMMA_MORE)
     {
         uint previous = previous_arg_for_after_comma(container);
         if (valid_node(previous))

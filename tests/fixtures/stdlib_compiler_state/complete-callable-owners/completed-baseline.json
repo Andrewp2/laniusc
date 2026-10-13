@@ -1,0 +1,6 @@
+{
+  "binary": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/complete-callable-owner-baseline/stdlib_gpu_perf",
+  "binary_sha256": "cf61d16daa200d18827447cdac7c51f3b26a36cafcfd1aae5bdb60d4796496e7",
+  "shaders": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/complete-callable-owner-baseline/shaders",
+  "shader_hashes": "current-shader-hashes.json"
+}

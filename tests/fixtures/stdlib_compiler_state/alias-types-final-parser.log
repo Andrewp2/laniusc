@@ -1,0 +1,12 @@
+
+running 6 tests
+test parser_explicit_constant_arguments_preserve_mixed_order_and_value_nodes ... ok
+test parser_hir_constant_alias_headers_do_not_replace_the_target ... ok
+test parser_hir_nested_generic_type_arguments_split_shift_token ... ok
+test parser_hir_type_alias_target_readback_rejects_malformed_targets ... ok
+test parser_hir_type_alias_target_records_are_source_addressable_in_source_packs ... GPU source-pack type-check rejection: token=36 code=AssignMismatch detail=770
+ok
+test parser_semantic_tokens_classify_generic_alias_targets_as_types ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 250 filtered out; finished in 2.80s
+

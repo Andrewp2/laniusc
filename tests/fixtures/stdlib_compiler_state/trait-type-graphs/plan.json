@@ -1,0 +1,85 @@
+{
+  "status": "verified_checkpoint_with_remaining_dependencies",
+  "overall_goal": "active",
+  "contract": "Trait predicates retain ordered complete checked type references and use shared scoped hashing, equality and substitution, with up to 32 type arguments. Concrete body replay enforces obligations before native emission.",
+  "scope": "Audit parser, collector, solver, method-contract validation and execution; prove changes using positive and negative executable programs.",
+  "cases": [
+    "scalar-control",
+    "nested-argument",
+    "array-argument",
+    "nested-target",
+    "array-target",
+    "thirty-two"
+  ],
+  "verification": {
+    "selection_file": "final-selection.json",
+    "counts": {
+      "generic": 63,
+      "semantic": 99,
+      "parser": 4,
+      "features": 2,
+      "contracts": 8
+    },
+    "total_passed": 176,
+    "target": "x86_64 Linux ELF emitted by GPU compiler; user-program GPU execution not established",
+    "logs": [
+      "final-generic.log",
+      "final-semantic.log",
+      "final-parser.log",
+      "reference-feature-flags.log",
+      "final-contracts.log"
+    ],
+    "full_execution_inventory": 336,
+    "full_inventory_rerun": false,
+    "scoped_diff_check": "diff-check.log"
+  },
+  "feature_gate_correction": {
+    "cause": "Host scheduling consumes conservative lexer features before semantic parser classification. Semantic-only reference flags arrive too late; raw ampersands over-enable bitwise expressions.",
+    "fix": "Lexer excludes proven binary predecessors and reserves reference storage for other ampersands. Semantic parser also publishes ordinary and bound reference syntax.",
+    "test_file": "tests/lexer_parser_feature_flags.rs"
+  },
+  "remaining": [
+    {
+      "case": "imported-caller-impl.lani",
+      "state": "reproduces",
+      "diagnostic": "LNC0021 detail 2",
+      "boundary": "Caller-defined implementation cannot resolve imported trait identity; failure precedes witness lookup."
+    },
+    {
+      "case": "method-signature.lani",
+      "control": "method-signature-inherent-control.lani",
+      "state": "both reproduce",
+      "diagnostic": "LNC0042",
+      "boundary": "Unannotated compound method result loses member access; explicitly annotated result executes.",
+      "resolved_by": "../method-result-contract/plan.json"
+    },
+    {
+      "case": "ordinary-positional-receiver.lani",
+      "state": "reproduced in broader semantic sweep",
+      "boundary": "Existing inherent-method test uses receiver: Range instead of self. Intended receiver convention and relation to this checkpoint remain unestablished."
+    },
+    {
+      "boundary": "Blanket trait implementation environments and trait method generic headers/where clauses",
+      "state": "explicitly unsupported"
+    },
+    {
+      "boundary": "Wider compound caller-bound forwarding",
+      "state": "not established by the zero-argument marker forwarding regression"
+    },
+    {
+      "boundary": "Canonical benchmark tracked allocation cost",
+      "state": "five extra allocations and 27033792 bytes remain; ownership not isolated"
+    }
+  ],
+  "remaining_probe_evidence": "remaining-probes.json",
+  "performance": "benchmark_artifacts/performance/stdlib-gpu-20261010-trait-type-graphs/checkpoint-metadata.json",
+  "documentation": [
+    "docs/compiler-generic-types.md",
+    "docs/compiler-semantic-contracts.md",
+    "docs/stdlib-foundation.md",
+    "docs/stdlib-gpu-performance.md"
+  ],
+  "abi_change": false,
+  "private_interface_format_change": false,
+  "kernel_count": 729
+}

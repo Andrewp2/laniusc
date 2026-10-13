@@ -1,6 +1,9 @@
 // Resolve still-unmatched one-segment paths to canonical dependency identities.
 
 import dependency_interface;
+import semantic_interface_layout;
+import type_checker.modules.qualified_type_parent;
+import type_checker.modules.decl_lookup;
 import byte_packing;
 import gpu_index;
 
@@ -28,9 +31,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
-StructuredBuffer<uint> path_segment_base;
-StructuredBuffer<uint> path_segment_name_id;
-StructuredBuffer<uint> path_owner_module_id;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> name_hash_lo;
 StructuredBuffer<uint> name_hash_hi;
 StructuredBuffer<NameSpan> name_spans;
@@ -39,17 +40,24 @@ ByteAddressBuffer language_symbol_bytes;
 StructuredBuffer<uint> dependency_visible_owner_module;
 StructuredBuffer<uint> dependency_visible_decl;
 StructuredBuffer<uint> dependency_visible_lookup;
-RWStructuredBuffer<uint> resolved_dependency_decl;
 RWStructuredBuffer<uint> resolved_status;
+// The operation binds this identity triple to the selected namespace's
+// retained columns, alongside its independently bound status column.
 RWStructuredBuffer<uint> resolved_dependency_library_id;
 RWStructuredBuffer<uint> resolved_dependency_unit_id;
 RWStructuredBuffer<uint> resolved_dependency_local_index;
+RWStructuredBuffer<uint> resolved_dependency_trait_header;
+RWStructuredBuffer<uint> resolved_value_type_qualifier_token;
+// x: unseen 0, source declaration 1, dependency 2, ambiguous 3. The remaining words
+// retain the selected declaration's exact identity across page replay.
+RWStructuredBuffer<uint4> resolved_value_qualifier_binding;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
 static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
+static const uint PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR = 5u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED = 2u;
 static const uint PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT = 4u;
@@ -121,16 +129,12 @@ uint local_name_byte(NameSpan span, uint byte_i)
         : byte_address_load_u8_bounded(source_bytes, span.start + byte_i, gParams.source_len);
 }
 
-bool exact_match(uint name_id, uint owner_module, uint visible_i)
+bool declaration_name_equal(uint name_id, uint declaration_i)
 {
-    if (dependency_visible_owner_module[visible_i] != owner_module)
-        return false;
-    uint declaration_i = dependency_visible_decl[visible_i];
     if (declaration_i >= dependency_declaration_count())
         return false;
     uint base = declaration_i * DECL_WORDS;
-    if (dependency_declaration_word(base + 5u) != gParams.namespace ||
-        dependency_declaration_word(base + 1u) != name_hash_lo[name_id] ||
+    if (dependency_declaration_word(base + 1u) != name_hash_lo[name_id] ||
         dependency_declaration_word(base + 2u) != name_hash_hi[name_id])
         return false;
     NameSpan span = name_spans[name_id];
@@ -146,6 +150,81 @@ bool exact_match(uint name_id, uint owner_module, uint visible_i)
             return false;
     }
     return true;
+}
+
+bool exact_match(uint name_id, uint owner_module, uint visible_i)
+{
+    if (dependency_visible_owner_module[visible_i] != owner_module) return false;
+    uint declaration = dependency_visible_decl[visible_i];
+    return declaration < dependency_declaration_count() &&
+        dependency_declaration_word(declaration * DECL_WORDS + 5u) == gParams.namespace &&
+        declaration_name_equal(name_id, declaration);
+}
+
+void bind_qualified_type_parent(uint path, uint prefix_count, uint owner)
+{
+    uint4 binding = resolved_value_qualifier_binding[path];
+    if (binding.x == 3u) return;
+    if (binding.x == 1u &&
+        (prefix_count > 1u || decl_module_id[binding.y] == owner)) return;
+    DeclLookupResult local = qualified_local_type_parent(path, prefix_count);
+    if (local.matches != 0u)
+    {
+        binding = local.matches == 1u
+            ? uint4(1u, local.first, INVALID, INVALID) : uint4(3u, INVALID, INVALID, INVALID);
+        resolved_value_qualifier_binding[path] = binding;
+        // Only declarations in the owning module shadow imports. A source-
+        // pack import and a persisted dependency import have equal priority.
+        if (local.matches > 1u || prefix_count > 1u ||
+            decl_module_id[local.first] == owner) return;
+    }
+    uint name = path_segment_name_id[path_segment_base[path] + prefix_count - 1u];
+    uint mask = gParams.lookup_capacity - 1u;
+    uint slot = key_hash(owner, 3u, name_hash_lo[name], name_hash_hi[name]) & mask;
+    for (uint probe = 0u; probe < gParams.lookup_capacity; probe++)
+    {
+        uint visible = dependency_visible_lookup[slot];
+        if (visible == INVALID) break;
+        if (visible < gParams.visible_capacity && dependency_visible_owner_module[visible] == owner)
+        {
+            uint decl = dependency_visible_decl[visible];
+            if (decl < dependency_declaration_count() &&
+                dependency_declaration_word(decl * DECL_WORDS + 5u) == 3u &&
+                declaration_name_equal(name, decl) && (prefix_count == 1u ||
+                    module_prefix_equal(path, prefix_count - 1u, dependency_declaration_word(decl * DECL_WORDS))))
+            {
+                uint4 candidate = uint4(2u, dependency_declaration_library_id(decl),
+                    dependency_declaration_unit_id(decl), dependency_declaration_local_index(decl));
+                if (binding.x == 0u) binding = candidate;
+                else if (any(binding != candidate))
+                { binding = uint4(3u, INVALID, INVALID, INVALID); break; }
+            }
+        }
+        slot = (slot + 1u) & mask;
+    }
+    resolved_value_qualifier_binding[path] = binding;
+}
+
+bool qualified_declaration_owner_matches(uint path_i, uint prefix_count, uint declaration,
+    out bool ambiguous)
+{
+    ambiguous = false;
+    uint base = declaration * DECL_WORDS;
+    uint module = dependency_declaration_word(base);
+    if (module_prefix_equal(path_i, prefix_count, module)) return true;
+    if (gParams.namespace != 2u || prefix_count == 0u ||
+        dependency_declaration_word(base + 6u) != 9u) return false;
+    uint parent = dependency_declaration_word(base + 10u);
+    if (parent >= dependency_declaration_count() ||
+        dependency_declaration_word(parent * DECL_WORDS + 6u) != 7u) return false;
+    uint parent_name = path_segment_name_id[path_segment_base[path_i] + prefix_count - 1u];
+    if (!declaration_name_equal(parent_name, parent) ||
+        (prefix_count != 1u && !module_prefix_equal(path_i, prefix_count - 1u, module))) return false;
+    uint4 binding = resolved_value_qualifier_binding[path_i];
+    ambiguous = binding.x == 3u;
+    return binding.x == 2u && all(binding.yzw == uint3(
+        dependency_declaration_library_id(parent), dependency_declaration_unit_id(parent),
+        dependency_declaration_local_index(parent)));
 }
 
 uint find_qualified_declaration(
@@ -167,8 +246,11 @@ uint find_qualified_declaration(
         if (visible_i < gParams.visible_capacity && exact_match(name_id, owner_module, visible_i))
         {
             uint declaration_i = dependency_visible_decl[visible_i];
-            uint module_i = dependency_declaration_word(declaration_i * DECL_WORDS);
-            if (module_prefix_equal(path_i, prefix_count, module_i))
+            bool parent_ambiguous;
+            bool owns_member = qualified_declaration_owner_matches(path_i, prefix_count, declaration_i,
+                parent_ambiguous);
+            if (parent_ambiguous) { ambiguous = true; return INVALID; }
+            if (owns_member)
             {
                 if (match != INVALID && match != declaration_i)
                 {
@@ -183,6 +265,20 @@ uint find_qualified_declaration(
     return match;
 }
 
+void reject_ambiguous_path(uint path)
+{
+    resolved_status[path] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
+    resolved_dependency_library_id[path] = INVALID;
+    resolved_dependency_unit_id[path] = INVALID;
+    resolved_dependency_local_index[path] = INVALID;
+    if (gParams.namespace == 2u)
+    {
+        // A later page can invalidate an earlier selection. Its declaration
+        // and applying segment must no longer look like a resolved callable.
+        resolved_value_type_qualifier_token[path] = INVALID;
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -190,34 +286,43 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint path_i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
     if (path_i >= gParams.path_capacity)
         return;
-    resolved_dependency_decl[path_i] = INVALID;
     if (path_i >= min(path_count_out[0u], gParams.path_capacity))
         return;
-    uint expected_kind = gParams.namespace == 3u
-        ? PATH_RECORD_KIND_HIR_TYPE_EXPR
-        : PATH_RECORD_KIND_HIR_PATH_EXPR;
-    if (path_kind[path_i] != expected_kind)
+    uint kind = path_kind[path_i];
+    bool type_path = kind == PATH_RECORD_KIND_HIR_TYPE_EXPR ||
+        kind == PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR;
+    // Generic operands retain type-shaped syntax until the declaration domain
+    // is checked. Resolve both namespaces without sharing their identities.
+    if (!((gParams.namespace == 3u && type_path) ||
+          (gParams.namespace == 2u &&
+           (kind == PATH_RECORD_KIND_HIR_PATH_EXPR || type_path))))
         return;
-    if (gParams.namespace == 2u && dependency_is_first_page() &&
+    if (dependency_is_first_page() &&
         resolved_status[path_i] != PATH_RESOLVE_STATUS_OK)
     {
         resolved_dependency_library_id[path_i] = INVALID;
         resolved_dependency_unit_id[path_i] = INVALID;
         resolved_dependency_local_index[path_i] = INVALID;
     }
+    uint owner_module = path_owner_module_id[path_i];
+    uint segment_count = path_segment_count[path_i];
+    if (gParams.namespace == 2u && owner_module != INVALID && segment_count > 1u)
+    {
+        bind_qualified_type_parent(path_i, segment_count - 1u, owner_module);
+        if (resolved_value_type_qualifier_token[path_i] != INVALID &&
+            resolved_value_qualifier_binding[path_i].x == 3u)
+        {
+            reject_ambiguous_path(path_i);
+            return;
+        }
+    }
     if (resolved_status[path_i] == PATH_RESOLVE_STATUS_OK)
     {
-        if (gParams.namespace == 2u)
-            resolved_dependency_decl[path_i] = dependency_find_declaration(
-                resolved_dependency_library_id[path_i],
-                resolved_dependency_unit_id[path_i],
-                resolved_dependency_local_index[path_i]);
         return;
     }
-    uint owner_module = path_owner_module_id[path_i];
+    if (resolved_status[path_i] == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT) return;
     if (owner_module == INVALID)
         return;
-    uint segment_count = path_segment_count[path_i];
     if (segment_count == 0u) return;
     uint first_segment = path_segment_base[path_i];
     uint name_id = path_segment_name_id[first_segment + segment_count - 1u];
@@ -232,7 +337,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             path_i, segment_count - 1u, name_id, owner_module, ambiguous);
         if (ambiguous)
         {
-            resolved_status[path_i] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
+            reject_ambiguous_path(path_i);
             return;
         }
     }
@@ -248,7 +353,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 uint declaration_i = dependency_visible_decl[visible_i];
                 if (match != INVALID && match != declaration_i)
                 {
-                    resolved_status[path_i] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
+                    reject_ambiguous_path(path_i);
                     return;
                 }
                 match = declaration_i;
@@ -262,15 +367,44 @@ void main(uint3 dtid: SV_DispatchThreadID)
             resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED;
         return;
     }
-    resolved_dependency_decl[path_i] = match;
+    // Type and value paths both retain declaration identity. A canonical row
+    // is meaningful only while this dependency page occupies the shared slot.
+    resolved_dependency_library_id[path_i] = dependency_declaration_library_id(match);
+    resolved_dependency_unit_id[path_i] = dependency_declaration_unit_id(match);
+    resolved_dependency_local_index[path_i] = dependency_declaration_local_index(match);
+    uint header_words; uint header_stride;
+    resolved_dependency_trait_header.GetDimensions(header_words, header_stride);
+    if (gParams.namespace == 3u && path_i < header_words / 4u)
+    {
+        uint declaration_kind = dependency_declaration_word(match * DECL_WORDS + 6u);
+        uint types = 0u; uint constants = 0u; uint methods = 0u;
+        if (declaration_kind == 10u)
+        {
+            uint first = dependency_declaration_word(match * DECL_WORDS + 8u);
+            uint count = dependency_declaration_word(match * DECL_WORDS + 9u);
+            for (uint ordinal = 0u; ordinal < count; ordinal++)
+            {
+                uint member = (first + ordinal) * SEMANTIC_INTERFACE_MEMBER_WORDS;
+                uint kind = dependency_member_word(member + 1u);
+                uint scope = dependency_member_word(member + 9u);
+                if (scope == 0u && kind == 2u) types++;
+                if (scope == 0u && kind == 3u) constants++;
+                if (kind == 7u) methods++;
+            }
+        }
+        resolved_dependency_trait_header[path_i * 4u] = declaration_kind;
+        resolved_dependency_trait_header[path_i * 4u + 1u] = types;
+        resolved_dependency_trait_header[path_i * 4u + 2u] = constants;
+        resolved_dependency_trait_header[path_i * 4u + 3u] = methods;
+    }
     if (gParams.namespace == 2u)
     {
-        resolved_dependency_library_id[path_i] =
-            dependency_declaration_library_id(match);
-        resolved_dependency_unit_id[path_i] =
-            dependency_declaration_unit_id(match);
-        resolved_dependency_local_index[path_i] =
-            dependency_declaration_local_index(match);
+        // A type qualifier is a resolved owner, independent of the spelling
+        // and generic syntax of a module prefix. Retain it across page replay.
+        if (segment_count > 1u && !module_prefix_equal(path_i, segment_count - 1u,
+            dependency_declaration_word(match * DECL_WORDS)))
+            resolved_value_type_qualifier_token[path_i] =
+                path_segment_token[first_segment + segment_count - 2u];
     }
     resolved_status[path_i] = PATH_RESOLVE_STATUS_OK;
 }

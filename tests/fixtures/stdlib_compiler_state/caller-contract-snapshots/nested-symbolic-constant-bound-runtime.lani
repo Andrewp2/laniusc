@@ -1,0 +1,14 @@
+struct Cell<T, const L:usize> { value:T }
+trait Rel<A> {}
+impl Rel<Cell<[i32;2],3>> for bool {}
+impl Rel<Cell<[i32;0],0>> for i32 {}
+fn keep<T,U,const N:usize,const M:usize>(value:T, values:[U;N], markers:[i32;M])->T
+    where T:Rel<Cell<[U;N],M>> { return value; }
+fn main()->i32 {
+    let values:[i32;2]=[19,23];
+    let markers:[i32;3]=[5,7,11];
+    if (keep(false,values,markers)) { return 1; }
+    let empty:[i32;0]=[];
+    if (keep(42,empty,empty)!=42) { return 2; }
+    return 0;
+}

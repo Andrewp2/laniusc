@@ -13,9 +13,11 @@
 //   shortcuts.
 
 import gpu_index;
+import type_checker.modules.qualified_type_parent;
 import type_checker.modules.import_edge_set;
 import type_checker.modules.decl_lookup;
 import type_checker.modules.module_lookup;
+import type_checker.modules.import_visible_lookup;
 
 struct Params
 {
@@ -30,26 +32,12 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
-StructuredBuffer<uint> path_segment_base;
-StructuredBuffer<uint> path_segment_name_id;
-StructuredBuffer<uint> path_prefix_id;
-StructuredBuffer<uint> path_owner_module_id;
-StructuredBuffer<uint> module_count_out;
-StructuredBuffer<uint> module_by_canonical_id;
-StructuredBuffer<uint> import_count_out;
-StructuredBuffer<uint> import_status;
-StructuredBuffer<uint> import_module_id;
-StructuredBuffer<uint> import_target_module_id;
-StructuredBuffer<uint> import_edge_set_state;
-StructuredBuffer<uint> decl_count_out;
-StructuredBuffer<uint> decl_module_id;
-StructuredBuffer<uint> decl_namespace;
-StructuredBuffer<uint> decl_visibility;
-StructuredBuffer<uint> decl_name_id;
-StructuredBuffer<uint> decl_lookup_state;
+StructuredBuffer<uint> path_segment_token;
+RWStructuredBuffer<uint4> resolved_value_qualifier_binding;
 
 RWStructuredBuffer<uint> resolved_decl;
 RWStructuredBuffer<uint> resolved_status;
+RWStructuredBuffer<uint> resolved_value_type_qualifier_token;
 
 public struct ImportEdgeStatusSource : IImportEdgeStatusSource
 {
@@ -115,16 +103,20 @@ bool has_import_edge(uint importing_module, uint target_module)
         import_edge_set_state);
 }
 
-uint find_decl(uint module_id, uint name_id)
+uint find_decl_in_scope(uint module_id, uint namespace_id, uint name_id, uint parent)
 {
-    uint namespace_id = gParams.reserved == 0u
-        ? HIR_ITEM_NAMESPACE_TYPE
-        : HIR_ITEM_NAMESPACE_VALUE;
-    return decl_lookup_find(
-        module_id, namespace_id, name_id,
+    return decl_lookup_query(
+        module_id, namespace_id, name_id, parent,
         min(decl_count_out[0], gParams.record_capacity),
         decl_module_id, decl_namespace, decl_name_id,
-        decl_lookup_state);
+        decl_parent_type_decl, decl_lookup_state).unique();
+}
+
+uint find_decl(uint module_id, uint name_id)
+{
+    return find_decl_in_scope(module_id, gParams.reserved == 0u
+        ? HIR_ITEM_NAMESPACE_TYPE : HIR_ITEM_NAMESPACE_VALUE,
+        name_id, DECL_LOOKUP_ANY_PARENT);
 }
 
 bool decl_visible_from_path(uint path_i, uint decl_i)
@@ -150,6 +142,23 @@ bool module_prefix_visible_from_path(uint path_i, uint module_i)
     return has_import_edge(owner_module, module_i);
 }
 
+uint find_qualified_variant(uint path_i, uint count)
+{
+    if (gParams.reserved == 0u || path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
+        return INVALID;
+    uint4 binding = resolved_value_qualifier_binding[path_i];
+    if (binding.x == 3u)
+    { resolved_status[path_i] = 4u; return INVALID; }
+    if (binding.x != 1u) return INVALID;
+    uint base = path_segment_base[path_i];
+    uint parent = binding.y;
+    if (parent >= min(decl_count_out[0u], gParams.record_capacity) ||
+        decl_kind[parent] != 7u || !decl_visible_from_path(path_i, parent)) return INVALID;
+    uint variant = find_decl_in_scope(decl_module_id[parent], HIR_ITEM_NAMESPACE_VALUE,
+        path_segment_name_id[base + count - 1u], parent);
+    return variant < gParams.record_capacity && decl_kind[variant] == 9u ? variant : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -161,20 +170,39 @@ void main(uint3 dtid: SV_DispatchThreadID)
          path_kind[path_i] != PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR))
         return;
 
+    // Bind the parent independently of whether its member is already known.
+    // Dependency lookup has precedence rules across pages; only fill an empty
+    // binding here for jobs with no matching dependency parent.
+    uint count = path_segment_count[path_i];
+    if (gParams.reserved != 0u && path_kind[path_i] == PATH_RECORD_KIND_HIR_PATH_EXPR &&
+        count > 1u && resolved_value_qualifier_binding[path_i].x == 0u)
+    {
+        DeclLookupResult parent = qualified_local_type_parent(path_i, count - 1u);
+        if (parent.matches != 0u)
+            resolved_value_qualifier_binding[path_i] = parent.matches == 1u
+                ? uint4(1u, parent.first, INVALID, INVALID)
+                : uint4(3u, INVALID, INVALID, INVALID);
+    }
+
     // Dependency pages resolve imported qualified paths before this local
     // module-table pass. Their stable identity must not be overwritten merely
     // because an imported module is absent from the current unit's module rows.
-    if (resolved_status[path_i] == PATH_RESOLVE_STATUS_OK)
+    if (resolved_status[path_i] == PATH_RESOLVE_STATUS_OK || resolved_status[path_i] == 4u)
         return;
 
-    uint count = path_segment_count[path_i];
     if (count <= 1u)
         return;
     uint module_i = find_module_for_path_prefix(path_i, count - 1u);
     if (module_i == INVALID)
     {
-        resolved_decl[path_i] = INVALID;
-        resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED_MODULE;
+        uint variant = find_qualified_variant(path_i, count);
+        if (resolved_status[path_i] == 4u) return;
+        resolved_decl[path_i] = variant;
+        resolved_status[path_i] = variant != INVALID
+            ? PATH_RESOLVE_STATUS_OK : PATH_RESOLVE_STATUS_UNRESOLVED_MODULE;
+        if (variant != INVALID)
+            resolved_value_type_qualifier_token[path_i] =
+                path_segment_token[path_segment_base[path_i] + count - 2u];
         return;
     }
     if (path_owner_module_id[path_i] == INVALID)

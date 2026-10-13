@@ -1,0 +1,7 @@
+
+running 1 test
+test gpu::typed_constant_tests::physical_gpu_typed_owned_constant_overlap ... [laniusc][pipeline][tests/owned_typed_constants_overlap] shader_module.start
+[laniusc][pipeline][tests/owned_typed_constants_overlap] shader_module.done
+[laniusc][pipeline][tests/owned_typed_constants_overlap] pipeline_layout.start
+[laniusc][pipeline][tests/owned_typed_constants_overlap] pipeline_layout.done
+[laniusc][pipeline][tests/owned_typed_constants_overlap] compute_pipeline.start

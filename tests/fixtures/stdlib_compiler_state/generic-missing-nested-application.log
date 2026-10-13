@@ -1,0 +1,6 @@
+error[LNC0042]: invalid member access
+ --> tests/fixtures/stdlib_foundation/repro_generic_missing_nested_application.lani:8:53
+  |
+8 | fn read(holder: Holder<i32>) -> i32 { return holder.child.value; }
+  |                                                     ^^^^^ this value does not have the requested field
+     = note: field access is only valid for structs that declare a field with this name

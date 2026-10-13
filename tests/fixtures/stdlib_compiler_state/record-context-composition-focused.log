@@ -1,0 +1,33 @@
+
+running 5 tests
+test generic_record_literal_receiving_contexts_compose_values_and_scopes ... 
+thread 'generic_record_literal_receiving_contexts_compose_values_and_scopes' (104712) panicked at tests/compiler_generic_types_execution.rs:136:29:
+record receiving contexts across composed values and generic bodies: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 9, column: 47, length: 1, byte_start: Some(397), byte_end: Some(398), source_line: Some("fn pointer(value: Cell<&i32>) -> i32 { return *value.value; }"), message: "expected one of identifier, integer literal, `!`, `(`, `[`, string literal, float literal, character literal, `+`, `-`, keyword `true`, keyword `false`, keyword `match`, keyword `self`, or `;`, found `*`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test generic_record_literal_receiving_contexts_execute ... ok
+test generic_record_literal_receiving_contexts_preserve_imported_identity ... 
+thread 'generic_record_literal_receiving_contexts_preserve_imported_identity' (104747) panicked at tests/compiler_generic_types_execution.rs:136:29:
+imported record receiving contexts and payloads: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 8, column: 9, length: 5, byte_start: Some(412), byte_end: Some(417), source_line: Some("        child: core::record_context::ImportedCell { value: \"Ω\" }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+FAILED
+test generic_record_literal_receiving_contexts_preserve_thirty_two_fields ... 
+thread 'generic_record_literal_receiving_contexts_preserve_thirty_two_fields' (104754) panicked at tests/compiler_generic_types_execution.rs:136:29:
+thirty-two record context fields: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 13, column: 5, length: 1, byte_start: Some(1118), byte_end: Some(1119), source_line: Some("if (*value.f6 != 9) { return 7; }"), message: "expected one of identifier, integer literal, `!`, `(`, `[`, string literal, float literal, character literal, `+`, `-`, keyword `true`, keyword `false`, keyword `match`, or keyword `self`, found `*`" }), help: None, notes: [] })
+FAILED
+test generic_record_literal_receiving_contexts_reject_conflicting_fields ... 
+thread 'generic_record_literal_receiving_contexts_reject_conflicting_fields' (104756) panicked at tests/compiler_generic_types_execution.rs:6924:9:
+assertion `left == right` failed: imported nested: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 166, length: 5, byte_start: Some(165), byte_end: Some(170), source_line: Some("import core::record_context; struct Other<T> { value: T } fn main() -> i32 { let text: str = core::record_context::envelope(core::record_context::ImportedEnvelope { child: Other { value: true } }); return 0; }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+  left: "LNC0047"
+ right: "LNC0006"
+FAILED
+
+failures:
+
+failures:
+    generic_record_literal_receiving_contexts_compose_values_and_scopes
+    generic_record_literal_receiving_contexts_preserve_imported_identity
+    generic_record_literal_receiving_contexts_preserve_thirty_two_fields
+    generic_record_literal_receiving_contexts_reject_conflicting_fields
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 195 filtered out; finished in 3.72s
+

@@ -1,0 +1,48 @@
+{
+  "source_changed": [
+    "crates/laniusc-compiler/src/type_checker/resident.rs",
+    "shaders/parser/tokens/to/kinds.slang",
+    "shaders/parser/tokens/value_path_type_arguments.slang",
+    "shaders/type_checker/calls/03e1_expand_application_fields.slang",
+    "shaders/type_checker/calls/03e_materialize_return_types.slang",
+    "shaders/type_checker/dependencies/14_project_type_instances.slang",
+    "shaders/type_checker/dependencies/enum_instance_layout.slang",
+    "shaders/type_checker/modules/10i_consume_value_consts.slang",
+    "shaders/type_checker/modules/10j_consume_value_enum_units.slang",
+    "shaders/type_checker/modules/10m3_validate_imported_unit_patterns.slang",
+    "shaders/type_checker/modules/10m_bind_match_patterns.slang",
+    "shaders/type_checker/semantic/artifact/00_project.slang",
+    "tests/compiler_generic_types_execution.rs",
+    "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_bare_none.lani",
+    "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_some_unannotated.lani",
+    "tests/parser_hir_records.rs",
+    "tests/stdlib_generic_enum_declaration_execution.rs"
+  ],
+  "source_added": [
+    "shaders/type_checker/checked_pattern_use.slang",
+    "tests/fixtures/stdlib_compiler_state/member-comparison-before.lani",
+    "tests/fixtures/stdlib_compiler_state/member-comparison-close.lani",
+    "tests/fixtures/stdlib_compiler_state/member-comparison-shift.lani",
+    "tests/fixtures/stdlib_compiler_state/variant-path-distinct-parents.lani",
+    "tests/fixtures/stdlib_compiler_state/variant-path-imported-qualified.lani",
+    "tests/fixtures/stdlib_compiler_state/variant-path-imported-unit.lani",
+    "tests/fixtures/stdlib_compiler_state/variant-path-local-call.lani",
+    "tests/fixtures/stdlib_compiler_state/variant-path-local-payload.lani"
+  ],
+  "shader_changed": [
+    "parser/tokens/bracket/match/03_pair_pse.spv",
+    "parser/tokens/to/kinds.spv",
+    "type_checker/calls/03e1_expand_application_fields.spv",
+    "type_checker/calls/03e_materialize_return_types.reflect.json",
+    "type_checker/calls/03e_materialize_return_types.spv",
+    "type_checker/dependencies/14_project_type_instances.reflect.json",
+    "type_checker/dependencies/14_project_type_instances.spv",
+    "type_checker/modules/10i_consume_value_consts.reflect.json",
+    "type_checker/modules/10i_consume_value_consts.spv",
+    "type_checker/modules/10j_consume_value_enum_units.reflect.json",
+    "type_checker/modules/10j_consume_value_enum_units.spv",
+    "type_checker/modules/10m3_validate_imported_unit_patterns.reflect.json",
+    "type_checker/modules/10m3_validate_imported_unit_patterns.spv",
+    "type_checker/modules/10m_bind_match_patterns.spv"
+  ]
+}

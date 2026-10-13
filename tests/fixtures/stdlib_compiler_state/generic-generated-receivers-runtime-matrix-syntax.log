@@ -1,0 +1,26 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.00s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 3 tests
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... FAILED
+test imported_compound_declaration_fields_report_an_explicit_boundary ... ok
+test imported_generic_record_constructors_check_declaration_and_fields ... ok
+
+failures:
+
+---- generated_imported_receivers_preserve_more_than_four_type_arguments stdout ----
+
+thread 'generated_imported_receivers_preserve_more_than_four_type_arguments' (281868) panicked at tests/compiler_generic_types_execution.rs:329:33:
+generated string array receiver: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "operation is not implemented by the x86 backend", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 8, column: 16, length: 4, byte_start: Some(216), byte_end: Some(220), source_line: Some("        child: core::five::Five { fifth: [\"Ω\", \"\"], third: 'Ω', second: false, first: 11, fourth: 4294967295 },"), message: "not supported by the native x86 backend yet" }), help: Some("use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering"), notes: ["the native x86 backend rejected this program before emitting an artifact", "first unsupported target LIR opcode: 31"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    generated_imported_receivers_preserve_more_than_four_type_arguments
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 4.31s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

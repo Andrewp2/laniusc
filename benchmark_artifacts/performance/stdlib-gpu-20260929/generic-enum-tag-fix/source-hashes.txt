@@ -1,0 +1,32 @@
+[
+  {
+    "path": "crates/laniusc-compiler/src/codegen/lowering.rs",
+    "previous_sha256": "9e018f13c28b95f162145b48612b437865236ae446377a5e7b536ab1166e9ce8",
+    "fixed_sha256": "cd0ca2875fde1acdf4be96c27c598de13ef66aa954eb3b3b2bf6d88a0d3df70a"
+  },
+  {
+    "path": "crates/laniusc-compiler/src/codegen/lowering_ir.rs",
+    "previous_sha256": "e720de895243861427f07598948621f0f14555327bf78d46c854c9d4578c6250",
+    "fixed_sha256": "58c7d0c4d126b9afef3f8042e439e73a18b7cf97918c83741971d5a8d6b79044"
+  },
+  {
+    "path": "shaders/codegen/lir/semantic/count.slang",
+    "previous_sha256": "945544159353df99b747da87622c6dbcffe46b2e0faf1066285dd07bb904506d",
+    "fixed_sha256": "bb8b3acb1243a1845e7299c25634b8b84f746b7d73518716e21c4f043ed646f2"
+  },
+  {
+    "path": "shaders/codegen/lir/semantic/materialize.slang",
+    "previous_sha256": "ed0c313449f1925e73788f5da63d081c8c22f76efa016a46a72a463634c26b10",
+    "fixed_sha256": "04168f0b2728ec6a24a92ad3d36f43c133874821501095c44e9c7e4d3bb1cd3d"
+  },
+  {
+    "path": "shaders/codegen/lir/semantic/value_uses_clear.slang",
+    "previous_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixed_sha256": "d48297444cbb2c622229265834a7cf08e5edd9eda64d44e907e577ebdf612716"
+  },
+  {
+    "path": "shaders/codegen/lir/semantic/value_uses_mark.slang",
+    "previous_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixed_sha256": "1ee3e10250d08585b27aa47bc8067737ab138b499d509056232237032a701c27"
+  }
+]

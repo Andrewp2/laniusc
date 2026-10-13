@@ -1,0 +1,16 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "program_evidence::packet::tests::",
+    "native_call_ownership_retains_ordinary_calls_and_repeated_inlined_sites",
+    "checked_unit_contracts_retain_nongeneric_imported_caller_owner",
+    "scalar_body_specialization_executes_both_variants_and_clears_between_jobs",
+    "fallback_cache_keeps_diagnostic_paths_in_its_identity"
+  ],
+  "exit_code": 0,
+  "seconds": 3.8204444419998254,
+  "binary_sha256": "a71cb3f12bf134b4801f44b7b6585ab3635c8f8e4302ca6592b5f9c79ac178ad",
+  "sources_unchanged": true
+}

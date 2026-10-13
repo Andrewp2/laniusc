@@ -6,6 +6,7 @@ ConstantBuffer<Params> gHirType;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_type_arg_owner;
+StructuredBuffer<uint> hir_type_arg_application_owner;
 RWStructuredBuffer<uint> hir_type_root_link_a;
 RWStructuredBuffer<uint> hir_type_root_owner_a;
 
@@ -33,7 +34,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         hir_type_root_owner_a[node] = INVALID;
         return;
     }
-    uint parent_type = hir_type_arg_owner[node];
+    uint seed = hir_type_arg_owner[node];
+    uint parent_type = seed < active ? hir_type_arg_application_owner[seed] : INVALID;
     bool nested = parent_type < active && hir_kind[parent_type] == HIR_TYPE;
     hir_type_root_link_a[node] = nested ? parent_type : INVALID;
     hir_type_root_owner_a[node] = nested ? INVALID : node;

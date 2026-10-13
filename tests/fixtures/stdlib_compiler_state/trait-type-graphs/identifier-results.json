@@ -1,0 +1,42 @@
+[
+  {
+    "case": "scalar-control",
+    "exit": 0,
+    "tail": "sample=0 ms=68.817\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/scalar-control.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=68.817 median_ms=68.817 avg_ms=68.817 max_ms=68.817 output_verified=true\n"
+  },
+  {
+    "case": "nested-argument",
+    "exit": 0,
+    "tail": "sample=0 ms=71.181\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/nested-argument.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=71.181 median_ms=71.181 avg_ms=71.181 max_ms=71.181 output_verified=true\n"
+  },
+  {
+    "case": "compound-arguments",
+    "exit": 0,
+    "tail": "sample=0 ms=78.239\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/compound-arguments.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=78.239 median_ms=78.239 avg_ms=78.239 max_ms=78.239 output_verified=true\n"
+  },
+  {
+    "case": "symbolic-arguments",
+    "exit": 0,
+    "tail": "sample=0 ms=77.171\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/symbolic-arguments.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4409 min_ms=77.171 median_ms=77.171 avg_ms=77.171 max_ms=77.171 output_verified=true\n"
+  },
+  {
+    "case": "compound-subjects",
+    "exit": 0,
+    "tail": "sample=0 ms=330.355\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/compound-subjects.lani rebuild_entry=true warmups=1 iters=1 output_bytes=21739 min_ms=330.355 median_ms=330.355 avg_ms=330.355 max_ms=330.355 output_verified=true\n"
+  },
+  {
+    "case": "thirty-two",
+    "exit": 0,
+    "tail": "sample=0 ms=76.551\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=76.551 median_ms=76.551 avg_ms=76.551 max_ms=76.551 output_verified=true\n"
+  },
+  {
+    "case": "method-signature-inherent-control",
+    "exit": 1,
+    "tail": "GPU source-pack type-check rejection: token=130 code=InvalidMemberAccess detail=0\nstdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_203753.lani: error[LNC0042]: invalid member access\n --> /tmp/laniusc_stdlib_perf_input_203753.lani:5:95\n  |\n5 | fn main()->i32 {let n=0; let c:Cell<[i32;2]> = Cell{value:[19,23]}; let v=n.echo(c); return v.value[0]+v.value[1]-42;}\n  |                                                                                               ^^^^^ this value does not have the requested field\n     = note: field access is only valid for structs that declare a field with this name\n"
+  },
+  {
+    "case": "method-signature-annotated",
+    "exit": 0,
+    "tail": "sample=0 ms=186.007\nentry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/method-signature-annotated.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=186.007 median_ms=186.007 avg_ms=186.007 max_ms=186.007 output_verified=true\n"
+  }
+]

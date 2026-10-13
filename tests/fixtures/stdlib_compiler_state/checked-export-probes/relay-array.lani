@@ -1,0 +1,6 @@
+import core::aliases;
+fn relay<T, const N: usize>(value: [T; N]) -> [T; N] { return value; }
+fn main() -> i32 {
+    let data: core::aliases::Constant<2> = relay<i32, 2>([19, 23]);
+    return data[0] + data[1];
+}

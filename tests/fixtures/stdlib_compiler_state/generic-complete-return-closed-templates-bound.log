@@ -1,0 +1,38 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 50.91s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 7 tests
+test generic_compound_returns_use_complete_call_environments ... ok
+test generic_value_functions_preserve_compound_array_elements ... ok
+test generic_value_functions_preserve_compound_slice_bounds ... FAILED
+test generic_value_functions_preserve_compound_slice_elements ... FAILED
+test imported_compound_field_generic_reader_executes ... ok
+test imported_generic_compound_record_fields_execute ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+
+failures:
+
+---- generic_value_functions_preserve_compound_slice_bounds stdout ----
+
+thread 'generic_value_functions_preserve_compound_slice_bounds' (450131) panicked at tests/compiler_generic_types_execution.rs:100:29:
+empty compound slice bound: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 29; relocation 0)"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- generic_value_functions_preserve_compound_slice_elements stdout ----
+
+thread 'generic_value_functions_preserve_compound_slice_elements' (450146) panicked at tests/compiler_generic_types_execution.rs:100:29:
+compound slice values: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 29; relocation 5)"] })
+
+
+failures:
+    generic_value_functions_preserve_compound_slice_bounds
+    generic_value_functions_preserve_compound_slice_elements
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 35 filtered out; finished in 4.67s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

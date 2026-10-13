@@ -1,0 +1,75 @@
+module app::main;
+import core::relay;
+import std::io;
+
+struct Pair { number: i32, text: str }
+fn borrow(values: [i32]) -> [i32] { return values; }
+fn length(values: [i32]) -> i32 {
+    let count: i32 = 0;
+    for value in values { count += 1; }
+    return count;
+}
+fn duplicate<T>(value: T) -> [T; 2] { return [value, value]; }
+fn keep<T>(value: T) -> T { return value; }
+fn local<T>(value: T) -> [T; 2] {
+    let values = duplicate(value);
+    let copied = keep(values);
+    return copied;
+}
+fn imported<T>(value: T) -> [T; 2] {
+    let values = core::relay::duplicate(value);
+    let copied = core::relay::keep(values);
+    return copied;
+}
+fn main() -> i32 {
+    let numbers: [i32; 2] = local(-7);
+    let other_numbers: [i32; 2] = imported(42);
+    numbers[0] = 99;
+    if (numbers[1] != -7 || other_numbers[0] != 42 || other_numbers[1] != 42) { return 1; }
+    let flags: [bool; 2] = local(false);
+    let other_flags: [bool; 2] = imported(true);
+    flags[0] = true;
+    if (flags[1] || !other_flags[0] || !other_flags[1]) { return 2; }
+
+    let text: [str; 2] = local("Ω");
+    let other_text: [str; 2] = imported("");
+    text[0] = "";
+    std::io::println(text[0]);
+    std::io::println(text[1]);
+    std::io::println(other_text[1]);
+
+    let original: Pair = Pair { number: -7, text: "Ω" };
+    let records: [Pair; 2] = local(original);
+    let other_records: [Pair; 2] = imported(original);
+    records[0].number = 99;
+    other_records[1].text = "";
+    if (original.number != -7 || records[1].number != -7 || other_records[0].number != -7) { return 3; }
+    std::io::println(original.text);
+    std::io::println(records[1].text);
+    std::io::println(other_records[0].text);
+    std::io::println(other_records[1].text);
+
+    let words: [str; 2] = ["Ω", ""];
+    let arrays: [[str; 2]; 2] = local(words);
+    let other_arrays: [[str; 2]; 2] = imported(words);
+    arrays[0][0] = "";
+    other_arrays[1][1] = "Ω";
+    std::io::println(words[0]);
+    std::io::println(words[1]);
+    std::io::println(arrays[0][0]);
+    std::io::println(arrays[1][0]);
+    std::io::println(other_arrays[0][1]);
+    std::io::println(other_arrays[1][1]);
+
+    let storage: [i32; 3] = [11, 22, 33];
+    let view: [i32] = borrow(storage);
+    let vacant: [i32; 0] = [];
+    let empty: [i32] = borrow(vacant);
+    let views: [[i32]; 2] = local(view);
+    let other_views: [[i32]; 2] = imported(view);
+    views[0][1] = 77;
+    if (storage[1] != 77 || views[1][1] != 77 || other_views[0][1] != 77) { return 4; }
+    other_views[0] = empty;
+    if (length(other_views[0]) != 0 || length(other_views[1]) != 3 || length(views[0]) != 3) { return 5; }
+    return 0;
+}

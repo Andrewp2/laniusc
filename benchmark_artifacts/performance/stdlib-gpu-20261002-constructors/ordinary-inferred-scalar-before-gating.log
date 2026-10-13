@@ -1,0 +1,2 @@
+sample=0 ms=123.671
+entry=benchmark_artifacts/performance/stdlib-gpu-20261002-constructors/ordinary-inferred-scalar-calls.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2388 min_ms=123.671 median_ms=123.671 avg_ms=123.671 max_ms=123.671 output_verified=true

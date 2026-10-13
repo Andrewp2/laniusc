@@ -9,6 +9,7 @@
 //   names, or function-body shapes.
 
 import gpu_index;
+import hir_records;
 import status;
 
 struct Params
@@ -26,6 +27,17 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_type_status;
 StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
+StructuredBuffer<uint> decl_count_out;
+StructuredBuffer<uint> decl_kind;
+StructuredBuffer<uint> path_owner_hir;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
 StructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> module_value_path_expr_head;
 
@@ -62,6 +74,26 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
+bool is_constant_operand_path(uint path)
+{
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint node = path_owner_hir[path];
+    if (node >= count) return false;
+    uint parent = compact_hir_core[node].parent;
+    if (parent >= count) return false;
+    HirPayload owner = compact_hir_payload[parent];
+    bool operand = compact_hir_core[parent].kind == 5u && owner.a == 2u && owner.d == node;
+    HirRange arguments = compact_type_arg_ranges[parent];
+    uint total = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
+    if (arguments.count <= 64u && arguments.start <= total && arguments.count <= total - arguments.start)
+        for (uint i = 0u; i < arguments.count; i++)
+            operand = operand || compact_type_args[arguments.start + i].value == node;
+    if (!operand || resolved_value_status[path] != PATH_RESOLVE_STATUS_OK) return false;
+    if (resolved_dependency_value_metadata[path * 4u] == 3u) return true;
+    uint declaration = resolved_value_decl[path];
+    return declaration < min(decl_count_out[0u], gParams.n_tokens) && decl_kind[declaration] == 3u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -78,6 +110,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (kind == PATH_RECORD_KIND_HIR_TYPE_EXPR)
     {
+        // The selected generic header (or array count consumer) decides the
+        // operand domain. A value-name operand may have no type-namespace match.
+        if (is_constant_operand_path(path_i)) return;
         uint resolved_status = resolved_type_status[path_i];
         if (resolved_status == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT)
         {

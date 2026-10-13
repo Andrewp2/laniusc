@@ -1,4 +1,4 @@
-// Validate required direct-call generic parameters from compact requirement rows.
+// Validate declared call generic parameters from compact requirement rows.
 //
 // This pass walks compact `(call, slot)` requirement rows and probes the exact
 // claim index to verify each declared generic slot was either concretely
@@ -8,6 +8,10 @@
 import hir_records;
 import status;
 import type_checker.calls.claim_lookup;
+import type_checker.calls.claim_reference;
+import type_checker.calls.explicit_call_environment;
+import type_checker.calls.contextual_call_environment;
+import type_checker.calls.checked_constant_environment;
 
 struct Params
 {
@@ -25,14 +29,12 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
-StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
-StructuredBuffer<uint> call_generic_slot_type;
-StructuredBuffer<uint> call_generic_slot_ordinal;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
-StructuredBuffer<uint> call_generic_claim_type;
+StructuredBuffer<uint> call_generic_claim_ref_tag;
+StructuredBuffer<uint> call_generic_claim_ref_payload;
 StructuredBuffer<uint> call_generic_claim_lookup_head;
 StructuredBuffer<uint> call_generic_claim_lookup_next;
 StructuredBuffer<uint> call_required_generic_count_out;
@@ -49,7 +51,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
-static const uint PARAM_CACHE_STRIDE = 4u;
+static const uint ERR_MISSING_CONSTANT_BINDING = 23u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -98,6 +100,8 @@ bool valid_token(uint token)
     return token != INVALID && token < active_token_count();
 }
 
+#include "callable_generic_requirements.slang"
+
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
@@ -108,8 +112,14 @@ uint callee_token_for_hir_call(uint call_node)
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
-    uint call_token = compact_hir_core[call_node].token_start;
     uint callee_node = compact_hir_payload[call_node].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[callee_node].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
+    uint call_token = compact_hir_core[call_node].token_start;
     if (!valid_node(callee_node))
         return valid_token(call_token) ? call_token : INVALID;
 
@@ -118,21 +128,12 @@ uint callee_token_for_hir_call(uint call_node)
 
     HirCore callee = compact_hir_core[callee_node];
     HirPayload payload = compact_hir_payload[callee_node];
-    uint callee_token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    uint callee_token = payload.d;
     if (!valid_token(callee_token))
         callee_token = callee.token_start;
     if (!valid_token(callee_token))
         callee_token = call_token;
     return valid_token(callee_token) ? callee_token : INVALID;
-}
-
-bool call_record_is_member_call(uint call_node)
-{
-    if (!valid_node(call_node))
-        return false;
-    uint callee_node = compact_hir_payload[call_node].a;
-    return valid_node(callee_node) &&
-        compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR;
 }
 
 uint call_node_for_requirement(uint requirement_i)
@@ -162,7 +163,7 @@ uint concrete_claim_key(uint row)
 {
     return call_generic_claim_callee[row] != INVALID &&
            call_generic_claim_slot[row] != INVALID &&
-           call_generic_claim_type[row] != TY_UNKNOWN
+           checked_claim_reference(call_generic_claim_ref_tag[row], call_generic_claim_ref_payload[row])
         ? 1u
         : 0u;
 }
@@ -208,14 +209,10 @@ uint required_slot_status(uint callee_i, uint slot)
     if (has_concrete_generic_claim(callee_i, slot))
         return REQUIRED_SLOT_INFERRED;
 
-    if (slot < PARAM_CACHE_STRIDE)
-    {
-        uint state_i = callee_i * PARAM_CACHE_STRIDE + slot;
-        if (call_generic_slot_type[state_i] != INVALID)
-            return REQUIRED_SLOT_INFERRED;
-        if (call_generic_slot_ordinal[state_i] != INVALID)
-            return REQUIRED_SLOT_TOUCHED_UNKNOWN;
-    }
+    uint tag; uint payload;
+    if (checked_explicit_environment_argument(0x80000000u | callee_i, slot, tag, payload) ||
+        checked_context_environment_argument(0x80000000u | callee_i, slot, tag, payload))
+        return REQUIRED_SLOT_INFERRED;
 
     return has_any_generic_claim(callee_i, slot)
         ? REQUIRED_SLOT_TOUCHED_UNKNOWN
@@ -229,8 +226,7 @@ void validate_required_generic(uint requirement_i)
 
     uint call_node = call_node_for_requirement(requirement_i);
     if (!valid_node(call_node) ||
-        compact_hir_core[call_node].kind != HIR_CALL_EXPR ||
-        call_record_is_member_call(call_node))
+        compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
 
     uint start = call_required_generic_prefix[call_node];
@@ -240,19 +236,25 @@ void validate_required_generic(uint requirement_i)
 
     uint callee_i = callee_token_for_hir_call(call_node);
     if (!valid_token(callee_i) ||
-        call_dependency_library_id[callee_i] != INVALID ||
-        method_call_name_id[callee_i] != INVALID ||
         call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return;
 
-    uint fn_i = call_fn_index[callee_i];
-    if (!valid_token(fn_i))
-        return;
-
+    uint2 counts = required_callable_generic_counts(callee_i);
     uint slot = requirement_i - start;
-    uint generic_count = type_decl_generic_param_count[fn_i];
+    uint generic_count = counts.x;
     if (slot >= generic_count)
+    {
+        uint constant_slot = slot - generic_count;
+        if (constant_slot >= counts.y) return;
+        uint kind; uint value;
+        if (!checked_call_environment_constant_ref(0x80000000u | callee_i,
+                constant_slot, kind, value))
+        {
+            call_return_type[callee_i] = TY_UNKNOWN;
+            record_error(callee_i, ERR_MISSING_CONSTANT_BINDING, constant_slot);
+        }
         return;
+    }
 
     uint slot_status = required_slot_status(callee_i, slot);
     if (slot_status == REQUIRED_SLOT_INFERRED)

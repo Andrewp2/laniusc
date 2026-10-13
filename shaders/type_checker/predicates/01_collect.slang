@@ -55,13 +55,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (!callable_generic_decl_item_kind(compact_item_kind_for_node(owner_decl)))
+    if (!predicate_generic_owner_supported(owner_decl))
     {
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND;
         return;
     }
 
-    if (!generic_type_param_declared_on(owner_decl, subject_token))
+    if (lexical_parameter_row(node, subject_token, GENERIC_PARAM_KIND_TYPE) == INVALID)
     {
         predicate_status[node] = PREDICATE_STATUS_INVALID_SUBJECT;
         return;
@@ -90,7 +90,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint trait_decl_i = type_decl_for_bound_path(node, owner_decl);
+    uint trait_decl_i = trait_reference_for_bound_path(node, owner_decl);
     if (!valid_token(bound_token) || trait_decl_i == INVALID)
     {
         predicate_status[node] = bound_path_segment_count(node) > 1u
@@ -98,12 +98,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             : PREDICATE_STATUS_UNKNOWN_BOUND_TYPE;
         return;
     }
-    if (
+    if (!trait_reference_is_dependency(trait_decl_i) && (
         decl_kind[trait_decl_i] != HIR_ITEM_KIND_TRAIT ||
-        decl_namespace[trait_decl_i] != HIR_ITEM_NAMESPACE_TYPE)
+        decl_namespace[trait_decl_i] != HIR_ITEM_NAMESPACE_TYPE))
     {
         predicate_status[node] = PREDICATE_STATUS_BOUND_NOT_TRAIT;
         return;
     }
-    predicate_bound_decl_id[node] = trait_decl_i;
+    predicate_bound_reference[node] = trait_decl_i;
 }

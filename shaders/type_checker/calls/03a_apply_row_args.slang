@@ -1,7 +1,6 @@
 // Apply row-dispatched generic direct call inference.
 
 import hir_records;
-import status;
 
 struct Params
 {
@@ -16,20 +15,14 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
-StructuredBuffer<uint> call_param_count;
-StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
-StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> call_generic_slot_type;
-StructuredBuffer<uint> call_generic_slot_ordinal;
 
 RWStructuredBuffer<uint> call_return_type;
-RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -39,9 +32,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint TYPE_REF_INSTANCE = 3u;
 
-static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint WG_SIZE = 256u;
@@ -70,11 +61,6 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < active_token_count();
-}
-
-void record_error(uint token_i, uint code, uint detail)
-{
-    record_min_token_error(status, token_i, code, detail);
 }
 
 bool is_generic_type(uint ty)
@@ -130,35 +116,6 @@ uint callee_token_for_hir_call(uint call_node)
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
-bool check_required_generic_slot(
-    uint callee_i,
-    uint fn_i,
-    uint generic_count,
-    uint slot)
-{
-    if (slot >= generic_count)
-        return true;
-
-    uint state_i = callee_i * PARAM_CACHE_STRIDE + slot;
-    uint inferred = call_generic_slot_type[state_i];
-    if (inferred != INVALID)
-        return true;
-
-    if (call_generic_slot_ordinal[state_i] != INVALID)
-        return false;
-
-    // Aggregate return slots can be inferred from the enclosing declaration
-    // or return context after argument claims have been collected.
-    if (fn_return_ref_tag[fn_i] == TYPE_REF_INSTANCE)
-        return true;
-
-    record_error(
-        callee_i,
-        ERR_ASSIGN_MISMATCH,
-        (TY_GENERIC_BASE + slot) * 256u + TY_UNKNOWN);
-    return false;
-}
-
 void apply_row_argument_call(uint call_node)
 {
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
@@ -174,7 +131,6 @@ void apply_row_argument_call(uint call_node)
         return;
 
     uint fn_i = call_fn_index[callee_i];
-    uint arg_count = call_arg_row_count[call_node];
     if (!valid_token(fn_i))
         return;
 
@@ -182,15 +138,10 @@ void apply_row_argument_call(uint call_node)
     if (generic_count == 0u)
         return;
 
-    if (!check_required_generic_slot(callee_i, fn_i, generic_count, 0u) ||
-        !check_required_generic_slot(callee_i, fn_i, generic_count, 1u) ||
-        !check_required_generic_slot(callee_i, fn_i, generic_count, 2u) ||
-        !check_required_generic_slot(callee_i, fn_i, generic_count, 3u))
-    {
-        call_return_type[callee_i] = TY_UNKNOWN;
-        return;
-    }
-
+    // This cache supplies provisional scalar facts only. Complete argument
+    // claims and result contexts can bind parameters the cache cannot encode,
+    // and dependent calls can refine them in later inference rounds. Required
+    // slots are validated once, after that closure, from the complete relation.
     uint ret_ty = call_return_type[fn_i];
     uint current_ret_ty = call_return_type[callee_i];
     if (current_ret_ty != ret_ty && !is_generic_type(current_ret_ty))
@@ -204,8 +155,6 @@ void apply_row_argument_call(uint call_node)
             slot = array_or_slice_generic_slot(ret_ty);
         if (slot == INVALID || slot >= generic_count || slot >= PARAM_CACHE_STRIDE)
         {
-            record_error(callee_i, ERR_ASSIGN_MISMATCH, ret_ty * 256u + TY_UNKNOWN);
-            call_return_type[callee_i] = TY_UNKNOWN;
             return;
         }
 

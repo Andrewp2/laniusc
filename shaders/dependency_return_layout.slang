@@ -1,3 +1,4 @@
+import semantic_interface_layout;
 // Exact aggregate result widths for imported calls. Free functions and
 // associated methods must publish the same checked result ABI.
 
@@ -6,7 +7,7 @@ import dependency_interface;
 static const uint RETURN_LAYOUT_INVALID = 0xffffffffu;
 static const uint RETURN_LAYOUT_DECL_WORDS = 14u;
 static const uint RETURN_LAYOUT_TYPE_WORDS = 9u;
-static const uint RETURN_LAYOUT_MEMBER_WORDS = 11u;
+static const uint RETURN_LAYOUT_MEMBER_WORDS = SEMANTIC_INTERFACE_MEMBER_WORDS;
 static const uint RETURN_LAYOUT_SCALAR = 1u;
 static const uint RETURN_LAYOUT_DECLARATION = 3u;
 static const uint RETURN_LAYOUT_FUNCTION = 7u;
@@ -14,6 +15,41 @@ static const uint RETURN_LAYOUT_STRUCT = 6u;
 static const uint RETURN_LAYOUT_ENUM = 7u;
 static const uint RETURN_LAYOUT_FIELD = 4u;
 static const uint RETURN_LAYOUT_VARIANT = 5u;
+
+// Empty monomorphic structs have the existing zero-word result ABI. Prove
+// emptiness from the complete declaration while its interface page is active;
+// a zero projected width alone can also mean an unsupported aggregate layout.
+public bool dependency_empty_struct_result(
+    uint type_i, StructuredBuffer<uint> canonical_type_roots)
+{
+    uint total = dependency_type_count();
+    if (type_i >= total) return false;
+    uint root = canonical_type_roots[type_i];
+    if (root >= total) return false;
+    uint base = root * RETURN_LAYOUT_TYPE_WORDS;
+    if (dependency_type_word(base) != RETURN_LAYOUT_DECLARATION ||
+        dependency_type_word(base + 4u) != 0u)
+        return false;
+    uint declaration = dependency_find_declaration(
+        dependency_type_word(base + 1u), dependency_type_word(base + 8u),
+        dependency_type_word(base + 2u));
+    if (declaration >= dependency_declaration_count()) return false;
+    uint declaration_base = declaration * RETURN_LAYOUT_DECL_WORDS;
+    if (dependency_declaration_word(declaration_base + 6u) != RETURN_LAYOUT_STRUCT)
+        return false;
+    uint start = dependency_declaration_word(declaration_base + 8u);
+    uint count = dependency_declaration_word(declaration_base + 9u);
+    uint members = dependency_member_count();
+    if (start > members || count > members - start) return false;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        uint kind = dependency_member_word(
+            (start + ordinal) * RETURN_LAYOUT_MEMBER_WORDS + 1u);
+        if (kind == RETURN_LAYOUT_FIELD || kind == 2u || kind == 3u)
+            return false;
+    }
+    return true;
+}
 
 public bool dependency_flat_payload_word_count(
     uint type_i,
@@ -124,6 +160,19 @@ public uint dependency_aggregate_word_count(
             for (uint argument = 0u; argument + 1u < edge_count; argument += 1u)
             {
                 uint argument_type = dependency_type_edge_word(first_edge + argument);
+                if (argument_type >= dependency_type_count()) return 0u;
+                uint argument_root = canonical_type_roots[argument_type];
+                if (argument_root >= dependency_type_count()) return 0u;
+                if (dependency_type_word(argument_root * RETURN_LAYOUT_TYPE_WORDS) == 2u)
+                {
+                    uint slot = dependency_generic_type_slot(argument_root);
+                    uint result_arg_count = dependency_type_word(base + 4u);
+                    uint result_arg_start = dependency_type_word(base + 3u);
+                    if (slot >= result_arg_count || result_arg_start > dependency_count(5u) ||
+                        result_arg_count > dependency_count(5u) - result_arg_start)
+                        return 0u;
+                    argument_type = dependency_type_edge_word(result_arg_start + slot);
+                }
                 uint argument_words;
                 if (!dependency_flat_payload_word_count(
                     argument_type, canonical_type_roots, argument_words))

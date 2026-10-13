@@ -1,0 +1,13 @@
+module core::float_constants;
+pub const LARGE: f64 = 1.0e300;
+pub const PRECISE: f64 = 1.0000000000000002;
+pub const NEGATIVE_ZERO: f64 = -0.0;
+pub const NARROW: f32 = 1.000000059604644775390626;
+pub struct FloatTag<const V: f64> { value: f64 }
+pub struct Packet<const V: f64, const S: f32> { nested: FloatTag<V>, small: f32 }
+pub fn make<const V: f64, const S: f32>() -> Packet<V, S> {
+    let tag: FloatTag<V> = FloatTag<V> { value: V };
+    return Packet<V, S> { nested: tag, small: S };
+}
+pub fn forward<const V: f64, const S: f32>() -> Packet<V, S> { return make<V, S>(); }
+pub fn wide<const V: f64>() -> f64 { return V; }

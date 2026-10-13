@@ -1,0 +1,33 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.64s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 8 tests
+test direct_record_descriptor_fields_have_exact_types ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... FAILED
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+
+failures:
+
+---- imported_generic_functions_preserve_descriptor_record_fields stdout ----
+GPU parser rejection: error_pos=0 code=4 detail=4294967294 steps=1304 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'imported_generic_functions_preserve_descriptor_record_fields' (61376) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 11, column: 24, length: 1, byte_start: Some(433), byte_end: Some(434), source_line: Some("    for value in output.values { count += 1; }"), message: "expected `{`, found `.`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_imported_descriptor_record_61344_4.lani
+
+
+failures:
+    imported_generic_functions_preserve_descriptor_record_fields
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.89s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

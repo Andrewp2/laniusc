@@ -1,7 +1,8 @@
 // Emit synthetic function and nominal signature records after all HIR-backed
-// children and the shared void leaf.
+// children and the shared primitive leaves.
 
 import atomics;
+import type_checker.interface.scalar_leaves;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> public_decl_count;
@@ -15,6 +16,8 @@ StructuredBuffer<uint> interface_signature_edge_count;
 StructuredBuffer<uint> interface_signature_edge_prefix;
 RWStructuredBuffer<uint> interface_signature_type_by_decl;
 RWStructuredBuffer<uint> interface_types;
+RWStructuredBuffer<uint> interface_type_edges;
+RWStructuredBuffer<uint> interface_type_edge_written;
 RWStructuredBuffer<uint> interface_status;
 static const uint TYPE_WORDS = 9u;
 static const uint TYPE_KIND_DECLARATION = 3u;
@@ -50,7 +53,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (local >= gParams.decl_capacity) { fail(persisted); return; }
     uint kind = decl_kind[local];
     uint hir_count = min(interface_type_count[0u], gParams.hir_capacity);
-    uint type_index = hir_count + 1u + interface_signature_type_prefix[persisted];
+    uint first_type = hir_count + INTERFACE_SCALAR_LEAF_COUNT + interface_signature_type_prefix[persisted];
+    uint type_index = first_type + interface_signature_type_flag[persisted] - 1u;
     uint first_edge = interface_type_edge_total[0u] + interface_signature_edge_prefix[persisted];
     uint edge_count = interface_signature_edge_count[persisted];
     if (kind == HIR_ITEM_KIND_FN || kind == HIR_ITEM_KIND_EXTERN_FN ||
@@ -63,7 +67,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             kind != HIR_ITEM_KIND_TRAIT)
         { fail(persisted); return; }
         if (nominal >= public_count) { fail(persisted); return; }
-        write_type(type_index, TYPE_KIND_DECLARATION, gParams.library_id, nominal, 0u, 0u, gParams.unit_id);
+        write_type(type_index, TYPE_KIND_DECLARATION, gParams.library_id, nominal, first_edge, edge_count, gParams.unit_id);
+        // Generic-member scatter writes these leaves with portable parameter
+        // identities, including parameters unused by all payloads/fields.
+        for (uint ordinal = 0u; ordinal < edge_count; ordinal++)
+        {
+            interface_type_edges[first_edge + ordinal] = type_index - 1u - ordinal;
+            interface_type_edge_written[first_edge + ordinal] = 1u;
+        }
     }
     interface_signature_type_by_decl[persisted] = type_index;
 }

@@ -1,0 +1,28 @@
+{
+  "command": [
+    "target/caller-proof-tests/stdlib_gpu_perf",
+    "type_checker::generic_body::tests::",
+    "compiler::gpu_compiler::body_specialization::tests::",
+    "type_checker::generic_calls::tests::",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_nominal_applications_keep_declarations_and_all_ordered_arguments",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_contextual_environments_preserve_all_thirty_two_parameters",
+    "compiler::gpu_compiler::x86_codegen::tests::retained_generic_result_environments_preserve_two_slots_and_record_layouts",
+    "compiler::gpu_compiler::typecheck::tests::body_replay_preserves_symbolic_public_interfaces",
+    "compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity",
+    "type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes",
+    "compiler::gpu_compiler::x86_codegen::tests::caller_private_nominals_execute_through_imported_generic_relay",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 101,
+  "elapsed_seconds": 6.373670754001068,
+  "binary_sha256": "4f60da5f82da75bca024fe52db06a98fc68d55db7b34949b4f43bdab68772699",
+  "summaries": [
+    "test result: FAILED. 20 passed; 7 failed; 0 ignored; 0 measured; 642 filtered out; finished in 6.21s"
+  ],
+  "source_snapshot": "before-nominal-kind-repair-sources.json",
+  "sources_unchanged": true,
+  "classification": "Optimization regression: struct/enum HIR kinds reversed and alias HIR kind incorrect. Existing borrowed-enum failure remains separate."
+}

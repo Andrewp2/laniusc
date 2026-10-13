@@ -1,0 +1,3 @@
+enum Length<T> { Known(usize), Values(T) } struct Boxed<T> { value: T } fn length<T, const N: usize>() -> Length<[T; N]> { return Known(N); } fn keep<T>(value: T) -> T { return value; }
+fn wrap<T, const N: usize>() -> Length<[T; N]> { let item: Boxed<Length<[T; N]> > = Boxed { value: keep(length()) }; return item.value; }
+fn main() -> i32 { let v: Length<[str; 3]> = wrap(); let n: usize = match (v) { Known(n) -> n, Values(v) -> 99 }; if (n != 3) { return 1; } return 0; }

@@ -1,0 +1,6 @@
+fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let view = keep<[i32]>([19, 23]);
+    view[0] = 20;
+    return view[0] + view[1] - 43;
+}

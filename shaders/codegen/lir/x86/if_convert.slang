@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import primitive_types;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
 import gpu_index;
@@ -155,7 +156,7 @@ void mark_coalescible_value_get(uint row, uint position, uint total)
         OptIrNodeOperands candidate_operands =
             opt_ir_operands[candidate];
         uint op = opt_ir_op(candidate_core);
-        if (semantic_lir_is_call(op)) return;
+        if (opt_ir_may_write_memory(candidate_core)) return;
         if (op == SEMANTIC_LIR_OP_VALUE_SET &&
             candidate_operands.a == declaration)
             return;
@@ -208,7 +209,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         !same_function(branch.b, total, function_id) ||
         opt_ir_op(opt_ir_core[branch.a]) !=
             SEMANTIC_LIR_OP_COMPARE ||
-        opt_ir_core[branch.a].type_id == X86_LIR_TY_FLOAT ||
+        scalar_is_float(opt_ir_core[branch.a].type_id) ||
         x86_last_use_by_semantic[branch.a] != position ||
         opt_ir_op(opt_ir_core[branch.b]) != SEMANTIC_LIR_OP_ELSE)
         return;

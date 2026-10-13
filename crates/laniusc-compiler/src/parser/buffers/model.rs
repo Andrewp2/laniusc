@@ -28,6 +28,8 @@ pub struct TokenDelimiterParams {
     pub n_tokens: u32,
     pub n_blocks: u32,
     pub scan_step: u32,
+    /// Physical delimiter-tree layout retained across differently sized jobs.
+    pub match_tree_leaf_base: u32,
 }
 
 #[repr(C)]
@@ -35,6 +37,8 @@ pub struct TokenDelimiterParams {
 /// Uniform parameters for token brace/delimiter matching passes.
 pub struct TokenBraceMatchParams {
     pub n_tokens: u32,
+    /// Tree leaves retain their allocated position when n_tokens shrinks.
+    pub match_tree_leaf_base: u32,
 }
 
 #[repr(C)]
@@ -101,6 +105,8 @@ pub struct HirTypeArg {
     pub value: u32,
     pub ordinal: u32,
     pub file_id: u32,
+    /// Source name token of the path segment that owns this application.
+    pub application_token: u32,
 }
 
 #[repr(C)]
@@ -244,6 +250,8 @@ pub struct HirSemanticFacts {
     /// Dense target type for an impl predicate, or the subject token for a
     /// generic bound. The interpretation follows the predicate family row.
     pub predicate_subject: u32,
+    /// Float literal decode statuses: binary32 low byte, binary64 next byte.
+    pub literal_status: u32,
 }
 
 /// Allocation-free handle set for the compact parser phase artifact.
@@ -292,8 +300,12 @@ pub struct GpuHirView {
     pub type_arg_count: LaniusBuffer<u32>,
     pub type_args: LaniusBuffer<HirTypeArg>,
     pub type_arg_ranges: LaniusBuffer<HirRange>,
+    /// Ordered argument ranges keyed by the applying path segment name token.
+    pub path_type_arg_ranges: LaniusBuffer<HirRange>,
     pub generic_param_count: LaniusBuffer<u32>,
     pub generic_params: LaniusBuffer<HirGenericParam>,
+    /// Parsed annotation HIR keyed by compact generic parameter row; INVALID for types.
+    pub generic_param_types: LaniusBuffer<u32>,
     pub generic_param_ranges: LaniusBuffer<HirRange>,
     pub path_count: LaniusBuffer<u32>,
     pub paths: LaniusBuffer<HirPath>,
@@ -373,11 +385,16 @@ impl GpuHirView {
             ("compact_type_arg_count", (&self.type_arg_count).into()),
             ("compact_type_args", (&self.type_args).into()),
             ("compact_type_arg_ranges", (&self.type_arg_ranges).into()),
+            ("compact_path_type_arg_ranges", (&self.path_type_arg_ranges).into()),
             (
                 "compact_generic_param_count",
                 (&self.generic_param_count).into(),
             ),
             ("compact_generic_params", (&self.generic_params).into()),
+            (
+                "compact_generic_param_types",
+                (&self.generic_param_types).into(),
+            ),
             (
                 "compact_generic_param_ranges",
                 (&self.generic_param_ranges).into(),
@@ -519,6 +536,7 @@ pub struct ParserBuffers {
     // buffer is shared by parser validation and tree/HIR passes. Host LL(1)
     // tables remain in `PrecomputedParseTables` for diagnostics and tests.
     pub ll1_status: LaniusBuffer<u32>,
+    pub(crate) hir_literal_status: LaniusBuffer<u32>,
     pub(crate) ll1_status_readback: LaniusBuffer<u8>,
     pub(crate) hir_count_readback: LaniusBuffer<u8>,
     pub(in crate::parser) status_readback_operations:
@@ -796,9 +814,11 @@ pub struct ParserBuffers {
     pub hir_type_arg_family_flag: LaniusBuffer<u32>,
     pub hir_type_arg_rows: LaniusBuffer<HirTypeArg>,
     pub hir_type_arg_ranges: LaniusBuffer<HirRange>,
+    pub hir_path_type_arg_ranges: LaniusBuffer<HirRange>,
     pub hir_generic_param_table_count: LaniusBuffer<u32>,
     pub hir_generic_param_family_flag: LaniusBuffer<u32>,
     pub hir_generic_param_rows: LaniusBuffer<HirGenericParam>,
+    pub hir_generic_param_types: LaniusBuffer<u32>,
     pub hir_generic_param_ranges: LaniusBuffer<HirRange>,
     pub hir_path_table_count: LaniusBuffer<u32>,
     pub hir_path_family_flag: LaniusBuffer<u32>,
@@ -850,7 +870,7 @@ pub struct ParserBuffers {
     pub hir_type_form: LaniusBuffer<u32>,
     pub hir_type_value_node: LaniusBuffer<u32>,
     pub hir_type_len_token: LaniusBuffer<u32>,
-    pub hir_type_len_value: LaniusBuffer<u32>,
+    pub hir_type_len_operand: LaniusBuffer<u32>,
     pub hir_type_file_id: LaniusBuffer<u32>,
     pub hir_type_path_leaf_node: LaniusBuffer<u32>,
     pub hir_bound_path_owner_by_leaf: LaniusBuffer<u32>,
@@ -872,6 +892,8 @@ pub struct ParserBuffers {
     pub hir_type_alias_target_node: LaniusBuffer<u32>,
     pub hir_fn_return_type_node: LaniusBuffer<u32>,
     pub hir_type_arg_owner_a: LaniusBuffer<u32>,
+    pub hir_type_arg_application_owner: LaniusBuffer<u32>,
+    pub hir_type_arg_application_token: LaniusBuffer<u32>,
     pub hir_type_arg_owner_b: LaniusBuffer<u32>,
     pub hir_type_arg_link_a: LaniusBuffer<u32>,
     pub hir_type_arg_link_b: LaniusBuffer<u32>,
@@ -1013,6 +1035,8 @@ pub struct ParserBuffers {
     pub hir_binary_span_start_b: LaniusBuffer<u32>,
     pub hir_expr_int_value: LaniusBuffer<u32>,
     pub hir_expr_float_bits: LaniusBuffer<u32>,
+    /// At most 2048 disjoint 768-word decimal workspaces, in storage memory.
+    pub(crate) hir_float_workspace: LaniusBuffer<u32>,
     pub hir_expr_string_start: LaniusBuffer<u32>,
     pub hir_expr_string_len: LaniusBuffer<u32>,
     pub(crate) hir_literal_values_params:
@@ -1116,8 +1140,10 @@ impl GpuHirView {
             type_arg_count: buffers.hir_type_arg_table_count.clone(),
             type_args: buffers.hir_type_arg_rows.clone(),
             type_arg_ranges: buffers.hir_type_arg_ranges.clone(),
+            path_type_arg_ranges: buffers.hir_path_type_arg_ranges.clone(),
             generic_param_count: buffers.hir_generic_param_table_count.clone(),
             generic_params: buffers.hir_generic_param_rows.clone(),
+            generic_param_types: buffers.hir_generic_param_types.clone(),
             generic_param_ranges: buffers.hir_generic_param_ranges.clone(),
             path_count: buffers.hir_path_table_count.clone(),
             paths: buffers.hir_path_rows.clone(),

@@ -1,0 +1,15 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+warning: unused import: `CheckedUnitFacts`
+  --> crates/laniusc-compiler/src/type_checker/mod.rs:20:54
+   |
+20 | pub(crate) use checked_contracts::{CheckedCallOwner, CheckedUnitFacts, CheckedUnitContracts};
+   |                                                      ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `laniusc-compiler` (lib test) generated 1 warning (run `cargo fix --lib -p laniusc-compiler --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 01s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+  Executable unittests src/lib.rs (target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66)

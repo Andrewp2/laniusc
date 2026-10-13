@@ -1,0 +1,10 @@
+pub const LARGE: f64 = 1.0e300;
+pub const NEGATIVE: f64 = -(1.0000000000000002);
+pub const ZERO: f64 = -0.0;
+pub const SMALL: f32 = -0.125;
+fn main() -> i32 {
+    let one: f64 = 1.0;
+    if (LARGE <= 1.0e299 || NEGATIVE >= -one || one / ZERO >= 0.0) { return 1; }
+    if (SMALL != -0.125) { return 2; }
+    return 0;
+}

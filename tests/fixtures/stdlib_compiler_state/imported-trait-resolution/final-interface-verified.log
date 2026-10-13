@@ -1,0 +1,23 @@
+
+running 12 tests
+test semantic_interface_export_preserves_transitive_dependency_nominal_identity ... GPU source-pack type-check rejection: token=31 code=AssignMismatch detail=0
+ok
+test semantic_interface_exports_arbitrary_depth_module_segments ... ok
+test semantic_interface_exports_public_checked_graph_on_gpu ... ok
+test semantic_interface_exports_public_generic_traits ... ok
+test semantic_interface_preserves_all_thirty_two_trait_parameters ... ok
+test semantic_interface_preserves_trait_method_shapes_and_parent_scopes ... ok
+test semantic_interface_variant_rows_do_not_alias_dense_hir_declarations ... ok
+test type_checker_enforces_stdlib_trait_where_obligations_from_source_pack ... GPU source-pack type-check rejection: token=8394 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_rejects_leaf_name_trait_impl_for_different_qualified_bound ... GPU source-pack type-check rejection: token=126 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_rejects_unqualified_trait_impl_for_different_module_bound ... GPU source-pack type-check rejection: token=120 code=TraitBoundUnsatisfied detail=9
+ok
+test type_checker_resolves_qualified_trait_bounds ... GPU source-pack type-check rejection: token=43 code=TraitBoundUnsatisfied detail=2
+GPU source-pack type-check rejection: token=36 code=TraitBoundUnsatisfied detail=2
+ok
+test type_checker_resolves_trait_bounds_beyond_the_legacy_path_depth ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 90 filtered out; finished in 2.82s
+

@@ -10,6 +10,7 @@
 import hir_records;
 import gpu_index;
 import checked_semantic_artifact;
+import type_checker.methods.candidate;
 
 struct Params
 {
@@ -45,11 +46,20 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_return_aggregate_word_count;
 StructuredBuffer<uint> call_result_instance;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
+StructuredBuffer<MethodCandidate> method_candidate;
+StructuredBuffer<uint> method_call_receiver_hir;
+StructuredBuffer<uint> method_call_parameter_ref_tag;
+StructuredBuffer<uint> method_call_parameter_ref_payload;
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
 RWStructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 RWStructuredBuffer<uint> semantic_aggregate_word_count_by_hir;
 
@@ -137,9 +147,10 @@ uint imported_constructor_ordinal(uint call)
     uint callee = compact_hir_payload[call].a;
     uint path = path_for_callee(callee);
     if (path == INVALID) return INVALID;
-    uint base = path * 3u;
+    uint base = path * 4u;
     uint kind = resolved_dependency_value_metadata[base];
-    return kind == IMPORTED_PAYLOAD_VARIANT || kind == IMPORTED_GENERIC_UNIT_VARIANT
+    return kind == HIR_ITEM_KIND_ENUM_VARIANT || kind == IMPORTED_PAYLOAD_VARIANT ||
+        kind == IMPORTED_GENERIC_UNIT_VARIANT
         ? resolved_dependency_value_metadata[base + 2u]
         : INVALID;
 }
@@ -150,7 +161,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     // This HIR-keyed table is sparse by contract: consumers inspect it only
-    // for call-expression rows. Avoid writing a 56-byte empty record for every
+    // for call-expression rows. Avoid writing an empty record for every
     // other syntax node. Active call rows are still rewritten in full on every
     // daemon job, so stale workspace contents cannot cross the semantic ABI.
     if (!valid_hir(row) || compact_hir_core[row].kind != HIR_CALL_EXPR) return;
@@ -171,6 +182,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call.callable_kind = CALLABLE_NONE;
     call.callable_hir = INVALID;
     call.callable_ordinal = INVALID;
+    call.receiver_adjustment_kind = 0u;
+    call.receiver_deref_count = 0u;
+    call.receiver_matched_ref_tag = 0u;
+    call.receiver_matched_ref_payload = INVALID;
+    call.receiver_parameter_ref_tag = 0u;
+    call.receiver_parameter_ref_payload = INVALID;
     {
         uint callee = compact_hir_payload[row].a;
         uint callee_token = callee_token_for_call(row);
@@ -244,7 +261,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // instance so downstream semantic consumers never have to repeat
             // generic substitution.
             uint result_instance = call_result_instance[row];
-            if (valid_token(result_instance))
+            uint instance_capacity; uint instance_stride;
+            type_instance_aggregate_word_count.GetDimensions(instance_capacity, instance_stride);
+            if (result_instance < instance_capacity)
             {
                 call.return_ref_tag = 3u;
                 call.return_ref_payload = result_instance;
@@ -252,12 +271,107 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 if (instance_words != 0u)
                     semantic_aggregate_word_count_by_hir[row] = instance_words;
             }
+            // The complete producer also returns nominal leaves, encoded in
+            // the existing scalar reference protocol. Preserve those accepted
+            // call-site facts instead of the declaration's symbolic T or an
+            // early void cache. Downstream checks and layout use this record.
+            uint inferred_tag = call_inference_result_tag[row];
+            uint inferred_payload = call_inference_result_payload[row];
+            if (inferred_tag == 1u && inferred_payload != 0u && inferred_payload != INVALID)
+            {
+                call.return_ref_tag = inferred_tag;
+                call.return_ref_payload = inferred_payload;
+                call.return_type = inferred_payload;
+            }
+            // A substituted generic scalar reference is authoritative even
+            // when the declaration's original machine return code was zero.
+            // In particular, strings must retain their pointer/length result.
+            if (call.return_ref_tag == 1u && call.return_ref_payload >= 1u &&
+                call.return_ref_payload <= 7u)
+                call.return_type = call.return_ref_payload;
+            // Dependency projection proved this monomorphic struct empty
+            // while retaining its nominal type for all semantic checks. The
+            // backend consumes its unit machine representation, rather than
+            // truncating an external-canonical tag and treating a page row
+            // number as a scalar/aggregate type code.
+            if (call.return_type == 1u && call.return_ref_tag == 5u &&
+                semantic_aggregate_word_count_by_hir[row] == 0u)
+            {
+                call.return_ref_tag = 1u;
+                call.return_ref_payload = 1u;
+            }
         }
         call.receiver_hir = valid_hir(callee) &&
                             compact_hir_core[callee].kind == HIR_MEMBER_EXPR
                                 ? compact_hir_payload[callee].b
                                 : INVALID;
         call.arg_count = compact_hir_payload[row].c;
+        if (call.callable_kind == CALLABLE_INTRINSIC && valid_hir(call.receiver_hir))
+        {
+            // Intrinsic syntax has explicit arguments and no receiver plan.
+            // Do not release a member-shaped call under that classification.
+            call.callable_kind = CALLABLE_NONE;
+            call.intrinsic_tag = 0u;
+            call.target_token = INVALID;
+        }
+        if ((call.callable_kind == CALLABLE_FUNCTION || call.callable_kind == CALLABLE_DEPENDENCY)
+            && valid_hir(call.receiver_hir))
+        {
+            uint token = callee_token_for_call(row);
+            uint capacity; uint stride;
+            method_candidate.GetDimensions(capacity, stride);
+            bool accepted = token < capacity;
+            if (accepted)
+            {
+                MethodCandidate candidate = method_candidate[token];
+                bool local = call.callable_kind == CALLABLE_FUNCTION;
+                uint declaration = local ? call_fn_index[token] : call.dependency_local_index;
+                accepted = method_candidate_is_winner(candidate,
+                    local ? METHOD_CALLABLE_LOCAL : METHOD_CALLABLE_DEPENDENCY,
+                    local ? INVALID : call.dependency_library_id,
+                    local ? INVALID : call.dependency_unit_id, declaration) &&
+                    method_call_receiver_hir[token] == call.receiver_hir &&
+                    candidate.receiver_mode >= 1u && candidate.receiver_mode <= 2u &&
+                    method_call_parameter_ref_tag[token] != 0u &&
+                    method_call_parameter_ref_payload[token] != INVALID;
+                if (accepted)
+                {
+                    call.receiver_adjustment_kind = candidate.receiver_mode;
+                    call.receiver_deref_count = candidate.deref_count;
+                    call.receiver_matched_ref_tag = candidate.matched_ref_tag;
+                    call.receiver_matched_ref_payload = candidate.matched_ref_payload;
+                    call.receiver_parameter_ref_tag = method_call_parameter_ref_tag[token];
+                    call.receiver_parameter_ref_payload = method_call_parameter_ref_payload[token];
+                    semantic_argument_mode_by_hir[call.receiver_hir] =
+                        candidate.receiver_mode == 2u ? 3u : 1u;
+                }
+            }
+            // A callable and receiver adjustment are one accepted fact. A
+            // missing or stale plan cannot fall back to forwarding the source
+            // value with a different reference depth. Lowering rejects NONE.
+            if (!accepted)
+            {
+                call.callable_kind = CALLABLE_NONE;
+                call.target_token = INVALID;
+                call.dependency_library_id = INVALID;
+                call.dependency_unit_id = INVALID;
+                call.dependency_local_index = INVALID;
+            }
+        }
+        if (call.callable_kind == CALLABLE_ENUM_VARIANT)
+        {
+            uint start = compact_hir_payload[row].b;
+            uint total = compact_call_arg_count[0u];
+            for (uint i = 0u; i < call.arg_count && start + i < total; ++i)
+            {
+                HirCallArg argument = compact_call_args[start + i];
+                // The callable binder owns borrowed/reference parameter modes,
+                // including enum payloads. Only an unset mode defaults to value.
+                if (argument.call == row && valid_hir(argument.value) &&
+                    semantic_argument_mode_by_hir[argument.value] == 0u)
+                    semantic_argument_mode_by_hir[argument.value] = 1u;
+            }
+        }
     }
     semantic_calls_by_hir[row] = call;
 }

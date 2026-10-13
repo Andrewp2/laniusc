@@ -1,11 +1,14 @@
 // Publish struct-literal contextual type records from parser-owned statement HIR.
 //
-// This pass records the nearest let/return statement context for struct literals.
+// This pass records the owning let/return statement context or a complete
+// explicit constructor type for struct literals.
 // Field typing consumes these literal-keyed rows instead of walking ancestors per
 // field. Broader nested context propagation should be added as another explicit
 // relation, not by restoring per-consumer tree walks.
 
 import hir_records;
+import external_type_identity;
+import type_checker.argument_context;
 
 struct Params
 {
@@ -17,6 +20,14 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> resolved_type_decl;
+StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
+
+
 
 
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -75,6 +86,13 @@ uint active_node_count()
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return instance < capacity;
+}
+
 bool valid_token(uint i)
 {
     return i != INVALID && i < active_token_count();
@@ -115,10 +133,11 @@ bool context_for_type_ref(uint tag, uint payload, out uint decl_token, out uint 
 {
     decl_token = INVALID;
     instance_i = INVALID;
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+    if (tag == TYPE_REF_INSTANCE && valid_instance(payload))
     {
         uint instance_decl = type_instance_decl_token[payload];
-        if (!valid_token(instance_decl))
+        if (!valid_token(instance_decl) &&
+            (type_instance_kind[payload] != 1u || !external_type_identity_valid(payload)))
             return false;
         decl_token = instance_decl;
         instance_i = payload;
@@ -134,7 +153,7 @@ bool context_for_type_ref(uint tag, uint payload, out uint decl_token, out uint 
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
 {
-    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+    if (tag != TYPE_REF_INSTANCE || !valid_instance(payload))
         return INVALID;
     return type_instance_kind[payload] == TYPE_INSTANCE_ARRAY ? payload : INVALID;
 }
@@ -143,6 +162,8 @@ uint type_head_token_for_compact_node(uint type_node)
 {
     if (type_node >= active_compact_hir_count())
         return INVALID;
+    uint owner = compact_hir_core[type_node].token_start;
+    if (valid_token(owner) && type_expr_ref_tag[owner] != 0u) return owner;
     uint path = path_id_by_owner_hir[type_node];
     if (path < gParams.n_hir_nodes)
     {
@@ -182,8 +203,14 @@ bool is_struct_literal(uint node)
 
 void publish_context(uint literal_node, uint decl_token, uint instance_i)
 {
-    if (!is_struct_literal(literal_node) || !valid_token(decl_token))
+    if (!is_struct_literal(literal_node) ||
+        (!valid_token(decl_token) && !valid_instance(instance_i)))
         return;
+    uint constructor_tag; uint constructor_payload; uint constructor_decl;
+    checked_record_constructor_reference(literal_node, constructor_tag, constructor_payload, constructor_decl);
+    if (valid_token(constructor_decl) && constructor_decl != decl_token) return;
+    if (!valid_token(constructor_decl) && valid_instance(instance_i) &&
+        !external_type_identity_equal(instance_i, compact_hir_core[literal_node].token_start)) return;
     struct_lit_context_decl_token[literal_node] = decl_token;
     struct_lit_context_instance[literal_node] = instance_i;
 }
@@ -193,6 +220,8 @@ void publish_let_context(uint literal_node, uint stmt_node)
     uint decl_token = INVALID;
     uint instance_i = INVALID;
     HirPayload stmt = stmt_payload(stmt_node);
+    if (argument_context_root(stmt.c, active_compact_hir_count(),
+        compact_hir_core, compact_hir_payload) != literal_node) return;
     uint decl = stmt.b;
     if (valid_token(decl) &&
         context_for_type_ref(decl_type_ref_tag[decl], decl_type_ref_payload[decl], decl_token, instance_i))
@@ -207,6 +236,8 @@ void publish_let_context(uint literal_node, uint stmt_node)
 
 void publish_return_context(uint literal_node, uint stmt_node)
 {
+    if (argument_context_root(stmt_payload(stmt_node).b, active_compact_hir_count(),
+        compact_hir_core, compact_hir_payload) != literal_node) return;
     uint return_token = stmt_node < active_compact_hir_count()
         ? compact_hir_core[stmt_node].token_start
         : INVALID;
@@ -314,9 +345,14 @@ bool publish_array_element_context(uint literal_node, uint stmt_node)
         : INVALID;
     if (!valid_node(array_node) || array_stmt != stmt_node)
         return false;
+    HirPayload stmt = stmt_payload(stmt_node);
+    uint value = stmt.a == STMT_RECORD_KIND_LET ? stmt.c
+        : stmt.a == STMT_RECORD_KIND_RETURN ? stmt.b : INVALID;
+    if (argument_context_root(value, active_compact_hir_count(),
+        compact_hir_core, compact_hir_payload) != array_node) return false;
 
     uint array_instance = array_instance_for_context_stmt(stmt_node);
-    if (!valid_token(array_instance))
+    if (!valid_instance(array_instance))
         return false;
 
     uint decl_token = INVALID;
@@ -332,6 +368,8 @@ bool publish_array_element_context(uint literal_node, uint stmt_node)
     return true;
 }
 
+#include "../../checked_record_constructor_reference.slang"
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -345,18 +383,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint literal = i;
+    // An explicit application is the constructor's actual type. Receiving
+    // context validates it later and cannot replace its ordered arguments.
+    uint source_tag; uint source_payload; uint source_decl;
+    uint source_context_decl; uint source_context_instance;
+    if (checked_record_constructor_reference(literal, source_tag, source_payload, source_decl) &&
+        source_tag == TYPE_REF_INSTANCE &&
+        context_for_type_ref(source_tag, source_payload, source_context_decl, source_context_instance))
+    {
+        publish_context(literal, source_context_decl, source_context_instance);
+        return;
+    }
     uint stmt_node = literal < active_compact_hir_count()
         ? compact_hir_payload[literal].d
         : INVALID;
-    if (stmt_node >= active_compact_hir_count())
-        return;
+    if (stmt_node < active_compact_hir_count())
+    {
+        if (publish_array_element_context(i, stmt_node)) return;
+        uint kind = stmt_payload(stmt_node).a;
+        if (kind == STMT_RECORD_KIND_LET)
+            publish_let_context(i, stmt_node);
+        else if (kind == STMT_RECORD_KIND_RETURN)
+            publish_return_context(i, stmt_node);
+    }
+    if (valid_token(struct_lit_context_decl_token[i]) ||
+        valid_instance(struct_lit_context_instance[i])) return;
 
-    if (publish_array_element_context(i, stmt_node))
-        return;
-
-    uint kind = stmt_payload(stmt_node).a;
-    if (kind == STMT_RECORD_KIND_LET)
-        publish_let_context(i, stmt_node);
-    else if (kind == STMT_RECORD_KIND_RETURN)
-        publish_return_context(i, stmt_node);
+    // Call arguments and unannotated initializers can have no destination
+    // context. Seed their literal relation from the checked constructor type
+    // before nested field projection, validation, and expression inference.
+    // A bare generic declaration still requires arguments or checked context.
+    uint tag; uint payload; uint declaration;
+    if (!checked_record_constructor_reference(literal, tag, payload, declaration)) return;
+    uint decl_token; uint instance_i;
+    if (tag == TYPE_REF_INSTANCE &&
+        context_for_type_ref(tag, payload, decl_token, instance_i))
+        publish_context(literal, decl_token, instance_i);
+    else if (tag == TYPE_REF_SCALAR)
+        publish_context(literal, declaration, INVALID);
 }

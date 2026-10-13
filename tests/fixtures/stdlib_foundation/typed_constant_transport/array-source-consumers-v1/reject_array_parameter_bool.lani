@@ -1,0 +1,2 @@
+fn invalid<const B:bool>(value:[i32;B])->i32 { return 0; }
+fn main()->i32 { return 0; }

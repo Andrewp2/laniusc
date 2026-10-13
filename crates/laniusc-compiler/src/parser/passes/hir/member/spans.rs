@@ -56,6 +56,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMemberSpansPa
                 },
             ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("parent".into(), b.parent.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
+            ("out_emit_pos".into(), b.out_emit_pos.as_entire_binding()),
             (
                 "hir_semantic_dense_node".into(),
                 b.hir_semantic_dense_node.as_entire_binding(),

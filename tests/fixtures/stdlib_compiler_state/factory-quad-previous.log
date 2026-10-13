@@ -1,0 +1,15 @@
+
+running 1 test
+test four_argument_generic_factory_receiver_executes_on_x86 ... 
+thread 'four_argument_generic_factory_receiver_executes_on_x86' (573348) panicked at tests/stdlib_option_bool_execution.rs:219:6:
+compile four scalar generic arguments and the five-word enum result: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 5, column: 43, length: 8, byte_start: Some(107), byte_end: Some(115), source_line: Some("    if (core::factory_quad::four_values().checksum() != 257) { return 1; }"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    four_argument_generic_factory_receiver_executes_on_x86
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.90s
+

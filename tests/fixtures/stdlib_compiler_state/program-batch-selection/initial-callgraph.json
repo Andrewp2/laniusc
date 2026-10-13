@@ -1,0 +1,173 @@
+[
+  {
+    "shader": "14_validate_contexts",
+    "bytes": 143040,
+    "functions": 96,
+    "stored_instructions": 9056,
+    "hypothetical_fully_inlined_instructions": 924850,
+    "largest": [
+      [
+        "%main",
+        924850
+      ],
+      [
+        "%pev_batch_validate_contexts",
+        924817
+      ],
+      [
+        "%pev_validate_context",
+        916667
+      ],
+      [
+        "%pev_equal_admitted_goals",
+        250389
+      ],
+      [
+        "%pev_admit_and_hash_goal",
+        200991
+      ],
+      [
+        "%pev_equal_admitted_goal_roots",
+        125143
+      ],
+      [
+        "%scoped_type_refs_equal",
+        123012
+      ],
+      [
+        "%pev_hash_root",
+        98501
+      ],
+      [
+        "%scoped_type_ref_hash",
+        63436
+      ],
+      [
+        "%pev_admit_root",
+        33417
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        33407
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        28102
+      ]
+    ]
+  },
+  {
+    "shader": "17_select_obligations",
+    "bytes": 113080,
+    "functions": 84,
+    "stored_instructions": 7150,
+    "hypothetical_fully_inlined_instructions": 544261,
+    "largest": [
+      [
+        "%main",
+        544261
+      ],
+      [
+        "%pev_batch_select_obligations",
+        544228
+      ],
+      [
+        "%pev_select_obligation",
+        542265
+      ],
+      [
+        "%pev_select_assumption",
+        257010
+      ],
+      [
+        "%pev_select_catalog_implementation",
+        255442
+      ],
+      [
+        "%pev_equal_admitted_goals",
+        250389
+      ],
+      [
+        "%pev_equal_admitted_goal_roots",
+        125143
+      ],
+      [
+        "%scoped_type_refs_equal",
+        123012
+      ],
+      [
+        "%scoped_constant_length",
+        12709
+      ],
+      [
+        "%scoped_constant_length_0",
+        12709
+      ],
+      [
+        "%ProgramEvidenceTypeGraph_substitute_type_parameter",
+        11709
+      ],
+      [
+        "%ProgramEvidenceTypeGraph_substitute_constant_parameter",
+        11224
+      ]
+    ]
+  },
+  {
+    "shader": "32_admit_batch_rows",
+    "bytes": 201544,
+    "functions": 122,
+    "stored_instructions": 13102,
+    "hypothetical_fully_inlined_instructions": 678515,
+    "largest": [
+      [
+        "%main",
+        678515
+      ],
+      [
+        "%pev_batch_admit_rows",
+        678469
+      ],
+      [
+        "%pev_admit_batch_row",
+        673416
+      ],
+      [
+        "%pev_admit_batch_call",
+        189795
+      ],
+      [
+        "%pev_admit_batch_context",
+        182135
+      ],
+      [
+        "%pev_admit_batch_environment",
+        147893
+      ],
+      [
+        "%pev_admit_batch_evidence",
+        72958
+      ],
+      [
+        "%pev_admit_environment",
+        50388
+      ],
+      [
+        "%pev_admit_root",
+        33417
+      ],
+      [
+        "%pev_admit_root_with_graph",
+        33407
+      ],
+      [
+        "%pev_admit_reference_leaf",
+        28102
+      ],
+      [
+        "%pev_admit_batch_obligation",
+        22250
+      ]
+    ]
+  }
+]

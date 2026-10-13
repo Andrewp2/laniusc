@@ -1,0 +1,29 @@
+fn main() -> i32 {
+    let count: i32 = 0;
+    let last: i32 = 0;
+    for value in 2147483646.. {
+        count += 1;
+        last = value;
+        if (count > 2 || value < 0) { return 1; }
+        continue;
+    }
+    if (count != 2 || last != 2147483647) { return 2; }
+    let early: i32 = 0;
+    for value in .. {
+        early += 1;
+        if (value == 2) { break; }
+        if (early > 3) { return 3; }
+    }
+    if (early != 3) { return 4; }
+    let nested: i32 = 0;
+    for outer in 0..2 {
+        for inner in 2147483647.. {
+            if (inner != 2147483647) { return 5; }
+            nested += 1;
+            if (nested > 2) { return 7; }
+            continue;
+        }
+    }
+    if (nested != 2) { return 6; }
+    return 0;
+}

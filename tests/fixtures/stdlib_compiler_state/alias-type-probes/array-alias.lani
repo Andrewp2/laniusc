@@ -1,0 +1,2 @@
+type Id<T> = T;
+fn keep(value: Id<[i32; 2]>) -> Id<[i32; 2]> { return value; } fn main() -> i32 { let original: Id<[i32; 2]> = [19, 23]; let copied = keep(original); original[0] = 9; if (copied[0] != 19 || copied[1] != 23) { return 1; } return 0; }

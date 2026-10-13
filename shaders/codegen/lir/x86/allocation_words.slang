@@ -1,3 +1,5 @@
+import native_value_layout;
+import primitive_types;
 // Computes spill storage independently for every scheduled OptIR node. The
 // subsequent global prefix scan turns these widths into deterministic,
 // function-relative stack offsets; no invocation walks a function.
@@ -59,7 +61,7 @@ bool scalar_gpr_result(OptIrNodeCore core)
         core.type_id == 6u || core.type_id == 8u;
 }
 
-bool produces_f32_value(uint op)
+bool produces_float_value(uint op)
 {
     // Comparisons and logical operations keep their operand type in the IR,
     // but produce an integer Boolean. They must never enter the XMM domain.
@@ -129,9 +131,16 @@ uint parallel_register_location(uint row, uint position, uint total)
     OptIrNodeCore core = opt_ir_core[row];
     uint op = opt_ir_op(core);
     if (!produces_scalar_value(op)) return INVALID;
-    // A raw-parts slice is a pointer-and-length pair even when its source
-    // type tag looks scalar. Its emitter needs three adjacent stack slots:
-    // one result address and two payload words. Never assign it a GPR.
+    if (op == SEMANTIC_LIR_OP_PLACE_LOAD) return INVALID;
+    // A direct descriptor needs adjacent stack slots even when its final
+    // consumer is RETURN. The single-register return shortcut below cannot
+    // represent the length component.
+    if (core.type_id == SEMANTIC_LIR_TY_STRING ||
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
+        return INVALID;
+    // A raw-parts slice has three components even when its source type tag
+    // looks scalar. Its emitter needs four adjacent stack slots:
+    // one result address and three payload words. Never assign it a GPR.
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
         intrinsic_slice_from_raw_parts(opt_ir_operands[row].a))
         return INVALID;
@@ -187,7 +196,7 @@ uint parallel_register_location(uint row, uint position, uint total)
     uint function_id = function_for_node(row);
     if (function_id >= gParams.function_capacity) return INVALID;
 
-    if (core.type_id == X86_LIR_TY_FLOAT && produces_f32_value(op))
+    if (scalar_is_float(core.type_id) && produces_float_value(op))
     {
         if (last - position >= 8u ||
             interval_crosses_call(position, last, total))
@@ -219,6 +228,7 @@ uint aggregate_copy_word_count(uint row, uint total, uint function_total)
         operands.b >= total)
         return 0u;
     OptIrNodeCore value_core = opt_ir_core[operands.b];
+    if (x86_direct_array_pair(value_core)) return 0u;
     OptIrNodeOperands value_operands = opt_ir_operands[operands.b];
     uint call_words = opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL &&
         value_operands.a < function_total
@@ -249,6 +259,14 @@ uint spill_word_count(uint row, uint total, uint function_total)
     OptIrNodeCore core = opt_ir_core[row];
     OptIrNodeOperands operands = opt_ir_operands[row];
     uint op = opt_ir_op(core);
+    if (op == SEMANTIC_LIR_OP_PLACE_STORE) return 0u;
+    if (op == SEMANTIC_LIR_OP_PLACE_LOAD)
+    {
+        if ((core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u) return NATIVE_SLICE_WORDS;
+        if ((core.flags & SEMANTIC_LIR_FLAG_PLACE_VIEW) != 0u) return 1u;
+        if (core.type_id == SEMANTIC_LIR_TY_STRING) return 2u;
+        return x86_semantic_type_is_aggregate(core) ? 1u + max(core.value_word_count, 1u) : 1u;
+    }
     if (op == SEMANTIC_LIR_OP_VALUE_SET || op == SEMANTIC_LIR_OP_STORE)
     {
         uint words = aggregate_copy_word_count(row, total, function_total);
@@ -256,13 +274,19 @@ uint spill_word_count(uint row, uint total, uint function_total)
     }
     if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
         return 1u + aggregate_new_word_count(core, operands);
+    if (op == SEMANTIC_LIR_OP_AGGREGATE_COPY)
+        return 1u + core.value_word_count;
+    if (core.type_id == SEMANTIC_LIR_TY_STRING && produces_scalar_value(op))
+        return 2u;
     if (op == SEMANTIC_LIR_OP_CONST_STRING ||
-        (op == SEMANTIC_LIR_OP_VALUE_GET &&
+        ((op == SEMANTIC_LIR_OP_VALUE_GET ||
+          (op == SEMANTIC_LIR_OP_LOAD &&
+           (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)) &&
          core.type_id == SEMANTIC_LIR_TY_STRING))
         return 2u;
     if (op == SEMANTIC_LIR_OP_VALUE_GET &&
         (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
-        return 2u;
+        return NATIVE_SLICE_WORDS;
     if (op == SEMANTIC_LIR_OP_CALL)
     {
         uint words = operands.a < function_total
@@ -279,7 +303,7 @@ uint spill_word_count(uint row, uint total, uint function_total)
                 operands.a == INTRINSIC_I32_SLICE_DATA_PTR ||
                 operands.a == INTRINSIC_STRING_DATA_PTR) ? 1u :
             intrinsic_slice_from_raw_parts(operands.a) ?
-                3u : 0u;
+                1u + NATIVE_SLICE_WORDS : 0u;
     return produces_scalar_value(op) ? 1u : 0u;
 }
 

@@ -1,0 +1,11 @@
+{
+  "independent_unit_probes": "Both fail with LNC0021 detail 2: imported trait header unresolved. Confirmed again through existing native driver.",
+  "interface_assertion": "Not reached: standalone modules test times out during cold pipeline initialization at 60s and 95s; parser initialization 33.472 seconds in timed attempt. Do not classify as assertion failure.",
+  "source_inspection": "Trait signature flags allocate zero generic edges; method export only includes inherent methods.",
+  "commands_bounded_seconds": [
+    25,
+    95,
+    105,
+    22
+  ]
+}

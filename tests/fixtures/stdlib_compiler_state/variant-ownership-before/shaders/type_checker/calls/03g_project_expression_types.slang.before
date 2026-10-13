@@ -1,0 +1,48 @@
+// Publish stable full expression references before dependent generic matching.
+import hir_records;
+import hir_expr_semantics;
+import type_checker.checked_index_reference;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.scoped_type_equality;
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
+StructuredBuffer<uint> call_result_instance;
+RWStructuredBuffer<uint> call_inference_result_tag;
+RWStructuredBuffer<uint> call_inference_result_payload;
+RWStructuredBuffer<uint> call_inference_state;
+#include "../inference_expression_reference.slang"
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint node = dtid.x + dtid.y * 16776960u;
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint capacity; uint stride;
+    call_inference_result_tag.GetDimensions(capacity, stride);
+    if (node >= count || node >= capacity) return;
+    uint kind = compact_hir_core[node].kind;
+    if (kind != 14u && kind != 16u && kind != 17u && kind != 20u &&
+        kind != 21u && kind != 22u && kind != 23u && kind != 28u &&
+        kind != 33u && kind != 34u) return;
+    uint tag; uint payload;
+    if (!inference_value_reference(node, tag, payload)) return;
+    uint previous_tag = call_inference_result_tag[node];
+    uint previous_payload = call_inference_result_payload[node];
+    bool changed = !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+        previous_tag, previous_payload, 0xffffffffu, tag, payload, 0xffffffffu,
+        checked_type_capacity(), gParams.n_tokens);
+    call_inference_result_tag[node] = tag;
+    call_inference_result_payload[node] = payload;
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "label": "variant-path-local-call",
+    "compile_status": 1,
+    "stdout": "",
+    "stderr": "error[LNC0005]: unresolved identifier\n --> tests/fixtures/stdlib_compiler_state/variant-path-local-call.lani:1:81\n  |\n1 | enum Maybe<T> { Value(T), Missing } fn main() -> i32 { let value: Maybe<bool> = Maybe::Missing(); return match (value) { Missing -> 42, _ -> 1 }; }\n  |                                                                                 ^^^^^ not found in this scope\n     = note: declare the value before using it or import its defining module\n"
+  },
+  {
+    "label": "variant-path-local-payload",
+    "compile_status": 1,
+    "stdout": "",
+    "stderr": "error[LNC0005]: unresolved identifier\n --> tests/fixtures/stdlib_compiler_state/variant-path-local-payload.lani:1:68\n  |\n1 | enum Maybe<T> { Value(T), Missing } fn main() -> i32 { let value = Maybe::Value([41,43]); return match(value) { Value(v) -> v[0]+v[1]-42, _ -> 1 }; }\n  |                                                                    ^^^^^ not found in this scope\n     = note: declare the value before using it or import its defining module\n"
+  },
+  {
+    "label": "variant-path-imported-unit",
+    "compile_status": 1,
+    "stdout": "",
+    "stderr": "error[LNC0005]: unresolved identifier\n --> <source pack file 0>:1:85\n  |\n1 | import core::option; fn main() -> i32 { let value: core::option::Option<[i32; 2]> = core::option::None; return match (value) { core::option::None -> 42, _ -> 1 }; }\n  |                                                                                     ^^^^ not found in this scope\n     = note: declare the value before using it or import its defining module\n"
+  },
+  {
+    "label": "variant-path-imported-qualified",
+    "compile_status": 1,
+    "stdout": "",
+    "stderr": "error[LNC0005]: unresolved identifier\n --> <source pack file 0>:1:81\n  |\n1 | import core::option; fn main() -> i32 { let value: core::option::Option<bool> = core::option::Option::None(); return match (value) { core::option::None -> 42, _ -> 1 }; }\n  |                                                                                 ^^^^ not found in this scope\n     = note: declare the value before using it or import its defining module\n"
+  },
+  {
+    "label": "variant-path-distinct-parents",
+    "compile_status": 1,
+    "stdout": "",
+    "stderr": "error[LNC0016]: syntax error\n --> tests/fixtures/stdlib_compiler_state/variant-path-distinct-parents.lani:1:45\n  |\n1 | enum A<T> { Value(T), Missing } enum B<T> { Value(T), Missing } fn main() -> i32 { let first: A<bool> = A::Missing(); let second = B::Value(42); return match(second) { B::Value(v) -> v, _ -> 1 }; }\n  |                                             ^^^^^ invalid syntax here\n"
+  }
+]

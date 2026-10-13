@@ -1,0 +1,1 @@
+fn main() -> i32 { let value: u64 = 18_446_744_073_709_551_616; if (value == 0) { return 1; } return 0; }

@@ -28,6 +28,7 @@ pub(in crate::parser) struct TokenFrontendPasses {
     pub tokens_match_pattern_02_apply: PassData,
     pub tokens_delimiter_match_01_depth_blocks: PassData,
     pub tokens_delimiter_match_02_build_min_tree: PassData,
+    pub tokens_bracket_01_kinds: PassData,
     pub tokens_bracket_match_03_pair_pse: PassData,
     pub tokens_brace_match_03_pair_pse: PassData,
     pub tokens_to_kinds: PassData,
@@ -126,6 +127,10 @@ impl TokenFrontendPasses {
             tokens_delimiter_match_02_build_min_tree: pass!(
                 "parser_tokens_delimiter_match_02_build_min_tree",
                 "parser/tokens/delimiter_match/02_build_min_tree"
+            ),
+            tokens_bracket_01_kinds: pass!(
+                "parser_tokens_bracket_01_kinds",
+                "parser/tokens/bracket/01_kinds"
             ),
             tokens_bracket_match_03_pair_pse: pass!(
                 "parser_tokens_bracket_match_03_pair_pse",

@@ -1,0 +1,6 @@
+import core::methods;
+fn main() -> i32 {
+    let owner: core::methods::Boxed<i32> = core::methods::Boxed { value: 9 };
+    if (!owner.keep(true) || owner.keep(42) != 42) { return 1; }
+    return 0;
+}

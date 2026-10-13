@@ -1,0 +1,174 @@
+diff --git a/crates/laniusc-compiler/src/parser/buffers.rs b/crates/laniusc-compiler/src/parser/buffers.rs
+index ef2a4d6..91a78a7 100644
+--- a/crates/laniusc-compiler/src/parser/buffers.rs
++++ b/crates/laniusc-compiler/src/parser/buffers.rs
+@@ -177,6 +177,7 @@ impl ParserBuffers {
+                 n_tokens: self.token_input_capacity,
+                 n_blocks: self.token_delimiter_n_blocks,
+                 scan_step: 0,
++                match_tree_leaf_base: self.token_brace_match_min_tree_base,
+             },
+         );
+         write_uniform(
+@@ -184,6 +185,7 @@ impl ParserBuffers {
+             &self.token_brace_match_params,
+             &TokenBraceMatchParams {
+                 n_tokens: self.token_input_capacity,
++                match_tree_leaf_base: self.token_brace_match_min_tree_base,
+             },
+         );
+         write_uniform(
+@@ -579,6 +581,7 @@ impl ParserBuffers {
+                 n_tokens: token_input_capacity,
+                 n_blocks: token_delimiter_n_blocks,
+                 scan_step: 0,
++                match_tree_leaf_base: next_power_of_two_u32(token_delimiter_n_blocks).max(1),
+             },
+         );
+         let token_block_scan_plan =
+@@ -665,6 +668,7 @@ impl ParserBuffers {
+             "parser.token_brace_match.params",
+             &TokenBraceMatchParams {
+                 n_tokens: token_input_capacity,
++                match_tree_leaf_base: next_power_of_two_u32(token_delimiter_n_blocks).max(1),
+             },
+         );
+         let token_brace_match_depth = graph_buffer!(i32, "brace_match_depth");
+diff --git a/crates/laniusc-compiler/src/parser/buffers/model.rs b/crates/laniusc-compiler/src/parser/buffers/model.rs
+index 551f066..cf58ba9 100644
+--- a/crates/laniusc-compiler/src/parser/buffers/model.rs
++++ b/crates/laniusc-compiler/src/parser/buffers/model.rs
+@@ -28,6 +28,8 @@ pub struct TokenDelimiterParams {
+     pub n_tokens: u32,
+     pub n_blocks: u32,
+     pub scan_step: u32,
++    /// Physical delimiter-tree layout retained across differently sized jobs.
++    pub match_tree_leaf_base: u32,
+ }
+ 
+ #[repr(C)]
+@@ -35,6 +37,8 @@ pub struct TokenDelimiterParams {
+ /// Uniform parameters for token brace/delimiter matching passes.
+ pub struct TokenBraceMatchParams {
+     pub n_tokens: u32,
++    /// Tree leaves retain their allocated position when n_tokens shrinks.
++    pub match_tree_leaf_base: u32,
+ }
+ 
+ #[repr(C)]
+diff --git a/shaders/parser/tokens/brace/match/03_pair_pse.slang b/shaders/parser/tokens/brace/match/03_pair_pse.slang
+index c7edf4c..34da992 100644
+--- a/shaders/parser/tokens/brace/match/03_pair_pse.slang
++++ b/shaders/parser/tokens/brace/match/03_pair_pse.slang
+@@ -3,6 +3,7 @@ import segment_tree;
+ struct Params
+ {
+     uint n_tokens;
++    uint match_tree_leaf_base;
+ };
+ 
+ ConstantBuffer<Params> gParams;
+@@ -69,8 +70,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+-        return range_search_leaf_base_for_block_count(n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)
+diff --git a/shaders/parser/tokens/bracket/match/03_pair_pse.slang b/shaders/parser/tokens/bracket/match/03_pair_pse.slang
+index d56c1bf..f2d6d6a 100644
+--- a/shaders/parser/tokens/bracket/match/03_pair_pse.slang
++++ b/shaders/parser/tokens/bracket/match/03_pair_pse.slang
+@@ -3,6 +3,7 @@ import segment_tree;
+ struct Params
+ {
+     uint n_tokens;
++    uint match_tree_leaf_base;
+ };
+ 
+ ConstantBuffer<Params> gParams;
+@@ -170,8 +171,7 @@ public struct AngleDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+-        return range_search_leaf_base_for_block_count(n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)
+@@ -273,8 +273,7 @@ public struct BracketDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+-        return range_search_leaf_base_for_block_count(n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)
+@@ -315,8 +314,7 @@ public struct ParenDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+-        return range_search_leaf_base_for_block_count(n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)
+@@ -357,8 +355,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+-        return range_search_leaf_base_for_block_count(n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)
+diff --git a/shaders/parser/tokens/match/pattern/01_local.slang b/shaders/parser/tokens/match/pattern/01_local.slang
+index cae8dc1..9f329c6 100644
+--- a/shaders/parser/tokens/match/pattern/01_local.slang
++++ b/shaders/parser/tokens/match/pattern/01_local.slang
+@@ -12,6 +12,7 @@ struct Params
+     uint n_tokens;
+     uint n_blocks;
+     uint scan_step;
++    uint match_tree_leaf_base;
+ };
+ 
+ ConstantBuffer<Params> gParams;
+@@ -99,7 +100,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        return range_search_leaf_base_for_block_count(gParams.n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)
+diff --git a/shaders/parser/tokens/match/pattern/02_apply.slang b/shaders/parser/tokens/match/pattern/02_apply.slang
+index 9118583..aa15b72 100644
+--- a/shaders/parser/tokens/match/pattern/02_apply.slang
++++ b/shaders/parser/tokens/match/pattern/02_apply.slang
+@@ -8,6 +8,7 @@ struct Params
+     uint n_tokens;
+     uint n_blocks;
+     uint scan_step;
++    uint match_tree_leaf_base;
+ };
+ 
+ ConstantBuffer<Params> gParams;
+@@ -98,7 +99,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
+ 
+     public static uint leaf_base()
+     {
+-        return range_search_leaf_base_for_block_count(gParams.n_blocks);
++        return gParams.match_tree_leaf_base;
+     }
+ 
+     public static int leaf_value(uint block)

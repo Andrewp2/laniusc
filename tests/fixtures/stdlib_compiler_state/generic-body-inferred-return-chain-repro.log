@@ -1,0 +1,26 @@
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+[typecheck.call_inference] round=0 changed=3
+[typecheck.call_inference] round=1 changed=2
+[typecheck.call_inference] round=2 changed=0
+sample=0 ms=163.955
+entry=tests/fixtures/stdlib_foundation/repro_generic_body_inferred_return_chain.lani rebuild_entry=false warmups=1 iters=1 output_bytes=10508 min_ms=163.955 median_ms=163.955 avg_ms=163.955 max_ms=163.955 output_verified=true

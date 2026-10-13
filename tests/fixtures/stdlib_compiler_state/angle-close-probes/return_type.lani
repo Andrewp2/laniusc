@@ -1,0 +1,1 @@
+import core::closes; fn keep(v: core::closes::Id<i32>) -> core::closes::Id<core::closes::Id<i32>> { return v; } fn main() -> i32 { return keep(42) - 42; }

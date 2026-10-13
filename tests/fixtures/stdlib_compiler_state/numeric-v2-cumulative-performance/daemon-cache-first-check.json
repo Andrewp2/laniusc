@@ -1,0 +1,11 @@
+{
+  "cache_change": "keep device pipeline cache alive for lazily created program pipelines",
+  "large_workload_attempt": "first-primer timeout resolved; warm-workspace gate still fails after six primers",
+  "latest_resource_counts": {
+    "buffers": 38,
+    "bind_groups": 19,
+    "compute_pipelines": 0
+  },
+  "latest_diagnostic_ms": 83.118137,
+  "measurement_scope": "diagnostic only; not accepted canonical warm-workspace benchmark"
+}

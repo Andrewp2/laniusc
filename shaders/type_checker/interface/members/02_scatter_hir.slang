@@ -1,12 +1,17 @@
+import semantic_interface_layout;
 // Scatter compact parameters, fields, and enum variants by semantic ordinal.
 import hir_records;
 import atomics;
+import type_checker.interface.method_parameters;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> compact_variant_count;
@@ -31,9 +36,9 @@ RWStructuredBuffer<uint> interface_member_words;
 RWStructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_member_written;
 RWStructuredBuffer<uint> interface_status;
-static const uint INVALID=0xffffffffu, MEMBER_WORDS=11u;
-static const uint MEMBER_PARAMETER=1u, MEMBER_FIELD=4u, MEMBER_ENUM_VARIANT=5u, MEMBER_ASSOCIATED_METHOD=6u;
-static const uint METHOD_VIS_PUBLIC=1u, METHOD_SIGNATURE_INHERENT_IMPL=4u;
+static const uint INVALID=0xffffffffu, MEMBER_WORDS=SEMANTIC_INTERFACE_MEMBER_WORDS;
+static const uint MEMBER_PARAMETER=1u, MEMBER_FIELD=4u, MEMBER_ENUM_VARIANT=5u;
+static const uint MEMBER_TRAIT_METHOD=7u;
 static const uint WG_SIZE=256u, MAX_GROUPS_X=65535u;
 uint linear_thread_id(uint3 d){return d.x+d.y*MAX_GROUPS_X*WG_SIZE;}
 void fail(uint d){atomic_u32_or(interface_status,0u,8192u);atomic_u32_min(interface_status,1u,d);}
@@ -42,7 +47,7 @@ void emit(uint owner,uint kind,uint ordinal,uint name_id,uint type_index,uint va
  uint dst=interface_member_prefix[owner]+ordinal; uint base=dst*MEMBER_WORDS;
  interface_member_words[base+0u]=owner;interface_member_words[base+1u]=kind;interface_member_words[base+2u]=ordinal;
  interface_member_words[base+3u]=0u;interface_member_words[base+4u]=0u;interface_member_words[base+5u]=0u;interface_member_words[base+6u]=0u;
- interface_member_words[base+7u]=type_index;interface_member_words[base+8u]=value_lo;interface_member_words[base+9u]=value_hi;interface_member_words[base+10u]=INVALID;
+ interface_member_words[base+7u]=type_index;interface_member_words[base+8u]=value_lo;interface_member_words[base+9u]=value_hi;interface_member_words[base+10u]=INVALID;interface_member_words[base+11u]=INVALID;
  uint prior=atomic_u32_compare_exchange(interface_member_written,dst,0u,1u);if(prior!=0u){fail(detail);return;}
  interface_member_name_id[dst]=name_id;
 }
@@ -53,11 +58,9 @@ uint method_owner(uint row)
  if(row>=count)return INVALID;
  HirMethodCore core=compact_method_cores[row];
  HirMethodSignature sig=compact_method_signatures[row];
- if(((sig.metadata>>16u)&METHOD_SIGNATURE_INHERENT_IMPL)==0u ||
-    (sig.metadata&0xffffu)!=METHOD_VIS_PUBLIC)return INVALID;
- uint receiver_type=sig.impl_receiver_type;
- uint local=receiver_type<gParams.hir_capacity?interface_type_local_decl_by_hir[receiver_type]:INVALID;
- return local<gParams.decl_capacity?public_decl_index_by_local[local]:INVALID;
+ uint trait_owner=interface_trait_method_owner(core,gParams.hir_capacity,
+     compact_hir_core,compact_hir_payload,public_decl_index_by_hir);
+ return trait_owner;
 }
 [shader("compute")][numthreads(256,1,1)]
 void main(uint3 dtid:SV_DispatchThreadID)
@@ -73,6 +76,26 @@ void main(uint3 dtid:SV_DispatchThreadID)
    uint name_id=param.name_token<gParams.token_capacity?name_id_by_token[param.name_token]:INVALID;
    uint type_index=param.type_node<gParams.hir_capacity?interface_type_index_by_hir[param.type_node]:INVALID;
    if(name_id==INVALID||type_index==INVALID)fail(row);else emit(owner,MEMBER_PARAMETER,param.ordinal+generic_count,name_id,type_index,0u,0u,row);
+  }
+  else
+  {
+   uint method=interface_method_for_function(param.owner,
+       min(compact_method_count[0u],gParams.hir_capacity),compact_method_cores);
+   if(method!=INVALID)
+   {
+    HirMethodSignature signature=compact_method_signatures[method];
+    uint parameter_ordinal=interface_method_parameter_ordinal(signature,param.ordinal);
+    uint method_owner_id=method_owner(method);
+    if(method_owner_id<gParams.decl_capacity&&parameter_ordinal!=INVALID)
+    {
+     uint name_id=param.name_token<gParams.token_capacity?name_id_by_token[param.name_token]:INVALID;
+     uint type_index=param.type_node<gParams.hir_capacity?interface_type_index_by_hir[param.type_node]:INVALID;
+     uint ordinal=atomic_u32_add(interface_member_cursor,method_owner_id,1u);
+     if(name_id==INVALID||type_index==INVALID)fail(row);
+     else emit(method_owner_id,MEMBER_PARAMETER,ordinal,name_id,type_index,
+         parameter_ordinal,INTERFACE_METHOD_SYMBOL|param.owner,row);
+    }
+   }
   }
  }
  if(row<min(compact_field_count[0u],gParams.hir_capacity))
@@ -111,6 +134,8 @@ void main(uint3 dtid:SV_DispatchThreadID)
   uint owner=method_owner(row);
   if(owner<gParams.decl_capacity)
   {
+   bool trait_method=interface_trait_method_owner(method,gParams.hir_capacity,
+       compact_hir_core,compact_hir_payload,public_decl_index_by_hir)!=INVALID;
    uint method_token=method.name_token;
    uint name_id=method_token<gParams.token_capacity?name_id_by_token[method_token]:INVALID;
    uint return_hir=method.node<gParams.hir_capacity?compact_fn_return_type[method.node]:INVALID;
@@ -118,18 +143,38 @@ void main(uint3 dtid:SV_DispatchThreadID)
    uint receiver_type_index=signature.impl_receiver_type<gParams.hir_capacity
        ?interface_type_index_by_hir[signature.impl_receiver_type]:INVALID;
    uint param_count=compact_param_ranges[method.node].count;
-   if(signature.receiver_mode!=0u&&param_count!=0u)param_count-=1u;
+   if((signature.receiver_mode==1u||signature.receiver_mode==2u)&&param_count!=0u)param_count-=1u;
    uint ordinal=atomic_u32_add(interface_member_cursor,owner,1u);
    uint generic_count=interface_generic_type_count_by_decl[owner]+interface_generic_const_count_by_decl[owner];
    if(ordinal<generic_count) { fail(row); return; }
-   ordinal = ordinal;
-   if(name_id==INVALID||type_index==INVALID||receiver_type_index==INVALID)fail(row);
+   if(name_id==INVALID||type_index==INVALID||(!trait_method&&receiver_type_index==INVALID))fail(row);
    // Method symbols occupy a namespace disjoint from declaration indices. The
    // compact method HIR row is stable within the unit and is carried through
    // the persisted member record for dependency calls and object definitions.
    else
    {
-    emit(owner,MEMBER_ASSOCIATED_METHOD,ordinal,name_id,type_index,param_count,0x80000000u|method.node,row);
+    uint types=type_decl_generic_param_count_by_owner_token[method_token];
+    uint constants=type_decl_const_param_count_by_owner_token[method_token];
+    if(!trait_method)
+    {
+     if(method.impl_node>=gParams.hir_capacity){fail(row);return;}
+     uint impl_token=hir_generic_owner_token(compact_hir_core[method.impl_node],
+         compact_hir_payload[method.impl_node],gParams.token_capacity);
+     if(impl_token>=gParams.token_capacity){fail(row);return;}
+     types+=type_decl_generic_param_count_by_owner_token[impl_token];
+     constants+=type_decl_const_param_count_by_owner_token[impl_token];
+    }
+    if(types>32u||constants>32u||param_count>65535u){fail(row);return;}
+    uint requirements=param_count|(types<<16u)|(constants<<22u);
+    if(trait_method)
+    {
+     uint visibility=signature.metadata&0xffffu;
+     if(signature.receiver_mode>3u||visibility>1u){fail(row);return;}
+     requirements|=(signature.receiver_mode<<28u)|(visibility<<30u);
+     receiver_type_index=INVALID;
+    }
+    emit(owner,MEMBER_TRAIT_METHOD,
+        ordinal,name_id,type_index,requirements,INTERFACE_METHOD_SYMBOL|method.node,row);
     interface_member_words[(interface_member_prefix[owner]+ordinal)*MEMBER_WORDS+10u]=receiver_type_index;
    }
   }

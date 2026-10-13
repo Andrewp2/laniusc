@@ -8,6 +8,7 @@ StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> interface_type_count;
+StructuredBuffer<uint> interface_complete_type_count;
 StructuredBuffer<uint> interface_type_edge_total;
 StructuredBuffer<uint> interface_complete_edge_total;
 StructuredBuffer<uint> interface_signature_edge_count;
@@ -62,7 +63,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     ? interface_type_index_by_hir[type_node]
                     : min(interface_type_count[0u], gParams.hir_capacity);
     }
-    if (target > gParams.hir_capacity)
+    if (target >= interface_complete_type_count[0u])
     {
         fail(persisted);
         return;

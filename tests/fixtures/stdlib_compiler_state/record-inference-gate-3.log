@@ -1,0 +1,24 @@
+
+running 19 tests
+test concrete_nominal_parameters_preserve_all_nested_type_arguments ... ok
+test concrete_nominal_parameters_reject_incompatible_arguments ... ok
+test concrete_nominal_parameters_reject_incompatible_returns ... ok
+test concrete_nominal_parameters_retain_complete_return_types ... ok
+test direct_record_literal_generic_arguments_reject_type_and_field_conflicts ... ok
+test explicit_record_constructor_actual_arguments_reject_context_conflicts ... ok
+test explicit_record_constructor_composed_types_execute ... ok
+test generic_record_literal_receiving_contexts_reject_conflicting_fields ... ok
+test generic_reference_results_preserve_referent_identity ... ok
+test generic_reference_types_reject_incompatible_referents_and_owned_values ... ok
+test imported_generic_record_fields_reject_wrong_types_and_names ... ok
+test imported_reference_fields_preserve_pointer_layout_and_aliases ... ok
+test nominal_constant_arguments_reject_equal_width_identity_conflicts ... ok
+test ordinary_aggregate_value_parameters_preserve_caller_storage ... ok
+test ordinary_reference_results_preserve_referent_identity ... ok
+test reference_receivers_preserve_identity_through_method_calls ... ok
+test structural_impl_receivers_execute_imported_compositions ... ok
+test structural_impl_receivers_execute_local_compositions ... ok
+test structural_impl_receivers_execute_ordinary_array_patterns ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 253 filtered out; finished in 7.11s
+

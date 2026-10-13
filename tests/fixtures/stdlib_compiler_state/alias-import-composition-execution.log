@@ -1,0 +1,38 @@
+
+running 6 tests
+test alias_qualified_constructors_preserve_symbolic_and_constant_domains ... ok
+test generic_aliases_substitute_reordered_record_parameters ... ok
+test imported_alias_qualified_constructors_preserve_parent_arguments ... GPU source-pack type-check rejection: token=16 code=UnresolvedIdent detail=5
+
+thread 'imported_alias_qualified_constructors_preserve_parent_arguments' (92541) panicked at tests/compiler_generic_types_execution.rs:161:29:
+imported qualifier alias: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0005", title: "unresolved identifier", category: "name resolution", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0005", message: "unresolved identifier", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 2, column: 32, length: 4, byte_start: Some(53), byte_end: Some(57), source_line: Some("fn main() -> i32 { let value = core::aliases::Maybe<i32>::Some(42); return match (value) { core::aliases::Choice::Some(inner) -> inner - 42, _ -> 1 }; }"), message: "not found in this scope" }), help: None, notes: ["declare the value before using it or import its defining module"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test imported_generic_aliases_preserve_nested_local_and_imported_compositions ... GPU parser rejection: error_pos=0 code=4 detail=4294967271 steps=2063 emit_len=0 semantic_kinds=Some([0, 96, 1, 114, 114])
+
+thread 'imported_generic_aliases_preserve_nested_local_and_imported_compositions' (92567) panicked at tests/compiler_generic_types_execution.rs:161:29:
+nested imported alias compositions: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 4, column: 60, length: 2, byte_start: Some(98), byte_end: Some(100), source_line: Some("type Local<T> = core::aliases::Id<core::aliases::Fixed<T, 2>>;"), message: "unexpected `>>`" }), help: None, notes: [] })
+FAILED
+test imported_generic_aliases_preserve_symbolic_type_and_constant_environments ... ok
+test imported_generic_aliases_reject_type_length_and_header_conflicts ... GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=39 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=16 code=UnknownType detail=22
+
+thread 'imported_generic_aliases_reject_type_length_and_header_conflicts' (93554) panicked at tests/compiler_generic_types_execution.rs:349:9:
+let value: core::aliases::Id<Unknown> = 42;: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0007", title: "unknown type", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0007", message: "unknown type", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 53, length: 4, byte_start: Some(52), byte_end: Some(56), source_line: Some("import core::aliases; fn main() -> i32 { let value: core::aliases::Id<Unknown> = 42; return 0; }"), message: "type not found" }), help: None, notes: ["declare the type before using it or import its defining module"] })
+FAILED
+
+failures:
+
+failures:
+    imported_alias_qualified_constructors_preserve_parent_arguments
+    imported_generic_aliases_preserve_nested_local_and_imported_compositions
+    imported_generic_aliases_reject_type_length_and_header_conflicts
+
+test result: FAILED. 3 passed; 3 failed; 0 ignored; 0 measured; 306 filtered out; finished in 4.00s
+

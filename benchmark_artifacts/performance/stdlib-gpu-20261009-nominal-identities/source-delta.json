@@ -1,0 +1,32 @@
+{
+  "changed": [
+    "shaders/type_checker/calls/argument_value_reference.slang",
+    "shaders/type_checker/modules/10j_consume_value_enum_units.slang",
+    "shaders/type_checker/modules/10l3_finalize_value_enum_calls.slang",
+    "shaders/type_checker/modules/10l_consume_value_enum_calls.slang",
+    "shaders/type_checker/semantic/artifact/01c_generic_native_words.slang",
+    "shaders/type_checker/type/instances/01b_collect_named_instances.slang",
+    "tests/compiler_generic_types_execution.rs"
+  ],
+  "added": [
+    "tests/fixtures/stdlib_compiler_state/nominal-identity-overlap.lani",
+    "tests/fixtures/stdlib_compiler_state/nominal-identity-separated.lani",
+    "tests/fixtures/stdlib_compiler_state/nominal-imported-forward.lani",
+    "tests/fixtures/stdlib_compiler_state/nominal-unannotated-body-closure.lani",
+    "tests/fixtures/stdlib_foundation/generic_bare_nominal_body_closure.lani"
+  ],
+  "removed": [],
+  "shader_payloads_changed": [
+    "type_checker/calls/03a1_emit_generic_claims.reflect.json",
+    "type_checker/calls/03a1_emit_generic_claims.spv",
+    "type_checker/calls/03a_collect_row_args.reflect.json",
+    "type_checker/calls/03a_collect_row_args.spv",
+    "type_checker/modules/10j_consume_value_enum_units.reflect.json",
+    "type_checker/modules/10j_consume_value_enum_units.spv",
+    "type_checker/modules/10l3_finalize_value_enum_calls.spv",
+    "type_checker/modules/10l_consume_value_enum_calls.spv",
+    "type_checker/semantic/artifact/01c_generic_native_words.spv",
+    "type_checker/type/instances/01b_collect_named_instances.reflect.json",
+    "type_checker/type/instances/01b_collect_named_instances.spv"
+  ]
+}

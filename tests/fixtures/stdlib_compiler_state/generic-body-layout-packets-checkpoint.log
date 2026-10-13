@@ -1,0 +1,9 @@
+
+running 4 tests
+test type_checker::generic_body::tests::checked_packets_keep_zero_layouts_distinct_from_missing_layouts ... ok
+test type_checker::generic_body::tests::nominal_packets_keep_ordered_children_and_distinct_equal_width_types ... ok
+test type_checker::generic_body::tests::nominal_packets_preserve_nested_structural_arguments_and_arity_limit ... ok
+test type_checker::generic_body::tests::replay_keeps_complete_arguments_and_scopes_local_declarations ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 616 filtered out; finished in 0.00s
+

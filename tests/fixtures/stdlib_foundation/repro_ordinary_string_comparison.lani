@@ -1,0 +1,1 @@
+fn main() -> i32 { let words: [str; 2] = ["after", "tail"]; if (words[0] != "after") { return 1; } return 42; }

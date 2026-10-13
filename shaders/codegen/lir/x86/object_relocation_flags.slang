@@ -7,6 +7,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<OptIrNodeCore> opt_ir_core;
+StructuredBuffer<uint> target_lir_count;
 RWStructuredBuffer<uint> x86_object_relocation_flag;
 RWStructuredBuffer<uint> x86_object_symbol_flag;
 
@@ -19,7 +20,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint total = opt_ir_total[0u];
     if (row >= total) return;
-    uint op = opt_ir_op(opt_ir_core[semantic_schedule_order[row]]);
+    // Eliminated calls and calls inside removed inline bodies have no machine
+    // instruction to relocate. A placeholder here would patch the next row.
+    uint op = target_lir_count[row] != 0u
+        ? opt_ir_op(opt_ir_core[semantic_schedule_order[row]]) : SEMANTIC_LIR_OP_NOP;
     x86_object_relocation_flag[row] =
         op == SEMANTIC_LIR_OP_CALL_SYMBOL || op == SEMANTIC_LIR_OP_CONST_STRING ? 1u : 0u;
     x86_object_symbol_flag[row] = op == SEMANTIC_LIR_OP_CALL_SYMBOL ? 1u : 0u;

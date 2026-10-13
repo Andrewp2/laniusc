@@ -1,0 +1,12 @@
+struct Slot<T> { value: T, sentinel: i32 }
+enum Decision { Accept(bool), Reject }
+fn reject() -> Decision { return Reject(); }
+fn main() -> i32 {
+ let plain: Decision = reject();
+ let slot: Slot<Decision> = Slot { value: Reject(), sentinel: 97 };
+ slot.value = Accept(true);
+ let flag: bool = match (slot.value) { Accept(v) -> v, Reject -> false };
+ let other: bool = match (plain) { Accept(v) -> v, Reject -> false };
+ if (!flag || other || slot.sentinel != 97) { return 1; }
+ return 0;
+}

@@ -1,0 +1,4 @@
+module app::local;
+const VALUE:u32 = 1;
+fn value<const N:u32>()->u32 { return N; }
+fn main()->i32 { const VALUE:u32 = 2; let result:u32 = value<VALUE>(); return 0; }

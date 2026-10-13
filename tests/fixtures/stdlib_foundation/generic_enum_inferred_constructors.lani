@@ -1,0 +1,40 @@
+enum Maybe<T> { Value(T), Missing }
+enum Pair<A, B> { Have(A, B), Empty }
+struct Cell<T> { value: T }
+struct EmptyValue {}
+fn keep<T>(value: T) -> T { return value; }
+fn wrap<T>(value: T) -> Maybe<T> {
+    let inferred = Value(value);
+    return keep(inferred);
+}
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let number = Value(42);
+    let flag = Value(false);
+    let nested = Value(Value([41, 43]));
+    let got: i32 = match (number) { Value(v) -> v, Missing -> 0 };
+    let boolean: bool = match (flag) { Value(v) -> v, Missing -> true };
+    let inner: Maybe<[i32; 2]> = match (nested) { Value(v) -> v, Missing -> Missing() };
+    let values: [i32; 2] = match (inner) { Value(v) -> v, Missing -> [0, 0] };
+    if (got != 42 || boolean || values[0] != 41 || values[1] != 43) { return 1; }
+
+    let original: Cell<[i32; 2]> = Cell { value: [11, 22] };
+    let pair = Have(original, true);
+    original.value[0] = 33;
+    let fallback: Cell<[i32; 2]> = Cell { value: [0, 0] };
+    let copied: Cell<[i32; 2]> = match (pair) { Have(v, flag) -> v, Empty -> fallback };
+    if (copied.value[0] != 11 || copied.value[1] != 22 || original.value[0] != 33) { return 2; }
+
+    let data: [i32; 2] = [51, 61];
+    let alias = Value(view(data));
+    let slice: [i32] = match (alias) { Value(v) -> v, Missing -> view(data) };
+    slice[1] = 71;
+    if (data[0] != 51 || data[1] != 71) { return 3; }
+    let empty: [EmptyValue; 0] = [];
+    let absent = Value(empty);
+    let present: bool = match (absent) { Value(v) -> true, Missing -> false };
+    let replayed = wrap([31, 37]);
+    let replay_values: [i32; 2] = match (replayed) { Value(v) -> v, Missing -> [0, 0] };
+    if (!present || replay_values[0] != 31 || replay_values[1] != 37) { return 4; }
+    return 0;
+}

@@ -1,0 +1,25 @@
+fn unsigned(value: u64, other: u64) -> u64 { return value * other; }
+fn signed(value: i64, divisor: i64) -> i64 { return value / divisor; }
+fn main() -> i32 {
+    let word: u64 = 4294967296;
+    let maximum: u64 = 18446744073709551615;
+    let high_bit: u64 = 9223372036854775808;
+    if (!(maximum > high_bit) || !(high_bit > word) || maximum < word) { return 1; }
+    if (maximum + 1 != 0 || word - 1 != 4294967295) { return 2; }
+    if (unsigned(word, 3) != 12884901888 || unsigned(high_bit, 2) != 0) { return 3; }
+    if ((word | 7) != 4294967303 || (word ^ word) != 0 || (maximum & word) != word) { return 4; }
+    if ((word << 31) != high_bit || (high_bit >> 63) != 1 || (maximum >> 32) != 4294967295) { return 5; }
+    if (maximum / 4294967296 != 4294967295 || maximum % 4294967296 != 4294967295) { return 6; }
+    if (high_bit / 2 != 4611686018427387904) { return 7; }
+    let minimum: i64 = -9223372036854775808;
+    let signed_maximum: i64 = 9223372036854775807;
+    let negative: i64 = -10000000001;
+    if (!(minimum < negative) || !(negative < 0) || !(signed_maximum > 0)) { return 8; }
+    if ((minimum >> 63) != -1 || (negative >> 32) != -3) { return 9; }
+    if (signed(negative, 3) != -3333333333 || negative % 3 != -2) { return 10; }
+    if (-negative != 10000000001 || -minimum != minimum) { return 11; }
+    if (signed_maximum + 1 != minimum || minimum - 1 != signed_maximum) { return 12; }
+    let signed_word: i64 = 4294967296;
+    if ((signed_word << 31) != minimum || signed_word * 3 != 12884901888) { return 13; }
+    return 0;
+}

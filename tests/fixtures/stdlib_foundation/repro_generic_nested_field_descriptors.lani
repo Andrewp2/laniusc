@@ -1,0 +1,53 @@
+module app::main;
+import core::mem;
+import std::io;
+
+struct Cell<T> { value: T, sentinel: i32 }
+struct ArrayHolder<T> { child: Cell<[T; 2]>, sentinel: i32 }
+struct SliceHolder<T> { child: Cell<[T]>, sentinel: i32 }
+
+fn slices(values: [i32], backup: [i32], empty: [i32]) -> i32 {
+    let cell: Cell<[i32]> = Cell { value: values, sentinel: 42 };
+    let holder: SliceHolder<i32> = SliceHolder { child: cell, sentinel: -7 };
+    let copied: SliceHolder<i32> = core::mem::identity(holder);
+    if (copied.child.sentinel != 42 || copied.sentinel != -7 || copied.child.value[1] != 99) { return 1; }
+    copied.child.value[0] = 123;
+    if (values[0] != 123 || holder.child.value[0] != 123) { return 2; }
+    copied.child.value = backup;
+    let selected: [i32] = copied.child.value;
+    let count: i32 = 0;
+    for value in selected { count += 1; }
+    if (count != 3 || copied.child.value[2] != -11 || holder.child.value[1] != 99) { return 9; }
+    copied.child.value[2] = 88;
+    if (backup[2] != 88 || holder.child.value[0] != 123) { return 10; }
+    copied.child.value = holder.child.value;
+    if (copied.child.value[0] != 123 || copied.child.value[1] != 99) { return 11; }
+    copied.child.value = empty;
+    let empty_selected: [i32] = copied.child.value;
+    let empty_count: i32 = 0;
+    for value in empty_selected { empty_count += 1; }
+    if (empty_count != 0 || copied.child.sentinel != 42 || copied.sentinel != -7) { return 12; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let numbers: [i32; 2] = [-7, 99];
+    let number_cell: Cell<[i32; 2]> = Cell { value: numbers, sentinel: 42 };
+    let number_holder: ArrayHolder<i32> = ArrayHolder { child: number_cell, sentinel: -11 };
+    let copied_numbers: ArrayHolder<i32> = core::mem::identity(number_holder);
+    if (copied_numbers.child.value[0] != -7 || copied_numbers.child.value[1] != 99) { return 3; }
+    if (copied_numbers.child.sentinel != 42 || copied_numbers.sentinel != -11) { return 4; }
+    copied_numbers.child.value[0] = 88;
+    if (number_holder.child.value[0] != -7 || number_cell.value[0] != -7 || numbers[0] != -7) { return 5; }
+    let texts: [str; 2] = ["Ω", ""];
+    let text_cell: Cell<[str; 2]> = Cell { value: texts, sentinel: 777 };
+    let text_holder: ArrayHolder<str> = ArrayHolder { child: text_cell, sentinel: -99 };
+    let copied_texts: ArrayHolder<str> = core::mem::identity(text_holder);
+    if (copied_texts.child.sentinel != 777 || copied_texts.sentinel != -99) { return 6; }
+    if (std::io::println(copied_texts.child.value[0]) != 3 || std::io::println(copied_texts.child.value[1]) != 1) { return 7; }
+    copied_texts.child.value[0] = "backup";
+    if (std::io::println(text_holder.child.value[0]) != 3 || std::io::println(copied_texts.child.value[0]) != 7) { return 8; }
+    let backup: [i32; 3] = [777, 0, -11];
+    let empty: [i32; 0] = [];
+    return slices(numbers, backup, empty);
+}

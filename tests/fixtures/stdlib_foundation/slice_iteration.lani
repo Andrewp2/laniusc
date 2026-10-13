@@ -1,0 +1,91 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::number_i32;
+import core::range;
+
+struct Readings { values: [i32], valid: bool }
+
+fn sum(values: [i32]) -> i32 {
+    let total: i32 = 0;
+    for value in values {
+        total = core::number_i32::saturating_add(total, value);
+    }
+    return total;
+}
+
+fn count(values: [i32]) -> i32 {
+    let total: i32 = 0;
+    for value in values { total = total + 1; }
+    return total;
+}
+
+fn first_nonzero_or(values: [i32], fallback: i32) -> i32 {
+    for value in values { if (value != 0) { return value; } }
+    return fallback;
+}
+
+fn main() -> i32 {
+    let backing: [i32; 4] = [4, 7, -9, 20];
+    let data: ptr = core::mem::i32_array_data_ptr(backing);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(data, 4);
+    let empty: [i32] = core::mem::i32_slice_from_raw_parts(data, 0);
+    let one: [i32] = core::mem::i32_slice_from_raw_parts(data, 1);
+    if (sum(cells) != 22 || count(cells) != 4) { return 1; }
+    if (sum(empty) != 0 || count(empty) != 0) { return 2; }
+    let copied_empty: [i32] = empty;
+    if (sum(copied_empty) != 0 || count(copied_empty) != 0) { return 13; }
+    if (sum(one) != 4 || count(one) != 1) { return 3; }
+    if (first_nonzero_or(cells, -100) != 4 || first_nonzero_or(empty, -100) != -100) { return 4; }
+
+    let accepted: i32 = 0;
+    for value in cells {
+        if (value < 0) { continue; }
+        if (value == 20) { break; }
+        accepted = accepted + value;
+    }
+    if (accepted != 11) { return 5; }
+
+    let pairs: i32 = 0;
+    for left in cells {
+        for right in cells {
+            if (right == 20) { break; }
+            if (left == right) { continue; }
+            pairs = pairs + 1;
+        }
+    }
+    if (pairs != 9) { return 6; }
+    let skipped: i32 = 0;
+    for left in empty { for right in cells { skipped = skipped + 1; } }
+    if (skipped != 0) { return 7; }
+
+    let changing: [i32] = cells;
+    let visited: i32 = 0;
+    let snapshot_sum: i32 = 0;
+    for value in changing {
+        changing = empty;
+        visited = visited + 1;
+        snapshot_sum = snapshot_sum + value;
+    }
+    if (visited != 4) { return 11; }
+    if (snapshot_sum != 22) { return 12; }
+
+    // Copying an Option payload preserves the borrowed descriptor.
+    let record: Readings = Readings { values: cells, valid: true };
+    let present: core::option::Option<Readings> = core::option::Some(record);
+    let recovered: Readings = match (present) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> record,
+    };
+    let borrowed: [i32] = recovered.values;
+    let total: i32 = 0;
+    for value in borrowed {
+        if (!core::range::contains_i32(core::range::range_i32(-10, 21), value)) { return 8; }
+        total = total + value;
+    }
+    if (!recovered.valid || total != 22) { return 9; }
+
+    borrowed[1] = -7;
+    if (sum(cells) != 8 || backing[1] != -7) { return 10; }
+    return 0;
+}

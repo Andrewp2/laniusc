@@ -14,6 +14,7 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> struct_init_field_context_instance;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_tag;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_payload;
+RWStructuredBuffer<uint> struct_init_field_expected_context_instance;
 RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_lit_context_decl_token;
 RWStructuredBuffer<uint> struct_lit_context_instance;
@@ -43,6 +44,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         struct_init_field_context_instance[i] = INVALID;
         struct_init_field_expected_ref_tag[i] = TYPE_REF_INVALID;
         struct_init_field_expected_ref_payload[i] = INVALID;
+        struct_init_field_expected_context_instance[i] = INVALID;
         struct_init_field_ordinal[i] = INVALID;
     }
 

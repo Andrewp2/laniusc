@@ -1,0 +1,7 @@
+{
+  "index": 31,
+  "shader": "type_checker/predicates/01a_validate_bound_args.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 1.0151829390015337,
+  "sha256": "152a752c70bb9fec5dd4f0de36ceeee116eab992eed9147b2e034ff48463892e"
+}

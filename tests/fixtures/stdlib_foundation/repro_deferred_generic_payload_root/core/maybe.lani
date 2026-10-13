@@ -1,0 +1,33 @@
+module core::maybe;
+
+pub enum Maybe<T> { Some(T), None }
+pub enum Choice<T> { Item(T, i32), Empty }
+
+pub fn is_some<T>(value: Maybe<T>) -> bool {
+    return match (value) { Some(inner) -> true, None -> false };
+}
+
+pub fn unwrap_or<T>(value: Maybe<T>, fallback: T) -> T {
+    return match (value) { Some(inner) -> inner, None -> fallback };
+}
+
+pub fn concrete_or(value: Maybe<i32>, fallback: i32) -> i32 {
+    return match (value) { Some(inner) -> inner, None -> fallback };
+}
+
+pub fn prefer<T>(value: Maybe<T>, fallback: Maybe<T>) -> Maybe<T> {
+    if (is_some(value)) { return value; }
+    return fallback;
+}
+
+pub fn keep<T>(value: T) -> T { return value; }
+
+pub impl<T> Maybe<T> {
+    pub fn take_or(&self, fallback: T) -> T {
+        return match (self) { Some(inner) -> inner, None -> fallback };
+    }
+}
+
+pub fn last<T>(value: Choice<T>) -> i32 {
+    return match (value) { Item(ignored, used) -> used, Empty -> 0 };
+}

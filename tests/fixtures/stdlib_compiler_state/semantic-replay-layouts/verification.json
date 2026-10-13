@@ -1,0 +1,186 @@
+{
+  "status": "focused semantic replay, original recipe retention, and GPU recipe admission checkpoint; foreign missing-layout consumer and abstract trait routing unfinished",
+  "date": "2026-10-11",
+  "target": "physical GPU compiler and x86_64 Linux native execution where specified",
+  "runs": [
+    {
+      "build": 19,
+      "label": "semantic-seed-host-contracts-1",
+      "kind": "host",
+      "record": "runs/semantic-seed-host-contracts-1.json",
+      "log": "runs/semantic-seed-host-contracts-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::body_specialization::tests::closed_replay_defers_missing_native_layout_to_gpu_materialization",
+        "type_checker::generic_body::tests::completed_gpu_layouts_replace_unknown_cache_witnesses_before_reuse",
+        "type_checker::generic_body::tests::semantic_packets_reject_symbolic_graphs_but_preserve_missing_layouts",
+        "type_checker::generic_body::tests::semantic_seed_preserves_missing_zero_and_known_width_witnesses"
+      ],
+      "binary_sha256": "0215671faf2eae191a63b7c4cbd172b4c1da1b9ca2964133237bd14a870731ed",
+      "sources_manifest": "manifests/sources-32564220245f61b085f6faa2bcad6656c2b37dce807b01277dccdb15ef8da088.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json"
+    },
+    {
+      "build": 19,
+      "label": "semantic-seed-gpu-missing-layout-1",
+      "kind": "gpu_replay_lowering_readback",
+      "record": "runs/semantic-seed-gpu-missing-layout-1.json",
+      "log": "runs/semantic-seed-gpu-missing-layout-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::typecheck::tests::semantic_replay_materializes_local_nominal_and_array_without_width_witnesses"
+      ],
+      "binary_sha256": "0215671faf2eae191a63b7c4cbd172b4c1da1b9ca2964133237bd14a870731ed",
+      "sources_manifest": "manifests/sources-32564220245f61b085f6faa2bcad6656c2b37dce807b01277dccdb15ef8da088.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json",
+      "cache_alias_provenance": "cache-provenance/build-19.json"
+    },
+    {
+      "build": 19,
+      "label": "semantic-seed-native-layout-controls-1",
+      "kind": "native_execution",
+      "record": "runs/semantic-seed-native-layout-controls-1.json",
+      "log": "runs/semantic-seed-native-layout-controls-1.log",
+      "passed_tests": [
+        "generic_trait_operands_and_results_execute_imported_compound_copies",
+        "zero_sized_compositions_preserve_neighbors_and_array_bounds"
+      ],
+      "binary_sha256": "d8b990630562475799c0f8268ef93d75e99641ee4723bd6541575c236e61a591",
+      "sources_manifest": "manifests/sources-32564220245f61b085f6faa2bcad6656c2b37dce807b01277dccdb15ef8da088.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json"
+    },
+    {
+      "build": 19,
+      "label": "semantic-seed-private-nominal-native-1",
+      "kind": "native_execution",
+      "record": "runs/semantic-seed-private-nominal-native-1.json",
+      "log": "runs/semantic-seed-private-nominal-native-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::x86_codegen::tests::caller_private_nominals_execute_through_imported_generic_relay"
+      ],
+      "binary_sha256": "0215671faf2eae191a63b7c4cbd172b4c1da1b9ca2964133237bd14a870731ed",
+      "sources_manifest": "manifests/sources-32564220245f61b085f6faa2bcad6656c2b37dce807b01277dccdb15ef8da088.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json",
+      "cache_alias_provenance": "cache-provenance/build-19.json"
+    },
+    {
+      "build": 20,
+      "label": "semantic-seed-gpu-edge-contracts-1",
+      "kind": "gpu_replay_lowering_readback",
+      "record": "runs/semantic-seed-gpu-edge-contracts-1.json",
+      "log": "runs/semantic-seed-gpu-edge-contracts-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::typecheck::tests::semantic_replay_descriptors_do_not_require_opaque_referent_widths",
+        "compiler::gpu_compiler::typecheck::tests::semantic_replay_layout_admission_preserves_zero_and_recovers_after_conflict"
+      ],
+      "binary_sha256": "aa0f190859ce5ab3959a527a534387c0d6f5197c46764614522921e8c9c60c1a",
+      "sources_manifest": "manifests/sources-cfcb54bb81d38534702ac107986607cce695a56fcef650566af5157bcb57d27a.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json",
+      "cache_alias_provenance": "cache-provenance/build-20.json"
+    },
+    {
+      "build": 20,
+      "label": "nominal-recipe-retention-gpu-1",
+      "kind": "gpu_recipe_retention",
+      "record": "runs/nominal-recipe-retention-gpu-1.json",
+      "log": "runs/nominal-recipe-retention-gpu-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::x86_codegen::tests::checked_nominal_recipes_replay_reuses_the_original_symbolic_snapshot",
+        "compiler::gpu_compiler::x86_codegen::tests::checked_nominal_recipes_retain_private_public_payloads_without_calls_or_predicates"
+      ],
+      "binary_sha256": "aa0f190859ce5ab3959a527a534387c0d6f5197c46764614522921e8c9c60c1a",
+      "sources_manifest": "manifests/sources-cfcb54bb81d38534702ac107986607cce695a56fcef650566af5157bcb57d27a.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json",
+      "cache_alias_provenance": "cache-provenance/build-20.json"
+    },
+    {
+      "build": 20,
+      "label": "nominal-recipe-native-regression-1",
+      "kind": "native_execution",
+      "record": "runs/nominal-recipe-native-regression-1.json",
+      "log": "runs/nominal-recipe-native-regression-1.log",
+      "passed_tests": [
+        "generic_trait_operands_and_results_execute_imported_compound_copies",
+        "inherent_method_bounds_keep_own_enclosing_and_shadowed_parameters_distinct"
+      ],
+      "binary_sha256": "1b08cdd9203a824c61469748f1ec1b3c97c8b39f7b6c77cb6d2a448ca8e94e58",
+      "sources_manifest": "manifests/sources-cfcb54bb81d38534702ac107986607cce695a56fcef650566af5157bcb57d27a.json",
+      "shaders_manifest": "manifests/shaders-080d57d5a70878241fde95c0cdbd946e1cbec5dec1a3658c2e9ba66181c7c0b9.json"
+    },
+    {
+      "build": 23,
+      "label": "nominal-recipe-transport-host-1",
+      "kind": "host",
+      "record": "runs/nominal-recipe-transport-host-1.json",
+      "log": "runs/nominal-recipe-transport-host-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::program_evidence::native_layout::tests::nominal_recipe_transport_normalizes_empty_regions_and_rejects_size_overflow",
+        "compiler::gpu_compiler::program_evidence::native_layout::tests::nominal_recipe_transport_preserves_owned_rows_and_resets_gpu_outputs"
+      ],
+      "binary_sha256": "aafa57655699ddf930a76fb8622e2a650c0472a4c62edb34fe6b7f09bec86df3",
+      "sources_manifest": "manifests/sources-1319362b4a938d496e809d46e0b1b0d6c5cd31c12c07e02dccb0e37c650f1625.json",
+      "shaders_manifest": "manifests/shaders-c40c6f81e9134caad2ff43b7f4f40d29be0e3ce095c27538cf3cce18be48ce3b.json"
+    },
+    {
+      "build": 23,
+      "label": "nominal-recipe-gpu-admission-1",
+      "kind": "gpu_recipe_admission",
+      "record": "runs/nominal-recipe-gpu-admission-1.json",
+      "log": "runs/nominal-recipe-gpu-admission-1.log",
+      "passed_tests": [
+        "compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_native_recipe_admission_rejects_stale_epoch_broken_groups_and_foreign_parameters"
+      ],
+      "binary_sha256": "aafa57655699ddf930a76fb8622e2a650c0472a4c62edb34fe6b7f09bec86df3",
+      "sources_manifest": "manifests/sources-1319362b4a938d496e809d46e0b1b0d6c5cd31c12c07e02dccb0e37c650f1625.json",
+      "shaders_manifest": "manifests/shaders-c40c6f81e9134caad2ff43b7f4f40d29be0e3ce095c27538cf3cce18be48ce3b.json",
+      "cache_alias_provenance": "cache-provenance/build-23.json"
+    },
+    {
+      "build": 23,
+      "label": "nominal-recipe-admitted-native-1",
+      "kind": "native_execution",
+      "record": "runs/nominal-recipe-admitted-native-1.json",
+      "log": "runs/nominal-recipe-admitted-native-1.log",
+      "passed_tests": [
+        "generic_trait_methods_execute_imported_impl_bounds_from_caller",
+        "generic_trait_operands_and_results_execute_imported_compound_copies"
+      ],
+      "binary_sha256": "63ce973ac3224910aeb1cc112f48c5c5d7d1966bce3aa483a09bb09906b9aa3a",
+      "sources_manifest": "manifests/sources-1319362b4a938d496e809d46e0b1b0d6c5cd31c12c07e02dccb0e37c650f1625.json",
+      "shaders_manifest": "manifests/shaders-c40c6f81e9134caad2ff43b7f4f40d29be0e3ce095c27538cf3cce18be48ce3b.json"
+    }
+  ],
+  "passed_executions": 19,
+  "distinct_passed_tests": 17,
+  "limits": [
+    "Runs use different binaries and source snapshots; no equivalence across builds is inferred.",
+    "Per-build cache aliases record unchanged compiler-library bytes under the native-test basename. No fresh driver cache leaf trace was collected for these builds.",
+    "GPU replay/readback and recipe-retention cases are not emitted-program execution.",
+    "Recipe admission is verified; the actual foreign missing-layout consumer and abstract trait required-member routing remain unfinished."
+  ],
+  "counts_by_build": {
+    "19": {
+      "passing_executions": 8,
+      "run_labels": [
+        "semantic-seed-host-contracts-1",
+        "semantic-seed-gpu-missing-layout-1",
+        "semantic-seed-native-layout-controls-1",
+        "semantic-seed-private-nominal-native-1"
+      ]
+    },
+    "20": {
+      "passing_executions": 6,
+      "run_labels": [
+        "semantic-seed-gpu-edge-contracts-1",
+        "nominal-recipe-retention-gpu-1",
+        "nominal-recipe-native-regression-1"
+      ]
+    },
+    "23": {
+      "passing_executions": 5,
+      "run_labels": [
+        "nominal-recipe-transport-host-1",
+        "nominal-recipe-gpu-admission-1",
+        "nominal-recipe-admitted-native-1"
+      ]
+    }
+  }
+}

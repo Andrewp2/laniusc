@@ -1,0 +1,20 @@
+
+running 1 test
+test qualified_enum_variant_parent_forms_execute_independently ... qualified constructor form: called concrete unit
+[typecheck.call_inference] round=0 changed=6
+[typecheck.call_inference] round=1 changed=1
+[typecheck.call_inference] round=2 changed=0
+GPU source-pack type-check rejection: token=17 code=GenericInstantiationBoundary detail=1
+
+thread 'qualified_enum_variant_parent_forms_execute_independently' (263790) panicked at tests/compiler_generic_types_execution.rs:141:29:
+called concrete unit: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_called_concrete_unit_263789_0.lani", line: 1, column: 54, length: 4, byte_start: Some(53), byte_end: Some(57), source_line: Some("enum Flag { On, Off } fn main() -> i32 { let value = Flag::On(); return match (value) { Flag::On -> 42, _ -> 1 }; }"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["the private checked type application arena is exhausted"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    qualified_enum_variant_parent_forms_execute_independently
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 282 filtered out; finished in 1.63s
+

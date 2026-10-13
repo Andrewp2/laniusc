@@ -1,10 +1,9 @@
-// Finalizes the exact base of the dominator relation. Only blocks with two or
-// more forward predecessors remain unresolved; later GPU rounds intersect
-// those predecessor dominator paths. This keeps the required persistent state
-// at one word per CFG block.
+// Admit function entries. All other reachable blocks remain unresolved until
+// every reachable forward predecessor has published its completed parent.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.ssa_sparse_work;
 import gpu_index;
 
 struct Params
@@ -20,8 +19,11 @@ StructuredBuffer<uint> opt_ir_block_total;
 StructuredBuffer<uint> semantic_function_total;
 StructuredBuffer<OptIrBlock> opt_ir_blocks;
 StructuredBuffer<OptIrFunction> opt_ir_functions;
+StructuredBuffer<uint> opt_ir_reachable;
 StructuredBuffer<uint> opt_ir_forward_predecessor_count_by_block;
 RWStructuredBuffer<uint> opt_ir_immediate_dominator;
+RWStructuredBuffer<uint> opt_ir_reachability_work_state;
+RWStructuredBuffer<uint> opt_ir_reachability_work_queue;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -48,33 +50,31 @@ void main(uint3 dtid: SV_DispatchThreadID)
         report_structure_failure(block_id);
         return;
     }
-
-    OptIrFunction function = opt_ir_functions[block.function_id];
     uint count = opt_ir_forward_predecessor_count_by_block[block_id];
-    uint candidate = opt_ir_immediate_dominator[block_id];
-    if (block_id == function.entry_block)
+    bool entry = block_id == opt_ir_functions[block.function_id].entry_block;
+    bool reachable = opt_ir_reachable[block_id] != 0u;
+    if (!reachable)
     {
-        if (count != 0u) report_structure_failure(block_id);
-        opt_ir_immediate_dominator[block_id] = block_id;
-        return;
-    }
-    if (count == 0u)
-    {
+        if (entry || count != 0u) report_structure_failure(block_id);
         opt_ir_immediate_dominator[block_id] = OPT_IR_DOMINATOR_UNREACHABLE;
         return;
     }
-    if (count > 1u)
-    {
-        opt_ir_immediate_dominator[block_id] = OPT_IR_DOMINATOR_UNRESOLVED;
-        return;
-    }
-
-    bool valid = candidate < block_total &&
-        opt_ir_blocks[candidate].function_id == block.function_id &&
-        opt_ir_blocks[candidate].position_start < block.position_start;
-    if (!valid)
+    opt_ir_immediate_dominator[block_id] = entry
+        ? block_id : OPT_IR_DOMINATOR_UNRESOLVED;
+    if (entry ? count != 0u : count == 0u)
     {
         report_structure_failure(block_id);
-        opt_ir_immediate_dominator[block_id] = OPT_IR_DOMINATOR_UNRESOLVED;
+        return;
+    }
+    if (!entry) return;
+    uint required = 0u;
+    if (!ssa_work_publish(block_id, gParams.block_capacity,
+            opt_ir_reachability_work_state,
+            opt_ir_reachability_work_queue, required))
+    {
+        InterlockedOr(lowering_status[0u].flags,
+            LOWERING_STATUS_OPTIMIZATION_CAPACITY);
+        InterlockedMax(lowering_status[0u].required_capacity, required);
+        lowering_status[0u].available_capacity = gParams.block_capacity;
     }
 }

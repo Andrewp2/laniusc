@@ -1,0 +1,18 @@
+{
+  "contract": [
+    "Resolve a type qualifier independently of its member name.",
+    "A declaration in the owning module shadows imports. Source-pack imports and dependency imports have equal visibility and can be ambiguous.",
+    "Accumulate exact imported parent identities across dependency page replay; differing visible parents reject as ambiguous.",
+    "Resolve members only within the selected parent."
+  ],
+  "baseline": "stdlib-gpu-20261010-qualified-variants",
+  "before_images": [
+    "crates/laniusc-compiler/src/type_checker/compiler_graph.rs",
+    "crates/laniusc-compiler/src/type_checker/module_path/buffers.rs",
+    "crates/laniusc-compiler/src/type_checker/operations/module_paths.rs",
+    "shaders/type_checker/modules/01a_clear_path_state.slang",
+    "shaders/type_checker/modules/10c_resolve_qualified_paths.slang",
+    "shaders/type_checker/dependencies/06_resolve_paths.slang",
+    "tests/compiler_generic_types_execution.rs"
+  ]
+}

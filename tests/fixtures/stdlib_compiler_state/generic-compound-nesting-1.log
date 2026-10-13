@@ -1,0 +1,52 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.80s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 11 tests
+test direct_record_descriptor_fields_have_exact_types ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... FAILED
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... FAILED
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test local_generic_functions_preserve_nested_enum_values ... FAILED
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+
+failures:
+
+---- imported_generic_functions_preserve_enum_values_and_nested_options stdout ----
+GPU source-pack type-check rejection: token=227 code=AssignMismatch detail=0
+
+thread 'imported_generic_functions_preserve_enum_values_and_nested_options' (62490) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 14, column: 67, length: 4, byte_start: Some(689), byte_end: Some(693), source_line: Some("    let outer: core::option::Option<core::option::Option<Pair>> = core::option::Some(some);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_imported_nested_enums_62444_6.lani
+
+---- imported_generic_methods_and_results_preserve_compound_payloads stdout ----
+GPU source-pack type-check rejection: token=258 code=AssignMismatch detail=0
+
+thread 'imported_generic_methods_and_results_preserve_compound_payloads' (62498) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 16, column: 52, length: 2, byte_start: Some(790), byte_end: Some(792), source_line: Some("    let successful: Pair = core::result::unwrap_or(ok, backup);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+kept temp artifact /tmp/generic_types_compound_methods_and_Result_62444_9.lani
+
+---- local_generic_functions_preserve_nested_enum_values stdout ----
+GPU source-pack type-check rejection: token=208 code=AssignMismatch detail=0
+
+thread 'local_generic_functions_preserve_nested_enum_values' (62525) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_nested_enums_62444_12.lani", line: 17, column: 50, length: 4, byte_start: Some(651), byte_end: Some(655), source_line: Some("    let present: Maybe<Pair> = unwrap_or(copied, none);"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+kept temp artifact /tmp/generic_types_local_nested_enums_62444_12.lani
+
+
+failures:
+    imported_generic_functions_preserve_enum_values_and_nested_options
+    imported_generic_methods_and_results_preserve_compound_payloads
+    local_generic_functions_preserve_nested_enum_values
+
+test result: FAILED. 8 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

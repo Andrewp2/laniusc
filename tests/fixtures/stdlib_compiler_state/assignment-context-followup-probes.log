@@ -1,0 +1,114 @@
+CASE assignment_contexts_separated_closers
+SOURCE
+import core::option;
+import core::mem;
+
+struct Slot<T> { value: T, sentinel: i32 }
+enum Maybe<T> { Value(T), Missing }
+fn empty<T>() -> core::option::Option<T> { return core::option::None(); }
+fn present<T>(value: T) -> core::option::Option<T> { return core::option::Some(value); }
+fn view<T>(values: [T]) -> [T] { return values; }
+fn main() -> i32 {
+    let slot: Slot<core::option::Option<i32> > = Slot { value: core::option::None(), sentinel: 97 };
+    slot.value = match (true) { true -> core::option::Some(42), false -> core::option::None() };
+    if (core::option::unwrap_or(slot.value, -1) != 42 || slot.sentinel != 97) { return 1; }
+    slot.value = empty();
+    if (!core::option::is_none(slot.value)) { return 2; }
+
+    let values: [core::option::Option<i32>; 2] = [core::option::None(), core::option::None()];
+    values[0] = core::option::Some(11);
+    view(values)[1] = present(22);
+    if (core::option::unwrap_or(values[0], -1) != 11 || core::option::unwrap_or(values[1], -1) != 22) { return 3; }
+    values[1] = empty();
+    if (!core::option::is_none(values[1]) || core::option::unwrap_or(values[0], -1) != 11) { return 4; }
+
+    let rows: [[u32; 2]; 2] = [[1, 2], [3, 4]];
+    rows[0] = [4294967295, 2147483648];
+    let row: Slot<[u32; 2]> = Slot { value: [5, 6], sentinel: 91 };
+    row.value = [2147483648, 4294967295];
+    if (rows[0][0] != 4294967295 || rows[0][1] != 2147483648 || rows[1][0] != 3 ||
+        row.value[0] != 2147483648 || row.value[1] != 4294967295 || row.sentinel != 91) { return 5; }
+
+    let local: Slot<Maybe<bool> > = Slot { value: Missing(), sentinel: 89 };
+    local.value = Value(true);
+    let flag: bool = match (local.value) { Value(flag) -> flag, Missing -> false };
+    if (!flag || local.sentinel != 89) { return 6; }
+
+    let records: [Slot<core::option::Option<[i32; 2]> >; 2] = [
+        Slot { value: core::option::None(), sentinel: 83 },
+        Slot { value: core::option::None(), sentinel: 79 }
+    ];
+    records[1].value = present([31, 41]);
+    let extracted: [i32; 2] = core::option::unwrap_or(records[1].value, [0, 0]);
+    extracted[0] = 99;
+    let original: [i32; 2] = core::option::unwrap_or(records[1].value, [0, 0]);
+    if (original[0] != 31 || original[1] != 41 || records[0].sentinel != 83 || records[1].sentinel != 79) { return 7; }
+    return 0;
+}
+
+EXIT 1
+stdlib_gpu_perf: /tmp/lanius-assignment-followups-jhnz7xy1/assignment_contexts_separated_closers.lani: error[LNC0016]: syntax error
+ --> <source pack file 0>:16:38
+   |
+16 |     let values: [core::option::Option<i32>; 2] = [core::option::None(), core::option::None()];
+   |                                      ^ expected one of `)`, `=`, `,`, `]`, `;`, keyword `where`, `:`, `{`, `}`, `<`, `>`, or keyword `for`, found `<`
+
+CASE cycle_typed_borrow
+SOURCE
+import core::option;
+import core::mem;
+struct Node<T> { value: T, next: core::option::Option<&Node<T>> }
+impl<T> Node<T> { fn borrow(&self) -> &Node<T> { return self; } }
+fn walk<T>(value: &Node<T>, depth: i32) -> &Node<T> {
+    if (depth == 0) { return value; }
+    let next: &Node<T> = core::option::unwrap_or(value.next, value);
+    return walk(next, depth - 1);
+}
+fn main() -> i32 {
+    let node: Node<i32> = Node { value: 11, next: core::option::None() };
+    node.next = core::option::Some(node.borrow());
+    let copied: Node<i32> = core::mem::identity(node);
+    copied.value = 77;
+    node.value = 42;
+    let borrowed: &Node<i32> = copied.borrow(); let current: &Node<i32> = walk(borrowed, 4);
+    if (current.value != 42 || copied.value != 77 || node.value != 42) { return 1; }
+    return 0;
+}
+
+EXIT 0
+sample=0 ms=198.967
+entry=/tmp/lanius-assignment-followups-jhnz7xy1/cycle_typed_borrow.lani rebuild_entry=false warmups=1 iters=1 output_bytes=32344 min_ms=198.967 median_ms=198.967 avg_ms=198.967 max_ms=198.967 output_verified=true
+
+CASE cycle_without_walk
+SOURCE
+import core::option;
+import core::mem;
+struct Node<T> { value: T, next: core::option::Option<&Node<T>> }
+impl<T> Node<T> { fn borrow(&self) -> &Node<T> { return self; } }
+fn walk<T>(value: &Node<T>, depth: i32) -> &Node<T> {
+    if (depth == 0) { return value; }
+    let next: &Node<T> = core::option::unwrap_or(value.next, value);
+    return walk(next, depth - 1);
+}
+fn main() -> i32 {
+    let node: Node<i32> = Node { value: 11, next: core::option::None() };
+    node.next = core::option::Some(node.borrow());
+    let copied: Node<i32> = core::mem::identity(node);
+    copied.value = 77;
+    node.value = 42;
+    let current: &Node<i32> = core::option::unwrap_or(copied.next, node.borrow());
+    if (current.value != 42 || copied.value != 77 || node.value != 42) { return 1; }
+    return 0;
+}
+
+EXIT 0
+sample=0 ms=144.256
+entry=/tmp/lanius-assignment-followups-jhnz7xy1/cycle_without_walk.lani rebuild_entry=false warmups=1 iters=1 output_bytes=29422 min_ms=144.256 median_ms=144.256 avg_ms=144.256 max_ms=144.256 output_verified=true
+
+CASE minimal_nested_closers
+SOURCE
+import core::option; struct Slot<T> { value: T } fn main() -> i32 { let v: Slot<core::option::Option<i32>> = Slot { value: core::option::Some(42) }; return core::option::unwrap_or(v.value, 0) - 42; }
+EXIT 0
+sample=0 ms=43.894
+entry=/tmp/lanius-assignment-followups-jhnz7xy1/minimal_nested_closers.lani rebuild_entry=false warmups=1 iters=1 output_bytes=17677 min_ms=43.894 median_ms=43.894 avg_ms=43.894 max_ms=43.894 output_verified=true
+

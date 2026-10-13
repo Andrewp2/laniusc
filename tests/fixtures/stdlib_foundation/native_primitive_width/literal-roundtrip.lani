@@ -1,0 +1,30 @@
+struct Cell<T> { head: i32, value: T, tail: i32 }
+fn keep<T>(value: T) -> T { return value; }
+fn ordinary(value: u64) -> u64 { return value; }
+fn low(value: u64) -> u64 { return value & 4294967295; }
+fn high(value: u64) -> u64 { return value >> 32; }
+fn main() -> i32 {
+    let leading: u64 = 000000000000000000000000000000000000000042;
+    if (high(leading) != 0 || low(leading) != 42) { return 1; }
+    let word: u64 = 4294967296;
+    let ten_billion: u64 = 10000000000;
+    let high_bit: u64 = 9223372036854775808;
+    let maximum: u64 = 18446744073709551615;
+    if (high(word) != 1 || low(word) != 0) { return 2; }
+    if (high(ordinary(ten_billion)) != 2 || low(ordinary(ten_billion)) != 1410065408) { return 3; }
+    if (high(high_bit) != 2147483648 || low(high_bit) != 0) { return 4; }
+    if (high(maximum) != 4294967295 || low(maximum) != 4294967295) { return 5; }
+    let original: Cell<u64> = Cell { head: 31, value: ten_billion, tail: 73 };
+    let copied: Cell<u64> = keep(original);
+    original.value = 7;
+    if (high(copied.value) != 2 || low(copied.value) != 1410065408 || copied.head != 31 || copied.tail != 73) { return 6; }
+    let minimum: i64 = -9223372036854775808;
+    let signed_maximum: i64 = 9223372036854775807;
+    if ((keep(minimum) >> 63) != -1 || (keep(minimum) & 4294967295) != 0) { return 7; }
+    if ((signed_maximum >> 32) != 2147483647 || (signed_maximum & 4294967295) != 4294967295) { return 8; }
+    let size: usize = 9223372036854775815;
+    let signed_size: isize = -4294967296;
+    if ((keep(size) >> 32) != 2147483648 || (keep(size) & 4294967295) != 7) { return 9; }
+    if ((keep(signed_size) >> 32) != -1 || (keep(signed_size) & 4294967295) != 0) { return 10; }
+    return 0;
+}

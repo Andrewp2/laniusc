@@ -1,0 +1,19 @@
+
+running 14 tests
+test explicit_constant_arguments_execute_both_thirty_two_slot_domains ... ok
+test explicit_constant_arguments_execute_independent_method_domains ... ok
+test explicit_constant_arguments_execute_mixed_types_and_caller_parameters ... ok
+test generic_nested_result_field_contexts_preserve_independent_parameter_domains ... ok
+test imported_generic_bodies_enforce_their_concrete_trait_contracts ... ok
+test imported_trait_bounds_preserve_all_thirty_two_ordered_graphs ... ok
+test nested_symbolic_nominal_constants_in_trait_bounds_execute ... ok
+test nested_symbolic_nominal_constants_in_trait_bounds_reject_wrong_bindings ... ok
+test nominal_constant_arguments_execute_thirty_two_interleaved_operands ... ok
+test trait_bounds_execute_thirty_two_independent_compound_operand_graphs ... ok
+test trait_bounds_preserve_complete_argument_graphs_and_symbolic_bindings ... ok
+test trait_bounds_reject_inner_identity_length_order_and_unproved_assumptions ... ok
+test trait_impls_reject_duplicate_complete_keys_and_inner_method_mismatches ... ok
+test trait_method_contracts_compare_substituted_types_independently_of_syntax_shape ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 340 filtered out; finished in 13.91s
+

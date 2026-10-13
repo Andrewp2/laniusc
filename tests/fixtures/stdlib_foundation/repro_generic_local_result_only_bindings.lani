@@ -1,0 +1,6 @@
+enum Many<A, B, C, D, E> { Empty, Values(A, B, C, D, E) }
+fn absent<A, B, C, D, E>() -> Many<A, B, C, D, E> { return Empty(); }
+fn main() -> i32 {
+    let value: Many<i32, str, [str; 2], [i32], bool> = absent();
+    return match (value) { Empty -> 0, Values(a, b, c, d, e) -> 1 };
+}

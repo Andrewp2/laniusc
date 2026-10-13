@@ -1,0 +1,9 @@
+struct Boxed<T> { value: T }
+impl<T> Boxed<T> {
+    fn keep<U>(self, value: U) -> U { return value; }
+}
+fn main() -> i32 {
+    let receiver: Boxed<bool> = Boxed { value: false };
+    let values: [i32; 2] = receiver.keep<[i32; 2]>([40, 2]);
+    return values[0] + values[1] - 42;
+}

@@ -1,0 +1,22 @@
+module app::main;
+import core::mem;
+import std::io;
+struct Pair { left: i32, right: i32 }
+fn main() -> i32 {
+    let data: [i32; 3] = [-7, 0, 42];
+    let copied: [i32; 3] = core::mem::identity(data);
+    std::io::print_i32(copied[0]);
+    std::io::print_i32(copied[1]);
+    std::io::print_i32(copied[2]);
+    let last: i32 = core::mem::identity(copied[2]);
+    if (last != 42) { return 1; }
+    let first: Pair = Pair { left: -7, right: 42 };
+    let second: Pair = Pair { left: 99, right: -11 };
+    let pairs: [Pair; 2] = [first, second];
+    let selected: Pair = core::mem::identity(pairs[0]);
+    if (selected.left != -7 || selected.right != 42) { return 2; }
+    selected.right = 123;
+    let original: Pair = pairs[0];
+    if (original.right != 42 || selected.right != 123) { return 3; }
+    return 0;
+}

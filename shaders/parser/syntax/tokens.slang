@@ -176,6 +176,7 @@ static const uint TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint TK_BOUND_TYPE_ARG_COMMA = 177u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
 static const uint TK_PATH_GENERIC_IDENT = 187u;
 static const uint TK_EXTERN_ABI_STRING = 188u;
@@ -298,7 +299,8 @@ bool is_generic_lt_kind(uint kind)
 bool is_generic_gt_kind(uint kind)
 {
     return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_GENERIC_PARAM_GT ||
-           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
+           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT ||
+           kind == TK_MEMBER_TYPE_ARG_GT;
 }
 
 bool is_generic_comma_kind(uint kind)

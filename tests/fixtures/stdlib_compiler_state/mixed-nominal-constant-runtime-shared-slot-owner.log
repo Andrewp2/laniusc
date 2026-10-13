@@ -1,0 +1,44 @@
+
+running 1 test
+test nominal_constant_arguments_preserve_owned_values ... [gpu_compile_host_timer] pipeline_cache.create.path: 0.016ms
+[gpu_compile_host_timer] pipeline_cache.create.prune: 0.036ms
+[gpu_compile_host_timer] pipeline_cache.create.read: 185.456ms
+[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 234785500 bytes
+[gpu_compile_host_timer] pipeline_cache.create.decode: 42.088ms
+[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 234785460 bytes
+[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 141.127ms
+[gpu_compile_host_timer] pipeline_cache.create.total: 410.936ms
+[gpu_compile_host_timer] compiler.init.lexer: 5.244ms (total 5.244ms)
+[gpu_compile_host_timer] compiler.init.parse_tables: 1.114ms (total 6.359ms)
+[gpu_compile_host_timer] compiler.init.parser: 62.150ms (total 68.509ms)
+[laniusc][pipeline-timing] label=codegen/lir/functions/finalize total_ms=135.233 shader_module_ms=0.008 pipeline_layout_ms=134.444 compute_pipeline_ms=0.782
+[laniusc][pipeline-timing] label=radix/bucket_bases total_ms=133.085 shader_module_ms=0.009 pipeline_layout_ms=132.324 compute_pipeline_ms=0.752
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 154.982ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 234785460 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 42.623ms
+[gpu_compile_host_timer] pipeline_cache.persist.skipped.unchanged: 197.665ms
+[laniusc][pipeline-timing] label=type_checker/calls/03a0_bind_explicit_applications total_ms=82.570 shader_module_ms=0.047 pipeline_layout_ms=0.161 compute_pipeline_ms=82.362
+[laniusc][pipeline-timing] label=type_checker/calls/03a1_emit_generic_claims total_ms=1009.336 shader_module_ms=0.213 pipeline_layout_ms=0.346 compute_pipeline_ms=1008.777
+[laniusc][pipeline-timing] label=type_checker/calls/03a4b_contextual_result_requests total_ms=606.521 shader_module_ms=0.349 pipeline_layout_ms=1.991 compute_pipeline_ms=604.181
+[laniusc][pipeline-timing] label=type_checker/calls/03a7_validate_required_generics total_ms=93.806 shader_module_ms=0.065 pipeline_layout_ms=0.292 compute_pipeline_ms=93.449
+[laniusc][pipeline-timing] label=type_checker/calls/03a_collect_row_args total_ms=1171.733 shader_module_ms=0.221 pipeline_layout_ms=0.124 compute_pipeline_ms=1171.388
+[laniusc][pipeline-timing] label=type_checker/calls/03d_bind_method_receiver_environment total_ms=1524.460 shader_module_ms=0.195 pipeline_layout_ms=1.190 compute_pipeline_ms=1523.076
+[laniusc][pipeline-timing] label=type_checker/calls/03d_mark_array_args total_ms=161.173 shader_module_ms=0.131 pipeline_layout_ms=0.068 compute_pipeline_ms=160.973
+[laniusc][pipeline-timing] label=type_checker/calls/03e1_expand_application_fields total_ms=4424.851 shader_module_ms=0.188 pipeline_layout_ms=0.176 compute_pipeline_ms=4424.487
+[laniusc][pipeline-timing] label=type_checker/calls/03e_materialize_return_types total_ms=10831.291 shader_module_ms=0.281 pipeline_layout_ms=1.178 compute_pipeline_ms=10829.831
+[laniusc][pipeline-timing] label=type_checker/calls/03k2_materialize_match_payloads total_ms=6715.394 shader_module_ms=0.217 pipeline_layout_ms=0.050 compute_pipeline_ms=6715.127
+[laniusc][pipeline-timing] label=type_checker/calls/03k_project_argument_contexts total_ms=57622.360 shader_module_ms=0.286 pipeline_layout_ms=0.042 compute_pipeline_ms=57622.032
+[laniusc][pipeline-timing] label=type_checker/conditions/compact_stmt total_ms=75.158 shader_module_ms=0.070 pipeline_layout_ms=0.023 compute_pipeline_ms=75.066
+[laniusc][pipeline-timing] label=type_checker/conditions/type_subtree total_ms=32.443 shader_module_ms=0.026 pipeline_layout_ms=0.058 compute_pipeline_ms=32.360
+[laniusc][pipeline-timing] label=type_checker/dependencies/08_validate_call_args total_ms=764.095 shader_module_ms=0.371 pipeline_layout_ms=1.193 compute_pipeline_ms=762.531
+[laniusc][pipeline-timing] label=type_checker/dependencies/15_project_methods total_ms=773.632 shader_module_ms=0.350 pipeline_layout_ms=1.028 compute_pipeline_ms=772.255
+[laniusc][pipeline-timing] label=type_checker/dependencies/16_project_struct_literals total_ms=93.700 shader_module_ms=0.095 pipeline_layout_ms=0.252 compute_pipeline_ms=93.353
+[laniusc][pipeline-timing] label=type_checker/methods/05_validate_keys total_ms=480.252 shader_module_ms=0.306 pipeline_layout_ms=1.241 compute_pipeline_ms=478.704
+[laniusc][pipeline-timing] label=type_checker/methods/07_resolve_table total_ms=933.021 shader_module_ms=0.575 pipeline_layout_ms=1.352 compute_pipeline_ms=931.094
+[laniusc][pipeline-timing] label=type_checker/modules/10l2_validate_value_enum_call_payloads total_ms=20.717 shader_module_ms=0.486 pipeline_layout_ms=0.173 compute_pipeline_ms=20.058
+[laniusc][pipeline-timing] label=type_checker/modules/10m2_type_match_payloads total_ms=20.692 shader_module_ms=0.462 pipeline_layout_ms=0.209 compute_pipeline_ms=20.022
+[laniusc][pipeline-timing] label=type_checker/predicates/01_collect total_ms=144.544 shader_module_ms=0.060 pipeline_layout_ms=1.212 compute_pipeline_ms=143.271
+[laniusc][pipeline-timing] label=type_checker/predicates/01_collect_impls total_ms=3457.509 shader_module_ms=0.162 pipeline_layout_ms=1.294 compute_pipeline_ms=3456.054
+[laniusc][pipeline-timing] label=type_checker/predicates/01a_validate_bound_args total_ms=1637.898 shader_module_ms=0.074 pipeline_layout_ms=0.069 compute_pipeline_ms=1637.756
+[laniusc][pipeline-timing] label=type_checker/semantic/artifact/01b_array_index_refs total_ms=1024.109 shader_module_ms=0.566 pipeline_layout_ms=0.172 compute_pipeline_ms=1023.370
+nominal constant ordinary values timed out after 95000 ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker; waited 0 ms for the GPU test lock before starting the timeout; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang

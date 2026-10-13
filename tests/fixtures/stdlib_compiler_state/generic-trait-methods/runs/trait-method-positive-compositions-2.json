@@ -1,0 +1,16 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "generic_trait_methods_execute_inherited_environments_at_different_layouts",
+    "generic_trait_methods_execute_imported_impl_bounds_from_caller",
+    "inherent_method_bounds_keep_own_enclosing_and_shadowed_parameters_distinct",
+    "generic_trait_operands_and_results_execute_imported_compound_copies"
+  ],
+  "exit_code": 0,
+  "seconds": 11.08209209800043,
+  "binary_sha256": "9f9239764470d66f777249ef8d91ca2f8dbb14fce32f424ae9f9122a7fe80985",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

@@ -1,0 +1,41 @@
+module app::main;
+import core::option;
+import core::result_bool;
+
+fn main() -> i32 {
+    let ok_false: core::result_bool::ResultBool = core::result_bool::ok(false);
+    let ok_true: core::result_bool::ResultBool = core::result_bool::ok(true);
+    let err_false: core::result_bool::ResultBool = core::result_bool::err(false);
+    let err_true: core::result_bool::ResultBool = core::result_bool::err(true);
+    if (!core::option::ok(ok_false).contains(false)) { return 1; }
+    if (core::option::ok(ok_false).contains(true)) { return 2; }
+    if (!core::option::ok(ok_true).contains(true)) { return 3; }
+    if (core::option::ok(ok_true).contains(false)) { return 4; }
+    if (!core::option::ok(ok_false).is_some()) { return 5; }
+    if (core::option::ok(ok_true).is_none()) { return 6; }
+    if (core::option::ok(ok_false).unwrap_or(true)) { return 7; }
+    if (!core::option::ok(ok_true).unwrap_or(false)) { return 8; }
+    if (!core::option::ok(err_false).is_none()) { return 9; }
+    if (core::option::ok(err_true).is_some()) { return 10; }
+    if (core::option::ok(err_false).contains(false)) { return 11; }
+    if (core::option::ok(err_true).contains(true)) { return 12; }
+    if (core::option::ok(err_false).unwrap_or(false)) { return 13; }
+    if (!core::option::ok(err_true).unwrap_or(true)) { return 14; }
+    if (!core::option::err(err_false).contains(false)) { return 15; }
+    if (!core::option::err(err_true).contains(true)) { return 16; }
+    if (core::option::err(err_false).contains(true)) { return 17; }
+    if (core::option::err(err_true).contains(false)) { return 18; }
+    if (!core::option::err(ok_false).is_none()) { return 19; }
+    if (core::option::err(ok_true).is_some()) { return 20; }
+    if (!core::option::ok(ok_false).or(core::option::ok(ok_true)).contains(false)) { return 21; }
+    if (!core::option::ok(err_false).or(core::option::ok(ok_true)).contains(true)) { return 22; }
+    if (!core::option::ok(ok_false).and(core::option::ok(ok_true)).contains(true)) { return 23; }
+    if (!core::option::ok(err_false).and(core::option::ok(ok_true)).is_none()) { return 24; }
+    if (!core::option::ok(ok_false).xor(core::option::ok(ok_true)).is_none()) { return 25; }
+    if (!core::option::ok(err_false).xor(core::option::ok(ok_false)).contains(false)) { return 26; }
+    if (!core::result_bool::contains(core::option::ok(ok_false).ok_or(true), false)) { return 27; }
+    if (!core::result_bool::contains_err(core::option::ok(err_false).ok_or(false), false)) { return 28; }
+    if (!core::option::ok(core::result_bool::ok(false)).contains(false)) { return 29; }
+    if (!core::option::err(core::result_bool::err(true)).contains(true)) { return 30; }
+    return 0;
+}

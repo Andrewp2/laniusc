@@ -1,0 +1,21 @@
+// One imported definition must preserve distinct scalar and record layouts.
+module app::main;
+import core::maybe_payload;
+struct Pair { first: i32, second: i32 }
+fn main() -> i32 {
+    let boolean: core::maybe_payload::Maybe<bool> = core::maybe_payload::Some(false);
+    let absent: core::maybe_payload::Maybe<bool> = core::maybe_payload::None();
+    if (core::maybe_payload::unwrap_or(boolean, true)) { return 1; }
+    if (!core::maybe_payload::unwrap_or(absent, true)) { return 2; }
+    let signed: core::maybe_payload::Maybe<i32> = core::maybe_payload::Some(-7);
+    if (core::maybe_payload::unwrap_or(signed, 99) != -7) { return 3; }
+    let pair: Pair = Pair { first: -19, second: 999 };
+    let fallback: Pair = Pair { first: 4, second: 8 };
+    let record: core::maybe_payload::Maybe<Pair> = core::maybe_payload::Some(pair);
+    let no_record: core::maybe_payload::Maybe<Pair> = core::maybe_payload::None();
+    let result: Pair = core::maybe_payload::unwrap_or(record, fallback);
+    let selected: Pair = core::maybe_payload::unwrap_or(no_record, fallback);
+    if (result.first != -19 || result.second != 999) { return 4; }
+    if (selected.first != 4 || selected.second != 8) { return 5; }
+    return 0;
+}

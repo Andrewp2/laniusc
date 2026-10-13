@@ -1,0 +1,16 @@
+import core::option;
+import core::mem;
+
+struct Slot<T> { value: T, sentinel: i32 }
+enum Maybe<T> { Value(T), Missing }
+fn empty<T>() -> core::option::Option<T> { return core::option::None(); }
+fn present<T>(value: T) -> core::option::Option<T> { return core::option::Some(value); }
+fn view<T>(values: [T]) -> [T] { return values; }
+fn main() -> i32 {
+    let slot: Slot<core::option::Option<i32>> = Slot { value: core::option::None(), sentinel: 97 };
+    slot.value = match (true) { true -> core::option::Some(42), false -> core::option::None() };
+    if (core::option::unwrap_or(slot.value, -1) != 42 || slot.sentinel != 97) { return 1; }
+    slot.value = empty();
+    if (!core::option::is_none(slot.value)) { return 2; }
+return 0;
+}

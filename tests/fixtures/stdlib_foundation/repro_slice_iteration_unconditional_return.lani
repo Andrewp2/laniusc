@@ -1,0 +1,9 @@
+// Dependency: unreachable synthetic loop reads fail SSA validation.
+fn first_or(values: [i32], fallback: i32) -> i32 {
+    for value in values { return value; }
+    return fallback;
+}
+fn main() -> i32 {
+    let values: [i32; 3] = [4, 7, -9];
+    return first_or(values, 99);
+}

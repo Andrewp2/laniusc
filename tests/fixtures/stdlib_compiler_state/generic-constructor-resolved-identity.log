@@ -1,0 +1,31 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 55.12s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 6 tests
+test direct_record_literal_arguments_execute_through_ordinary_and_generic_calls ... ok
+test direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types ... FAILED
+test direct_record_literal_arguments_preserve_contextual_generic_compositions ... ok
+test direct_record_literal_arguments_preserve_generic_body_failure ... ok
+test direct_record_literal_arguments_preserve_imported_generic_record_fields ... ok
+test direct_record_literal_generic_arguments_reject_type_and_field_conflicts ... ok
+
+failures:
+
+---- direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types stdout ----
+
+thread 'direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types' (23660) panicked at tests/compiler_generic_types_execution.rs:105:29:
+literal arguments inside generic bodies: compile: GpuCodegen("concrete body replay produced no native definition")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 4.51s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

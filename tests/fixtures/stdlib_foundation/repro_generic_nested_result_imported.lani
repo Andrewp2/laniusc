@@ -1,0 +1,20 @@
+import core::nested_result;
+struct Bundle { empty: core::nested_result::BoundLength<[bool; 0]>, nested: core::nested_result::BoundLength<[[str; 0]; 2]> }
+fn read(value: core::nested_result::BoundLength<[str; 3]>) -> usize {
+    return match (value) { core::nested_result::Known(n) => n, core::nested_result::Values(v) => 99 };
+}
+fn main() -> i32 {
+    let receiver: core::nested_result::Boxed<bool> = core::nested_result::Boxed { value: true };
+    if (read(core::nested_result::length()) != 3 || read(receiver.length()) != 3) { return 1; }
+    let bundle: Bundle = Bundle { nested: core::nested_result::length(), empty: receiver.length() };
+    let items: [[BoundLength<[str; 3]>; 2]; 1] = [[receiver.length(), core::nested_result::length()]];
+    let selected: core::nested_result::BoundLength<[str; 3]> = match (false) {
+        true -> core::nested_result::length(), false -> receiver.length()
+    };
+    let a: usize = match (bundle.empty) { core::nested_result::Known(n) => n, core::nested_result::Values(v) => 99 };
+    let b: usize = match (bundle.nested) { core::nested_result::Known(n) => n, core::nested_result::Values(v) => 99 };
+    let c: usize = read(items[0][0]);
+    let d: usize = read(items[0][1]);
+    if (!receiver.value || a != 0 || b != 2 || c != 3 || d != 3 || read(selected) != 3) { return 2; }
+    return 0;
+}

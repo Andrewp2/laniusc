@@ -1,0 +1,9 @@
+module app::main;
+import std::io;
+enum Maybe<T> { Some(T), None }
+fn main() -> i32 {
+    let text: Maybe<str> = Some("payload");
+    let value: str = match (text) { Some(inner) -> inner, None -> "missing" };
+    std::io::println(value);
+    return 0;
+}

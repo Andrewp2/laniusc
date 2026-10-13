@@ -1,0 +1,72 @@
+module app::main;
+import core::option;
+import core::mem;
+import core::slice;
+import std::io;
+
+struct Text { first: i32, text: str, last: i32 }
+struct View { first: i32, values: [i32], last: i32 }
+
+fn text_or(value: core::option::Option<Text>, fallback: Text) -> Text {
+    return match (value) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> fallback,
+    };
+}
+
+fn view_or(value: core::option::Option<View>, fallback: View) -> View {
+    return match (value) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> fallback,
+    };
+}
+
+fn main() -> i32 {
+    let text: str = "Option<T>";
+    let present_text: core::option::Option<str> = core::option::Some(text);
+    let absent_text: core::option::Option<str> = core::option::None();
+    if (!present_text.is_some() || !absent_text.is_none()) { return 1; }
+    let recovered: str = match (present_text) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> "missing",
+    };
+    if (std::io::println(recovered) != 10) { return 2; }
+
+    let record: Text = Text { first: -7, text: "payload", last: 999 };
+    let fallback: Text = Text { first: 19, text: "fallback", last: -200 };
+    let present: core::option::Option<Text> = core::option::Some(record);
+    let absent: core::option::Option<Text> = core::option::None();
+    let result: Text = text_or(present, fallback);
+    if (result.first != -7 || result.last != 999) { return 3; }
+    let result_text: str = result.text;
+    if (std::io::println(result_text) != 8) { return 4; }
+    let selected: Text = text_or(absent, fallback);
+    if (selected.first != 19 || selected.last != -200) { return 5; }
+    let selected_text: str = selected.text;
+    if (std::io::println(selected_text) != 9) { return 6; }
+
+    let backing: [i32; 3] = [4, 7, -9];
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 3);
+    let view: View = View { first: -19, values: cells, last: 123 };
+    let fallback_view: View = View { first: 71, values: cells, last: 83 };
+    let present_view: core::option::Option<View> = core::option::Some(view);
+    let absent_view: core::option::Option<View> = core::option::None();
+    let recovered_view: View = view_or(present_view, fallback_view);
+    if (recovered_view.first != -19 || recovered_view.last != 123) { return 8; }
+    let recovered_cells: [i32] = recovered_view.values;
+    if (recovered_cells[0] != 4 || recovered_cells[2] != -9) { return 10; }
+    if (!core::slice::set(recovered_cells, 3, 1, 55)) { return 14; }
+    if (backing[1] != 55) { return 11; }
+    let selected_view: View = view_or(absent_view, fallback_view);
+    if (selected_view.first != 71 || selected_view.last != 83) { return 12; }
+    let selected_cells: [i32] = selected_view.values;
+    if (selected_cells[1] != 55) { return 13; }
+    let empty_text: core::option::Option<str> = core::option::Some("");
+    if (!empty_text.is_some()) { return 15; }
+    let recovered_empty: str = match (empty_text) {
+        core::option::Some(empty_payload) -> empty_payload,
+        core::option::None -> "missing",
+    };
+    if (std::io::println(recovered_empty) != 1) { return 16; }
+    return 0;
+}

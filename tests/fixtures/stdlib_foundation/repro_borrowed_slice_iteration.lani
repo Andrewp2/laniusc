@@ -1,0 +1,10 @@
+module app::main;
+import core::mem;
+fn main() -> i32 {
+    let backing: [i32; 3] = [4, 7, -9];
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 3);
+    let count: i32 = 0;
+    for value in cells { count = count + 1; }
+    if (count != 3) { return 1; }
+    return 0;
+}

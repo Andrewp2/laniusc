@@ -1,0 +1,5 @@
+error[LNC0016]: syntax error
+ --> tests/fixtures/stdlib_foundation/repro_ordinary_structural_impl_receiver.lani:2:11
+  |
+2 | impl Wrap<[i32; 2]> {
+  |           ^ expected one of identifier, `[`, or `&`, found `[`

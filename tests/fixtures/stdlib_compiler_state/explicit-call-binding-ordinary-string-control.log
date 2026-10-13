@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=24 code=AssignMismatch detail=8
+error[LNC0006]: type mismatch
+ --> /tmp/lanius-explicit-method-controls/ordinary-string-equality.lani:1:65
+  |
+1 | fn main() -> i32 { let words: [str; 2] = ["after", "tail"]; if (words[0] != "after") { return 1; } return 42; }
+  |                                                                 ^^^^^ value type is ptr, which is not accepted here
+     = note: found ptr, but this context requires another type; change the expression or the annotation so they agree

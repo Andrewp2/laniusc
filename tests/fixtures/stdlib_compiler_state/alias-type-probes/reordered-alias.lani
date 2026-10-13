@@ -1,0 +1,3 @@
+struct Pair<A, B> { first: A, second: B }
+type Swap<A, B> = Pair<B, A>;
+fn first<A, B>(value: Swap<A, B>) -> B { return value.first; } fn main() -> i32 { let pair: Swap<bool, i32> = Pair { first: 42, second: true }; if (!pair.second) { return 1; } return first(pair) - 42; }

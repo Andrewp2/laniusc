@@ -1,3 +1,9 @@
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.checked_index_reference;
+import type_checker.checked_pattern_path;
+import type_checker.scoped_type_equality;
+import hir_expr_semantics;
 import hir_records;
 import status;
 
@@ -26,6 +32,8 @@ StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
 StructuredBuffer<uint> resolved_dependency_variant_payload_records;
+StructuredBuffer<uint> imported_match_payload_ref_tag;
+StructuredBuffer<uint> imported_match_payload_ref_payload;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> decl_id_by_name_token;
@@ -39,18 +47,12 @@ StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
 StructuredBuffer<uint> call_result_instance;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
+RWStructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> visible_type;
 RWStructuredBuffer<uint> status;
 
@@ -97,14 +99,8 @@ bool token_is_wildcard(uint token)
 
 uint path_for_pattern(uint pattern)
 {
-    if (!valid_hir(pattern))
-        return INVALID;
-    uint path = path_id_by_owner_hir[pattern];
-    if (valid_path(path))
-        return path;
-    uint child = compact_hir_links[pattern].first_child;
-    path = valid_hir(child) ? path_id_by_owner_hir[child] : INVALID;
-    return valid_path(path) ? path : INVALID;
+    return checked_pattern_path(pattern, active_hir_count(), active_path_count(),
+        compact_hir_links, path_id_by_owner_hir);
 }
 
 bool resolved_enum_variant(
@@ -145,7 +141,7 @@ uint type_ref_to_type_code(uint tag, uint payload)
         uint slot = type_generic_param_slot_by_token[payload];
         return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
     }
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+    if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity())
     {
         uint decl_token = type_instance_decl_token[payload];
         return valid_token(decl_token) ? visible_type[decl_token] : TY_UNKNOWN;
@@ -157,7 +153,7 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
 {
     tag = TYPE_REF_INVALID;
     payload = INVALID;
-    if (!valid_token(instance_i) || slot >= type_instance_arg_count[instance_i])
+    if (instance_i >= checked_type_capacity() || slot >= type_instance_arg_count[instance_i])
         return false;
     uint start = type_instance_arg_row_start[instance_i];
     uint row = start == INVALID ? INVALID : start + slot;
@@ -176,65 +172,36 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
     return tag != TYPE_REF_INVALID;
 }
 
+#include "../inference_expression_reference.slang"
+#include "../checked_referent.slang"
+
 bool scrutinee_context_for_match(uint match_node, uint enum_token, out uint instance_i)
 {
     instance_i = INVALID;
     if (!valid_hir(match_node))
         return false;
-    uint scrutinee_node = compact_hir_payload[match_node].a;
-    if (!valid_hir(scrutinee_node))
-        return false;
-    uint expr_token = compact_hir_core[scrutinee_node].kind == HIR_MEMBER_EXPR
-        ? compact_hir_payload[scrutinee_node].c
-        : compact_hir_core[scrutinee_node].token_start;
-    if (!valid_token(expr_token))
-        return false;
-    if (compact_hir_core[scrutinee_node].kind == HIR_MEMBER_EXPR)
+    uint tag; uint payload;
+    if (!inference_value_reference(compact_hir_payload[match_node].a, tag, payload)) return false;
+    uint reference_depth;
+    if (!checked_referent_reference(tag, payload, reference_depth)) return false;
+    if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity() &&
+        type_instance_kind[payload] == 1u)
     {
-        uint tag = member_result_ref_tag[expr_token];
-        uint payload = member_result_ref_payload[expr_token];
-        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-        {
-            instance_i = payload;
-            return type_instance_decl_token[payload] == enum_token;
-        }
-        return type_ref_to_type_code(tag, payload) == TY_ENUM_BASE + enum_token;
+        instance_i = payload;
+        return type_instance_decl_token[payload] == enum_token;
     }
-    uint decl_token = visible_decl[expr_token];
-    if (!valid_token(decl_token))
-        return false;
-    if (decl_type_ref_tag[decl_token] == TYPE_REF_INSTANCE)
-    {
-        instance_i = decl_type_ref_payload[decl_token];
-        return valid_token(instance_i) && type_instance_decl_token[instance_i] == enum_token;
-    }
-    uint scrutinee_ty = visible_type[decl_token];
-    if (scrutinee_ty == TY_UNKNOWN)
-        scrutinee_ty = type_ref_to_type_code(
-            decl_type_ref_tag[decl_token], decl_type_ref_payload[decl_token]);
-    return scrutinee_ty == TY_ENUM_BASE + enum_token;
+    return tag == TYPE_REF_SCALAR && payload == TY_ENUM_BASE + enum_token;
 }
 
 uint imported_scrutinee_instance(uint match_node)
 {
     if (!valid_hir(match_node)) return INVALID;
-    uint scrutinee = compact_hir_payload[match_node].a;
-    if (!valid_hir(scrutinee)) return INVALID;
-    if (compact_hir_core[scrutinee].kind == HIR_CALL_EXPR)
-    {
-        uint instance = call_result_instance[scrutinee];
-        return valid_token(instance) ? instance : INVALID;
-    }
-    uint token = compact_hir_core[scrutinee].kind == HIR_MEMBER_EXPR
-        ? compact_hir_payload[scrutinee].c
-        : compact_hir_core[scrutinee].token_start;
-    if (!valid_token(token)) return INVALID;
-    uint declaration = visible_decl[token];
-    if (!valid_token(declaration) ||
-        decl_type_ref_tag[declaration] != TYPE_REF_INSTANCE)
-        return INVALID;
-    uint instance = decl_type_ref_payload[declaration];
-    return valid_token(instance) ? instance : INVALID;
+    uint tag; uint payload;
+    uint reference_depth;
+    return inference_value_reference(compact_hir_payload[match_node].a, tag, payload) &&
+        checked_referent_reference(tag, payload, reference_depth) &&
+        tag == TYPE_REF_INSTANCE && payload < checked_type_capacity() &&
+        type_instance_kind[payload] == 1u ? payload : INVALID;
 }
 
 bool imported_payload_ref(HirMatchPayload payload_row, HirMatchArm arm,
@@ -243,6 +210,18 @@ bool imported_payload_ref(HirMatchPayload payload_row, HirMatchArm arm,
     tag = TYPE_REF_INVALID;
     ref_payload = INVALID;
     if (payload_row.parent_pattern != arm.pattern) return false;
+    if (valid_hir(payload_row.pattern))
+    {
+        uint completed_tag = imported_match_payload_ref_tag[payload_row.pattern];
+        uint completed = imported_match_payload_ref_payload[payload_row.pattern];
+        if ((completed_tag == TYPE_REF_SCALAR && completed != INVALID) ||
+            (completed_tag == TYPE_REF_GENERIC_PARAM && valid_token(completed)) ||
+            (completed_tag == TYPE_REF_INSTANCE && completed < checked_type_capacity()))
+        {
+            tag = completed_tag; ref_payload = completed;
+            return true;
+        }
+    }
     uint record_base = path * 9u;
     uint count = resolved_dependency_variant_payload_records[record_base];
     if (payload_row.ordinal >= count || count > 4u) return false;
@@ -257,9 +236,11 @@ bool imported_payload_ref(HirMatchPayload payload_row, HirMatchArm arm,
     }
     if (projected_tag != TYPE_REF_GENERIC_PARAM) return false;
     uint instance = imported_scrutinee_instance(arm.owner);
-    return valid_token(instance) &&
-        instance_arg_ref(instance, projected_payload, tag, ref_payload) &&
-        tag == TYPE_REF_SCALAR && ref_payload != INVALID;
+    if (instance >= checked_type_capacity() ||
+        !instance_arg_ref(instance, projected_payload, tag, ref_payload))
+        return false;
+    return (tag == TYPE_REF_SCALAR && ref_payload != INVALID) ||
+        (tag == TYPE_REF_INSTANCE && checked_instance_is_closed(ref_payload));
 }
 
 bool enum_variant_for_arm(
@@ -296,17 +277,10 @@ void substituted_ref(uint instance_i, uint type_head, out uint tag, out uint pay
         return;
     tag = type_expr_ref_tag[type_head];
     payload = type_expr_ref_payload[type_head];
-    if (tag != TYPE_REF_GENERIC_PARAM)
-        return;
-    uint slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : INVALID;
-    if (slot == INVALID || instance_i == INVALID)
-        return;
-    uint substituted_tag;
-    uint substituted_payload;
-    if (instance_arg_ref(instance_i, slot, substituted_tag, substituted_payload))
+    if (!checked_scoped_reference(tag, payload, instance_i, gParams.n_tokens, tag, payload))
     {
-        tag = substituted_tag;
-        payload = substituted_payload;
+        tag = TYPE_REF_INVALID;
+        payload = INVALID;
     }
 }
 
@@ -321,7 +295,7 @@ bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload
         return false;
     uint path = path_for_pattern(payload_row.parent_pattern);
     if (valid_path(path) &&
-        resolved_dependency_value_metadata[path * 3u] == IMPORTED_PAYLOAD_VARIANT)
+        resolved_dependency_value_metadata[path * 4u] == IMPORTED_PAYLOAD_VARIANT)
         return imported_payload_ref(payload_row, arm, path, tag, ref_payload);
     uint variant_token;
     uint enum_token;
@@ -371,24 +345,34 @@ void main(uint3 dtid: SV_DispatchThreadID)
             payload.pattern,
             variant_token,
             enum_token,
-            variant) ||
-        token_is_wildcard(binder_token))
+            variant))
         return;
-    visible_decl[binder_token] = binder_token;
-    module_value_path_status[binder_token] = INVALID;
+    bool wildcard = token_is_wildcard(binder_token);
+    if (!wildcard)
+    {
+        visible_decl[binder_token] = binder_token;
+        module_value_path_status[binder_token] = INVALID;
+    }
     uint tag;
     uint ref_payload;
     if (!payload_ref(payload, tag, ref_payload))
     {
         uint path = path_for_pattern(payload.parent_pattern);
-        if (valid_path(path) &&
-            resolved_dependency_value_metadata[path * 3u] == IMPORTED_PAYLOAD_VARIANT)
+        if (call_inference_state[0u] == 0u && valid_path(path) &&
+            resolved_dependency_value_metadata[path * 4u] == IMPORTED_PAYLOAD_VARIANT)
             record_min_token_error(status, binder_token, ERR_ASSIGN_MISMATCH, 0u);
         return;
     }
+    bool changed = !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+        decl_type_ref_tag[binder_token], decl_type_ref_payload[binder_token], INVALID,
+        tag, ref_payload, INVALID, checked_type_capacity(), gParams.n_tokens);
+    // Every payload occurrence owns its complete type, including `_`: later
+    // payload offsets and template closure depend on ignored prefix fields.
+    // This occurrence-local root does not introduce a lexical wildcard name.
     decl_type_ref_tag[binder_token] = tag;
     decl_type_ref_payload[binder_token] = ref_payload;
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
     uint ty = type_ref_to_type_code(tag, ref_payload);
-    if (ty != TY_UNKNOWN)
+    if (!wildcard && ty != TY_UNKNOWN)
         visible_type[binder_token] = ty;
 }

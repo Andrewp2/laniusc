@@ -241,7 +241,20 @@ pub fn reverse_in_place(value: VecU16) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    return core::slice::reverse_in_place_i32(cells, value.length);
+    // These cells belong to this allocation-backed vector. Keep reversal
+    // concrete here until local generic calls within a source pack specialize.
+    let left: i32 = 0;
+    let right: i32 = value.length - 1;
+    let swaps: i32 = 0;
+    while (left < right) {
+        let previous: i32 = cells[left];
+        cells[left] = cells[right];
+        cells[right] = previous;
+        left += 1;
+        right -= 1;
+        swaps += 1;
+    }
+    return swaps;
 }
 
 // Search requires nondecreasing signed order. Bounds range from zero to len;

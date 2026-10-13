@@ -93,7 +93,12 @@ fn bool_char_float_option_result_methods_execute_on_x86() {
             "tests/fixtures/stdlib_foundation/option_result_{suffix}.lani"
         ));
         let fixture = std::fs::read_to_string(&entry).expect("read option/result fixture");
-        for module in [format!("option_{suffix}"), format!("result_{suffix}")] {
+        let option_module = if suffix == "bool" {
+            "option".to_string()
+        } else {
+            format!("option_{suffix}")
+        };
+        for module in [option_module, format!("result_{suffix}")] {
             let source = std::fs::read_to_string(root.join(format!("stdlib/core/{module}.lani")))
                 .expect("read option/result module");
             assert_eq!(

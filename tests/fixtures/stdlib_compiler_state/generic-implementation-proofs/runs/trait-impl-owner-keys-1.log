@@ -1,0 +1,6 @@
+
+running 1 test
+test compiler::gpu_compiler::x86_codegen::tests::generic_impl_owner_keys_use_source_tokens ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 734 filtered out; finished in 2.27s
+

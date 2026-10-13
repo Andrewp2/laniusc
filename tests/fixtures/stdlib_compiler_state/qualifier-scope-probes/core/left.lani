@@ -1,0 +1,1 @@
+module core::left; pub enum Choice<T> { Left(T) }

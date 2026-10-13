@@ -2,6 +2,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import codegen.lir.optimization.ssa_sparse_work;
 import atomics;
 import gpu_index;
@@ -33,7 +34,8 @@ bool observable_root(OptIrNodeCore core)
                        SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE)) != 0u)
         return true;
     return op == SEMANTIC_LIR_OP_VALUE_SET ||
-        op == SEMANTIC_LIR_OP_STORE || semantic_lir_is_call(op) ||
+        op == SEMANTIC_LIR_OP_STORE || op == SEMANTIC_LIR_OP_PLACE_STORE ||
+        op == SEMANTIC_LIR_OP_INDEX_ADDRESS || semantic_lir_is_call(op) ||
         (op >= SEMANTIC_LIR_OP_BLOCK_BEGIN && op <= SEMANTIC_LIR_OP_RETURN) ||
         op == SEMANTIC_LIR_OP_TRAP ||
         op == SEMANTIC_LIR_OP_DROP || op == SEMANTIC_LIR_OP_LOAD ||
@@ -47,7 +49,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
-    if (row >= total || !observable_root(opt_ir_core[row])) return;
+    if (!opt_ir_node_is_executable(row, total) ||
+        !observable_root(opt_ir_core[row])) return;
     uint prior = atomic_u32_compare_exchange(
         x86_live_by_semantic, row, 0u, X86_SEMANTIC_LIVE);
     if (prior != 0u) return;

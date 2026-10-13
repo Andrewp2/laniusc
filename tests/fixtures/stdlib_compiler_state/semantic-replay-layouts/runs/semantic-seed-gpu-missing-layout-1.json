@@ -1,0 +1,14 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/semantic-seed-build-19-cache-alias/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "compiler::gpu_compiler::typecheck::tests::semantic_replay_materializes_local_nominal_and_array_without_width_witnesses",
+    "--exact"
+  ],
+  "exit_code": 0,
+  "seconds": 3.218920037001226,
+  "binary_sha256": "0215671faf2eae191a63b7c4cbd172b4c1da1b9ca2964133237bd14a870731ed",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

@@ -1,0 +1,6 @@
+module core::contracts;
+pub struct Cell<T> {value:T}
+pub trait Rel<T> {}
+pub fn keep<T,U,const N:usize>(v:T, values:[U;N])->T where T:Rel<Cell<[U;N]>> {return v;}
+pub fn relay<T,U,const N:usize>(v:T, values:[U;N])->T where T:Rel<Cell<[U;N]>> {return keep(v,values);}
+pub fn tag<T,U,const N:usize>()->i32 where T:Rel<Cell<[U;N]>> {return 42;}

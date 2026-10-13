@@ -1,0 +1,17 @@
+import core::option;
+enum Packet<T> { Data(T), Missing }
+fn main() -> i32 {
+    let packet: Packet<[u32; 2]> = Data([1, 42]);
+    let fallback: [u32; 2] = [0, 0];
+    let local: [u32; 2] = match (packet) { Data(value) -> value, Missing -> fallback };
+    let imported: core::option::Option<[u32; 2]> = core::option::Some([11, 32]);
+    let copied: [u32; 2] = imported.unwrap_or(fallback);
+    if (local[0] != 1 || local[1] != 42 || copied[0] != 11 || copied[1] != 32) { return 1; }
+    let high: Packet<[u32; 2]> = Data([4294967295, 2147483648]);
+    let high_values: [u32; 2] = match (high) { Data(value) -> value, Missing -> fallback };
+    let imported_high: core::option::Option<[u32; 2]> = core::option::Some([4294967295, 2147483648]);
+    let high_copy: [u32; 2] = imported_high.unwrap_or(fallback);
+    if (high_values[0] != 4294967295 || high_values[1] != 2147483648 ||
+        high_copy[0] != 4294967295 || high_copy[1] != 2147483648) { return 2; }
+    return 0;
+}

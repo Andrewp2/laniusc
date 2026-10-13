@@ -1,0 +1,47 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1.58s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+
+running 18 tests
+test boolean_programs_use_option_bool_enum_on_x86 ... ok
+test concrete_generic_enum_return_executes_on_x86 ... ok
+test enum_match_later_payload_comparison_executes_on_x86 ... ok
+test enum_match_payload_short_circuit_executes_on_x86 ... ok
+test enum_match_result_consumers_execute_on_x86 ... ok
+test four_argument_generic_factory_receiver_executes_on_x86 ... ok
+test imported_empty_struct_results_execute_without_erasing_nominal_checks ... ok
+test imported_generic_factories_preserve_receiver_specializations ... ok
+test imported_generic_factory_methods_reject_wrong_result_types ... ok
+test imported_methods_validate_multiple_scalar_and_nominal_parameters ... ok
+test imported_option_bool_factory_result_supports_method_calls ... FAILED
+test imported_option_bool_methods_reject_wrong_argument_types ... FAILED
+test later_generic_enums_preserve_payloads_and_empty_variants ... ok
+test mixed_generic_factories_execute_in_one_module ... ok
+test option_bool_enum_methods_execute_on_x86 ... ok
+test option_bool_method_results_pass_directly_to_imported_functions ... ok
+test option_bool_rejects_wrong_payload_and_receiver ... ok
+test unused_generic_enum_does_not_prevent_later_construction ... ok
+
+failures:
+
+---- imported_option_bool_factory_result_supports_method_calls stdout ----
+
+thread 'imported_option_bool_factory_result_supports_method_calls' (581105) panicked at tests/stdlib_option_bool_execution.rs:291:6:
+compile imported generic factory result as a receiver: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0017", title: "x86 backend boundary", category: "native codegen", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0017", message: "referenced function has no native definition", primary_label: Some(DiagnosticLabel { path: "<source pack link>", line: 1, column: 1, length: 1, byte_start: None, byte_end: None, source_line: None, message: "a referenced function has no executable native body" }), help: Some("provide an executable native definition; imported generic payload bodies require concrete specialization support"), notes: ["native function has no emitted definition (library 0, unit 0, declaration 2147484068; relocation 17)"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- imported_option_bool_methods_reject_wrong_argument_types stdout ----
+
+thread 'imported_option_bool_methods_reject_wrong_argument_types' (581107) panicked at tests/stdlib_option_bool_execution.rs:133:22:
+fallback: an invalid imported method argument compiled
+
+
+failures:
+    imported_option_bool_factory_result_supports_method_calls
+    imported_option_bool_methods_reject_wrong_argument_types
+
+test result: FAILED. 16 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.00s
+
+error: test failed, to rerun pass `--test stdlib_option_bool_execution`

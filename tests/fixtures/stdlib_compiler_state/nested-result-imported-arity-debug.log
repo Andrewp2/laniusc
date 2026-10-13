@@ -1,0 +1,16 @@
+
+running 1 test
+test generic_nested_result_imported_contexts_and_methods_execute ... GPU source-pack type-check rejection: token=295 code=AssignMismatch detail=0
+
+thread 'generic_nested_result_imported_contexts_and_methods_execute' (53655) panicked at tests/compiler_generic_types_execution.rs:136:29:
+imported nested result contexts: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 14, column: 43, length: 4, byte_start: Some(947), byte_end: Some(951), source_line: Some("    let a: usize = match (bundle.empty) { core::nested_result::Known(n) => n, core::nested_result::Values(v) => 99 };"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_nested_result_imported_contexts_and_methods_execute
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 189 filtered out; finished in 2.48s
+

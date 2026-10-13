@@ -1,0 +1,19 @@
+{
+  "environment": {},
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "constant_value::tests",
+    "type_checker::params::constant_storage_plan_tests",
+    "constant_packet_atoms_preserve_declared_scalar_and_every_bit",
+    "constant_packet_copies_projection_recipe_without_host_fitting",
+    "dispatch::native_layout::typed_constant_tests",
+    "proof_store::tests::acceptance_is_atomic_and_validates_the_owned_header"
+  ],
+  "exit_code": 0,
+  "seconds": 0.007742692996544065,
+  "binary_sha256": "0fb16a11bb6a4fa09d2facf7a1338b581ed5b4b69b115db040fd45f03741a450",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

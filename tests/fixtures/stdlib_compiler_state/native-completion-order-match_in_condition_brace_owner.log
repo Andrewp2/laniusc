@@ -1,0 +1,5 @@
+error[LNC0016]: syntax error
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_match_in_condition_brace_owner.lani:1:73
+  |
+1 | fn main() -> i32 { if ((match (true) { true -> true, false -> false })) { return 0; } return 1; }
+  |                                                                         ^ expected `{`, found `{`

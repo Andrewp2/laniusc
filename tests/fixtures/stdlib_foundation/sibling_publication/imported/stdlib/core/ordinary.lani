@@ -1,0 +1,10 @@
+module core::ordinary;
+pub fn helper(limit: i32) -> i32 {
+    let sum: i32 = 0;
+    let index: i32 = 0;
+    while (index < limit) {
+        sum = sum + index;
+        index = index + 1;
+    }
+    return sum;
+}

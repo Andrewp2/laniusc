@@ -1,0 +1,11 @@
+
+running 6 tests
+test bare_nominal_compositions_preserve_copies_and_aliases ... ok
+test explicit_callable_arguments_execute_string_reference_and_slice_forms ... ok
+test explicit_constant_arguments_execute_both_thirty_two_slot_domains ... ok
+test explicit_constant_arguments_execute_independent_method_domains ... ok
+test nominal_constant_arguments_execute_thirty_two_interleaved_operands ... ok
+test zero_sized_values_forward_through_ordinary_and_generic_functions ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 341 filtered out; finished in 5.61s
+

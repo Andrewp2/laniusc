@@ -60,6 +60,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirPostfixFields
             ("parent".into(), b.parent.as_entire_binding()),
             ("first_child".into(), b.first_child.as_entire_binding()),
             ("prev_sibling".into(), b.prev_sibling.as_entire_binding()),
+            ("next_sibling".into(), b.next_sibling.as_entire_binding()),
+            ("out_emit_pos".into(), b.out_emit_pos.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),

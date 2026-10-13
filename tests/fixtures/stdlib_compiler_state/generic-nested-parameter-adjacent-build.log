@@ -1,0 +1,10 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 3.41s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+  Executable tests/stdlib_generic_payload_templates_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_payload_templates_execution-3db1cc76ecd73f30)
+  Executable tests/stdlib_mem_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_mem_generic_execution-3d5775ab86854f89)
+  Executable tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+  Executable tests/stdlib_option_generic_payload_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_generic_payload_execution-eeaa609c017fb174)
+  Executable tests/stdlib_result_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_result_generic_execution-82a33b04090f5a93)
+  Executable tests/stdlib_slice_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_slice_generic_execution-e40555ee32eecc54)

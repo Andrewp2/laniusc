@@ -1,0 +1,21 @@
+fn fixed_sum<const N: usize>(values: [i32; N]) -> i32 {
+    let total: i32 = 0;
+    for value in values { total = total + value; }
+    return total;
+}
+fn slice_sum(values: [i32]) -> i32 {
+    let total: i32 = 0;
+    for value in values { total = total + value; }
+    return total;
+}
+fn main() -> i32 {
+    let values: [i32; 3] = [3, 5, 7];
+    if (fixed_sum(values) != 15 || slice_sum(values) != 15) { return 1; }
+    let empty: [i32; 0] = [];
+    if (fixed_sum(empty) != 0 || slice_sum(empty) != 0) { return 2; }
+    let literal_total: i32 = 0;
+    let literal_values = [11, 13];
+    for value in literal_values { literal_total = literal_total + value; }
+    if (literal_total != 24) { return 3; }
+    return 0;
+}

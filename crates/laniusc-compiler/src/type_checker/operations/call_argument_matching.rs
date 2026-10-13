@@ -69,9 +69,10 @@ impl CallArgumentMatchingOperation {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         stage: CallArgumentMatchStage,
+        pages: &DependencyPatternReplay<'_>,
     ) -> Result<()> {
         let (initialize, consume, _) = stage.operation_names();
         self.initialize.record_as(encoder, initialize)?;
-        self.consume.record_as(encoder, consume)
+        pages.record(encoder, |encoder| self.consume.record_as(encoder, consume))
     }
 }

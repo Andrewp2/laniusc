@@ -1,0 +1,9 @@
+enum Length<T> { Known(usize), Values(T) }
+fn length<T, const N: usize>() -> Length<[T; N]> { return Known(N); }
+fn read(value: Length<[str; 3]>) -> usize {
+    return match (value) { Known(n) => n, Values(v) => 99 };
+}
+fn main() -> i32 {
+    if (read(length()) != 3) { return 1; }
+    return 0;
+}

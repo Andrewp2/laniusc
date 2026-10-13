@@ -1,0 +1,142 @@
+import semantic_interface_layout;
+// Retain substituted record fields and every enum variant's payload group.
+// Each lane owns one instance. Published references and group boundaries remain
+// meaningful after this immutable dependency page has been replaced.
+import dependency_interface;
+import atomics;
+import status;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
+import type_checker.dependencies.canonical_field_types;
+
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+RWStructuredBuffer<uint> imported_field_ref_start;
+RWStructuredBuffer<uint> imported_field_ref_count;
+RWStructuredBuffer<uint> imported_field_ref_tag;
+RWStructuredBuffer<uint> imported_field_ref_payload;
+RWStructuredBuffer<uint> imported_field_ref_total;
+RWStructuredBuffer<uint> imported_layout_kind;
+RWStructuredBuffer<uint> imported_layout_group_start;
+RWStructuredBuffer<uint> imported_layout_group_count;
+RWStructuredBuffer<uint2> imported_layout_groups;
+RWStructuredBuffer<uint> imported_layout_group_total;
+RWStructuredBuffer<uint> call_inference_state;
+RWStructuredBuffer<uint> status;
+
+static const uint INVALID = 0xffffffffu;
+
+bool variant_payloads(uint member, out uint start, out uint count)
+{
+    start = 0u; count = 0u;
+    uint signature = canonical_field_root(
+        dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 7u));
+    if (signature == INVALID || dependency_type_word(signature * 9u) != 7u) return false;
+    start = dependency_type_word(signature * 9u + 3u);
+    uint edges = dependency_type_word(signature * 9u + 4u);
+    uint capacity = dependency_count(5u);
+    if (edges == 0u || start > capacity || edges > capacity - start) return false;
+    count = edges - 1u;
+    return true;
+}
+
+bool publish_field(uint instance, uint target, uint type)
+{
+    uint2 reference;
+    bool resolved = canonical_checked_reference<ScopedCheckedTypeGraph>(instance, type,
+        checked_type_capacity(), gParams.n_tokens, type_instance_lookup_head,
+        type_instance_lookup_next, reference);
+    resolved = resolved && (reference.x == 1u || reference.x == 2u || reference.x == 3u) &&
+        reference.y != INVALID;
+    if (!resolved) reference = uint2(0u, INVALID);
+    imported_field_ref_tag[target] = reference.x;
+    imported_field_ref_payload[target] = reference.y;
+    return resolved;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint lane = dtid.x + dtid.y * 16776960u;
+    if (lane >= gParams.n_tokens) return;
+    uint capacity; uint stride; uint group_capacity;
+    imported_field_ref_tag.GetDimensions(capacity, stride);
+    imported_layout_groups.GetDimensions(group_capacity, stride);
+    for (uint instance = lane; instance < checked_type_capacity(); instance += gParams.n_tokens)
+    {
+        if (type_instance_kind[instance] != 1u || type_instance_decl_token[instance] != INVALID ||
+            external_type_library_id[instance] == INVALID) continue;
+        uint declaration = dependency_find_declaration(external_type_library_id[instance],
+            external_type_unit_id[instance], external_type_local_index[instance]);
+        if (declaration >= dependency_declaration_count()) continue;
+        uint kind = dependency_declaration_word(declaration * 14u + 6u);
+        if (kind != 6u && kind != 7u) continue;
+        uint start = dependency_declaration_word(declaration * 14u + 8u);
+        uint count = dependency_declaration_word(declaration * 14u + 9u);
+        if (start > dependency_member_count() || count > dependency_member_count() - start) continue;
+        uint fields = 0u; uint groups = kind == 6u ? 1u : 0u;
+        bool complete = true;
+        for (uint member = start; member < start + count; member++)
+        {
+            uint member_kind = dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 1u);
+            if (kind == 6u && member_kind == 4u) fields++;
+            if (kind == 7u && member_kind == 5u)
+            {
+                uint payload_start; uint payload_count;
+                if (!variant_payloads(member, payload_start, payload_count) ||
+                    payload_count > capacity || fields > capacity - payload_count)
+                { complete = false; break; }
+                groups++; fields += payload_count;
+            }
+        }
+        uint previous_kind = imported_layout_kind[instance];
+        imported_layout_kind[instance] = 0u;
+        if (!complete)
+        { record_min_token_error(status, min(instance, gParams.n_tokens - 1u), 6u, 0x474e0001u); return; }
+        uint target = imported_field_ref_start[instance];
+        bool new_fields = target == INVALID || imported_field_ref_count[instance] != fields;
+        if (new_fields) target = atomic_u32_add(imported_field_ref_total, 0u, fields);
+        uint group_target = imported_layout_group_start[instance];
+        bool new_groups = group_target == INVALID || imported_layout_group_count[instance] != groups;
+        if (new_groups) group_target = atomic_u32_add(imported_layout_group_total, 0u, groups);
+        if (target > capacity || fields > capacity - target ||
+            group_target > group_capacity || groups > group_capacity - group_target)
+        { record_min_token_error(status, min(instance, gParams.n_tokens - 1u), 6u, 0x474e0001u); return; }
+        imported_field_ref_start[instance] = target;
+        imported_field_ref_count[instance] = fields;
+        imported_layout_group_start[instance] = group_target;
+        imported_layout_group_count[instance] = groups;
+        // Completion is monotone within a checked application. Equivalent
+        // index representatives can differ without creating new layout work.
+        bool changed = previous_kind != kind || new_fields || new_groups;
+        uint ordinal = 0u; uint group = 0u;
+        if (kind == 6u) imported_layout_groups[group_target] = uint2(0u, fields);
+        for (uint member = start; member < start + count; member++)
+        {
+            uint member_kind = dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 1u);
+            uint type = dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 7u);
+            uint payload_start = 0u; uint payload_count = 0u;
+            if (kind == 6u && member_kind == 4u)
+                payload_count = 1u;
+            else if (kind == 7u && member_kind == 5u)
+            {
+                variant_payloads(member, payload_start, payload_count);
+                imported_layout_groups[group_target + group++] = uint2(ordinal, payload_count);
+            }
+            // Keep one canonical-reference traversal site for both nominal
+            // kinds; duplicating it also duplicates the compiled GPU program.
+            for (uint payload = 0u; payload < payload_count; payload++)
+            {
+                uint child = kind == 6u ? type : dependency_type_edge_word(payload_start + payload);
+                bool resolved = publish_field(instance, target + ordinal++, child);
+                complete = complete && resolved;
+            }
+        }
+        if (complete)
+        {
+            imported_layout_kind[instance] = kind;
+            if (changed) atomic_u32_add(call_inference_state, 1u, 1u);
+        }
+    }
+}

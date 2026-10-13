@@ -1,0 +1,30 @@
+module app::main;
+import core::option;
+
+struct Frame<T> { value: T }
+fn relay<T>(value: T) -> T { return value; }
+fn accumulate(stop: i32) -> Frame<core::option::Option<[i64; 2]>> {
+    let count: i64 = 0;
+    let state: core::option::Option<[i64; 2]> = core::option::None();
+    for value in .. {
+        count += 1;
+        state = core::option::Some([count, 9007199254740993]);
+        if (value == 1) { continue; }
+        if (value == stop) { break; }
+        if (value == 4) { break; }
+    }
+    let result: Frame<core::option::Option<[i64; 2]>> = Frame { value: relay(state) };
+    return result;
+}
+fn main() -> i32 {
+    let early = accumulate(2);
+    let late = accumulate(8);
+    let a: [i64; 2] = early.value.unwrap_or([0, 0]);
+    let b: [i64; 2] = late.value.unwrap_or([0, 0]);
+    if (a[0] != 3 || b[0] != 5) { return 1; }
+    if (a[1] != 9007199254740993 || b[1] != 9007199254740993) { return 2; }
+    let untouched: i32 = 7;
+    for value in 4..4 { untouched = value; }
+    if (untouched != 7) { return 3; }
+    return 0;
+}

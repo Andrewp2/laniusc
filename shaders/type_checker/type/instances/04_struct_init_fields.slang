@@ -34,6 +34,8 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> path_count_out;
@@ -49,6 +51,7 @@ StructuredBuffer<uint> struct_lit_context_instance;
 RWStructuredBuffer<uint> struct_init_field_context_instance;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_tag;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_payload;
+RWStructuredBuffer<uint> struct_init_field_expected_context_instance;
 RWStructuredBuffer<uint> struct_init_field_ordinal;
 RWStructuredBuffer<uint> struct_init_field_ordinal_by_row;
 
@@ -79,6 +82,13 @@ uint active_token_count()
 uint active_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, compact_hir_count[0u]);
+}
+
+bool valid_instance(uint instance)
+{
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    return instance < capacity;
 }
 
 bool valid_token(uint i)
@@ -179,7 +189,7 @@ bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out
     uint constructor_payload = valid_token(constructor_token)
         ? type_expr_ref_payload[constructor_token]
         : INVALID;
-    if (constructor_tag == TYPE_REF_INSTANCE && valid_token(constructor_payload))
+    if (constructor_tag == TYPE_REF_INSTANCE && valid_instance(constructor_payload))
     {
         explicit_decl = type_instance_decl_token[constructor_payload];
         explicit_instance = constructor_payload;
@@ -188,13 +198,13 @@ bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out
         constructor_payload >= TY_STRUCT_BASE && constructor_payload < TY_ENUM_BASE)
         explicit_decl = constructor_payload - TY_STRUCT_BASE;
 
-    if (valid_token(explicit_instance))
+    if (valid_instance(explicit_instance))
     {
         decl_token = explicit_decl;
         instance_i = explicit_instance;
         return valid_token(decl_token);
     }
-    if (valid_token(contextual_instance) &&
+    if (valid_instance(contextual_instance) &&
         type_instance_decl_token[contextual_instance] == explicit_decl)
     {
         decl_token = explicit_decl;
@@ -263,6 +273,9 @@ void publish_struct_init_field_row(uint field_row)
         return;
     if (!valid_token(decl_token))
         return;
+    // Declaration parameters describe a pattern, not a receiving type.
+    // Wait for the literal's application before exposing its field context.
+    if (type_instance_arg_count[decl_token] != 0u && !valid_instance(instance_i)) return;
 
     uint struct_node = struct_node_for_decl_token(decl_token);
     if (!valid_compact_node(struct_node))
@@ -285,14 +298,14 @@ void publish_struct_init_field_row(uint field_row)
     {
         if (!valid_token(payload))
             return;
-        payload = type_generic_param_slot_by_token[payload];
-        if (payload == INVALID)
+        if (type_generic_param_slot_by_token[payload] == INVALID)
             return;
     }
 
     struct_init_field_context_instance[field_token] = instance_i;
     struct_init_field_expected_ref_tag[field_token] = tag;
     struct_init_field_expected_ref_payload[field_token] = payload;
+    struct_init_field_expected_context_instance[field_token] = instance_i;
     struct_init_field_ordinal[field_token] = field_ordinal;
     uint literal_hir = literal_node;
     uint row = field_row;

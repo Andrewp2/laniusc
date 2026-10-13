@@ -1,0 +1,5 @@
+error[LNC0017]: referenced function has no native definition
+ --> <source pack link>:1:1
+     = a referenced function has no executable native body
+     = help: provide an executable native definition; imported generic payload bodies require concrete specialization support
+     = note: native function has no emitted definition (library 0, unit 0, declaration 1073741824; relocation 0)

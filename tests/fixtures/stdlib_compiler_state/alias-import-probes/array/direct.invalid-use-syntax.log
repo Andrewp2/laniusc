@@ -1,0 +1,6 @@
+GPU parser rejection: error_pos=0 code=4 detail=4294967271 steps=263 emit_len=0 semantic_kinds=Some([0, 1, 1, 114, 114])
+stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_33005.lani: error[LNC0016]: syntax error
+ --> /tmp/laniusc_stdlib_perf_input_33005.lani:1:1
+  |
+1 | use core::aliases;
+  | ^^^ expected one of end of input, keyword `pub`, keyword `fn`, keyword `const`, keyword `enum`, keyword `struct`, keyword `import`, keyword `module`, keyword `trait`, keyword `extern`, keyword `type`, or keyword `impl`, found `use`

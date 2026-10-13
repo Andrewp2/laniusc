@@ -83,6 +83,7 @@ pub(in crate::parser) const HIR_TYPE_PATH_LEAF_STEPS: [&str; 8] = [
     "hir_type_path_leaf_step.7",
 ];
 pub(in crate::parser) const HIR_TYPE_PATH_LEAF_FINALIZE: &str = "hir_type_path_leaf_step.finalize";
+pub(in crate::parser) const HIR_LITERAL_STATUS_CLEAR: &str = "parser.hir_literal_status.clear";
 pub(in crate::parser) const TREE_DEPTH_STATUS_CLEAR: &str = "parser.tree_depth_status.clear";
 pub(in crate::parser) const HIR_EXPR_NAME_ROLE_CLEAR: &str = "parser.hir_expr_name_role.clear";
 pub(in crate::parser) const SOURCE_FILE_TOKEN_END_CLEAR: &str =
@@ -98,7 +99,7 @@ pub(in crate::parser) const HIR_CANONICAL_IDENTITY_CLEAR: &str =
 pub(in crate::parser) const HIR_COUNTS_READBACK: &str = "parser.hir_counts.readback";
 
 pub(in crate::parser) struct ParserStatusReadbackOperations {
-    full: [CopyBufferOperation; 3],
+    full: [CopyBufferOperation; 4],
     partial: [CopyBufferOperation; 2],
 }
 
@@ -113,6 +114,7 @@ pub(in crate::parser) struct ParserClearOperations {
     token_impl_header_kind: Option<ClearBufferOperation>,
     token_braced_rhs_statement_kind: Option<ClearBufferOperation>,
     tree_depth_status: ClearBufferOperation,
+    hir_literal_status: ClearBufferOperation,
     hir_expr_name_role: ClearBufferOperation,
     source_file_token_end: ClearBufferOperation,
     hir_type_path_leaf_link_b: ClearBufferOperation,
@@ -129,6 +131,10 @@ pub(in crate::parser) struct ParserClearOperations {
 }
 
 impl ParserClearOperations {
+    pub(in crate::parser) fn record_hir_literal_status(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.hir_literal_status.record(encoder);
+    }
+
     pub(in crate::parser) fn record_token_file_id(&self, encoder: &mut wgpu::CommandEncoder) {
         self.token_file_id.record(encoder);
     }
@@ -391,6 +397,7 @@ impl ParserCompilerGraph {
         partial_parse_status: &crate::gpu::buffers::LaniusBuffer<u32>,
         token_feature_flags: &crate::gpu::buffers::LaniusBuffer<u32>,
         tree_depth_status: &crate::gpu::buffers::LaniusBuffer<u32>,
+        hir_literal_status: &crate::gpu::buffers::LaniusBuffer<u32>,
         readback: &crate::gpu::buffers::LaniusBuffer<u8>,
     ) -> anyhow::Result<ParserStatusReadbackOperations> {
         let copy = |name,
@@ -433,6 +440,7 @@ impl ParserCompilerGraph {
                     28,
                     4,
                 )?,
+                copy("parser.status.literal.readback", "hir_literal_status", hir_literal_status, 32, 12)?,
             ],
             partial: [
                 copy(
@@ -654,6 +662,9 @@ impl ParserCompilerGraph {
             &[(
                 "hir_type_arg_table_count",
                 (&buffers.hir_type_arg_table_count).into(),
+            ), (
+                "hir_type_arg_family_flag",
+                (&buffers.hir_type_arg_family_flag).into(),
             )],
         )?;
         phase_clear(
@@ -731,6 +742,7 @@ impl ParserCompilerGraph {
                 "braced_rhs_statement_kind",
                 &buffers.token_braced_rhs_statement_kind,
             )?,
+            hir_literal_status: clear(HIR_LITERAL_STATUS_CLEAR, "hir_literal_status", &buffers.hir_literal_status)?,
             tree_depth_status: clear(
                 TREE_DEPTH_STATUS_CLEAR,
                 "tree_depth_status",
@@ -988,6 +1000,7 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "tree_prefix_block_max"
             | "tree_prefix_block_max_tree"
             | "tree_depth_status"
+            | "hir_literal_status"
             | "tree_depth_block_max"
             | "tree_depth"
             | "prev_sibling"
@@ -1023,7 +1036,7 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_type_form"
             | "hir_type_value_node"
             | "hir_type_len_token"
-            | "hir_type_len_value"
+            | "hir_type_len_operand"
             | "hir_type_path_leaf_node"
             | "hir_bound_path_owner_by_leaf"
             | "hir_type_path_leaf_link_a"
@@ -1125,7 +1138,7 @@ fn retained_debug_parser_output(name: &str) -> bool {
             | "hir_type_form"
             | "hir_type_value_node"
             | "hir_type_len_token"
-            | "hir_type_len_value"
+            | "hir_type_len_operand"
             | "hir_type_path_leaf_node"
             | "hir_bound_path_owner_by_leaf"
             | "hir_type_path_leaf_link_a"
@@ -1237,8 +1250,10 @@ pub(super) fn retained_hir_output(name: &str) -> bool {
             | "hir_type_arg_table_count"
             | "hir_type_arg_rows"
             | "hir_type_arg_ranges"
+            | "hir_path_type_arg_ranges"
             | "hir_generic_param_table_count"
             | "hir_generic_param_rows"
+            | "hir_generic_param_types"
             | "hir_generic_param_ranges"
             | "hir_path_table_count"
             | "hir_path_rows"
@@ -1470,7 +1485,8 @@ fn build_graph(
         ),
         ("ll1_status", ResourceDomain::Tokens, 24),
         ("token_feature_flags", ResourceDomain::Tokens, 4),
-        ("status_readback", ResourceDomain::Tokens, 32),
+        ("status_readback", ResourceDomain::Tokens, 44),
+        ("hir_literal_status", ResourceDomain::Tokens, 12),
         ("hir_count_readback", ResourceDomain::HirNodes, 120),
         (
             "tree_prefix_inblock",
@@ -1787,7 +1803,7 @@ fn build_graph(
         ("hir_type_form", tree_rows * 4),
         ("hir_type_value_node", tree_rows * 4),
         ("hir_type_len_token", tree_rows * 4),
-        ("hir_type_len_value", tree_rows * 4),
+        ("hir_type_len_operand", tree_rows * 4),
         ("hir_type_path_leaf_node", tree_rows * 4),
         ("hir_bound_path_owner_by_leaf", tree_rows * 4),
         ("hir_type_arg_start", tree_rows * 4),
@@ -1811,6 +1827,7 @@ fn build_graph(
         ("hir_match_pattern_to_arm", input_token_rows * 4),
         ("hir_param_ranges", input_token_rows * 8),
         ("hir_type_arg_ranges", input_token_rows * 8),
+        ("hir_path_type_arg_ranges", input_token_rows * 8),
     ] {
         if !capacity.retain_debug_hir_buffers
             && matches!(
@@ -1902,6 +1919,8 @@ fn build_graph(
     )?;
 
     graph.add_physical_reset_pass(JOB_STORAGE_RESET, CompilerPhase::Parse)?;
+    clear(&mut graph, HIR_LITERAL_STATUS_CLEAR, CompilerPhase::Parse,
+        &[("hir_literal_status", "hir_literal_status")])?;
 
     if !capacity.preclassified_token_kinds {
         token_frontend::register_schedule(&mut graph, capacity, &passes.token_frontend)?;
@@ -2922,7 +2941,7 @@ fn build_graph(
             "hir_call_context_stmt_node",
             "hir_array_lit_context_stmt_node",
             "hir_struct_lit_context_stmt_node",
-            "hir_type_len_value",
+            "hir_type_len_operand",
             "hir_expr_result_root_scratch_node",
         ],
     )?;
@@ -3008,6 +3027,7 @@ fn build_graph(
             "hir_type_form",
             "hir_type_value_node",
             "hir_type_len_token",
+            "hir_type_len_operand",
             "hir_type_path_leaf_node",
             "hir_type_path_leaf_link_a",
             "hir_type_path_leaf_value_a",
@@ -3242,6 +3262,7 @@ fn build_graph(
             ("match_pattern_to_arm", "hir_match_pattern_to_arm", None),
             ("param_ranges", "hir_param_ranges", None),
             ("type_arg_ranges", "hir_type_arg_ranges", None),
+            ("path_type_arg_ranges", "hir_path_type_arg_ranges", None),
         ],
     )?;
     graph.mark_pass_bindings_initialize(
@@ -3257,6 +3278,7 @@ fn build_graph(
             "match_pattern_to_arm",
             "param_ranges",
             "type_arg_ranges",
+            "path_type_arg_ranges",
         ],
     )?;
     static_pass(
@@ -3312,6 +3334,7 @@ fn build_graph(
             "token_feature_flags",
         ),
         ("parser.status.tree_depth.readback", "tree_depth_status"),
+        ("parser.status.literal.readback", "hir_literal_status"),
         (
             "parser.status.partial_parse.readback",
             "partial_parse_status",
@@ -3367,6 +3390,94 @@ mod tests {
             preclassified_token_kinds: false,
         };
         let graph = build_graph(capacity, &passes).unwrap();
+        assert!(graph.pass_id("parser_hir_float_values").is_none());
+        assert_eq!(graph.resource(graph.resource_id("hir_float_workspace").unwrap()).unwrap().bytes, 4);
+        assert_eq!(graph.resource(graph.resource_id("hir_expr_float_bits").unwrap()).unwrap().bytes, 16);
+        let float_graph = build_graph(ParserGraphCapacity {
+            parser_feature_flags: crate::lexer::features::PARSER_FEATURE_FLOAT_LITERALS,
+            ..capacity
+        }, &passes).unwrap();
+        let float_pass = float_graph.pass_id("parser_hir_float_values").unwrap();
+        assert!(float_graph.pass_id("parser_hir_literal_values").unwrap().index() < float_pass.index());
+        assert!(float_pass.index() < float_graph.pass_id("hir_canonical_core").unwrap().index());
+        assert_eq!(float_graph.resource(float_graph.resource_id("hir_float_workspace").unwrap()).unwrap().bytes, 2048 * 768 * 4);
+        assert_eq!(float_graph.resource(float_graph.resource_id("hir_expr_float_bits").unwrap()).unwrap().bytes, u64::from(capacity.token_capacity) * 16);
+        // Structural header recovery reads the raw delimiter search relation.
+        // Semantic bracket roles require the later statement context instead.
+        // Keep both producer/consumer contracts in the production schedule.
+        for (producer, consumer) in [
+            (
+                token_frontend::DELIMITER_DEPTH_SCAN_UP,
+                "parser.tokens.impl_header.local",
+            ),
+            (
+                "parser.tokens.impl_header.apply",
+                "parser.tokens.bracket_match.pair_pse",
+            ),
+            (
+                "parser.tokens.delimiter_match.depth_blocks",
+                "parser.tokens.delimiter_match.build_min_tree",
+            ),
+            (
+                "parser.tokens.delimiter_match.build_min_tree",
+                "parser.tokens.delimiters.owner_apply",
+            ),
+            (
+                "parser.tokens.statement_phase.apply",
+                "parser.tokens.bracket.kinds",
+            ),
+            (
+                "parser.tokens.bracket.kinds",
+                "parser.tokens.bracket_match.pair_pse",
+            ),
+        ] {
+            assert!(
+                graph.pass_id(producer).unwrap().index() < graph.pass_id(consumer).unwrap().index(),
+                "{consumer} must consume the relation published by {producer}"
+            );
+        }
+        let array_context = graph
+            .pass_id("parser.tokens.bracket_match.pair_pse")
+            .unwrap();
+        let impl_context = graph.resource_id("token_impl_context_event").unwrap();
+        assert!(
+            graph
+                .pass(array_context)
+                .unwrap()
+                .accesses
+                .iter()
+                .any(|access| {
+                    access.resource == impl_context && access.mode == AccessMode::Read
+                })
+        );
+        assert!(graph.lifetime(impl_context).unwrap().last_pass.index() >= array_context.index());
+        // Constructor braces and value-path array arguments share the raw
+        // angle relation. Reflection must keep every input read-only and live
+        // until its consumer, including before semantic bracket projection.
+        for consumer in [
+            "parser.tokens.delimiters.owner_apply",
+            "parser.tokens.bracket_match.pair_pse",
+            "parser.tokens_to_kinds.pass",
+        ] {
+            let pass = graph.pass_id(consumer).unwrap();
+            for name in [
+                "angle_match_depth",
+                "angle_match_block_min",
+                "angle_match_min_tree",
+            ] {
+                let resource = graph.resource_id(name).unwrap();
+                assert!(
+                    graph.pass(pass).unwrap().accesses.iter().any(|access| {
+                        access.resource == resource && access.mode == AccessMode::Read
+                    }),
+                    "{consumer} must declare its read of {name}",
+                );
+                assert!(
+                    graph.lifetime(resource).unwrap().last_pass.index() >= pass.index(),
+                    "{name} must survive through {consumer}",
+                );
+            }
+        }
         if std::env::var_os("LANIUS_TEST_PRINT_PARSER_EXTERNALS").is_some() {
             let external = graph
                 .resources()

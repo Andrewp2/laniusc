@@ -1,0 +1,2 @@
+type Invalid = [u8;true];
+fn main()->i32 { return 0; }

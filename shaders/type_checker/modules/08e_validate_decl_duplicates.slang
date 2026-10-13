@@ -17,6 +17,7 @@ StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> decl_token_start;
 StructuredBuffer<uint> decl_lookup_state;
 RWStructuredBuffer<uint> decl_status;
@@ -42,10 +43,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint module_id = decl_module_id[declaration];
     uint namespace_id = decl_namespace[declaration];
     uint name_id = decl_name_id[declaration];
-    uint representative = decl_lookup_find(
-        module_id, namespace_id, name_id, count,
+    uint representative = decl_lookup_query(
+        module_id, namespace_id, name_id, decl_parent_type_decl[declaration], count,
         decl_module_id, decl_namespace, decl_name_id,
-        decl_lookup_state);
+        decl_parent_type_decl, decl_lookup_state).first;
     if (representative == INVALID || representative == declaration)
         return;
     decl_status[declaration] = DECL_STATUS_DUPLICATE;

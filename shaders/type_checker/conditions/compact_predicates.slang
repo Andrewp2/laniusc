@@ -3,6 +3,7 @@
 // sibling, or raw-to-compact relation crosses this pass boundary.
 
 import hir_records;
+import type_checker.calls.explicit_call_environment;
 import fixed.compact_method;
 import gpu_index;
 import status;
@@ -242,6 +243,12 @@ void validate_bound_type_argument(uint row)
     // using the bound-specific visibility rules. This pass exists to cover
     // nested argument rows which are not part of that direct relation.
     if (argument.owner == root) return;
+
+    // Nested nominal operands retain their checked type/constant domain.
+    // A symbolic constant remains a HIR_TYPE path in source, but it must not
+    // be resolved again as a type after application binding accepted it.
+    uint constant_kind; uint constant_payload;
+    if (checked_source_constant_operand(node, constant_kind, constant_payload)) return;
 
     uint path = path_for_type(node);
     uint token = path_leaf_token(path);

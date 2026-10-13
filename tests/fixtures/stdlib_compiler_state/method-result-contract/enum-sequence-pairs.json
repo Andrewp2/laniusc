@@ -1,0 +1,62 @@
+[
+  {
+    "prior": "imported_argument_values_are_captured_before_later_effects",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-0.log"
+  },
+  {
+    "prior": "imported_generic_aliases_preserve_nested_local_and_imported_compositions",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-1.log"
+  },
+  {
+    "prior": "imported_generic_aliases_preserve_symbolic_type_and_constant_environments",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-2.log"
+  },
+  {
+    "prior": "imported_generic_aliases_reject_type_length_and_header_conflicts",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-3.log"
+  },
+  {
+    "prior": "imported_generic_aliases_substitute_array_targets",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-4.log"
+  },
+  {
+    "prior": "imported_generic_aliases_substitute_identity_targets",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-5.log"
+  },
+  {
+    "prior": "imported_generic_aliases_substitute_reordered_record_targets",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-6.log"
+  },
+  {
+    "prior": "imported_generic_aliases_substitute_slice_targets",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-7.log"
+  },
+  {
+    "prior": "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-8.log"
+  },
+  {
+    "prior": "imported_generic_functions_preserve_enum_values_and_nested_options",
+    "target": "slice_enum_payloads_borrow_arrays_and_preserve_following_fields",
+    "exit": 101,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-sequence-pair-9.log"
+  }
+]

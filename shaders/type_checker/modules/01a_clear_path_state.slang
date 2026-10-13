@@ -9,6 +9,8 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> path_id_by_owner_hir;
 RWStructuredBuffer<uint> path_id_by_owner_token;
 RWStructuredBuffer<uint> path_max_segment_count;
+RWStructuredBuffer<uint> resolved_value_type_qualifier_token;
+RWStructuredBuffer<uint4> resolved_value_qualifier_binding;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -20,6 +22,13 @@ uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = tid(dtid);
+    uint path_capacity; uint stride;
+    resolved_value_type_qualifier_token.GetDimensions(path_capacity, stride);
+    if (row < path_capacity)
+    {
+        resolved_value_type_qualifier_token[row] = INVALID;
+        resolved_value_qualifier_binding[row] = uint4(0u, INVALID, INVALID, INVALID);
+    }
     if (row < gParams.n_hir_nodes)
     {
         path_id_by_owner_hir[row] = INVALID;

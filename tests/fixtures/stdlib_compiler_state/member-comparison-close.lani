@@ -1,0 +1,1 @@
+struct Pair { low: u32 } fn first(left: Pair, low: u32) -> bool { return low < left.low; } fn second(left: Pair, low: u32)->bool { return low > (left.low); } fn main()->i32 { let left=Pair{low:7}; if(first(left,3) && second(left,8)){return 42;}return 1;}

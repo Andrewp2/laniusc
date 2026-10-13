@@ -23,7 +23,9 @@ pub(in crate::type_checker) fn create_method_bind_groups(
         keys,
         mark_call_keys: indirect(METHODS_MARK_CALL_KEYS, method_token_hir_args)?,
         mark_call_return_keys: indirect(METHODS_MARK_CALL_RETURN_KEYS, method_hir_args)?,
+        reset_candidates: indirect(METHODS_RESET_CANDIDATES, method_token_args)?,
         resolve_table: indirect(METHODS_RESOLVE_TABLE, method_token_args)?,
+        finalize_candidates: indirect(METHODS_FINALIZE_CANDIDATES, method_token_args)?,
         resolve: indirect(METHODS_RESOLVE, method_token_hir_args)?,
     })
 }

@@ -1,0 +1,15 @@
+[gpu_compile_host_timer] pipeline_cache.create.path: 0.014ms
+[gpu_compile_host_timer] pipeline_cache.create.prune: 0.033ms
+[gpu_compile_host_timer] pipeline_cache.create.read: 75.911ms
+[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 93809837 bytes
+[gpu_compile_host_timer] pipeline_cache.create.decode: 17.046ms
+[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 93809797 bytes
+[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 54.136ms
+[gpu_compile_host_timer] pipeline_cache.create.total: 164.249ms
+[gpu_compile_host_timer] compiler.init.lexer: 17.832ms (total 17.832ms)
+[gpu_compile_host_timer] compiler.init.parse_tables: 1.101ms (total 18.933ms)
+[gpu_compile_host_timer] compiler.init.parser: 81.587ms (total 100.520ms)
+[gpu_compile_host_timer] pipeline_cache.persist.get_data: 60.831ms
+[gpu_compile_host_timer] pipeline_cache.persist.bytes: 93809797 bytes
+[gpu_compile_host_timer] pipeline_cache.persist.hash: 20.846ms
+[gpu_compile_host_timer] pipeline_cache.persist.skipped.unchanged: 81.745ms

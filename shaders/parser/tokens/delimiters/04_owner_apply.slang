@@ -1,6 +1,8 @@
+import parser.tokens.statement.parameter_keywords;
 // Apply prefix-scanned brace-owner header context.
 
 import prefix_scan;
+import segment_tree;
 
 struct Params
 {
@@ -30,6 +32,13 @@ StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<int> block_prefix_angle;
 StructuredBuffer<uint> token_impl_context_event;
 StructuredBuffer<uint> top_brace_owner_block_prefix;
+// Raw delimiter matching has one producer and precedes semantic ownership.
+StructuredBuffer<int> paren_match_depth;
+StructuredBuffer<int> paren_match_block_min;
+StructuredBuffer<int> paren_match_min_tree;
+StructuredBuffer<int> angle_match_depth;
+StructuredBuffer<int> angle_match_block_min;
+StructuredBuffer<int> angle_match_min_tree;
 
 RWStructuredBuffer<uint> top_brace_owner_block;
 RWStructuredBuffer<uint> brace_semantic_kind;
@@ -42,7 +51,11 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
+static const uint TK_LPAREN = 4u;
 static const uint TK_RPAREN = 5u;
+static const uint TK_LT = 12u;
+static const uint TK_GT = 13u;
+static const uint TK_SHR = 44u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
@@ -190,6 +203,72 @@ uint owner_header_event_for(
     return 0u;
 }
 
+public struct OwnerHeaderParenTree : IRangeSearchTree<int>
+{
+    public static uint n_blocks() { return gParams.n_blocks; }
+    public static uint leaf_base()
+    {
+        return range_search_leaf_base_for_block_count(gParams.n_blocks);
+    }
+    public static int leaf_value(uint block) { return paren_match_block_min[block]; }
+    public static int tree_value(uint node) { return paren_match_min_tree[node]; }
+}
+
+public struct OwnerHeaderParenRows : IRangeSearchRows<int>
+{
+    public static uint item_count() { return active_token_count(); }
+    public static uint block_size() { return WG_SIZE; }
+    public static int row_value(uint row) { return paren_match_depth[row]; }
+}
+
+public struct OwnerHeaderParenAtMost : IRangeSearchPredicate<int, int>
+{
+    public static bool aggregate_may_match(int value, int query) { return value <= query; }
+    public static bool leaf_matches(int value, int query) { return value <= query; }
+}
+
+uint parenthesized_header_owner(uint close_i)
+{
+    int depth = paren_match_depth[close_i];
+    uint open_i;
+    if (!range_search_tree_last_index_before<int, int,
+            OwnerHeaderParenTree, OwnerHeaderParenRows, OwnerHeaderParenAtMost>(
+            close_i, depth, open_i) || open_i == 0u ||
+        token_words[open_i].kind != TK_LPAREN || paren_match_depth[open_i] != depth)
+        return 0u;
+    uint header_kind = token_words[open_i - 1u].kind;
+    if (header_kind == TK_IF) return TK_IF_LBRACE;
+    if (header_kind == TK_MATCH) return TK_MATCH_LBRACE;
+    if (header_kind == TK_WHILE) return TK_LBRACE;
+    return 0u;
+}
+
+public struct ConstructorAngleTree : IRangeSearchTree<int>
+{
+    public static uint n_blocks() { return gParams.n_blocks; }
+    public static uint leaf_base() { return range_search_leaf_base_for_block_count(gParams.n_blocks); }
+    public static int leaf_value(uint block) { return angle_match_block_min[block]; }
+    public static int tree_value(uint node) { return angle_match_min_tree[node]; }
+}
+
+public struct ConstructorAngleRows : IRangeSearchRows<int>
+{
+    public static uint item_count() { return active_token_count(); }
+    public static uint block_size() { return WG_SIZE; }
+    public static int row_value(uint row) { return angle_match_depth[row]; }
+}
+
+bool brace_follows_type_application(uint close_i)
+{
+    int depth = angle_match_depth[close_i];
+    uint open_i;
+    return range_search_tree_last_index_before<int, int,
+            ConstructorAngleTree, ConstructorAngleRows, OwnerHeaderParenAtMost>(
+            close_i, depth, open_i) && open_i != 0u &&
+        token_words[open_i].kind == TK_LT && angle_match_depth[open_i] == depth &&
+        token_words[open_i - 1u].kind == TK_IDENT;
+}
+
 uint brace_open_kind_for(
     uint parser_i,
     uint count,
@@ -204,7 +283,18 @@ uint brace_open_kind_for(
     // the raw angle depth open across later statements. Parenthesis and bracket
     // depth are sufficient here, while `if`/`match` bodies are also confirmed
     // by their immediately preceding `)` below.
-    bool nested_in_header_expression = paren_depth > 0 || bracket_depth > 0;
+    // A header can itself be an expression inside an array, call, or group.
+    // Its body begins at the header's enclosing depths, not necessarily zero.
+    // Braces deeper than that belong to expressions inside its condition.
+    uint header_token = (header_context >> 8u) - 1u;
+    uint header_block = header_token / WG_SIZE;
+    bool valid_header = header_token < count;
+    int header_parens = valid_header
+        ? block_prefix_paren[header_block] + depth_paren_inblock[header_token] : 0;
+    int header_brackets = valid_header
+        ? block_prefix_bracket[header_block] + depth_bracket_inblock[header_token] : 0;
+    bool nested_in_header_expression = !valid_header ||
+        paren_depth != header_parens || bracket_depth != header_brackets;
     if (nested_in_header_expression &&
         (owner == TK_IF_LBRACE || owner == TK_MATCH_LBRACE || owner == TK_LBRACE))
     {
@@ -219,7 +309,19 @@ uint brace_open_kind_for(
     if (owner != 0u)
         return owner;
 
+    // Nested headers can replace an outer header in the flat prefix scan.
+    // The matching condition parentheses retain the exact structural owner.
+    // Ordinary headers use the prefix fast path above; only a lost owner needs
+    // a range query, with the same bounded search service as syntax validation.
+    if (prev_raw == TK_RPAREN && parser_i > 1u)
+    {
+        owner = parenthesized_header_owner(parser_i - 2u);
+        if (owner != 0u) return owner;
+    }
     if (semantic_token_ends_primary(prev_raw))
+        return TK_STRUCT_LIT_LBRACE;
+    if ((prev_raw == TK_GT || prev_raw == TK_SHR) && parser_i > 1u &&
+        brace_follows_type_application(parser_i - 2u))
         return TK_STRUCT_LIT_LBRACE;
 
     return TK_LBRACE;
@@ -256,6 +358,8 @@ uint statement_event_for(
 {
     if (global_bracket_depth_before != 0)
         return 0u;
+    uint previous = token_i != 0u ? token_words[token_i - 1u].kind : 0u;
+    if (statement_keyword_is_const_parameter(kind, previous)) return 0u;
     if (is_statement_starter(kind))
         return ((token_i + 1u) << 8u) | (kind & 0xffu);
     if ((kind == TK_LBRACE || kind == TK_RBRACE) && global_paren_depth_before != 0)

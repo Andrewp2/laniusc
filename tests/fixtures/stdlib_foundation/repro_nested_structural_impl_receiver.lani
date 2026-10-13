@@ -1,0 +1,9 @@
+struct Wrap<A> { value: A }
+impl<T> Wrap<[T; 2]> {
+    fn first(&self) -> T { return self.value[0]; }
+}
+fn main() -> i32 {
+    let pair: Wrap<[i32; 2]> = Wrap<[i32; 2]> { value: [7, 9] };
+    if (pair.first() != 7) { return 1; }
+    return 0;
+}

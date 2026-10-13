@@ -1,0 +1,53 @@
+module app::main;
+import core::mem;
+import std::io;
+
+struct Pair { left: i32, text: str }
+struct Cell<T> { value: T, sentinel: i32 }
+struct Holder<T> { child: Cell<T>, sentinel: i32 }
+struct Outer<T> { child: Holder<T>, sentinel: i32 }
+struct ArrayHolder<T> { child: Cell<[T; 3]>, sentinel: i32 }
+
+fn read(holder: Holder<i32>) -> i32 { return holder.child.value; }
+fn flag(holder: Holder<bool>) -> bool { return holder.child.value; }
+fn text(holder: Holder<str>) -> str { return holder.child.value; }
+fn sentinel<T>(holder: Holder<T>) -> i32 { return holder.child.sentinel; }
+fn read_generic<T>(holder: Holder<T>) -> T { return holder.child.value; }
+
+fn main() -> i32 {
+    // Cell<i32>, Cell<bool>, Cell<str>, and Holder<f32> never appear as
+    // explicit source types. Their applications must be compiler generated.
+    let integer: Holder<i32> = Holder { child: Cell { value: -7, sentinel: 42 }, sentinel: 99 };
+    let boolean: Holder<bool> = Holder { child: Cell { value: false, sentinel: 43 }, sentinel: 98 };
+    let string: Holder<str> = Holder { child: Cell { value: "Ω", sentinel: 44 }, sentinel: 97 };
+    let empty: Holder<str> = Holder { child: Cell { value: "", sentinel: 45 }, sentinel: 96 };
+    let nested: Outer<f32> = Outer { child: Holder { child: Cell { value: 2.5, sentinel: 46 }, sentinel: 95 }, sentinel: 94 };
+    let copied: Holder<i32> = core::mem::identity(integer);
+    let array: ArrayHolder<i32> = ArrayHolder { child: Cell { value: [-7, 42, 99], sentinel: 47 }, sentinel: 93 };
+    let strings: ArrayHolder<str> = ArrayHolder { child: Cell { value: ["Ω", "", "backup"], sentinel: 48 }, sentinel: 92 };
+    if (read(copied) != -7 || copied.child.sentinel != 42 || copied.sentinel != 99) { return 1; }
+    if (flag(boolean) || boolean.child.sentinel != 43 || boolean.sentinel != 98) { return 2; }
+    if (std::io::println(text(string)) != 3) { return 6; }
+    if (std::io::println(text(empty)) != 1) { return 7; }
+    if (string.child.sentinel != 44 || string.sentinel != 97) { return 3; }
+    if (empty.child.sentinel != 45 || empty.sentinel != 96) { return 4; }
+    if (nested.child.child.value != 2.5 || nested.child.child.sentinel != 46 || nested.child.sentinel != 95 || nested.sentinel != 94) { return 5; }
+    if (sentinel(integer) != 42 || sentinel(boolean) != 43 || sentinel(string) != 44) { return 14; }
+    if (read_generic(integer) != -7 || read_generic(boolean)) { return 8; }
+    if (std::io::println(read_generic(string)) != 3) { return 9; }
+    if (array.child.value[0] != -7 || array.child.value[1] != 42 || array.child.value[2] != 99 || array.child.sentinel != 47 || array.sentinel != 93) { return 10; }
+    if (std::io::println(strings.child.value[0]) != 3 || std::io::println(strings.child.value[1]) != 1 || std::io::println(strings.child.value[2]) != 7) { return 11; }
+    if (strings.child.sentinel != 48 || strings.sentinel != 92) { return 12; }
+    copied.child.value = 88;
+    if (integer.child.value != -7 || copied.child.value != 88 || copied.child.sentinel != 42 || copied.sentinel != 99) { return 13; }
+    let record: Holder<Pair> = Holder { child: Cell { value: Pair { left: -7, text: "Ω" }, sentinel: 49 }, sentinel: 91 };
+    let row: Holder<[str; 2]> = Holder { child: Cell { value: ["Ω", ""], sentinel: 50 }, sentinel: 90 };
+    let returned_record: Pair = read_generic(record);
+    let returned_array: [str; 2] = read_generic(row);
+    if (returned_record.left != -7 || sentinel(record) != 49 || record.sentinel != 91 || sentinel(row) != 50 || row.sentinel != 90) { return 15; }
+    if (std::io::println(returned_record.text) != 3 || std::io::println(returned_array[0]) != 3 || std::io::println(returned_array[1]) != 1) { return 16; }
+    returned_record.left = 88;
+    returned_array[1] = "changed";
+    if (record.child.value.left != -7 || std::io::println(row.child.value[1]) != 1) { return 17; }
+    return 0;
+}

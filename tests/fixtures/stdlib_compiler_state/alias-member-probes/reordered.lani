@@ -1,0 +1,8 @@
+enum Pair<A, B> { Both(A, B), Empty }
+type Flip<A, B> = Pair<B, A>;
+fn main() -> i32 {
+ let value = Flip<bool, i32>::Both(42, false);
+ let number = match (value) { Pair::Both(a, b) -> a, _ -> 0 };
+ let flag = match (value) { Pair::Both(a, b) -> b, _ -> true };
+ if (flag) { return 1; } return number - 42;
+}

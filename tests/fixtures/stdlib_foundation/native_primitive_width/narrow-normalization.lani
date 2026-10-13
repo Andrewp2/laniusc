@@ -1,0 +1,37 @@
+const NEG8: i8 = -1;
+const MIN8: i8 = -128;
+const NEG16: i16 = -32767;
+const MIN16: i16 = -32768;
+fn keep<T>(value: T) -> T { return value; }
+impl i8 { fn width(self) -> i32 { return 8; } }
+impl u8 { fn width(self) -> i32 { return 108; } }
+impl i16 { fn width(self) -> i32 { return 16; } }
+impl u16 { fn width(self) -> i32 { return 116; } }
+impl i32 { fn width(self) -> i32 { return 32; } }
+impl u32 { fn width(self) -> i32 { return 132; } }
+impl i64 { fn width(self) -> i32 { return 64; } }
+impl u64 { fn width(self) -> i32 { return 164; } }
+impl isize { fn width(self) -> i32 { return 65; } }
+impl usize { fn width(self) -> i32 { return 165; } }
+fn main() -> i32 {
+    let a: i8 = keep(NEG8);
+    let b: i8 = 127;
+    let c: u8 = 255;
+    let d: i16 = keep(NEG16);
+    let e: i16 = 32767;
+    let f: u16 = 65535;
+    if (a != -1 || !(a < 0) || (a >> 1) != -1 || (a & 127) != 127) { return 1; }
+    if (keep(MIN8) != -128 || b + 1 != MIN8 || c + 1 != 0) { return 2; }
+    if (d != -32767 || (d >> 8) != -128 || (d & 255) != 1) { return 3; }
+    if (keep(MIN16) != -32768 || e + 1 != MIN16 || f + 1 != 0) { return 4; }
+    if (a.width() != 8 || c.width() != 108 || d.width() != 16 || f.width() != 116) { return 5; }
+    let i: i32 = 5;
+    let u: u32 = 4294967295;
+    let iwide: i64 = 5;
+    let uwide: u64 = 5;
+    let isized: isize = 5;
+    let usized: usize = 5;
+    if (keep(i).width() != 32 || keep(u).width() != 132 || u + 1 != 0) { return 6; }
+    if (keep(iwide).width() != 64 || keep(uwide).width() != 164 || keep(isized).width() != 65 || keep(usized).width() != 165) { return 7; }
+    return 0;
+}

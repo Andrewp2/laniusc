@@ -1,0 +1,1 @@
+enum Maybe<T> { Value(T), Missing } fn main() -> i32 { let value = Maybe::Value([41,43]); return match(value) { Value(v) -> v[0]+v[1]-42, _ -> 1 }; }

@@ -1,0 +1,7 @@
+
+running 2 tests
+test generic_trait_operands_and_results_execute_imported_compound_copies ... ok
+test inherent_method_bounds_keep_own_enclosing_and_shadowed_parameters_distinct ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 381 filtered out; finished in 3.65s
+

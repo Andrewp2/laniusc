@@ -1,0 +1,7 @@
+{
+  "index": 6,
+  "shader": "type_checker/calls/03d_bind_method_receiver_environment.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 2.4681470040013664,
+  "sha256": "fc610c7fa2eafc844375de55114fc30e5068c255855d608c24cec6b8742f6a13"
+}

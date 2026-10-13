@@ -1,0 +1,174 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 52.87s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 17 tests
+test direct_record_descriptor_fields_have_exact_types ... FAILED
+test direct_string_slice_access_preserves_descriptors ... FAILED
+test generic_calls_forward_concrete_record_and_slice_types ... FAILED
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... FAILED
+test generic_slice_operations_preserve_record_element_layouts ... FAILED
+test generic_slice_operations_preserve_string_element_descriptors ... FAILED
+test imported_generic_functions_preserve_descriptor_record_fields ... FAILED
+test imported_generic_functions_preserve_enum_values_and_nested_options ... FAILED
+test imported_generic_functions_preserve_fixed_array_values ... FAILED
+test imported_generic_functions_preserve_private_record_values ... FAILED
+test imported_generic_methods_and_results_preserve_compound_payloads ... FAILED
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... FAILED
+test local_generic_functions_preserve_fixed_array_values ... FAILED
+test local_generic_functions_preserve_nested_enum_values ... FAILED
+test local_generic_payload_functions_execute_records ... FAILED
+test local_generic_value_functions_execute_distinct_scalar_types ... FAILED
+test local_generic_value_functions_preserve_borrowed_slices ... FAILED
+
+failures:
+
+---- direct_record_descriptor_fields_have_exact_types stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'direct_record_descriptor_fields_have_exact_types' (88894) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Source-level standard I/O declarations."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_direct_descriptor_record_88893_0.lani
+
+---- direct_string_slice_access_preserves_descriptors stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'direct_string_slice_access_preserves_descriptors' (88915) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Source-level standard I/O declarations."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_direct_string_slice_elements_88893_1.lani
+
+---- generic_calls_forward_concrete_record_and_slice_types stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'generic_calls_forward_concrete_record_and_slice_types' (88917) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_generic_forwarding_88893_2.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_generic_forwarding_88893_2.lani
+
+---- generic_inference_preserves_nested_nominal_identity_and_array_lengths stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'generic_inference_preserves_nested_nominal_identity_and_array_lengths' (88919) panicked at tests/compiler_generic_types_execution.rs:379:9:
+assertion `left == right` failed: local nested nominal mismatch: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_nested_nominal_mismatch_88893_3.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+  left: "LNC0047"
+ right: "LNC0006"
+kept temp artifact /tmp/generic_types_local_nested_nominal_mismatch_88893_3.lani
+
+---- generic_slice_operations_preserve_record_element_layouts stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'generic_slice_operations_preserve_record_element_layouts' (88921) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Allocation-free i32 arithmetic. Overflowing arithmetic uses saturation;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_generic_record_slice_elements_88893_4.lani
+
+---- generic_slice_operations_preserve_string_element_descriptors stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'generic_slice_operations_preserve_string_element_descriptors' (88923) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Allocation-free i32 arithmetic. Overflowing arithmetic uses saturation;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 3", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_generic_string_slice_elements_88893_5.lani
+
+---- imported_generic_functions_preserve_descriptor_record_fields stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'imported_generic_functions_preserve_descriptor_record_fields' (88925) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Generic value helpers and compiler-provided memory intrinsics."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_imported_descriptor_record_88893_6.lani
+
+---- imported_generic_functions_preserve_enum_values_and_nested_options stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'imported_generic_functions_preserve_enum_values_and_nested_options' (88927) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Generic value helpers and compiler-provided memory intrinsics."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 3", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_imported_nested_enums_88893_7.lani
+
+---- imported_generic_functions_preserve_fixed_array_values stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'imported_generic_functions_preserve_fixed_array_values' (88929) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Generic value helpers and compiler-provided memory intrinsics."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_imported_fixed_array_values_88893_8.lani
+
+---- imported_generic_functions_preserve_private_record_values stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'imported_generic_functions_preserve_private_record_values' (88931) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Generic value helpers and compiler-provided memory intrinsics."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 3", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_imported_private_records_88893_9.lani
+
+---- imported_generic_methods_and_results_preserve_compound_payloads stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'imported_generic_methods_and_results_preserve_compound_payloads' (88933) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// A concrete bool result with a bool error value until generic enums execute."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 3", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_compound_methods_and_Result_88893_10.lani
+
+---- imported_option_generic_functions_preserve_borrowed_slice_payloads stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'imported_option_generic_functions_preserve_borrowed_slice_payloads' (88935) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// A concrete bool result with a bool error value until generic enums execute."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 2", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_imported_optional_descriptor_88893_11.lani
+
+---- local_generic_functions_preserve_fixed_array_values stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'local_generic_functions_preserve_fixed_array_values' (88937) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_fixed_array_values_88893_12.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_local_fixed_array_values_88893_12.lani
+
+---- local_generic_functions_preserve_nested_enum_values stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'local_generic_functions_preserve_nested_enum_values' (88939) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_nested_enums_88893_13.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_local_nested_enums_88893_13.lani
+
+---- local_generic_payload_functions_execute_records stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'local_generic_payload_functions_execute_records' (88941) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_record_payload_88893_14.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_local_record_payload_88893_14.lani
+
+---- local_generic_value_functions_execute_distinct_scalar_types stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'local_generic_value_functions_execute_distinct_scalar_types' (88943) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_scalar_environments_88893_15.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_local_scalar_environments_88893_15.lani
+
+---- local_generic_value_functions_preserve_borrowed_slices stdout ----
+GPU type-check detail: Gpu(compiler pass type_check.calls.array_state.consume reads call_generic_claim_count_out before it is initialized)
+
+thread 'local_generic_value_functions_preserve_borrowed_slices' (88945) panicked at tests/compiler_generic_types_execution.rs:17:6:
+compile generic program: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_local_borrowed_descriptor_88893_16.lani", line: 2, column: 1, length: 1, byte_start: Some(1), byte_end: Some(2), source_line: Some("module app::main;"), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+kept temp artifact /tmp/generic_types_local_borrowed_descriptor_88893_16.lani
+
+
+failures:
+    direct_record_descriptor_fields_have_exact_types
+    direct_string_slice_access_preserves_descriptors
+    generic_calls_forward_concrete_record_and_slice_types
+    generic_inference_preserves_nested_nominal_identity_and_array_lengths
+    generic_slice_operations_preserve_record_element_layouts
+    generic_slice_operations_preserve_string_element_descriptors
+    imported_generic_functions_preserve_descriptor_record_fields
+    imported_generic_functions_preserve_enum_values_and_nested_options
+    imported_generic_functions_preserve_fixed_array_values
+    imported_generic_functions_preserve_private_record_values
+    imported_generic_methods_and_results_preserve_compound_payloads
+    imported_option_generic_functions_preserve_borrowed_slice_payloads
+    local_generic_functions_preserve_fixed_array_values
+    local_generic_functions_preserve_nested_enum_values
+    local_generic_payload_functions_execute_records
+    local_generic_value_functions_execute_distinct_scalar_types
+    local_generic_value_functions_preserve_borrowed_slices
+
+test result: FAILED. 0 passed; 17 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.63s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

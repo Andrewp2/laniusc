@@ -1,0 +1,21 @@
+{
+  "command": [
+    "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "bare_nominal_compositions_preserve_copies_and_aliases",
+    "explicit_callable_arguments_execute_string_reference_and_slice_forms",
+    "zero_sized_values_forward_through_ordinary_and_generic_functions",
+    "explicit_constant_arguments_execute_both_thirty_two_slot_domains",
+    "nominal_constant_arguments_execute_thirty_two_interleaved_operands",
+    "explicit_constant_arguments_execute_independent_method_domains",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 5.521895048999795,
+  "binary_sha256": "b17d8ff0dff3d9513ff8cbbc57d3bbf3dac685b8fcc28dc592159d9cf3346d4a",
+  "summaries": [
+    "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 341 filtered out; finished in 5.41s"
+  ],
+  "source_snapshot": "optimized-sources.json",
+  "sources_unchanged": true
+}

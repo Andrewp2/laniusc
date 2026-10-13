@@ -1,0 +1,5 @@
+fn keep<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let ignored = keep<i32>(false);
+    return 0;
+}

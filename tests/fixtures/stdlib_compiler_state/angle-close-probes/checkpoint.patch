@@ -1,0 +1,169 @@
+--- before/shaders/type_checker/type/instances/00f_apply_body_specialization.slang
++++ after/shaders/type_checker/type/instances/00f_apply_body_specialization.slang
+@@ -23,6 +23,11 @@
+ StructuredBuffer<uint> compact_hir_count;
+ StructuredBuffer<HirCore> compact_hir_core;
+ StructuredBuffer<HirPayload> compact_hir_payload;
++StructuredBuffer<uint> compact_path_count;
++StructuredBuffer<HirPath> compact_paths;
++StructuredBuffer<uint> compact_path_segment_count;
++StructuredBuffer<HirPathSegment> compact_path_segments;
++StructuredBuffer<uint> path_id_by_owner_hir;
+ StructuredBuffer<HirGenericParam> compact_generic_params;
+ StructuredBuffer<HirRange> compact_generic_param_ranges;
+ StructuredBuffer<uint> generic_decl_owner_by_node_a;
+@@ -125,6 +130,20 @@
+ 
+ #include "body_specialization_owner.slang"
+ 
++uint type_path_leaf(uint node)
++{
++    uint count = min(compact_path_count[0u], gParams.n_hir_nodes);
++    uint path = path_id_by_owner_hir[node];
++    uint child = compact_hir_payload[node].b;
++    if (path >= count && valid_node(child)) path = path_id_by_owner_hir[child];
++    if (path >= count) return INVALID;
++    HirPath record = compact_paths[path];
++    uint segments = min(compact_path_segment_count[0u], gParams.n_tokens);
++    if (record.segment_count == 0u || record.segment_start >= segments ||
++        record.segment_count > segments - record.segment_start) return INVALID;
++    return compact_path_segments[record.segment_start + record.segment_count - 1u].name_token;
++}
++
+ void publish_type_parameter_reference(uint row, uint slot, uint use_token)
+ {
+     type_generic_param_slot_by_token[use_token] = slot;
+@@ -275,5 +294,11 @@
+     if (slot != INVALID)
+     {
+         publish_type_parameter_reference(row, slot, token);
+-    }
+-}
++        // A qualified annotation exposes the same checked reference at its
++        // head and final path segment. Specialize both occurrence anchors so
++        // declaration, return, and interface readers observe one type.
++        uint leaf = type_path_leaf(node);
++        if (valid_token(leaf) && leaf != token)
++            publish_type_parameter_reference(row, slot, leaf);
++    }
++}
+--- before/crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs
++++ after/crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs
+@@ -3708,6 +3708,39 @@
+ 
+     #[test]
+     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
++    fn body_replay_preserves_qualified_alias_parameter_identity() {
++        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
++        let aliases = pollster::block_on(compiler.semantic_interface_for_source_pack(10, &[
++            "module lib::aliases; pub type Id<T> = T;",
++        ])).expect("identity alias interface");
++        let source = r#"
++module app::main;
++import lib::aliases;
++pub fn keep<T>(v: lib::aliases::Id<T>) -> lib::aliases::Id<lib::aliases::Id<T>> { return v; }
++fn main() -> i32 {
++    let number = keep<i32>(42);
++    let flag = keep<bool>(false);
++    let values = keep<[i32; 2]>([19, 23]);
++    if (flag || values[0] + values[1] != number) { return 1; }
++    return number;
++}
++"#;
++        let pages = vec![vec![aliases]];
++        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
++            vec![source.to_owned()].into(), 12, 0, pages.clone().into(),
++            SourcePackArtifactTarget::X86_64)).expect("symbolic imported aliases are checked");
++        assert_eq!(template.generic_calls.len(), 3);
++        for call in template.generic_calls.iter() {
++            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call))
++                .expect("complete qualified alias references specialize with their parameter");
++            assert_eq!(replay.interface, template.interface,
++                "body replay preserves the symbolic public interface");
++        }
++        assert_paged_native_exit(&compiler, source, &pages, "specialized imported identity aliases", 42, b"");
++    }
++
++    #[test]
++    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+     fn body_replay_preserves_symbolic_public_interfaces() {
+         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+         let source = r#"
+--- before/tests/compiler_generic_types_execution.rs
++++ after/tests/compiler_generic_types_execution.rs
+@@ -459,33 +459,67 @@
+ }
+ 
+ #[test]
++fn imported_identity_aliases_specialize_complete_values_in_generic_bodies() {
++    let stdlib = imported_alias_composition_stdlib();
++    execute_with_stdlib("qualified identity alias replay",
++        include_str!("fixtures/stdlib_compiler_state/alias-import-composition/symbolic-identity.lani"),
++        stdlib.0.path(), "Ω\n".as_bytes(), 0);
++}
++
++#[test]
++fn imported_identity_aliases_reject_conflicting_body_and_call_types() {
++    let stdlib = imported_alias_composition_stdlib();
++    for (signature, body, call) in [
++        ("fn keep<A, B>(v: core::aliases::Id<A>) -> core::aliases::Id<B>",
++            "return v;", "let v = keep<i32, bool>(42);"),
++        ("fn keep<T>(v: core::aliases::Id<T>) -> core::aliases::Id<T>",
++            "return v;", "let v: bool = keep<i32>(42);"),
++        ("fn keep<T>(v: core::aliases::Id<T>) -> core::aliases::Id<T>",
++            "return v;", "let v = keep<[i32; 2]>([19, 23, 7]);"),
++        ("fn keep<T>(v: core::aliases::Id<T>) -> core::aliases::Id<T>",
++            "return v;", "let v = keep<bool>(42);"),
++    ] {
++        let entry = common::TempArtifact::new("imported_alias_replay_reject", "entry", Some("lani"));
++        entry.write_str(&format!("import core::aliases; {signature} {{ {body} }} fn main() -> i32 {{ {call} return 0; }}"));
++        let path = entry.path().to_path_buf();
++        let root = stdlib.0.path().to_path_buf();
++        let error = common::run_gpu_codegen_with_timeout("qualified alias replay rejection", move || {
++            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &root))
++        }).err().unwrap_or_else(|| panic!("conflicting alias types emitted an executable: {signature}; {call}"));
++        let diagnostic = error.to_public_diagnostic();
++        assert_eq!(diagnostic.code, "LNC0006", "{signature}; {call}: {error:?}");
++        assert!(diagnostic.primary_label.is_some(), "{signature}; {call}: {error:?}");
++    }
++}
++
++#[test]
+ fn imported_generic_aliases_preserve_nested_local_and_imported_compositions() {
+     let stdlib = imported_alias_composition_stdlib();
+     execute_with_stdlib("nested imported alias compositions", r#"
+ import core::aliases;
+ import std::io;
+-type Local<T> = core::aliases::Id<core::aliases::Fixed<T, 2> >;
++type Local<T> = core::aliases::Id<core::aliases::Fixed<T, 2>>;
+ struct Cell<T> { value: T }
+ impl<T> Cell<T> { fn borrow(&self) -> &Cell<T> { return self; } }
+-fn view<T>(value: core::aliases::View<T>) -> core::aliases::Id<core::aliases::View<T> > { return value; }
++fn view<T>(value: core::aliases::View<T>) -> core::aliases::Id<core::aliases::View<T>> { return value; }
+ fn main() -> i32 {
+     let data: Local<i32> = [19, 23];
+-    let original: core::aliases::Id<core::aliases::Nested<i32, str> > =
++    let original: core::aliases::Id<core::aliases::Nested<i32, str>> =
+         core::aliases::Pair { first: "Ω", second: data };
+     let saved = core::aliases::keep(original);
+     original.second[0] = -9;
+-    let injected: core::aliases::Inject<Local<i32> > =
++    let injected: core::aliases::Inject<Local<i32>> =
+         core::aliases::Pair { first: false, second: saved.second };
+     if (saved.second[0] != 19 || injected.first || injected.second[1] != 23) { return 1; }
+-    let borrowed: core::aliases::Id<core::aliases::View<i32> > = view(data);
++    let borrowed: core::aliases::Id<core::aliases::View<i32>> = view(data);
+     borrowed[0] = 20;
+     let cell: Cell<i32> = Cell { value: 19 };
+-    let pointer: core::aliases::Ref<Cell<i32> > = cell.borrow();
++    let pointer: core::aliases::Ref<Cell<i32>> = cell.borrow();
+     cell.value = 22;
+     data[1] = pointer.value;
+     if (data[0] + data[1] != 42) { return 2; }
+-    let empty: core::aliases::Id<core::aliases::Empty<bool> > = [];
+-    let flag: core::aliases::Flag<Local<str> > = false;
++    let empty: core::aliases::Id<core::aliases::Empty<bool>> = [];
++    let flag: core::aliases::Flag<Local<str>> = false;
+     if (flag) { return 3; }
+     if (std::io::println(saved.first) != 3) { return 4; }
+     return 0;

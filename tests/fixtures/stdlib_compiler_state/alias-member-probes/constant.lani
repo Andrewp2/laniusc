@@ -1,0 +1,7 @@
+enum Choice<T> { Some(T), None }
+type Window<T, const N: usize> = Choice<[T; N]>;
+fn main() -> i32 {
+ let value = Window<i32, 2>::Some([19, 23]);
+ let total = match (value) { Choice::Some(values) -> values[0] + values[1], _ -> 0 };
+ return total - 42;
+}

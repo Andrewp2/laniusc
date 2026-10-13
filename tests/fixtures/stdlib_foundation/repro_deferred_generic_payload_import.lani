@@ -1,0 +1,23 @@
+// Uninstantiated payload bodies must not prevent the executable API from importing.
+module app::main;
+import core::maybe;
+
+struct Pair { first: i32, second: i32 }
+
+fn main() -> i32 {
+    let present: core::maybe::Maybe<i32> = core::maybe::Some(-7);
+    let absent: core::maybe::Maybe<i32> = core::maybe::None();
+    if (!core::maybe::is_some(present) || core::maybe::is_some(absent)) { return 1; }
+    if (core::maybe::concrete_or(present, 99) != -7) { return 2; }
+    if (core::maybe::concrete_or(absent, 99) != 99) { return 3; }
+    let pair: Pair = Pair { first: -19, second: 999 };
+    let record: core::maybe::Maybe<Pair> = core::maybe::Some(pair);
+    let no_record: core::maybe::Maybe<Pair> = core::maybe::None();
+    if (!core::maybe::is_some(record) || core::maybe::is_some(no_record)) { return 4; }
+    let recovered: Pair = match (record) {
+        core::maybe::Some(inner) -> inner,
+        core::maybe::None -> pair,
+    };
+    if (recovered.first != -19 || recovered.second != 999) { return 5; }
+    return 0;
+}

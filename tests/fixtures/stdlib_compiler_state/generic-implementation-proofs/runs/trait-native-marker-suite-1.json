@@ -1,0 +1,23 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "--nocapture",
+    "--test-threads=1",
+    "generic_marker_"
+  ],
+  "exit_code": 0,
+  "seconds": 16.440767489999416,
+  "binary_sha256": "03da4f4762560d7b7327614b26f76778c158d1b573fecad4a7ff3bad41500ee7",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true,
+  "passed_tests": 5,
+  "evidence_label": "trait-native-marker-suite-1",
+  "sources_manifest": {
+    "file": "manifests/sources-10f1fb3391cfc6c682b11246ee9311c8ef7074703466db1641f827067a3ed835.json",
+    "sha256": "10f1fb3391cfc6c682b11246ee9311c8ef7074703466db1641f827067a3ed835"
+  },
+  "shaders_manifest": {
+    "file": "manifests/shaders-ff780ae34ed937ce5fe4a7e7a35bc830efe03c7ad4ab2bbb72d3ca4c054ce156.json",
+    "sha256": "ff780ae34ed937ce5fe4a7e7a35bc830efe03c7ad4ab2bbb72d3ca4c054ce156"
+  }
+}

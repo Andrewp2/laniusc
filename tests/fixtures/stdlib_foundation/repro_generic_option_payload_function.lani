@@ -1,0 +1,7 @@
+module app::main;
+import core::maybe_payload;
+fn main() -> i32 {
+    let value: core::maybe_payload::Maybe<bool> = core::maybe_payload::Some(false);
+    if (core::maybe_payload::unwrap_or(value, true)) { return 1; }
+    return 0;
+}

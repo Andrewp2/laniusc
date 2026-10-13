@@ -1,0 +1,24 @@
+    Finished `release` profile [optimized] target(s) in 0.17s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test imported_generic_functions_preserve_fixed_array_element_representations ... kept temp artifact /tmp/laniusc_sample_x86_generic_types_107351_1
+
+thread 'imported_generic_functions_preserve_fixed_array_element_representations' (107352) panicked at tests/compiler_generic_types_execution.rs:55:5:
+assertion `left == right` failed: fixed array element representations: Output { status: ExitStatus(unix_wait_status(1792)), stdout: "first\n", stderr: "" }
+  left: Some(7)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_fixed_array_element_representations_107351_0.lani
+FAILED
+
+failures:
+
+failures:
+    imported_generic_functions_preserve_fixed_array_element_representations
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 1.28s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

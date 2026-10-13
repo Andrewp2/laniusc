@@ -1,0 +1,117 @@
+{
+  "scope": "typed constant integration component checkpoint; general generics and native source acceptance remain incomplete",
+  "builds": [
+    "typed-float-range-warm-build-24",
+    "typed-float-range-warm-build-25"
+  ],
+  "runs": [
+    {
+      "label": "typed-build24-host-contracts",
+      "exit_code": 0,
+      "snapshots": {
+        "sources": {
+          "file": "sources-2cd70e9982a117a6.json",
+          "sha256": "2cd70e9982a117a6708cf940c6ca13d8659797b7936b69dbbc730ad5d3926526"
+        },
+        "shaders": {
+          "file": "shaders-048c5d551facb39d.json",
+          "sha256": "048c5d551facb39d0b8bfbd4d3f1c752ef3e1024cc13fcaeefce307347623fa7"
+        }
+      }
+    },
+    {
+      "label": "typed-build24-atoms-and-storage",
+      "exit_code": 0,
+      "snapshots": {
+        "sources": {
+          "file": "sources-2cd70e9982a117a6.json",
+          "sha256": "2cd70e9982a117a6708cf940c6ca13d8659797b7936b69dbbc730ad5d3926526"
+        },
+        "shaders": {
+          "file": "shaders-048c5d551facb39d.json",
+          "sha256": "048c5d551facb39d0b8bfbd4d3f1c752ef3e1024cc13fcaeefce307347623fa7"
+        }
+      }
+    },
+    {
+      "label": "typed-build24-matching-overlap",
+      "exit_code": "timeout90",
+      "snapshots": {
+        "sources": {
+          "file": "sources-2cd70e9982a117a6.json",
+          "sha256": "2cd70e9982a117a6708cf940c6ca13d8659797b7936b69dbbc730ad5d3926526"
+        },
+        "shaders": {
+          "file": "shaders-048c5d551facb39d.json",
+          "sha256": "048c5d551facb39d0b8bfbd4d3f1c752ef3e1024cc13fcaeefce307347623fa7"
+        }
+      }
+    },
+    {
+      "label": "typed-build24-overlap-alone",
+      "exit_code": "timeout90",
+      "snapshots": {
+        "sources": {
+          "file": "sources-2cd70e9982a117a6.json",
+          "sha256": "2cd70e9982a117a6708cf940c6ca13d8659797b7936b69dbbc730ad5d3926526"
+        },
+        "shaders": {
+          "file": "shaders-048c5d551facb39d.json",
+          "sha256": "048c5d551facb39d0b8bfbd4d3f1c752ef3e1024cc13fcaeefce307347623fa7"
+        }
+      }
+    },
+    {
+      "label": "typed-build24-native-operands",
+      "exit_code": "timeout90",
+      "snapshots": {
+        "sources": {
+          "file": "sources-2cd70e9982a117a6.json",
+          "sha256": "2cd70e9982a117a6708cf940c6ca13d8659797b7936b69dbbc730ad5d3926526"
+        },
+        "shaders": {
+          "file": "shaders-048c5d551facb39d.json",
+          "sha256": "048c5d551facb39d0b8bfbd4d3f1c752ef3e1024cc13fcaeefce307347623fa7"
+        }
+      }
+    },
+    {
+      "label": "typed-build25-overlap-single-call",
+      "exit_code": 0,
+      "snapshots": {
+        "sources": {
+          "file": "sources-d09cc4fc2ddfbd9a.json",
+          "sha256": "d09cc4fc2ddfbd9a10734407aaae911d0929579c61652daba9e03e7b04702637"
+        },
+        "shaders": {
+          "file": "shaders-d31b8758c97d4601.json",
+          "sha256": "d31b8758c97d460148354ebe8bacc31d75860ed47209c0f23b1a1c5803e56c85"
+        }
+      }
+    },
+    {
+      "label": "typed-build25-native-operands",
+      "exit_code": "timeout90",
+      "snapshots": {
+        "sources": {
+          "file": "sources-d09cc4fc2ddfbd9a.json",
+          "sha256": "d09cc4fc2ddfbd9a10734407aaae911d0929579c61652daba9e03e7b04702637"
+        },
+        "shaders": {
+          "file": "shaders-d31b8758c97d4601.json",
+          "sha256": "d31b8758c97d460148354ebe8bacc31d75860ed47209c0f23b1a1c5803e56c85"
+        }
+      }
+    }
+  ],
+  "interpretation": [
+    "Ten host contract tests pass.",
+    "Five physical GPU storage/atom/readback tests pass, including4518 atom cases.",
+    "Grouped matching/overlap run timed out after matching passed; no claim that the entire group passed.",
+    "Isolated build24 overlap timed out at compute_pipeline.start; no assertion result.",
+    "Build25 fixture shares ordered overlap call site; overlap passes all13 cases, including compound projection capture/revisit.",
+    "Native operands build24 timed out during pipeline creation, not accepted as executable evidence.",
+    "No refreshed warm/cold/large-workload performance acceptance.",
+    "Native operands build25 also timed out during pipeline creation: 374 completed; generic claim emission and aggregate element lowering remained pending. No source execution assertion was reached."
+  ]
+}

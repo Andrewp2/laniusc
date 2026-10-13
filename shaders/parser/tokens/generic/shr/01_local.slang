@@ -24,6 +24,7 @@ static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 
 groupshared int2 scan_values[256];
 
@@ -35,7 +36,8 @@ int token_delta(uint raw_kind, uint semantic_kind)
         semantic_kind == TK_BOUND_TYPE_ARG_LT || semantic_kind == TK_PATH_TYPE_ARG_LT)
         return 1;
     if (semantic_kind == TK_TYPE_ARG_GT || semantic_kind == TK_GENERIC_PARAM_GT ||
-        semantic_kind == TK_BOUND_TYPE_ARG_GT || semantic_kind == TK_PATH_TYPE_ARG_GT)
+        semantic_kind == TK_BOUND_TYPE_ARG_GT || semantic_kind == TK_PATH_TYPE_ARG_GT ||
+        semantic_kind == TK_MEMBER_TYPE_ARG_GT)
         return -1;
     return raw_kind == TK_SHR ? -2 : 0;
 }

@@ -1,9 +1,14 @@
+import semantic_interface_layout;
+#ifndef PROJECT_DEPENDENCY_VALUES_ONLY
+#define PROJECT_DEPENDENCY_VALUES_ONLY 0
+#endif
 // Project resolved dependency declaration types into local relations. Type
 // paths populate the tagged type-ref relation. Constant and unit-variant value
 // paths retain compact metadata that survives replacement of the dependency
 // page.
 
 import dependency_interface;
+import constant_value;
 import gpu_index;
 
 struct Params
@@ -19,8 +24,14 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> resolved_dependency_decl;
-StructuredBuffer<uint> dependency_resolved_value_decl;
+StructuredBuffer<uint> resolved_dependency_library_id;
+StructuredBuffer<uint> resolved_dependency_unit_id;
+StructuredBuffer<uint> resolved_dependency_local_index;
+StructuredBuffer<uint> resolved_dependency_value_library_id;
+StructuredBuffer<uint> resolved_dependency_value_unit_id;
+StructuredBuffer<uint> resolved_dependency_value_local_index;
+StructuredBuffer<uint> resolved_type_status;
+StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> declaration_generic_arity;
 StructuredBuffer<uint> declaration_field_count;
@@ -37,7 +48,9 @@ RWStructuredBuffer<uint> resolved_dependency_variant_payload_records;
 
 static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
+static const uint INVALID = 0xffffffffu;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
+static const uint PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR = 5u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
@@ -54,7 +67,7 @@ static const uint MEMBER_FIELD = 4u;
 static const uint MEMBER_GENERIC_TYPE = 2u;
 static const uint MEMBER_GENERIC_CONST = 3u;
 static const uint MEMBER_ENUM_VARIANT = 5u;
-static const uint MEMBER_WORDS = 11u;
+static const uint MEMBER_WORDS =SEMANTIC_INTERFACE_MEMBER_WORDS;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint WG_SIZE = 256u;
@@ -161,36 +174,46 @@ bool variant_metadata(uint declaration_base, uint signature_root,
         {
             uint member_base = (start + offset) * MEMBER_WORDS;
             uint kind = dependency_member_word(member_base + 1u);
-            if (kind == MEMBER_GENERIC_TYPE || kind == MEMBER_GENERIC_CONST)
+            if ((kind == MEMBER_GENERIC_TYPE || kind == MEMBER_GENERIC_CONST) &&
+                dependency_member_word(member_base + 9u) == 0u)
                 generic_parent = true;
         }
     }
+    uint variant_ordinal = 0u;
     for (uint offset = 0u; offset < count; offset += 1u)
     {
         uint member_base = (start + offset) * MEMBER_WORDS;
-        if (dependency_member_word(member_base + 1u) == MEMBER_ENUM_VARIANT &&
-            same_variant_name(declaration_base, member_base))
+        if (dependency_member_word(member_base + 1u) != MEMBER_ENUM_VARIANT)
+            continue;
+        if (same_variant_name(declaration_base, member_base))
         {
-            ordinal = dependency_member_word(member_base + 2u);
-            return ordinal < count;
+            // Member ordinals include generic parameters and methods. The
+            // runtime tag counts only enum variants, just like local HIR.
+            ordinal = variant_ordinal;
+            return true;
         }
+        variant_ordinal += 1u;
     }
     return false;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+// A path may have valid bindings in both namespaces. Project each retained
+// identity independently; a constant operand never installs a type-path seed.
+void project_dependency_value(uint path_i, uint owner_token)
 {
-    uint path_i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (path_i >= min(path_count_out[0u], gParams.path_capacity))
+    uint kind = path_kind[path_i];
+    if (kind != PATH_RECORD_KIND_HIR_PATH_EXPR &&
+        kind != PATH_RECORD_KIND_HIR_TYPE_EXPR &&
+        kind != PATH_RECORD_KIND_HIR_BOUND_TYPE_EXPR) return;
+    uint value_base = path_i * 4u;
+    if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
+    {
+        resolved_dependency_value_metadata[value_base] = INVALID;
         return;
-    uint path_record_kind = path_kind[path_i];
-    uint declaration_i = path_record_kind == PATH_RECORD_KIND_HIR_TYPE_EXPR
-        ? resolved_dependency_decl[path_i]
-        : dependency_resolved_value_decl[path_i];
-    uint owner_token = path_owner_token[path_i];
-    if (declaration_i >= dependency_declaration_count() || owner_token >= gParams.token_capacity)
+    }
+    uint declaration_i = dependency_find_declaration(resolved_dependency_value_library_id[path_i],
+        resolved_dependency_value_unit_id[path_i], resolved_dependency_value_local_index[path_i]);
+    if (declaration_i >= dependency_declaration_count())
         return;
     uint declaration_base = declaration_i * DECL_WORDS;
     uint signature = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
@@ -202,63 +225,89 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint type_base = root * TYPE_WORDS;
     uint type_kind = dependency_type_word(type_base);
     uint payload = dependency_type_word(type_base + 1u);
-    if (path_kind[path_i] == PATH_RECORD_KIND_HIR_PATH_EXPR)
+    uint declaration_kind = dependency_declaration_word(declaration_base + 6u);
+    if (path_kind[path_i] == PATH_RECORD_KIND_HIR_PATH_EXPR &&
+        declaration_kind == HIR_ITEM_KIND_ENUM_VARIANT)
     {
-        uint declaration_kind = dependency_declaration_word(declaration_base + 6u);
-        uint value_base = path_i * 3u;
-        if (declaration_kind == HIR_ITEM_KIND_ENUM_VARIANT)
+        uint enum_root;
+        uint ordinal;
+        uint payload_count;
+        bool generic_parent;
+        if (variant_metadata(declaration_base, root, enum_root, ordinal,
+                             payload_count, generic_parent))
         {
-            uint enum_root;
-            uint ordinal;
-            uint payload_count;
-            bool generic_parent;
-            if (variant_metadata(declaration_base, root, enum_root, ordinal,
-                                 payload_count, generic_parent))
+            resolved_dependency_value_metadata[value_base] =
+                payload_count != 0u ? IMPORTED_PAYLOAD_VARIANT
+                : generic_parent ? IMPORTED_GENERIC_UNIT_VARIANT
+                                 : HIR_ITEM_KIND_ENUM_VARIANT;
+            resolved_dependency_value_metadata[value_base + 1u] = enum_root;
+            resolved_dependency_value_metadata[value_base + 2u] = ordinal;
+            resolved_dependency_value_metadata[value_base + 3u] = 0u;
+            // The dependency page is reused before match binding runs.
+            // Retain only direct scalar and generic-slot payload types;
+            // other payload shapes remain unresolved at that boundary.
+            uint record_base = path_i * 9u;
+            resolved_dependency_variant_payload_records[record_base] = payload_count;
+            uint edge_start = dependency_type_word(root * TYPE_WORDS + 3u);
+            for (uint payload_i = 0u; payload_i < payload_count; payload_i += 1u)
             {
-                resolved_dependency_value_metadata[value_base] =
-                    payload_count != 0u ? IMPORTED_PAYLOAD_VARIANT
-                    : generic_parent ? IMPORTED_GENERIC_UNIT_VARIANT
-                                     : HIR_ITEM_KIND_ENUM_VARIANT;
-                resolved_dependency_value_metadata[value_base + 1u] = enum_root;
-                resolved_dependency_value_metadata[value_base + 2u] = ordinal;
-                // The dependency page is reused before match binding runs.
-                // Retain only direct scalar and generic-slot payload types;
-                // other payload shapes remain unresolved at that boundary.
-                uint record_base = path_i * 9u;
-                resolved_dependency_variant_payload_records[record_base] = payload_count;
-                uint edge_start = dependency_type_word(root * TYPE_WORDS + 3u);
-                for (uint payload_i = 0u; payload_i < payload_count; payload_i += 1u)
-                {
-                    uint payload_root = canonical_type_roots[
-                        dependency_type_edge_word(edge_start + payload_i)];
-                    uint payload_base = payload_root * TYPE_WORDS;
-                    uint payload_kind = dependency_type_word(payload_base);
-                    uint tag = payload_kind == INTERFACE_TYPE_SCALAR ? 1u
-                        : payload_kind == INTERFACE_TYPE_GENERIC_PARAMETER ? 2u : 0u;
-                    resolved_dependency_variant_payload_records[record_base + 1u + payload_i * 2u] = tag;
-                    resolved_dependency_variant_payload_records[record_base + 2u + payload_i * 2u] =
-                        tag != 0u ? dependency_type_word(payload_base + 1u) : 0xffffffffu;
-                }
-                uint enum_base = enum_root * TYPE_WORDS;
-                external_type_library_id[owner_token] =
-                    dependency_type_word(enum_base + 1u);
-                external_type_unit_id[owner_token] =
-                    dependency_type_word(enum_base + 8u);
-                external_type_local_index[owner_token] =
-                    dependency_type_word(enum_base + 2u);
+                uint payload_root = canonical_type_roots[
+                    dependency_type_edge_word(edge_start + payload_i)];
+                uint payload_base = payload_root * TYPE_WORDS;
+                uint payload_kind = dependency_type_word(payload_base);
+                uint tag = payload_kind == INTERFACE_TYPE_SCALAR ? 1u
+                    : payload_kind == INTERFACE_TYPE_GENERIC_PARAMETER ? 2u : 0u;
+                resolved_dependency_variant_payload_records[record_base + 1u + payload_i * 2u] = tag;
+                resolved_dependency_variant_payload_records[record_base + 2u + payload_i * 2u] =
+                    tag == 2u ? dependency_generic_type_slot(payload_root)
+                    : tag == 1u ? dependency_type_word(payload_base + 1u) : 0xffffffffu;
             }
-            return;
+            uint enum_base = enum_root * TYPE_WORDS;
+            external_type_library_id[owner_token] =
+                dependency_type_word(enum_base + 1u);
+            external_type_unit_id[owner_token] =
+                dependency_type_word(enum_base + 8u);
+            external_type_local_index[owner_token] =
+                dependency_type_word(enum_base + 2u);
         }
-        if (declaration_kind != HIR_ITEM_KIND_CONST || type_kind != INTERFACE_TYPE_SCALAR)
-            return;
-        resolved_dependency_value_metadata[value_base] = HIR_ITEM_KIND_CONST;
-        resolved_dependency_value_metadata[value_base + 1u] = payload;
-        resolved_dependency_value_metadata[value_base + 2u] =
-            dependency_declaration_word(declaration_base + 13u);
         return;
     }
-    if (path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR)
+    if (declaration_kind != HIR_ITEM_KIND_CONST || type_kind != INTERFACE_TYPE_SCALAR)
         return;
+    uint3 atom_value = uint3(payload,
+        dependency_declaration_word(declaration_base + 12u),
+        dependency_declaration_word(declaration_base + 13u));
+    if (!constant_value_is_valid(atom_value))
+    {
+        resolved_dependency_value_metadata[value_base] = INVALID;
+        return;
+    }
+    resolved_dependency_value_metadata[value_base] = HIR_ITEM_KIND_CONST;
+    resolved_dependency_value_metadata[value_base + 1u] = atom_value.x;
+    resolved_dependency_value_metadata[value_base + 2u] = atom_value.y;
+    resolved_dependency_value_metadata[value_base + 3u] = atom_value.z;
+    return;
+}
+
+#if !PROJECT_DEPENDENCY_VALUES_ONLY
+void project_dependency_type(uint path_i, uint owner_token)
+{
+    if (path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR ||
+        resolved_type_status[path_i] != PATH_RESOLVE_STATUS_OK) return;
+    uint declaration_i = dependency_find_declaration(resolved_dependency_library_id[path_i],
+        resolved_dependency_unit_id[path_i], resolved_dependency_local_index[path_i]);
+    if (declaration_i >= dependency_declaration_count())
+        return;
+    uint declaration_base = declaration_i * DECL_WORDS;
+    uint signature = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
+    if (signature >= dependency_type_count())
+        return;
+    uint root = canonical_type_roots[signature];
+    if (root >= dependency_type_count())
+        return;
+    uint type_base = root * TYPE_WORDS;
+    uint type_kind = dependency_type_word(type_base);
+    uint payload = dependency_type_word(type_base + 1u);
     if (type_kind == INTERFACE_TYPE_SCALAR)
     {
         type_expr_ref_tag[owner_token] = TYPE_REF_SCALAR;
@@ -291,3 +340,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     module_type_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
 }
+#endif
+
+void project_dependency_types(uint3 dtid)
+{
+    uint path_i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
+    if (path_i >= min(path_count_out[0u], gParams.path_capacity)) return;
+    uint owner_token = path_owner_token[path_i];
+    if (owner_token >= gParams.token_capacity) return;
+    // Each page can contribute either namespace. Reacquire page-local rows
+    // from retained identities, including after checked storage is cleared.
+    project_dependency_value(path_i, owner_token);
+#if !PROJECT_DEPENDENCY_VALUES_ONLY
+    project_dependency_type(path_i, owner_token);
+#endif
+}
+
+#if !PROJECT_DEPENDENCY_VALUES_ONLY
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    project_dependency_types(dtid);
+}
+#endif

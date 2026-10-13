@@ -1,0 +1,29 @@
+
+running 24 tests
+test lexical_method_environment_keeps_impl_and_method_arguments_distinct ... ok
+test lexical_method_environment_rejects_conflicts_and_missing_bindings ... ok
+test lexical_method_environment_supports_ordinary_owners_and_constant_results ... ok
+test local_enum_constructor_contexts_preserve_thirty_two_bindings ... ok
+test local_generic_enums_substitute_nested_payload_types ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test local_generic_methods_preserve_compound_values_and_nested_calls ... ok
+test local_generic_methods_use_lexical_impl_parameter_order ... ok
+test local_result_context_infers_complete_bindings_through_thirty_two_parameters ... ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... ok
+test nominal_constant_arguments_execute_imported_records_functions_and_methods ... ok
+test nominal_constant_arguments_execute_thirty_two_interleaved_operands ... ok
+test normalized_alias_trait_arguments_execute ... ok
+test ordinary_inline_array_borrows_preserve_elements_and_aliases ... ok
+test ordinary_trait_methods_execute_alongside_generic_value_calls ... ok
+test ordinary_value_arguments_are_captured_before_later_argument_effects ... ok
+test qualified_enum_variants_forward_symbolic_parameters ... ok
+test qualified_enum_variants_preserve_wide_and_symbolic_parent_headers ... ok
+test reexported_generic_aliases_preserve_constant_array_targets ... ok
+test reexported_generic_aliases_preserve_identity_targets ... ok
+test reexported_generic_aliases_preserve_reordered_nominal_targets ... ok
+test reference_receivers_preserve_identity_through_method_calls ... ok
+test slice_enum_payloads_borrow_arrays_and_preserve_following_fields ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 316 filtered out; finished in 15.36s
+

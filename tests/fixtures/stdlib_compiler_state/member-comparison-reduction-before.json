@@ -1,0 +1,12 @@
+[
+  {
+    "name": "member-comparison-shift",
+    "compile_status": 1,
+    "stderr": "error[LNC0016]: syntax error\n --> tests/fixtures/stdlib_compiler_state/member-comparison-shift.lani:1:82\n  |\n1 | struct Pair { low: u32 } fn compare(left: Pair, low: u32) -> u32 { if (low < left.low) { return 1; } if (low < 3) { return 2; } return low >> (1); } fn main()->i32 { let left = Pair { low: 7 }; if(compare(left,3)!=1 || compare(left,8)!=4){return 1;} return 42;}\n  |                                                                                  ^ expected one of `)`, `=`, `,`, `]`, `;`, keyword `where`, `:`, `{`, `}`, `<`, `>`, or keyword `for`, found `.`\n"
+  },
+  {
+    "name": "member-comparison-close",
+    "compile_status": 1,
+    "stderr": "error[LNC0016]: syntax error\n --> tests/fixtures/stdlib_compiler_state/member-comparison-close.lani:1:84\n  |\n1 | struct Pair { low: u32 } fn first(left: Pair, low: u32) -> bool { return low < left.low; } fn second(left: Pair, low: u32)->bool { return low > (left.low); } fn main()->i32 { let left=Pair{low:7}; if(first(left,3) && second(left,8)){return 42;}return 1;}\n  |                                                                                    ^ expected one of `)`, `=`, `,`, `]`, `;`, keyword `where`, `:`, `{`, `}`, `<`, `>`, or keyword `for`, found `.`\n"
+  }
+]

@@ -1,0 +1,13 @@
+module app::main;
+import core::mem;
+struct Cell<T> { value: T, sentinel: i32 }
+fn main() -> i32 {
+    let data: [i32; 3] = [-7, 0, 42];
+    let source: Cell<[i32; 3]> = Cell { value: data, sentinel: 99 };
+    let copied: Cell<[i32; 3]> = core::mem::identity(source);
+    if (copied.value[0] != -7 || copied.value[1] != 0 ||
+        copied.value[2] != 42 || copied.sentinel != 99) { return 1; }
+    copied.value[1] = 123;
+    if (source.value[1] != 0 || copied.value[1] != 123 || data[1] != 0) { return 2; }
+    return 0;
+}

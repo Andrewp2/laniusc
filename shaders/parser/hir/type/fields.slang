@@ -26,6 +26,7 @@ StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> hir_type_form;
 RWStructuredBuffer<uint> hir_type_value_node;
 RWStructuredBuffer<uint> hir_type_len_token;
+RWStructuredBuffer<uint> hir_type_len_operand;
 RWStructuredBuffer<uint> hir_type_path_leaf_node;
 RWStructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 RWStructuredBuffer<uint> hir_type_arg_start;
@@ -87,6 +88,7 @@ void clear_type(uint i)
     hir_type_form[i] = HIR_TYPE_FORM_NONE;
     hir_type_value_node[i] = INVALID;
     hir_type_len_token[i] = INVALID;
+    hir_type_len_operand[i] = INVALID;
     hir_type_path_leaf_node[i] = INVALID;
     // Production stores this sparse reverse relation by the leaf's distinct
     // token anchor and uses zero as its job-clear sentinel. Debug parsing
@@ -130,20 +132,21 @@ void publish_array_or_slice_type(uint i)
     if (tail_prod == PROD_TYPE_ARRAY_TAIL)
     {
         uint len_node = first_child_node(tail);
-        if (!valid_node(len_node) ||
-            (node_kind[len_node] != PROD_TYPE_ARRAY_LEN_INT &&
-             node_kind[len_node] != PROD_TYPE_ARRAY_LEN_NAME))
-            return;
+        if (valid_node(len_node) && node_kind[len_node] == PROD_TYPE_ARRAY_LEN_CONSTANT)
+            len_node = first_child_node(len_node);
+        if (!valid_node(len_node)) return;
 
         hir_type_form[i] = HIR_TYPE_FORM_ARRAY;
         hir_type_value_node[i] = elem;
         hir_type_len_token[i] = hir_token_pos[len_node];
+        hir_type_len_operand[i] = len_node;
     }
     else if (tail_prod == PROD_TYPE_SLICE_TAIL)
     {
         hir_type_form[i] = HIR_TYPE_FORM_SLICE;
         hir_type_value_node[i] = elem;
         hir_type_len_token[i] = INVALID;
+        hir_type_len_operand[i] = INVALID;
     }
 }
 
@@ -151,7 +154,8 @@ bool is_path_container(uint prod)
 {
     return prod == PROD_PATH || prod == PROD_PATH_MORE ||
            prod == PROD_TYPE_PATH || prod == PROD_TYPE_PATH_MORE ||
-           prod == PROD_BOUND_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH_MORE;
+           prod == PROD_BOUND_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH_MORE ||
+           prod == PROD_ARRAY_LENGTH_PATH || prod == PROD_ARRAY_LENGTH_PATH_MORE;
 }
 
 bool is_type_path_segment(uint prod)
@@ -159,14 +163,14 @@ bool is_type_path_segment(uint prod)
     return prod == PROD_TYPE_PATH_IDENT ||
            prod == PROD_PATH_IDENT ||
            prod == PROD_PATH_IDENT_ARGS ||
-           prod == PROD_BOUND_TYPE_PATH_IDENT;
+           prod == PROD_BOUND_TYPE_PATH_IDENT || prod == PROD_ARRAY_LENGTH_PATH_IDENT;
 }
 
 bool is_type_path_tail(uint prod)
 {
     return prod == PROD_TYPE_PATH_MORE ||
            prod == PROD_PATH_MORE ||
-           prod == PROD_BOUND_TYPE_PATH_MORE;
+           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE;
 }
 
 void seed_type_path_leaf(uint node)
@@ -202,7 +206,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint prod = node_kind[i];
-    if (prod == PROD_TYPE_IDENT || prod == PROD_BOUND_TYPE_IDENT)
+    if (prod == PROD_TYPE_IDENT || prod == PROD_BOUND_TYPE_IDENT ||
+        prod == PROD_TYPE_ARRAY_LEN_NAME)
         publish_path_type(i);
     else if (prod == PROD_TYPE_ARRAY)
         publish_array_or_slice_type(i);

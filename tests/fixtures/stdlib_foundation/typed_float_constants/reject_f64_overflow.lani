@@ -1,0 +1,2 @@
+fn wide<const V: f64>() -> f64 { return V; }
+fn main() -> i32 { wide<1.0e400>(); return 0; }

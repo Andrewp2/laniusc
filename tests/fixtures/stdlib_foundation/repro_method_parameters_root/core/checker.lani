@@ -1,0 +1,24 @@
+module core::checker;
+
+pub struct Checker { value: i32 }
+
+pub impl Checker {
+    pub fn new(value: i32, enabled: bool) -> Checker {
+        if (enabled) { return Checker { value: value }; }
+        return Checker { value: 0 };
+    }
+
+    pub fn accepts(&self, expected: i32, enabled: bool) -> bool {
+        return enabled && self.value == expected;
+    }
+
+    pub fn biased(receiver: Checker, delta: i32, enabled: bool) -> i32 {
+        if (enabled) { return receiver.value + delta; }
+        return receiver.value;
+    }
+
+    pub fn choose(&self, left: Checker, right: Checker, use_left: bool) -> Checker {
+        if (use_left) { return left; }
+        return right;
+    }
+}

@@ -1,0 +1,1 @@
+enum Decision { Vacant([i32; 0]) } fn main() -> i32 { let values: [Decision; 1] = [Vacant([])]; return 0; }

@@ -1,0 +1,2 @@
+struct Pair<A, B> { first: A, second: B }
+fn first<A, B>(value: Pair<B, A>) -> B { return value.first; } fn main() -> i32 { let pair: Pair<i32, bool> = Pair { first: 42, second: true }; if (!pair.second) { return 1; } return first(pair) - 42; }

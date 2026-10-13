@@ -1,0 +1,31 @@
+{
+  "shader_metadata": "digest=20909c5e2a13e561\ncount=746\nmax_spv_bytes=522460\nmax_spv_name=codegen/lir/x86/emit\nsize_guard_status=enforced\nsize_guard_max_bytes=524288\n",
+  "sources_unchanged": 2980,
+  "shader_payloads_unchanged": 1492,
+  "changed_shader_payloads_from_baseline": [
+    "type_checker/calls/03e1_expand_application_fields.spv",
+    "type_checker/calls/03e_materialize_return_types.spv",
+    "type_checker/calls/03k2_materialize_match_payloads.spv",
+    "type_checker/calls/03k_project_argument_contexts.spv",
+    "type_checker/type/instances/02d_materialize_applications.spv"
+  ],
+  "canonical_cli_build_transition": {
+    "before_sha256": "a77e20bbf43327ff945a31008288e68c9e7b6b9ac035f4f6ae8ab66cfa837769",
+    "measured_sha256": "d7a0768330fe9467f26f074d1bcfa568b70f04981886cc49c7650a1d887f267e"
+  },
+  "canonical_compiler_ms": 37.5868075,
+  "canonical_wall_ms": 40.364931,
+  "canonical_source_hashes_match_baseline": true,
+  "canonical_elfs_verified": 20,
+  "canonical_cache_hits": 0,
+  "canonical_resource_creations": 0,
+  "tracked_live_bytes": [
+    1619185363
+  ],
+  "excluded_raw_buffers": [
+    5
+  ],
+  "generic_32_ms": 373.9355,
+  "generic_32_final_elf_verified": true,
+  "canonical_runner_status": "saved_report_then_existing_catalogue_list_get_exception"
+}

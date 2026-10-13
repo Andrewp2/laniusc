@@ -1,0 +1,12 @@
+module app::main;
+import core::factory;
+
+fn main() -> i32 {
+    let byte_max: u8 = 255;
+    let byte_zero: u8 = 0;
+    if (core::factory::byte_value(byte_max).read() != byte_max) { return 1; }
+    if (core::factory::byte_value(byte_zero).read() != byte_zero) { return 2; }
+    if (core::factory::bool_value(false).read()) { return 3; }
+    if (!core::factory::bool_value(true).read()) { return 4; }
+    return 0;
+}

@@ -1,0 +1,9 @@
+
+running 4 tests
+test compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_keep_actual_callers_and_execute_after_workspace_reuse ... ok
+test compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse ... ok
+test compiler::gpu_compiler::x86_codegen::tests::retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse ... ok
+test type_checker::scoped_type_graph_tests::physical_gpu_parameter_scoped_type_graph_preserves_identity_and_capacity ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 671 filtered out; finished in 4.54s
+

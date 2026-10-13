@@ -1,0 +1,11 @@
+sample=0 ms=24.740
+sample=1 ms=20.046
+sample=2 ms=22.375
+sample=3 ms=21.615
+sample=4 ms=21.446
+sample=5 ms=20.840
+sample=6 ms=20.551
+sample=7 ms=20.851
+sample=8 ms=20.067
+sample=9 ms=19.762
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani rebuild_entry=true warmups=3 iters=10 output_bytes=34807 min_ms=19.762 median_ms=20.845 avg_ms=21.229 max_ms=24.740 output_verified=true

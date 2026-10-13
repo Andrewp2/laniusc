@@ -83,16 +83,12 @@ impl HirLiteralValuesPass {
                 buffers.hir_token_pos.as_entire_binding(),
             ),
             (
-                "hir_type_len_token".into(),
-                buffers.hir_type_len_token.as_entire_binding(),
+                "hir_literal_status".into(),
+                buffers.hir_literal_status.as_entire_binding(),
             ),
             (
                 "hir_expr_int_value".into(),
                 buffers.hir_expr_int_value.as_entire_binding(),
-            ),
-            (
-                "hir_expr_float_bits".into(),
-                buffers.hir_expr_float_bits.as_entire_binding(),
             ),
             (
                 "hir_expr_string_start".into(),
@@ -101,10 +97,6 @@ impl HirLiteralValuesPass {
             (
                 "hir_expr_string_len".into(),
                 buffers.hir_expr_string_len.as_entire_binding(),
-            ),
-            (
-                "hir_type_len_value".into(),
-                buffers.hir_type_len_value.as_entire_binding(),
             ),
         ]);
         let bind_group = cache

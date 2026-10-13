@@ -1,0 +1,22 @@
+
+running 2 tests
+GPU source-pack type-check rejection: token=160 code=CallMismatch detail=16
+
+thread 'generic_method_lookup_uses_complete_inferred_call_results' (648204) panicked at tests/compiler_generic_types_execution.rs:115:29:
+generic call result method receivers: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 14, column: 28, length: 3, byte_start: Some(481), byte_end: Some(484), source_line: Some("    let first = keep(view).get();"), message: "call does not match a resolved function or method" }), help: None, notes: ["no supported function or method signature matches this receiver and argument list"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test generic_method_lookup_uses_complete_inferred_call_results ... FAILED
+GPU source-pack type-check rejection: token=120 code=GenericInstantiationBoundary detail=4
+
+thread 'imported_generic_reference_methods_preserve_all_receiver_arguments' (648205) panicked at tests/compiler_generic_types_execution.rs:115:29:
+imported generic reference methods: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 12, column: 16, length: 4, byte_start: Some(382), byte_end: Some(386), source_line: Some("    let view = core::relay::keep_ref(packet.borrow());"), message: "generic type instantiation reached a compiler boundary" }), help: None, notes: ["an imported declaration type could not be projected from its checked argument and result bindings"] })
+test imported_generic_reference_methods_preserve_all_receiver_arguments ... FAILED
+
+failures:
+
+failures:
+    generic_method_lookup_uses_complete_inferred_call_results
+    imported_generic_reference_methods_preserve_all_receiver_arguments
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 119 filtered out; finished in 1.68s
+

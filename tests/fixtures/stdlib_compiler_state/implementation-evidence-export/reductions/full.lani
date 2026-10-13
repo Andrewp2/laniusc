@@ -1,0 +1,44 @@
+module contracts::implementations;
+pub struct Cell<T> { value:T }
+pub struct Empty {}
+pub enum Choice<T> { Some(T), None }
+pub trait Mark {}
+pub trait Rel<A> {}
+pub trait Echo<T> {
+    pub fn copy(self, value:T)->T;
+    fn secret(self, value:[T;0])->[T;0];
+}
+pub impl Mark for [i32;2] {}
+pub impl Mark for [bool;0] {}
+pub impl Mark for Empty {}
+pub impl Mark for Choice<[i32;2]> {}
+pub impl Mark for [i32] {}
+pub impl Mark for &Cell<i32> {}
+pub impl Mark for Cell<[i32;2]> {}
+pub impl Rel<Cell<&[i32;2]>> for char {}
+pub impl Echo<[i32;2]> for bool {
+    pub fn copy(self, value:[i32;2])->[i32;2] { return value; }
+    fn secret(self, value:[[i32;2];0])->[[i32;2];0] { return value; }
+}
+impl<T> Cell<T> { fn borrow(&self)->&Cell<T> { return self; } }
+fn keep<T>(value:T)->T where T:Mark { return value; }
+fn flag<T>(value:T)->T where T:Echo<[i32;2]> { return value; }
+fn main()->i32 {
+    let a=[19,23]; let copied=keep(a); copied[0]=20;
+    if (a[0]!=19 || copied[0]!=20) { return 1; }
+    let view=keep<[i32]>(a); view[1]=25;
+    if (a[1]!=25) { return 2; }
+    let cell:Cell<i32>=Cell{value:7}; let pointer=keep(cell.borrow()); pointer.value=9;
+    if (cell.value!=9) { return 3; }
+    let nested:Cell<[i32;2]>=Cell{value:a}; let result=keep(nested);
+    if (result.value[0]+result.value[1]!=44) { return 4; }
+    let zero:[bool;0]=[]; let zero_copy=keep(zero);
+    let empty:Empty=Empty{}; let empty_copy=keep(empty);
+    let choice:Choice<[i32;2]>=Some([19,23]);
+    let payload=match(keep(choice)){Some(v)=>v,None=>[0,0]};
+    if (payload[0]+payload[1]!=42) { return 5; }
+    let ready=flag(false); let method_copy=ready.copy([19,23]);
+    if (method_copy[0]+method_copy[1]!=42) { return 6; }
+    let hidden:[[i32;2];0]=[]; let secret_copy=ready.secret(hidden);
+    return 0;
+}

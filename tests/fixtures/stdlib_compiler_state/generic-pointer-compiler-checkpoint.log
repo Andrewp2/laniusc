@@ -1,0 +1,79 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 70 tests
+test dependent_expression_chains_preserve_values_and_copy_boundaries ... ok
+test dependent_expression_results_preserve_slice_aliases ... ok
+test direct_record_descriptor_fields_have_exact_types ... ok
+test direct_string_slice_access_preserves_descriptors ... ok
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... ok
+test generic_applications_compose_six_sixteen_and_thirty_two_parameters ... ok
+test generic_bodies_construct_nested_applications ... ok
+test generic_calls_forward_concrete_record_and_slice_types ... ok
+test generic_compound_returns_reject_wrong_elements_lengths_and_nominal_identities ... ok
+test generic_compound_returns_use_complete_call_environments ... ok
+test generic_inference_preserves_nested_nominal_identity_and_array_lengths ... ok
+test generic_inferred_compound_returns_execute ... ok
+test generic_nominal_arguments_survive_imported_and_forwarded_body_replay ... ok
+test generic_nominal_results_reject_conflicting_contextual_constraints ... ok
+test generic_pointer_compositions_preserve_values_copies_and_aliases ... ok
+test generic_slice_operations_preserve_record_element_layouts ... ok
+test generic_slice_operations_preserve_string_element_descriptors ... ok
+test generic_value_functions_preserve_compound_array_elements ... ok
+test generic_value_functions_preserve_compound_slice_bounds ... ok
+test generic_value_functions_preserve_compound_slice_elements ... ok
+test generic_value_functions_preserve_slice_of_slice_descriptors ... ok
+test imported_compound_field_generic_reader_executes ... ok
+test imported_generic_compound_record_fields_execute ... ok
+test imported_generic_functions_preserve_descriptor_record_fields ... ok
+test imported_generic_functions_preserve_enum_values_and_nested_options ... ok
+test imported_generic_functions_preserve_fixed_array_element_representations ... ok
+test imported_generic_functions_preserve_fixed_array_values ... ok
+test imported_generic_functions_preserve_private_record_values ... ok
+test imported_generic_inference_closes_long_chains_and_compound_arguments ... ok
+test imported_generic_inferred_array_return_executes ... ok
+test imported_generic_inferred_compound_returns_preserve_values_copies_and_aliases ... ok
+test imported_generic_inferred_return_arguments_execute ... ok
+test imported_generic_methods_and_results_preserve_compound_payloads ... ok
+test imported_generic_pointer_values_preserve_addresses_and_aliases ... ok
+test imported_generic_record_constructors_check_declaration_and_fields ... ok
+test imported_generic_record_fields_execute_in_the_importing_module ... ok
+test imported_generic_record_fields_preserve_native_slice_bounds ... ok
+test imported_generic_record_fields_reject_wrong_types_and_names ... ok
+test imported_nested_parameter_inference_preserves_copies_and_aliases ... ok
+test imported_option_generic_functions_preserve_borrowed_slice_payloads ... ok
+test imported_record_dependencies_report_explicit_boundaries ... ok
+test imported_result_only_generic_bindings_reach_body_specialization ... ok
+test imported_scalar_calls_accept_projected_array_elements ... ok
+test inferred_field_results_supply_complete_generic_arguments ... ok
+test inferred_index_results_supply_complete_generic_arguments ... ok
+test inferred_match_results_supply_complete_generic_arguments ... ok
+test inferred_returns_inside_generic_bodies_preserve_compound_values ... ok
+test local_generic_enums_substitute_nested_payload_types ... ok
+test local_generic_functions_preserve_fixed_array_values ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test local_generic_match_results_preserve_float_and_string_representations ... ok
+test local_generic_payload_functions_execute_records ... ok
+test local_generic_pointer_values_preserve_addresses_and_aliases ... ok
+test local_generic_records_preserve_concrete_field_layouts ... ok
+test local_generic_value_functions_execute_distinct_scalar_types ... ok
+test local_generic_value_functions_preserve_borrowed_slices ... ok
+test local_result_context_infers_complete_bindings_through_thirty_two_parameters ... ok
+test local_result_context_rejects_repeated_or_argument_constraint_conflicts ... ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nested_generic_applications_are_created_without_source_annotations ... ok
+test nested_generic_declaration_fields_substitute_in_the_enclosing_scope ... ok
+test nested_generic_parameter_constraints_infer_complete_types ... ok
+test nested_parameter_constraints_reject_conflicts_and_missing_bindings ... ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... ok
+test option_and_result_fixed_array_payloads_preserve_values_and_independent_copies ... ok
+test ordinary_pointer_field_and_array_stores_preserve_full_addresses ... ok
+test ordinary_pointer_values_preserve_addresses_and_aliases ... ok
+test ordinary_trait_methods_execute_alongside_generic_value_calls ... ok
+test unbounded_generic_application_expansion_reports_an_explicit_boundary ... ok
+test zero_sized_forwarding_reports_the_existing_native_layout_boundary ... ok
+
+test result: ok. 70 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 37.19s
+

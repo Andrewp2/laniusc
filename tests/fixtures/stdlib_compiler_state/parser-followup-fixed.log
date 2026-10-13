@@ -1,0 +1,77 @@
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 2.58s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/lexer_parser_feature_flags.rs (target/stdlib-perf/build/release/deps/lexer_parser_feature_flags-fdedff918f2af62d)
+
+running 2 tests
+test gpu_lexer_publishes_conservative_parser_family_flags ... ok
+test gpu_parser_type_arg_feature_ignores_comparisons_and_tracks_generics ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+     Running tests/parser_nonresident.rs (target/stdlib-perf/build/release/deps/parser_nonresident-13904560e5454263)
+
+running 7 tests
+test lexer_source_pack_after_count_reports_token_count ... ok
+test lexer_source_pack_counts_float_literal_local_tokens ... ok
+test parser_nonresident_accepts_float_literal_local ... ok
+test parser_nonresident_parse_classifies_raw_lexer_tokens ... ok
+test parser_pair_table_matches_ll1_for_float_literal_local ... ok
+test parser_rejects_tokenizable_grammar_errors ... ok
+test parser_syntax_accepts_float_literal_local ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s
+
+     Running tests/stdlib_generic_enum_declaration_execution.rs (target/stdlib-perf/build/release/deps/stdlib_generic_enum_declaration_execution-5118d1f96a067361)
+
+running 33 tests
+test concrete_generic_enum_values_execute_on_x86 ... ok
+test imported_concrete_two_payload_match_executes_on_x86 ... ok
+test imported_declaration_only_generic_enum_executes_on_x86 ... ok
+test imported_generic_aggregate_payload_constructor_is_rejected ... ok
+test imported_generic_enum_constructor_emits_and_passes_on_x86 ... ok
+test imported_generic_enum_function_body_still_fails_closed ... ok
+test imported_generic_enum_rejects_wrong_payload_type ... ok
+test imported_generic_enum_rejects_wrong_second_payload_type ... ok
+test imported_generic_enum_uses_maximum_variant_abi_width_on_x86 ... ok
+test imported_generic_payload_constructor_direct_argument_rejects_wrong_type ... ok
+test imported_generic_payload_constructor_requires_concrete_result_type ... ok
+test imported_generic_payload_match_executes_on_x86 ... ok
+test imported_generic_payload_pattern_rejects_another_enum ... ok
+test imported_generic_payload_pattern_rejects_scalar_scrutinee ... ok
+test imported_generic_payload_pattern_rejects_wrong_arity ... ok
+test imported_generic_two_payload_match_executes_on_x86 ... ok
+test imported_generic_unit_constructor_direct_argument_executes_on_x86 ... ok
+test imported_generic_unit_constructor_direct_argument_rejects_unrelated_enum ... ok
+test imported_generic_unit_constructor_preserves_enum_abi_on_x86 ... ok
+test imported_generic_unit_constructor_requires_concrete_result_type ... ok
+test imported_generic_unit_pattern_checks_discriminant_on_x86 ... ok
+test imported_generic_unit_pattern_rejects_scalar_scrutinee ... ok
+test imported_generic_unit_variant_is_not_a_bare_value ... ok
+test imported_two_parameter_variants_execute_as_direct_arguments_on_x86 ... ok
+test imported_unit_enum_match_checks_discriminants_on_x86 ... ok
+test imported_unit_enum_match_direct_call_executes_on_x86 ... ok
+test imported_unit_enum_pattern_rejects_inferred_scalar_scrutinee ... ok
+test imported_unit_enum_pattern_rejects_payload_binding ... ok
+test imported_unit_enum_pattern_rejects_scalar_scrutinee ... ok
+test imported_unit_enum_pattern_rejects_unrelated_call_result ... ok
+test imported_unit_enum_pattern_rejects_unrelated_scrutinee ... ok
+test unqualified_imported_unit_pattern_rejects_unrelated_scrutinee ... ok
+test unused_generic_enum_declaration_executes_on_x86 ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.59s
+
+     Running tests/stdlib_option_bool_execution.rs (target/stdlib-perf/build/release/deps/stdlib_option_bool_execution-257bb4d48b2f2a4f)
+
+running 7 tests
+test boolean_programs_use_option_bool_enum_on_x86 ... ok
+test concrete_generic_enum_return_executes_on_x86 ... ok
+test imported_option_bool_factory_result_supports_method_calls ... ignored, dependency 72: imported generic factory result loses receiver arguments
+test imported_option_bool_methods_reject_wrong_argument_types ... ignored, dependency 70: imported method interfaces omit parameter types
+test option_bool_enum_methods_execute_on_x86 ... ok
+test option_bool_method_results_pass_directly_to_imported_functions ... ok
+test option_bool_rejects_wrong_payload_and_receiver ... ok
+
+test result: ok. 5 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.57s
+

@@ -1,0 +1,27 @@
+// Candidate only: this audit did not compile or execute it.
+// Derived from the retained nested-reference-producer failure. All forms exist
+// in the current grammar. Structural inherent-impl checking currently rejects
+// this producer, so forwarding/matching can only be assessed after that boundary.
+enum Flag { Missing, Value(bool) }
+impl Flag { fn borrow(&self) -> &Flag { return self; } }
+impl &Flag { fn borrow_outer(&self) -> & &Flag { return self; } }
+fn ordinary(value: & &Flag) -> & &Flag { return value; }
+fn generic<T>(value: T) -> T { return value; }
+fn read(value: & &Flag) -> bool {
+    return match (value) { Value(flag) -> flag, Missing -> false };
+}
+fn main() -> i32 {
+    let value: Flag = Value(true);
+    let borrowed: &Flag = value.borrow();
+    let outer: & &Flag = borrowed.borrow_outer();
+    let direct: & &Flag = ordinary(outer);
+    let copied: & &Flag = generic(outer);
+    if (!read(direct) || !read(copied)) { return 1; }
+    value = Missing();
+    if (read(direct) || read(copied)) { return 2; }
+    value = Value(false);
+    if (read(direct) || read(copied)) { return 3; }
+    value = Value(true);
+    if (!read(direct) || !read(copied)) { return 4; }
+    return 0;
+}

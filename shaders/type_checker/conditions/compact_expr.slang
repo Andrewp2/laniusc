@@ -1,10 +1,17 @@
+import primitive_types;
+import integer_words;
 // Validate boolean control conditions and logical operands from dense compact
 // HIR after scalar expression types have reached their pointer-jump fixed
 // point. No raw parser node or token scan participates in this pass.
 
 import hir_records;
+import hir_expr_semantics;
 import gpu_index;
 import status;
+import type_checker.checked_index_reference;
+import type_checker.argument_context;
+import type_checker.float_literal_selection;
+import type_checker.owned_literal_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -12,11 +19,23 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
+StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_hir_nearest_loop;
+StructuredBuffer<uint> compact_hir_expr_parent;
+StructuredBuffer<uint> compact_const_value;
+StructuredBuffer<uint> compact_const_type;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> compact_expr_scalar_type;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -28,7 +47,9 @@ static const uint HIR_EXPR = 14u;
 static const uint HIR_BINARY_EXPR = 16u;
 static const uint HIR_UNARY_EXPR = 17u;
 static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_STMT_IF = 3u;
+static const uint HIR_STMT_FOR = 7u;
 static const uint HIR_EXPR_NOT = 6u;
 static const uint HIR_EXPR_EQ = 7u;
 static const uint HIR_EXPR_NE = 8u;
@@ -60,13 +81,16 @@ static const uint TY_POINTER = 8u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint ERR_LOOP_CONTROL = 7u;
-static const uint SCALAR_TYPE_SHIFT = 28u;
+static const uint ERR_INTEGER_LITERAL_RANGE = 24u;
+static const uint ERR_FLOAT_LITERAL = 25u;
+static const uint ERR_COMPUTED_FLOAT_CONSTANT = 26u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
@@ -91,13 +115,12 @@ bool is_array_type(uint ty)
 
 bool assignable_to_int(uint ty)
 {
-    return ty == TY_UNKNOWN || ty == TY_INT || ty == TY_UINT || ty == TY_CHAR;
+    return ty == TY_UNKNOWN || scalar_is_integer(ty);
 }
 
 bool numeric_operand_ok(uint ty)
 {
-    return ty == TY_UNKNOWN || ty == TY_INT || ty == TY_UINT ||
-           ty == TY_FLOAT || ty == TY_CHAR;
+    return ty == TY_UNKNOWN || scalar_is_integer(ty) || scalar_is_float(ty);
 }
 
 bool integer_operand_ok(uint ty) { return assignable_to_int(ty); }
@@ -143,7 +166,7 @@ bool pointer_offset_binary(uint form, uint left_ty, uint right_ty)
 bool null_pointer_constant(uint node)
 {
     return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
-        compact_hir_payload[node].b == 0u;
+        compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
 }
 
 bool pointer_equality_ok(uint form, HirPayload payload, uint left_ty, uint right_ty)
@@ -180,17 +203,34 @@ void validate_binary(uint node, HirPayload payload)
         record_mismatch(payload.b, form);
         return;
     }
-    if (!binary_operand_ok(form, right_ty)) record_mismatch(payload.c, form);
+    if (!binary_operand_ok(form, right_ty)) { record_mismatch(payload.c, form); return; }
+    // Integer widths and signedness are checked type identity. Only an
+    // unsuffixed literal can take the opposite operand's type via context.
+    bool shift = form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
+    if (!shift && left_ty != TY_UNKNOWN && right_ty != TY_UNKNOWN && left_ty != right_ty)
+        record_mismatch(payload.c, left_ty * 256u + right_ty);
 }
 
 bool instance_is_array_or_slice(uint node)
 {
-    if (!valid_hir(node) || semantic_expr_ref_tag_by_hir[node] != TYPE_REF_INSTANCE)
-        return false;
+    if (!valid_hir(node)) return false;
+    uint tag = semantic_expr_ref_tag_by_hir[node];
     uint instance = semantic_expr_ref_payload_by_hir[node];
-    if (instance == INVALID || instance >= gParams.n_tokens) return false;
-    uint kind = type_instance_kind[instance];
-    return kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE;
+    if (tag != TYPE_REF_INSTANCE)
+    {
+        // Nested indexing can retain a stale scalar cache from its base.
+        // The complete checked named projection establishes its result kind.
+        if (!checked_named_index_reference(node, active_hir_count(), gParams.n_tokens,
+            compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
+            decl_type_ref_payload, type_instance_kind, type_instance_elem_ref_tag,
+            type_instance_elem_ref_payload, tag, instance) || tag != TYPE_REF_INSTANCE)
+            return false;
+    }
+    // Admission depends on the referent container, while the base expression
+    // keeps its reference type for storage and call/assignment checking.
+    uint container;
+    return checked_index_container(tag, instance, type_instance_kind,
+        type_instance_elem_ref_tag, type_instance_elem_ref_payload, container);
 }
 
 void validate_index(uint node, HirPayload payload)
@@ -207,6 +247,100 @@ void validate_index(uint node, HirPayload payload)
         record_mismatch(payload.c, TY_INT * 256u + index_ty);
 }
 
+// Type-only generic applications need not run expression inference rounds.
+// Their accepted operand role still owns the literal's exact diagnostic width.
+uint checked_literal_scalar(uint node)
+{
+    uint owned = checked_owned_numeric_literal_context(node, active_hir_count(), gParams.n_tokens,
+        compact_hir_core, compact_hir_payload, compact_hir_expr_parent, compact_const_type,
+        compact_const_value, type_expr_ref_tag, type_expr_ref_payload);
+    return owned != 0u ? owned : scalar_type(node);
+}
+
+bool literal_is_under_unary_minus(uint node)
+{
+    // Forwarding wrappers do not change which unary expression owns a
+    // magnitude. This agrees with the source operand decoder for signed minima.
+    for (uint step = 0u; step < active_hir_count() && valid_hir(node); step++)
+    {
+        uint parent = compact_hir_expr_parent[node];
+        if (!valid_hir(parent) || parent == node) return false;
+        HirCore core = compact_hir_core[parent];
+        HirPayload payload = compact_hir_payload[parent];
+        if (payload.b != node) return false;
+        if (core.kind == HIR_UNARY_EXPR && payload.a == 13u) return true;
+        if (!hir_is_forward_expression(core.kind, payload.a)) return false;
+        node = parent;
+    }
+    return false;
+}
+
+void validate_integer_literal(uint node, HirCore core, HirPayload value)
+{
+    if (core.kind != 23u || value.a != HIR_EXPR_INT) return;
+    uint type = checked_literal_scalar(node);
+    if (!scalar_is_integer(type)) return;
+    // Magnitude2^(bits-1) is admitted only beneath unary minus, where it
+    // represents the signed minimum. The literal bits themselves stay intact.
+    bool negative = literal_is_under_unary_minus(node);
+    if (!integer_words_magnitude_fits(uint2(value.b, value.c), type, negative))
+        record_min_token_error(status, core.token_start, ERR_INTEGER_LITERAL_RANGE, type);
+}
+
+void validate_float_literal(uint node, HirCore core, HirPayload value)
+{
+    if (core.kind != 23u || value.a != 27u) return;
+    uint type = checked_literal_scalar(node);
+    uint result;
+    if (!selected_float_literal_status(compact_hir_semantic_facts[node].literal_status, type, result)) return;
+    if (result != 0u)
+        record_min_token_error(status, core.token_start, ERR_FLOAT_LITERAL,
+            (type << 8u) | result);
+}
+
+// Absence of a function owner does not make a row a constant expression:
+// module paths and declaration/type names also live outside functions. Check
+// the parser-owned initializer and expression edges before rejecting a value.
+bool module_constant_initializer_contains(uint node)
+{
+    uint count = active_hir_count();
+    uint ancestor = compact_hir_core[node].parent;
+    for (uint step = 0u; step < count && valid_hir(ancestor); step++)
+    {
+        HirCore owner = compact_hir_core[ancestor];
+        if (owner.kind == 25u)
+        {
+            uint initializer = argument_context_root(compact_const_value[ancestor],
+                count, compact_hir_core, compact_hir_payload);
+            uint current = node;
+            for (uint edge = 0u; edge < count && valid_hir(current); edge++)
+            {
+                if (current == initializer) return true;
+                uint parent = compact_hir_expr_parent[current];
+                if (parent == current) return false;
+                current = parent;
+            }
+            return false;
+        }
+        if (owner.kind == 3u || owner.kind == 1u || owner.parent == ancestor) return false;
+        ancestor = owner.parent;
+    }
+    return false;
+}
+
+void validate_computed_float_constant(uint node, HirCore core, HirPayload value)
+{
+    if (compact_hir_nearest_fn[node] != INVALID) return;
+    bool binary = core.kind == HIR_BINARY_EXPR && scalar_is_float(scalar_type(value.b));
+    bool reference = (core.kind == 22u || core.kind == 33u) && scalar_is_float(scalar_type(node));
+    if ((!binary && !reference) || !module_constant_initializer_contains(node)) return;
+    // Literals, forwarding, and unary sign changes have exact integer-bit
+    // evaluation. Float arithmetic and constant-reference DAGs need the
+    // portable IEEE evaluator before they can become exported constants.
+    record_min_token_error(status, core.token_start, ERR_COMPUTED_FLOAT_CONSTANT,
+        binary ? value.a : 0u);
+}
+
 void validate_loop_control(uint node, HirCore core)
 {
     if (core.kind != HIR_BREAK_STMT && core.kind != HIR_CONTINUE_STMT) return;
@@ -219,6 +353,76 @@ void validate_loop_control(uint node, HirCore core)
         record_min_token_error(status, core.token_start, ERR_LOOP_CONTROL, core.kind);
 }
 
+uint range_value_root(uint node)
+{
+    for (uint step = 0u; step < active_hir_count() && valid_hir(node); step++)
+    {
+        HirCore core = compact_hir_core[node];
+        HirPayload value = compact_hir_payload[node];
+        if (!hir_is_forward_expression(core.kind, value.a)) return node;
+        if (value.b == node) return INVALID;
+        node = value.b;
+    }
+    return INVALID;
+}
+
+void validate_range_endpoint(uint endpoint, uint expected, uint statement)
+{
+    endpoint = range_value_root(endpoint);
+    if (!valid_hir(endpoint))
+    {
+        record_mismatch(statement, expected * 256u + TY_UNKNOWN);
+        return;
+    }
+    uint tag = semantic_expr_ref_tag_by_hir[endpoint];
+    uint actual = tag == TYPE_REF_SCALAR
+        ? semantic_expr_ref_payload_by_hir[endpoint] : TY_UNKNOWN;
+    // Inference is closed here. Missing, noninteger, and differently sized
+    // or signed accepted references are errors, never implicit conversions.
+    if (tag != TYPE_REF_SCALAR || !scalar_is_integer(actual) || actual != expected)
+        record_mismatch(endpoint, expected * 256u + actual);
+}
+
+void validate_direct_range(uint node, HirCore core, HirPayload statement)
+{
+    if ((core.kind != HIR_FOR_STMT && core.kind != HIR_STMT) ||
+        statement.a != HIR_STMT_FOR) return;
+    uint iterable = range_value_root(statement.c);
+    uint binding_tag = statement.b < gParams.n_tokens ? decl_type_ref_tag[statement.b] : 0u;
+    uint binding_payload = statement.b < gParams.n_tokens ? decl_type_ref_payload[statement.b] : INVALID;
+    // Unsupported or unresolved iterables have no accepted binder contract.
+    // Reject them here instead of allowing lowering to guess an integer.
+    if (!valid_hir(iterable) || binding_tag < 1u || binding_tag > 3u || binding_payload == INVALID)
+    {
+        record_mismatch(node, TY_UNKNOWN);
+        return;
+    }
+    HirCore iterable_core = compact_hir_core[iterable];
+    HirPayload range = compact_hir_payload[iterable];
+    if ((iterable_core.kind != HIR_EXPR && iterable_core.kind != HIR_BINARY_EXPR) ||
+        range.a < 30u || range.a > 35u) return;
+    uint expected_tag = statement.b < gParams.n_tokens
+        ? decl_type_ref_tag[statement.b] : 0u;
+    uint expected = expected_tag == TYPE_REF_SCALAR
+        ? decl_type_ref_payload[statement.b] : TY_UNKNOWN;
+    if (expected_tag != TYPE_REF_SCALAR || !scalar_is_integer(expected))
+    {
+        record_mismatch(node, expected);
+        return;
+    }
+    if (range.a == 33u)
+    {
+        // An entirely unbounded range has no typed endpoint; its binder uses
+        // the ordinary unsuffixed integer default.
+        if (expected != TY_INT) record_mismatch(node, TY_INT * 256u + expected);
+        return;
+    }
+    if (range.a == 30u || range.a == 31u || range.a == 34u)
+        validate_range_endpoint(range.b, expected, node);
+    if (range.a == 30u || range.a == 32u || range.a == 34u || range.a == 35u)
+        validate_range_endpoint(range.c, expected, node);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -229,6 +433,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirCore core = compact_hir_core[node];
     HirPayload payload = compact_hir_payload[node];
     validate_loop_control(node, core);
+    validate_integer_literal(node, core, payload);
+    validate_float_literal(node, core, payload);
+    validate_computed_float_constant(node, core, payload);
+    validate_direct_range(node, core, payload);
     if (core.kind == HIR_INDEX_EXPR) validate_index(node, payload);
     if (core.kind == HIR_BINARY_EXPR) validate_binary(node, payload);
     if (core.kind == HIR_IF_STMT ||

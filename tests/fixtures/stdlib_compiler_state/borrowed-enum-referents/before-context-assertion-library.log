@@ -1,0 +1,16 @@
+
+running 2 tests
+test codegen::lowering::tests::physical_gpu_semantic_projection_rejects_capacity_overflow ... ok
+test compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type ... 
+thread 'compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type' (152885) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/x86_codegen.rs:824:9:
+return-context substitutions remain explicitly unavailable: [CheckedGenericCall { call_hir: 208, target: Dependency { library_id: 7, unit_id: 0, declaration_index: 35 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(3) }], constants: [], required_constant_parameters: Some(0), receiver_arguments: [], required_generic_parameters: Some(1) }, CheckedGenericCall { call_hir: 213, target: Dependency { library_id: 7, unit_id: 0, declaration_index: 35 }, arguments: [CheckedGenericArgument { slot: 0, ty: Scalar(2) }], constants: [], required_constant_parameters: Some(0), receiver_arguments: [], required_generic_parameters: Some(1) }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::x86_codegen::tests::retained_generic_call_environments_keep_each_calls_concrete_type
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 668 filtered out; finished in 51.11s
+

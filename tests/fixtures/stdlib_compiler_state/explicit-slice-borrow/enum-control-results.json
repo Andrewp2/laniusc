@@ -1,0 +1,10 @@
+[
+  {
+    "name": "enum-ordinary",
+    "exit": 1
+  },
+  {
+    "name": "enum-structural",
+    "exit": 1
+  }
+]

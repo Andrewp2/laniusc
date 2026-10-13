@@ -1,0 +1,17 @@
+[
+  {
+    "case": "imported-caller-impl",
+    "exit": 1,
+    "tail": "GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=2\nstdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_218936.lani: error[LNC0021]: invalid trait implementation\n --> <source pack file 0>:2:5\n  |\n2 | pub impl core::contracts::Rel<core::contracts::Cell<[i32;3]>> for bool {}\n  |     ^^^^ trait impl header does not resolve to a trait\n     = note: name a trait in the impl header before providing trait methods\n"
+  },
+  {
+    "case": "method-signature",
+    "exit": 1,
+    "tail": "GPU source-pack type-check rejection: token=135 code=InvalidMemberAccess detail=0\nstdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_218988.lani: error[LNC0042]: invalid member access\n --> /tmp/laniusc_stdlib_perf_input_218988.lani:5:95\n  |\n5 | fn main()->i32 {let n=0; let c:Cell<[i32;2]> = Cell{value:[19,23]}; let v=n.echo(c); return v.value[0]+v.value[1]-42;}\n  |                                                                                               ^^^^^ this value does not have the requested field\n     = note: field access is only valid for structs that declare a field with this name\n"
+  },
+  {
+    "case": "method-signature-inherent-control",
+    "exit": 1,
+    "tail": "GPU source-pack type-check rejection: token=130 code=InvalidMemberAccess detail=0\nstdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_219030.lani: error[LNC0042]: invalid member access\n --> /tmp/laniusc_stdlib_perf_input_219030.lani:5:95\n  |\n5 | fn main()->i32 {let n=0; let c:Cell<[i32;2]> = Cell{value:[19,23]}; let v=n.echo(c); return v.value[0]+v.value[1]-42;}\n  |                                                                                               ^^^^^ this value does not have the requested field\n     = note: field access is only valid for structs that declare a field with this name\n"
+  }
+]

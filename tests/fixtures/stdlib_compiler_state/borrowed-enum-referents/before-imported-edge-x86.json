@@ -1,0 +1,5 @@
+{
+  "exit_code": 124,
+  "timeout_seconds": 90,
+  "summary": "First codegen_x86 test did not finish before timeout; no test result claimed. Retry will use established stdlib_gpu_perf executable-name driver workaround."
+}

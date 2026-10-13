@@ -1,0 +1,7 @@
+{
+  "index": 36,
+  "shader": "type_checker/predicates/02b_validate_obligations.spv",
+  "exit_code": 0,
+  "elapsed_seconds": 4.22101497499898,
+  "sha256": "20656c91779e0e74e89c43d05b2d8f2182fdf0fbaff8efc07a5827e3557fdad4"
+}

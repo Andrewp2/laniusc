@@ -1,0 +1,54 @@
+Run from /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc.
+Both revisions use identical compiler binaries and Rust production code.
+Previous: mixed-enum-layout-validated-shaders, digest ec6ad44b56155ace.
+Fixed: match-arm-schedule-validated-shaders, digest 801026615965cd3d.
+Only codegen/lir/semantic/scatter.spv changes, from 321824 to 322536 bytes.
+The shader size guard stays enforced at 524288 bytes.
+
+Build and runtime checks:
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo build --locked --release --bin laniusc
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" timeout 110s cargo test --locked --release --test stdlib_option_bool_execution --test stdlib_foundation_execution --test stdlib_generic_enum_declaration_execution --test stdlib_generic_vec_flat_execution -- --test-threads=1
+
+68 tests pass, including the foundation's 138-entry executable gate.
+Dependency 75 is resolved; dependency 70 stays ignored and open.
+The three enum_match_ regressions all fail with SSA diagnostic reason 104
+on the same test binary when the shader root selects the previous snapshot.
+They execute with the fixed shaders. Logs, a temporary readback probe patch,
+and the original schedule readback are retained under
+tests/fixtures/stdlib_compiler_state/. The probe source edits were removed.
+
+Large interleaved comparison through existing lanius_perf helpers:
+timeout 110s python3 benchmark_artifacts/performance/stdlib-gpu-20260929/parser-workspace-fix/measure_pair.py 5000000 match-arm-schedule --previous-shaders mixed-enum-layout-validated-shaders --fixed-shaders match-arm-schedule-validated-shaders
+
+Each revision makes fifteen full recompiles across seeds 20, 21, and 22.
+Compiled project results are cleared before every timed request, and every
+measured job creates zero new GPU buffers, bind groups, or compute pipelines.
+All thirty native executables match their exact expected stdout and exit zero.
+Expected stdout is 2547 newline, 599 newline, and 1769 newline respectively.
+All fifteen paired native output hashes match.
+The median paired change is -0.120732%; pooled medians are 248.103876 ms
+before and 249.076611 ms after. The two summaries describe different groups.
+
+Imported program: prepared target/stdlib-perf/match-arm-schedule-perf with
+baseline/current shader symlinks and identical copies of the existing harness
+from target/stdlib-perf/build/release/examples/stdlib_gpu_perf.
+Harness SHA256: 9a3416001d5c690173106832405cdd6b227cce7c65391a6776e1e7ef31d4d135.
+boolean-window.stdout contains exactly 3 followed by newline.
+
+LANIUS_PERF_REBUILD_ENTRY=1 LANIUS_PERF_SHADER_ROOT="$PWD/target/stdlib-perf/build/laniusc-shader-artifacts/release/shaders" timeout 110s tools/run_stdlib_gpu_perf.sh target/stdlib-perf/match-arm-schedule-perf boolean-window-rebuild entry "$PWD/sample_programs/boolean_window_checksum.lani" "$PWD/stdlib" "$PWD/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout"
+
+The harness makes eighty timed entry rebuilds across four alternating process
+pairs, with three warmups and ten samples each. Compiled dependencies remain
+cached. All eight final process outputs pass the exact stdout and exit checks.
+Pooled medians are 21.6275 ms before and 21.689 ms after, a 0.28436% increase.
+Intermediate timed outputs are not executed, and GPU resource creation is not
+instrumented by this imported harness. Its raw samples have three decimal places.
+Changing source mtime, construction, warmups, and output checks are outside timing.
+
+Both comparison cases use GPU compilation and native execution on Linux x86_64.
+This follow-up has no new cross-compiler ratios or GPU device execution claims.
+The shared shader root was restored to current-shaders after both comparisons.
+
+Canonical result validation through the existing performance catalog:
+timeout 110s python3 tools/lanius_perf.py catalog
+Result: 235 result files cataloged, zero invalid.

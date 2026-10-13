@@ -1,0 +1,21 @@
+struct Wide { value: u64 }
+fn take(value: u64) -> u64 { return value; }
+fn choose<T>(left: T, right: T, first: bool) -> T { if (first) { return left; } return right; }
+fn from_return() -> u64 { return (4294967296 + 7) * 3 - 2; }
+fn main() -> i32 {
+    let wide: u64 = 10000000000;
+    if (take((4294967296 + 7) * 3 - 2) != 12884901907 || from_return() != 12884901907) { return 1; }
+    if (choose(1 + 2, wide, true) != 3 || choose(1 + 2, wide, false) != wide) { return 2; }
+    if (choose(wide, (1 + 2) * (3 + 4), false) != 21) { return 3; }
+    let record: Wide = Wide { value: (4294967296 + 3) * 2 };
+    if ((record.value >> 32) != 2 || (record.value & 4294967295) != 6) { return 4; }
+    let values: [u64; 2] = [1 + 2, 4294967296 + 3];
+    if (values[0] != 3 || (values[1] >> 32) != 1 || (values[1] & 4294967295) != 3) { return 5; }
+    let amount: u32 = 40;
+    if (take(1 << amount) != 1099511627776) { return 6; }
+    let deep: u64 = choose(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1 + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1), wide, true);
+    if (deep != 81) { return 7; }
+    let wrapped: u64 = choose(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((55)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))), wide, true);
+    if (wrapped != 55) { return 8; }
+    return 0;
+}

@@ -1,0 +1,93 @@
+// Accepted constructor headers may be backed by a normalized parent graph.
+// Distinct bindings alias the existing checked arena so call readers can also
+// import mutable graph producers without changing storage ownership.
+import type_checker.concrete_type_equality;
+import type_checker.instance_arguments;
+public static const uint EXPLICIT_CHECKED_PARENT = 5u;
+public StructuredBuffer<uint> explicit_parent_type_tag;
+public StructuredBuffer<uint> explicit_parent_type_payload;
+public StructuredBuffer<uint> explicit_parent_kind;
+public StructuredBuffer<uint> explicit_parent_decl_token;
+public StructuredBuffer<uint> explicit_parent_state;
+public StructuredBuffer<uint> explicit_parent_arg_count;
+public StructuredBuffer<uint> explicit_parent_arg_start;
+public StructuredBuffer<uint> explicit_parent_arg_ref_tag;
+public StructuredBuffer<uint> explicit_parent_arg_ref_payload;
+public StructuredBuffer<uint> explicit_parent_arg_row_start;
+public StructuredBuffer<uint> explicit_parent_arg_row_count_out;
+public StructuredBuffer<uint> explicit_parent_arg_row_ref_tag;
+public StructuredBuffer<uint> explicit_parent_arg_row_ref_payload;
+public StructuredBuffer<uint> explicit_parent_elem_ref_tag;
+public StructuredBuffer<uint> explicit_parent_elem_ref_payload;
+public StructuredBuffer<uint> explicit_parent_len_kind;
+public StructuredBuffer<uint> explicit_parent_len_payload;
+public StructuredBuffer<uint> explicit_parent_external_type_library_id;
+public StructuredBuffer<uint> explicit_parent_external_type_unit_id;
+public StructuredBuffer<uint> explicit_parent_external_type_local_index;
+
+public struct ExplicitParentGraph : IConcreteTypeGraph
+{
+    public static uint metadata(uint instance, uint field)
+    {
+        switch (field)
+        {
+        case 0u: return explicit_parent_kind[instance];
+        case 1u: return explicit_parent_decl_token[instance];
+        case 2u: return explicit_parent_arg_count[instance];
+        case 3u: return explicit_parent_elem_ref_tag[instance];
+        case 4u: return explicit_parent_elem_ref_payload[instance];
+        case 5u: return explicit_parent_len_kind[instance];
+        case 6u: return explicit_parent_len_payload[instance];
+        case 7u: return explicit_parent_external_type_library_id[instance];
+        case 8u: return explicit_parent_external_type_unit_id[instance];
+        case 9u: return explicit_parent_external_type_local_index[instance];
+        default: return 0xffffffffu;
+        }
+    }
+    public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
+    {
+        uint tokens; uint stride;
+        explicit_parent_type_tag.GetDimensions(tokens, stride);
+        return checked_instance_argument(instance, slot, tokens,
+            explicit_parent_arg_count, explicit_parent_arg_start,
+            explicit_parent_arg_ref_tag, explicit_parent_arg_ref_payload,
+            explicit_parent_arg_row_start, explicit_parent_arg_row_count_out,
+            explicit_parent_arg_row_ref_tag, explicit_parent_arg_row_ref_payload,
+            tag, payload);
+    }
+}
+
+public uint checked_explicit_parent_instance(uint token)
+{
+    uint capacity; uint stride;
+    explicit_parent_type_tag.GetDimensions(capacity, stride);
+    if (token >= capacity || explicit_parent_type_tag[token] != 3u) return 0xffffffffu;
+    uint instance = explicit_parent_type_payload[token];
+    explicit_parent_kind.GetDimensions(capacity, stride);
+    return instance < capacity && explicit_parent_kind[instance] == 1u &&
+        explicit_parent_state[instance] == 1u ? instance : 0xffffffffu;
+}
+
+public bool checked_explicit_parent_domains(uint instance, out uint types, out uint constants)
+{
+    types = explicit_parent_len_kind[instance] & ~APPLICATION_INTERLEAVED_DOMAINS;
+    uint count = explicit_parent_arg_count[instance];
+    constants = types <= count ? count - types : 0u;
+    return count <= 32u && types <= count;
+}
+
+public bool checked_explicit_parent_type_argument(uint token, uint slot, out uint tag, out uint payload)
+{
+    tag = 0u; payload = 0xffffffffu;
+    uint parent = checked_explicit_parent_instance(token);
+    return parent != 0xffffffffu && application_environment_type_argument<ExplicitParentGraph>(
+        parent, slot, tag, payload);
+}
+
+public bool checked_explicit_parent_constant(uint token, uint slot, out uint kind, out uint payload)
+{
+    kind = 0u; payload = 0xffffffffu;
+    uint parent = checked_explicit_parent_instance(token);
+    return parent != 0xffffffffu && application_environment_constant<ExplicitParentGraph>(
+        parent, slot, kind, payload);
+}

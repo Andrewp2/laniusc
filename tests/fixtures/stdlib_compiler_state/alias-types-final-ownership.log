@@ -1,0 +1,64 @@
+
+running 13 tests
+test generic_constant_values_execute_in_imported_associated_array_literals ... GPU source-pack type-check rejection: token=16 code=MissingConstantBinding detail=0
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+ok
+test generic_method_lookup_uses_complete_inferred_call_results ... ok
+test implicit_method_receivers_preserve_argument_constraints ... GPU source-pack type-check rejection: token=117 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=117 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=119 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=37 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=120 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=120 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=122 code=AssignMismatch detail=515
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=37 code=AssignMismatch detail=515
+ok
+test imported_generic_reference_methods_preserve_all_receiver_arguments ... ok
+test lexical_method_environment_supports_ordinary_owners_and_constant_results ... ok
+test qualified_enum_variant_parent_forms_execute_independently ... ok
+test qualified_enum_variants_bind_parent_applications ... ok
+test qualified_enum_variants_bind_qualifier_scope_before_members ... GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=22 code=UnresolvedIdent detail=4
+ok
+test qualified_enum_variants_forward_symbolic_parameters ... ok
+test qualified_enum_variants_preserve_wide_and_symbolic_parent_headers ... ok
+test qualified_enum_variants_reject_ambiguous_and_unrelated_names ... GPU source-pack type-check rejection: token=43 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=43 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=4
+GPU source-pack type-check rejection: token=43 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=27 code=UnresolvedIdent detail=5
+GPU source-pack type-check rejection: token=43 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=0
+ok
+test qualified_enum_variants_reject_conflicting_parent_applications ... GPU source-pack type-check rejection: token=67 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=30 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=71 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967050
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=59 code=CallMismatch detail=4294967049
+GPU source-pack type-check rejection: token=16 code=CallMismatch detail=4294967049
+ok
+test qualified_enum_variants_retain_their_parent_declarations ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 284 filtered out; finished in 8.54s
+

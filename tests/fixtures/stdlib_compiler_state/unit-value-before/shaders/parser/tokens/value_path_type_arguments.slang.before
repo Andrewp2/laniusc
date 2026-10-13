@@ -1,0 +1,21 @@
+// Shared structural evidence for type arguments in a value path. Including
+// passes supply the raw angle search relation and their read-only token views.
+bool value_path_type_arguments_have_tail(uint open_i, uint count)
+{
+    if (open_i == 0u || open_i >= count || token_words[open_i].kind != TK_LT ||
+        token_words[open_i - 1u].kind != TK_IDENT) return false;
+    int depth = angle_match_depth[open_i];
+    uint close_i;
+    if (depth == 2147483647 ||
+        !range_search_tree_first_index_at_or_after<int, int,
+            AngleDepthTree, AngleDepthRows, DepthAtMost>(open_i + 1u, depth, close_i) ||
+        close_i >= count || angle_match_depth[close_i] != depth) return false;
+    uint close = token_words[close_i].kind;
+    if (close != TK_GT && close != 44u) return false;
+    uint next_i = close_i + 1u;
+    if (next_i >= count) return false;
+    uint next = token_words[next_i].kind;
+    return next == TK_LPAREN ||
+        (next == TK_COLON && next_i + 1u < count && token_words[next_i + 1u].kind == TK_COLON) ||
+        (next == TK_LBRACE && brace_semantic_kind[next_i] == TK_STRUCT_LIT_LBRACE);
+}

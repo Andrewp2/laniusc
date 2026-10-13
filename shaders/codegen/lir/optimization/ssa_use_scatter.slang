@@ -3,6 +3,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -144,7 +145,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         OptIrNodeCore core = opt_ir_core[row];
         OptIrNodeOperands operands = opt_ir_ssa_operands[row];
         uint destination = opt_ir_ssa_node_use_prefix[row];
-        if (!opt_ir_is_declaration_state_node(core))
+        if (opt_ir_node_is_executable(row, node_total) &&
+            !opt_ir_is_declaration_state_node(core))
         {
             uint rank = 0u;
             for (uint ordinal = 0u; ordinal < 3u; ++ordinal)

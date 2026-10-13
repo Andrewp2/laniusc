@@ -1,0 +1,7 @@
+import core::nested_views;
+
+fn main() -> i32 {
+    let rows: [[i32; 3]; 2] = [[11, 13, 17], [19, 23, 29]];
+    let view = core::nested_views::forward<i32, 2>(rows);
+    return 0;
+}

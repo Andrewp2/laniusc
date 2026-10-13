@@ -8,6 +8,9 @@
 
 import hir_records;
 import status;
+import type_checker.checked_type_graph;
+import type_checker.scoped_type_equality;
+import type_checker.calls.claim_lookup;
 
 struct Params
 {
@@ -20,7 +23,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
-StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> aggregate_compare_scan_input;
 StructuredBuffer<uint> aggregate_compare_prefix;
@@ -29,25 +31,14 @@ StructuredBuffer<uint> aggregate_compare_expected_instance;
 StructuredBuffer<uint> aggregate_compare_actual_instance;
 StructuredBuffer<uint> aggregate_compare_error_token;
 StructuredBuffer<uint> aggregate_compare_error_detail;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> call_generic_slot_type;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
-StructuredBuffer<uint> type_semantic_row_by_token;
-StructuredBuffer<uint> type_semantic_scan_input;
-StructuredBuffer<uint> type_semantic_prefix;
-StructuredBuffer<uint> type_semantic_count_out;
-RWStructuredBuffer<uint> type_subtree_compare_scan_input;
-RWStructuredBuffer<uint> type_subtree_compare_left_root;
-RWStructuredBuffer<uint> type_subtree_compare_right_root;
-RWStructuredBuffer<uint> type_subtree_compare_error_token;
-RWStructuredBuffer<uint> type_subtree_compare_error_detail;
+StructuredBuffer<uint> call_generic_claim_count_out;
+StructuredBuffer<uint> call_generic_claim_callee;
+StructuredBuffer<uint> call_generic_claim_slot;
+StructuredBuffer<uint> call_generic_claim_ref_tag;
+StructuredBuffer<uint> call_generic_claim_ref_payload;
+StructuredBuffer<uint> call_generic_claim_lookup_head;
+StructuredBuffer<uint> call_generic_claim_lookup_next;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -67,7 +58,6 @@ static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_STMT_ASSIGN = 5u;
 static const uint PARAM_CACHE_STRIDE = 4u;
-static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -121,67 +111,6 @@ uint request_node_for_compare(uint row)
     return row >= prefix && row < saturating_add(prefix, width) ? lo : INVALID;
 }
 
-uint instance_arg_ref_index(uint instance_i, uint slot)
-{
-    uint start = type_instance_arg_start[instance_i];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint instance_arg_row_ref_index(uint instance_i, uint ordinal)
-{
-    uint start = type_instance_arg_row_start[instance_i];
-    uint ref_i = start == INVALID ? INVALID : start + ordinal;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool instance_arg_ref(uint instance_i, uint ordinal, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(instance_i))
-        return false;
-    if (ordinal >= type_instance_arg_count[instance_i])
-        return false;
-
-    uint row_ref_i = instance_arg_row_ref_index(instance_i, ordinal);
-    if (row_ref_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_ref_i];
-        payload = type_instance_arg_row_ref_payload[row_ref_i];
-        if (tag != TYPE_REF_INVALID)
-            return true;
-    }
-
-    if (ordinal >= TYPE_INSTANCE_ARG_REF_STRIDE)
-        return false;
-
-    uint fixed_ref_i = instance_arg_ref_index(instance_i, ordinal);
-    if (fixed_ref_i == INVALID)
-        return false;
-
-    tag = type_instance_arg_ref_tag[fixed_ref_i];
-    payload = type_instance_arg_ref_payload[fixed_ref_i];
-    return tag != TYPE_REF_INVALID;
-}
-
-bool same_generic_type_param_ref(uint lhs_payload, uint rhs_payload)
-{
-    uint lhs_slot = valid_token(lhs_payload) ? type_generic_param_slot_by_token[lhs_payload] : INVALID;
-    uint rhs_slot = valid_token(rhs_payload) ? type_generic_param_slot_by_token[rhs_payload] : INVALID;
-    return lhs_slot != INVALID && lhs_slot == rhs_slot;
-}
-
-bool same_leaf_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
-{
-    if (lhs_tag != rhs_tag)
-        return false;
-    if (lhs_tag == TYPE_REF_GENERIC_PARAM)
-        return same_generic_type_param_ref(lhs_payload, rhs_payload);
-    return lhs_payload == rhs_payload;
-}
-
 uint statement_call_callee_token(uint request)
 {
     if (request >= active_hir_node_count()) return INVALID;
@@ -218,13 +147,42 @@ bool substituted_generic_matches(
     uint actual_tag,
     uint actual_payload)
 {
-    if (expected_tag != TYPE_REF_SCALAR || actual_tag != TYPE_REF_GENERIC_PARAM)
+    if (actual_tag != TYPE_REF_GENERIC_PARAM)
         return false;
     uint slot = valid_token(actual_payload)
         ? type_generic_param_slot_by_token[actual_payload]
         : INVALID;
     uint callee = statement_call_callee_token(request);
-    if (slot >= PARAM_CACHE_STRIDE || !valid_token(callee)) return false;
+    if (slot == INVALID || !valid_token(callee)) return false;
+
+    // An argument claim owns the complete per-call type, including arrays,
+    // slices, and nominal arguments. The scalar cache cannot represent it.
+    uint claim_count = call_generic_claim_count_out[0u];
+    uint accepted = INVALID;
+    if (claim_count != 0u)
+    {
+        uint link = call_generic_claim_lookup_head[
+            call_claim_lookup_bucket(callee, slot, claim_count)];
+        for (uint step = 0u; step < claim_count && link != 0u; step++)
+        {
+            uint claim = link - 1u;
+            if (claim >= claim_count) break;
+            if (call_generic_claim_callee[claim] == callee &&
+                call_generic_claim_slot[claim] == slot &&
+                call_generic_claim_ref_tag[claim] != TYPE_REF_INVALID)
+                accepted = min(accepted, claim);
+            link = call_generic_claim_lookup_next[claim];
+        }
+    }
+    if (accepted != INVALID)
+        return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+            expected_tag, expected_payload, INVALID,
+            call_generic_claim_ref_tag[accepted], call_generic_claim_ref_payload[accepted],
+            INVALID, checked_type_capacity(), gParams.n_tokens);
+
+    // Keep the existing annotation-only scalar inference when no argument
+    // supplies the result parameter. Structural inference needs a claim.
+    if (expected_tag != TYPE_REF_SCALAR || slot >= PARAM_CACHE_STRIDE) return false;
     uint state = callee * PARAM_CACHE_STRIDE + slot;
     uint inferred = call_generic_slot_type[state];
     if (inferred == INVALID)
@@ -237,49 +195,6 @@ bool substituted_generic_matches(
     return inferred == expected_payload;
 }
 
-uint semantic_type_subtree_count(uint root)
-{
-    uint semantic_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (root >= semantic_count || type_semantic_scan_input[root] == 0u)
-        return INVALID;
-    uint end = compact_hir_links[root].subtree_end;
-    if (end <= root || end > semantic_count)
-        return INVALID;
-    uint begin_ordinal = type_semantic_prefix[root];
-    uint end_ordinal = end == semantic_count
-        ? type_semantic_count_out[0u]
-        : type_semantic_prefix[end];
-    return end_ordinal > begin_ordinal ? end_ordinal - begin_ordinal : INVALID;
-}
-
-bool enqueue_type_subtree_compare(
-    uint request,
-    uint lhs_instance,
-    uint rhs_instance,
-    uint error_token,
-    uint error_detail)
-{
-    if (lhs_instance == rhs_instance)
-        return true;
-    if (!valid_token(lhs_instance) || !valid_token(rhs_instance))
-        return false;
-    uint lhs_root = type_semantic_row_by_token[lhs_instance];
-    uint rhs_root = type_semantic_row_by_token[rhs_instance];
-    if (lhs_root == INVALID || rhs_root == INVALID)
-        return false;
-    uint lhs_count = semantic_type_subtree_count(lhs_root);
-    uint rhs_count = semantic_type_subtree_count(rhs_root);
-    if (lhs_count == INVALID || rhs_count == INVALID || lhs_count != rhs_count)
-        return false;
-
-    type_subtree_compare_scan_input[request] = lhs_count;
-    type_subtree_compare_left_root[request] = lhs_root;
-    type_subtree_compare_right_root[request] = rhs_root;
-    type_subtree_compare_error_token[request] = error_token;
-    type_subtree_compare_error_detail[request] = error_detail;
-    return true;
-}
-
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
@@ -289,15 +204,6 @@ void validate_compare_row(uint row)
 {
     if (row >= active_compare_count())
         return;
-
-    // One lane exclusively owns this downstream request row. Initialize it
-    // before deciding whether this argument pair needs recursive comparison so
-    // no previous job or earlier request can survive into the counted scan.
-    type_subtree_compare_scan_input[row] = 0u;
-    type_subtree_compare_left_root[row] = INVALID;
-    type_subtree_compare_right_root[row] = INVALID;
-    type_subtree_compare_error_token[row] = INVALID;
-    type_subtree_compare_error_detail[row] = 0u;
 
     uint request_node = request_node_for_compare(row);
     if (request_node == INVALID)
@@ -313,33 +219,18 @@ void validate_compare_row(uint row)
     uint actual_tag;
     uint actual_payload;
     bool have_refs =
-        instance_arg_ref(expected_instance, ordinal, expected_tag, expected_payload) &&
-        instance_arg_ref(actual_instance, ordinal, actual_tag, actual_payload);
-    bool matches = false;
-    if (have_refs && expected_tag == TYPE_REF_INSTANCE && actual_tag == TYPE_REF_INSTANCE)
-    {
-        matches = enqueue_type_subtree_compare(
-            row,
-            expected_payload,
-            actual_payload,
-            aggregate_compare_error_token[request_node],
-            aggregate_compare_error_detail[request_node]);
-    }
-    else if (have_refs)
-    {
-        matches = same_leaf_type_ref(
-            expected_tag,
-            expected_payload,
-            actual_tag,
-            actual_payload);
-        if (!matches)
-            matches = substituted_generic_matches(
-                request_node,
-                expected_tag,
-                expected_payload,
-                actual_tag,
-                actual_payload);
-    }
+        ScopedCheckedTypeGraph.argument(expected_instance, ordinal, expected_tag, expected_payload) &&
+        ScopedCheckedTypeGraph.argument(actual_instance, ordinal, actual_tag, actual_payload);
+    // Normalization and body replay produce types without source HIR subtrees.
+    // Compare their complete checked graphs, including lexical identities and
+    // constant lengths, using the same relation as ordinary applications.
+    bool matches = have_refs && scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+        expected_tag, expected_payload, INVALID,
+        actual_tag, actual_payload, INVALID,
+        checked_type_capacity(), gParams.n_tokens);
+    if (have_refs && !matches)
+        matches = substituted_generic_matches(
+            request_node, expected_tag, expected_payload, actual_tag, actual_payload);
     if (!matches)
     {
         record_error(

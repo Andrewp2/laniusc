@@ -1,0 +1,24 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 51.49s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/stdlib_slice_generic_execution.rs (target/stdlib-perf/build/release/deps/stdlib_slice_generic_execution-e40555ee32eecc54)
+
+running 1 test
+test generic_slice_raw_storage_keeps_checked_element_types ... SLICE TRACE STATUS [0, 91, 3, 4883]
+
+thread 'generic_slice_raw_storage_keeps_checked_element_types' (641414) panicked at tests/stdlib_slice_generic_execution.rs:107:10:
+typed raw views must infer scalar slice parameters: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 10, column: 47, length: 6, byte_start: Some(329), byte_end: Some(335), source_line: Some("    if (core::slice::reverse_in_place(values, extent.length) != 2) { return 1; }"), message: "value type is an unsupported type but this context expects an unsupported type" }), help: None, notes: ["expected an unsupported type, found an unsupported type; change the expression or the annotation so they agree"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    generic_slice_raw_storage_keeps_checked_element_types
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 1.28s
+
+error: test failed, to rerun pass `--test stdlib_slice_generic_execution`

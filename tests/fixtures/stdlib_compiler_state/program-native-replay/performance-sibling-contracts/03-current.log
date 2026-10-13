@@ -1,0 +1,11 @@
+sample=0 ms=91.635
+sample=1 ms=91.404
+sample=2 ms=92.740
+sample=3 ms=94.000
+sample=4 ms=88.995
+sample=5 ms=90.759
+sample=6 ms=96.933
+sample=7 ms=89.666
+sample=8 ms=90.865
+sample=9 ms=87.468
+entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani rebuild_entry=true warmups=3 iters=10 output_bytes=4211 min_ms=87.468 median_ms=91.135 avg_ms=91.447 max_ms=96.933 output_verified=true

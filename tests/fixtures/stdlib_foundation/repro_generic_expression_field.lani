@@ -1,0 +1,20 @@
+module app::main;
+import std::io;
+
+struct Cell<T> { value: T }
+struct Pair { first: i32, text: str, last: i32 }
+fn wrap<T>(value: T) -> Cell<T> { return Cell { value: value }; }
+fn keep<T>(value: T) -> T { return value; }
+
+fn main() -> i32 {
+    let original: Pair = Pair { first: -7, text: "Ω", last: 42 };
+    let wrapped = wrap(original);
+    let selected = keep(wrapped.value);
+    let direct = keep(wrap(original).value);
+    selected.last = 91;
+    if (selected.first != -7 || selected.last != 91 || direct.last != 42 ||
+        original.last != 42 || wrapped.value.last != 42) { return 1; }
+    std::io::println(selected.text);
+    std::io::println(direct.text);
+    return 0;
+}

@@ -1,0 +1,7 @@
+compile_exit=1
+error[LNC0006]: type mismatch
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/repro_local_option_record_literal_context.lani:4:42
+  |
+4 |     let value: Option<Cell<bool>> = Some(Cell { value: true });
+  |                                          ^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

@@ -1,0 +1,61 @@
+module app::main;
+import std::io;
+
+struct Cell<T> { value: T }
+struct Pair { first: i32, text: str, last: i32 }
+struct Duo<A, B> { left: A, right: B }
+enum Maybe<T> { None, Some(T) }
+
+fn read<T>(container: Cell<Cell<T>>) -> T { return container.value.value; }
+fn read_pair(container: Cell<Cell<Pair>>) -> Pair { return container.value.value; }
+fn agree<T>(container: Cell<Duo<T, T>>) -> T { return container.value.left; }
+fn read_array<T>(container: [Cell<T>; 2]) -> T { return container[1].value; }
+fn view(values: [i32]) -> [i32] { return values; }
+
+fn main() -> i32 {
+    let flag: Cell<Cell<bool>> = Cell { value: Cell { value: true } };
+    let character: Cell<Cell<char>> = Cell { value: Cell { value: 'Ω' } };
+    let fraction: Cell<Cell<f32>> = Cell { value: Cell { value: 2.5 } };
+    if (!read(flag) || read(character) != 'Ω' || read(fraction) != 2.5) { return 1; }
+
+    let original: Pair = Pair { first: -7, text: "Ω", last: 42 };
+    let record: Cell<Cell<Pair>> = Cell { value: Cell { value: original } };
+    let generic_copy = read(record);
+    let concrete_copy = read_pair(record);
+    generic_copy.last = 91;
+    if (generic_copy.first != -7 || generic_copy.last != 91 ||
+        concrete_copy.last != 42 || record.value.value.last != 42) { return 2; }
+    std::io::println(generic_copy.text);
+    std::io::println(concrete_copy.text);
+
+    let strings: [str; 2] = ["Ω", ""];
+    let array: Cell<Cell<[str; 2]>> = Cell { value: Cell { value: strings } };
+    let array_copy = read(array);
+    array_copy[0] = "replacement";
+    std::io::println(array.value.value[0]);
+    std::io::println(array_copy[0]);
+    std::io::println(array_copy[1]);
+
+    let numbers: [i32; 3] = [-7, 42, 91];
+    let borrowed: [i32] = view(numbers);
+    let slice: Cell<Cell<[i32]>> = Cell { value: Cell { value: borrowed } };
+    let alias = read(slice);
+    alias[1] = 83;
+    if (numbers[0] != -7 || numbers[1] != 83 || alias[2] != 91) { return 3; }
+
+    let payload: Maybe<Pair> = Some(original);
+    let wrapped_enum: Cell<Cell<Maybe<Pair>>> = Cell { value: Cell { value: payload } };
+    let extracted = read(wrapped_enum);
+    let total = match (extracted) { None -> 0, Some(value) -> value.first + value.last };
+    if (total != 35) { return 4; }
+
+    let repeated: Cell<Duo<str, str>> = Cell { value: Duo { left: "Ω", right: "different" } };
+    std::io::println(agree(repeated));
+    let first: Cell<Pair> = Cell { value: original };
+    let second: Cell<Pair> = Cell { value: Pair { first: 19, text: "second", last: 71 } };
+    let records: [Cell<Pair>; 2] = [first, second];
+    let selected = read_array(records);
+    if (selected.first != 19 || selected.last != 71) { return 5; }
+    std::io::println(selected.text);
+    return 0;
+}

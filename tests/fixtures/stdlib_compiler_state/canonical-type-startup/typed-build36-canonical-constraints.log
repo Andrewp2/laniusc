@@ -1,0 +1,7 @@
+
+running 1 test
+test gpu::canonical_type_leaf_boundary_tests::physical_gpu_canonical_type_constraints_reject_cross_domain_bindings_before_publication ... [laniusc][pipeline][tests/canonical_type_constraint_boundary] shader_module.start
+[laniusc][pipeline][tests/canonical_type_constraint_boundary] shader_module.done
+[laniusc][pipeline][tests/canonical_type_constraint_boundary] pipeline_layout.start
+[laniusc][pipeline][tests/canonical_type_constraint_boundary] pipeline_layout.done
+[laniusc][pipeline][tests/canonical_type_constraint_boundary] compute_pipeline.start

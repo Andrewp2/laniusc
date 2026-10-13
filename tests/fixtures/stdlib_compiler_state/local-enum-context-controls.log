@@ -1,0 +1,89 @@
+
+running 38 tests
+test aggregate_parameter_copies_preserve_nested_borrows ... ok
+test checked_window_program_executes_generic_values_and_portable_utilities ... ok
+test enum_constructor_expected_empty_payloads_execute ... ok
+test enum_constructor_expected_unsigned_payloads_execute ... ok
+test enum_constructor_literal_compound_payloads_preserve_values_and_copies ... ok
+test enum_constructor_literal_conflicting_payloads_reject_after_inference ... GPU source-pack type-check rejection: token=54 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=54 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=50 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=58 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=58 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=69 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=54 code=AssignMismatch detail=0
+ok
+test enum_constructor_literal_imported_payload_executes ... ok
+test enum_constructor_literal_local_payload_executes ... ok
+test enum_layouts_include_unconstructed_compound_variants ... ok
+test expected_argument_contexts_execute_nested_empty_and_unsigned_arrays ... ok
+test expected_argument_contexts_reject_conflicting_known_values ... GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=44 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=37 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=55 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=41 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=51 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=38 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=48 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=42 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=60 code=AssignMismatch detail=0
+ok
+test generic_assignment_contexts_preserve_slice_descriptors_and_aliases ... ok
+test generic_assignment_destinations_reject_conflicting_payloads ... GPU source-pack type-check rejection: token=53 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=75 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=38 code=AssignMismatch detail=0
+ok
+test generic_compound_returns_reject_wrong_elements_lengths_and_nominal_identities ... GPU source-pack type-check rejection: token=140 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=140 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=178 code=AssignMismatch detail=0
+ok
+test generic_compound_returns_use_complete_call_environments ... ok
+test generic_nested_result_arguments_execute ... ok
+test generic_nested_result_array_elements_execute ... ok
+test generic_nested_result_conflicts_and_missing_context_reject ... GPU source-pack type-check rejection: token=111 code=MissingConstantBinding detail=0
+GPU source-pack type-check rejection: token=108 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=104 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=106 code=MissingConstantBinding detail=0
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=90 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=47 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=44 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=42 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=46 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=770
+ok
+test generic_nested_result_contexts_preserve_thirty_two_type_bindings ... ok
+test generic_nested_result_fields_execute ... ok
+test generic_nested_result_match_arms_execute ... ok
+test generic_pointer_compositions_preserve_values_copies_and_aliases ... ok
+test generic_record_literal_receiving_contexts_compose_values_and_scopes ... ok
+test generic_record_literal_receiving_contexts_execute ... ok
+test generic_record_literal_receiving_contexts_preserve_imported_identity ... ok
+test generic_record_literal_receiving_contexts_preserve_thirty_two_fields ... ok
+test generic_reference_compositions_preserve_aliases_inside_owned_values ... ok
+test imported_constructor_contexts_preserve_compound_payload_patterns ... GPU source-pack type-check rejection: token=37 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=40 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=0
+ok
+test imported_enum_constructor_wrappers_preserve_symbolic_payloads ... ok
+test imported_enum_constructor_wrappers_reject_unrelated_parameters ... GPU source-pack type-check rejection: token=31 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=33 code=AssignMismatch detail=0
+ok
+test local_generic_enums_substitute_nested_payload_types ... ok
+test local_generic_functions_preserve_nested_enum_values ... ok
+test local_result_context_infers_complete_bindings_through_thirty_two_parameters ... ok
+test local_result_context_rejects_repeated_or_argument_constraint_conflicts ... GPU source-pack type-check rejection: token=63 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=69 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=61 code=AssignMismatch detail=0
+ok
+test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
+test nested_concrete_returns_preserve_complete_types_through_generic_calls ... ok
+test qualified_generic_array_elements_preserve_owned_and_borrowed_storage ... ok
+test zero_sized_generic_calls_retain_distinct_complete_type_identities ... GPU source-pack type-check rejection: token=61 code=AssignMismatch detail=1052933
+GPU source-pack type-check rejection: token=66 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=80 code=AssignMismatch detail=0
+ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 223 filtered out; finished in 16.87s
+

@@ -1,0 +1,8 @@
+enum Option<T> { Some(T), None }
+struct Cell<T> { value: T }
+fn main() -> i32 {
+    let value: Option<Cell<bool>> = Some(Cell { value: true });
+    let flag: bool = match (value) { Some(v) -> v.value, None -> false };
+    if (flag) { return 0; }
+    return 1;
+}

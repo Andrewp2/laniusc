@@ -1,0 +1,23 @@
+
+module app::main;
+import core::mem;
+import core::option;
+struct Pair { left: i32, right: i32 }
+fn main() -> i32 {
+    let input: Pair = Pair { left: -7, right: 42 };
+    let some: core::option::Option<Pair> = core::option::Some(input);
+    let none: core::option::Option<Pair> = core::option::None();
+    let copied: core::option::Option<Pair> = core::mem::identity(some);
+    let selected: core::option::Option<Pair> = core::mem::select(false, some, none);
+    let present: Pair = core::option::unwrap_or(copied, input);
+    if (present.left != -7 || present.right != 42 || core::option::is_some(selected)) { return 1; }
+    let outer: core::option::Option<core::option::Option<Pair>> = core::option::Some(some);
+    let absent: core::option::Option<core::option::Option<Pair>> = core::option::None();
+    let nested: core::option::Option<core::option::Option<Pair>> = core::mem::identity(outer);
+    let recovered: core::option::Option<Pair> = core::option::unwrap_or(nested, none);
+    let fallback: core::option::Option<Pair> = core::option::unwrap_or(absent, some);
+    let left: Pair = core::option::unwrap_or(recovered, input);
+    let right: Pair = core::option::unwrap_or(fallback, input);
+    if (left.left != -7 || left.right != 42 || right.left != -7 || right.right != 42) { return 2; }
+    return 0;
+}

@@ -1,0 +1,15 @@
+
+running 10 tests
+test type_checker_accepts_same_module_private_qualified_values ... ok
+test type_checker_keeps_imported_type_and_value_namespaces_separate ... ok
+test type_checker_prefers_local_declarations_over_imported_names ... ok
+test type_checker_rejects_ambiguous_imported_names_independent_of_source_and_import_order ... ok
+test type_checker_rejects_duplicate_declarations_in_same_module_on_gpu ... ok
+test type_checker_rejects_private_cross_module_qualified_paths ... ok
+test type_checker_resolves_qualified_constants_independent_of_source_order ... ok
+test type_checker_resolves_qualified_function_calls ... ok
+test type_checker_resolves_qualified_generic_call_arguments_by_ordinal ... ok
+test type_checker_resolves_qualified_unit_enum_variants ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 90 filtered out; finished in 3.28s
+

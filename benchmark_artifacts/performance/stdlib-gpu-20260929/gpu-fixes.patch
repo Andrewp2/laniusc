@@ -1,0 +1,430 @@
+diff --git a/shaders/codegen/lir/semantic/materialize.slang b/shaders/codegen/lir/semantic/materialize.slang
+index ff34b45..3845909 100644
+--- a/shaders/codegen/lir/semantic/materialize.slang
++++ b/shaders/codegen/lir/semantic/materialize.slang
+@@ -1131,6 +1131,14 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
+         core.value_word_count = aggregate_word_count_for_hir(node, hir_count);
+     if (core.value_word_count == 0u)
+         core.value_word_count = aggregate_word_count_for_type(core.type_id, hir_count);
++    // A return statement has no independent instance reference. Its nominal
++    // type can name an unresolved generic declaration even when the checked
++    // function signature has a concrete layout. Use that signature's width.
++    if (op == SEMANTIC_LIR_OP_RETURN && semantic_function_id[node] != LIR_INVALID)
++    {
++        uint return_words = semantic_lir_functions[semantic_function_id[node]].result_word_count;
++        if (return_words != 0u) core.value_word_count = return_words;
++    }
+     // Comparison retains its operand type for machine selection, but its
+     // produced value is one scalar bool. Inheriting an enum operand's word
+     // count makes a subsequent &&/|| store dereference that bool as a pointer.
+diff --git a/shaders/dependency_interface.slang b/shaders/dependency_interface.slang
+index 58cddea..070c003 100644
+--- a/shaders/dependency_interface.slang
++++ b/shaders/dependency_interface.slang
+@@ -155,6 +155,106 @@ uint dependency_member_word(uint index)
+     return dependency_table_word(DEPENDENCY_MEMBER_OFFSET, index);
+ }
+ 
++// A generic type node stores a member identity. Resolve that member's ordinal
++// before indexing a concrete instance or a call's generic claims; its absolute
++// index changes when other declarations precede it in the dependency page.
++uint dependency_generic_type_slot(uint type_index)
++{
++    if (type_index >= dependency_type_count() ||
++        dependency_type_word(type_index * 9u) != 2u)
++        return 0xffffffffu;
++    uint member = dependency_type_word(type_index * 9u + 1u);
++    if (member >= dependency_member_count() ||
++        dependency_member_word(member * 11u + 1u) != 2u)
++        return 0xffffffffu;
++    return dependency_member_word(member * 11u + 2u);
++}
++
++// Layout for an imported concrete enum with direct scalar payloads. The type
++// arguments stay local; the declaration and variants live in the active page.
++// Compound payloads return zero so a caller cannot assume a one-word payload.
++uint dependency_scalar_enum_instance_words(
++    uint parent, uint instance,
++    StructuredBuffer<uint> roots,
++    StructuredBuffer<uint> arg_counts,
++    StructuredBuffer<uint> row_starts,
++    StructuredBuffer<uint> row_count,
++    StructuredBuffer<uint> row_tags,
++    StructuredBuffer<uint> row_payloads,
++    StructuredBuffer<uint> legacy_starts,
++    StructuredBuffer<uint> legacy_tags,
++    StructuredBuffer<uint> legacy_payloads)
++{
++    if (parent >= dependency_declaration_count() ||
++        dependency_declaration_word(parent * 14u + 6u) != 7u)
++        return 0u;
++    uint signature = dependency_declaration_word(parent * 14u + 7u);
++    if (signature >= dependency_type_count()) return 0u;
++    uint parent_root = roots[signature];
++    uint start = dependency_declaration_word(parent * 14u + 8u);
++    uint count = dependency_declaration_word(parent * 14u + 9u);
++    if (start > dependency_member_count() || count > dependency_member_count() - start)
++        return 0u;
++    uint maximum = 0u;
++    for (uint offset = 0u; offset < count; offset += 1u)
++    {
++        uint member = (start + offset) * 11u;
++        if (dependency_member_word(member + 1u) != 5u) continue;
++        uint variant_signature = dependency_member_word(member + 7u);
++        if (variant_signature >= dependency_type_count()) return 0u;
++        uint variant_root = roots[variant_signature];
++        if (variant_root >= dependency_type_count() ||
++            dependency_type_word(variant_root * 9u) != 7u)
++            return 0u;
++        uint edge_start = dependency_type_word(variant_root * 9u + 3u);
++        uint edge_count = dependency_type_word(variant_root * 9u + 4u);
++        if (edge_count == 0u || edge_start > dependency_count(5u) ||
++            edge_count > dependency_count(5u) - edge_start)
++            return 0u;
++        uint result = dependency_type_edge_word(edge_start + edge_count - 1u);
++        if (result >= dependency_type_count() || roots[result] != parent_root)
++            return 0u;
++        uint words = 1u;
++        for (uint ordinal = 0u; ordinal + 1u < edge_count; ordinal += 1u)
++        {
++            uint child = dependency_type_edge_word(edge_start + ordinal);
++            if (child >= dependency_type_count()) return 0u;
++            uint root = roots[child];
++            if (root >= dependency_type_count()) return 0u;
++            uint kind = dependency_type_word(root * 9u);
++            uint scalar = dependency_type_word(root * 9u + 1u);
++            if (kind == 2u)
++            {
++                uint slot = dependency_generic_type_slot(root);
++                if (slot >= arg_counts[instance]) return 0u;
++                uint row_start = row_starts[instance];
++                uint total = row_count[0u];
++                uint tag;
++                if (row_start < total && slot < total - row_start)
++                {
++                    tag = row_tags[row_start + slot];
++                    scalar = row_payloads[row_start + slot];
++                }
++                else
++                {
++                    if (slot >= 4u || legacy_starts[instance] == 0xffffffffu) return 0u;
++                    uint row = legacy_starts[instance] + slot;
++                    tag = legacy_tags[row];
++                    scalar = legacy_payloads[row];
++                }
++                if (tag != 1u) return 0u;
++            }
++            else if (kind != 1u) return 0u;
++            if (scalar == 0u || scalar >= 128u) return 0u;
++            uint width = scalar == 7u ? 2u : 1u;
++            if (words > 0xffffffffu - width) return 0u;
++            words += width;
++        }
++        maximum = max(maximum, words);
++    }
++    return maximum;
++}
++
+ uint dependency_name_byte_word(uint index)
+ {
+     return dependency_table_word(DEPENDENCY_NAME_BYTE_OFFSET, index);
+diff --git a/shaders/dependency_return_layout.slang b/shaders/dependency_return_layout.slang
+index 69f7211..df78462 100644
+--- a/shaders/dependency_return_layout.slang
++++ b/shaders/dependency_return_layout.slang
+@@ -124,6 +124,19 @@ public uint dependency_aggregate_word_count(
+             for (uint argument = 0u; argument + 1u < edge_count; argument += 1u)
+             {
+                 uint argument_type = dependency_type_edge_word(first_edge + argument);
++                if (argument_type >= dependency_type_count()) return 0u;
++                uint argument_root = canonical_type_roots[argument_type];
++                if (argument_root >= dependency_type_count()) return 0u;
++                if (dependency_type_word(argument_root * RETURN_LAYOUT_TYPE_WORDS) == 2u)
++                {
++                    uint slot = dependency_generic_type_slot(argument_root);
++                    uint result_arg_count = dependency_type_word(base + 4u);
++                    uint result_arg_start = dependency_type_word(base + 3u);
++                    if (slot >= result_arg_count || result_arg_start > dependency_count(5u) ||
++                        result_arg_count > dependency_count(5u) - result_arg_start)
++                        return 0u;
++                    argument_type = dependency_type_edge_word(result_arg_start + slot);
++                }
+                 uint argument_words;
+                 if (!dependency_flat_payload_word_count(
+                     argument_type, canonical_type_roots, argument_words))
+diff --git a/shaders/type_checker/dependencies/07b_scatter_call_params.slang b/shaders/type_checker/dependencies/07b_scatter_call_params.slang
+index 07d15db..3bd443e 100644
+--- a/shaders/type_checker/dependencies/07b_scatter_call_params.slang
++++ b/shaders/type_checker/dependencies/07b_scatter_call_params.slang
+@@ -104,7 +104,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
+     else if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)
+     {
+         tag = TYPE_REF_EXTERNAL_GENERIC;
+-        payload = dependency_type_word(type_base + 1u);
++        payload = dependency_generic_type_slot(type_i);
+         type_code = TY_GENERIC_BASE;
+     }
+     call_param_row_node[row] = arg.value;
+diff --git a/shaders/type_checker/dependencies/08a_validate_call_results.slang b/shaders/type_checker/dependencies/08a_validate_call_results.slang
+index f9bac2d..628b7ae 100644
+--- a/shaders/type_checker/dependencies/08a_validate_call_results.slang
++++ b/shaders/type_checker/dependencies/08a_validate_call_results.slang
+@@ -421,7 +421,7 @@ uint direct_payload_words(uint type_root, uint instance)
+     }
+     if (kind != INTERFACE_TYPE_GENERIC_PARAMETER)
+         return 0u;
+-    uint slot = dependency_type_word(base + 1u);
++    uint slot = dependency_generic_type_slot(type_root);
+     uint tag;
+     uint payload;
+     if (!instance_arg_ref(instance, slot, tag, payload) ||
+@@ -526,7 +526,7 @@ bool bare_generic_variant_result_matches(
+             continue;
+         if (kind != INTERFACE_TYPE_GENERIC_PARAMETER)
+             return false;
+-        uint slot = dependency_type_word(base + 1u);
++        uint slot = dependency_generic_type_slot(root);
+         if (slot >= type_instance_arg_count[expected_instance] ||
+             !claim_matches_instance_arg(callee, slot, expected_instance))
+             return false;
+@@ -577,7 +577,7 @@ void substitute_direct_generic_call(uint call_node)
+     uint return_base = return_root * TYPE_WORDS;
+     if (dependency_type_word(return_base) != INTERFACE_TYPE_GENERIC_PARAMETER)
+         return;
+-    uint slot = dependency_type_word(return_base + 1u);
++    uint slot = dependency_generic_type_slot(return_root);
+     uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
+     uint row = concrete_claim_row(callee_token, slot, count);
+     if (row == INVALID)
+diff --git a/shaders/type_checker/dependencies/08b_validate_call_type_args.slang b/shaders/type_checker/dependencies/08b_validate_call_type_args.slang
+index d4a0d37..1a6c97e 100644
+--- a/shaders/type_checker/dependencies/08b_validate_call_type_args.slang
++++ b/shaders/type_checker/dependencies/08b_validate_call_type_args.slang
+@@ -291,7 +291,7 @@ bool node_matches(
+     uint payload = type_expr_ref_payload[token];
+     if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)
+     {
+-        uint slot = dependency_type_word(base + 1u);
++        uint slot = dependency_generic_type_slot(expected);
+         uint claim = generic_claim_row(callee, slot);
+         if (claim != INVALID)
+             return generic_claim_row_matches(claim, form, tag, payload, token);
+diff --git a/shaders/type_checker/dependencies/11_project_types.slang b/shaders/type_checker/dependencies/11_project_types.slang
+index 61ca3ba..f6d7a56 100644
+--- a/shaders/type_checker/dependencies/11_project_types.slang
++++ b/shaders/type_checker/dependencies/11_project_types.slang
+@@ -165,15 +165,20 @@ bool variant_metadata(uint declaration_base, uint signature_root,
+                 generic_parent = true;
+         }
+     }
++    uint variant_ordinal = 0u;
+     for (uint offset = 0u; offset < count; offset += 1u)
+     {
+         uint member_base = (start + offset) * MEMBER_WORDS;
+-        if (dependency_member_word(member_base + 1u) == MEMBER_ENUM_VARIANT &&
+-            same_variant_name(declaration_base, member_base))
++        if (dependency_member_word(member_base + 1u) != MEMBER_ENUM_VARIANT)
++            continue;
++        if (same_variant_name(declaration_base, member_base))
+         {
+-            ordinal = dependency_member_word(member_base + 2u);
+-            return ordinal < count;
++            // Member ordinals include generic parameters and methods. The
++            // runtime tag counts only enum variants, just like local HIR.
++            ordinal = variant_ordinal;
++            return true;
+         }
++        variant_ordinal += 1u;
+     }
+     return false;
+ }
+@@ -237,7 +242,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
+                         : payload_kind == INTERFACE_TYPE_GENERIC_PARAMETER ? 2u : 0u;
+                     resolved_dependency_variant_payload_records[record_base + 1u + payload_i * 2u] = tag;
+                     resolved_dependency_variant_payload_records[record_base + 2u + payload_i * 2u] =
+-                        tag != 0u ? dependency_type_word(payload_base + 1u) : 0xffffffffu;
++                        tag == 2u ? dependency_generic_type_slot(payload_root)
++                        : tag == 1u ? dependency_type_word(payload_base + 1u) : 0xffffffffu;
+                 }
+                 uint enum_base = enum_root * TYPE_WORDS;
+                 external_type_library_id[owner_token] =
+diff --git a/shaders/type_checker/dependencies/14_project_type_instances.slang b/shaders/type_checker/dependencies/14_project_type_instances.slang
+index 0706351..7bc4b90 100644
+--- a/shaders/type_checker/dependencies/14_project_type_instances.slang
++++ b/shaders/type_checker/dependencies/14_project_type_instances.slang
+@@ -26,6 +26,13 @@ StructuredBuffer<uint> declaration_generic_arity;
+ StructuredBuffer<uint> declaration_field_count;
+ StructuredBuffer<uint> type_instance_kind;
+ StructuredBuffer<uint> type_instance_arg_count;
++StructuredBuffer<uint> type_instance_arg_start;
++StructuredBuffer<uint> type_instance_arg_ref_tag;
++StructuredBuffer<uint> type_instance_arg_ref_payload;
++StructuredBuffer<uint> type_instance_arg_row_start;
++StructuredBuffer<uint> type_instance_arg_row_count_out;
++StructuredBuffer<uint> type_instance_arg_row_ref_tag;
++StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+ RWStructuredBuffer<uint> type_instance_decl_token;
+ RWStructuredBuffer<uint> type_instance_state;
+ RWStructuredBuffer<uint> type_expr_ref_tag;
+@@ -92,8 +99,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
+     external_type_local_index[leaf_token] = kind == TYPE_KIND_DECLARATION
+         ? dependency_type_word(type_base + 2u)
+         : dependency_type_local_index(root);
+-    type_instance_aggregate_word_count[leaf_token] =
+-        declaration_field_count[declaration_i];
++    uint enum_words = dependency_scalar_enum_instance_words(
++        declaration_i, leaf_token, canonical_type_roots,
++        type_instance_arg_count, type_instance_arg_row_start,
++        type_instance_arg_row_count_out, type_instance_arg_row_ref_tag,
++        type_instance_arg_row_ref_payload, type_instance_arg_start,
++        type_instance_arg_ref_tag, type_instance_arg_ref_payload);
++    type_instance_aggregate_word_count[leaf_token] = enum_words != 0u
++        ? enum_words : declaration_field_count[declaration_i];
+     type_instance_state[leaf_token] = TYPE_INSTANCE_RESOLVED;
+     type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
+     type_expr_ref_payload[owner_token] = leaf_token;
+diff --git a/shaders/type_checker/dependencies/15_project_methods.slang b/shaders/type_checker/dependencies/15_project_methods.slang
+index 4415117..5f4123e 100644
+--- a/shaders/type_checker/dependencies/15_project_methods.slang
++++ b/shaders/type_checker/dependencies/15_project_methods.slang
+@@ -32,6 +32,7 @@ struct NameSpan
+ ConstantBuffer<Params> gParams;
+ StructuredBuffer<uint> canonical_type_roots;
+ StructuredBuffer<uint> declaration_field_count;
++StructuredBuffer<uint> type_instance_aggregate_word_count;
+ StructuredBuffer<uint> compact_hir_count;
+ StructuredBuffer<HirCore> compact_hir_core;
+ StructuredBuffer<HirLinks> compact_hir_links;
+@@ -476,6 +477,10 @@ void publish_method_result(
+         call_return_type_token[method_token] = method_token;
+         bool same_receiver = method_returns_receiver_instance(
+             return_root, member_base, receiver_tag, receiver_payload);
++        if (same_receiver)
++            call_return_aggregate_word_count[method_token] =
++                max(call_return_aggregate_word_count[method_token],
++                    type_instance_aggregate_word_count[receiver_payload]);
+         decl_type_ref_tag[method_token] = same_receiver
+             ? TYPE_REF_INSTANCE : TYPE_REF_EXTERNAL_CANONICAL;
+         decl_type_ref_payload[method_token] = same_receiver
+diff --git a/shaders/type_checker/semantic/artifact/01_expression_refs.slang b/shaders/type_checker/semantic/artifact/01_expression_refs.slang
+index 6443498..b68dae3 100644
+--- a/shaders/type_checker/semantic/artifact/01_expression_refs.slang
++++ b/shaders/type_checker/semantic/artifact/01_expression_refs.slang
+@@ -14,6 +14,21 @@ StructuredBuffer<HirPayload> compact_hir_payload;
+ StructuredBuffer<uint> compact_expr_scalar_type;
+ StructuredBuffer<uint> type_instance_decl_token;
+ StructuredBuffer<uint> type_instance_aggregate_word_count;
++StructuredBuffer<uint> type_instance_arg_count;
++StructuredBuffer<uint> type_instance_arg_start;
++StructuredBuffer<uint> type_instance_arg_ref_tag;
++StructuredBuffer<uint> type_instance_arg_ref_payload;
++StructuredBuffer<uint> type_instance_arg_row_start;
++StructuredBuffer<uint> type_instance_arg_row_count_out;
++StructuredBuffer<uint> type_instance_arg_row_ref_tag;
++StructuredBuffer<uint> type_instance_arg_row_ref_payload;
++StructuredBuffer<uint> type_generic_param_slot_by_token;
++StructuredBuffer<uint> compact_variant_count;
++StructuredBuffer<HirVariant> compact_variants;
++StructuredBuffer<uint> compact_variant_payload_start;
++StructuredBuffer<uint> compact_variant_payload_count;
++StructuredBuffer<uint> compact_variant_payload_row_count;
++StructuredBuffer<HirVariantPayload> compact_variant_payloads;
+ StructuredBuffer<uint> visible_decl;
+ StructuredBuffer<uint> decl_type_ref_tag;
+ StructuredBuffer<uint> decl_type_ref_payload;
+@@ -126,6 +141,72 @@ uint resolved_path_decl_token(uint node)
+     return valid_token(token) ? token : INVALID;
+ }
+ 
++// Concrete enum return types need their instantiated width before function
++// lowering. A generic declaration has no fixed layout; derive this only when
++// every substituted payload is a direct scalar. Compound layouts remain with
++// the backend's aggregate layout pass and must never default to one word.
++uint local_scalar_enum_words(uint instance)
++{
++    if (!valid_token(instance) || type_instance_arg_count[instance] == 0u)
++        return 0u;
++    uint declaration = type_instance_decl_token[instance];
++    uint owner = valid_token(declaration)
++        ? type_decl_hir_node_by_token[declaration] : INVALID;
++    if (!valid_hir(owner) || compact_hir_core[owner].kind != HIR_ENUM_ITEM)
++        return 0u;
++    uint maximum = 0u;
++    uint variant_count = min(compact_variant_count[0u], gParams.n_hir_nodes);
++    uint payload_count = min(compact_variant_payload_row_count[0u], gParams.n_hir_nodes);
++    for (uint row = 0u; row < variant_count; row += 1u)
++    {
++        if (compact_variants[row].owner != owner) continue;
++        uint start = compact_variant_payload_start[row];
++        uint count = compact_variant_payload_count[row];
++        if (count != 0u && (start >= payload_count || count > payload_count - start))
++            return 0u;
++        uint words = 1u; // discriminant, including empty variants
++        for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
++        {
++            HirVariantPayload item = compact_variant_payloads[start + ordinal];
++            if (item.variant != row || item.ordinal != ordinal || !valid_hir(item.type_node))
++                return 0u;
++            uint token = type_head_token(item.type_node);
++            if (!valid_token(token)) return 0u;
++            uint tag = type_expr_ref_tag[token];
++            uint payload = type_expr_ref_payload[token];
++            if (tag == 2u) // generic parameter
++            {
++                if (!valid_token(payload)) return 0u;
++                uint slot = type_generic_param_slot_by_token[payload];
++                if (slot >= type_instance_arg_count[instance]) return 0u;
++                uint row_start = type_instance_arg_row_start[instance];
++                uint row_count = type_instance_arg_row_count_out[0u];
++                if (row_start < row_count && slot < row_count - row_start)
++                {
++                    tag = type_instance_arg_row_ref_tag[row_start + slot];
++                    payload = type_instance_arg_row_ref_payload[row_start + slot];
++                }
++                else
++                {
++                    uint legacy_start = type_instance_arg_start[instance];
++                    if (slot >= 4u || legacy_start >= gParams.n_tokens * 4u ||
++                        slot >= gParams.n_tokens * 4u - legacy_start)
++                        return 0u;
++                    tag = type_instance_arg_ref_tag[legacy_start + slot];
++                    payload = type_instance_arg_ref_payload[legacy_start + slot];
++                }
++            }
++            if (tag != TYPE_REF_SCALAR || payload == 0u || payload >= 128u)
++                return 0u;
++            uint width = payload == 7u ? 2u : 1u; // string is pointer + length
++            if (words > INVALID - width) return 0u;
++            words += width;
++        }
++        maximum = max(maximum, words);
++    }
++    return maximum;
++}
++
+ uint scalar_nominal_decl_token(uint payload)
+ {
+     uint hir_count = active_hir_count();
+@@ -172,7 +253,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
+         HirCore core = compact_hir_core[node];
+         HirPayload hir_payload = compact_hir_payload[node];
+         uint scalar = compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT;
+-        if (scalar != 0u)
++        // Nominal scalar codes omit generic arguments. Type nodes must keep
++        // their checked instance, especially concrete function return types.
++        uint type_token = core.kind == HIR_TYPE ? type_head_token(node) : INVALID;
++        bool concrete_type_instance = valid_token(type_token) &&
++            type_expr_ref_tag[type_token] == TYPE_REF_INSTANCE;
++        if (scalar != 0u && !concrete_type_instance)
+         {
+             tag = TYPE_REF_SCALAR;
+             payload = scalar;
+@@ -311,7 +397,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
+         valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
+             ? semantic_aggregate_word_count_by_hir[node]
+             : tag == TYPE_REF_INSTANCE && valid_token(payload)
+-                ? type_instance_aggregate_word_count[payload]
++                ? max(type_instance_aggregate_word_count[payload], local_scalar_enum_words(payload))
+             : tag == TYPE_REF_EXTERNAL_CANONICAL && valid_hir(node) &&
+               compact_hir_core[node].kind == HIR_TYPE
+                 ? external_type_path_width(node) : 0u;

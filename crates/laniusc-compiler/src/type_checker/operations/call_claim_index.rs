@@ -68,7 +68,7 @@ impl CallClaimIndexOperation {
                 "call_generic_claim_lookup_next",
             ),
             CallClaimKind::Const => (
-                "call_arg_row_count_out",
+                "call_const_claim_count_out",
                 "call_const_claim_callee",
                 "call_const_claim_slot",
                 "call_const_claim_lookup_head",

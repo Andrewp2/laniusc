@@ -1,0 +1,21 @@
+module app::main;
+import core::mem;
+
+fn keep<T>(value: T) -> T { return core::mem::identity(value); }
+fn view(values: [i32]) -> [i32] { return values; }
+fn inspect(rows: [[i32]]) -> i32 {
+    let forwarded: [[i32]] = keep(rows);
+    if (forwarded[0][0] != -7 || forwarded[0][1] != 42) { return 1; }
+    forwarded[0][1] = 123;
+    if (rows[0][1] != 123) { return 2; }
+    return 0;
+}
+fn main() -> i32 {
+    let values: [i32; 2] = [-7, 42];
+    let borrowed: [i32] = view(values);
+    let rows: [[i32]; 1] = [borrowed];
+    let status: i32 = inspect(rows);
+    if (status != 0) { return status; }
+    if (values[1] != 123) { return 3; }
+    return 0;
+}

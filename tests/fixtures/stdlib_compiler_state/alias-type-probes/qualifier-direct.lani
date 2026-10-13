@@ -1,0 +1,2 @@
+enum Choice<T> { Some(T), None }
+fn main() -> i32 { let value = Choice<i32>::Some(42); return match (value) { Choice::Some(inner) -> inner - 42, Choice::None -> 1 }; }

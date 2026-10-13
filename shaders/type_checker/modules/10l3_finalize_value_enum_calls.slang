@@ -2,8 +2,8 @@ import hir_records;
 
 // GPU HIR enum constructor finalizer.
 //
-// Runs after per-payload validation. A constructor call is finalized only if
-// the prepare pass left it as a valid candidate and no payload row rejected it.
+// Publish derived name/type facts for resolved constructor shapes. Complete
+// argument and result acceptance belongs to the shared callable binder.
 
 struct Params
 {
@@ -13,6 +13,7 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> call_result_instance;
 
 
 StructuredBuffer<uint> compact_hir_count;
@@ -34,17 +35,16 @@ StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> decl_type_ref_tag;
-StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> fn_return_ref_tag;
-StructuredBuffer<uint> fn_return_ref_payload;
-StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
+StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> module_value_path_call_head;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> visible_decl;
+RWStructuredBuffer<uint> call_inference_result_tag;
+RWStructuredBuffer<uint> call_inference_result_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -61,12 +61,9 @@ static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_KIND_VALUE = 3u;
 static const uint HIR_CALL_EXPR = 19u;
 
-static const uint STMT_RECORD_KIND_LET = 1u;
-static const uint STMT_RECORD_KIND_RETURN = 2u;
 
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_ENUM_BASE = 6144u;
-static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -93,17 +90,6 @@ bool valid_compact_node(uint node)
     return node != INVALID && node < min(compact_hir_count[0u], gParams.n_hir_nodes);
 }
 
-uint enclosing_function_decl_token(uint token)
-{
-    uint encoded_fn = valid_token(token) ? enclosing_fn[token] : 0u;
-    uint fn_node = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
-    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (fn_node == INVALID || fn_node >= count)
-        return INVALID;
-    uint fn_token = compact_hir_payload[fn_node].b;
-    return valid_token(fn_token) ? fn_token : INVALID;
-}
-
 bool valid_variant(uint row)
 {
     return row != INVALID && row < min(compact_variant_count[0u], gParams.n_hir_nodes);
@@ -120,65 +106,7 @@ uint path_leaf_token(uint path_i, uint owner_token)
     return valid_token(leaf_token) ? leaf_token : owner_token;
 }
 
-uint function_return_instance_for_token(uint token)
-{
-    if (!valid_token(token))
-        return INVALID;
-
-    uint fn_token = enclosing_function_decl_token(token);
-    if (valid_token(fn_token))
-    {
-        uint tag = fn_return_ref_tag[fn_token];
-        uint payload = fn_return_ref_payload[fn_token];
-        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-            return payload;
-    }
-    return INVALID;
-}
-
-uint function_return_instance_for_call(uint owner_token, uint call_node)
-{
-    uint instance = function_return_instance_for_token(owner_token);
-    if (instance != INVALID)
-        return instance;
-    return valid_compact_node(call_node)
-               ? function_return_instance_for_token(compact_hir_core[call_node].token_start)
-                                 : INVALID;
-}
-
-uint contextual_instance_for_call(uint owner_token, uint call_node)
-{
-    uint encoded_context = valid_compact_node(call_node) ? compact_hir_payload[call_node].d
-                                                         : HIR_CALL_CONTEXT_ID_MASK;
-    uint context_node = (encoded_context & HIR_CALL_CONTEXT_ID_MASK) != HIR_CALL_CONTEXT_ID_MASK
-        ? encoded_context & HIR_CALL_CONTEXT_ID_MASK
-        : INVALID;
-    if (!valid_compact_node(context_node))
-        return function_return_instance_for_call(owner_token, call_node);
-
-    HirPayload context = compact_hir_payload[context_node];
-    uint context_kind = context.a;
-    if (context_kind == STMT_RECORD_KIND_LET)
-    {
-        uint decl_token = context.b;
-        if (valid_token(decl_token))
-        {
-            uint tag = decl_type_ref_tag[decl_token];
-            uint payload = decl_type_ref_payload[decl_token];
-            if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-                return payload;
-        }
-    }
-
-    if (context_kind == STMT_RECORD_KIND_RETURN && valid_token(owner_token))
-    {
-        uint instance = function_return_instance_for_call(owner_token, call_node);
-        if (instance != INVALID)
-            return instance;
-    }
-
-    return function_return_instance_for_call(owner_token, call_node);
-}
+#include "enum_call_result.slang"
 
 bool valid_enum_variant_decl(
     uint decl_i,
@@ -227,7 +155,7 @@ bool prepared_constructor_still_valid(
     if (expected_count > 0u && !valid_node(call_node))
         return false;
 
-    uint context_instance = contextual_instance_for_call(owner_token, call_node);
+    uint context_instance = enum_result_instance_for_call(call_node);
     return context_instance == INVALID || type_instance_decl_token[context_instance] == enum_token;
 }
 
@@ -265,6 +193,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint result_ty = TY_ENUM_BASE + enum_token;
+    // Bare enum declarations own a complete zero-argument nominal instance.
+    // Publish that identity before array/argument inference reads the result.
+    if (valid_compact_node(call_node) &&
+        type_decl_generic_param_count_by_owner_token[enum_token] == 0u &&
+        type_decl_const_param_count_by_owner_token[enum_token] == 0u)
+    {
+        call_inference_result_tag[call_node] = TYPE_REF_INSTANCE;
+        call_inference_result_payload[call_node] = enum_token;
+    }
     visible_decl[owner_token] = variant_token;
     call_return_type[owner_token] = result_ty;
     uint leaf_token = path_leaf_token(path_i, owner_token);

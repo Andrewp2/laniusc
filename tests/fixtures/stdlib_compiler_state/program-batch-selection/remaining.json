@@ -1,0 +1,28 @@
+{
+  "command": [
+    "target/program-batch-tests/stdlib_gpu_perf",
+    "gpu_batch_missing_and_wrong_inner_implementations_are_semantic_failures",
+    "gpu_batch_forwards_hypotheses_and_keeps_two_replay_occurrences_separate",
+    "gpu_batch_rejects_changed_unused_replay_binding_despite_matching_predicate",
+    "gpu_batch_empty_deltas_get_fresh_receipts_and_reject_unused_bad_roots",
+    "gpu_batch_rejects_changed_retained_witness_before_replay",
+    "gpu_batch_rejects_authentic_evidence_for_a_different_replay_goal",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 26.95906302700314,
+  "binary_sha256": "19810fab4031d28ba0def5f80d29ac3e6a223a9ea72b2a409a72df2b7edb97e2",
+  "sources_unchanged": true,
+  "passed": [
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_empty_deltas_get_fresh_receipts_and_reject_unused_bad_roots",
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_forwards_hypotheses_and_keeps_two_replay_occurrences_separate",
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_missing_and_wrong_inner_implementations_are_semantic_failures",
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_authentic_evidence_for_a_different_replay_goal",
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_retained_witness_before_replay",
+    "compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_unused_replay_binding_despite_matching_predicate"
+  ],
+  "summaries": [
+    "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 702 filtered out; finished in 26.76s"
+  ]
+}

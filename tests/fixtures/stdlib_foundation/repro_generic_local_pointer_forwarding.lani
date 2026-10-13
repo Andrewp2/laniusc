@@ -1,0 +1,18 @@
+module app::main;
+import core::mem;
+fn copy<T>(value: T) -> T { return value; }
+fn main() -> i32 {
+    let first: [i32; 2] = [-7, 42];
+    let second: [i32; 2] = [71, 99];
+    let first_pointer: ptr = core::mem::i32_array_data_ptr(first);
+    let second_pointer: ptr = core::mem::i32_array_data_ptr(second);
+    let null: ptr = 0;
+    let copied: ptr = copy(first_pointer);
+    let missing: ptr = copy(null);
+    if (copied != first_pointer || copied == second_pointer || missing != null) { return 1; }
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(copied, 2);
+    if (view[0] != -7 || view[1] != 42) { return 2; }
+    view[1] = 123;
+    if (first[1] != 123 || second[1] != 99) { return 3; }
+    return 0;
+}

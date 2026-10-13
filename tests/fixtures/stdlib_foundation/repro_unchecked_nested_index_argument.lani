@@ -1,0 +1,6 @@
+import std::io;
+fn main() -> i32 {
+    let values: [[str; 2]; 2] = [["α", "β"], ["γ", "δ"]];
+    std::io::println(values[1][0]);
+    return 0;
+}

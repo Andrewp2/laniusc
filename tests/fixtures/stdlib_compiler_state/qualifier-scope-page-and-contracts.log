@@ -1,0 +1,20 @@
+
+running 3 tests
+test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
+test compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay ... GPU source-pack type-check rejection: token=7 code=UnresolvedImport detail=1
+
+thread 'compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay' (292942) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3561:17:
+assertion `left == right` failed: Choice<i32>::Left(42): Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0010", title: "unresolved import", category: "module resolution", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0010", message: "unresolved import", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 26, length: 3, byte_start: Some(25), byte_end: Some(28), source_line: Some("module app::main; import lib::left; import lib::right; fn main() -> i32 { let wrong = Choice<i32>::Left(42); return 0; }"), message: "imported module not found" }), help: None, notes: ["the module resolver could not match this import path to a loaded module declaration"] })
+  left: "LNC0010"
+ right: "LNC0005"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
+
+failures:
+
+failures:
+    compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 629 filtered out; finished in 2.82s
+

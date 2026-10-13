@@ -1,0 +1,4 @@
+error[LNC0017]: generic call is missing declared type or constant bindings
+     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
+     = note: source location unavailable for this diagnostic
+compile_exit=1

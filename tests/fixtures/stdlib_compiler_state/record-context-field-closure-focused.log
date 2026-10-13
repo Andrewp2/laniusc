@@ -1,0 +1,23 @@
+
+running 5 tests
+test generic_record_literal_receiving_contexts_compose_values_and_scopes ... 
+thread 'generic_record_literal_receiving_contexts_compose_values_and_scopes' (130595) panicked at tests/compiler_generic_types_execution.rs:136:29:
+record receiving contexts across composed values and generic bodies: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 28, column: 23, length: 6, byte_start: Some(1442), byte_end: Some(1448), source_line: Some("    let view: [i32] = values;"), message: "value type does not match this context" }), help: None, notes: ["change the expression or the annotation so both sides have the same type"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test generic_record_literal_receiving_contexts_execute ... ok
+test generic_record_literal_receiving_contexts_preserve_imported_identity ... ok
+test generic_record_literal_receiving_contexts_preserve_thirty_two_fields ... 
+thread 'generic_record_literal_receiving_contexts_preserve_thirty_two_fields' (130928) panicked at tests/compiler_generic_types_execution.rs:136:29:
+thirty-two record context fields: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0006", title: "type mismatch", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0006", message: "type mismatch", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 11, column: 5, length: 5, byte_start: Some(1033), byte_end: Some(1038), source_line: Some("if (value.f2 != \"Ω\") { return 3; }"), message: "value type is ptr, which is not accepted here" }), help: None, notes: ["found ptr, but this context requires another type; change the expression or the annotation so they agree"] })
+FAILED
+test generic_record_literal_receiving_contexts_reject_conflicting_fields ... ok
+
+failures:
+
+failures:
+    generic_record_literal_receiving_contexts_compose_values_and_scopes
+    generic_record_literal_receiving_contexts_preserve_thirty_two_fields
+
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 195 filtered out; finished in 26.91s
+

@@ -1,0 +1,76 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+
+struct Cell<T> { value: T, sentinel: i32 }
+enum Branch<T> { Payload(T), Empty }
+fn keep<T>(value: T) -> T { return value; }
+fn wrap<T>(value: T) -> Cell<T> { return Cell { value: value, sentinel: -91 }; }
+fn read<T>(cell: Cell<T>) -> T { return cell.value; }
+
+fn main() -> i32 {
+    let first: [i32; 2] = [-7, 42];
+    let second: [i32; 2] = [71, 99];
+    let left: ptr = core::mem::i32_array_data_ptr(first);
+    let right: ptr = core::mem::i32_array_data_ptr(second);
+    let null: ptr = 0;
+    if (core::mem::first(left, right) != left || core::mem::second(left, right) != right ||
+        core::mem::select(true, left, right) != left ||
+        core::mem::select(false, left, right) != right) { return 1; }
+
+    let cell: Cell<ptr> = wrap(core::mem::identity(left));
+    let copied: Cell<ptr> = keep(core::mem::identity(cell));
+    if (read(copied) != left || copied.sentinel != -91) { return 2; }
+    copied.value = right;
+    if (cell.value != left || copied.value != right) { return 3; }
+
+    let pointers: [ptr; 2] = [left, right];
+    let array_copy: [ptr; 2] = keep(core::mem::identity(pointers));
+    if (array_copy[0] != left || array_copy[1] != right) { return 4; }
+    array_copy[0] = null;
+    if (pointers[0] != left || pointers[1] != right) { return 5; }
+
+    let nested: Cell<[ptr; 2]> = wrap(pointers);
+    let nested_copy: Cell<[ptr; 2]> = core::mem::identity(keep(nested));
+    nested_copy.value[1] = null;
+    if (nested.value[1] != right || nested_copy.value[0] != left ||
+        nested_copy.sentinel != -91) { return 6; }
+
+    let present: Branch<ptr> = Payload(left);
+    let absent: Branch<ptr> = Empty();
+    let copied_present: Branch<ptr> = core::mem::identity(keep(present));
+    let copied_absent: Branch<ptr> = keep(core::mem::identity(absent));
+    let recovered: ptr = match (copied_present) { Payload(value) -> value, Empty -> null };
+    let fallback: ptr = match (copied_absent) { Payload(value) -> value, Empty -> right };
+    if (recovered != left || fallback != right) { return 7; }
+
+    let some: core::option::Option<ptr> = Some(null);
+    let none: core::option::Option<ptr> = None();
+    let copied_some: core::option::Option<ptr> = core::mem::identity(some);
+    if (!core::option::is_some(copied_some) || !core::option::is_none(none) ||
+        core::option::unwrap_or(copied_some, right) != null ||
+        core::option::unwrap_or(none, right) != right) { return 8; }
+
+    let ok: core::result::Result<ptr, Cell<ptr>> = Ok(left);
+    let err: core::result::Result<ptr, Cell<ptr>> = Err(cell);
+    let copied_ok: core::result::Result<ptr, Cell<ptr>> = keep(core::mem::identity(ok));
+    let copied_err: core::result::Result<ptr, Cell<ptr>> = core::mem::identity(keep(err));
+    let error_cell: Cell<ptr> = core::result::unwrap_err_or(copied_err, copied);
+    if (core::result::unwrap_or(copied_ok, right) != left ||
+        core::result::unwrap_or(copied_err, right) != right ||
+        error_cell.value != left || error_cell.sentinel != -91) { return 9; }
+    error_cell.value = null;
+    let original_error: Cell<ptr> = core::result::unwrap_err_or(err, copied);
+    if (original_error.value != left) { return 10; }
+
+    // Dereference live caller-owned storage to check every address bit and alias.
+    let left_view: [i32] = core::mem::i32_slice_from_raw_parts(read(cell), 2);
+    let right_view: [i32] = core::mem::i32_slice_from_raw_parts(fallback, 2);
+    if (left_view[0] != -7 || left_view[1] != 42 ||
+        right_view[0] != 71 || right_view[1] != 99) { return 11; }
+    left_view[1] = 123;
+    right_view[0] = -33;
+    if (first[1] != 123 || second[0] != -33 || first[0] != -7 || second[1] != 99) { return 12; }
+    return 0;
+}

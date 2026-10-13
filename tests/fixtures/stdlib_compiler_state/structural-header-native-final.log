@@ -1,0 +1,7 @@
+
+running 2 tests
+test generic_nested_condition_headers_preserve_branches_and_loop_effects ... ok
+test ordinary_match_in_condition_header_executes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 193 filtered out; finished in 2.04s
+

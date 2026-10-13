@@ -1,0 +1,18 @@
+module app::grammar;
+struct Numeric<const N:u64> { value:i32 }
+struct Signed<const N:i64> { value:i32 }
+struct Flag<const B:bool> { value:i32 }
+struct Character<const C:char> { value:i32 }
+struct Float<const F:f32> { value:i32 }
+const COUNT:u64 = 4294967295;
+type Maximum = Numeric<18446744073709551615>;
+type Minimum = Signed<-9223372036854775808>;
+type Enabled = Flag<true>;
+type Disabled = Flag<false>;
+type Unicode = Character<'雪'>;
+type PositiveZero = Float<+0.0>;
+type NegativeZero = Float<-0.0>;
+type FullCount = [u8;4294967295];
+type NamedCount = [u8;app::grammar::COUNT];
+trait Predicate<const B:bool> { }
+fn constrained<T>(v:T)->T where T:Predicate<true> { return v; }

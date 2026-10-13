@@ -1,0 +1,147 @@
+{
+  "runs": [
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/parameter-scoped-graph-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani",
+        "stdlib",
+        "benchmark_artifacts/performance/stdlib-gpu-20261010-implementation-evidence/generic-32.expected.txt",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 5.3735687650005275,
+      "binary_sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
+      "samples_ms": [
+        252.573,
+        250.228,
+        244.271,
+        250.566,
+        272.842,
+        262.1,
+        262.179,
+        258.056,
+        257.297,
+        268.637
+      ],
+      "median_ms": 257.67650000000003,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani",
+        "stdlib",
+        "benchmark_artifacts/performance/stdlib-gpu-20261010-implementation-evidence/generic-32.expected.txt",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 5.323564179998357,
+      "binary_sha256": "cf61d16daa200d18827447cdac7c51f3b26a36cafcfd1aae5bdb60d4796496e7",
+      "samples_ms": [
+        269.641,
+        275.287,
+        258.541,
+        255.972,
+        256.781,
+        275.186,
+        271.73,
+        263.964,
+        248.822,
+        268.997
+      ],
+      "median_ms": 266.4805,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani",
+        "stdlib",
+        "benchmark_artifacts/performance/stdlib-gpu-20261010-implementation-evidence/generic-32.expected.txt",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 5.273042541997711,
+      "binary_sha256": "cf61d16daa200d18827447cdac7c51f3b26a36cafcfd1aae5bdb60d4796496e7",
+      "samples_ms": [
+        286.838,
+        266.496,
+        270.675,
+        262.898,
+        266.499,
+        263.231,
+        254.223,
+        267.766,
+        264.525,
+        257.511
+      ],
+      "median_ms": 265.5105,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/parameter-scoped-graph-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani",
+        "stdlib",
+        "benchmark_artifacts/performance/stdlib-gpu-20261010-implementation-evidence/generic-32.expected.txt",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 5.575251400998241,
+      "binary_sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
+      "samples_ms": [
+        262.627,
+        263.835,
+        261.354,
+        264.193,
+        262.747,
+        266.337,
+        263.838,
+        265.991,
+        258.872,
+        263.417
+      ],
+      "median_ms": 263.626,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    }
+  ],
+  "pooled_median_ms": {
+    "baseline": 262.403,
+    "current": 265.5105
+  },
+  "change_percent": 1.1842471313208813,
+  "method": "Existing stdlib_gpu_perf; exact previous checkpoint binary/shaders vs frozen current binary/shaders; ABBA; 3 warmups and 10 measured entry rebuilds per run; output verification after every run.",
+  "limits": [
+    "Two focused workloads; no cross-compiler or canonical 1MB claim.",
+    "Cold driver preparation excluded from warm measurements.",
+    "Observed changes do not establish causality without further investigation."
+  ]
+}

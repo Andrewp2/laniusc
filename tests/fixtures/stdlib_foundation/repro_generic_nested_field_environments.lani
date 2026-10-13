@@ -1,0 +1,43 @@
+module app::main;
+import core::mem;
+import core::option;
+import std::io;
+
+struct Cell<T> { value: T, sentinel: i32 }
+struct Holder<A, B> { marker: A, child: Cell<B>, tail: bool }
+struct Nest<T> { child: Holder<i32, T>, sentinel: i32 }
+
+fn main() -> i32 {
+    let number: Cell<i32> = Cell { value: -7, sentinel: 42 };
+    let text: Cell<str> = Cell { value: "Ω", sentinel: -11 };
+    let flag: Cell<bool> = Cell { value: false, sentinel: 123 };
+    let a: Holder<str, i32> = Holder { marker: "", child: number, tail: false };
+    let b: Holder<i32, str> = Holder { marker: 99, child: text, tail: true };
+    let c: Holder<i32, bool> = Holder { marker: -99, child: flag, tail: true };
+    let copied_a: Holder<str, i32> = core::mem::identity(a);
+    let copied_b: Holder<i32, str> = core::mem::identity(b);
+    let copied_c: Holder<i32, bool> = core::mem::identity(c);
+    if (copied_a.child.value != -7 || copied_a.child.sentinel != 42 || copied_a.tail) { return 1; }
+    if (copied_b.marker != 99 || copied_b.child.sentinel != -11 || !copied_b.tail) { return 2; }
+    if (copied_c.marker != -99 || copied_c.child.value || !copied_c.tail) { return 3; }
+    if (std::io::println(copied_a.marker) != 1 || std::io::println(copied_b.child.value) != 3) { return 4; }
+    copied_a.child.value = 88;
+    copied_b.child.value = "backup";
+    copied_c.child.value = true;
+    if (a.child.value != -7 || c.child.value || number.value != -7 || flag.value) { return 5; }
+    if (copied_a.child.value != 88 || !copied_c.child.value || std::io::println(copied_b.child.value) != 7) { return 6; }
+    if (std::io::println(b.child.value) != 3) { return 7; }
+    copied_b.child.value = "";
+    if (std::io::println(copied_b.child.value) != 1 || copied_b.child.sentinel != -11) { return 11; }
+    copied_b.child.value = b.child.value;
+    if (std::io::println(copied_b.child.value) != 3 || !copied_b.tail) { return 12; }
+    let nested: Nest<str> = Nest { child: b, sentinel: 777 };
+    let some: core::option::Option<Nest<str>> = core::option::Some(nested);
+    let none: core::option::Option<Nest<str>> = core::option::None();
+    let copied: Nest<str> = core::option::unwrap_or(some, nested);
+    let fallback: Nest<str> = none.unwrap_or(nested);
+    if (copied.child.marker != 99 || !copied.child.tail || copied.sentinel != 777) { return 8; }
+    if (fallback.child.child.sentinel != -11 || fallback.sentinel != 777) { return 9; }
+    if (std::io::println(copied.child.child.value) != 3) { return 10; }
+    return 0;
+}

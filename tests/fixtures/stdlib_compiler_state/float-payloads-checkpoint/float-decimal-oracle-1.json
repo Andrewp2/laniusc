@@ -1,0 +1,15 @@
+{
+  "environment": {},
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66",
+    "--nocapture",
+    "--test-threads=1",
+    "gpu::float_decimal_tests::physical_gpu_float_decimal_matches_native_rounding_and_bounds",
+    "--exact"
+  ],
+  "exit_code": 0,
+  "seconds": 0.965382532998774,
+  "binary_sha256": "5ed3dd74e2e10ee16a55f86f03be78bc0172e39d5dc12671df3e18c49d47b073",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

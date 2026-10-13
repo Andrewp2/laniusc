@@ -1,0 +1,31 @@
+{
+  "status": "local alias constructor checkpoint complete; unrestricted generics goal remains active",
+  "tests": {
+    "runtime_and_rejection": 34,
+    "resource_and_lowering": 2,
+    "inventory": 303,
+    "selection": "alias-member-final-selection.json",
+    "logs": [
+      "alias-member-final-generic.log",
+      "alias-member-final-contracts.log"
+    ]
+  },
+  "target": "GPU compiler emits and executes x86_64 Linux ELF; user-program GPU execution not established",
+  "performance": {
+    "directory": "benchmark_artifacts/performance/stdlib-gpu-20261010-alias-members",
+    "canonical_compiler_first_ms": 42.0496205,
+    "canonical_compiler_repeat_ms": 37.7972035,
+    "generic_32_ms": 402.744,
+    "canonical_output_checks": 40,
+    "focused_final_output_checks": 1,
+    "frozen_sources_and_shaders_unchanged": true,
+    "interpretation": "Unpaired observations; 1 MB +15.7% first and +4.0% repeat, generic +1.8%. Causal attribution and 10x cross-compiler target not established."
+  },
+  "remaining": [
+    "Imported generic alias substitution and alias-qualified imported member resolution.",
+    "Some malformed alias headers surface as unresolved member diagnostics.",
+    "Controlled performance comparison to attribute the observed timing difference."
+  ],
+  "diagnostics": "Temporary final-validator markers restored; no production diagnostic instrumentation retained.",
+  "abi_changes": false
+}

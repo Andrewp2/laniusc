@@ -1,0 +1,33 @@
+
+running 5 tests
+test structural_impl_receivers_execute_imported_compositions ... GPU parser rejection: error_pos=0 code=4 detail=2 steps=4546 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'structural_impl_receivers_execute_imported_compositions' (197904) panicked at tests/compiler_generic_types_execution.rs:136:29:
+imported structural receiver shapes: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 29, column: 63, length: 2, byte_start: Some(1293), byte_end: Some(1295), source_line: Some("    let nested: core::shapes::Wrap<core::shapes::Cell<[i32; 2]>> = core::shapes::Wrap<core::shapes::Cell<[i32; 2]>> { value: core::shapes::Cell<[i32; 2]> { value: [13, 17] } };"), message: "unexpected `>>`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test structural_impl_receivers_execute_local_compositions ... ok
+test structural_impl_receivers_execute_nested_generic_array_patterns ... ok
+test structural_impl_receivers_execute_ordinary_array_patterns ... ok
+test structural_impl_receivers_reject_conflicts_and_ambiguous_patterns ... GPU source-pack type-check rejection: token=86 code=CallMismatch detail=11
+wrong nested nominal argument: LNC0027 call resolution failed
+GPU source-pack type-check rejection: token=122 code=CallMismatch detail=17
+repeated structural type parameter: LNC0027 call resolution failed
+GPU source-pack type-check rejection: token=116 code=CallMismatch detail=15
+repeated structural constant parameter: LNC0027 call resolution failed
+GPU source-pack type-check rejection: token=97 code=CallMismatch detail=7
+overlapping structural methods: LNC0027 call resolution failed
+GPU source-pack type-check rejection: token=51 code=BadHir detail=1
+
+thread 'structural_impl_receivers_reject_conflicts_and_ambiguous_patterns' (197943) panicked at tests/compiler_generic_types_execution.rs:4433:9:
+alpha equivalent structural methods: checking must reject the receiver before parsing/codegen boundaries: Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_alpha_equivalent_structural_methods_197903_12.lani", line: 4, column: 27, length: 6, byte_start: Some(118), byte_end: Some(124), source_line: Some("impl<U> Wrap<[U; 2]> { fn marker(&self) -> i32 { return 2; } }"), message: "expected function name, found `marker`" }), help: None, notes: [] }
+FAILED
+
+failures:
+
+failures:
+    structural_impl_receivers_execute_imported_compositions
+    structural_impl_receivers_reject_conflicts_and_ambiguous_patterns
+
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 203 filtered out; finished in 3.15s
+

@@ -1,5 +1,5 @@
 {
-  "grammar": "grammar/lanius.bnf",
+  "grammar": "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/typed-grammar-candidate-1/lanius.bnf",
   "start": "file",
   "lookback": 1,
   "lookahead": 1,
@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2202,
+    "cells": 2351,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2202,
+    "cells": 2351,
     "conflicts": []
   },
   "ll1_runtime": {
-    "nonterminals": 136,
+    "nonterminals": 143,
     "start_nonterminal": "file",
-    "predict_cells": 25976,
-    "rhs_symbols": 539
+    "predict_cells": 27885,
+    "rhs_symbols": 564
   },
   "ll1_predictions": [
     {
@@ -1015,6 +1015,30 @@
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
       "production": 183
+    },
+    {
+      "nonterminal": "array_length_path",
+      "lookahead": "ArrayLengthIdent",
+      "lookahead_id": 194,
+      "production": 287
+    },
+    {
+      "nonterminal": "array_length_path_segment",
+      "lookahead": "ArrayLengthIdent",
+      "lookahead_id": 194,
+      "production": 288
+    },
+    {
+      "nonterminal": "array_length_path_tail",
+      "lookahead": "TypeArrayRBracket",
+      "lookahead_id": 86,
+      "production": 290
+    },
+    {
+      "nonterminal": "array_length_path_tail",
+      "lookahead": "PathColon",
+      "lookahead_id": 114,
+      "production": 289
     },
     {
       "nonterminal": "assign",
@@ -2068,8 +2092,50 @@
     },
     {
       "nonterminal": "bound_type_arg_tail_after_comma",
-      "lookahead": "BoundTypeIdent",
-      "lookahead_id": 174,
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "TypeIdent",
+      "lookahead_id": 80,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "TypeArrayLBracket",
+      "lookahead_id": 85,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "TypeAmpersand",
+      "lookahead_id": 144,
       "production": 251
     },
     {
@@ -2080,8 +2146,14 @@
     },
     {
       "nonterminal": "bound_type_arg_tail_after_comma",
-      "lookahead": "BoundTypeAmpersand",
-      "lookahead_id": 179,
+      "lookahead": "ConstantArgumentPlus",
+      "lookahead_id": 192,
+      "production": 251
+    },
+    {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "ConstantArgumentMinus",
+      "lookahead_id": 193,
       "production": 251
     },
     {
@@ -2167,18 +2239,6 @@
       "lookahead": "BoundTypeArgLt",
       "lookahead_id": 175,
       "production": 248
-    },
-    {
-      "nonterminal": "bound_type_args_opt",
-      "lookahead": "BoundTypeArgGt",
-      "lookahead_id": 176,
-      "production": 247
-    },
-    {
-      "nonterminal": "bound_type_args_opt",
-      "lookahead": "BoundTypeArgComma",
-      "lookahead_id": 177,
-      "production": 247
     },
     {
       "nonterminal": "bound_type_expr",
@@ -2292,18 +2352,6 @@
       "nonterminal": "bound_type_path_tail",
       "lookahead": "BoundTypeArgLt",
       "lookahead_id": 175,
-      "production": 246
-    },
-    {
-      "nonterminal": "bound_type_path_tail",
-      "lookahead": "BoundTypeArgGt",
-      "lookahead_id": 176,
-      "production": 246
-    },
-    {
-      "nonterminal": "bound_type_path_tail",
-      "lookahead": "BoundTypeArgComma",
-      "lookahead_id": 177,
       "production": 246
     },
     {
@@ -3525,6 +3573,78 @@
       "production": 95
     },
     {
+      "nonterminal": "generic_argument",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "TypeIdent",
+      "lookahead_id": 80,
+      "production": 294
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "TypeArrayLBracket",
+      "lookahead_id": 85,
+      "production": 294
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "TypeAmpersand",
+      "lookahead_id": 144,
+      "production": 294
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "ConstantArgumentPlus",
+      "lookahead_id": 192,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "ConstantArgumentMinus",
+      "lookahead_id": 193,
+      "production": 295
+    },
+    {
+      "nonterminal": "generic_argument_magnitude",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 301
+    },
+    {
+      "nonterminal": "generic_argument_magnitude",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 302
+    },
+    {
       "nonterminal": "if_block",
       "lookahead": "IfLBrace",
       "lookahead_id": 88,
@@ -3919,6 +4039,294 @@
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
       "production": 193
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Star",
+      "lookahead_id": 7,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Slash",
+      "lookahead_id": 9,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "CallLParen",
+      "lookahead_id": 28,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "IndexLBracket",
+      "lookahead_id": 30,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Dot",
+      "lookahead_id": 35,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Percent",
+      "lookahead_id": 41,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "InfixPlus",
+      "lookahead_id": 59,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "InfixMinus",
+      "lookahead_id": 61,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ArgComma",
+      "lookahead_id": 82,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ArrayComma",
+      "lookahead_id": 83,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "MatchRBrace",
+      "lookahead_id": 120,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "StructLitRBrace",
+      "lookahead_id": 126,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "MatchArmComma",
+      "lookahead_id": 138,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "StructLitComma",
+      "lookahead_id": 160,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ConstSemicolon",
+      "lookahead_id": 166,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "LetSemicolon",
+      "lookahead_id": 167,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ReturnSemicolon",
+      "lookahead_id": 168,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ExprSemicolon",
+      "lookahead_id": 169,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "PathTypeArgLt",
+      "lookahead_id": 184,
+      "production": 298
     },
     {
       "nonterminal": "module_item",
@@ -4578,25 +4986,25 @@
       "nonterminal": "param_tail_after_comma",
       "lookahead": "ParamRParen",
       "lookahead_id": 77,
-      "production": 289
+      "production": 293
     },
     {
       "nonterminal": "param_tail_after_comma",
       "lookahead": "ParamIdent",
       "lookahead_id": 79,
-      "production": 288
+      "production": 292
     },
     {
       "nonterminal": "param_tail_after_comma",
       "lookahead": "TypeAmpersand",
       "lookahead_id": 144,
-      "production": 288
+      "production": 292
     },
     {
       "nonterminal": "param_tail_after_comma",
       "lookahead": "ParamSelfValue",
       "lookahead_id": 173,
-      "production": 288
+      "production": 292
     },
     {
       "nonterminal": "path",
@@ -4965,6 +5373,30 @@
       "production": 52
     },
     {
+      "nonterminal": "path_type_arg_tail",
+      "lookahead": "MemberTypeArgGt",
+      "lookahead_id": 191,
+      "production": 53
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 54
+    },
+    {
       "nonterminal": "path_type_arg_tail_after_comma",
       "lookahead": "TypeIdent",
       "lookahead_id": 80,
@@ -4978,6 +5410,18 @@
     },
     {
       "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
       "lookahead": "TypeAmpersand",
       "lookahead_id": 144,
       "production": 54
@@ -4987,6 +5431,24 @@
       "lookahead": "PathTypeArgGt",
       "lookahead_id": 185,
       "production": 55
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "MemberTypeArgGt",
+      "lookahead_id": 191,
+      "production": 55
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "ConstantArgumentPlus",
+      "lookahead_id": 192,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "ConstantArgumentMinus",
+      "lookahead_id": 193,
+      "production": 54
     },
     {
       "nonterminal": "pattern",
@@ -6075,6 +6537,48 @@
       "production": 90
     },
     {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 296
+    },
+    {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 306
+    },
+    {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 305
+    },
+    {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 303
+    },
+    {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 304
+    },
+    {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "ConstantArgumentPlus",
+      "lookahead_id": 192,
+      "production": 300
+    },
+    {
+      "nonterminal": "scalar_constant_argument",
+      "lookahead": "ConstantArgumentMinus",
+      "lookahead_id": 193,
+      "production": 299
+    },
+    {
       "nonterminal": "self_param_tail",
       "lookahead": "ParamRParen",
       "lookahead_id": 77,
@@ -6874,6 +7378,24 @@
     },
     {
       "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
       "lookahead": "TypeIdent",
       "lookahead_id": 80,
       "production": 230
@@ -6886,6 +7408,18 @@
     },
     {
       "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
       "lookahead": "TypeArgGt",
       "lookahead_id": 132,
       "production": 231
@@ -6894,6 +7428,18 @@
       "nonterminal": "type_arg_tail_after_comma",
       "lookahead": "TypeAmpersand",
       "lookahead_id": 144,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "ConstantArgumentPlus",
+      "lookahead_id": 192,
+      "production": 230
+    },
+    {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "ConstantArgumentMinus",
+      "lookahead_id": 193,
       "production": 230
     },
     {
@@ -7042,6 +7588,18 @@
     },
     {
       "nonterminal": "type_args_opt",
+      "lookahead": "BoundTypeArgGt",
+      "lookahead_id": 176,
+      "production": 226
+    },
+    {
+      "nonterminal": "type_args_opt",
+      "lookahead": "BoundTypeArgComma",
+      "lookahead_id": 177,
+      "production": 226
+    },
+    {
+      "nonterminal": "type_args_opt",
       "lookahead": "PathTypeArgGt",
       "lookahead_id": 185,
       "production": 226
@@ -7053,15 +7611,57 @@
       "production": 226
     },
     {
-      "nonterminal": "type_array_len",
-      "lookahead": "Ident",
-      "lookahead_id": 1,
-      "production": 287
+      "nonterminal": "type_args_opt",
+      "lookahead": "MemberTypeArgGt",
+      "lookahead_id": 191,
+      "production": 226
     },
     {
       "nonterminal": "type_array_len",
       "lookahead": "Int",
       "lookahead_id": 2,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "ConstantArgumentPlus",
+      "lookahead_id": 192,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "ConstantArgumentMinus",
+      "lookahead_id": 193,
+      "production": 291
+    },
+    {
+      "nonterminal": "type_array_len",
+      "lookahead": "ArrayLengthIdent",
+      "lookahead_id": 194,
       "production": 286
     },
     {
@@ -7366,6 +7966,18 @@
     },
     {
       "nonterminal": "type_path_tail",
+      "lookahead": "BoundTypeArgGt",
+      "lookahead_id": 176,
+      "production": 59
+    },
+    {
+      "nonterminal": "type_path_tail",
+      "lookahead": "BoundTypeArgComma",
+      "lookahead_id": 177,
+      "production": 59
+    },
+    {
+      "nonterminal": "type_path_tail",
       "lookahead": "PathTypeArgGt",
       "lookahead_id": 185,
       "production": 59
@@ -7374,6 +7986,12 @@
       "nonterminal": "type_path_tail",
       "lookahead": "PathTypeArgComma",
       "lookahead_id": 186,
+      "production": 59
+    },
+    {
+      "nonterminal": "type_path_tail",
+      "lookahead": "MemberTypeArgGt",
+      "lookahead_id": 191,
       "production": 59
     },
     {
@@ -8226,7 +8844,7 @@
       "rhs": [
         "'PathGenericIdent'",
         "'PathTypeArgLt'",
-        "type_expr",
+        "generic_argument",
         "path_type_arg_tail",
         "'PathTypeArgGt'"
       ]
@@ -8278,7 +8896,7 @@
       "tag": "path_type_args_after_comma_more",
       "arity": 2,
       "rhs": [
-        "type_expr",
+        "generic_argument",
         "path_type_arg_tail"
       ]
     },
@@ -9443,10 +10061,11 @@
       "line": 208,
       "lhs": "postfix_tail",
       "tag": "postfix_member",
-      "arity": 1,
+      "arity": 2,
       "rhs": [
         "'Dot'",
         "'MemberIdent'",
+        "member_type_args_opt",
         "postfix_tail"
       ]
     },
@@ -10093,7 +10712,7 @@
       "arity": 2,
       "rhs": [
         "'TypeArgLt'",
-        "type_expr",
+        "generic_argument",
         "type_arg_tail",
         "'TypeArgGt'"
       ]
@@ -10124,7 +10743,7 @@
       "tag": "type_args_after_comma_more",
       "arity": 2,
       "rhs": [
-        "type_expr",
+        "generic_argument",
         "type_arg_tail"
       ]
     },
@@ -10311,7 +10930,7 @@
       "arity": 2,
       "rhs": [
         "'BoundTypeArgLt'",
-        "bound_type_expr",
+        "generic_argument",
         "bound_type_arg_tail",
         "'BoundTypeArgGt'"
       ]
@@ -10342,7 +10961,7 @@
       "tag": "bound_type_args_after_comma_more",
       "arity": 2,
       "rhs": [
-        "bound_type_expr",
+        "generic_argument",
         "bound_type_arg_tail"
       ]
     },
@@ -10691,27 +11310,69 @@
     },
     {
       "id": 286,
-      "line": 337,
+      "line": 339,
       "lhs": "type_array_len",
-      "tag": "type_array_len_int",
-      "arity": 0,
+      "tag": "type_array_len_name",
+      "arity": 1,
       "rhs": [
-        "'Int'"
+        "array_length_path"
       ]
     },
     {
       "id": 287,
-      "line": 338,
-      "lhs": "type_array_len",
-      "tag": "type_array_len_name",
-      "arity": 0,
+      "line": 340,
+      "lhs": "array_length_path",
+      "tag": "array_length_path",
+      "arity": 2,
       "rhs": [
-        "'Ident'"
+        "array_length_path_segment",
+        "array_length_path_tail"
       ]
     },
     {
       "id": 288,
-      "line": 339,
+      "line": 341,
+      "lhs": "array_length_path_segment",
+      "tag": "array_length_path_ident",
+      "arity": 0,
+      "rhs": [
+        "'ArrayLengthIdent'"
+      ]
+    },
+    {
+      "id": 289,
+      "line": 342,
+      "lhs": "array_length_path_tail",
+      "tag": "array_length_path_more",
+      "arity": 2,
+      "rhs": [
+        "'PathColon'",
+        "'PathColon'",
+        "array_length_path_segment",
+        "array_length_path_tail"
+      ]
+    },
+    {
+      "id": 290,
+      "line": 343,
+      "lhs": "array_length_path_tail",
+      "tag": "array_length_path_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 291,
+      "line": 344,
+      "lhs": "type_array_len",
+      "tag": "type_array_len_constant",
+      "arity": 1,
+      "rhs": [
+        "scalar_constant_argument"
+      ]
+    },
+    {
+      "id": 292,
+      "line": 345,
       "lhs": "param_tail_after_comma",
       "tag": "params_after_comma_more",
       "arity": 2,
@@ -10721,12 +11382,145 @@
       ]
     },
     {
-      "id": 289,
-      "line": 340,
+      "id": 293,
+      "line": 346,
       "lhs": "param_tail_after_comma",
       "tag": "params_after_comma_trailing",
       "arity": 0,
       "rhs": []
+    },
+    {
+      "id": 294,
+      "line": 351,
+      "lhs": "generic_argument",
+      "tag": "generic_argument_type",
+      "arity": 1,
+      "rhs": [
+        "type_expr"
+      ]
+    },
+    {
+      "id": 295,
+      "line": 352,
+      "lhs": "generic_argument",
+      "tag": "generic_argument_constant",
+      "arity": 1,
+      "rhs": [
+        "scalar_constant_argument"
+      ]
+    },
+    {
+      "id": 296,
+      "line": 353,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_integer",
+      "arity": 0,
+      "rhs": [
+        "'Int'"
+      ]
+    },
+    {
+      "id": 297,
+      "line": 355,
+      "lhs": "member_type_args_opt",
+      "tag": "member_type_args_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 298,
+      "line": 356,
+      "lhs": "member_type_args_opt",
+      "tag": "member_type_args_some",
+      "arity": 2,
+      "rhs": [
+        "'PathTypeArgLt'",
+        "generic_argument",
+        "path_type_arg_tail",
+        "'MemberTypeArgGt'"
+      ]
+    },
+    {
+      "id": 299,
+      "line": 360,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_negative",
+      "arity": 1,
+      "rhs": [
+        "'ConstantArgumentMinus'",
+        "generic_argument_magnitude"
+      ]
+    },
+    {
+      "id": 300,
+      "line": 361,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_positive",
+      "arity": 1,
+      "rhs": [
+        "'ConstantArgumentPlus'",
+        "generic_argument_magnitude"
+      ]
+    },
+    {
+      "id": 301,
+      "line": 362,
+      "lhs": "generic_argument_magnitude",
+      "tag": "generic_argument_magnitude_integer",
+      "arity": 0,
+      "rhs": [
+        "'Int'"
+      ]
+    },
+    {
+      "id": 302,
+      "line": 363,
+      "lhs": "generic_argument_magnitude",
+      "tag": "generic_argument_magnitude_float",
+      "arity": 0,
+      "rhs": [
+        "'Float'"
+      ]
+    },
+    {
+      "id": 303,
+      "line": 364,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_true",
+      "arity": 0,
+      "rhs": [
+        "'True'"
+      ]
+    },
+    {
+      "id": 304,
+      "line": 365,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_false",
+      "arity": 0,
+      "rhs": [
+        "'False'"
+      ]
+    },
+    {
+      "id": 305,
+      "line": 366,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_char",
+      "arity": 0,
+      "rhs": [
+        "'Char'"
+      ]
+    },
+    {
+      "id": 306,
+      "line": 367,
+      "lhs": "scalar_constant_argument",
+      "tag": "generic_argument_float",
+      "arity": 0,
+      "rhs": [
+        "'Float'"
+      ]
     }
   ]
 }

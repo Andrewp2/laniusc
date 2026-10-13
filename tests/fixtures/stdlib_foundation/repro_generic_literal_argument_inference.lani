@@ -1,0 +1,14 @@
+fn choose<T>(left: T, right: T, first: bool) -> T {
+    if (first) { return left; }
+    return right;
+}
+
+fn main() -> i32 {
+    let unsigned: u32 = 4294967295;
+    let later = choose(1, unsigned, false);
+    let earlier = choose(unsigned, 1, true);
+    if (later / 2 != 2147483647 || earlier / 2 != 2147483647) { return 1; }
+    let default = choose(41, 42, false);
+    if (default != 42) { return 2; }
+    return 0;
+}

@@ -1,0 +1,49 @@
+module app::main;
+import core::option;
+
+struct Pair { first: i32, second: i32 }
+struct Quad { first: i32, second: i32, third: i32, fourth: i32 }
+
+fn main() -> i32 {
+    let present_false: core::option::Option<bool> = core::option::Some(false);
+    let present_true: core::option::Option<bool> = core::option::Some(true);
+    let absent_bool: core::option::Option<bool> = core::option::None();
+    if (!core::option::is_some(present_false)) { return 1; }
+    if (!core::option::is_some(present_true)) { return 2; }
+    if (core::option::is_none(present_false)) { return 3; }
+    if (core::option::is_some(absent_bool)) { return 4; }
+    if (!core::option::is_none(absent_bool)) { return 5; }
+
+    let byte: u8 = 255;
+    let present_byte: core::option::Option<u8> = core::option::Some(byte);
+    let absent_byte: core::option::Option<u8> = core::option::None();
+    if (!core::option::is_some(present_byte)) { return 6; }
+    if (core::option::is_none(present_byte)) { return 7; }
+    if (core::option::is_some(absent_byte)) { return 8; }
+    if (!core::option::is_none(absent_byte)) { return 9; }
+
+    let unsigned: u32 = 4294967295;
+    let present_unsigned: core::option::Option<u32> = core::option::Some(unsigned);
+    let absent_unsigned: core::option::Option<u32> = core::option::None();
+    if (!core::option::is_some(present_unsigned)) { return 10; }
+    if (core::option::is_none(present_unsigned)) { return 11; }
+    if (core::option::is_some(absent_unsigned)) { return 12; }
+    if (!core::option::is_none(absent_unsigned)) { return 13; }
+
+    let present_signed: core::option::Option<i32> = core::option::Some(-7);
+    let absent_signed: core::option::Option<i32> = core::option::None();
+    if (!core::option::is_some(present_signed)) { return 14; }
+    if (core::option::is_none(present_signed)) { return 15; }
+    if (core::option::is_some(absent_signed)) { return 16; }
+    if (!core::option::is_none(absent_signed)) { return 17; }
+
+    let real: f32 = -3.5;
+    let present_real: core::option::Option<f32> = core::option::Some(real);
+    let absent_real: core::option::Option<f32> = core::option::None();
+    if (!core::option::is_some(present_real)) { return 18; }
+    if (core::option::is_none(present_real)) { return 19; }
+    if (core::option::is_some(absent_real)) { return 20; }
+    if (!core::option::is_none(absent_real)) { return 21; }
+
+    return 0;
+}

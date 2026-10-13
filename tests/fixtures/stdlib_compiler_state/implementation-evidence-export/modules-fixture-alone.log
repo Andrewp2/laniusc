@@ -1,0 +1,15 @@
+
+running 1 test
+test semantic_interface_exports_implementations_with_complete_subjects_and_method_bindings ... 
+thread 'semantic_interface_exports_implementations_with_complete_subjects_and_method_bindings' (111992) panicked at tests/type_checker_modules.rs:359:10:
+complete implementation evidence on all supported subject shapes: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0021", title: "invalid trait implementation", category: "trait solving", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0021", message: "invalid trait implementation", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 18, column: 19, length: 1, byte_start: Some(494), byte_end: Some(495), source_line: Some("pub impl Rel<Cell<&[i32;2]>> for char {}"), message: "trait impl header uses an unsupported trait argument shape" }), help: None, notes: ["use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    semantic_interface_exports_implementations_with_complete_subjects_and_method_bindings
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 108 filtered out; finished in 1.44s
+

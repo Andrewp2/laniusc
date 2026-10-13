@@ -19,6 +19,11 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
     }
     stamp_typecheck_timer(&mut timer, encoder, labels.scalar);
     match labels.stage {
+        TypeInstanceCollectionStage::Initial => collection.constant_scalars.record(encoder)?,
+        TypeInstanceCollectionStage::Projected => collection.constant_scalars
+            .record_invocation(encoder, &collection.projected_constant_scalars)?,
+    }
+    match labels.stage {
         TypeInstanceCollectionStage::Initial => collection.named.record(encoder)?,
         TypeInstanceCollectionStage::Projected => collection
             .named
@@ -33,13 +38,12 @@ pub(in crate::type_checker) fn record_type_instance_collection_passes_with_passe
                 .record_invocation(encoder, &collection.projected_aggregate_refs)?,
         }
         stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_refs);
-        match labels.stage {
-            TypeInstanceCollectionStage::Initial => collection.aggregate_details.record(encoder)?,
-            TypeInstanceCollectionStage::Projected => collection
-                .aggregate_details
-                .record_invocation(encoder, &collection.projected_aggregate_details)?,
+        // Final child edges must follow dependency nominal projection. Bare
+        // imported children still carry page-local canonical refs here.
+        if matches!(labels.stage, TypeInstanceCollectionStage::Initial) {
+            collection.aggregate_details.record(encoder)?;
+            stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
         }
-        stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
     }
 
     Ok(())

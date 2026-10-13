@@ -171,7 +171,6 @@ impl GpuParser {
         let bind_groups = bind_guard
             .as_ref()
             .expect("resident token-kind parser bind groups allocated");
-        self.record_impl_header_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
         self.record_token_delimiters_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
         self.record_match_pattern_phase_timed(
             encoder,
@@ -567,12 +566,15 @@ impl GpuParser {
             encoder,
             "parser.tokens.delimiters.depth_scan.done",
         );
+        self.record_impl_header_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
         self.record_raw_clamped_angle_depth(encoder, token_buf, token_count_buf, bufs)?;
         stamp_timer(
             timer_ref,
             encoder,
             "parser.tokens.delimiters.clamped_angle.done",
         );
+        self.record_raw_delimiter_matching(encoder, token_buf, token_count_buf, bufs)?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.raw_delimiter_match.done");
         self.record_token_delimiter_owner_local(encoder, token_buf, token_count_buf, bufs)?;
         stamp_timer(
             timer_ref,
@@ -685,7 +687,7 @@ impl GpuParser {
         Ok(())
     }
 
-    fn record_token_delimiter_matching(
+    fn record_raw_delimiter_matching(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         token_buf: &wgpu::Buffer,
@@ -707,7 +709,27 @@ impl GpuParser {
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
 
-        self.record_token_delimiter_match_min_tree_build(encoder, bufs)?;
+        self.record_token_delimiter_match_min_tree_build(encoder, bufs)
+    }
+
+    fn record_token_delimiter_matching(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        bufs: &ParserBuffers,
+    ) -> Result<()> {
+        self.record_cached_token_operation(
+            encoder,
+            bufs,
+            token_buf,
+            token_count_buf,
+            "parser_tokens_bracket_01_kinds",
+            "parser.tokens.bracket.kinds",
+            &self.passes.token_frontend.tokens_bracket_01_kinds,
+            &[("gParams", bufs.token_brace_match_params.as_entire_binding())],
+            bufs.token_delimiter_n_blocks.saturating_mul(256),
+        )?;
         bufs.clear_operations()
             .record_token_braced_rhs_statement_kind(encoder);
         self.record_token_brace_pairing(encoder, token_buf, token_count_buf, bufs)?;

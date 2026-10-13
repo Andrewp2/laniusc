@@ -23,6 +23,7 @@ use laniusc_compiler::{
         GpuCompiler,
         GpuSemanticInterfaceArtifact,
         GpuSemanticInterfaceMemberKind,
+        GpuSemanticInterfaceImplementationKind,
         GpuSemanticInterfaceTypeKind,
         GpuSourcePackArtifactDescriptor,
         GpuSourcePackArtifactExecutor,
@@ -55,10 +56,11 @@ fn range_interface_preserves_generic_fields_and_methods() {
     let artifact =
         common::semantic_interface_with_timeout(7, &[include_str!("../stdlib/core/range.lani")])
             .unwrap();
-    let declaration = artifact
+    let (range_index, declaration) = artifact
         .declarations
         .iter()
-        .find(|declaration| {
+        .enumerate()
+        .find(|(_, declaration)| {
             semantic_interface_name(
                 &artifact.name_bytes,
                 declaration.name_byte_start,
@@ -68,23 +70,61 @@ fn range_interface_preserves_generic_fields_and_methods() {
         .expect("Range must be exported");
     let first = declaration.first_member as usize;
     let end = first + declaration.member_count as usize;
-    let kinds = artifact.members[first..end]
-        .iter()
-        .map(|member| member.kind)
-        .collect::<Vec<_>>();
     assert_eq!(
-        kinds,
+        artifact.members[first..end].iter().map(|member| member.kind).collect::<Vec<_>>(),
         vec![
             GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32,
             GpuSemanticInterfaceMemberKind::Field as u32,
             GpuSemanticInterfaceMemberKind::Field as u32,
-            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
-            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
-            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
-            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
-            GpuSemanticInterfaceMemberKind::AssociatedMethod as u32,
-        ]
+        ],
+        "the nominal declaration owns its header and fields, not inherent methods"
     );
+    let implementations = artifact.implementations.iter().enumerate().filter(|(_, implementation)| {
+        let subject = artifact.types[implementation.subject_type as usize];
+        implementation.kind == GpuSemanticInterfaceImplementationKind::Inherent as u32
+            && subject.kind == GpuSemanticInterfaceTypeKind::Declaration as u32
+            && (subject.payload_lo, subject.nominal_unit_id, subject.payload_hi)
+                == (artifact.library_id, artifact.unit_id, range_index as u32)
+    }).collect::<Vec<_>>();
+    assert_eq!(implementations.len(), 2, "Range<i32> and Range<u32> retain distinct lexical implementations");
+    let mut seen = std::collections::BTreeSet::new();
+    for function_name in ["start_i32", "start_u32"] {
+        let function = artifact.declarations.iter().find(|declaration|
+            semantic_interface_name(&artifact.name_bytes, declaration.name_byte_start,
+                declaration.name_byte_len) == function_name).unwrap();
+        let signature = artifact.types[function.signature_type as usize];
+        assert_eq!(signature.kind, GpuSemanticInterfaceTypeKind::Function as u32);
+        let result = artifact.type_edges[(signature.first_edge + signature.edge_count - 1) as usize].type_index;
+        let scalar = artifact.types[result as usize];
+        assert_eq!(scalar.kind, GpuSemanticInterfaceTypeKind::Scalar as u32);
+        assert!(seen.insert(scalar.payload_lo), "signed and unsigned receivers are distinct");
+        let (implementation_index, implementation) = implementations.iter().copied().find(|(_, implementation)| {
+            let subject = artifact.types[implementation.subject_type as usize];
+            if subject.edge_count != 1 { return false; }
+            let argument = artifact.types[artifact.type_edges[subject.first_edge as usize].type_index as usize];
+            argument.kind == GpuSemanticInterfaceTypeKind::Scalar as u32
+                && argument.payload_lo == scalar.payload_lo
+        }).expect("full receiver application matches its signed or unsigned scalar");
+        let members = &artifact.members[implementation.first_member as usize
+            ..(implementation.first_member + implementation.member_count) as usize];
+        assert!(members.iter().all(|member| member.owner_ref == (0x8000_0000 | implementation_index as u32)));
+        let methods = members.iter().filter(|member|
+            member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32).collect::<Vec<_>>();
+        assert_eq!(methods.len(), 5);
+        let mut names = methods.iter().map(|member|
+            semantic_interface_name(&artifact.name_bytes, member.name_byte_start, member.name_byte_len))
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        assert_eq!(names, ["contains", "end", "is_empty", "overlaps", "start"]);
+        for method in methods {
+            assert_eq!(method.receiver_type_index, implementation.subject_type);
+            assert_eq!(method.method_type_parameter_count(), 0);
+            assert_eq!(method.method_constant_parameter_count(), 0);
+            assert!(method.trait_method_is_public());
+        }
+        assert_eq!(implementation.argument_count, 0);
+        assert_eq!(implementation.method_binding_count, 0);
+    }
 }
 
 #[test]
@@ -116,9 +156,437 @@ pub trait Policy<T> {
     );
     let members = &artifact.members[declaration.first_member as usize
         ..(declaration.first_member + declaration.member_count) as usize];
-    assert!(members.iter().any(|member| {
+    let parameter = members.iter().find(|member| {
         member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
-    }));
+    }).expect("trait header parameter");
+    let signature = artifact.types[declaration.signature_type as usize];
+    assert_eq!(signature.edge_count, 1, "trait signature preserves its complete header");
+    let argument = artifact.type_edges[signature.first_edge as usize].type_index;
+    let argument = artifact.types[argument as usize];
+    assert_eq!(argument.kind, GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+    assert_eq!(argument.payload_lo as usize, declaration.first_member as usize +
+        members.iter().position(|member| std::ptr::eq(member, parameter)).unwrap());
+    let contract = members.iter().find(|member| {
+        semantic_interface_name(&artifact.name_bytes, member.name_byte_start,
+            member.name_byte_len) == "apply"
+    }).expect("imported traits must retain required method contracts");
+    assert_eq!(contract.kind, GpuSemanticInterfaceMemberKind::TraitMethod as u32);
+    assert!(contract.trait_method_is_public());
+    assert_eq!(contract.method_parameter_count(), 1);
+    let argument = members.iter().find(|member| {
+        member.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
+            && member.value_hi == contract.value_hi
+    }).expect("method parameter type");
+    assert_eq!(artifact.types[argument.type_index as usize].kind,
+        GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+    artifact.validate().unwrap();
+    let bytes = artifact.to_bytes().unwrap();
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(), artifact);
+}
+
+#[test]
+fn semantic_interface_preserves_trait_method_shapes_and_parent_scopes() {
+    let artifact = common::semantic_interface_with_timeout(13, &[r#"
+module contracts::flow;
+pub struct Cell<T> { value: T }
+pub trait Flow<const N: usize, T> {
+    pub fn apply(value: &[Cell<T>; N]) -> [Cell<T>; N];
+    fn reset(&self);
+}
+pub trait Other<U> { pub fn inspect(value: U) -> bool; }
+"#]).expect("complete compound trait contract");
+    let (owner, declaration) = artifact.declarations.iter().enumerate().find(|(_, row)|
+        semantic_interface_name(&artifact.name_bytes, row.name_byte_start, row.name_byte_len) == "Flow"
+    ).unwrap();
+    let header = artifact.types[declaration.signature_type as usize];
+    let arguments = &artifact.type_edges[header.first_edge as usize
+        ..(header.first_edge + header.edge_count) as usize];
+    assert_eq!(arguments.len(), 2);
+    assert_eq!(artifact.types[arguments[0].type_index as usize].kind,
+        GpuSemanticInterfaceTypeKind::ConstParameter as u32);
+    assert_eq!(artifact.types[arguments[1].type_index as usize].kind,
+        GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+    let method = |name: &str| artifact.members.iter().enumerate().find(|(_, row)|
+        row.owner_ref == owner as u32
+        && row.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
+        && semantic_interface_name(&artifact.name_bytes, row.name_byte_start, row.name_byte_len) == name
+    ).unwrap();
+    let (_, apply) = method("apply");
+    assert!(apply.trait_method_is_public());
+    assert_eq!(apply.method_parameter_count(), 1);
+    assert_eq!(apply.method_type_parameter_count(), 0);
+    assert_eq!(apply.method_constant_parameter_count(), 0);
+    let result = artifact.types[apply.type_index as usize];
+    assert_eq!(result.kind, GpuSemanticInterfaceTypeKind::Array as u32);
+    assert_eq!(result.length_kind, 2);
+    let length = artifact.members[result.length_lo as usize];
+    assert_eq!(length.owner_ref, owner as u32);
+    assert_eq!(length.value_hi, 0);
+    assert_eq!(length.generic_parameter_ordinal, 0);
+    let parameter = artifact.members.iter().find(|row|
+        row.owner_ref == owner as u32 && row.value_hi == apply.value_hi
+        && row.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
+    ).unwrap();
+    assert_eq!(artifact.types[parameter.type_index as usize].kind,
+        GpuSemanticInterfaceTypeKind::Reference as u32);
+    let (reset_index, reset) = method("reset");
+    assert!(!reset.trait_method_is_public());
+    assert_eq!(reset.trait_method_receiver_mode(), 2);
+    assert_eq!(reset.method_parameter_count(), 0);
+    assert_eq!(reset.receiver_type_index, u32::MAX);
+    assert_eq!(artifact.types[reset.type_index as usize].kind,
+        GpuSemanticInterfaceTypeKind::Scalar as u32);
+    let bytes = artifact.to_bytes().unwrap();
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(), artifact);
+
+    let foreign = artifact.members.iter().enumerate().find(|(_, row)|
+        row.owner_ref != owner as u32 && row.value_hi == 0
+        && row.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+    ).unwrap().0;
+    let mut malformed = artifact.clone();
+    let mut pending = vec![apply.type_index];
+    let leaf = loop {
+        let index = pending.pop().expect("compound result uses the trait parameter");
+        let ty = artifact.types[index as usize];
+        if ty.kind == GpuSemanticInterfaceTypeKind::GenericParameter as u32 { break index; }
+        pending.extend(artifact.type_edges[ty.first_edge as usize
+            ..(ty.first_edge + ty.edge_count) as usize].iter().map(|edge| edge.type_index));
+    };
+    malformed.types[leaf as usize].payload_lo = foreign as u32;
+    assert!(malformed.validate().unwrap_err().contains("foreign"));
+    let mut malformed = artifact.clone();
+    malformed.members[reset_index].value_lo |= 1 << 31;
+    assert!(malformed.validate().unwrap_err().contains("requirements/identity"));
+}
+
+#[test]
+fn semantic_interface_preserves_all_thirty_two_trait_parameters() {
+    let names = (0..32).map(|i| format!("T{i}")).collect::<Vec<_>>();
+    let source = format!("module contracts::wide; pub trait Wide<{}> {{ pub fn last(value: T31) -> T0; }}", names.join(","));
+    let artifact = common::semantic_interface_with_timeout(13, &[&source])
+        .expect("trait with all thirty-two ordered parameters");
+    let declaration = artifact.declarations.iter().find(|row| row.kind == 10).unwrap();
+    let header = artifact.types[declaration.signature_type as usize];
+    assert_eq!(header.edge_count, 32);
+    for (ordinal, edge) in artifact.type_edges[header.first_edge as usize
+        ..(header.first_edge + header.edge_count) as usize].iter().enumerate() {
+        let parameter = artifact.members[artifact.types[edge.type_index as usize].payload_lo as usize];
+        assert_eq!(parameter.generic_parameter_ordinal, ordinal as u32);
+    }
+    let bytes = artifact.to_bytes().unwrap();
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(), artifact);
+}
+
+#[test]
+fn semantic_interface_exports_callable_predicate_graphs_and_scopes() {
+    let artifact = common::semantic_interface_with_timeout(19, &[r#"
+module contracts::bounds;
+pub struct Cell<T> { value:T }
+pub trait Rel<A> {}
+pub trait Marker {}
+pub fn keep<T,U,const N:usize>(v:T, values:[U;N])->T
+    where T:Rel<Cell<[U;N]>> {return v;}
+pub fn only<T,U>(v:T)->T where T:Rel<&[Cell<U>;2]> {return v;}
+pub fn view<T,U>(v:T)->T where T:Rel<[U]> {return v;}
+pub fn siblings<T,U>(v:T, other:U)->T where T:Rel<U>, U:Marker {return v;}
+fn hidden<T>(v:T)->T where T:Marker {return v;}
+"#]).expect("export complete callable bounds, including bound-only operands");
+    assert_eq!(artifact.predicates.len(), 5);
+    let name = |owner: u32| {
+        let declaration = artifact.declarations[owner as usize];
+        semantic_interface_name(&artifact.name_bytes, declaration.name_byte_start,
+            declaration.name_byte_len)
+    };
+    let mut saw_symbolic_array = false;
+    let mut saw_reference = false;
+    let mut saw_slice = false;
+    for predicate in &artifact.predicates {
+        assert!(matches!(name(predicate.owner_ref), "keep" | "only" | "view" | "siblings"));
+        assert_eq!(predicate.owner_scope_symbol, 0);
+        assert_eq!((predicate.trait_library_id, predicate.trait_unit_id),
+            (artifact.library_id, artifact.unit_id));
+        assert!(matches!(name(predicate.trait_declaration_index), "Rel" | "Marker"));
+        let mut pending = vec![predicate.subject_type];
+        pending.extend_from_slice(&artifact.predicate_arguments[predicate.first_argument as usize
+            ..(predicate.first_argument + predicate.argument_count) as usize]);
+        while let Some(index) = pending.pop() {
+            let ty = artifact.types[index as usize];
+            if ty.kind == GpuSemanticInterfaceTypeKind::GenericParameter as u32 {
+                let member = artifact.members[ty.payload_lo as usize];
+                assert_eq!(member.owner_ref, predicate.owner_ref,
+                    "same-named parameters in other functions must remain distinct");
+                assert_eq!(member.value_hi, 0);
+            }
+            if ty.kind == GpuSemanticInterfaceTypeKind::Array as u32 && ty.length_kind == 2 {
+                let member = artifact.members[ty.length_lo as usize];
+                assert_eq!(member.owner_ref, predicate.owner_ref);
+                assert_eq!(member.kind, GpuSemanticInterfaceMemberKind::GenericConstParameter as u32);
+                saw_symbolic_array = true;
+            }
+            saw_reference |= ty.kind == GpuSemanticInterfaceTypeKind::Reference as u32;
+            saw_slice |= ty.kind == GpuSemanticInterfaceTypeKind::Slice as u32;
+            pending.extend(artifact.type_edges[ty.first_edge as usize
+                ..(ty.first_edge + ty.edge_count) as usize].iter().map(|edge| edge.type_index));
+        }
+    }
+    assert!(saw_symbolic_array && saw_reference && saw_slice);
+    artifact.validate().unwrap();
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&artifact.to_bytes().unwrap()).unwrap(), artifact);
+}
+
+#[test]
+fn semantic_interface_retains_inherent_method_predicates_with_exact_owner_scope() {
+    let source = include_str!("fixtures/stdlib_compiler_state/callable-predicate-export/method-where-not-yet-supported.lani");
+    let plain = source.replace(" where U:Rel<[T;2]>", "");
+    let control = common::semantic_interface_with_timeout(19, &[&plain])
+        .expect("the public generic method without a bound exports");
+    assert!(control.members.iter().any(|member|
+        member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
+            && member.owner_ref != u32::MAX
+            && member.owner_ref & 0x8000_0000 != 0
+            && control.implementations[(member.owner_ref & 0x7fff_ffff) as usize].kind
+                == GpuSemanticInterfaceImplementationKind::Inherent as u32));
+    let artifact = common::semantic_interface_with_timeout(19, &[source])
+        .expect("inherent method bounds are part of the public callable contract");
+    assert_eq!(artifact.predicates.len(), 1);
+    let predicate = artifact.predicates[0];
+    let method = artifact.members.iter().find(|member|
+        member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
+            && member.value_hi == predicate.owner_scope_symbol).unwrap();
+    assert_eq!(predicate.owner_ref, method.owner_ref);
+    assert_eq!(predicate.argument_count, 1);
+    assert_eq!(method.method_type_parameter_count(), 2);
+    artifact.validate().unwrap();
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&artifact.to_bytes().unwrap()).unwrap(), artifact);
+}
+
+#[test]
+fn semantic_interface_checks_method_body_bounds_in_exact_lexical_scopes() {
+    let source = r#"
+module contracts::method_assumptions;
+pub trait Mark {}
+pub fn marked<U>(value: U) -> U where U: Mark { return value; }
+pub struct Cell<T> { value: T }
+pub impl<T> Cell<T> where T: Mark {
+    pub fn from_impl<U>(&self, unused: U) -> T { return marked(self.value); }
+}
+pub struct Own<T> { value: T }
+pub impl<T> Own<T> {
+    pub fn from_method(&self) -> T where T: Mark { return marked(self.value); }
+}
+"#;
+    // This strict interface job has no pending-program admission to repair a
+    // missed caller assumption. Both method bodies must typecheck here.
+    let artifact = common::semantic_interface_with_timeout(19, &[source])
+        .expect("own method and enclosing impl assumptions remain visible");
+    assert_eq!(artifact.predicates.len(), 3);
+    assert!(artifact.predicates.iter().any(|predicate|
+        predicate.owner_scope_symbol & 0xc000_0000 == 0xc000_0000));
+    assert!(artifact.predicates.iter().any(|predicate|
+        predicate.owner_scope_symbol & 0xc000_0000 == 0x8000_0000));
+    artifact.validate().unwrap();
+}
+
+#[test]
+fn semantic_interface_checks_inherited_impl_prerequisites_at_method_calls() {
+    let source = r#"
+module contracts::strict_method_prerequisites;
+pub trait Mark {}
+pub struct Cell<T> { value: T }
+pub impl<T> Cell<T> where T: Mark {
+    pub fn read(&self) -> T { return self.value; }
+}
+pub fn concrete() -> i32 {
+    let cell: Cell<i32> = Cell { value: 42 };
+    return cell.read();
+}
+"#;
+    let supported = format!("{source}\npub impl Mark for i32 {{}}\n");
+    common::semantic_interface_with_timeout(19, &[&supported])
+        .expect("a concrete impl proves the inherited method prerequisite");
+    let error = common::semantic_interface_with_timeout(19, &[source])
+        .expect_err("a method call must check its enclosing impl prerequisite");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0008", "{error:?}");
+}
+
+#[test]
+fn semantic_interface_checks_method_prerequisites_in_distinct_lexical_domains() {
+    let source = r#"
+module contracts::strict_method_shadowing;
+pub trait Mark<U> {}
+pub trait Other {}
+pub impl Mark<bool> for i32 {}
+pub impl Other for bool {}
+pub struct Cell<T> { value: T }
+pub impl<T> Cell<T> where T: Mark<bool> {
+    pub fn pick<T>(&self, value: T) -> T where T: Other { return value; }
+}
+pub fn concrete() -> bool {
+    let cell: Cell<i32> = Cell { value: 42 };
+    return cell.pick(true);
+}
+"#;
+    common::semantic_interface_with_timeout(19, &[source])
+        .expect("impl T=i32 and shadowing method T=bool use distinct call slots");
+    for (label, missing) in [
+        ("inherited impl subject and operand", "pub impl Mark<bool> for i32 {}"),
+        ("own method subject", "pub impl Other for bool {}"),
+    ] {
+        let invalid = source.replace(missing, "");
+        let error = common::semantic_interface_with_timeout(19, &[&invalid])
+            .expect_err(label);
+        assert_eq!(error.to_public_diagnostic().code, "LNC0008", "{label}: {error:?}");
+    }
+}
+
+#[test]
+fn semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands() {
+    let parameters = (0..32).map(|i| format!("T{i}")).collect::<Vec<_>>().join(",");
+    let operands = (0..32).map(|i| format!("Cell<[i32;{i}]>")).collect::<Vec<_>>().join(",");
+    let source = format!("module contracts::wide_bound; pub struct Cell<T>{{value:T}} \
+        pub trait Wide<{parameters}>{{}} \
+        pub fn keep<T>(v:T)->T where T:Wide<{operands}>{{return v;}}");
+    let artifact = common::semantic_interface_with_timeout(19, &[&source])
+        .expect("all thirty-two bound operands, including empty arrays");
+    assert_eq!(artifact.predicates.len(), 1);
+    let predicate = artifact.predicates[0];
+    assert_eq!(predicate.argument_count, 32);
+    for (ordinal, root) in artifact.predicate_arguments[predicate.first_argument as usize
+        ..(predicate.first_argument + predicate.argument_count) as usize].iter().enumerate() {
+        let cell = artifact.types[*root as usize];
+        assert_eq!(cell.kind, GpuSemanticInterfaceTypeKind::Declaration as u32);
+        assert_eq!(cell.edge_count, 1);
+        let array = artifact.types[artifact.type_edges[cell.first_edge as usize].type_index as usize];
+        assert_eq!(array.kind, GpuSemanticInterfaceTypeKind::Array as u32);
+        assert_eq!(array.length_kind, 1);
+        assert_eq!(array.length_lo, ordinal as u32);
+        assert_eq!(array.length_hi, 0);
+    }
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&artifact.to_bytes().unwrap()).unwrap(), artifact);
+}
+
+#[test]
+fn semantic_interface_rejects_public_predicate_with_unexported_trait() {
+    let source = r#"
+module contracts::hidden;
+trait Hidden {}
+pub fn keep<T>(v:T)->T where T:Hidden {return v;}
+"#;
+    let public = source.replace("trait Hidden", "pub trait Hidden");
+    let accepted = common::semantic_interface_with_timeout(19, &[&public])
+        .expect("the representable public trait control must export");
+    assert_eq!(accepted.predicates.len(), 1);
+    let error = common::semantic_interface_with_timeout(19, &[source])
+        .expect_err("an unrepresentable public bound must not disappear from the interface");
+    assert!(matches!(&error, CompileError::GpuFrontend(message)
+        if message.contains("semantic-interface GPU export failed")), "{error:?}");
+}
+
+#[test]
+fn semantic_interface_exports_implementations_with_complete_subjects_and_method_bindings() {
+    let source = include_str!("fixtures/stdlib_compiler_state/implementation-evidence-export/local-evidence.lani");
+    let interface = common::semantic_interface_with_timeout(19, &[source])
+        .expect("complete implementation evidence on all supported subject shapes");
+    assert_eq!(interface.implementations.len(), 9);
+    assert_eq!(interface.implementation_method_bindings.len(), 2);
+    let mut kinds = std::collections::BTreeSet::new();
+    for (index, implementation) in interface.implementations.iter().enumerate() {
+        assert_eq!(implementation.visibility, 1);
+        assert_eq!((implementation.trait_library_id, implementation.trait_unit_id), (19, 0));
+        kinds.insert(interface.types[implementation.subject_type as usize].kind);
+        let start = implementation.first_member as usize;
+        for member in &interface.members[start..start + implementation.member_count as usize] {
+            assert_eq!(member.owner_ref, 0x8000_0000 | index as u32);
+        }
+    }
+    for kind in [GpuSemanticInterfaceTypeKind::Scalar, GpuSemanticInterfaceTypeKind::Declaration,
+        GpuSemanticInterfaceTypeKind::Array, GpuSemanticInterfaceTypeKind::Slice,
+        GpuSemanticInterfaceTypeKind::Reference] {
+        assert!(kinds.contains(&(kind as u32)), "missing subject kind {kind:?}");
+    }
+    let mut public = 0;
+    let mut private = 0;
+    for binding in &interface.implementation_method_bindings {
+        let implementation = interface.implementations[binding.implementation_index as usize];
+        let method = interface.members[binding.implementation_method_member as usize];
+        assert_eq!(method.kind, GpuSemanticInterfaceMemberKind::ImplementationMethod as u32);
+        assert_eq!(method.receiver_type_index, implementation.subject_type);
+        assert_eq!(method.owner_ref, 0x8000_0000 | binding.implementation_index);
+        assert_eq!((binding.target_library_id, binding.target_unit_id), (19, 0));
+        assert_eq!(binding.required_method_symbol & 0xc000_0000, 0x8000_0000);
+        if method.value_lo & (1 << 30) != 0 {
+            public += 1; assert_eq!(binding.target_symbol, method.value_hi);
+        } else {
+            private += 1; assert_eq!(binding.target_symbol & 0xc000_0000, 0x4000_0000);
+            assert_ne!(binding.target_symbol, method.value_hi);
+        }
+    }
+    assert_eq!((public, private), (1, 1));
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&interface.to_bytes().unwrap()).unwrap(), interface);
+}
+
+#[test]
+fn semantic_interface_implementation_reference_operands_preserve_nested_graphs() {
+    use GpuSemanticInterfaceTypeKind::{Array, Declaration, Reference, Scalar};
+    let cases: &[(&str, &[GpuSemanticInterfaceTypeKind])] = &[
+        ("&[i32;2]", &[Reference, Array, Scalar]),
+        ("Cell<&[i32;2]>", &[Declaration, Reference, Array, Scalar]),
+        ("Cell<&i32>", &[Declaration, Reference, Scalar]),
+        ("Cell<[i32;2]>", &[Declaration, Array, Scalar]),
+        ("Cell<&Cell<[bool;0]>>", &[Declaration, Reference, Declaration, Array, Scalar]),
+    ];
+    let mut failures = Vec::new();
+    for &(operand, kinds) in cases {
+        let source = format!("module contracts::references; pub struct Cell<T>{{value:T}} pub trait Rel<A>{{}} pub impl Rel<{operand}> for char{{}}");
+        let interface = match common::semantic_interface_with_timeout(19, &[&source]) {
+            Ok(interface) => interface,
+            Err(error) => { failures.push(format!("{operand}: {error:?}")); continue; }
+        };
+        assert_eq!(interface.implementations.len(), 1, "{operand}");
+        assert_eq!(interface.implementation_arguments.len(), 1, "{operand}");
+        let mut root = interface.implementation_arguments[0];
+        for (depth, kind) in kinds.iter().enumerate() {
+            let node = interface.types[root as usize];
+            assert_eq!(node.kind, *kind as u32, "{operand} at depth {depth}");
+            assert_eq!(node.edge_count, u32::from(depth + 1 < kinds.len()), "{operand}");
+            if node.edge_count != 0 { root = interface.type_edges[node.first_edge as usize].type_index; }
+        }
+    }
+    assert!(failures.is_empty(), "complete implementation operand graphs must export:\n{}", failures.join("\n"));
+}
+
+#[test]
+fn semantic_interface_implementation_operands_preserve_thirty_two_independent_graphs() {
+    let names = (0..32).map(|i| format!("T{i}")).collect::<Vec<_>>().join(",");
+    let operands = (0..32).map(|i| format!("Cell<[i32;{i}]>")).collect::<Vec<_>>().join(",");
+    let source = format!("module contracts::wide_impl; pub struct Cell<T>{{value:T}} pub trait Wide<{names}>{{}} pub impl Wide<{operands}> for bool{{}}");
+    let interface = common::semantic_interface_with_timeout(19, &[&source]).expect("32 independent implementation operands");
+    assert_eq!(interface.implementations.len(), 1);
+    let implementation = interface.implementations[0];
+    assert_eq!(implementation.argument_count, 32);
+    assert_eq!(implementation.method_binding_count, 0);
+    for (ordinal, root) in interface.implementation_arguments.iter().enumerate() {
+        let cell = interface.types[*root as usize];
+        assert_eq!(cell.kind, GpuSemanticInterfaceTypeKind::Declaration as u32);
+        let array = interface.types[interface.type_edges[cell.first_edge as usize].type_index as usize];
+        assert_eq!(array.kind, GpuSemanticInterfaceTypeKind::Array as u32);
+        assert_eq!((array.length_kind, array.length_lo, array.length_hi), (1, ordinal as u32, 0));
+    }
+    assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&interface.to_bytes().unwrap()).unwrap(), interface);
+}
+
+#[test]
+fn semantic_interface_rejects_public_implementation_with_unexported_trait() {
+    let source = "module contracts::hidden_impl; trait Hidden{} pub impl Hidden for bool{}";
+    let public = source.replace("trait Hidden", "pub trait Hidden");
+    let control = common::semantic_interface_with_timeout(19, &[&public])
+        .expect("representable public implementation control");
+    assert_eq!(control.implementations.len(), 1);
+    let error = common::semantic_interface_with_timeout(19, &[source])
+        .expect_err("a public implementation contract must not disappear");
+    assert!(matches!(&error, CompileError::Diagnostic(diagnostic)
+        if diagnostic.code == "LNC0021" && diagnostic.primary_label.as_ref().is_some_and(|label|
+            label.message == "trait impl visibility does not match the resolved trait contract")), "{error:?}");
 }
 
 fn assert_gpu_type_check_accepts(src: &str) {
@@ -3667,6 +4135,9 @@ fn type_checker_enforces_stdlib_trait_where_obligations_from_source_pack() {
     assert_gpu_type_check_pack_accepts(&[
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
+        include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/wide_u64.lani"),
+        include_str!("../stdlib/core/wide_i64.lani"),
         r#"
 module app::main;
 
@@ -3693,25 +4164,31 @@ fn main() {
 }
 "#,
     ]);
-    assert_gpu_type_check_pack_rejects(&[
+    let error = common::type_check_source_pack_with_timeout(&[
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
+        include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/wide_u64.lani"),
+        include_str!("../stdlib/core/wide_i64.lani"),
         r#"
 module app::main;
 
 import core::cmp;
 import core::hash;
 
+struct Unhashed { value: i32 }
+
 fn keep_both<T>(value: T) -> T where T: core::cmp::Eq<T> + core::hash::Hash<T> {
     return value;
 }
 
 fn main() {
-    let value: bool = keep_both(true);
+    let value: Unhashed = keep_both(Unhashed { value: 7 });
     return 0;
 }
 "#,
-    ]);
+    ]).expect_err("a record without comparison/hash implementations must reject");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0008", "{error:?}");
 }
 
 #[test]
@@ -3794,6 +4271,7 @@ fn main() {
             "core::u8+i64",
             &[
                 include_str!("../stdlib/core/result.lani"),
+                include_str!("../stdlib/core/result_bool.lani"),
                 include_str!("../stdlib/core/option.lani"),
                 include_str!("../stdlib/core/result_u8.lani"),
                 include_str!("../stdlib/core/option_u8.lani"),
@@ -4089,7 +4567,7 @@ fn main() {
 #[test]
 fn type_checker_accepts_qualified_generic_option_and_result_calls() {
     assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/option.lani"),
+        include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         include_str!("../stdlib/core/result.lani"),
         r#"
 module app::main;
@@ -4129,7 +4607,7 @@ fn main() {
 fn type_checker_accepts_qualified_generic_enum_instance_returns() {
     assert_gpu_type_check_pack_accepts(&[
         include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/option.lani"),
+        include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
 module app::main;
 
@@ -4148,7 +4626,7 @@ fn main() {
 fn type_checker_rejects_qualified_generic_option_and_result_call_mismatches() {
     assert_gpu_type_check_pack_rejects(&[
         include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/option.lani"),
+        include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
 module app::main;
 
@@ -4175,7 +4653,7 @@ fn main() {
     ]);
     assert_gpu_type_check_pack_rejects(&[
         include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/option.lani"),
+        include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
 module app::main;
 
@@ -4307,6 +4785,7 @@ fn main() {
 fn rejects_non_constructor_symbolic_enum_returns() {
     assert_gpu_type_check_pack_rejects(&[
         include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/result_bool.lani"),
         include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;

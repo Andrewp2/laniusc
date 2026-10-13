@@ -1,0 +1,2 @@
+type View<T> = [T];
+fn keep<T>(value: View<T>) -> View<T> { return value; } fn main() -> i32 { let data: [i32; 2] = [19, 23]; let view: View<i32> = keep(data); view[0] = 29; if (data[0] != 29 || view[1] != 23) { return 1; } return 0; }

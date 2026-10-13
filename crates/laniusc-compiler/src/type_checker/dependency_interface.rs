@@ -10,7 +10,14 @@ pub(crate) struct GpuDependencyInterfaceState {
     pub(crate) module_count: u32,
     pub(crate) declaration_count: u32,
     pub(crate) type_count: u32,
+    /// Retained immutable constant address span across all pages of the job.
+    pub(crate) constant_type_rows: u32,
     pub(crate) member_count: u32,
+    pub(crate) predicate_count: u32,
+    pub(crate) predicate_argument_count: u32,
+    pub(crate) implementation_count: u32,
+    pub(crate) implementation_argument_count: u32,
+    pub(crate) implementation_method_binding_count: u32,
     pub(crate) module_lookup_capacity: u32,
     pub(crate) words: LaniusBuffer<u32>,
     pub(crate) module_lookup: LaniusBuffer<u32>,
@@ -18,7 +25,8 @@ pub(crate) struct GpuDependencyInterfaceState {
 
 /// One fixed GPU dependency slot plus the CPU-packed pages that are streamed
 /// through it. Total project dependency data remains in ordinary host memory;
-/// only the largest page contributes to resident GPU capacity.
+/// The largest page bounds table capacity; retained constant atoms use a checked
+/// disjoint span across every page so replay cannot overwrite earlier values.
 pub(crate) struct GpuDependencyInterfacePages {
     state: GpuDependencyInterfaceState,
     pages: Vec<PackedGpuDependencyInterfacePage>,
@@ -30,7 +38,13 @@ struct GpuDependencyInterfaceCapacities {
     modules: u32,
     declarations: u32,
     types: u32,
+    constant_type_rows: u32,
     members: u32,
+    predicates: u32,
+    predicate_arguments: u32,
+    implementations: u32,
+    implementation_arguments: u32,
+    implementation_method_bindings: u32,
     module_lookup: u32,
 }
 
@@ -54,11 +68,17 @@ impl GpuDependencyInterfaceCapacities {
                 .max()
                 .unwrap_or(0),
             types: pages.iter().map(|page| page.type_count).max().unwrap_or(0),
+            constant_type_rows: pages.iter().map(|page| page.words[CONSTANT_TYPE_ROWS]).max().unwrap_or(0),
             members: pages
                 .iter()
                 .map(|page| page.member_count)
                 .max()
                 .unwrap_or(0),
+            predicates: pages.iter().map(|page| page.predicate_count).max().unwrap_or(0),
+            predicate_arguments: pages.iter().map(|page| page.predicate_argument_count).max().unwrap_or(0),
+            implementations: pages.iter().map(|page| page.implementation_count).max().unwrap_or(0),
+            implementation_arguments: pages.iter().map(|page| page.implementation_argument_count).max().unwrap_or(0),
+            implementation_method_bindings: pages.iter().map(|page| page.implementation_method_binding_count).max().unwrap_or(0),
             module_lookup: pages
                 .iter()
                 .map(|page| page.module_lookup_capacity)
@@ -74,7 +94,13 @@ impl GpuDependencyInterfaceCapacities {
             modules: self.modules.max(required.modules),
             declarations: self.declarations.max(required.declarations),
             types: self.types.max(required.types),
+            constant_type_rows: self.constant_type_rows.max(required.constant_type_rows),
             members: self.members.max(required.members),
+            predicates: self.predicates.max(required.predicates),
+            predicate_arguments: self.predicate_arguments.max(required.predicate_arguments),
+            implementations: self.implementations.max(required.implementations),
+            implementation_arguments: self.implementation_arguments.max(required.implementation_arguments),
+            implementation_method_bindings: self.implementation_method_bindings.max(required.implementation_method_bindings),
             module_lookup: self.module_lookup.max(required.module_lookup),
         }
     }
@@ -88,11 +114,18 @@ pub(crate) struct PackedGpuDependencyInterfacePage {
     pub(crate) declaration_count: u32,
     pub(crate) type_count: u32,
     pub(crate) member_count: u32,
+    pub(crate) predicate_count: u32,
+    pub(crate) predicate_argument_count: u32,
+    pub(crate) implementation_count: u32,
+    pub(crate) implementation_argument_count: u32,
+    pub(crate) implementation_method_binding_count: u32,
     pub(crate) module_lookup_capacity: u32,
     pub(crate) words: Vec<u32>,
 }
 
-const HEADER_WORDS: usize = 28;
+pub(super) const HEADER_WORDS: usize = 46;
+const CONSTANT_TYPE_SPAN_BASE: usize = 44;
+const CONSTANT_TYPE_ROWS: usize = 45;
 const MODULE_LIBRARY_OFFSET: usize = 8;
 const MODULE_UNIT_OFFSET: usize = 9;
 const MODULE_LOCAL_OFFSET: usize = 10;
@@ -113,6 +146,22 @@ const MODULE_DECLARATION_START_OFFSET: usize = 24;
 const MODULE_DECLARATION_COUNT_OFFSET: usize = 25;
 const MODULE_DECLARATION_ORDER_OFFSET: usize = 26;
 const PAGE_FLAGS_OFFSET: usize = 27;
+const PREDICATE_COUNT: usize = 28;
+const PREDICATE_ARGUMENT_COUNT: usize = 29;
+const PREDICATE_LIBRARY_OFFSET: usize = 30;
+const PREDICATE_UNIT_OFFSET: usize = 31;
+const PREDICATE_LOCAL_OFFSET: usize = 32;
+const PREDICATE_OFFSET: usize = 33;
+const PREDICATE_ARGUMENT_OFFSET: usize = 34;
+const IMPLEMENTATION_COUNT: usize = 35;
+const IMPLEMENTATION_ARGUMENT_COUNT: usize = 36;
+const IMPLEMENTATION_METHOD_BINDING_COUNT: usize = 37;
+const IMPLEMENTATION_LIBRARY_OFFSET: usize = 38;
+const IMPLEMENTATION_UNIT_OFFSET: usize = 39;
+const IMPLEMENTATION_LOCAL_OFFSET: usize = 40;
+const IMPLEMENTATION_OFFSET: usize = 41;
+const IMPLEMENTATION_ARGUMENT_OFFSET: usize = 42;
+const IMPLEMENTATION_METHOD_BINDING_OFFSET: usize = 43;
 
 impl PackedGpuDependencyInterfacePage {
     pub(crate) fn new(
@@ -134,6 +183,16 @@ impl PackedGpuDependencyInterfacePage {
             .map_err(|_| anyhow::anyhow!("dependency type count exceeds u32"))?;
         let member_count = u32::try_from(batch.members.len())
             .map_err(|_| anyhow::anyhow!("dependency member count exceeds u32"))?;
+        let predicate_count = u32::try_from(batch.predicates.len())
+            .map_err(|_| anyhow::anyhow!("dependency predicate count exceeds u32"))?;
+        let predicate_argument_count = u32::try_from(batch.predicate_arguments.len())
+            .map_err(|_| anyhow::anyhow!("dependency predicate argument count exceeds u32"))?;
+        let implementation_count = u32::try_from(batch.implementations.len())
+            .map_err(|_| anyhow::anyhow!("dependency implementation count exceeds u32"))?;
+        let implementation_argument_count = u32::try_from(batch.implementation_arguments.len())
+            .map_err(|_| anyhow::anyhow!("dependency implementation argument count exceeds u32"))?;
+        let implementation_method_binding_count = u32::try_from(batch.implementation_method_bindings.len())
+            .map_err(|_| anyhow::anyhow!("dependency implementation method binding count exceeds u32"))?;
         let module_lookup_capacity = module_count
             .checked_mul(2)
             .and_then(u32::checked_next_power_of_two)
@@ -147,6 +206,8 @@ impl PackedGpuDependencyInterfacePage {
         let (module_declaration_start, module_declaration_count, module_declaration_order) =
             build_module_declaration_index(module_count, &batch.declarations)?;
         let mut words = vec![0; HEADER_WORDS];
+        // A standalone packed page is also a valid one-page address plan.
+        words[CONSTANT_TYPE_ROWS] = type_count;
         words[..8].copy_from_slice(&[
             u32::try_from(batch.library_ids.len()).unwrap_or(u32::MAX),
             module_count,
@@ -157,6 +218,11 @@ impl PackedGpuDependencyInterfacePage {
             u32::try_from(batch.members.len()).unwrap_or(u32::MAX),
             u32::try_from(batch.name_bytes.len()).unwrap_or(u32::MAX),
         ]);
+        words[PREDICATE_COUNT] = predicate_count;
+        words[PREDICATE_ARGUMENT_COUNT] = predicate_argument_count;
+        words[IMPLEMENTATION_COUNT] = implementation_count;
+        words[IMPLEMENTATION_ARGUMENT_COUNT] = implementation_argument_count;
+        words[IMPLEMENTATION_METHOD_BINDING_COUNT] = implementation_method_binding_count;
         append_table(&mut words, MODULE_LIBRARY_OFFSET, &batch.module_library_id)?;
         append_table(&mut words, MODULE_UNIT_OFFSET, &batch.module_unit_id)?;
         append_table(&mut words, MODULE_LOCAL_OFFSET, &batch.module_local_index)?;
@@ -253,7 +319,7 @@ impl PackedGpuDependencyInterfacePage {
         )?;
         append_records(&mut words, MEMBER_OFFSET, batch.members.iter(), |member| {
             [
-                member.owner_declaration,
+                member.owner_ref,
                 member.kind,
                 member.ordinal,
                 member.name_hash_lo,
@@ -264,8 +330,42 @@ impl PackedGpuDependencyInterfacePage {
                 member.value_lo,
                 member.value_hi,
                 member.receiver_type_index,
+                member.generic_parameter_ordinal,
             ]
         })?;
+        append_table(&mut words, PREDICATE_LIBRARY_OFFSET, &batch.predicate_library_id)?;
+        append_table(&mut words, PREDICATE_UNIT_OFFSET, &batch.predicate_unit_id)?;
+        append_table(&mut words, PREDICATE_LOCAL_OFFSET, &batch.predicate_local_index)?;
+        append_records(&mut words, PREDICATE_OFFSET, batch.predicates.iter(), |predicate| {
+            [
+                predicate.owner_ref,
+                predicate.owner_scope_symbol,
+                predicate.subject_type,
+                predicate.trait_library_id,
+                predicate.trait_unit_id,
+                predicate.trait_declaration_index,
+                predicate.first_argument,
+                predicate.argument_count,
+            ]
+        })?;
+        append_table(&mut words, PREDICATE_ARGUMENT_OFFSET, &batch.predicate_arguments)?;
+        append_table(&mut words, IMPLEMENTATION_LIBRARY_OFFSET, &batch.implementation_library_id)?;
+        append_table(&mut words, IMPLEMENTATION_UNIT_OFFSET, &batch.implementation_unit_id)?;
+        append_table(&mut words, IMPLEMENTATION_LOCAL_OFFSET, &batch.implementation_local_index)?;
+        append_records(&mut words, IMPLEMENTATION_OFFSET, batch.implementations.iter(), |record| {
+            [record.module, record.visibility, record.trait_library_id, record.trait_unit_id,
+             record.trait_declaration_index, record.subject_type, record.first_argument,
+             record.argument_count, record.first_member, record.member_count,
+             record.first_prerequisite, record.prerequisite_count,
+             record.first_method_binding, record.method_binding_count, record.kind]
+        })?;
+        append_table(&mut words, IMPLEMENTATION_ARGUMENT_OFFSET, &batch.implementation_arguments)?;
+        append_records(&mut words, IMPLEMENTATION_METHOD_BINDING_OFFSET,
+            batch.implementation_method_bindings.iter(), |record| {
+                [record.implementation_index, record.required_method_symbol,
+                 record.implementation_method_member, record.target_library_id,
+                 record.target_unit_id, record.target_symbol]
+            })?;
         let mut name_byte_words = Vec::with_capacity(batch.name_bytes.len().div_ceil(4));
         for bytes in batch.name_bytes.chunks(4) {
             let mut word = [0u8; 4];
@@ -278,10 +378,32 @@ impl PackedGpuDependencyInterfacePage {
             declaration_count,
             type_count,
             member_count,
+            predicate_count,
+            predicate_argument_count,
+            implementation_count,
+            implementation_argument_count,
+            implementation_method_binding_count,
             module_lookup_capacity,
             words,
         })
     }
+}
+
+/// Address planning only: rows retain their page identity across every replay.
+/// Compute the complete checked plan before publishing any header changes.
+fn assign_constant_type_spans(pages: &mut [PackedGpuDependencyInterfacePage]) -> Result<()> {
+    let mut total = 0u32;
+    let mut bases = Vec::with_capacity(pages.len());
+    for page in pages.iter() {
+        bases.push(total);
+        total = total.checked_add(page.type_count)
+            .ok_or_else(|| anyhow::anyhow!("dependency constant type span exceeds u32 rows"))?;
+    }
+    for (page, base) in pages.iter_mut().zip(bases) {
+        page.words[CONSTANT_TYPE_SPAN_BASE] = base;
+        page.words[CONSTANT_TYPE_ROWS] = total;
+    }
+    Ok(())
 }
 
 fn build_module_declaration_index(
@@ -345,6 +467,7 @@ impl GpuDependencyInterfacePages {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        assign_constant_type_spans(&mut pages)?;
         let last = pages.len() - 1;
         for (index, page) in pages.iter_mut().enumerate() {
             page.words[PAGE_FLAGS_OFFSET] = u32::from(index == 0) | (u32::from(index == last) << 1);
@@ -387,6 +510,12 @@ impl GpuDependencyInterfacePages {
     pub(crate) fn len(&self) -> usize {
         self.pages.len()
     }
+
+    /// Empty pages still carry the owning unit identity. Test the current
+    /// contents, not the resident slot's capacity left by an earlier job.
+    pub(crate) fn has_type_references(&self) -> bool {
+        self.pages.iter().any(|page| page.type_count != 0)
+    }
 }
 
 impl GpuDependencyInterfaceState {
@@ -396,7 +525,13 @@ impl GpuDependencyInterfaceState {
             modules: self.module_count,
             declarations: self.declaration_count,
             types: self.type_count,
+            constant_type_rows: self.constant_type_rows,
             members: self.member_count,
+            predicates: self.predicate_count,
+            predicate_arguments: self.predicate_argument_count,
+            implementations: self.implementation_count,
+            implementation_arguments: self.implementation_argument_count,
+            implementation_method_bindings: self.implementation_method_binding_count,
             module_lookup: self.module_lookup_capacity,
         }
     }
@@ -422,7 +557,13 @@ impl GpuDependencyInterfaceState {
             module_count: capacities.modules,
             declaration_count: capacities.declarations,
             type_count: capacities.types,
+            constant_type_rows: capacities.constant_type_rows,
             member_count: capacities.members,
+            predicate_count: capacities.predicates,
+            predicate_argument_count: capacities.predicate_arguments,
+            implementation_count: capacities.implementations,
+            implementation_argument_count: capacities.implementation_arguments,
+            implementation_method_binding_count: capacities.implementation_method_bindings,
             module_lookup_capacity: capacities.module_lookup,
             words,
             module_lookup,
@@ -439,7 +580,16 @@ impl GpuDependencyInterfaceState {
             || page.module_count > self.module_count
             || page.declaration_count > self.declaration_count
             || page.type_count > self.type_count
+            || page.words[CONSTANT_TYPE_ROWS] > self.constant_type_rows
+            || page.words[CONSTANT_TYPE_SPAN_BASE]
+                .checked_add(page.type_count)
+                .is_none_or(|end| end > page.words[CONSTANT_TYPE_ROWS])
             || page.member_count > self.member_count
+            || page.predicate_count > self.predicate_count
+            || page.predicate_argument_count > self.predicate_argument_count
+            || page.implementation_count > self.implementation_count
+            || page.implementation_argument_count > self.implementation_argument_count
+            || page.implementation_method_binding_count > self.implementation_method_binding_count
         {
             anyhow::bail!("dependency page exceeds its fixed GPU slot capacity");
         }
@@ -479,8 +629,67 @@ fn upload_words(device: &wgpu::Device, label: &str, words: &[u32]) -> LaniusBuff
 
 #[cfg(test)]
 mod tests {
-    use super::{GpuDependencyInterfaceCapacities, build_module_declaration_index};
-    use crate::compiler::GpuSemanticInterfaceDeclarationRecord;
+    use super::*;
+    use crate::compiler::{GpuCompiler, GpuSemanticInterfaceDeclarationRecord};
+
+    #[test]
+    fn dependency_page_preserves_callable_predicate_identity_and_graph_roots() {
+        pollster::block_on(async {
+            let compiler = GpuCompiler::new().await.expect("GPU compiler");
+            let source = "module contracts::left; pub trait Rel<T>{} pub impl Rel<[i32;2]> for bool{} pub fn keep<T,U>(v:T)->T where T:Rel<[U;2]>{return v;}";
+            let first = compiler.semantic_interface_for_source_pack(
+                7, &[source]).await.expect("first callable contract");
+            let second = compiler.semantic_interface_for_source_pack(
+                8, &[source.replace("contracts::left", "contracts::right")])
+                .await.expect("second library's distinct callable contract");
+            let packed = PackedGpuDependencyInterfacePage::new(9, 0,
+                &[second.clone(), first.clone()]).unwrap();
+            assert_eq!(packed.predicate_count, 2);
+            assert_eq!(packed.predicate_argument_count, 2);
+            assert_eq!(packed.implementation_count, 2);
+            assert_eq!(packed.implementation_argument_count, 2);
+            assert_eq!(packed.words[IMPLEMENTATION_COUNT], 2);
+            assert_eq!(packed.words[PREDICATE_COUNT], 2);
+            assert_eq!(packed.words[PREDICATE_ARGUMENT_COUNT], 2);
+            let table = |header: usize, index: usize| {
+                packed.words[packed.words[header] as usize + index]
+            };
+            let mut declaration_base = 0;
+            let mut type_base = 0;
+            let mut argument_base = 0;
+            for (row, interface) in [first, second].iter().enumerate() {
+                assert_eq!(interface.predicates.len(), 1);
+                let predicate = interface.predicates[0];
+                assert_eq!(table(PREDICATE_LIBRARY_OFFSET, row), interface.library_id);
+                assert_eq!(table(PREDICATE_UNIT_OFFSET, row), interface.unit_id);
+                assert_eq!(table(PREDICATE_LOCAL_OFFSET, row), 0);
+                let expected = [predicate.owner_ref + declaration_base,
+                    predicate.owner_scope_symbol, predicate.subject_type + type_base,
+                    predicate.trait_library_id, predicate.trait_unit_id,
+                    predicate.trait_declaration_index, predicate.first_argument + argument_base,
+                    predicate.argument_count];
+                for (word, expected) in expected.iter().enumerate() {
+                    assert_eq!(table(PREDICATE_OFFSET, row * 8 + word), *expected);
+                }
+                for (index, root) in interface.predicate_arguments.iter().enumerate() {
+                    assert_eq!(table(PREDICATE_ARGUMENT_OFFSET, argument_base as usize + index),
+                        root + type_base);
+                }
+                let implementation = interface.implementations[0];
+                assert_eq!(table(IMPLEMENTATION_LIBRARY_OFFSET, row), interface.library_id);
+                assert_eq!(table(IMPLEMENTATION_UNIT_OFFSET, row), interface.unit_id);
+                assert_eq!(table(IMPLEMENTATION_LOCAL_OFFSET, row), 0);
+                assert_eq!(table(IMPLEMENTATION_OFFSET, row * crate::compiler::IMPLEMENTATION_U32S + 5), implementation.subject_type + type_base);
+                assert_eq!(table(IMPLEMENTATION_OFFSET, row * crate::compiler::IMPLEMENTATION_U32S + 2), implementation.trait_library_id);
+                assert_eq!(table(IMPLEMENTATION_OFFSET, row * crate::compiler::IMPLEMENTATION_U32S + 4), implementation.trait_declaration_index);
+                assert_eq!(table(IMPLEMENTATION_OFFSET, row * crate::compiler::IMPLEMENTATION_U32S + 14), implementation.kind);
+                assert_eq!(table(IMPLEMENTATION_ARGUMENT_OFFSET, row), interface.implementation_arguments[0] + type_base);
+                declaration_base += interface.declarations.len() as u32;
+                type_base += interface.types.len() as u32;
+                argument_base += interface.predicate_arguments.len() as u32;
+            }
+        });
+    }
 
     fn declaration(module: u32) -> GpuSemanticInterfaceDeclarationRecord {
         GpuSemanticInterfaceDeclarationRecord {
@@ -512,13 +721,46 @@ mod tests {
     }
 
     #[test]
+    fn constant_page_addresses_are_disjoint_stable_and_overflow_checked() {
+        let mut pages = [3u32, 0, 5].into_iter().map(|count| {
+            let mut page = PackedGpuDependencyInterfacePage::new(7, 0, &[]).unwrap();
+            // Only address-domain sizes matter to this host planner.
+            page.type_count = count;
+            page
+        }).collect::<Vec<_>>();
+        assign_constant_type_spans(&mut pages).unwrap();
+        let plan = pages.iter().map(|page|
+            (page.words[CONSTANT_TYPE_SPAN_BASE], page.words[CONSTANT_TYPE_ROWS]))
+            .collect::<Vec<_>>();
+        assert_eq!(plan, [(0, 8), (3, 8), (3, 8)]);
+        assert_ne!(pages[0].words[CONSTANT_TYPE_SPAN_BASE], pages[2].words[CONSTANT_TYPE_SPAN_BASE]);
+        let capacity = GpuDependencyInterfaceCapacities::for_pages(&pages);
+        assert_eq!((capacity.types, capacity.constant_type_rows), (5, 8));
+        // The same logical page may be streamed several times in one job.
+        assign_constant_type_spans(&mut pages).unwrap();
+        assert_eq!(plan, pages.iter().map(|page|
+            (page.words[CONSTANT_TYPE_SPAN_BASE], page.words[CONSTANT_TYPE_ROWS]))
+            .collect::<Vec<_>>());
+        pages[0].type_count = u32::MAX;
+        assert!(assign_constant_type_spans(&mut pages).is_err());
+        assert_eq!(pages[0].words[CONSTANT_TYPE_ROWS], 8);
+        assert_eq!(pages[2].words[CONSTANT_TYPE_SPAN_BASE], 3);
+    }
+
+    #[test]
     fn resident_dependency_slot_grows_without_shrinking_other_domains() {
         let resident = GpuDependencyInterfaceCapacities {
             words: 100,
             modules: 8,
             declarations: 20,
             types: 30,
+            constant_type_rows: 80,
             members: 40,
+            predicates: 12,
+            predicate_arguments: 16,
+            implementations: 3,
+            implementation_arguments: 7,
+            implementation_method_bindings: 5,
             module_lookup: 16,
         };
         let required = GpuDependencyInterfaceCapacities {
@@ -526,7 +768,13 @@ mod tests {
             modules: 4,
             declarations: 24,
             types: 12,
+            constant_type_rows: 100,
             members: 50,
+            predicates: 7,
+            predicate_arguments: 20,
+            implementations: 4,
+            implementation_arguments: 6,
+            implementation_method_bindings: 8,
             module_lookup: 8,
         };
         assert_eq!(
@@ -536,7 +784,13 @@ mod tests {
                 modules: 8,
                 declarations: 24,
                 types: 30,
+                constant_type_rows: 100,
                 members: 50,
+                predicates: 12,
+                predicate_arguments: 20,
+                implementations: 4,
+                implementation_arguments: 7,
+                implementation_method_bindings: 8,
                 module_lookup: 16,
             }
         );

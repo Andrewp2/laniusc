@@ -1,3 +1,5 @@
+import type_checker.methods.candidate;
+StructuredBuffer<MethodCandidate> method_candidate;
 import hir_records;
 
 // Match compact arguments to compact parameter rows.
@@ -34,10 +36,20 @@ StructuredBuffer<uint> call_param_row_ordinal;
 StructuredBuffer<uint> call_param_row_start;
 StructuredBuffer<uint> call_param_row_count;
 
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_param_row_node;
+StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<uint> call_param_row_ref_tag;
+StructuredBuffer<uint> call_param_row_ref_payload;
+StructuredBuffer<uint> type_instance_kind;
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
 RWStructuredBuffer<uint> call_arg_param_row;
+RWStructuredBuffer<uint> call_generic_claim_scan_input;
+RWStructuredBuffer<uint> call_generic_claim_pattern_mask;
+RWStructuredBuffer<uint> call_const_claim_scan_input;
+RWStructuredBuffer<uint> call_const_claim_pattern_mask;
 RWStructuredBuffer<uint> call_generic_slot_type;
 RWStructuredBuffer<uint> call_generic_slot_ordinal;
-RWStructuredBuffer<uint> call_const_slot_len;
 
 static const uint INVALID = 0xffffffffu;
 static const uint INTRINSIC_NONE = 0u;
@@ -96,10 +108,13 @@ uint callee_token_for_hir_call(uint call_node)
     return valid_token(callee_token) ? callee_token : INVALID;
 }
 
-uint method_param_offset(uint fn_i)
+uint method_param_offset(uint callee, uint fn_i)
 {
-    uint mode = valid_token(fn_i) ? method_decl_receiver_mode[fn_i] : 0u;
-    return mode == METHOD_RECEIVER_SELF || mode == METHOD_RECEIVER_REF_SELF ? 1u : 0u;
+    if (!valid_token(callee) || !valid_token(fn_i) || callee == fn_i) return 0u;
+    MethodCandidate candidate = method_candidate[callee];
+    return candidate.state == METHOD_CANDIDATE_UNIQUE &&
+        candidate.callable_kind == METHOD_CALLABLE_LOCAL && candidate.local_index == fn_i &&
+        candidate.receiver_mode != 0u ? 1u : 0u;
 }
 
 bool param_row_matches(uint row, uint fn_i, uint ordinal)
@@ -125,7 +140,7 @@ uint param_row_for_call_ordinal(uint call_node, uint arg_count, uint arg_ordinal
         fn_i = callee_i;
 
     uint param_count = call_param_count[fn_i];
-    uint param_offset = method_param_offset(fn_i);
+    uint param_offset = method_param_offset(callee_i, fn_i);
     uint expected_arg_count = param_count >= param_offset ? param_count - param_offset : 0u;
     if ((!dependency_rows && (arg_count == 0u || arg_count != expected_arg_count)) ||
         (dependency_rows && arg_ordinal >= expected_arg_count) ||
@@ -155,6 +170,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < arg_rows)
     {
         call_arg_param_row[row] = INVALID;
+        // Initialize once before page-owned pattern producers fill their rows.
+        call_generic_claim_scan_input[row] = 0u;
+        call_generic_claim_pattern_mask[row] = 0u;
+        call_const_claim_scan_input[row] = 0u;
+        call_const_claim_pattern_mask[row] = 0u;
 
         uint call_node = call_arg_row_call_node[row];
         uint callee_i = callee_token_for_hir_call(call_node);
@@ -169,7 +189,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 uint state_i = callee_i * PARAM_CACHE_STRIDE + slot;
                 call_generic_slot_type[state_i] = INVALID;
                 call_generic_slot_ordinal[state_i] = INVALID;
-                call_const_slot_len[state_i] = INVALID;
             }
         }
         uint arg_count = valid_node(call_node) ? call_arg_row_count[call_node] : 0u;
@@ -177,5 +196,30 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call_node,
             arg_count,
             call_arg_row_ordinal[row]);
+        uint parameter = call_arg_param_row[row];
+        uint function = valid_token(callee_i) ? call_fn_index[callee_i] : INVALID;
+        uint value = call_arg_row_node[row];
+        // Imported rows name argument HIR, while local rows name compact
+        // parameters. Imported modes are published on their active page.
+        if (valid_node(value) && valid_token(function) && function != callee_i &&
+            parameter < active_param_row_count())
+        {
+            uint compact_row = call_param_row_node[parameter];
+            uint capacity; uint stride;
+            compact_params.GetDimensions(capacity, stride);
+            uint form = 0u;
+            if (compact_row < capacity)
+            {
+                uint type_node = compact_params[compact_row].type_node;
+                form = valid_node(type_node) ? compact_hir_payload[type_node].a : 0u;
+            }
+            uint instance = call_param_row_ref_payload[parameter];
+            type_instance_kind.GetDimensions(capacity, stride);
+            uint kind = call_param_row_ref_tag[parameter] == 3u && instance < capacity
+                ? type_instance_kind[instance] : 0u;
+            bool reference = form == 4u || kind == 4u;
+            bool borrowed = form == 3u || kind == 3u;
+            semantic_argument_mode_by_hir[value] = reference ? 3u : borrowed ? 2u : 1u;
+        }
     }
 }

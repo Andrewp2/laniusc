@@ -1,0 +1,16 @@
+{
+  "contract": [
+    "A variant belongs to its parent enum declaration; instantiated parent arguments belong to the ordinary checked application environment.",
+    "Qualified type paths select that declaration before resolving the member.",
+    "All declaration rows are retained in the existing GPU candidate index, allowing exact parent filtering and explicit ambiguous-name rejection.",
+    "Duplicate validation compares exact parent scopes. A module-level use of a name visible from different enum parents rejects.",
+    "Local/source-pack/imported forms preserve constructor and pattern ownership; no stdlib-specific implementation."
+  ],
+  "verification": [
+    "Original qualified local/imported call, payload, and duplicate-parent reproductions execute.",
+    "Bare and called unit values; payloads; qualified match patterns; explicit parent type/constant headers.",
+    "Same-name parents with reversed declaration order; wrong-family members and ambiguous unqualified names reject.",
+    "Module import visibility and generic method controls; focused execution/diagnostic tests; existing performance tools."
+  ],
+  "checkpoint_before": "benchmark_artifacts/performance/stdlib-gpu-20261010-unit-values/checkpoint-metadata.json"
+}

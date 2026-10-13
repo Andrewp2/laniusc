@@ -1,0 +1,4 @@
+module app::overflow;
+const TOO_BIG:u64 = 4294967296;
+type Invalid = [u8;app::overflow::TOO_BIG];
+fn main()->i32 { return 0; }

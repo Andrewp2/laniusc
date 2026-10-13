@@ -1,0 +1,86 @@
+
+running 31 tests
+test direct_record_literal_arguments_execute_through_ordinary_and_generic_calls ... ok
+test direct_record_literal_arguments_inside_generic_bodies_preserve_complete_types ... ok
+test direct_record_literal_arguments_preserve_contextual_generic_compositions ... ok
+test direct_record_literal_arguments_preserve_generic_body_failure ... ok
+test direct_record_literal_arguments_preserve_imported_generic_record_fields ... ok
+test direct_record_literal_generic_arguments_reject_type_and_field_conflicts ... GPU source-pack type-check rejection: token=72 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=62 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=61 code=AssignMismatch detail=770
+ok
+test imported_generic_bodies_enforce_their_concrete_trait_contracts ... GPU source-pack type-check rejection: token=45 code=TraitBoundUnsatisfied detail=9
+ok
+test imported_trait_bounds_preserve_all_thirty_two_ordered_graphs ... GPU source-pack type-check rejection: token=589 code=TraitBoundUnsatisfied detail=9
+ok
+test imported_trait_contract_records_preserve_ordinary_generic_execution ... ok
+test imported_trait_contracts_execute_caller_owned_compound_methods ... ok
+test imported_trait_keys_normalize_paths_and_preserve_defining_unit_identity ... GPU source-pack type-check rejection: token=29 code=InvalidTraitImplementation detail=19
+GPU source-pack type-check rejection: token=91 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=79 code=TraitBoundUnsatisfied detail=9
+ok
+test imported_trait_methods_reject_incomplete_and_incompatible_contracts ... GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=6
+GPU source-pack type-check rejection: token=40 code=InvalidTraitImplementation detail=23
+GPU source-pack type-check rejection: token=40 code=InvalidTraitImplementation detail=24
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=22 code=InvalidTraitImplementation detail=26
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=7
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=37
+ok
+test inferred_array_literals_preserve_nested_values_and_generic_body_types ... ok
+test inferred_array_literals_preserve_reference_and_slice_aliases ... ok
+test inferred_array_literals_reject_incompatible_elements_and_missing_empty_types ... GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=110 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=105 code=GenericInstantiationBoundary detail=3
+ok
+test late_method_results_compose_through_local_and_imported_generic_calls ... ok
+test late_method_results_preserve_all_thirty_two_compound_arguments ... ok
+test late_method_results_preserve_types_without_receiver_or_result_annotations ... ok
+test late_method_results_reject_conflicting_complete_types ... GPU source-pack type-check rejection: token=115 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=115 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=112 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=114 code=AssignMismatch detail=0
+ok
+test ordinary_inferred_array_literals_and_contextual_empty_literals_execute ... ok
+test ordinary_trait_methods_execute_alongside_generic_value_calls ... ok
+test scalar_literal_contexts_execute_imported_unsigned_constructors ... ok
+test scalar_literal_contexts_execute_local_imported_and_ordinary_calls ... ok
+test scalar_literal_contexts_execute_unsigned_match_arms ... ok
+test scalar_literal_contexts_reject_named_values_and_noninteger_literals ... GPU source-pack type-check rejection: token=38 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=33 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=34 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=35 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=29 code=AssignMismatch detail=1029
+GPU source-pack type-check rejection: token=18 code=AssignMismatch detail=1029
+GPU source-pack type-check rejection: token=27 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=66 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=59 code=AssignMismatch detail=0
+GPU source-pack type-check rejection: token=49 code=AssignMismatch detail=0
+ok
+test trait_bound_subjects_preserve_value_copies_borrows_and_empty_values ... ok
+test trait_bounds_preserve_all_thirty_two_ordered_argument_graphs ... ok
+test trait_bounds_preserve_complete_argument_graphs_and_symbolic_bindings ... ok
+test trait_bounds_reject_inner_identity_length_order_and_unproved_assumptions ... GPU source-pack type-check rejection: token=411 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=86 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=55 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=75 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=69 code=TraitBoundUnsatisfied detail=9
+GPU source-pack type-check rejection: token=45 code=TraitBoundUnsatisfied detail=9
+ok
+test trait_impls_reject_duplicate_complete_keys_and_inner_method_mismatches ... GPU source-pack type-check rejection: token=20 code=InvalidTraitImplementation detail=12
+GPU source-pack type-check rejection: token=20 code=InvalidTraitImplementation detail=28
+GPU source-pack type-check rejection: token=19 code=InvalidTraitImplementation detail=19
+GPU source-pack type-check rejection: token=33 code=InvalidTraitImplementation detail=8
+GPU source-pack type-check rejection: token=31 code=InvalidTraitImplementation detail=8
+ok
+test trait_method_contracts_compare_substituted_types_independently_of_syntax_shape ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 18.57s
+

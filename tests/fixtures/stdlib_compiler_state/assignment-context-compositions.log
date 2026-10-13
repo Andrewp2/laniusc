@@ -1,0 +1,17 @@
+generic_assignment_contexts
+exit=1
+stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/generic_assignment_contexts.lani: error[LNC0016]: syntax error
+ --> <source pack file 0>:10:44
+   |
+10 |     let slot: Slot<core::option::Option<i32>> = Slot { value: core::option::None(), sentinel: 97 };
+   |                                            ^^ unexpected `>>`
+
+generic_recursive_reference_context
+exit=1
+stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/generic_recursive_reference_context.lani: error[LNC0006]: type mismatch
+ --> <source pack file 0>:16:36
+   |
+16 |     let current: &Node<i32> = walk(copied.borrow(), 4);
+   |                                    ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+

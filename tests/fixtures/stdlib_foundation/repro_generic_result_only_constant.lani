@@ -1,0 +1,14 @@
+enum Length<T> { Known(usize), Values(T) }
+
+fn length<T, const N: usize>() -> Length<[T; N]> {
+    return Known(N);
+}
+
+fn main() -> i32 {
+    let empty: Length<[bool; 0]> = length();
+    let texts: Length<[str; 3]> = length();
+    let empty_length: usize = match (empty) { Known(n) => n, Values(v) => 99 };
+    let text_length: usize = match (texts) { Known(n) => n, Values(v) => 99 };
+    if (empty_length != 0 || text_length != 3) { return 1; }
+    return 0;
+}

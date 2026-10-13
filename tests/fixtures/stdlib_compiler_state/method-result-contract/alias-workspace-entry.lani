@@ -1,0 +1,11 @@
+import core::views;
+fn main() -> i32 {
+    let data: [i32; 2] = [19, 23];
+    let wrapped = core::views::Numbers::Present(data, 7);
+    let view = match (wrapped) { core::views::View::Present(values, tail) -> values };
+    let tail = match (wrapped) { core::views::View::Present(values, tail) -> tail };
+    view[0] = 20;
+    data[1] = 22;
+    if (tail != 7 || view[0] + view[1] != 42 || data[0] != 20) { return 1; }
+    return 0;
+}

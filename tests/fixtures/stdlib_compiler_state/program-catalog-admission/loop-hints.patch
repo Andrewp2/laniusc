@@ -1,0 +1,113 @@
+--- a/shaders/type_checker/program_evidence/definition_admission.slang
++++ b/shaders/type_checker/program_evidence/definition_admission.slang
+@@ -51,6 +51,7 @@
+     uint visits;
+     EvidenceStatus result = pev_admit_root(subject, PEV_INVALID, owner, closed, visits);
+     if (result.state != PEV_VALID) return result;
++    [loop]
+     for (uint i = 0u; i < argument_count; i++)
+     {
+         // Independent visits/depth budget for every ordered operand.
+@@ -101,6 +102,7 @@
+     // source/export producer owns completeness; strict order preserves uniqueness
+     // in one linear pass without an additional arbitrary method-count limit.
+     uint previous_required = PEV_INVALID;
++    [loop]
+     for (uint i = 0u; i < middle.w; i++)
+     {
+         uint row = middle.z + i; uint4 method; uint2 tail; uint parent;
+--- a/shaders/type_checker/program_evidence/graph_admission.slang
++++ b/shaders/type_checker/program_evidence/graph_admission.slang
+@@ -86,6 +86,7 @@
+     next[0u] = PEV_INVALID;
+     domains[0u] = PEV_GRAPH_DOMAIN_EITHER;
+ 
++    [loop]
+     for (;;)
+     {
+         uint3 reference = references[depth];
+@@ -120,6 +121,7 @@
+                 if (!pev_node_is_valid(reference.y)) return pev_invalid(4u, root, reference.y);
+                 // A substitution may turn a parameter edge into a node, so
+                 // detect cycles only after normalization of the current ref.
++                [loop]
+                 for (uint ancestor = 0u; ancestor < depth; ancestor++)
+                     if (references[ancestor].x == 3u &&
+                         references[ancestor].y == reference.y &&
+--- a/shaders/type_checker/program_evidence/packed_graph.slang
++++ b/shaders/type_checker/program_evidence/packed_graph.slang
+@@ -66,6 +66,7 @@
+         if (!pev_nominal_is_valid(low.y) || low.w > 32u ||
+             (low.w == 0u && low.z != 0u) || !pev_row_span(6u, low.z, low.w) ||
+             any(high != uint4(0u, 0u, 0u, 0u))) return false;
++        [loop]
+         for (uint i = 0u; i < low.w; i++)
+         {
+             uint2 child;
+@@ -117,14 +118,17 @@
+     if (!pev_atom(atom, parameter, extra) || parameter.x != 5u || parameter.z > 1u ||
+         !pev_parameter_is_valid(atom, parameter.z == 1u)) return false;
+     uint visited[64];
++    [loop]
+     for (uint depth = 0u; depth < 64u && owner != PEV_INVALID; depth++)
+     {
++        [loop]
+         for (uint prior = 0u; prior < depth; prior++) if (visited[prior] == owner) return false;
+         visited[depth] = owner;
+         uint4 low; uint4 high;
+         if (!pev_owner_row_is_valid(owner) || !pev_read8(2u, owner, low, high)) return false;
+         if (low.x == parameter.y)
+         {
++            [loop]
+             for (uint i = 0u; i < high.y; i++)
+             {
+                 uint4 candidate;
+@@ -145,9 +149,11 @@
+     uint visited[64]; uint type_mask = 0u; uint constant_mask = 0u;
+     uint chain_length = 0u;
+     uint original = owner;
++    [loop]
+     for (uint depth = 0u; owner != PEV_INVALID; depth++)
+     {
+         if (depth == 64u) return pev_limit(6u, original, 65u, 64u);
++        [loop]
+         for (uint prior = 0u; prior < depth; prior++)
+             if (visited[prior] == owner) return pev_invalid(5u, original, owner);
+         visited[depth] = owner;
+@@ -158,6 +164,7 @@
+         if (declared_count > 64u) return pev_limit(19u, owner, declared_count, 64u);
+         if (!pev_owner_row_is_valid(owner) || !pev_read8(2u, owner, low, high)) return pev_invalid(3u, original, owner);
+         uint prior_ordinal = PEV_INVALID;
++        [loop]
+         for (uint i = 0u; i < high.y; i++)
+         {
+             uint4 param; uint4 atom; uint4 extra;
+@@ -188,10 +195,12 @@
+     // Verify the actual producer composition: ancestors precede own parameters
+     // in each domain. Preserve these values; do not shift them a second time.
+     uint composed_types = 0u; uint composed_constants = 0u;
++    [loop]
+     for (uint remaining = chain_length; remaining != 0u; remaining--)
+     {
+         uint current = visited[remaining - 1u]; uint4 span;
+         if (!pev_read4(2u, current, 4u, span)) return pev_invalid(1u, original, current);
++        [loop]
+         for (uint i = 0u; i < span.y; i++)
+         {
+             uint4 param;
+@@ -219,6 +228,7 @@
+         param.x != 5u || param.z > 1u || !pev_parameter_visible(atom, env.x)) return false;
+     // Bound by 64 entries, sorted by exact atom. No parameter-to-slot conversion.
+     uint lo = 0u; uint hi = env.z;
++    [loop]
+     for (uint step = 0u; step < 7u && lo < hi; step++)
+     {
+         uint mid = lo + (hi - lo) / 2u;
+@@ -304,6 +314,7 @@
+         {
+             if (low.w > 32u || !pev_row_span(6u, low.z, low.w)) return PEV_INVALID;
+             uint constants = 0u; uint types = 0u;
++            [loop]
+             for (uint slot = 0u; slot < low.w; slot++)
+             {
+                 uint2 ref;

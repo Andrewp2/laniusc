@@ -7,6 +7,8 @@ use crate::codegen::{
 mod backends;
 pub use backends::GpuCompilerBackends;
 mod benchmarks;
+mod body_specialization;
+mod program_evidence;
 mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;
@@ -70,6 +72,7 @@ pub struct GpuCompiler<'gpu> {
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
+    program_evidence_workspace: program_evidence::EvidenceWorkspacePool,
 }
 
 // A worst-case 10,000-file project may place each file in its own bounded
@@ -426,6 +429,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
+                program_evidence_workspace: program_evidence::EvidenceWorkspacePool::new(
+                    gpu.device.clone(), gpu.queue.clone(),
+                ),
             })
         })
     }
@@ -499,6 +505,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// released resident graph.
     pub async fn release_resident_job_buffers(&self) -> GpuResidentJobBufferTrim {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
+        self.program_evidence_workspace.release();
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();

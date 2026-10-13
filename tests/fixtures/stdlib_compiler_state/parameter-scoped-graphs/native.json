@@ -1,0 +1,43 @@
+{
+  "command": [
+    "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248",
+    "generic_nested_result_field_contexts_preserve_independent_parameter_domains",
+    "explicit_constant_arguments_execute_mixed_types_and_caller_parameters",
+    "explicit_constant_arguments_execute_independent_method_domains",
+    "explicit_constant_arguments_execute_both_thirty_two_slot_domains",
+    "nominal_constant_arguments_execute_thirty_two_interleaved_operands",
+    "nested_symbolic_nominal_constants_in_trait_bounds_",
+    "trait_bounds_preserve_complete_argument_graphs_and_symbolic_bindings",
+    "trait_bounds_execute_thirty_two_independent_compound_operand_graphs",
+    "trait_method_contracts_compare_substituted_types_independently_of_syntax_shape",
+    "trait_bounds_reject_inner_identity_length_order_and_unproved_assumptions",
+    "trait_impls_reject_duplicate_complete_keys_and_inner_method_mismatches",
+    "imported_trait_bounds_preserve_all_thirty_two_ordered_graphs",
+    "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 14.136552452000615,
+  "binary_sha256": "2b42cba2ecb8fef63ad6406a39735be7b66c18c7c17ff3d8ef52d768c5a1ed1b",
+  "passed": [
+    "explicit_constant_arguments_execute_both_thirty_two_slot_domains",
+    "explicit_constant_arguments_execute_independent_method_domains",
+    "explicit_constant_arguments_execute_mixed_types_and_caller_parameters",
+    "generic_nested_result_field_contexts_preserve_independent_parameter_domains",
+    "imported_generic_bodies_enforce_their_concrete_trait_contracts",
+    "imported_trait_bounds_preserve_all_thirty_two_ordered_graphs",
+    "nested_symbolic_nominal_constants_in_trait_bounds_execute",
+    "nested_symbolic_nominal_constants_in_trait_bounds_reject_wrong_bindings",
+    "nominal_constant_arguments_execute_thirty_two_interleaved_operands",
+    "trait_bounds_execute_thirty_two_independent_compound_operand_graphs",
+    "trait_bounds_preserve_complete_argument_graphs_and_symbolic_bindings",
+    "trait_bounds_reject_inner_identity_length_order_and_unproved_assumptions",
+    "trait_impls_reject_duplicate_complete_keys_and_inner_method_mismatches",
+    "trait_method_contracts_compare_substituted_types_independently_of_syntax_shape"
+  ],
+  "summaries": [
+    "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 340 filtered out; finished in 13.91s"
+  ],
+  "frozen_sources_unchanged": true
+}

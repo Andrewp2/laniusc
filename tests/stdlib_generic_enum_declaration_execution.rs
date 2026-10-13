@@ -393,17 +393,19 @@ fn imported_generic_payload_pattern_rejects_another_enum() {
 }
 
 #[test]
-fn imported_generic_aggregate_payload_constructor_is_rejected() {
+fn imported_generic_aggregate_payload_constructor_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(
         "tests/fixtures/stdlib_foundation/repro_imported_generic_payload_match_aggregate.lani",
     );
     let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
-    let error = common::run_gpu_codegen_with_timeout("aggregate generic enum payload", move || {
+    let bytes = common::run_gpu_codegen_with_timeout("aggregate generic enum payload", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
     })
-    .expect_err("aggregate generic enum payloads need a checked imported layout");
-    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+    .expect("aggregate generic enum payloads retain their complete checked layout");
+    let output = common::run_x86_64_elf_output("aggregate generic enum payload", "aggregate_enum", &bytes);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty() && output.stderr.is_empty(), "{output:?}");
 }
 
 #[test]
@@ -468,17 +470,19 @@ fn imported_generic_unit_constructor_requires_concrete_result_type() {
 }
 
 #[test]
-fn imported_generic_payload_constructor_requires_concrete_result_type() {
+fn imported_generic_payload_constructor_infers_its_result_type() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root
         .join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_some_unannotated.lani");
     let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
-    let error =
+    let bytes =
         common::run_gpu_codegen_with_timeout("unannotated imported generic Some", move || {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
         })
-        .expect_err("a generic payload constructor needs a concrete result type for its ABI");
-    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+        .expect("the payload supplies the complete result type");
+    let output = common::run_x86_64_elf_output("inferred generic enum payload", "inferred_enum", &bytes);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty() && output.stderr.is_empty(), "{output:?}");
 }
 
 #[test]
@@ -559,19 +563,18 @@ fn imported_two_parameter_variants_execute_as_direct_arguments_on_x86() {
 }
 
 #[test]
-fn imported_generic_unit_variant_is_not_a_bare_value() {
+fn imported_generic_unit_variant_uses_its_complete_receiving_type() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =
         root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_bare_none.lani");
     let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
-    let result = common::run_gpu_codegen_with_timeout("bare imported generic None", move || {
+    let bytes = common::run_gpu_codegen_with_timeout("bare imported generic None", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
-    });
-    let error = match result {
-        Err(error) => error,
-        Ok(_) => panic!("bare imported None must not be emitted without contextual width"),
-    };
-    assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
+    }).expect("the receiving annotation supplies the complete enum application");
+    let output = common::run_x86_64_elf_output(
+        "bare imported generic None", "contextual_unit_variant", &bytes);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty() && output.stderr.is_empty(), "{output:?}");
 }
 
 #[test]
@@ -618,13 +621,23 @@ fn imported_generic_enum_rejects_wrong_second_payload_type() {
 }
 
 #[test]
-fn imported_option_generic_function_body_still_fails_closed() {
+fn imported_generic_enum_tag_predicate_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_option.lani");
-    let stdlib = root.join("stdlib");
-    let error = common::run_gpu_codegen_with_timeout("generic Option function body", move || {
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_option_function_root");
+    let bytes = common::run_gpu_codegen_with_timeout("generic enum tag predicate", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
     })
-    .expect_err("generic Option functions still require concrete specialization");
-    assert_eq!(error.to_public_diagnostic().code, "LNC0017", "{error:?}");
+    .expect("generic enum tag predicate should compile without payload specialization");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "generic enum tag predicate",
+            "generic_enum_tag_predicate",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
 }

@@ -1,0 +1,18 @@
+
+running 1 test
+test nominal_constant_record_values_execute ... [laniusc][pipeline-timing] label=codegen/lir/functions/finalize total_ms=148.972 shader_module_ms=0.008 pipeline_layout_ms=147.980 compute_pipeline_ms=0.984
+[laniusc][pipeline-timing] label=radix/bucket_bases total_ms=146.560 shader_module_ms=0.006 pipeline_layout_ms=145.600 compute_pipeline_ms=0.954
+[laniusc][pipeline-timing] label=type_checker/calls/03a8_validate_explicit_applications total_ms=399.390 shader_module_ms=0.300 pipeline_layout_ms=0.116 compute_pipeline_ms=398.974
+[laniusc][pipeline-timing] label=codegen/lir/semantic/aggregate_elements total_ms=588.056 shader_module_ms=0.484 pipeline_layout_ms=0.061 compute_pipeline_ms=587.511
+[laniusc][pipeline-timing] label=type_checker/calls/03d_bind_method_receiver_environment total_ms=3698.354 shader_module_ms=0.290 pipeline_layout_ms=0.144 compute_pipeline_ms=3697.920
+[laniusc][pipeline-timing] label=type_checker/calls/03e1_expand_application_fields total_ms=9054.337 shader_module_ms=0.230 pipeline_layout_ms=0.181 compute_pipeline_ms=9053.926
+[laniusc][pipeline-timing] label=type_checker/calls/03e_materialize_return_types total_ms=37895.867 shader_module_ms=0.325 pipeline_layout_ms=0.229 compute_pipeline_ms=37895.314
+[laniusc][pipeline-timing] label=type_checker/calls/03f_infer_return_bindings total_ms=226.831 shader_module_ms=0.170 pipeline_layout_ms=0.034 compute_pipeline_ms=226.628
+[laniusc][pipeline-timing] label=type_checker/calls/03g_project_expression_types total_ms=256.946 shader_module_ms=0.248 pipeline_layout_ms=0.758 compute_pipeline_ms=255.941
+[laniusc][pipeline-timing] label=type_checker/calls/03h_project_array_literal_elements total_ms=602.156 shader_module_ms=0.282 pipeline_layout_ms=0.215 compute_pipeline_ms=601.660
+[laniusc][pipeline-timing] label=type_checker/calls/03i_materialize_array_literals total_ms=258.460 shader_module_ms=0.203 pipeline_layout_ms=0.087 compute_pipeline_ms=258.170
+[laniusc][pipeline-timing] label=type_checker/calls/03j_validate_array_literals total_ms=1004.961 shader_module_ms=0.602 pipeline_layout_ms=0.113 compute_pipeline_ms=1004.247
+[laniusc][pipeline-timing] label=type_checker/calls/03k1_project_literal_contexts total_ms=7103.467 shader_module_ms=0.143 pipeline_layout_ms=0.304 compute_pipeline_ms=7103.020
+[laniusc][pipeline-timing] label=type_checker/calls/03k2_materialize_match_payloads total_ms=26971.690 shader_module_ms=0.201 pipeline_layout_ms=0.100 compute_pipeline_ms=26971.389
+[laniusc][pipeline-timing] label=type_checker/calls/03k3_project_record_contexts total_ms=615.968 shader_module_ms=0.319 pipeline_layout_ms=0.501 compute_pipeline_ms=615.148
+nominal constant record storage timed out after 105000 ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker; waited 0 ms for the GPU test lock before starting the timeout; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang

@@ -1,0 +1,17 @@
+
+running 1 test
+test parser_hir_nested_constant_alias_applications_preserve_closing_angles ... CPU oracle: Ok(108); table stream depth: 0; spaced: Ll1AcceptResult { accepted: true, error_pos: 0, error_code: 0, detail: 0, steps: 170, emit_len: 108 }
+CPU oracle: Err(Ll1ParseError { pos: 225, code: NoPrediction, detail: 4 }); table stream depth: -8; spaced: Ll1AcceptResult { accepted: false, error_pos: 0, error_code: 4, detail: 4294967288, steps: 2152, emit_len: 0 }
+
+thread 'parser_hir_nested_constant_alias_applications_preserve_closing_angles' (36512) panicked at tests/parser_hir_records.rs:6237:9:
+nested constant application: Ll1AcceptResult { accepted: false, error_pos: 0, error_code: 4, detail: 4294967288, steps: 2152, emit_len: 0 }; semantic kinds: [0, 94, 1, 133, 155, 136, 155, 134, 127, 1, 108, 80, 159, 1, 108, 80, 128, 103, 153, 133, 155, 136, 92, 1, 108, 80, 134, 110, 85, 80, 87, 1, 86, 165, 103, 153, 133, 155, 136, 92, 1, 108, 80, 134, 110, 80, 131, 80, 131, 80, 135, 80, 132, 135, 80, 132, 165, 103, 153, 133, 155, 134, 110, 144, 80, 165, 103, 153, 133, 155, 134, 110, 85, 80, 86, 165, 67, 1, 133, 155, 136, 92, 1, 108, 80, 134, 76, 79, 108, 80, 131, 80, 135, 80, 132, 77, 112, 80, 131, 80, 135, 80, 132, 149, 69, 1, 168, 150, 67, 1, 133, 155, 134, 76, 79, 108, 80, 131, 80, 132, 77, 112, 80, 131, 80, 132, 149, 69, 1, 168, 150, 67, 1, 133, 155, 134, 76, 79, 108, 80, 131, 80, 132, 77, 112, 80, 131, 80, 132, 149, 69, 1, 168, 150, 67, 1, 76, 77, 112, 80, 149, 68, 78, 108, 80, 131, 80, 135, 2, 132, 81, 1, 125, 1, 38, 31, 2, 83, 2, 64, 160, 1, 38, 91, 126, 167, 68, 78, 108, 80, 131, 80, 135, 2, 132, 81, 1, 28, 1, 63, 167, 1, 35, 109, 30, 2, 65, 8, 2, 169, 68, 78, 108, 80, 131, 80, 131, 80, 135, 2, 2151809156, 81, 1, 28, 144, 80, 63, 167, 68, 78, 108, 80, 131, 80, 135, 2, 132, 81, 7, 1, 167, 70, 29, 1, 35, 109, 30, 2, 65, 40, 2, 18, 1, 35, 109, 30, 2, 65, 40, 2, 18, 1, 35, 109, 62, 88, 69, 2, 168, 89, 68, 78, 108, 80, 131, 80, 132, 81, 1, 28, 1, 35, 109, 63, 167, 1, 30, 2, 65, 8, 2, 169, 70, 29, 1, 35, 109, 30, 2, 65, 40, 2, 18, 1, 35, 109, 30, 2, 65, 40, 2, 62, 88, 69, 2, 168, 89, 68, 78, 108, 80, 131, 80, 135, 2, 132, 81, 1, 125, 1, 38, 31, 64, 160, 1, 38, 90, 126, 167, 68, 78, 108, 80, 131, 80, 135, 2, 132, 81, 1, 28, 1, 63, 167, 1, 35, 109, 8, 91, 169, 70, 29, 19, 1, 35, 109, 18, 1, 35, 109, 62, 88, 69, 2, 168, 89, 69, 2, 168, 150, 0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    parser_hir_nested_constant_alias_applications_preserve_closing_angles
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 255 filtered out; finished in 1.15s
+

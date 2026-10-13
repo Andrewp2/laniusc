@@ -1,0 +1,4 @@
+stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/program-native-replay/repros/sibling-local-helper.lani: error[LNC0017]: program trait evidence checking failed
+     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
+     = note: UNSUPPORTED: body replay changed a non-selected callable's checked call facts
+     = note: source location unavailable for this diagnostic

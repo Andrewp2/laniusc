@@ -1,0 +1,36 @@
+=== nullary_direct_call exit 0 ===
+enum Maybe<T> { Value(T), Missing } fn main()->i32 {let value:Maybe<bool> = Missing();return match(value){Value(flag)->1,Missing->0};}
+sample=0 ms=163.823
+entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_direct_call.lani rebuild_entry=false warmups=1 iters=1 output_bytes=2381 min_ms=163.823 median_ms=163.823 avg_ms=163.823 max_ms=163.823 output_verified=true
+
+=== nullary_field_call exit 1 ===
+struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Missing(),sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}
+GPU source-pack type-check rejection: token=48 code=UnresolvedIdent detail=6
+stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_field_call.lani: error[LNC0005]: unresolved identifier
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_field_call.lani:1:128
+  |
+1 | struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Missing(),sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}
+  |                                                                                                                                ^^^^^^^ not found in this scope
+     = note: declare the value before using it or import its defining module
+
+=== nullary_qualified_call exit 1 ===
+struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Maybe::Missing(),sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}
+GPU source-pack type-check rejection: token=48 code=UnresolvedIdent detail=5
+stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_qualified_call.lani: error[LNC0005]: unresolved identifier
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_qualified_call.lani:1:128
+  |
+1 | struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Maybe::Missing(),sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}
+  |                                                                                                                                ^^^^^ not found in this scope
+     = note: declare the value before using it or import its defining module
+
+=== nullary_bare_name exit 1 ===
+struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Missing,sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}
+stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_bare_name.lani: error[LNC0017]: operation is not implemented by the x86 backend
+ --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/nullary_bare_name.lani:1:128
+  |
+1 | struct Slot<T> {value:T,sentinel:i32} enum Maybe<T> {Value(T),Missing} fn main()->i32 {let slot:Slot<Maybe<bool>> = Slot{value:Missing,sentinel:97}; return match(slot.value){Value(flag)->1,Missing->0};}
+  |                                                                                                                                ^^^^^^^ not supported by the native x86 backend yet
+     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
+     = note: the native x86 backend rejected this program before emitting an artifact
+     = note: first unsupported target LIR opcode: 30
+

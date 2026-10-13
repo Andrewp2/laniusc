@@ -1,0 +1,21 @@
+
+running 11 tests
+test aggregate_parameter_copies_preserve_nested_borrows ... ok
+test aggregate_parameter_copies_preserve_stack_and_register_arguments ... ok
+test fixed_array_value_parameters_copy_before_mutation ... ok
+test generic_aggregate_value_parameters_preserve_caller_storage ... ok
+test generic_applications_compose_six_sixteen_and_thirty_two_parameters ... ok
+test imported_nested_parameter_inference_preserves_copies_and_aliases ... ok
+test local_result_context_infers_complete_bindings_through_thirty_two_parameters ... ok
+test nested_generic_parameter_constraints_infer_complete_types ... ok
+test nested_parameter_constraints_reject_conflicts_and_missing_bindings ... GPU source-pack type-check rejection: token=92 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=132 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=116 code=AssignMismatch detail=2097152
+GPU source-pack type-check rejection: token=119 code=AssignMismatch detail=770
+GPU source-pack type-check rejection: token=86 code=AssignMismatch detail=2097408
+ok
+test nested_parameter_inference_preserves_thirty_two_bindings ... ok
+test ordinary_aggregate_value_parameters_preserve_caller_storage ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 78 filtered out; finished in 4.69s
+

@@ -1,0 +1,797 @@
+{
+  "machine": {
+    "cpu": "x86_64",
+    "gpu": "NVIDIA GeForce RTX 3090, 595.91.07, 24576",
+    "logical_cpus": 32,
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39"
+  },
+  "measurements": [
+    {
+      "commands": {
+        "benchmark_processes": [
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          },
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          },
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          },
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/baseline-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          }
+        ]
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "laniusc 0.1.0\nlanguage-edition: unstable-alpha\nedition-policy: no stable production language edition yet; accepts the current alpha slice only\ntargets: x86_64, wasm\ndefault-target: x86_64\ntarget-triples: x86_64-unknown-linux-gnu, wasm32-unknown-unknown\nx86_64: bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics\nformatter: unstable-alpha lexical full-document formatter\nrelease-channel: source-worktree\ndistribution-status: not-production-release; no stable install artifact or package manager channel\nlsp-capabilities-schema-name: laniusc.lsp.capabilities\nlsp-capabilities-schema: 15\nlsp-experimental-schema-name: laniusc.lsp.experimental\nlsp-experimental-schema: 13\nlsp-error-data-schema-name: laniusc.lsp.error-data\nlsp-error-data-schema: 2\nslangc: 2026.2\nwgpu: 29.0.3\nbuild-profile: release\nshader-artifact-digest: ec6ad44b56155ace\nshader-artifact-count: 713\nshader-artifact-max-bytes: 522600\nshader-artifact-max-name: codegen/lir/x86/emit\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nslangc-version-timeout-ms: 2000\nshader-compile-timeout-ms: 120000\n"
+      },
+      "configuration": "entry_rebuild",
+      "id": "lanius-imported-entry-baseline",
+      "measurement_semantics": {
+        "compiled_unit_results_reused": true,
+        "dependency_results_retained": true,
+        "driver_shader_cache": "ambient machine state",
+        "process": "four alternating before/after process pairs; three warmups and ten measured entry rebuilds per process",
+        "project_entry_result_reused": false,
+        "source_manifest_metadata_may_be_resident": true,
+        "timer": "public compile API through completed native output; excludes compiler construction, input modification time update, warmups and executable validation",
+        "validation_scope": "final emitted executable from each process; four output contracts per revision; exact stdout 3 newline and successful exit"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "process_pair": 0,
+          "wall_ms": 24.832
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "process_pair": 0,
+          "wall_ms": 27.305
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "process_pair": 0,
+          "wall_ms": 24.059
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "process_pair": 0,
+          "wall_ms": 25.397
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "process_pair": 0,
+          "wall_ms": 23.131
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "process_pair": 0,
+          "wall_ms": 21.625
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "process_pair": 0,
+          "wall_ms": 21.63
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "process_pair": 0,
+          "wall_ms": 22.721
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "process_pair": 0,
+          "wall_ms": 22.977
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "process_pair": 0,
+          "wall_ms": 22.384
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "process_pair": 1,
+          "wall_ms": 22.05
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "process_pair": 1,
+          "wall_ms": 23.877
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "process_pair": 1,
+          "wall_ms": 24.842
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "process_pair": 1,
+          "wall_ms": 20.662
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "process_pair": 1,
+          "wall_ms": 20.415
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "process_pair": 1,
+          "wall_ms": 20.637
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "process_pair": 1,
+          "wall_ms": 20.245
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "process_pair": 1,
+          "wall_ms": 20.252
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "process_pair": 1,
+          "wall_ms": 20.319
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "process_pair": 1,
+          "wall_ms": 20.931
+        },
+        {
+          "compiler_ms": null,
+          "index": 20,
+          "process_pair": 2,
+          "wall_ms": 23.257
+        },
+        {
+          "compiler_ms": null,
+          "index": 21,
+          "process_pair": 2,
+          "wall_ms": 24.609
+        },
+        {
+          "compiler_ms": null,
+          "index": 22,
+          "process_pair": 2,
+          "wall_ms": 22.179
+        },
+        {
+          "compiler_ms": null,
+          "index": 23,
+          "process_pair": 2,
+          "wall_ms": 23.644
+        },
+        {
+          "compiler_ms": null,
+          "index": 24,
+          "process_pair": 2,
+          "wall_ms": 22.43
+        },
+        {
+          "compiler_ms": null,
+          "index": 25,
+          "process_pair": 2,
+          "wall_ms": 21.961
+        },
+        {
+          "compiler_ms": null,
+          "index": 26,
+          "process_pair": 2,
+          "wall_ms": 21.105
+        },
+        {
+          "compiler_ms": null,
+          "index": 27,
+          "process_pair": 2,
+          "wall_ms": 20.312
+        },
+        {
+          "compiler_ms": null,
+          "index": 28,
+          "process_pair": 2,
+          "wall_ms": 20.778
+        },
+        {
+          "compiler_ms": null,
+          "index": 29,
+          "process_pair": 2,
+          "wall_ms": 20.923
+        },
+        {
+          "compiler_ms": null,
+          "index": 30,
+          "process_pair": 3,
+          "wall_ms": 24.628
+        },
+        {
+          "compiler_ms": null,
+          "index": 31,
+          "process_pair": 3,
+          "wall_ms": 23.656
+        },
+        {
+          "compiler_ms": null,
+          "index": 32,
+          "process_pair": 3,
+          "wall_ms": 20.914
+        },
+        {
+          "compiler_ms": null,
+          "index": 33,
+          "process_pair": 3,
+          "wall_ms": 20.136
+        },
+        {
+          "compiler_ms": null,
+          "index": 34,
+          "process_pair": 3,
+          "wall_ms": 20.609
+        },
+        {
+          "compiler_ms": null,
+          "index": 35,
+          "process_pair": 3,
+          "wall_ms": 20.823
+        },
+        {
+          "compiler_ms": null,
+          "index": 36,
+          "process_pair": 3,
+          "wall_ms": 20.847
+        },
+        {
+          "compiler_ms": null,
+          "index": 37,
+          "process_pair": 3,
+          "wall_ms": 20.42
+        },
+        {
+          "compiler_ms": null,
+          "index": 38,
+          "process_pair": 3,
+          "wall_ms": 20.706
+        },
+        {
+          "compiler_ms": null,
+          "index": 39,
+          "process_pair": 3,
+          "wall_ms": 20.758
+        }
+      ],
+      "source": {
+        "bytes": 1131,
+        "file_records": [
+          {"bytes":1131,"lines":31,"path":"sample_programs/boolean_window_checksum.lani","sloc":28}
+        ],
+        "files": 1,
+        "kilobytes": 1.131,
+        "largest_file_bytes": 1131,
+        "megabytes": 0.001131,
+        "physical_lines": 31,
+        "sloc": 28,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 52294.533122750196,
+        "median_sloc_per_second": 1294.648034869147,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              19,
+              5,
+              5,
+              5,
+              4,
+              1,
+              1
+            ],
+            "edges": [
+              20.136,
+              21.160142857142855,
+              22.184285714285714,
+              23.20842857142857,
+              24.23257142857143,
+              25.256714285714285,
+              26.280857142857144,
+              27.305
+            ],
+            "unit": "ms"
+          },
+          "mad": 1.1504999999999992,
+          "maximum": 27.305,
+          "mean": 22.12465,
+          "median": 21.627499999999998,
+          "minimum": 20.136,
+          "p95": 24.869749999999996,
+          "samples": 40
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifact_bytes": 34807,
+        "artifacts_validated": true,
+        "compile_exit_status": 0,
+        "executables_checked": 4,
+        "expected_stdout": "3\n"
+      }
+    },
+    {
+      "commands": {
+        "benchmark_processes": [
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          },
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          },
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          },
+          {
+            "argv": [
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib",
+              "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout",
+              "3",
+              "10"
+            ],
+            "cwd": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc",
+            "display": "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/current-stdlib-gpu-perf /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/sample_programs/boolean_window_checksum.lani /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/stdlib /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/match-arm-schedule-perf/boolean-window.stdout 3 10",
+            "environment_overrides": {
+              "LANIUS_PERF_REBUILD_ENTRY": "1"
+            }
+          }
+        ]
+      },
+      "compiler": {
+        "name": "lanius",
+        "version": "laniusc 0.1.0\nlanguage-edition: unstable-alpha\nedition-policy: no stable production language edition yet; accepts the current alpha slice only\ntargets: x86_64, wasm\ndefault-target: x86_64\ntarget-triples: x86_64-unknown-linux-gnu, wasm32-unknown-unknown\nx86_64: bounded HIR main-return, same-module resolver-backed scalar constants, and direct scalar helper-call source-pack slices; unsupported source shapes are reported as unsupported-feature diagnostics\nformatter: unstable-alpha lexical full-document formatter\nrelease-channel: source-worktree\ndistribution-status: not-production-release; no stable install artifact or package manager channel\nlsp-capabilities-schema-name: laniusc.lsp.capabilities\nlsp-capabilities-schema: 15\nlsp-experimental-schema-name: laniusc.lsp.experimental\nlsp-experimental-schema: 13\nlsp-error-data-schema-name: laniusc.lsp.error-data\nlsp-error-data-schema: 2\nslangc: 2026.2\nwgpu: 29.0.3\nbuild-profile: release\nshader-artifact-digest: 801026615965cd3d\nshader-artifact-count: 713\nshader-artifact-max-bytes: 522600\nshader-artifact-max-name: codegen/lir/x86/emit\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nslangc-version-timeout-ms: 2000\nshader-compile-timeout-ms: 120000\n"
+      },
+      "configuration": "entry_rebuild",
+      "id": "lanius-imported-entry-current",
+      "measurement_semantics": {
+        "compiled_unit_results_reused": true,
+        "dependency_results_retained": true,
+        "driver_shader_cache": "ambient machine state",
+        "process": "four alternating before/after process pairs; three warmups and ten measured entry rebuilds per process",
+        "project_entry_result_reused": false,
+        "source_manifest_metadata_may_be_resident": true,
+        "timer": "public compile API through completed native output; excludes compiler construction, input modification time update, warmups and executable validation",
+        "validation_scope": "final emitted executable from each process; four output contracts per revision; exact stdout 3 newline and successful exit"
+      },
+      "samples": [
+        {
+          "compiler_ms": null,
+          "index": 0,
+          "process_pair": 0,
+          "wall_ms": 21.971
+        },
+        {
+          "compiler_ms": null,
+          "index": 1,
+          "process_pair": 0,
+          "wall_ms": 24.538
+        },
+        {
+          "compiler_ms": null,
+          "index": 2,
+          "process_pair": 0,
+          "wall_ms": 23.689
+        },
+        {
+          "compiler_ms": null,
+          "index": 3,
+          "process_pair": 0,
+          "wall_ms": 22.193
+        },
+        {
+          "compiler_ms": null,
+          "index": 4,
+          "process_pair": 0,
+          "wall_ms": 24.184
+        },
+        {
+          "compiler_ms": null,
+          "index": 5,
+          "process_pair": 0,
+          "wall_ms": 24.662
+        },
+        {
+          "compiler_ms": null,
+          "index": 6,
+          "process_pair": 0,
+          "wall_ms": 23.971
+        },
+        {
+          "compiler_ms": null,
+          "index": 7,
+          "process_pair": 0,
+          "wall_ms": 20.359
+        },
+        {
+          "compiler_ms": null,
+          "index": 8,
+          "process_pair": 0,
+          "wall_ms": 21.755
+        },
+        {
+          "compiler_ms": null,
+          "index": 9,
+          "process_pair": 0,
+          "wall_ms": 21.251
+        },
+        {
+          "compiler_ms": null,
+          "index": 10,
+          "process_pair": 1,
+          "wall_ms": 21.838
+        },
+        {
+          "compiler_ms": null,
+          "index": 11,
+          "process_pair": 1,
+          "wall_ms": 23.306
+        },
+        {
+          "compiler_ms": null,
+          "index": 12,
+          "process_pair": 1,
+          "wall_ms": 21.536
+        },
+        {
+          "compiler_ms": null,
+          "index": 13,
+          "process_pair": 1,
+          "wall_ms": 21.302
+        },
+        {
+          "compiler_ms": null,
+          "index": 14,
+          "process_pair": 1,
+          "wall_ms": 21.456
+        },
+        {
+          "compiler_ms": null,
+          "index": 15,
+          "process_pair": 1,
+          "wall_ms": 20.701
+        },
+        {
+          "compiler_ms": null,
+          "index": 16,
+          "process_pair": 1,
+          "wall_ms": 20.545
+        },
+        {
+          "compiler_ms": null,
+          "index": 17,
+          "process_pair": 1,
+          "wall_ms": 20.552
+        },
+        {
+          "compiler_ms": null,
+          "index": 18,
+          "process_pair": 1,
+          "wall_ms": 20.174
+        },
+        {
+          "compiler_ms": null,
+          "index": 19,
+          "process_pair": 1,
+          "wall_ms": 19.514
+        },
+        {
+          "compiler_ms": null,
+          "index": 20,
+          "process_pair": 2,
+          "wall_ms": 20.847
+        },
+        {
+          "compiler_ms": null,
+          "index": 21,
+          "process_pair": 2,
+          "wall_ms": 24.822
+        },
+        {
+          "compiler_ms": null,
+          "index": 22,
+          "process_pair": 2,
+          "wall_ms": 22.94
+        },
+        {
+          "compiler_ms": null,
+          "index": 23,
+          "process_pair": 2,
+          "wall_ms": 21.486
+        },
+        {
+          "compiler_ms": null,
+          "index": 24,
+          "process_pair": 2,
+          "wall_ms": 20.865
+        },
+        {
+          "compiler_ms": null,
+          "index": 25,
+          "process_pair": 2,
+          "wall_ms": 20.237
+        },
+        {
+          "compiler_ms": null,
+          "index": 26,
+          "process_pair": 2,
+          "wall_ms": 21.003
+        },
+        {
+          "compiler_ms": null,
+          "index": 27,
+          "process_pair": 2,
+          "wall_ms": 20.216
+        },
+        {
+          "compiler_ms": null,
+          "index": 28,
+          "process_pair": 2,
+          "wall_ms": 20.671
+        },
+        {
+          "compiler_ms": null,
+          "index": 29,
+          "process_pair": 2,
+          "wall_ms": 21.182
+        },
+        {
+          "compiler_ms": null,
+          "index": 30,
+          "process_pair": 3,
+          "wall_ms": 22.606
+        },
+        {
+          "compiler_ms": null,
+          "index": 31,
+          "process_pair": 3,
+          "wall_ms": 25.375
+        },
+        {
+          "compiler_ms": null,
+          "index": 32,
+          "process_pair": 3,
+          "wall_ms": 22.411
+        },
+        {
+          "compiler_ms": null,
+          "index": 33,
+          "process_pair": 3,
+          "wall_ms": 21.999
+        },
+        {
+          "compiler_ms": null,
+          "index": 34,
+          "process_pair": 3,
+          "wall_ms": 22.581
+        },
+        {
+          "compiler_ms": null,
+          "index": 35,
+          "process_pair": 3,
+          "wall_ms": 22.714
+        },
+        {
+          "compiler_ms": null,
+          "index": 36,
+          "process_pair": 3,
+          "wall_ms": 21.061
+        },
+        {
+          "compiler_ms": null,
+          "index": 37,
+          "process_pair": 3,
+          "wall_ms": 22.69
+        },
+        {
+          "compiler_ms": null,
+          "index": 38,
+          "process_pair": 3,
+          "wall_ms": 21.899
+        },
+        {
+          "compiler_ms": null,
+          "index": 39,
+          "process_pair": 3,
+          "wall_ms": 21.623
+        }
+      ],
+      "source": {
+        "bytes": 1131,
+        "file_records": [
+          {"bytes":1131,"lines":31,"path":"sample_programs/boolean_window_checksum.lani","sloc":28}
+        ],
+        "files": 1,
+        "kilobytes": 1.131,
+        "largest_file_bytes": 1131,
+        "megabytes": 0.001131,
+        "physical_lines": 31,
+        "sloc": 28,
+        "sloc_policy": "nonblank physical lines excluding comment-only lines"
+      },
+      "summary": {
+        "compiler_ms": null,
+        "median_bytes_per_second": 52146.73212709557,
+        "median_sloc_per_second": 1290.9889474435686,
+        "wall_ms": {
+          "histogram": {
+            "counts": [
+              4,
+              10,
+              11,
+              6,
+              3,
+              2,
+              4
+            ],
+            "edges": [
+              19.514,
+              20.351285714285712,
+              21.18857142857143,
+              22.02585714285714,
+              22.863142857142858,
+              23.70042857142857,
+              24.537714285714287,
+              25.375
+            ],
+            "unit": "ms"
+          },
+          "mad": 0.9525000000000006,
+          "maximum": 25.375,
+          "mean": 21.968125,
+          "median": 21.689,
+          "minimum": 19.514,
+          "p95": 24.669999999999998,
+          "samples": 40
+        }
+      },
+      "target": "x86_64",
+      "validation": {
+        "artifact_bytes": 34807,
+        "artifacts_validated": true,
+        "compile_exit_status": 0,
+        "executables_checked": 4,
+        "expected_stdout": "3\n"
+      }
+    }
+  ],
+  "run": {
+    "git_commit": "c37d38b8d55d52ef12b86d904a5dbd244276a2ac",
+    "git_dirty": true,
+    "id": "stdlib-match-arm-schedule-imported-entry",
+    "recorded_at": "2026-09-30T01:47:12.502727+00:00"
+  },
+  "schema": "lanius.performance-run.v1",
+  "workload": {
+    "comparison_group": "stdlib-match-arm-schedule-imported-entry",
+    "kind": "single_file",
+    "label": "imported boolean window checksum; entry rebuild with compiled dependencies retained",
+    "source": {
+      "bytes": 1131,
+      "file_records": [
+        {"bytes":1131,"lines":31,"path":"sample_programs/boolean_window_checksum.lani","sloc":28}
+      ],
+      "files": 1,
+      "kilobytes": 1.131,
+      "largest_file_bytes": 1131,
+      "megabytes": 0.001131,
+      "physical_lines": 31,
+      "sloc": 28,
+      "sloc_policy": "nonblank physical lines excluding comment-only lines"
+    }
+  }
+}

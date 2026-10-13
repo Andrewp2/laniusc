@@ -60,7 +60,8 @@ uint name_id_for_ref(uint ref_i)
     if (ref_i < gParams.module_segment_capacity)
     {
         uint module_count = min(module_count_out[0u], gParams.module_index_capacity);
-        uint segment_count = min(module_segment_total[0u], gParams.module_segment_capacity);
+        uint segment_count = module_count_out[0u] == 0u ? 0u
+            : min(module_segment_total[0u], gParams.module_segment_capacity);
         if (ref_i >= segment_count || module_count == 0u)
             return 0xffffffffu;
         uint lo = 0u;

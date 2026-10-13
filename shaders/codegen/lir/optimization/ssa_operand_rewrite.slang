@@ -5,6 +5,7 @@
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.optimization.execution_owner;
 import gpu_index;
 
 struct Params
@@ -81,7 +82,9 @@ uint rewritten_operand(OptIrNodeCore core, OptIrNodeOperands operands,
 bool active_call_argument(uint row, SemanticLirCallArg argument,
     uint node_total)
 {
-    if (argument.call_instruction >= node_total) return false;
+    if (!opt_ir_node_is_executable(argument.call_instruction, node_total) ||
+        !semantic_lir_is_call(opt_ir_op(opt_ir_core[argument.call_instruction])))
+        return false;
     uint hir = opt_ir_source_hir[argument.call_instruction];
     if (hir >= gParams.hir_capacity) return false;
     uint start = semantic_lir_call_arg_start_by_hir[hir];
@@ -105,7 +108,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         rewritten.a = INVALID;
         rewritten.b = INVALID;
         rewritten.c = INVALID;
-        if (row < node_total)
+        if (opt_ir_node_is_executable(row, node_total))
         {
             bool valid = true;
             OptIrNodeCore core = opt_ir_core[row];
@@ -147,7 +150,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             SemanticLirAggregateElement element =
                 semantic_lir_aggregate_elements[row];
-            bool active = element.aggregate_instruction < node_total &&
+            bool active = opt_ir_node_is_executable(
+            element.aggregate_instruction, node_total) &&
+            opt_ir_op(opt_ir_core[element.aggregate_instruction]) ==
+                SEMANTIC_LIR_OP_AGGREGATE_NEW &&
                 element.value_instruction < node_total;
             if (active)
             {

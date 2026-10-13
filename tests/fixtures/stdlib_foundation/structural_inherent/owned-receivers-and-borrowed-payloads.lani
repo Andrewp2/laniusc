@@ -1,0 +1,153 @@
+// Acceptance proposal only; not compiled or executed by this review.
+// Array/slice impl roots and by-value calls through references are new cases.
+struct Item { value: i32 }
+impl Item { fn borrow(&self) -> &Item { return self; } }
+
+struct Bundle {
+    owned: [i32; 2], view: [i32], link: &Item, sentinel: i32
+}
+impl Bundle {
+    fn borrow(&self) -> &Bundle { return self; }
+    fn snapshot(self, effect: i32) -> Bundle {
+        if (effect != 157) { self.sentinel = -1; }
+        return self;
+    }
+    fn rewrite_bundle(self, other_view: [i32], other_link: &Item) -> Bundle {
+        self.owned[0] = 101;
+        self.view[1] = 103;
+        self.link.value = 107;
+        self.view = other_view;
+        self.link = other_link;
+        self.sentinel = 109;
+        return self;
+    }
+}
+fn change_original(value: &Bundle) -> i32 {
+    value.owned[0] = 149;
+    value.owned[1] = 151;
+    value.sentinel = 153;
+    value.view[0] = 157;
+    value.link.value = 163;
+    return 157;
+}
+enum Packet { Empty, Filled(Bundle) }
+impl Packet {
+    fn borrow(&self) -> &Packet { return self; }
+    fn rewrite_packet(self, other_view: [i32], other_link: &Item, fallback: Bundle) -> Packet {
+        let payload: Bundle = match (self) { Filled(value) -> value, Empty -> fallback };
+        self = Filled(payload.rewrite_bundle(other_view, other_link));
+        return self;
+    }
+}
+fn payload(value: &Packet, fallback: Bundle) -> Bundle {
+    return match (value) { Filled(inner) -> inner, Empty -> fallback };
+}
+fn view(values: [i32]) -> [i32] { return values; }
+
+// Scalar inherent syntax is already used by existing execution fixtures.
+impl i32 {
+    fn plus(self: i32, amount: i32) -> i32 { return self + amount; }
+    fn print(self) -> i32 { return self + 2; }
+}
+// These structural roots are newly derived from existing type grammar.
+impl [i32; 2] {
+    fn array_ref(&self) -> &[i32; 2] { return self; }
+    fn replace_first(self, replacement: i32) -> [i32; 2] {
+        self[0] = replacement;
+        return self;
+    }
+}
+struct Pair { left: i32, right: i32 }
+struct ArrayHolder { prefix: i32, values: [Pair; 2], suffix: i32 }
+impl [Pair; 2] {
+    fn pair_array_ref(&self) -> &[Pair; 2] { return self; }
+    fn replace_pair(self, replacement: Pair) -> [Pair; 2] {
+        self[0] = replacement;
+        return self;
+    }
+}
+impl<T, const N: usize> [T; N] {
+    fn array_count(self) -> usize { return N; }
+}
+impl [i32] {
+    fn slice_ref(&self) -> &[i32] { return self; }
+    fn touch(self, replacement: i32) -> i32 {
+        self[1] = replacement;
+        return self[0];
+    }
+}
+
+fn main() -> i32 {
+    let scalar: i32 = 41;
+    if (scalar.plus(1) != 42 || scalar != 41) { return 1; }
+    // A language intrinsic name does not override a checked dotted method.
+    if (scalar.print() != 43) { return 24; }
+
+    let first: Item = Item { value: 23 };
+    let second: Item = Item { value: 37 };
+    let backing: [i32; 2] = [17, 19];
+    let other_backing: [i32; 2] = [29, 31];
+    let original: Bundle = Bundle {
+        owned: [11, 13], view: view(backing), link: first.borrow(), sentinel: 41
+    };
+    let borrowed: &Bundle = original.borrow();
+    let changed: Bundle = borrowed.rewrite_bundle(view(other_backing), second.borrow());
+    if (original.owned[0] != 11 || original.owned[1] != 13 || original.sentinel != 41) { return 2; }
+    if (changed.owned[0] != 101 || changed.owned[1] != 13 || changed.sentinel != 109) { return 3; }
+    if (backing[0] != 17 || backing[1] != 103 || first.value != 107) { return 4; }
+    if (original.view[0] != 17 || original.view[1] != 103 || original.link.value != 107) { return 5; }
+    if (changed.view[0] != 29 || changed.view[1] != 31 || changed.link.value != 37) { return 6; }
+    other_backing[0] = 113;
+    second.value = 127;
+    if (changed.view[0] != 113 || changed.link.value != 127) { return 7; }
+    if (original.view[0] != 17 || original.link.value != 107) { return 8; }
+
+    // Receiver value capture precedes later argument effects. Borrowed members
+    // remain aliases, while owned words retain their pre-effect values.
+    let snapshot: Bundle = borrowed.snapshot(change_original(borrowed));
+    if (snapshot.owned[0] != 11 || snapshot.owned[1] != 13 || snapshot.sentinel != 41) { return 18; }
+    if (original.owned[0] != 149 || original.owned[1] != 151 || original.sentinel != 153) { return 19; }
+    if (snapshot.view[0] != 157 || snapshot.view[1] != 103 || snapshot.link.value != 163) { return 20; }
+
+    let packet_item: Item = Item { value: 53 };
+    let packet_backing: [i32; 2] = [43, 47];
+    let packet: Packet = Filled(Bundle {
+        owned: [59, 61], view: view(packet_backing), link: packet_item.borrow(), sentinel: 67
+    });
+    let packet_ref: &Packet = packet.borrow();
+    let packet_copy: Packet = packet_ref.rewrite_packet(view(other_backing), second.borrow(), original);
+    let old_payload: Bundle = payload(packet_ref, original);
+    let new_payload: Bundle = payload(packet_copy.borrow(), original);
+    if (old_payload.owned[0] != 59 || old_payload.owned[1] != 61 || old_payload.sentinel != 67) { return 9; }
+    if (new_payload.owned[0] != 101 || new_payload.owned[1] != 61 || new_payload.sentinel != 109) { return 10; }
+    if (packet_backing[0] != 43 || packet_backing[1] != 103 || packet_item.value != 107) { return 11; }
+    if (old_payload.view[0] != 43 || old_payload.view[1] != 103 || old_payload.link.value != 107) { return 12; }
+    if (new_payload.view[0] != 113 || new_payload.view[1] != 31 || new_payload.link.value != 127) { return 13; }
+
+    let fixed: [i32; 2] = [71, 73];
+    let fixed_ref: &[i32; 2] = fixed.array_ref();
+    let fixed_copy: [i32; 2] = fixed_ref.replace_first(131);
+    if (fixed[0] != 71 || fixed[1] != 73 || fixed_copy[0] != 131 || fixed_copy[1] != 73) { return 14; }
+    // Borrow an inline compound array. Distinct surrounding and per-element
+    // words make reversed or noncanonical field/element offsets observable.
+    let holder: ArrayHolder = ArrayHolder {
+        prefix: 173,
+        values: [Pair { left: 179, right: 181 }, Pair { left: 191, right: 193 }],
+        suffix: 197
+    };
+    let pairs_ref: &[Pair; 2] = holder.values.pair_array_ref();
+    let replacement_pair: Pair = Pair { left: 199, right: 211 };
+    let pairs_copy: [Pair; 2] = pairs_ref.replace_pair(replacement_pair);
+    if (holder.prefix != 173 || holder.suffix != 197) { return 21; }
+    if (holder.values[0].left != 179 || holder.values[0].right != 181 || holder.values[1].left != 191 || holder.values[1].right != 193) { return 22; }
+    if (pairs_copy[0].left != 199 || pairs_copy[0].right != 211 || pairs_copy[1].left != 191 || pairs_copy[1].right != 193) { return 23; }
+    let empty: [bool; 0] = [];
+    if (fixed.array_count() != 2 || empty.array_count() != 0) { return 15; }
+
+    let slice_backing: [i32; 2] = [79, 83];
+    let slice: [i32] = view(slice_backing);
+    let slice_ref: &[i32] = slice.slice_ref();
+    if (slice_ref.touch(137) != 79) { return 16; }
+    if (slice_backing[0] != 79 || slice_backing[1] != 137 || slice[1] != 137) { return 17; }
+    return 0;
+}

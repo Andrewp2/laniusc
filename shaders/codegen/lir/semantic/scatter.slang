@@ -44,21 +44,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_count = semantic_lir_count[node];
     uint local_row = row - first_row;
     if (local_row >= local_count) return;
-    SemanticLirSchedule schedule = semantic_schedule(
-        node, local_row, local_count, hir_count, compact_hir_core[node],
-        compact_hir_links[node], compact_hir_payload[node]);
-    semantic_lir_schedule[row] =
-        target_schedule_pack(schedule, gParams.schedule_packed_bits);
+    SemanticLirSchedule schedule = place_semantic_schedule(node, local_row, hir_count);
+    semantic_lir_schedule[row] = target_schedule_pack(schedule, gParams.schedule_packed_bits);
     semantic_owner_by_instruction[row] = node;
-    uint op = semantic_materialized_op(node, local_row, local_count);
-    if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 2u)
-        op = SEMANTIC_LIR_OP_CALL_INTRINSIC;
-    else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 3u)
-        op = SEMANTIC_LIR_OP_CALL_HOST;
-    else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 4u)
-        op = SEMANTIC_LIR_OP_CALL_SYMBOL;
-    else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
-        op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
     if (row < gParams.resident_rows)
     {
         SemanticLirRow result =

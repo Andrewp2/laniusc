@@ -1,0 +1,16 @@
+module app::main;
+fn first<T>(values: [T]) -> T { return values[0]; }
+fn view(values: [i32]) -> [i32] { return values; }
+fn inspect(rows: [[i32]]) -> i32 {
+    let selected: [i32] = first(rows);
+    if (selected[0] != -7 || selected[1] != 42) { return 1; }
+    selected[1] = 123;
+    if (rows[0][1] != 123) { return 2; }
+    return 0;
+}
+fn main() -> i32 {
+    let values: [i32; 2] = [-7, 42];
+    let borrowed: [i32] = view(values);
+    let rows: [[i32]; 1] = [borrowed];
+    return inspect(rows);
+}

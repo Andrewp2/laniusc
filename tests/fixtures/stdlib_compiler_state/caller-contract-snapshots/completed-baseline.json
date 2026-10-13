@@ -1,0 +1,8 @@
+{
+  "binary": "target/contract-snapshot-complete-baseline/stdlib_gpu_perf",
+  "binary_sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
+  "shaders": "target/contract-snapshot-complete-baseline/shaders",
+  "source_snapshot": "final-sources.json",
+  "shader_snapshot": "current-shader-hashes.json",
+  "verification": "verification.json"
+}

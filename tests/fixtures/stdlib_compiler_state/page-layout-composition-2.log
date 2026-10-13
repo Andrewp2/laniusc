@@ -1,0 +1,15 @@
+
+running 1 test
+test compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values ... 
+thread 'compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values' (311967) panicked at crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs:3615:17:
+flat composed layout: compile paged values: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 6, column: 12, length: 5, byte_start: Some(120), byte_end: Some(125), source_line: Some("    return match (value) {"), message: "invalid syntax here" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 633 filtered out; finished in 3.31s
+

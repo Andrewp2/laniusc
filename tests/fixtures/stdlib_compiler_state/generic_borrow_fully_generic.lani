@@ -1,0 +1,1 @@
+struct Cell<T>{value:T} impl<T> Cell<T>{fn borrow(&self)->&Cell<T>{return self;}} fn keep<T>(value:T)->T{return value;} fn main()->i32 {let v:Cell<i32> =Cell{value:11};let r:&Cell<i32> =keep(v.borrow());v.value=42;return r.value-42;}

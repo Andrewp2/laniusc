@@ -28,3 +28,24 @@ pub mod timer;
 pub mod trace;
 /// Checked phase-liveness planning for reusable whole-buffer workspace slots.
 pub mod workspace;
+
+#[cfg(test)]
+mod owned_constraint_tests;
+
+#[cfg(test)]
+mod integer_words_tests;
+
+#[cfg(test)]
+mod float_decimal_tests;
+
+#[cfg(test)]
+mod constant_value_tests;
+
+#[cfg(test)]
+mod typed_constant_tests;
+
+#[cfg(test)]
+mod constant_claim_publication_tests;
+
+#[cfg(test)]
+mod canonical_type_leaf_boundary_tests;

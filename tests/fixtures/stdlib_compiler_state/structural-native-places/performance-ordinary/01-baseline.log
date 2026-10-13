@@ -1,0 +1,11 @@
+sample=0 ms=271.767
+sample=1 ms=274.858
+sample=2 ms=272.927
+sample=3 ms=273.150
+sample=4 ms=274.126
+sample=5 ms=274.843
+sample=6 ms=275.385
+sample=7 ms=273.454
+sample=8 ms=272.329
+sample=9 ms=277.392
+entry=tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani rebuild_entry=true warmups=3 iters=10 output_bytes=81934 min_ms=271.767 median_ms=273.790 avg_ms=274.023 max_ms=277.392 output_verified=true

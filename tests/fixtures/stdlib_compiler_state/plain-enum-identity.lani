@@ -1,0 +1,1 @@
+enum Decision { Accept(bool), Reject } fn keep<T>(value:T)->T { return value; } fn main()->i32 { let a:Decision=Accept(false); let b:Decision=keep(a); return match(b) {Accept(v)->0,Reject->1}; }

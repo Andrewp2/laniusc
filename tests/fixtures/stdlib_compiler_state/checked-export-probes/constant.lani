@@ -1,0 +1,5 @@
+import core::aliases;
+fn main() -> i32 {
+    let data: core::aliases::Constant<2> = [19, 23];
+    return data[0] + data[1];
+}

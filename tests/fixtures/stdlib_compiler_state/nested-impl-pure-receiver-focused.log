@@ -1,0 +1,34 @@
+
+running 5 tests
+test structural_impl_receivers_execute_imported_compositions ... GPU parser rejection: error_pos=0 code=4 detail=4294967295 steps=7195 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'structural_impl_receivers_execute_imported_compositions' (196176) panicked at tests/compiler_generic_types_execution.rs:136:29:
+imported structural receiver shapes: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 1>", line: 8, column: 34, length: 1, byte_start: Some(258), byte_end: Some(259), source_line: Some("impl<T, const N: usize> Wrap<[T; N]> {"), message: "expected identifier or integer literal, found `N`" }), help: None, notes: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test structural_impl_receivers_execute_local_compositions ... GPU parser rejection: error_pos=0 code=4 detail=4294967295 steps=5173 emit_len=0 semantic_kinds=Some([0, 97, 1, 114, 114])
+
+thread 'structural_impl_receivers_execute_local_compositions' (196278) panicked at tests/compiler_generic_types_execution.rs:136:29:
+local structural receiver shapes: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 9, column: 34, length: 1, byte_start: Some(271), byte_end: Some(272), source_line: Some("impl<T, const N: usize> Wrap<[T; N]> {"), message: "expected identifier or integer literal, found `N`" }), help: None, notes: [] })
+FAILED
+test structural_impl_receivers_execute_nested_generic_array_patterns ... ok
+test structural_impl_receivers_execute_ordinary_array_patterns ... ok
+test structural_impl_receivers_reject_conflicts_and_ambiguous_patterns ... GPU source-pack type-check rejection: token=86 code=CallMismatch detail=11
+wrong nested nominal argument: LNC0027 call resolution failed
+GPU source-pack type-check rejection: token=122 code=CallMismatch detail=17
+repeated structural type parameter: LNC0027 call resolution failed
+GPU parser rejection: error_pos=0 code=4 detail=4294967294 steps=592 emit_len=0 semantic_kinds=Some([0, 94, 1, 133, 155])
+
+thread 'structural_impl_receivers_reject_conflicts_and_ambiguous_patterns' (196330) panicked at tests/compiler_generic_types_execution.rs:4433:9:
+repeated structural constant parameter: checking must reject the receiver before parsing/codegen boundaries: Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0016", title: "syntax error", category: "parsing", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0016", message: "syntax error", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_repeated_structural_constant_parameter_196175_9.lani", line: 3, column: 34, length: 1, byte_start: Some(74), byte_end: Some(75), source_line: Some("impl<T, const N: usize> Pair<[T; N], [T; N]> { fn length(&self) -> usize { return N; } }"), message: "expected identifier or integer literal, found `N`" }), help: None, notes: [] }
+FAILED
+
+failures:
+
+failures:
+    structural_impl_receivers_execute_imported_compositions
+    structural_impl_receivers_execute_local_compositions
+    structural_impl_receivers_reject_conflicts_and_ambiguous_patterns
+
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 203 filtered out; finished in 9.11s
+

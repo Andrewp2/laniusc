@@ -6,6 +6,8 @@
 // backend passes do not parse source text.
 
 import utils;
+import integer_words;
+import atomics;
 
 struct Params
 {
@@ -30,13 +32,13 @@ ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_len_token;
 
-RWStructuredBuffer<uint> hir_expr_int_value;
-RWStructuredBuffer<uint> hir_expr_float_bits;
+RWStructuredBuffer<uint2> hir_expr_int_value;
+// Each zero-initialized slot stores ~token for its earliest rejection.
+// Separate failure slots make both the token and reason deterministic.
+RWStructuredBuffer<uint> hir_literal_status;
 RWStructuredBuffer<uint> hir_expr_string_start;
 RWStructuredBuffer<uint> hir_expr_string_len;
-RWStructuredBuffer<uint> hir_type_len_value;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -76,39 +78,64 @@ uint source_at(uint start, uint delta)
     return idx < gHirLiteral.source_len ? load_byte_at(source_bytes, idx) : 0u;
 }
 
-void consume_decimal_digit(uint start, uint len, uint i, inout uint value, inout bool active)
+void reject_integer_token(uint token, uint reason)
 {
-    if (!active || i >= len)
-    {
-        active = false;
-        return;
-    }
-    uint ch = source_at(start, i);
-    if (ch < 48u || ch > 57u)
-    {
-        active = false;
-        return;
-    }
-    value = value * 10u + (ch - 48u);
+    if (token < gHirLiteral.token_capacity && reason < 3u)
+        atomic_u32_max(hir_literal_status, reason, ~token);
 }
 
-uint parse_uint_token(uint token_i)
+bool parse_uint_token(uint token, out uint2 magnitude)
 {
-    uint value = 0u;
-    uint start = token_words[token_i].start;
-    uint len = token_words[token_i].len;
-    bool active = true;
-    consume_decimal_digit(start, len, 0u, value, active);
-    consume_decimal_digit(start, len, 1u, value, active);
-    consume_decimal_digit(start, len, 2u, value, active);
-    consume_decimal_digit(start, len, 3u, value, active);
-    consume_decimal_digit(start, len, 4u, value, active);
-    consume_decimal_digit(start, len, 5u, value, active);
-    consume_decimal_digit(start, len, 6u, value, active);
-    consume_decimal_digit(start, len, 7u, value, active);
-    consume_decimal_digit(start, len, 8u, value, active);
-    consume_decimal_digit(start, len, 9u, value, active);
-    return value;
+    magnitude = uint2(0u, 0u);
+    if (token >= gHirLiteral.token_capacity) return false;
+    uint start = token_words[token].start;
+    uint len = token_words[token].len;
+    if (len == 0u || start > gHirLiteral.source_len || len > gHirLiteral.source_len - start)
+    { reject_integer_token(token, 2u); return false; }
+    uint radix = 10u;
+    uint first_digit = 0u;
+    if (len >= 2u && load_byte_at(source_bytes, start) == 48u)
+    {
+        uint prefix = load_byte_at(source_bytes, start + 1u) | 32u;
+        if (prefix == 120u) { radix = 16u; first_digit = 2u; }
+        else if (prefix == 98u) { radix = 2u; first_digit = 2u; }
+        else if (prefix == 111u) { radix = 8u; first_digit = 2u; }
+    }
+    uint2 value = uint2(0u, 0u);
+    bool need_digit = true;
+    for (uint i = first_digit; i < len; i++)
+    {
+        uint ch = load_byte_at(source_bytes, start + i);
+        if (ch == 95u)
+        {
+            if (need_digit) { reject_integer_token(token, 2u); return false; }
+            need_digit = true;
+            continue;
+        }
+        uint digit = ch >= 48u && ch <= 57u ? ch - 48u :
+            ch >= 65u && ch <= 70u ? ch - 65u + 10u :
+            ch >= 97u && ch <= 102u ? ch - 97u + 10u : 16u;
+        if (digit >= radix) { reject_integer_token(token, 2u); return false; }
+        uint2 next;
+        if (radix == 10u)
+        {
+            if (!integer_words_append_decimal(value, digit, next))
+            { reject_integer_token(token, 0u); return false; }
+        }
+        else
+        {
+            uint shift = radix == 2u ? 1u : radix == 8u ? 3u : 4u;
+            if ((value.y >> (32u - shift)) != 0u)
+            { reject_integer_token(token, 0u); return false; }
+            next = integer_words_shift_left(value, shift);
+            next.x |= digit;
+        }
+        value = next;
+        need_digit = false;
+    }
+    if (need_digit) { reject_integer_token(token, 2u); return false; }
+    magnitude = value;
+    return true;
 }
 
 uint decoded_escape_byte(uint escaped)
@@ -168,81 +195,6 @@ uint parse_char_token(uint token_i)
     return 0u;
 }
 
-uint parse_float_token_bits(uint token_i)
-{
-    uint start = token_words[token_i].start;
-    uint len = token_words[token_i].len;
-    float value = 0.0;
-    float frac_scale = 0.1;
-    uint exponent = 0u;
-    bool after_dot = false;
-    bool after_exp = false;
-    bool exp_negative = false;
-    bool exp_sign_allowed = false;
-
-    for (uint i = 0u; i < len && i < 64u; i += 1u)
-    {
-        uint ch = source_at(start, i);
-        if (ch == 95u)
-            continue;
-        if (!after_exp && ch == 46u)
-        {
-            after_dot = true;
-            continue;
-        }
-        if (!after_exp && (ch == 101u || ch == 69u))
-        {
-            after_exp = true;
-            exp_sign_allowed = true;
-            continue;
-        }
-        if (exp_sign_allowed && (ch == 43u || ch == 45u))
-        {
-            exp_negative = ch == 45u;
-            exp_sign_allowed = false;
-            continue;
-        }
-        exp_sign_allowed = false;
-        if (ch < 48u || ch > 57u)
-            break;
-
-        uint digit = ch - 48u;
-        if (after_exp)
-        {
-            exponent = exponent * 10u + digit;
-        }
-        else if (after_dot)
-        {
-            value += float(digit) * frac_scale;
-            frac_scale *= 0.1;
-        }
-        else
-        {
-            value = value * 10.0 + float(digit);
-        }
-    }
-
-    float scale = 1.0;
-    uint capped_exponent = min(exponent, 38u);
-    for (uint e = 0u; e < capped_exponent; e += 1u)
-        scale *= 10.0;
-    if (after_exp)
-        value = exp_negative ? value / scale : value * scale;
-
-    return asuint(value);
-}
-
-bool token_starts_with_digit(uint token_i)
-{
-    if (token_i == INVALID)
-        return false;
-    uint len = token_words[token_i].len;
-    if (len == 0u)
-        return false;
-    uint ch = source_at(token_words[token_i].start, 0u);
-    return ch >= 48u && ch <= 57u;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -251,23 +203,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gHirLiteral.n)
         return;
 
-    hir_type_len_value[i] = INVALID;
-
     uint literal_row = gHirLiteral.retain_debug_rows != 0u ? i : hir_token_pos[i];
     if (gHirLiteral.retain_debug_rows != 0u)
     {
-        hir_expr_int_value[literal_row] = 0u;
-        hir_expr_float_bits[literal_row] = 0u;
+        hir_expr_int_value[literal_row] = uint2(0u, 0u);
         hir_expr_string_start[literal_row] = INVALID;
         hir_expr_string_len[literal_row] = 0u;
     }
 
     if (!valid_node(i))
         return;
-
-    uint len_token = hir_type_len_token[i];
-    if (token_starts_with_digit(len_token))
-        hir_type_len_value[i] = parse_uint_token(len_token);
 
     uint form = expr_slot(i, HIR_EXPR_RECORD_FORM);
     uint literal_capacity = gHirLiteral.retain_debug_rows != 0u
@@ -295,26 +240,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
         if (value_token != INVALID)
-            hir_expr_int_value[literal_row] = parse_char_token(value_token);
+            hir_expr_int_value[literal_row] = uint2(parse_char_token(value_token), 0u);
         return;
     }
 
-    if (form != HIR_EXPR_INT)
-    {
-        if (form != HIR_EXPR_FLOAT)
-            return;
-
-        uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
-        if (value_token == INVALID)
-            return;
-
-        hir_expr_float_bits[literal_row] = parse_float_token_bits(value_token);
-        return;
-    }
+    if (form != HIR_EXPR_INT) return;
 
     uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
     if (value_token == INVALID)
         return;
 
-    hir_expr_int_value[literal_row] = parse_uint_token(value_token);
+    uint2 magnitude;
+    if (parse_uint_token(value_token, magnitude))
+        hir_expr_int_value[literal_row] = magnitude;
 }

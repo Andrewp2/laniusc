@@ -1,0 +1,2 @@
+sample=0 ms=114.384
+entry=tests/fixtures/stdlib_compiler_state/imported-trait-contract/local-bound.lani rebuild_entry=true warmups=1 iters=1 output_bytes=6209 min_ms=114.384 median_ms=114.384 avg_ms=114.384 max_ms=114.384 output_verified=true

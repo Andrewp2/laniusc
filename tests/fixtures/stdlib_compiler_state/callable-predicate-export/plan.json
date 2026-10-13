@@ -1,0 +1,12 @@
+{
+  "status": "verified callable predicate export; general generics goal remains active",
+  "contract": "Persist every accepted public callable bound as a stable trait identity plus complete subject and ordered argument roots, preserving lexical parameter ownership. No HIR/path/page-local handles cross the export boundary.",
+  "schema": 11,
+  "validation": "positive source export, bound-only graphs, 32 ordered operands, scope and binary corruption rejection, dependency rebase/page replacement, existing native bound execution",
+  "non_claims": [
+    "Implementation records, caller solver, retained evidence and body replay are subsequent work.",
+    "Direct constant trait applications remain explicitly unsupported.",
+    "Method-level where clauses, including inherent methods, remain explicitly unsupported; retained source and LNC0021 rejection coverage."
+  ],
+  "preceding_checkpoint": "../imported-trait-resolution/verification.json"
+}

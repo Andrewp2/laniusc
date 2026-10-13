@@ -1,0 +1,129 @@
+--- a/crates/laniusc-compiler/src/type_checker/record/type_instances.rs
++++ b/crates/laniusc-compiler/src/type_checker/record/type_instances.rs
+@@ -33,13 +33,12 @@
+                 .record_invocation(encoder, &collection.projected_aggregate_refs)?,
+         }
+         stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_refs);
+-        match labels.stage {
+-            TypeInstanceCollectionStage::Initial => collection.aggregate_details.record(encoder)?,
+-            TypeInstanceCollectionStage::Projected => collection
+-                .aggregate_details
+-                .record_invocation(encoder, &collection.projected_aggregate_details)?,
++        // Final child edges must follow dependency nominal projection. Bare
++        // imported children still carry page-local canonical refs here.
++        if matches!(labels.stage, TypeInstanceCollectionStage::Initial) {
++            collection.aggregate_details.record(encoder)?;
++            stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
+         }
+-        stamp_typecheck_timer(&mut timer, encoder, labels.aggregate_details);
+     }
+ 
+     Ok(())
+--- a/crates/laniusc-compiler/src/type_checker/resident.rs
++++ b/crates/laniusc-compiler/src/type_checker/resident.rs
+@@ -689,6 +689,23 @@
+                 )?;
+             if let Some(timer) = timer.as_deref_mut() {
+                 timer.stamp(encoder, "typecheck.type_instances_project.done");
++            }
++            if aggregates_required {
++                // Snapshot child refs only after every dependency page has
++                // replaced imported nominal roots with persistent instances.
++                // Alias normalization must never receive page-local tag 5
++                // through a cached array, slice, or reference child edge.
++                let collection = &bind_groups.type_instances.collection;
++                collection.aggregate_details.record_invocation(
++                    encoder,
++                    &collection.projected_aggregate_details,
++                )?;
++                if let Some(timer) = timer.as_deref_mut() {
++                    timer.stamp(
++                        encoder,
++                        super::record::TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS.aggregate_details,
++                    );
++                }
+             }
+             bind_groups
+                 .type_instances
+--- a/crates/laniusc-compiler/src/type_checker/compiler_graph.rs
++++ b/crates/laniusc-compiler/src/type_checker/compiler_graph.rs
+@@ -4520,7 +4520,6 @@
+         TYPE_INSTANCES_COLLECT_PROJECTED,
+         TYPE_INSTANCES_COLLECT_PROJECTED_NAMED,
+         TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_REFS,
+-        TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS,
+     ] {
+         operation.register_kernel(&mut graph, kernels)?;
+     }
+@@ -4552,6 +4551,9 @@
+     )?;
+     graph.add_indirect_dispatch(DEPENDENCY_TYPE_INSTANCES_PROJECT.name, "path_dispatch_args")?;
+     TYPE_PATHS_PROJECT_AFTER_ALIAS_EQUIVALENCE.register_kernel(&mut graph, kernels)?;
++    // Match resident recording: child edges consume persistent local/imported
++    // nominal refs after dependency projection, before alias normalization.
++    TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS.register_kernel(&mut graph, kernels)?;
+     // Expression typing executes after call argument matching has published
+     // per-call generic and aggregate result dependencies. Keep the graph in
+     // the same order as command recording so ownership validation describes
+@@ -7494,6 +7496,14 @@
+             "projected collection follows the initial unresolved collection",
+         );
+         assert!(
++            graph.pass_id(DEPENDENCY_TYPE_INSTANCES_PROJECT.name).unwrap().index()
++                < graph
++                    .pass_id(TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS.name)
++                    .unwrap()
++                    .index(),
++            "structural child edges must consume persistent imported nominal instances",
++        );
++        assert!(
+             graph
+                 .pass_id(TYPE_INSTANCES_COLLECT_PROJECTED_AGGREGATE_DETAILS.name)
+                 .unwrap()
+--- a/tests/compiler_generic_types_execution.rs
++++ b/tests/compiler_generic_types_execution.rs
+@@ -9744,6 +9744,44 @@
+ }
+ 
+ #[test]
++fn structural_annotations_preserve_local_and_imported_nominal_children() {
++    execute_borrowed_enum_routes("structural nominal annotation children", r#"
++pub fn keep<T>(value: T) -> T { return value; }
++pub struct Item { value: i32 }
++pub impl Item {
++    pub fn borrow(&self) -> &Item { return self; }
++}
++pub struct Cell<T> { value: T }
++pub impl<T> Cell<T> {
++    pub fn borrow(&self) -> &Cell<T> { return self; }
++}
++"#, r#"
++$DECLARATIONS
++fn check_slice(items: [$P::Item]) -> i32 {
++    if (items[0].value != 31 || items[1].value != 37) { return 1; }
++    items[1].value = 53;
++    return 0;
++}
++fn main() -> i32 {
++    let item: $P::Item = $P::Item { value: 41 };
++    let borrowed: &$P::Item = $P::keep(item.borrow());
++    item.value = 47;
++    if (borrowed.value != 47) { return 2; }
++    let items: [$P::Item; 2] = [$P::Item { value: 31 }, $P::Item { value: 37 }];
++    if (check_slice(items) != 0 || items[1].value != 53) { return 3; }
++    let copied: [$P::Item; 2] = $P::keep(items);
++    copied[0].value = 61;
++    if (items[0].value != 31 || copied[0].value != 61 || copied[1].value != 53) { return 4; }
++    let cell: $P::Cell<i32> = $P::Cell { value: 43 };
++    let generic_borrowed: &$P::Cell<i32> = cell.borrow();
++    cell.value = 59;
++    if (generic_borrowed.value != 59) { return 5; }
++    return 0;
++}
++"#);
++}
++
++#[test]
+ fn borrowed_enum_reference_payload_preserves_alias_and_following_boolean() {
+     execute_borrowed_enum_routes("borrowed enum reference payload width", r#"
+ pub struct Item { head: i32, tail: i32, sentinel: i32 }

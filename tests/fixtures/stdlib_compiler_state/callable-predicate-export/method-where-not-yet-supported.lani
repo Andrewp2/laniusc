@@ -1,0 +1,6 @@
+module contracts::methods;
+pub struct Holder<T> { value: T }
+pub trait Rel<A> {}
+pub impl<T> Holder<T> {
+    pub fn keep<U>(self, value: U)->U where U:Rel<[T;2]> { return value; }
+}

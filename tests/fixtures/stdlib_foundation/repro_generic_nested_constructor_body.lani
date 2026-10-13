@@ -1,0 +1,11 @@
+module app::main;
+struct Cell<T> { value: T }
+struct Holder<T> { child: Cell<T> }
+fn wrap<T>(value: T) -> Holder<T> {
+    return Holder { child: Cell { value: value } };
+}
+fn main() -> i32 {
+    let holder: Holder<i32> = wrap(-7);
+    if (holder.child.value != -7) { return 1; }
+    return 0;
+}

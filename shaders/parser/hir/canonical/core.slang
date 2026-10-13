@@ -31,7 +31,7 @@ StructuredBuffer<uint> hir_method_name_token;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_type_len_token;
-StructuredBuffer<uint> hir_type_len_value;
+StructuredBuffer<uint> hir_type_len_operand;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_root_owner;
 StructuredBuffer<uint> hir_method_impl_receiver_type;
@@ -43,8 +43,8 @@ StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_stmt_scope_end;
 StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_expr_int_value;
-StructuredBuffer<uint> hir_expr_float_bits;
+StructuredBuffer<uint2> hir_expr_int_value;
+StructuredBuffer<uint4> hir_expr_float_bits;
 StructuredBuffer<uint> hir_expr_name_role;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_struct_lit_head_node;
@@ -104,7 +104,8 @@ static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 
 uint semantic_kind(uint production)
 {
-    if (production == PROD_TYPE_IDENT) return HIR_SEMANTIC_TYPE_PATH;
+    if (production == PROD_TYPE_IDENT || production == PROD_TYPE_ARRAY_LEN_NAME)
+        return HIR_SEMANTIC_TYPE_PATH;
     if (production == PROD_BOUND_TYPE_IDENT) return HIR_SEMANTIC_BOUND_PATH;
     if (production == PROD_BOUND_TYPE_REF) return HIR_SEMANTIC_BOUND_REFERENCE;
     if (production == PROD_BOUND_TYPE_ARGS_SOME) return HIR_SEMANTIC_BOUND_ARGUMENT_LIST;
@@ -274,7 +275,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.a = type_form;
         payload.b = semantic_id(hir_type_value_node[raw]);
         payload.c = hir_type_len_token[raw];
-        payload.d = hir_type_len_value[raw];
+        payload.d = dense_id(hir_type_len_operand[raw]);
     }
     else if (stmt_kind != 0u)
     {
@@ -399,9 +400,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // the decoded scalar beside the compact literal node lets typecheck
         // and codegen release the raw-node-keyed literal columns.
         if (expr_form == HIR_EXPR_INT || expr_form == HIR_EXPR_CHAR)
-            payload.b = hir_expr_int_value[literal_row];
+        {
+            uint2 magnitude = hir_expr_int_value[literal_row];
+            payload.b = magnitude.x;
+            payload.c = magnitude.y;
+        }
         else if (expr_form == HIR_EXPR_FLOAT)
-            payload.b = hir_expr_float_bits[literal_row];
+        {
+            uint4 floating = hir_expr_float_bits[literal_row];
+            payload.b = floating.x;
+            payload.c = floating.y;
+            payload.d = floating.z;
+        }
         else if (core.kind == HIR_NAME_EXPR)
             payload.b = hir_expr_name_role[literal_row];
     }
@@ -421,6 +431,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     semantic_facts.struct_lit_head = semantic_id(hir_struct_lit_head_node[raw]);
     semantic_facts.predicate_owner = INVALID;
     semantic_facts.predicate_subject = INVALID;
+    semantic_facts.literal_status = expr_form == HIR_EXPR_FLOAT
+        ? hir_expr_float_bits[gCanonical.records_use_token_rows != 0u ? hir_token_pos[raw] : raw].w
+        : 0u;
     hir_canonical_semantic_facts[row] = semantic_facts;
     uint owner_record_row = gCanonical.records_use_token_rows != 0u ? row : raw;
     hir_canonical_scope_end[row] = hir_stmt_scope_end[owner_record_row];

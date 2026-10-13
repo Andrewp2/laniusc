@@ -8,11 +8,14 @@ public static const uint PARSER_FEATURE_MEMBERS = 0x00000040u;
 public static const uint PARSER_FEATURE_IMPORTS = 0x00000080u;
 public static const uint PARSER_FEATURE_TYPE_ALIASES = 0x00000100u;
 public static const uint PARSER_FEATURE_STRING_EXPRS = 0x00000200u;
+public static const uint PARSER_FEATURE_REFERENCES = 0x00000400u;
+public static const uint PARSER_FEATURE_FLOAT_LITERALS = 0x00000800u;
 
 static const uint FEATURE_TK_LBRACKET = 20u;
 static const uint FEATURE_TK_RBRACKET = 21u;
 static const uint FEATURE_TK_DOT = 35u;
 static const uint FEATURE_TK_STRING = 32u;
+static const uint FEATURE_TK_FLOAT = 33u;
 static const uint FEATURE_TK_ENUM = 93u;
 static const uint FEATURE_TK_STRUCT = 94u;
 static const uint FEATURE_TK_MATCH = 95u;
@@ -28,14 +31,21 @@ static const uint FEATURE_TK_TYPE_ARG_LT = 131u;
 static const uint FEATURE_TK_TYPE_ARG_GT = 132u;
 static const uint FEATURE_TK_GENERIC_PARAM_LT = 133u;
 static const uint FEATURE_TK_GENERIC_PARAM_GT = 134u;
+static const uint FEATURE_TK_TYPE_AMPERSAND = 144u;
 static const uint FEATURE_TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint FEATURE_TK_BOUND_TYPE_ARG_GT = 176u;
+static const uint FEATURE_TK_BOUND_TYPE_AMPERSAND = 179u;
 static const uint FEATURE_TK_PATH_TYPE_ARG_LT = 184u;
 static const uint FEATURE_TK_PATH_TYPE_ARG_GT = 185u;
+static const uint FEATURE_TK_MEMBER_TYPE_ARG_GT = 191u;
 
 public uint parser_feature_flags_for_token(uint raw_kind, uint semantic_kind)
 {
     uint flags = 0u;
+    if (raw_kind == FEATURE_TK_FLOAT) flags |= PARSER_FEATURE_FLOAT_LITERALS;
+    if (semantic_kind == FEATURE_TK_TYPE_AMPERSAND ||
+        semantic_kind == FEATURE_TK_BOUND_TYPE_AMPERSAND)
+        flags |= PARSER_FEATURE_REFERENCES;
     if (semantic_kind == FEATURE_TK_TYPE_ARG_LT ||
         semantic_kind == FEATURE_TK_TYPE_ARG_GT ||
         semantic_kind == FEATURE_TK_GENERIC_PARAM_LT ||
@@ -43,7 +53,8 @@ public uint parser_feature_flags_for_token(uint raw_kind, uint semantic_kind)
         semantic_kind == FEATURE_TK_BOUND_TYPE_ARG_LT ||
         semantic_kind == FEATURE_TK_BOUND_TYPE_ARG_GT ||
         semantic_kind == FEATURE_TK_PATH_TYPE_ARG_LT ||
-        semantic_kind == FEATURE_TK_PATH_TYPE_ARG_GT)
+        semantic_kind == FEATURE_TK_PATH_TYPE_ARG_GT ||
+        semantic_kind == FEATURE_TK_MEMBER_TYPE_ARG_GT)
     {
         flags |= PARSER_FEATURE_TYPE_ARGS;
     }

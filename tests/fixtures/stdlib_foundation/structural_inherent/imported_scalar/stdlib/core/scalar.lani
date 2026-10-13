@@ -1,0 +1,7 @@
+module core::scalar;
+
+pub impl i32 {
+    pub fn weighted(self, tail: i32) -> i32 {
+        return self * 10 + tail;
+    }
+}

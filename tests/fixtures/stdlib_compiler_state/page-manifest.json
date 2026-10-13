@@ -1,0 +1,174 @@
+{
+  "checkpoint": "dependency pages and retained value layouts",
+  "date": "2026-10-10",
+  "checkpoint_complete": true,
+  "general_generics_goal_complete": false,
+  "supported_execution_target": "x86_64 Linux ELF emitted by GPU compiler; user-program GPU execution not established",
+  "plans_and_before_image_indexes": [
+    "qualifier-scope-plan.json",
+    "page-layout-plan.json",
+    "page-layout-parser-plan.json",
+    "page-pattern-plan.json",
+    "page-type-identity-plan.json",
+    "page-layout-initialization-plan.json"
+  ],
+  "selection": "page-final-selection.json",
+  "results": {
+    "page-final-generic-2.log": {
+      "passed": 30,
+      "elapsed_seconds": 25.15,
+      "sha256": "2b7c09cc38bd282b6bc4128c351a16b308f5e59def0cfebf57b71b808b8ac9fb"
+    },
+    "page-final-parser.log": {
+      "passed": 7,
+      "elapsed_seconds": 1.44,
+      "sha256": "8710402e2c74310e051c8b9989d4dda4c9daecae75c7cfa47258ea0dd35212a0"
+    },
+    "page-final-module.log": {
+      "passed": 10,
+      "elapsed_seconds": 6.29,
+      "sha256": "8a156635949109fe7f5cc7f0c31bbdb5f28a628277dd48a1d6d86738122368b7"
+    },
+    "page-final-enum.log": {
+      "passed": 33,
+      "elapsed_seconds": 9.08,
+      "sha256": "741b537d0cbafb61a7131a46997e9f21bc4ad375d208d81e024dbcf31b90bc0f"
+    },
+    "page-final-focused-2.log": {
+      "passed": 5,
+      "elapsed_seconds": 7.94,
+      "sha256": "1ebd39437dee8d7e3744d0ca6d1ac5831d45ed784850a3566845f9cd7bece10c"
+    },
+    "page-final-unbatched.log": {
+      "passed": 3,
+      "elapsed_seconds": 8.74,
+      "sha256": "89dc667787b554be0196a736971324ec41dac1b9704158eac9794b26f89e5c45"
+    }
+  },
+  "distinct_tests": 85,
+  "unbatched_repeat_tests": 3,
+  "generic_inventory": 287,
+  "full_generic_inventory_run": false,
+  "page_execution": {
+    "dependency_orders": [
+      "flat",
+      "inner-first",
+      "outer-first"
+    ],
+    "nested_stdout": "αomega",
+    "nested_exit": 42,
+    "stderr": "",
+    "rejects": [
+      "wrong element type",
+      "wrong fixed-array length"
+    ],
+    "scope": [
+      "local qualifier shadowing",
+      "import ambiguity",
+      "source-pack membership",
+      "repeated pages",
+      "copied nested values",
+      "reassignment",
+      "ordinary by-value parameter"
+    ]
+  },
+  "initial_failed_gate": {
+    "log": "page-final-generic.log",
+    "passed": 29,
+    "failed": 1,
+    "diagnosis": "page-enum-layout-rejection-debug.log",
+    "resolution": "Initialize all retained layout storage even without applications and keep record field bindings separate from layout group metadata.",
+    "isolated_passing_log": "page-enum-layout-initialization-fixed.log"
+  },
+  "remaining_dependencies": [
+    "multi-page record field access and generic body replay need direct executable evidence",
+    "alias-qualified enum variants",
+    "nested match parser rejection: page-layout-nested-match-before.lani",
+    "ordinary string comparison",
+    "other contracts listed in docs/compiler-generic-types.md#remaining-work"
+  ],
+  "performance_artifacts": "benchmark_artifacts/performance/stdlib-gpu-20261010-dependency-pages",
+  "performance": {
+    "source_count": 3186,
+    "shader_payload_count": 1490,
+    "frozen_sources_and_shaders_unchanged": true,
+    "measured_binary_identities": {
+      "target/stdlib-perf/build/release/deps/compiler_generic_types_execution-443177ec3361c248": "cc5fba2ce110f423700ebe6461b86283712d2839a05b3621edb4598af42b52bc",
+      "target/stdlib-perf/build/release/deps/laniusc_compiler-88bea0616d867d66": "ec6e1447f8e61a064734817ab98812cd4f6189c827ff7374644403b5ffce5921",
+      "target/stdlib-perf/build/release/deps/parser_hir_records-6a4a7d077edcca4f": "0439866551dd67368a22493dc123d499f45c29264fad47844371d3d950def95e",
+      "target/stdlib-perf/build/release/deps/stdlib_generic_enum_declaration_execution-0c999e2ce290d60f": "51d1b612881ffcfeee6287a5692715125b1ee9a41c92d868fbb2faab25a078e1",
+      "target/stdlib-perf/build/release/deps/type_checker_modules-2fa27f7cc330361d": "b79c6aa1740af73de7e667213377d3274bef635bb090db2d3c73102936bfae4a",
+      "target/stdlib-perf/build/release/examples/stdlib_gpu_perf": "6c53dd3137ac07ec73df15dd8a6f1d305b5d32fd8f98446c3b484a8d5b02b693",
+      "target/stdlib-perf/build/release/laniusc": "ff5a1af5d126020f89b38b7fd046e43912c0738a0e57ed50a172cdf6b844f88a"
+    },
+    "canonical_cli_rebuild_binary_transitions": {
+      "target/stdlib-perf/build/release/laniusc": {
+        "before": "f07ddbfcf1956f7d6cbb8db73f8ba115dd07d558db7e1ea6cca52eebe780e994",
+        "after": "ff5a1af5d126020f89b38b7fd046e43912c0738a0e57ed50a172cdf6b844f88a"
+      }
+    },
+    "shader_metadata": "shader-artifact-digest: 9a9322506f77915d\nshader-artifact-count: 745\nshader-artifact-max-bytes: 504704\nshader-artifact-max-name: codegen/lir/x86/emit\nshader-artifact-size-guard: enforced\nshader-artifact-max-spv-bytes: 524288\nshader-compile-timeout-ms: 120000",
+    "changed_spv": 18,
+    "changed_reflection": 15,
+    "canonical_compiler_median_ms": 37.179834,
+    "canonical_wall_median_ms": 39.961079,
+    "generic_32_median_ms": 401.12,
+    "canonical_elf_count": 20,
+    "canonical_source_hashes_match_baseline": true,
+    "canonical_seeds": [
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "canonical_source_bytes": 1000000,
+    "canonical_cache_hits": 0,
+    "canonical_resource_creations": 0,
+    "recorded_compute_dispatches": [
+      1462
+    ],
+    "recorded_compute_passes": [
+      98
+    ],
+    "tracked_live_bytes": [
+      1624117063
+    ],
+    "tracked_allocations": [
+      271
+    ],
+    "excluded_raw_buffers": [
+      5
+    ],
+    "canonical_runner_status": "saved_report_then_existing_catalogue_list_get_exception",
+    "generic_32_final_elf_verified": true,
+    "generic_32_initial_invocation": "Wrong empty-stdout argument; retained as generic-32-wrong-expected-output.log. Correct expected output is the pre-existing fixture contract."
+  },
+  "abi": {
+    "private_interface_version": 9,
+    "native_object_version": 3,
+    "slice_words": 3,
+    "changed_this_checkpoint": false
+  },
+  "documents": [
+    "docs/compiler-generic-types.md",
+    "docs/compiler-semantic-contracts.md",
+    "docs/stdlib-foundation.md",
+    "docs/stdlib-gpu-performance.md"
+  ]
+}

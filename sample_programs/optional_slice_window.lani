@@ -1,0 +1,51 @@
+// The caller owns the backing storage; an optional view preserves borrowing.
+module app::main;
+import core::mem;
+import core::option;
+import core::range;
+import core::number_i32;
+
+fn valid_window(values: [i32]) -> core::option::Option<[i32]> {
+    let absent: core::option::Option<[i32]> = core::option::None();
+    let allowed: core::range::Range<i32> = core::range::range_i32(-100, 101);
+    let count: i32 = 0;
+    for value in values {
+        if (!core::range::contains_i32(allowed, value)) {
+            return absent;
+        }
+        count = count + 1;
+    }
+    if (count == 0) {
+        return absent;
+    }
+    let present: core::option::Option<[i32]> = core::option::Some(values);
+    return present;
+}
+
+fn main() -> i32 {
+    let backing: [i32; 4] = [7, -2, 11, 4];
+    let data: ptr = core::mem::i32_array_data_ptr(backing);
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(data, 4);
+    let empty: [i32] = core::mem::i32_slice_from_raw_parts(data, 0);
+    let present: core::option::Option<[i32]> = valid_window(view);
+    let absent: core::option::Option<[i32]> = valid_window(empty);
+    if (!present.is_some()) { return 1; }
+    if (!absent.is_none()) { return 4; }
+    let selected: [i32] = match (present) {
+        core::option::Some(inner) -> inner,
+        core::option::None -> empty,
+    };
+    let count: i32 = 0;
+    let total: i32 = 0;
+    for value in selected {
+        count = count + 1;
+        total = core::number_i32::saturating_add(total, value);
+    }
+    if (count != 4 || total != 20) { return 2; }
+    selected[0] = 101;
+    let rejected: core::option::Option<[i32]> = valid_window(view);
+    if (!rejected.is_none() || backing[0] != 101) { return 3; }
+    print(count);
+    print(total);
+    return 0;
+}

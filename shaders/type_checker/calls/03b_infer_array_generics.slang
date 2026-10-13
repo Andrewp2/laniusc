@@ -74,17 +74,23 @@ uint call_callee_token(uint call_node)
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return INVALID;
 
+    uint callee_node = compact_hir_payload[call_node].a;
+    // A member's leaf owns this call; its span can begin in a receiver call.
+    if (valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[callee_node].c;
+        return valid_token(member_token) ? member_token : INVALID;
+    }
     uint call_token = compact_hir_core[call_node].token_start;
     if (valid_token(call_token) && valid_token(call_fn_index[call_token]))
         return call_token;
 
-    uint callee_node = compact_hir_payload[call_node].a;
     if (!valid_node(callee_node))
         return INVALID;
 
     HirCore callee = compact_hir_core[callee_node];
     HirPayload payload = compact_hir_payload[callee_node];
-    uint callee_token = callee.kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+    uint callee_token = payload.d;
     if (!valid_token(callee_token)) callee_token = callee.token_start;
     return valid_token(callee_token) ? callee_token : INVALID;
 }

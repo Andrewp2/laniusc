@@ -2,7 +2,9 @@ mod common;
 
 use laniusc_compiler::compiler::{
     GpuSemanticInterfaceArtifact,
+    GpuSemanticInterfaceImplementationKind,
     GpuSemanticInterfaceMemberKind,
+    GpuSemanticInterfaceMemberRecord,
     GpuSemanticInterfaceTypeKind,
 };
 
@@ -21,12 +23,87 @@ fn declaration<'a>(
         .unwrap_or_else(|| panic!("missing exported declaration {name}"))
 }
 
+fn inherent_implementations(artifact: &GpuSemanticInterfaceArtifact, name: &str) -> Vec<usize> {
+    let nominal = declaration(artifact, name);
+    let declaration_index = artifact.declarations
+        .iter()
+        .position(|candidate| std::ptr::eq(candidate, nominal))
+        .expect("nominal declaration index") as u32;
+    artifact.implementations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, implementation)| {
+            let subject = artifact.types[implementation.subject_type as usize];
+            (implementation.kind == GpuSemanticInterfaceImplementationKind::Inherent as u32
+                && subject.kind == GpuSemanticInterfaceTypeKind::Declaration as u32
+                && subject.payload_lo == artifact.library_id
+                && subject.nominal_unit_id == artifact.unit_id
+                && subject.payload_hi == declaration_index)
+                .then_some(index)
+        })
+        .collect()
+}
+
+fn implementation_members(
+    artifact: &GpuSemanticInterfaceArtifact,
+    index: usize,
+) -> &[GpuSemanticInterfaceMemberRecord] {
+    let implementation = artifact.implementations[index];
+    let members = &artifact.members[implementation.first_member as usize
+        ..(implementation.first_member + implementation.member_count) as usize];
+    for member in members {
+        assert_eq!(member.owner_ref, 0x8000_0000 | index as u32,
+            "member belongs to its explicit implementation owner");
+        if member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32 {
+            assert_eq!(member.receiver_type_index, implementation.subject_type,
+                "exported method retains the complete implementation subject");
+        }
+    }
+    members
+}
+
+#[test]
+fn exported_alias_targets_preserve_structural_roots_and_parameter_identity() {
+    let source = format!("{}\npub type Plain = [i32; 2];\n",
+        include_str!("fixtures/stdlib_compiler_state/alias-import-composition/aliases.lani"));
+    let artifact = common::semantic_interface_with_timeout(0, &[&source])
+        .expect("export complete alias target graphs");
+    let plain = artifact.types[declaration(&artifact, "Plain").signature_type as usize];
+    let plain_element = artifact.types[artifact.type_edges[plain.first_edge as usize].type_index as usize];
+    for (name, constant_ordinal) in [("Constant", 0), ("Fixed", 1)] {
+        let alias = declaration(&artifact, name);
+        let root = artifact.types[alias.signature_type as usize];
+        assert_eq!(root.kind, GpuSemanticInterfaceTypeKind::Array as u32, "{name}: {root:?}");
+        assert_eq!(root.length_kind, 2, "{name}: {root:?}");
+        assert_eq!(root.length_lo, alias.first_member + constant_ordinal, "{name}: {root:?}");
+        let element = artifact.types[artifact.type_edges[root.first_edge as usize].type_index as usize];
+        if name == "Constant" {
+            assert_eq!((element.kind, element.payload_lo),
+                (plain_element.kind, plain_element.payload_lo), "injected i32: {element:?}");
+        } else {
+            assert_eq!(element.kind, GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+            assert_eq!(element.payload_lo, alias.first_member);
+        }
+    }
+    for (name, kind) in [("View", GpuSemanticInterfaceTypeKind::Slice),
+        ("Ref", GpuSemanticInterfaceTypeKind::Reference)] {
+        let alias = declaration(&artifact, name);
+        let root = artifact.types[alias.signature_type as usize];
+        assert_eq!(root.kind, kind as u32, "{name}: {root:?}");
+        assert_eq!(root.edge_count, 1);
+        let element = artifact.types[artifact.type_edges[root.first_edge as usize].type_index as usize];
+        assert_eq!(element.kind, GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+        assert_eq!(element.payload_lo, alias.first_member);
+    }
+}
+
 #[test]
 fn generic_option_and_result_variant_payloads_refer_to_their_enum_parameters() {
     let artifact = common::semantic_interface_with_timeout(
         0,
         &[
             include_str!("../stdlib/core/result.lani"),
+            include_str!("../stdlib/core/result_bool.lani"),
             include_str!("../stdlib/core/option.lani"),
         ],
     )
@@ -60,11 +137,52 @@ fn generic_option_and_result_variant_payloads_refer_to_their_enum_parameters() {
             parent.first_member + parameter_ordinal,
             "{variant_name} must refer to {enum_name}'s generic member"
         );
+        let result_edge = artifact.type_edges[(signature.first_edge + signature.edge_count - 1) as usize];
+        assert_eq!(result_edge.type_index, parent.signature_type);
+        let result = artifact.types[result_edge.type_index as usize];
+        assert_eq!(result.kind, GpuSemanticInterfaceTypeKind::Declaration as u32);
+        let arity = if enum_name == "Option" { 1 } else { 2 };
+        assert_eq!(result.edge_count, arity, "constructor returns its complete enum application");
+        for ordinal in 0..arity {
+            let edge = artifact.type_edges[(result.first_edge + ordinal) as usize];
+            let argument = artifact.types[edge.type_index as usize];
+            assert_eq!(argument.kind, GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+            assert_eq!(argument.payload_lo, parent.first_member + ordinal);
+        }
     }
 }
 
 #[test]
-fn non_generic_public_methods_are_exported_as_associated_members() {
+fn imported_generic_slice_parameters_refer_to_their_function_parameters() {
+    let artifact = common::semantic_interface_with_timeout(
+        0,
+        &[include_str!(
+            "fixtures/stdlib_foundation/repro_generic_slice_root/core/slice_any.lani"
+        )],
+    )
+    .expect("export generic slice helpers");
+    for name in ["get_or", "swap", "copy_first"] {
+        let function = declaration(&artifact, name);
+        let member = artifact.members[function.first_member as usize];
+        assert_eq!(
+            member.kind,
+            GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+        );
+        let signature = artifact.types[function.signature_type as usize];
+        let argument = artifact.type_edges[signature.first_edge as usize];
+        let slice = artifact.types[argument.type_index as usize];
+        let element_edge = artifact.type_edges[slice.first_edge as usize];
+        let element = artifact.types[element_edge.type_index as usize];
+        assert_eq!(
+            element.kind,
+            GpuSemanticInterfaceTypeKind::GenericParameter as u32
+        );
+        assert_eq!(element.payload_lo, function.first_member);
+    }
+}
+
+#[test]
+fn non_generic_public_methods_are_exported_under_inherent_implementations() {
     let artifact = common::semantic_interface_with_timeout(
         0,
         &[include_str!(
@@ -72,24 +190,13 @@ fn non_generic_public_methods_are_exported_as_associated_members() {
         )],
     )
     .expect("export Thing interface");
-    let thing = declaration(&artifact, "Thing");
-    let thing_index = artifact
-        .declarations
+    let implementations = inherent_implementations(&artifact, "Thing");
+    assert_eq!(implementations.len(), 1, "one lexical Thing implementation");
+    let members = implementation_members(&artifact, implementations[0]);
+    let methods: Vec<_> = members
         .iter()
-        .position(|candidate| std::ptr::eq(candidate, thing))
-        .expect("Thing declaration index") as u32;
-    let methods: Vec<_> = artifact.members
-        [thing.first_member as usize..(thing.first_member + thing.member_count) as usize]
-        .iter()
-        .filter(|member| member.kind == GpuSemanticInterfaceMemberKind::AssociatedMethod as u32)
+        .filter(|member| member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32)
         .collect();
-    for method in &methods {
-        let receiver = &artifact.types[method.receiver_type_index as usize];
-        assert_eq!(receiver.kind, GpuSemanticInterfaceTypeKind::Declaration as u32);
-        assert_eq!(receiver.payload_lo, artifact.library_id);
-        assert_eq!(receiver.nominal_unit_id, artifact.unit_id);
-        assert_eq!(receiver.payload_hi, thing_index);
-    }
     let names: Vec<_> = methods
         .iter()
         .map(|member| {
@@ -104,15 +211,16 @@ fn non_generic_public_methods_are_exported_as_associated_members() {
 }
 
 #[test]
-fn generic_vec_public_methods_remain_exported_as_associated_members() {
+fn generic_vec_public_methods_remain_exported_under_inherent_implementations() {
     let artifact =
         common::semantic_interface_with_timeout(0, &[include_str!("../stdlib/std/vec.lani")])
             .expect("export Vec interface");
-    let vector = declaration(&artifact, "Vec");
-    let names: Vec<_> = artifact.members
-        [vector.first_member as usize..(vector.first_member + vector.member_count) as usize]
+    let implementations = inherent_implementations(&artifact, "Vec");
+    assert_eq!(implementations.len(), 1, "one lexical Vec implementation");
+    let members = implementation_members(&artifact, implementations[0]);
+    let names: Vec<_> = members
         .iter()
-        .filter(|member| member.kind == GpuSemanticInterfaceMemberKind::AssociatedMethod as u32)
+        .filter(|member| member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32)
         .map(|member| {
             let start = member.name_byte_start as usize;
             let end = start + member.name_byte_len as usize;
@@ -122,5 +230,420 @@ fn generic_vec_public_methods_remain_exported_as_associated_members() {
     assert_eq!(names.len(), 3);
     for name in ["new", "len", "is_empty"] {
         assert!(names.contains(&name.to_string()), "missing Vec::{name}");
+    }
+}
+
+#[test]
+fn public_option_methods_export_their_explicit_parameter_types() {
+    let artifact = common::semantic_interface_with_timeout(
+        0,
+        &[
+            include_str!("../stdlib/core/result_bool.lani"),
+            include_str!("../stdlib/core/option.lani"),
+        ],
+    )
+    .expect("export public Option method parameters");
+    let implementations = inherent_implementations(&artifact, "Option");
+    for name in ["contains", "unwrap_or", "or", "and", "xor", "ok_or"] {
+        let (implementation_index, method) = implementations
+            .iter()
+            .flat_map(|&index| implementation_members(&artifact, index)
+                .iter().map(move |member| (index, member)))
+            .find(|(index, member)| {
+                let start = member.name_byte_start as usize;
+                let end = start + member.name_byte_len as usize;
+                if member.kind != GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
+                    || &artifact.name_bytes[start..end] != name.as_bytes()
+                {
+                    return false;
+                }
+                // contains/ok_or are concrete bool methods. The value methods
+                // belong to impl<T>; their portable signature must preserve T.
+                let implementation = artifact.implementations[*index];
+                let receiver = artifact.types[implementation.subject_type as usize];
+                if receiver.edge_count != 1 {
+                    return false;
+                }
+                let argument = artifact.types
+                    [artifact.type_edges[receiver.first_edge as usize].type_index as usize];
+                if matches!(name, "contains" | "ok_or") {
+                    argument.kind == GpuSemanticInterfaceTypeKind::Scalar as u32
+                        && argument.payload_lo == 2
+                } else {
+                    argument.kind == GpuSemanticInterfaceTypeKind::GenericParameter as u32
+                }
+            })
+            .unwrap_or_else(|| panic!("missing Option::{name}"));
+        let members = implementation_members(&artifact, implementation_index);
+        let parameters: Vec<_> = members
+            .iter()
+            .filter(|member| {
+                member.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
+                    && member.value_hi == method.value_hi
+            })
+            .collect();
+        assert_eq!(
+            parameters.len(),
+            method.method_parameter_count() as usize,
+            "{name}: complete signature"
+        );
+        assert_eq!(parameters.len(), 1, "{name}: implicit receiver is excluded");
+        let parameter = parameters[0];
+        assert_eq!(parameter.value_lo, 1, "{name}: source argument after self");
+        let ty = &artifact.types[parameter.type_index as usize];
+        if matches!(name, "contains" | "ok_or") {
+            assert_eq!(
+                ty.kind,
+                GpuSemanticInterfaceTypeKind::Scalar as u32,
+                "{name}"
+            );
+            assert_eq!(ty.payload_lo, 2, "{name}: bool parameter");
+        } else {
+            let receiver = artifact.types[method.receiver_type_index as usize];
+            let receiver_argument = artifact.types
+                [artifact.type_edges[receiver.first_edge as usize].type_index as usize];
+            let inherited = artifact.members[receiver_argument.payload_lo as usize];
+            assert_eq!(
+                inherited.kind,
+                GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+            );
+            assert_eq!(inherited.owner_ref, method.owner_ref);
+            assert_eq!(
+                Some(inherited.value_hi),
+                artifact.inherent_implementation_scope(implementation_index as u32)
+                    .expect("Option implementation scope")
+            );
+            assert_eq!(
+                inherited.value_hi & 0xc0000000,
+                0xc0000000,
+                "{name}: impl scope"
+            );
+            assert_eq!(inherited.type_binding_slot(), 0);
+            assert_eq!(method.method_type_parameter_count(), 1);
+            assert_eq!(members.iter().filter(|member|
+                member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+                    && member.value_hi == method.value_hi).count(), 0,
+                "{name}: T belongs to the implementation, not a method header");
+            if name == "unwrap_or" {
+                assert_eq!(
+                    ty.kind,
+                    GpuSemanticInterfaceTypeKind::GenericParameter as u32
+                );
+                assert_eq!(
+                    ty.payload_lo, receiver_argument.payload_lo,
+                    "fallback has the receiver's T"
+                );
+                continue;
+            }
+            assert_eq!(
+                ty.kind,
+                GpuSemanticInterfaceTypeKind::Declaration as u32,
+                "{name}"
+            );
+            assert_eq!(ty.edge_count, 1, "{name}: Option<T> parameter");
+            let child =
+                &artifact.types[artifact.type_edges[ty.first_edge as usize].type_index as usize];
+            assert_eq!(
+                child.kind,
+                GpuSemanticInterfaceTypeKind::GenericParameter as u32,
+                "{name}"
+            );
+            assert_eq!(
+                child.payload_lo, receiver_argument.payload_lo,
+                "{name}: same impl parameter identity"
+            );
+        }
+    }
+}
+
+#[test]
+fn public_static_and_receiver_methods_export_multiple_parameter_types() {
+    let artifact = common::semantic_interface_with_timeout(
+        0,
+        &[include_str!(
+            "fixtures/stdlib_foundation/repro_method_parameters_root/core/checker.lani"
+        )],
+    )
+    .expect("export static and receiver method parameters");
+    let implementations = inherent_implementations(&artifact, "Checker");
+    assert_eq!(implementations.len(), 1, "one lexical Checker implementation");
+    let members = implementation_members(&artifact, implementations[0]);
+    for (name, first_ordinal, expected) in [
+        ("new", 0usize, &[3u32, 2][..]),
+        ("accepts", 1, &[3u32, 2][..]),
+        ("choose", 1, &[0u32, 0, 2][..]),
+        ("biased", 0, &[0u32, 3, 2][..]),
+    ] {
+        let method = members
+            .iter()
+            .find(|member| {
+                let start = member.name_byte_start as usize;
+                let end = start + member.name_byte_len as usize;
+                member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
+                    && &artifact.name_bytes[start..end] == name.as_bytes()
+            })
+            .unwrap_or_else(|| panic!("missing Checker::{name}"));
+        let mut parameters: Vec<_> = members
+            .iter()
+            .filter(|member| {
+                member.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
+                    && member.value_hi == method.value_hi
+            })
+            .collect();
+        parameters.sort_by_key(|parameter| parameter.value_lo);
+        assert_eq!(parameters.len(), expected.len(), "{name}: {members:?}");
+        assert_eq!(
+            method.method_parameter_count() as usize,
+            expected.len(),
+            "{name}"
+        );
+        for (ordinal, (&scalar, parameter)) in expected.iter().zip(parameters).enumerate() {
+            assert_eq!(
+                parameter.value_lo as usize,
+                ordinal + first_ordinal,
+                "{name}"
+            );
+            let ty = &artifact.types[parameter.type_index as usize];
+            if scalar != 0 {
+                assert_eq!(
+                    ty.kind,
+                    GpuSemanticInterfaceTypeKind::Scalar as u32,
+                    "{name}: {ty:?}"
+                );
+                assert_eq!(ty.payload_lo, scalar, "{name}: {ty:?}");
+            } else {
+                assert_eq!(
+                    ty.kind,
+                    GpuSemanticInterfaceTypeKind::Declaration as u32,
+                    "{name}: {ty:?}"
+                );
+                assert_eq!(ty.payload_lo, artifact.library_id, "{name}");
+                assert_eq!(ty.nominal_unit_id, artifact.unit_id, "{name}");
+            }
+        }
+    }
+}
+
+#[test]
+fn exported_method_generics_keep_lexical_scope_and_declared_requirements() {
+    let artifact = common::semantic_interface_with_timeout(
+        0,
+        &[include_str!(
+            "fixtures/stdlib_foundation/repro_method_local_import_root/core/methods.lani"
+        )],
+    )
+    .expect("export lexical method scope");
+    let implementations = inherent_implementations(&artifact, "Boxed");
+    assert_eq!(implementations.len(), 1, "one lexical Boxed implementation");
+    let implementation_index = implementations[0];
+    let members = implementation_members(&artifact, implementation_index);
+    let method = members
+        .iter()
+        .find(|member| member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32)
+        .expect("method");
+    assert_eq!(method.method_parameter_count(), 1);
+    assert_eq!(method.method_type_parameter_count(), 2);
+    assert_eq!(method.method_constant_parameter_count(), 0);
+    assert_eq!(members.iter().filter(|member|
+        member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+            && member.value_hi == method.value_hi).count(), 1,
+        "only U belongs to the method header; requirements also include impl T");
+    let return_type = artifact.types[method.type_index as usize];
+    assert_eq!(
+        return_type.kind,
+        GpuSemanticInterfaceTypeKind::GenericParameter as u32
+    );
+    let parameter = artifact.members[return_type.payload_lo as usize];
+    assert_eq!(
+        parameter.kind,
+        GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+    );
+    assert_eq!(
+        parameter.value_hi, method.value_hi,
+        "U belongs to the method"
+    );
+    assert_eq!(parameter.owner_ref, method.owner_ref);
+    assert_eq!(parameter.generic_parameter_ordinal, 0, "U begins its lexical header");
+    assert_eq!(
+        parameter.type_binding_slot(),
+        1,
+        "T precedes U in the call environment"
+    );
+    let receiver = artifact.types[method.receiver_type_index as usize];
+    let receiver_parameter =
+        artifact.types[artifact.type_edges[receiver.first_edge as usize].type_index as usize];
+    let inherited = artifact.members[receiver_parameter.payload_lo as usize];
+    assert_eq!(inherited.owner_ref, method.owner_ref);
+    assert_ne!(inherited.value_hi, method.value_hi, "T belongs to the impl");
+    assert_eq!(inherited.value_hi & 0xc0000000, 0xc0000000);
+    assert_eq!(
+        Some(inherited.value_hi),
+        artifact.inherent_implementation_scope(implementation_index as u32)
+            .expect("Boxed implementation scope")
+    );
+    assert_eq!(inherited.type_binding_slot(), 0);
+    let boxed = declaration(&artifact, "Boxed");
+    let boxed_members = &artifact.members
+        [boxed.first_member as usize..(boxed.first_member + boxed.member_count) as usize];
+    assert_eq!(
+        boxed_members
+            .iter()
+            .filter(|member| member.kind
+                == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+                && member.value_hi == 0)
+            .count(),
+        1,
+        "the record still owns exactly one parameter"
+    );
+    let encoded = artifact
+        .to_bytes()
+        .expect("validate exact parameter members");
+    assert_eq!(
+        GpuSemanticInterfaceArtifact::from_bytes(&encoded).expect("read interface"),
+        artifact
+    );
+    let mut malformed = artifact.clone();
+    malformed.members[return_type.payload_lo as usize].kind =
+        GpuSemanticInterfaceMemberKind::Field as u32;
+    assert!(
+        malformed
+            .validate()
+            .unwrap_err()
+            .contains("parameter member kind")
+    );
+    let mut malformed = artifact.clone();
+    let method_index = malformed
+        .members
+        .iter()
+        .position(|member| {
+            member.owner_ref == method.owner_ref
+                && member.value_hi == method.value_hi
+                && member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
+        })
+        .unwrap();
+    // Change only the type requirement, preserving public visibility,
+    // receiver mode, and explicit-parameter count.
+    malformed.members[method_index].value_lo &= !(63 << 16);
+    malformed.members[method_index].value_lo |= 1 << 16;
+    assert!(
+        malformed.validate().is_err(),
+        "U's slot cannot exceed the declared requirements"
+    );
+}
+
+#[test]
+fn exported_generic_headers_preserve_interleaved_order_and_lexical_scopes() {
+    for count in [5usize, 32] {
+        let names = (0..count)
+            .flat_map(|slot| [format!("T{slot}"), format!("N{slot}")])
+            .collect::<Vec<_>>();
+        let header = (0..count)
+            .map(|slot| format!("T{slot}, const N{slot}: usize"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            r#"
+module core::ordering;
+pub fn wide<{header}>() -> i32 {{ return 0; }}
+pub struct Shell<T, K> {{ first: T, last: K }}
+impl<K, T> Shell<T, K> {{
+    pub fn mixed<const N: usize, U, const M: usize, V>(&self, a: [U; N], b: [V; M]) -> i32 {{ return 0; }}
+}}
+"#
+        );
+        let artifact = common::semantic_interface_with_timeout(17, &[&source])
+            .expect("export ordered type and constant parameter headers");
+        let parameter_name =
+            |member: &laniusc_compiler::compiler::GpuSemanticInterfaceMemberRecord| {
+                let start = member.name_byte_start as usize;
+                String::from_utf8(
+                    artifact.name_bytes[start..start + member.name_byte_len as usize].to_vec(),
+                )
+                .unwrap()
+            };
+        let generic = |member: &&laniusc_compiler::compiler::GpuSemanticInterfaceMemberRecord| {
+            member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
+                || member.kind == GpuSemanticInterfaceMemberKind::GenericConstParameter as u32
+        };
+        let wide = declaration(&artifact, "wide");
+        let mut parameters = artifact.members
+            [wide.first_member as usize..(wide.first_member + wide.member_count) as usize]
+            .iter()
+            .filter(generic)
+            .collect::<Vec<_>>();
+        parameters.sort_by_key(|member| member.generic_parameter_ordinal);
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|member| parameter_name(member))
+                .collect::<Vec<_>>(),
+            names
+        );
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|member| member.generic_parameter_ordinal)
+                .collect::<Vec<_>>(),
+            (0..2 * count as u32).collect::<Vec<_>>()
+        );
+        // Canonical type-first member slots differ from source order.
+        assert_eq!(parameters[1].ordinal, count as u32);
+        let implementations = inherent_implementations(&artifact, "Shell");
+        assert_eq!(implementations.len(), 1, "one lexical Shell implementation");
+        let implementation_index = implementations[0];
+        let members = implementation_members(&artifact, implementation_index);
+        let method = members
+            .iter()
+            .find(|member| member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32)
+            .unwrap();
+        assert_eq!(method.method_type_parameter_count(), 4, "impl K,T plus method U,V");
+        assert_eq!(method.method_constant_parameter_count(), 2, "method N,M");
+        let mut own = members
+            .iter()
+            .filter(generic)
+            .filter(|member| member.value_hi == method.value_hi)
+            .collect::<Vec<_>>();
+        own.sort_by_key(|member| member.generic_parameter_ordinal);
+        assert_eq!(
+            own.iter()
+                .map(|member| parameter_name(member))
+                .collect::<Vec<_>>(),
+            ["N", "U", "M", "V"]
+        );
+        assert_eq!(
+            own.iter()
+                .map(|member| member.type_binding_slot())
+                .collect::<Vec<_>>(),
+            [0, 2, 1, 3]
+        );
+        let implementation_scope = artifact.inherent_implementation_scope(implementation_index as u32)
+            .expect("Shell implementation scope").expect("impl<K, T> header");
+        let mut inherited = members
+            .iter()
+            .filter(generic)
+            .filter(|member| member.value_hi == implementation_scope)
+            .collect::<Vec<_>>();
+        inherited.sort_by_key(|member| member.generic_parameter_ordinal);
+        assert_eq!(
+            inherited
+                .iter()
+                .map(|member| parameter_name(member))
+                .collect::<Vec<_>>(),
+            ["K", "T"]
+        );
+        let bytes = artifact.to_bytes().expect("ordered semantic interface");
+        assert_eq!(
+            GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(),
+            artifact
+        );
+        let mut malformed = artifact.clone();
+        let index = wide.first_member as usize + count;
+        malformed.members[index].generic_parameter_ordinal = 0;
+        assert!(
+            malformed
+                .validate()
+                .unwrap_err()
+                .contains("generic declaration order")
+        );
     }
 }

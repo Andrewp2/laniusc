@@ -9,6 +9,7 @@ RWStructuredBuffer<uint> predicate_method_validation_owner_node;
 RWStructuredBuffer<uint> predicate_method_validation_peer_node;
 RWStructuredBuffer<uint> predicate_method_validation_status;
 RWStructuredBuffer<uint> predicate_method_validation_detail_token;
+RWStructuredBuffer<uint> predicate_method_validation_required_symbol;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -66,6 +67,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_method_validation_peer_node[impl_method] = trait_method;
     predicate_method_validation_status[impl_method] =
         PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH;
+    // Type-peer rows never write the separate method evidence table. Failed
+    // parameters revoke the method-level correspondence before it is exported.
+    predicate_method_validation_required_symbol[impl_method] = INVALID;
     predicate_method_validation_detail_token[impl_method] =
         method_contract_diagnostic_token(impl_method);
 }

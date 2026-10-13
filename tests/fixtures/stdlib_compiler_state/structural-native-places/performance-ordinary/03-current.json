@@ -1,0 +1,33 @@
+{
+  "version": "current",
+  "command": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+    "tests/fixtures/stdlib_foundation/generic_many_parameter_composition_32.lani",
+    "stdlib",
+    "benchmark_artifacts/performance/stdlib-gpu-20261010-implementation-evidence/generic-32.expected.txt",
+    "3",
+    "10"
+  ],
+  "environment": {
+    "LANIUS_PERF_REBUILD_ENTRY": "1"
+  },
+  "exit_code": 0,
+  "seconds": 6.375014983001165,
+  "binary_sha256": "ae2fc050d58fa82986802b92fbf2e7604362615aafeb47b774ecfe1cb72dd1d4",
+  "samples_ms": [
+    279.531,
+    277.673,
+    279.628,
+    282.128,
+    279.537,
+    282.54,
+    280.954,
+    278.626,
+    279.031,
+    287.236
+  ],
+  "median_ms": 279.5825,
+  "output_verified": true,
+  "shader_link_restored": true,
+  "shader_artifacts_unchanged": true
+}

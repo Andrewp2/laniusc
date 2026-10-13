@@ -27,6 +27,7 @@ RWStructuredBuffer<uint> x86_stack_slot_count_by_function;
 RWStructuredBuffer<uint> x86_frame_slot_count_by_function;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 RWStructuredBuffer<uint> x86_decl_location_by_token;
+RWStructuredBuffer<uint4> x86_place_storage_by_token;
 RWStructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 RWStructuredBuffer<uint> x86_direct_call_count_by_function;
 
@@ -54,6 +55,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < gParams.token_capacity)
     {
         x86_decl_location_by_token[row] = INVALID;
+        x86_place_storage_by_token[row] = uint4(INVALID, 0u, 0u, 0u);
         X86DeclarationAnalysis analysis;
         analysis.last_read = 0u;
         analysis.last_access = 0u;

@@ -1,0 +1,8 @@
+
+running 3 tests
+test generic_slice_forwarders_close_transitive_body_environments ... ok
+test zero_sized_slices_enforce_logical_bounds ... ok
+test zero_sized_slices_preserve_effects_and_neighbors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 246 filtered out; finished in 3.22s
+

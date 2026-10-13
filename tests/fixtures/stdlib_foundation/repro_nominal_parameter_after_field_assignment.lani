@@ -1,0 +1,12 @@
+struct Cell<T> { value: T, sentinel: i32 }
+fn replace(cell: Cell<i32>, value: i32) -> Cell<i32> {
+    cell.value = value;
+    return cell;
+}
+fn main() -> i32 {
+    let original: Cell<i32> = Cell { value: 11, sentinel: 42 };
+    let updated: Cell<i32> = replace(original, 22);
+    if (updated.value != 22 || updated.sentinel != 42) { return 1; }
+    if (original.value != 11 || original.sentinel != 42) { return 2; }
+    return 0;
+}

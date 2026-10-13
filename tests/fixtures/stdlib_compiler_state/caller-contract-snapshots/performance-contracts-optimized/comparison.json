@@ -1,0 +1,143 @@
+{
+  "runs": [
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/caller-contract-snapshot-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.3179880019997654,
+      "binary_sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
+      "samples_ms": [
+        72.133,
+        65.811,
+        62.936,
+        64.369,
+        64.713,
+        63.996,
+        63.898,
+        63.589,
+        63.74,
+        65.833
+      ],
+      "median_ms": 64.1825,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.467991349996737,
+      "binary_sha256": "47bf6a56f9adb721f9f891ba702d7b5d646b31c404f80342c2edb4514431928f",
+      "samples_ms": [
+        75.314,
+        75.166,
+        73.636,
+        72.246,
+        73.102,
+        73.422,
+        72.897,
+        74.561,
+        73.373,
+        72.654
+      ],
+      "median_ms": 73.39750000000001,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "current",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/examples/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.4180905030007125,
+      "binary_sha256": "47bf6a56f9adb721f9f891ba702d7b5d646b31c404f80342c2edb4514431928f",
+      "samples_ms": [
+        77.632,
+        76.62,
+        76.861,
+        74.482,
+        73.635,
+        73.627,
+        72.604,
+        76.719,
+        73.315,
+        73.584
+      ],
+      "median_ms": 74.05850000000001,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    },
+    {
+      "version": "baseline",
+      "command": [
+        "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/caller-contract-snapshot-baseline/stdlib_gpu_perf",
+        "tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two-mixed.lani",
+        "stdlib",
+        "-",
+        "3",
+        "10"
+      ],
+      "environment": {
+        "LANIUS_PERF_REBUILD_ENTRY": "1"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.318054118000873,
+      "binary_sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
+      "samples_ms": [
+        66.032,
+        64.886,
+        67.268,
+        63.409,
+        65.385,
+        65.916,
+        64.159,
+        63.565,
+        63.385,
+        65.476
+      ],
+      "median_ms": 65.13550000000001,
+      "output_verified": true,
+      "sources_unchanged": true,
+      "shader_link_restored": true
+    }
+  ],
+  "pooled_median_ms": {
+    "baseline": 64.541,
+    "current": 73.631
+  },
+  "current_change_percent": 14.084070590787267,
+  "source_snapshot": "optimized-sources.json",
+  "baseline_limitations": "This example precedes the final imported structural-edge scheduling fix and capacity diagnostic change. Shader sources are identical to completed borrowed checkpoint; do not call it an exact immediate pre-snapshot baseline. No timing or correctness run performed at preservation."
+}

@@ -1,0 +1,85 @@
+   Compiling laniusc-shaders v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-shaders)
+   Compiling laniusc-compiler v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/crates/laniusc-compiler)
+   Compiling laniusc v0.1.0 (/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc)
+    Finished `release` profile [optimized] target(s) in 1m 13s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test generated_imported_receivers_preserve_more_than_four_type_arguments ... [typecheck.call_inference] round=0 changed=1
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=1
+[typecheck.call_inference] round=1 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+[typecheck.call_inference] round=0 changed=0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 51 filtered out; finished in 13.96s
+

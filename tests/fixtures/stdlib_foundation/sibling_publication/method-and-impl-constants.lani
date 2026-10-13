@@ -1,0 +1,39 @@
+struct Cell<T> { value: T }
+impl<T> Cell<T> {
+    fn copy<U, const M: usize>(&self, values: [U; M]) -> [U; M] { return values; }
+    fn relay<V, const L: usize>(&self, values: [V; L]) -> [V; L] {
+        return self.copy(values);
+    }
+}
+struct Numbers<T> { value: T }
+impl<const N: usize> Numbers<[i32; N]> {
+    fn copy(&self) -> [i32; N] { return self.value; }
+    fn relay(&self) -> [i32; N] { return self.copy(); }
+}
+fn main() -> i32 {
+    let number: Cell<i32> = Cell { value: 42 };
+    let flag: Cell<bool> = Cell { value: false };
+    let flags: [bool; 2] = [false, true];
+    let numbers: [i32; 3] = [19, 23, -7];
+    let a: [bool; 2] = number.copy(flags);
+    let b: [bool; 2] = number.relay(flags);
+    let c: [i32; 3] = flag.copy(numbers);
+    let d: [i32; 3] = flag.relay(numbers);
+    flags[1] = false;
+    numbers[2] = 99;
+    if (a[0] || !a[1] || b[0] || !b[1]) { return 1; }
+    if (c[0] != 19 || c[1] != 23 || c[2] != -7) { return 2; }
+    if (d[0] != 19 || d[1] != 23 || d[2] != -7) { return 3; }
+
+    let two: Numbers<[i32; 2]> = Numbers { value: [19, 23] };
+    let three: Numbers<[i32; 3]> = Numbers { value: [1, 2, 39] };
+    let short_direct: [i32; 2] = two.copy();
+    let short_relay: [i32; 2] = two.relay();
+    let long_direct: [i32; 3] = three.copy();
+    let long_relay: [i32; 3] = three.relay();
+    if (short_direct[0] != 19 || short_direct[1] != 23) { return 4; }
+    if (short_relay[0] != 19 || short_relay[1] != 23) { return 5; }
+    if (long_direct[0] != 1 || long_direct[1] != 2 || long_direct[2] != 39) { return 6; }
+    if (long_relay[0] != 1 || long_relay[1] != 2 || long_relay[2] != 39) { return 7; }
+    return 0;
+}

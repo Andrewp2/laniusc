@@ -1,0 +1,30 @@
+
+struct Range {
+    start: i32,
+    end: i32,
+}
+
+impl Range {
+    fn contains(receiver: Range, value: i32) -> bool {
+        return value >= receiver.start && value < receiver.end;
+    }
+}
+
+fn make_range() -> Range {
+    return Range { start: 1, end: 4 };
+}
+
+fn read_direct() -> i32 {
+    if (make_range().contains(2)) {
+        return 1;
+    }
+    return 0;
+}
+
+fn main() {
+    let range: Range = Range { start: 1, end: 4 };
+    if (range.contains(2)) {
+        return 1;
+    }
+    return 0;
+}

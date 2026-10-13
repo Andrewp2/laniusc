@@ -1,0 +1,24 @@
+    Finished `release` profile [optimized] target(s) in 0.18s
+warning: the following packages contain code that will be rejected by a future version of Rust: naga v29.0.3, wgpu v29.0.3, wgpu-core v29.0.3, wgpu-hal v29.0.3
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/compiler_generic_types_execution.rs (target/stdlib-perf/build/release/deps/compiler_generic_types_execution-df907a6d6bb8a387)
+
+running 1 test
+test local_generic_value_functions_preserve_borrowed_slices ... kept temp artifact /tmp/laniusc_sample_x86_generic_types_687472_1
+
+thread 'local_generic_value_functions_preserve_borrowed_slices' (687473) panicked at tests/compiler_generic_types_execution.rs:15:5:
+assertion `left == right` failed: local borrowed descriptor: Output { status: ExitStatus(unix_wait_status(139)), stdout: "", stderr: "" }
+  left: None
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+kept temp artifact /tmp/generic_types_local_borrowed_descriptor_687472_0.lani
+FAILED
+
+failures:
+
+failures:
+    local_generic_value_functions_preserve_borrowed_slices
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 1.14s
+
+error: test failed, to rerun pass `--test compiler_generic_types_execution`

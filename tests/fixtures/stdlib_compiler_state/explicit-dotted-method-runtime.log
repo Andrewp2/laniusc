@@ -1,0 +1,17 @@
+
+running 3 tests
+test explicit_dotted_arguments_execute_compounds_constants_and_symbolic_scopes ... 
+thread 'explicit_dotted_arguments_execute_compounds_constants_and_symbolic_scopes' (93177) panicked at tests/compiler_generic_types_execution.rs:141:29:
+explicit dotted method compositions: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0027", title: "call resolution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0027", message: "call resolution failed", primary_label: Some(DiagnosticLabel { path: "/tmp/generic_types_explicit_dotted_method_compositions_93176_2.lani", line: 20, column: 19, length: 8, byte_start: Some(746), byte_end: Some(754), source_line: Some("    let chained = receiver.keep<Boxed<i32>>(Boxed { value: 23 }).keep<[bool; 2]>([false, true]);"), message: "explicit callable generic arguments have no checked binding" }), help: None, notes: ["this callable must resolve to a declaration with an ordered generic parameter header"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test explicit_dotted_arguments_execute_imported_method_headers ... ok
+test explicit_dotted_arguments_reject_conflicts_and_wrong_headers ... ok
+
+failures:
+
+failures:
+    explicit_dotted_arguments_execute_compounds_constants_and_symbolic_scopes
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 241 filtered out; finished in 3.07s
+

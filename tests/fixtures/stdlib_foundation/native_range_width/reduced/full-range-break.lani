@@ -1,0 +1,10 @@
+fn main() -> i32 {
+    let early: i32 = 0;
+    for value in .. {
+        early += 1;
+        if (value == 2) { break; }
+        if (early > 3) { return 1; }
+    }
+    if (early != 3) { return 2; }
+    return 0;
+}

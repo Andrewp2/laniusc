@@ -1,0 +1,16 @@
+{
+  "args": [
+    "/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/target/stdlib-perf/build/release/deps/type_checker_modules-2fa27f7cc330361d",
+    "--nocapture",
+    "--test-threads=1",
+    "semantic_interface_retains_inherent_method_predicates_with_exact_owner_scope",
+    "semantic_interface_checks_method_body_bounds_in_exact_lexical_scopes",
+    "semantic_interface_checks_inherited_impl_prerequisites_at_method_calls",
+    "semantic_interface_checks_method_prerequisites_in_distinct_lexical_domains"
+  ],
+  "exit_code": 124,
+  "seconds": 85.3059612299985,
+  "binary_sha256": "c49c400779c8beb6958084e5afe358c23857804cdbe1e13dff0cd0e3ebdf6412",
+  "sources_unchanged": true,
+  "shader_artifacts_unchanged": true
+}

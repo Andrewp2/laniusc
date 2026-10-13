@@ -1,0 +1,16 @@
+
+running 1 test
+test enum_layouts_include_unconstructed_compound_variants ... GPU type-check detail: Gpu(compiler pass type_check.type_instances.member_results reads imported_layout_groups before it is initialized)
+
+thread 'enum_layouts_include_unconstructed_compound_variants' (323815) panicked at tests/compiler_generic_types_execution.rs:141:29:
+local unconstructed enum layouts: compile: Diagnostic(Diagnostic { schema_version: 4, schema_name: "laniusc.diagnostics.rendered-json", registry_schema_version: 32, severity: Error, code: "LNC0047", title: "type-check execution failed", category: "type checking", primary_label_policy: Required, explain_command: "laniusc diagnostics explain LNC0047", message: "type-check execution failed", primary_label: Some(DiagnosticLabel { path: "<source pack file 0>", line: 1, column: 1, length: 1, byte_start: Some(0), byte_end: Some(1), source_line: Some("// Source-level standard I/O declarations."), message: "type checker failed before it could report a language error" }), help: None, notes: ["source file count: 1", "try reducing the source pack; if this happens on a small package, report a compiler bug"] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    enum_layouts_include_unconstructed_compound_variants
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 286 filtered out; finished in 1.37s
+

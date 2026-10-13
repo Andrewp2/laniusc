@@ -1,0 +1,19 @@
+
+running 14 tests
+test compiler::gpu_compiler::source_pack_executor::tests::library_interface_descriptor_points_at_concrete_semantic_interface_bytes ... ok
+test compiler::semantic_interface::dependency_batch::tests::dependency_batch_distinguishes_units_of_one_library ... ok
+test compiler::semantic_interface::dependency_batch::tests::dependency_batch_is_library_ordered_and_rebases_only_flat_storage ... ok
+test compiler::semantic_interface::dependency_batch::tests::dependency_batch_keeps_constant_array_lengths_with_their_declarations ... ok
+test compiler::semantic_interface::dependency_batch::tests::dependency_batch_rejects_self_and_duplicate_units ... ok
+test compiler::semantic_interface::tests::associated_method_receiver_type_roundtrips_and_must_name_its_owner ... ok
+test compiler::semantic_interface::tests::semantic_interface_binary_roundtrip_preserves_canonical_typed_graph ... ok
+test compiler::semantic_interface::tests::semantic_interface_constants_cannot_be_value_roots_or_elements ... ok
+test compiler::semantic_interface::tests::semantic_interface_generic_order_is_independent_of_binding_slots ... ok
+test compiler::semantic_interface::tests::semantic_interface_nominal_constant_payloads_are_canonical ... ok
+test compiler::semantic_interface::tests::semantic_interface_nominal_constants_roundtrip_and_rebase_by_role ... ok
+test compiler::semantic_interface::tests::semantic_interface_nominal_types_carry_library_identity_and_generic_edges ... ok
+test compiler::semantic_interface::tests::semantic_interface_rejects_hash_only_or_out_of_range_identity_records ... ok
+test compiler::semantic_interface::tests::semantic_interface_rejects_trailing_or_truncated_binary_payloads ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 616 filtered out; finished in 0.00s
+

@@ -1,0 +1,12 @@
+[
+  {
+    "case": "slots",
+    "exit": 101,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-slots.log"
+  },
+  {
+    "case": "no-coloring",
+    "exit": 0,
+    "log": "tests/fixtures/stdlib_compiler_state/method-result-contract/enum-no-coloring.log"
+  }
+]

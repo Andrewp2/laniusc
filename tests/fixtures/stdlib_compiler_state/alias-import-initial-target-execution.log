@@ -1,0 +1,10 @@
+
+running 5 tests
+test imported_generic_aliases_substitute_array_targets ... ok
+test imported_generic_aliases_substitute_identity_targets ... ok
+test imported_generic_aliases_substitute_reordered_record_targets ... ok
+test imported_generic_aliases_substitute_slice_targets ... ok
+test imported_transparent_aliases_preserve_scalar_values ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 304 filtered out; finished in 19.47s
+

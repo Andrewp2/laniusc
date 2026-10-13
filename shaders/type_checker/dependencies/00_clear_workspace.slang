@@ -23,19 +23,14 @@ RWStructuredBuffer<uint> dependency_visible_total;
 RWStructuredBuffer<uint> dependency_visible_owner_module;
 RWStructuredBuffer<uint> dependency_visible_decl;
 RWStructuredBuffer<uint> dependency_visible_lookup;
-RWStructuredBuffer<uint> dependency_resolved_type_decl;
-RWStructuredBuffer<uint> dependency_resolved_value_decl;
 RWStructuredBuffer<uint> resolved_dependency_library_id;
 RWStructuredBuffer<uint> resolved_dependency_unit_id;
 RWStructuredBuffer<uint> resolved_dependency_local_index;
+RWStructuredBuffer<uint> resolved_dependency_value_library_id;
+RWStructuredBuffer<uint> resolved_dependency_value_unit_id;
+RWStructuredBuffer<uint> resolved_dependency_value_local_index;
+RWStructuredBuffer<uint> resolved_dependency_trait_header;
 RWStructuredBuffer<uint> resolved_dependency_value_metadata;
-RWStructuredBuffer<uint> dependency_call_compare_scan_input;
-RWStructuredBuffer<uint> dependency_call_compare_prefix;
-RWStructuredBuffer<uint> dependency_call_compare_total;
-RWStructuredBuffer<uint> dependency_call_compare_expected_type;
-RWStructuredBuffer<uint> dependency_call_compare_actual_instance;
-RWStructuredBuffer<uint> dependency_call_compare_callee;
-RWStructuredBuffer<uint> dependency_call_compare_error_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -60,28 +55,31 @@ void main(uint3 dtid: SV_DispatchThreadID)
         dependency_visible_lookup[i] = INVALID;
     if (i < gParams.path_capacity)
     {
-        dependency_resolved_type_decl[i] = INVALID;
-        dependency_resolved_value_decl[i] = INVALID;
         resolved_dependency_library_id[i] = INVALID;
         resolved_dependency_unit_id[i] = INVALID;
         resolved_dependency_local_index[i] = INVALID;
-        uint value_base = i * 3u;
+        resolved_dependency_value_library_id[i] = INVALID;
+        resolved_dependency_value_unit_id[i] = INVALID;
+        resolved_dependency_value_local_index[i] = INVALID;
+        uint header_words; uint header_stride;
+        resolved_dependency_trait_header.GetDimensions(header_words, header_stride);
+        if (i < header_words / 4u)
+        {
+            resolved_dependency_trait_header[i * 4u] = INVALID;
+            for (uint word = 1u; word < 4u; word++)
+                resolved_dependency_trait_header[i * 4u + word] = 0u;
+        }
+        uint value_base = i * 4u;
         resolved_dependency_value_metadata[value_base] = INVALID;
         resolved_dependency_value_metadata[value_base + 1u] = 0u;
         resolved_dependency_value_metadata[value_base + 2u] = 0u;
+        resolved_dependency_value_metadata[value_base + 3u] = 0u;
     }
     if (i < gParams.hir_capacity)
     {
-        dependency_call_compare_scan_input[i] = 0u;
-        dependency_call_compare_prefix[i] = 0u;
-        dependency_call_compare_expected_type[i] = INVALID;
-        dependency_call_compare_actual_instance[i] = INVALID;
-        dependency_call_compare_callee[i] = INVALID;
-        dependency_call_compare_error_token[i] = INVALID;
     }
     if (i == 0u)
     {
         dependency_visible_total[0u] = 0u;
-        dependency_call_compare_total[0u] = 0u;
     }
 }

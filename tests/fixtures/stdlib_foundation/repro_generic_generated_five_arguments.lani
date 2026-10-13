@@ -1,0 +1,14 @@
+module app::main;
+
+struct Five<A, B, C, D, E> { first: A, second: B, third: C, fourth: D, fifth: E }
+struct Holder<T> { child: Five<i32, bool, char, u32, T>, sentinel: i32 }
+fn last<A, B, C, D, E>(value: Five<A, B, C, D, E>) -> E { return value.fifth; }
+
+fn main() -> i32 {
+    let value: Holder<i32> = Holder {
+        child: Five { first: 11, second: false, third: 'Ω', fourth: 4294967295, fifth: -7 },
+        sentinel: 99,
+    };
+    if (last(value.child) != -7 || value.child.first != 11 || value.sentinel != 99) { return 1; }
+    return 0;
+}

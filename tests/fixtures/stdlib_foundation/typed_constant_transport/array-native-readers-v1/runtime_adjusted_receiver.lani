@@ -1,0 +1,11 @@
+impl<const N:u64> [i32;N] {
+    fn first(self)->i32 { return self[0]; }
+}
+fn relay<const N:u64>(values:&[i32;N])->i32 { return values.first(); }
+fn main()->i32 {
+    let values:[i32;2] = [41,43];
+    let borrowed:&[i32;2] = &values;
+    if (borrowed.first() != 41) { return 1; }
+    if (relay(borrowed) != 41) { return 2; }
+    return 0;
+}
