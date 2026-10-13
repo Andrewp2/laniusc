@@ -1108,7 +1108,7 @@ theorem fullNaturalSuccess (minimum enabled : Bool) :
           · have bounds := fullWrites storage; omega
           · have bounds := fullOutputBelow output; omega)
       (by
-        intro body selected address inside changed
+        intro body selected address inside _room changed
         have range := fullSourceRange inside
         rw [fullCatalogFootprint] at changed
         simp only [fullOriginalRegion] at range

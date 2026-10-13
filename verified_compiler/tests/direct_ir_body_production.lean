@@ -61,7 +61,7 @@ def NaturalFunctionCorrect : Prop :=
       ¬(natural.returns.workspaceWrites workspace storage address ∨
         (permissions body selected).writesFrom 0 address))
     (sourceCatalogApart : ∀ body, natural.Selects body → ∀ address,
-      sourceBytes input native address →
+      sourceBytes input native address → next.toInt < catalog.capacity.toInt →
       ¬(catalog.model next previous (streamRequest output (Int32.ofNat input.signature.id)
         input.signature.result body (fun index => if index = 0 then .Invalid else input.signature.result))).footprint address),
   ∃ body, ∃ selected : natural.Selects body,
@@ -312,7 +312,8 @@ theorem actualNaturalFunction : NaturalFunctionCorrect := by
         exact Heap.allocatedBytes_oldRead loaded
       have readonly := sourceBytes.readonly native invariant.below reads
         (caller.heap.allocationAddress_ge (by decide : 0 < 8)) stream.2.2.2
-        (apart body selected) (signatureApart body selected) post (sourceCatalogApart body selected)
+        (apart body selected) (signatureApart body selected) post (fun address inside changed =>
+          sourceCatalogApart body selected address inside changed.1.1.2.2.2.2.1 changed.2)
       have signature : input.signature.Read after :=
         (native.afterBytes (fun pointer offset byte lower upper loaded =>
           readonly pointer offset byte (Or.inr ⟨lower, upper⟩) loaded)).read

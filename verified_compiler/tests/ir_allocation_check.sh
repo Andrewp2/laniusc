@@ -18,6 +18,7 @@ lake --no-cache build +Lanius.Extraction.CurrentSourceClosure \
   +Lanius.Memory.Allocation +Lanius.Memory.Footprint +Lanius.Memory.BufferPrefix +Lanius.Semantics.HostCall +Lanius.Semantics.RawStore \
   +Lanius.Semantics.RawSlice +Lanius.Semantics.CallProof +Lanius.Semantics.PureProof \
   +Lanius.Extraction.OutputPacking.Read +Lanius.Extraction.OutputLoop \
+  +Lanius.Semantics.LocalEnvProof +Lanius.Semantics.Representation \
   +Lanius.Core.Bindings +Lanius.Semantics.SourceValue +Lanius.Semantics.TotalWhile +Lanius.World.FileRead
 lake env lean -R .. --run ../verified_compiler/tests/direct_source_boundary.lean
 mapfile -t sources < <(lake env lean -R .. --run ../verified_compiler/tests/print_extractor_sources.lean)
@@ -41,23 +42,26 @@ base_path="$(lake env printenv LEAN_PATH)"
 /usr/bin/time -f 'fresh actual copying loop: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
   -o "$out/verified_compiler/tests/direct_byte_io_read_loop.olean" \
   "$root/verified_compiler/tests/direct_byte_io_read_loop.lean"
+/usr/bin/time -f 'fresh actual read initializer: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
+  -o "$out/verified_compiler/tests/direct_byte_io_read_interface_read.olean" \
+  "$root/verified_compiler/tests/direct_byte_io_read_interface_read.lean"
 /usr/bin/time -f 'fresh actual read-count branches: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
-  -o "$out/verified_compiler/tests/direct_byte_io_read_step.olean" \
-  "$root/verified_compiler/tests/direct_byte_io_read_step.lean"
-/usr/bin/time -f 'fresh actual outer read body: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
-  -o "$out/verified_compiler/tests/direct_byte_io_read_outer.olean" \
-  "$root/verified_compiler/tests/direct_byte_io_read_outer.lean"
+  -o "$out/verified_compiler/tests/direct_byte_io_read_interface_step.olean" \
+  "$root/verified_compiler/tests/direct_byte_io_read_interface_step.lean"
+/usr/bin/time -f 'fresh actual total read declaration: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
+  -o "$out/verified_compiler/tests/direct_byte_io_read_interface_total.olean" \
+  "$root/verified_compiler/tests/direct_byte_io_read_interface_total.lean"
+/usr/bin/time -f 'fresh actual complete read function/call: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
+  -o "$out/verified_compiler/tests/direct_byte_io_read_interface_function.olean" \
+  "$root/verified_compiler/tests/direct_byte_io_read_interface_function.lean"
+/usr/bin/time -f 'fresh actual fitting-file refinement: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
+  -o "$out/verified_compiler/tests/direct_byte_io_read_interface_file.olean" \
+  "$root/verified_compiler/tests/direct_byte_io_read_interface_file.lean"
+/usr/bin/time -f 'fresh reader public contract reports: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
+  -o "$out/verified_compiler/tests/direct_byte_io_read_interface.olean" \
+  "$root/verified_compiler/tests/direct_byte_io_read_interface.lean"
 /usr/bin/time -f 'fresh actual outer read regressions: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
   "$root/verified_compiler/tests/direct_byte_io_read_outer_tests.lean"
-/usr/bin/time -f 'fresh actual total read declaration: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
-  -o "$out/verified_compiler/tests/direct_byte_io_read_total.olean" \
-  "$root/verified_compiler/tests/direct_byte_io_read_total.lean"
-/usr/bin/time -f 'fresh actual complete read function/call: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
-  -o "$out/verified_compiler/tests/direct_byte_io_read_function.olean" \
-  "$root/verified_compiler/tests/direct_byte_io_read_function.lean"
-/usr/bin/time -f 'fresh actual fitting-file refinement: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
-  -o "$out/verified_compiler/tests/direct_byte_io_read_file.olean" \
-  "$root/verified_compiler/tests/direct_byte_io_read_file.lean"
 /usr/bin/time -f 'fresh actual total read regressions: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \
   "$root/verified_compiler/tests/direct_byte_io_read_total_tests.lean"
 /usr/bin/time -f 'fresh actual copying-loop regressions: %e s' env LEAN_PATH="$out:$base_path" "$lean" -R "$root" \

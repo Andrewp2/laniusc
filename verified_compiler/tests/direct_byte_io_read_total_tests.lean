@@ -1,8 +1,8 @@
-import verified_compiler.tests.direct_byte_io_read_file
+import verified_compiler.tests.direct_byte_io_read_interface_file
 
 namespace ByteIoReadTotalTests
 
-open Lanius Lanius.Core Lanius.Memory Lanius.Semantics ByteIoReadProof
+open Lanius Lanius.Core Lanius.Memory Lanius.Semantics ByteIoReadProof ByteIoReadInterface
 
 private def reader := Extracted.«verified::byte_io».Functions.«read_file».core
 private def bytes : List UInt8 := [0, 127, 128, 255, 255, 1, 128, 255, 42, 9, 17, 33]
@@ -49,17 +49,22 @@ private theorem unique (capacity : Nat) : HeapBlockBasesUnique (outputHeap capac
   simp only [outputHeap, List.mem_cons, List.not_mem_nil, or_false] at firstMember secondMember
   rcases firstMember with rfl | rfl <;> rcases secondMember with rfl | rfl <;> simp_all <;> omega
 
-private def context : Total.Context (caller 8 6 0 3 true true) := {
+private def context : Context (storage 8 6 0 true true) (caller 8 6 0 3 true true) := {
   address := 64, words := 16384, destination := 16, capacity := 8, handle := 3
-  formed := by simp [State.CellsWellFormed, caller, storage, State.bindLocal, State.bindCell]
+  env := (((((LocalEnv.start (by simp [State.CellsWellFormed, storage])).bind
+    (reader.argumentId 0) (.signed .i32 3)).bind
+    (reader.argumentId 1) (.rawSlice (.scalar (.signed .i32)) 16 8)).bind
+    (reader.argumentId 2) (.signed .i32 8)).bind
+    (reader.argumentId 3) (.rawSlice (.scalar (.signed .i32)) 64 16384)).bind
+    (reader.bindingId 0) (.pointer 64)
   capacityFits := by decide, scratchSize := by decide, separate := by decide
-  packed := rfl, output := rfl, handleFound := rfl, pointerFound := rfl, capacityFound := rfl }
+  heap := rfl, world := rfl, views := rfl }
 
 -- The input domain is inhabited by real allocated scratch and output storage.
 -- These proofs reuse allocation laws, not reduction of 65,536 literal bytes.
 theorem completesActualDeclaration : ∃ value after,
     RunsStmt extractedProgram (caller 8 6 0 3 true true) (reader.bindingStatement 1) (.returned (some value)) after ∧
-    Total.Result context.toConfiguration (caller 8 6 0 3 true true) value after ∧
+    Result context.toConfiguration (storage 8 6 0 true true) value after ∧
       after.local? (reader.argumentId 2) = some (.signed .i32 8) := by
   have inputRoom : (caller 8 6 0 3 true true).heap.Readable 64 65536 :=
     Heap.allocatedI32_readable (words := 16384) (budget := none) (below 8)
@@ -67,10 +72,10 @@ theorem completesActualDeclaration : ∃ value after,
     Heap.allocatedI32_oldReadable (heap := outputHeap 8) (words := 16384) (budget := none)
       (Heap.Readable.of_loadBytes
         (show (outputHeap 8).loadBytes 16 32 = .ok (List.flatten (List.replicate 8 (i32Bytes 11))) from rfl))
-  obtain ⟨value, after, run, result⟩ := Total.declaration context inputRoom outputRoom
+  obtain ⟨value, after, run, finalEnv, result, _⟩ := declarationTracked context .unobserved True.intro
+    ⟨inputRoom, outputRoom⟩
     (Heap.allocatedI32_unique (words := 16384) (budget := none) (below 8) (unique 8)) rfl
-  have cells := result.choose_spec.2.1
-  exact ⟨value, after, run, result, cells.localFound run.choose_spec.2 _ _ (by rfl)⟩
+  exact ⟨value, after, run, result, finalEnv.read (by rfl)⟩
 
 #print axioms completesActualDeclaration
 
@@ -87,9 +92,9 @@ private def input : Function.Input (publicCaller 8 6 0 true true) := {
 
 theorem completesActualCall : ∃ value after,
     RunsExpr extractedProgram (publicCaller 8 6 0 true true) (.call reader.id (input.values.map Expr.value)) value after ∧
-    Total.Result input.toConfiguration (publicCaller 8 6 0 true true) value after ∧
+    Result input.toConfiguration (publicCaller 8 6 0 true true) value after ∧
     after.local? (reader.bindingId 1) = some (.signed .i32 777) := by
-  obtain ⟨value, after, run, result⟩ := Function.call input
+  obtain ⟨value, after, run, result, _, _⟩ := Function.call input
   exact ⟨value, after, run, result, result.choose_spec.2.1.localFound run.choose_spec.2 _ _ rfl⟩
 
 #print axioms completesActualCall
@@ -102,7 +107,8 @@ theorem retainsOutsideStorage : ∃ value after,
     after.heap.loadByte 0 0 = (publicCaller 8 6 0 true true).heap.loadByte 0 0 ∧
     after.heap.nextAddress = (publicCaller 8 6 0 true true).heap.nextAddress ∧
     after.heap.remaining = (publicCaller 8 6 0 true true).heap.remaining := by
-  obtain ⟨value, after, run, _, _, _, _, _, _, _, _, writes⟩ := Function.call input
+  obtain ⟨value, after, run, result, _, _⟩ := Function.call input
+  obtain ⟨_, _, _, _, _, _, _, _, writes⟩ := result
   refine ⟨value, after, run, writes.loadBytes (by rfl) ?_, writes.outside 0 0 ?_, writes.frontier, writes.budget⟩
   · intro index bound
     change ¬((64 ≤ 52 + index ∧ 52 + index < 64 + 16384 * 4) ∨
@@ -126,7 +132,7 @@ theorem readsActualFile : ∃ after,
     after.world.handle? 3 = some { sourceHandle with offset := 6 } ∧
     after.world.calls = [.read, .read] := by
   have cursor : World.FileCursor (publicCaller 8 6 0 true true).world input.handle sourceFile sourceHandle := ⟨rfl, rfl, rfl⟩
-  obtain ⟨value, after, run, _, final⟩ := File.call input (by decide) cursor (by decide)
+  obtain ⟨value, after, run, _, final, _, _⟩ := File.call input (by decide) cursor (by decide)
   have returned : value = .signed .i32 6 := Option.some.inj (Completion.returned.inj final.1)
   subst value
   exact ⟨after, run, final.loaded (by decide),
@@ -228,5 +234,7 @@ private def check (capacity length offset : Nat) (handle : Int) (readable presen
             after.locals == before.locals && (cellValues after).take before.cells.length == cellValues before do
           throw (IO.userError "early rejection touched caller stores")
     | _ => throw (IO.userError "early rejection failed") : IO Unit)
+
+#eval IO.println "proof-interface reader total runtime: PASS"
 
 end ByteIoReadTotalTests

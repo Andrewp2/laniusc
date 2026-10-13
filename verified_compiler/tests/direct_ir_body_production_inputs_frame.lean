@@ -50,7 +50,8 @@ theorem sourceBytes.readonly {caller produced : State} {allocated final : Heap}
     (apart : InputApart input allowed)
     (signature : ∀ address, native.base ≤ address → address < native.base + 72 → ¬allowed address)
     (post : IRCatalogAppendProof.Post model produced answer final world views)
-    (catalog : ∀ address, sourceBytes input native address → ¬model.footprint address) :
+    (catalog : ∀ address, sourceBytes input native address →
+      ¬(model.Success produced.heap ∧ model.footprint address)) :
     ∀ pointer offset byte, sourceBytes input native (pointer + offset) →
       caller.heap.loadByte pointer offset = .ok byte → final.loadByte pointer offset = .ok byte := by
   intro pointer offset byte inside loaded
@@ -65,7 +66,7 @@ theorem sourceBytes.readonly {caller produced : State} {allocated final : Heap}
   have retained : produced.heap.loadByte pointer offset = .ok byte := by
     rw [write.outside _ _ (fun changed => changed.elim nonmutable nonfresh)]
     exact reads _ _ _ loaded
-  exact post.outside pointer offset byte retained (fun changed => catalog _ inside changed.2)
+  exact post.outside pointer offset byte retained (catalog _ inside)
 
 /-- The original reached topology survives the real workspace/output union
     footprint. No whole-heap read preservation or new syntax data is assumed. -/

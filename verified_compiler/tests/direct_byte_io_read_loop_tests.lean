@@ -1,4 +1,4 @@
-import verified_compiler.tests.direct_byte_io_read_step
+import verified_compiler.tests.direct_byte_io_read_interface_step
 
 namespace ByteIoReadLoopTests
 
@@ -44,16 +44,26 @@ theorem copiesTwoWords : ∃ after,
 -- This instantiates the actual initializer and total update too; the count
 -- temporary is removed when restoring the enclosing scope, not the heap effect.
 theorem commitsChunk : ∃ after,
-    RunsStmt extractedProgram (prepared 1 6) ByteIoReadProof.ReadStep.continuation .next after ∧
+    RunsStmt extractedProgram (prepared 1 6) ByteIoReadInterface.ReadStep.continuation .next after ∧
     (restoreLocals (caller.bindLocal (reader.bindingId 1) (.signed .i32 1)) after).local? (reader.bindingId 1) =
       some (.signed .i32 7) ∧ after.local? (reader.bindingId 6) = none ∧
     after.heap.loadBytes 4 8 = .ok packed := by
   have formed : caller.CellsWellFormed := by simp [State.CellsWellFormed, caller, State.bindLocal, State.bindCell]
-  obtain ⟨after, execution, counted, written, _, _⟩ := ByteIoReadProof.ReadStep.copy input 8
-    (CountedLocal.start formed (reader.bindingId 1) 1) formed
-    (FreshCellFrame.bindLocal _ (reader.bindingId 5) (.signed .i32 6)) (by rfl) (by rfl) (by rfl)
-    (by decide) (by decide)
-  exact ⟨after, execution, counted.counter, by
+  let env := ((LocalEnv.start formed).bind (reader.bindingId 1) (.signed .i32 1)).bind
+    (reader.bindingId 5) (.signed .i32 6)
+  obtain ⟨after, chunk, finalEnv, written, _, _⟩ :=
+    ByteIoReadInterface.Step.chunk input env rfl rfl
+  have request : (prepared 1 6).local? (reader.bindingId 2) = some (.signed .i32 8) := rfl
+  have remaining : (prepared 1 6).local? (reader.bindingId 3) = some (.signed .i32 7) := rfl
+  have execution : RunsStmt extractedProgram (prepared 1 6)
+      ByteIoReadInterface.ReadStep.continuation .next after := by
+    core_facts [input]
+    core_stmt
+  have counted := finalEnv.restoreScope
+    (values := LocalValues.empty.set (reader.bindingId 1) (.signed .i32 1))
+    (before := caller.bindLocal (reader.bindingId 1) (.signed .i32 1))
+    (id := reader.bindingId 5) (value := .signed .i32 6) rfl chunk.choose_spec.2
+  exact ⟨after, execution, counted.read (by rfl), by
     have absent : after.cellId? (reader.bindingId 6) = none := by
       simpa only [State.cellId?, execution.choose_spec.2] using
         (show (prepared 1 6).cellId? (reader.bindingId 6) = none from rfl)
@@ -72,7 +82,7 @@ private def readReady : State :=
     |>.bindLocal (reader.argumentId 0) (.signed .i32 3)
     |>.bindLocal (reader.bindingId 0) (.pointer 4)
     |>.bindLocal (reader.bindingId 4) (.unsigned .usize 8)
-private def readInput : ByteIoReadProof.ReadStep.Input readReady := {
+private def readInput : ByteIoReadInterface.ReadStep.Input readReady := {
   address := 4, words := 2, destination := 16, capacity := 8, total := 1, handle := 3, request := 8
   capacityFits := by decide, totalBound := by decide, requestFits := by decide, requestRoom := by decide
   separate := by decide, inputRoom := Heap.Readable.of_loadBytes rfl, outputRoom := Heap.Readable.of_loadBytes rfl
@@ -92,19 +102,27 @@ theorem readsAndCommits : ∃ after,
     after.world.handle? 3 = some { id := 3, path := [1], readable := true, offset := 6 } := by
   have formed : fileCaller.CellsWellFormed := by
     simp [State.CellsWellFormed, fileCaller, caller, State.bindLocal, State.bindCell]
-  have setup : FreshCellFrame (fileCaller.bindLocal (reader.bindingId 1) (.signed .i32 1)) readReady :=
-    ((FreshCellFrame.bindLocal _ (reader.argumentId 0) (.signed .i32 3)).trans
-      (FreshCellFrame.bindLocal _ (reader.bindingId 0) (.pointer 4))).trans
-        (FreshCellFrame.bindLocal _ (reader.bindingId 4) (.unsigned .usize 8))
-  obtain ⟨completion, after, execution, value, heap, world, read, worldEq, _, outcome⟩ :=
-    ByteIoReadProof.ReadStep.run readInput (CountedLocal.start formed (reader.bindingId 1) 1)
-      formed setup rfl
+  let env := ((((LocalEnv.start formed).bind (reader.bindingId 1) (.signed .i32 1)).bind
+    (reader.argumentId 0) (.signed .i32 3)).bind (reader.bindingId 0) (.pointer 4)).bind
+      (reader.bindingId 4) (.unsigned .usize 8)
+  obtain ⟨next, completion, after, execution, finalEnv, value, heap, world, read, worldEq, _, outcome⟩ :=
+    ByteIoReadInterface.Step.run readInput env rfl rfl rfl
   have reading : World.readFileBytes (World.record readReady.world .read) readInput.handle readInput.request =
       some (packed.take 6, { World.record fileCaller.world .read with
         fileHandles := [{ id := 3, path := [1], readable := true, offset := 6 }] }) := rfl
   have nonempty : packed.take 6 ≠ [] := by decide
-  simp only [ByteIoReadProof.ReadStep.Input.specification, reading, if_neg nonempty] at outcome
-  refine ⟨after, outcome.1 ▸ execution, outcome.2.1.counter, ?_, outcome.2.2.loadBytes, ?_, ?_⟩
+  have bounded : readInput.total + (packed.take 6).length ≤ readInput.capacity := by decide
+  simp only [ByteIoReadInterface.ReadStep.Input.specification, reading, if_neg nonempty, if_pos bounded] at outcome
+  have nextEq : next = 7 := outcome.1
+  have counted : after.local? (reader.bindingId 1) = some (.signed .i32 7) := by
+    exact finalEnv.read (by rw [nextEq]; rfl)
+  have same : after.cellId? (reader.bindingId 1) =
+      (fileCaller.bindLocal (reader.bindingId 1) (.signed .i32 1)).cellId? (reader.bindingId 1) := by
+    simpa only [State.cellId?, execution.choose_spec.2] using
+      (show readReady.cellId? (reader.bindingId 1) =
+        (fileCaller.bindLocal (reader.bindingId 1) (.signed .i32 1)).cellId? (reader.bindingId 1) from rfl)
+  refine ⟨after, outcome.2.1 ▸ execution, restoreLocals_local?_of_cellId_eq same counted,
+    ?_, outcome.2.2.loadBytes, ?_, ?_⟩
   · have absent : after.cellId? (reader.bindingId 5) = none := by
       simpa only [State.cellId?, execution.choose_spec.2] using
         (show readReady.cellId? (reader.bindingId 5) = none from rfl)
@@ -193,7 +211,7 @@ private def checkRead (total length offset : Nat) (handle : Int) (readable prese
       |>.bindLocal (reader.bindingId 5) (.signed .i32 count)
       |>.bindLocal (reader.bindingId 2) (.signed .i32 request)
       |>.bindLocal (reader.bindingId 3) (.signed .i32 remaining)
-    match execStmt 100 extractedProgram before ByteIoReadProof.ReadStep.continuation with
+    match execStmt 100 extractedProgram before ByteIoReadInterface.ReadStep.continuation with
     | .done (.returned (some (.signed .i32 actual))) after =>
         let unchanged := match after.heap.loadBytes 4 8, after.heap.loadBytes 16 32,
             after.local? (reader.bindingId 1) with
@@ -203,5 +221,7 @@ private def checkRead (total length offset : Nat) (handle : Int) (readable prese
         unless actual == result && unchanged do
           throw (IO.userError "read count rejection changed output, source or total")
     | _ => throw (IO.userError "read count guard did not return its specified result") : IO Unit)
+
+#eval IO.println "proof-interface reader loop runtime: PASS"
 
 end ByteIoReadLoopTests

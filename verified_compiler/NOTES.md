@@ -4,6 +4,52 @@ Record agreed design decisions here so later work does not repeat rejected
 approaches. Keep the intended architecture distinct from what is implemented
 and proved today.
 
+## Current proof-interface checkpoint (October 9)
+
+The [independent review](../tmp/proof-interface-20261008/candidate-review-1/receipt.md)
+accepts the two-consumer experiment. Exact installation is complete and the
+[canonical-destination check](../tmp/proof-interface-20261008/integration/result.md)
+passes in **67.87 seconds**. This is not a proof of the whole compiler.
+
+- `IRBodyOwnedProof.actualOwnedLowering` proves finite actual Core1180 execution
+  from independent original inputs. It composes the proved natural-body producer,
+  preserves selected order and body meaning on success, protects existing bodies
+  and inputs on failure, and derives success from sufficient resources. Selected
+  functions remain zero-parameter Void/Bool/decimal/negative/MIN return bodies.
+- `ByteIoReadInterface.Function.call` and `File.call` cover the complete modeled
+  reader: termination, early rejection, errors/overflow, caller and memory frames,
+  and exact fitting-file bytes, tail, cursor and read count. The World model is
+  not an OS or x86 syscall proof.
+- Both use the same local-environment/scope interface and compositional heap
+  representations over the existing `RunsExpr`/`RunsStmt` semantics. Local values
+  do not imply referent preservation; byte contents, allocation shape and ownership
+  have separate proved frame obligations. There is no second interpreter, typing
+  tree or new trust axiom.
+
+Independent checking took **68.99 seconds** for all 49 current/unaccepted bodies,
+including affected fixtures, with 187 exact unchanged accepted foundations cached.
+All transitive axioms are standard; input authentication and descendant cleanup
+passed. The installed check used the same fresh/cached selection and dependency
+graph, with every active fresh source at its canonical path. Five superseded
+reader proof modules were removed and their tests migrated without compatibility
+shims. This is neither a per-program extraction time nor a fresh-all speedup.
+
+The size result is modest. The matched complete reader family falls from 1,132 to
+1,004 lines, but its full non-Core dependency closure grows by 1,009 lines after
+the shared interface is charged. The new lowerer family is 2,858 lines for its
+60-line source; the reader is 1,004 for 38. Shared interface code adds 1,079 lines.
+The complete two-consumer closure retains 44,482 non-Core lines, including existing
+specialized support. [Full accounting](../tmp/proof-interface-20261008/check/candidate-handoff/accounting.md)
+separates support, fixtures and generated data. This does **not** meet the near-5x
+target or justify scaling this proof pattern unchanged.
+
+The source-to-SelfCore bridge, general body lowering, actual typechecker/extractor
+correctness and x86 executable correspondence remain open. The next callers are
+`body_units.lower_units_owned` and `program.lower_bodies`; their general domains
+are not discharged by this restricted natural-body result. Further work must
+close a named end-to-end dependency and reduce the remaining producer/native
+representation adapters, not merely add another short wrapper over them.
+
 ## Current autonomous proof-pipeline policy (October 8)
 
 [Proof-pipeline Decision authority](/home/andrew-peterson/.codex/skills/proof-pipeline/SKILL.md)
@@ -38,6 +84,9 @@ worker termination headroom are not additional approval gates. Do not add new
 line, fixture, tooling or retry quotas. Authors/checkers handle ordinary diagnostics
 directly; root handles connected progress, interfaces and repeated bottlenecks.
 Missing acceptance evidence prevents integration, not further in-scope work.
+
+The dated checkpoints below retain earlier evidence and assignments. Their
+pending-work descriptions are historical, not current task instructions.
 
 ## Natural-body producer: independently accepted and integrated (October 8)
 

@@ -1,4 +1,4 @@
-import verified_compiler.tests.direct_byte_io_read_outer
+import verified_compiler.tests.direct_byte_io_read_loop
 
 namespace ByteIoReadOuterTests
 
@@ -82,5 +82,7 @@ private def check (capacity total length offset : Nat) (handle : Int) (readable 
     for length in [0, 1, 6] do check capacity 0 length 0 3 true true
     check capacity (capacity - 1) 6 0 3 true true
     check capacity capacity 1 0 3 true true : IO Unit)
+
+#eval IO.println "proof-interface reader outer runtime: PASS"
 
 end ByteIoReadOuterTests

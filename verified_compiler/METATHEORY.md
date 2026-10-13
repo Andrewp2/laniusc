@@ -39,11 +39,11 @@ Paths below are relative to `formal/Lanius/` unless stated otherwise.
 | 11 | Cell/heap coherence | Partial: flush/refresh, arbitrary nested first exposure, canonical pointer/read composition and exact stdout cell framing. Actual no-registration scratch allocation/construction now derives the descriptor premises for modeled reads. Allocation with live registrations, general construction/mutation, raw/temporary lifetime/ownership/regions and the global invariant remain open. |
 | 12 | Whole-evaluator preservation | Open: mutual expression/statement/function result and state typing, with legitimate host contracts and map extension. |
 | 13 | Safety/error classification | Partial: typed live views and readable storage rule out synchronization traps. The complete actual reader body/call derives total execution, error-or-bounded-count returns, valid buffers, caller preservation and an outside-both-buffers heap frame on the raw/no-registration domain. Readable capacity-fitting files now have an exact whole-call bytes/tail/count/cursor/trace theorem. Negative capacity and null scratch have separate early-rejection proofs without readable-buffer assumptions. Exact whole-file overflow/I/O-error observations and general bounds/division/resource/host classification remain open. |
-| 14 | Compact contracts | Partial: assignment derives liveness from execution; actual allocator/constructor proofs reuse shared call/store and scoped-memory rules. The reader separates geometry, persistent parameters and mutable state. Safety and content theorems share the same tracked loop, initializer, derived pointer context, body entry and actual parameter/call bridge. Its public input has no internal bindings, execution or assumed output. Program-specific proof size remains above target. |
+| 14 | Compact contracts | Partial: the independently accepted `LocalEnv`/`EnvStmt` interface replaces fresh-cell and lexical-scope bookkeeping in both actual lower_owned and the complete reader. `HeapFrame`/`Rep` distinguish byte contents, read-shape and ownership with proved locality. Public inputs contain no assumed execution or output. Actual algorithm and legacy native-representation adapters remain substantial; the near-5x size target is not met. See the October 9 checkpoint below. |
 | 15 | Sound composition | Partial: pure/effect/call/match/sequence rules; consolidate remaining control flow, traps and exits when consumers require them. |
 | 16 | Separation/ownership/frame rules | Partial: `Memory/`, `NativeReadFrame.lean`, `ScopedEffect.lean` and `Typing/Projection/Frame.lean` cover heap frames and independently updated aggregate branches. Native refresh consumes the nested frame law. The actual whole reader preserves every read outside the union of scratch/output ranges, including an allocated gap between them, together with allocation metadata. Permissions are not the convex hull and do not impose new language alias restrictions. Establish compositional ownership assertions and full lifetime/heap-operation composition. |
 | 17 | Loops/recursion | Partial: `TotalWhile.lean`, structural compiler inference induction and actual reader termination. Native `kind`/`child`/`definitely_returns` now have accepted total-execution contracts on independent physical statement trees, including discharged recursion, exact results, rejection and caller frames. The reader's tracked loop composes fitting-file contents, tail, cursor and read count through the actual call; EOF/errors/overflow still terminate. Native lowering/builder provenance, exact reader overflow/error refinements and other compiler contracts remain open. |
-| 18 | Data-structure contracts | Partial: independently accepted and integrated catalog allocation/copy/build/store/public-append and actual initializer contracts derive contents, snapshots, frames, termination, rejection and sufficient-resource success from original inputs. The actual natural-body producer1179 now also has independent ACCEPT and exact80-source installation: 124 fresh bodies/17 roots checked independently in100.56s and against canonical destinations in100.70s, with standard axioms, authenticated inputs/outputs and clean process shutdown. Original Void/Bool/decimal/negative/MIN syntax derives SAME source/Core/native meaning, actual production/inference/emission/insertion, failure effects and resource-sufficient success; both annotation modes are covered without unused backing premises. No spare-row decoding is required. Next is actual lower_owned1180 ordered-row composition, preserving earlier insertions and ALL future original inputs/signatures. General functions, source/extractor/typechecker correspondence and other compiler structures remain open. |
+| 18 | Data-structure contracts | Partial: independently accepted catalog allocation/copy/build/store/append and initializer contracts derive contents, frames, termination, rejection and sufficient-resource success. The accepted natural-body producer1179 connects original Void/Bool/decimal/negative/MIN syntax to Core/native meaning in both annotation modes. The October 9 accepted actual lower_owned1180 theorem now composes it over ordered selected rows, retaining earlier insertions and protected original inputs/signatures; safe failure and resource-sufficient success are proved. Unit/program callers, general functions, source/extractor/typechecker correspondence and other structures remain open. |
 | 19 | Invariant automation | Partial: `core_formed` propagates proved allocation facts; `core_lookup` shares checked table lookup facts across branches; `core_local` handles closed multiple-binding exclusions, and `core_scalar` reuses unsigned-cast laws. Syntax-aware binding selection and supplied-frame priority now close the actual constructor failure/normal-stage consumer without inferring binding data from cell predicates: binding reductions fell from 348,889 to 21, and the stage checked in 3.14s. These shared rules and their opaque-state regressions are accepted and installed with construction. They do not establish general preservation automation, which remains open. |
 | 20 | Actual typechecker soundness | Open: the proof-producing `Typing/Check.lean` is a model checker; general correctness of the Lanius implementation remains distinct. |
 | 21 | Resolution/linking | Partial: `Compiler/` contains model checks and boundaries; prove the actual implementation and discharge callers' premises. |
@@ -95,6 +95,34 @@ audit and cleanup; seconds remain the target. All other proof gates are unchange
 General extraction, preservation,
 x86 simulation and end-to-end correctness must remain open here until proved.
 
+## October 9: shared proof interface and complete restricted caller
+
+Independent [ACCEPT](../tmp/proof-interface-20261008/candidate-review-1/receipt.md)
+covers `IRBodyOwnedProof.actualOwnedLowering` over actual Core1180, plus the
+replacement complete reader contracts `ByteIoReadInterface.Function.call` and
+`File.call`. Both use the same local-environment/scope and heap-representation
+interface over the existing Core execution relation. The lowerer composes the
+proved natural-body producer rather than assuming its result. Independent inputs,
+finite execution, success, safe failure and caller-required frames are retained.
+
+The new reader family replaces the old `ByteIoReadProof.ReadStep`, `Outer`,
+`Total`, `Function` and `File` modules; raw-read and inner-copy foundations remain.
+Older sections below document their historical names and checks, not additional
+current proof paths. Exact installation is complete; the same canonical-only
+49-body destination check passes in 67.87s with matching hashes and clean shutdown.
+
+Fresh independent checking took 68.99s for 49 current/unaccepted bodies, with 187
+exact accepted foundations cached, standard axioms and complete process cleanup.
+Reader-specific code falls from 1,132 to 1,004 physical lines; new shared code adds
+1,079. The lowerer-specific family is 2,858 lines. The complete non-Core pair
+closure is 44,482 lines. This is useful composition, not a 5x-size result or a
+comparative whole-check speedup. See [current notes](NOTES.md) and
+[full costs](../tmp/proof-interface-20261008/check/candidate-handoff/accounting.md).
+
+The admitted Core still needs its source/extractor correspondence proof. General
+compiler bodies, the unit/program callers, x86 and the executable trust boundary
+remain open. Do not count this restricted result as whole-compiler correctness.
+
 ## October 5: native return-analysis execution
 
 `verified_compiler/tests/direct_ir_returns.lean` proves the actual current
@@ -140,7 +168,7 @@ remain charged to the actual validator trial. Its complete positive/negative
 contract and builder consumers, and the general preservation/extraction/x86
 obligations, are still open. No new evaluator, loop framework or trust was added.
 
-## October 5: exact fitting-file observations through the actual call
+## October 5: exact fitting-file observations through the actual call (previous implementation)
 
 `ByteIoReadProof.File.call` proves the complete actual call's expanded i32-byte
 contents, untouched output tail, returned count, file cursor and exact read
@@ -354,7 +382,7 @@ sequence, was additionally checked. Evidence: `binary/OuterIteration.lean/.olean
 `OuterIterationSource.lean` and `outer-iteration-*.log` under
 `target/verified-compiler`. No compiler source or emission format changed.
 
-## October 4: actual host-read/count declaration
+## October 4: actual host-read/count declaration (previous implementation)
 
 `ByteIoReadProof.ReadStep.run` derives total execution of the actual count
 declaration, including its host read, all guards, copy/update and lexical scope.

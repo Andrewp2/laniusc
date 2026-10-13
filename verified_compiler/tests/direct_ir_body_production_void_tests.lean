@@ -44,7 +44,7 @@ private def sourceBlocks : List Lanius.Memory.Block := [
   { base := 3072, size := 72, alignment := 8, bytes := List.replicate 48 165 ++ token },
   { base := 4096, size := 144, alignment := 8, bytes := List.replicate 72 165 ++ signatureBytes }]
 
-private def inputs : Inputs := {
+def inputs : Inputs := {
   owner := 0
   source := .rawSlice (.scalar (.signed .i32)) 256 10
   sourceLength := 6
@@ -89,19 +89,19 @@ private def workspace : Workspace := {
   codes := .unit, depths := .unit, types := .unit, aliasScratch := .unit, aliasCapacity := 0
   typeOutput := .unit, events := .unit, catalog := .unit }
 
-private def catalog : IRCatalogConstructionProof.Catalog := { memory := 4608, capacity := 2 }
-private def previous : IRCatalogAppendProof.PreviousRow := {
+def catalog : IRCatalogConstructionProof.Catalog := { memory := 4608, capacity := 2 }
+def previous : IRCatalogAppendProof.PreviousRow := {
   id := 40, parameters := 0, result := .Void, tree := IRBuilderProof.emptyTree }
 private def previousBytes : List UInt8 :=
   word 40 ++ tag (referenceValue .Void) ++ List.replicate 8 165 ++ word 0 ++ List.replicate 64 0
 private def catalogBytes := word 1 ++ List.replicate 96 165 ++ previousBytes
-private def funded : State := { original with
+def funded : State := { original with
   heap := {
     blocks := original.heap.blocks ++ sourceBlocks ++ [
       { base := catalog.memory, size := catalog.bytes, alignment := 8, bytes := catalogBytes }]
     nextAddress := 5120, remaining := some 92 }
   world := { standardOutput := [88], standardError := [89] } }
-private def fundedWorkspace (enabled : Bool) : Workspace := {
+def fundedWorkspace (enabled : Bool) : Workspace := {
   workspace with events := (input enabled).value, catalog := catalog.value }
 
 private theorem fundedUnique : HeapBlockBasesUnique funded.heap := by
@@ -196,7 +196,7 @@ elab "original_record " offsets:term ", " widths:term ", " count:num " => " leaf
   evalTactic (← `(tactic| next => original_fields $count => first | decide | omega))
   evalTactic (← `(tactic| original_fields $count => $leaf:tactic))
 
-private def nativeSignature : NativeSignature inputs.signature funded.heap := {
+def nativeSignature : NativeSignature inputs.signature funded.heap := {
   base := 4168
   location := by original_location 9
   snapshot := by original_record [0, 8, 16, 24, 32, 48, 56, 64], [8, 8, 8, 8, 16, 8, 8, 8], 8 => original_primitive }
@@ -270,7 +270,7 @@ private def topology : TerminalTopology inputs funded.heap 0 := {
     snapshot := by original_record [0, 8, 16], [8, 8, 8], 3 => original_primitive }
   returnKeyword := rfl, distinct := by decide }
 
-private def output (enabled : Bool) : Context funded := {
+def output (enabled : Bool) : Context funded := {
   input enabled with
   eventRoom := Heap.Readable.of_loadBytes (show funded.heap.loadBytes 56 40 = .ok eventBytes from rfl)
   typeRoom := by
@@ -279,7 +279,7 @@ private def output (enabled : Bool) : Context funded := {
     simp only [input, yes, ↓reduceIte]
     exact Heap.Readable.of_loadBytes (show funded.heap.loadBytes 112 16 = .ok typeBytes from rfl) }
 
-private theorem catalogInvariant : IRCatalogConstructionProof.Invariant catalog 1 (fun _ => previous) funded := {
+theorem catalogInvariant : IRCatalogConstructionProof.Invariant catalog 1 (fun _ => previous) funded := {
   supported := ⟨by decide, by decide⟩, bounds := ⟨by decide, by decide⟩
   count := (originalWord (fuel := 63) (size := 4) 1 (by decide) (by decide) (by decide) rfl).read
   backing := by
@@ -326,7 +326,7 @@ private theorem originalSourceWord (number : Int) (lower : -(2 ^ 31) ≤ number)
   simpa only [represented] using readRawSliceIndex_i32Bytes extractedProgram funded
     (word := BitVec.ofInt 32 number) inside (by simpa only [represented] using loaded)
 
-private def natural : NaturalBody inputs funded 0 := {
+def natural : NaturalBody inputs funded 0 := {
   topology := topology
   keyword := {
     toNativeToken := topology.returnToken
@@ -371,7 +371,7 @@ private theorem succeeds (enabled : Bool) : (model enabled).Success localsHeap :
       by change (Extracted.«ir::body_tree».Types.«NodeKind».«StatementNode» : IRShapeProof.Kind) ≠ .InvalidNode; decide,
       1, rfl, IRChildrenProof.ChildChain.nil⟩
 
-private def permissions (enabled : Bool) : OutputPermissions (output enabled) ReturnBody.void.count := {
+def permissions (enabled : Bool) : OutputPermissions (output enabled) ReturnBody.void.count := {
   bound := by change (1 : Nat) ≤ 2; decide
   typeBound := fun yes => by change enabled = true at yes; subst enabled; decide
   eventBases := fun _ => (output enabled).eventBase
@@ -388,7 +388,7 @@ private def permissions (enabled : Bool) : OutputPermissions (output enabled) Re
   typeRoom := fun yes _ _ => (output enabled).typeRoom yes
   planes := fun yes _ _ _ _ => (output enabled).separate yes }
 
-private theorem outputBelow (written : (permissions enabled).writesFrom 0 address) : address < 128 := by
+theorem outputBelow (written : (permissions enabled).writesFrom 0 address) : address < 128 := by
   rcases written with ⟨index, _, _, event | ⟨yes, annotation⟩⟩
   · change 56 ≤ address ∧ address < 96 at event
     omega
@@ -446,7 +446,7 @@ private theorem originalApart : InputApart inputs (fun address => ¬(256 ≤ add
     dsimp only [Lanius.Address] at lower upper
     exact outside ⟨by omega, by omega⟩ }
 
-private theorem originalRange (inside : sourceBytes inputs nativeSignature address) :
+theorem originalRange (inside : sourceBytes inputs nativeSignature address) :
     256 ≤ address ∧ address < 4240 := by
   apply Classical.byContradiction
   intro outside
@@ -524,7 +524,7 @@ theorem fundedSuccess (enabled : Bool) : ∃ after,
       change 4608 ≤ address at lower
       omega)
     (by
-      intro body selected address inside changed
+      intro body selected address inside _room changed
       change body = .void at selected
       subst body
       have range := originalRange inside

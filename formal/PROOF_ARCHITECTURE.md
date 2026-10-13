@@ -1,7 +1,9 @@
 # Verified compiler proof architecture
 
-Status: active, incomplete. This file describes the current proof boundary,
-not the history of the proof reset.
+Status: active, incomplete. The target is correctness of the actual Lanius-written
+tools, not repeated authentication of each normal output. The implementation-proof
+spine below is current; the retained certificate-checker sections describe a
+bootstrap/checking boundary, not a second competing target architecture.
 
 **Design update, 2026-09-27:** Read the
 [compiler working notes](../verified_compiler/NOTES.md) before extending the
@@ -10,10 +12,36 @@ typechecker and extractor rather than reconstructing typing proofs for each
 emitted program. The notes distinguish that target from the unfinished proofs
 and the per-program checking mechanisms described below.
 
-## What the proof is meant to establish
+## Current implementation-proof spine (October 9)
 
-The public result must be one connected implication about an actual compiler
-certificate:
+The eventual claim connects the actual compiler's successful output to the
+input program's meaning, through emitted x86 and the specified runtime. Its
+extraction mode must likewise preserve the input meaning in emitted Lean. These
+are universal tool-correctness results, not correctness assumptions about a
+particular successful compiler run. Prove the tools once; normal extraction must
+not reconstruct a second typing tree or rerun source/IR checking in Lean.
+
+| Required connection | Evidence and remaining obligation |
+| --- | --- |
+| Actual Lanius tool source → the Core implementation being proved | The designated SelfCore program and its identity are available. General correctness of that extraction/representation is still open; a source hash does not prove it. |
+| Source input → resolved, typed compiler IR | Frontend/model laws and restricted implementation proofs exist. Actual frontend, resolution and typechecker correspondence must discharge this connection for the agreed supported domain. |
+| IR lowering → native body catalog | The natural-body producer1179 and ordered lower_owned1180 caller now have independent accepted proofs from original inputs. Selected functions are still zero-parameter Void/Bool/decimal/negative/MIN returns. General body forms and the callers `lower_units_owned` and `lower_bodies` remain open. |
+| Shared IR → emitted Lean meaning | Direct emission without a second typing tree is implemented; the general actual extractor theorem and its output-import boundary remain open. |
+| Shared IR → x86 execution | Machine/encoding laws and checked fragments exist. Universal correctness of actual emission, calling conventions, memory representation and runtime composition remain open. |
+| Proved tools → the extractor executable and usable trusted output | Bootstrap provenance, executable correspondence and the explicit output trust mechanism must be composed with the preceding results. They cannot be inferred from self-extraction or component acceptance. |
+
+Each new proof must close a named connection or a premise of its next actual
+caller. Supporting safety or termination results remain useful, but do not close
+an end-to-end connection by themselves. See [current implementation evidence and
+costs](../verified_compiler/NOTES.md) and the [metatheory ledger](../verified_compiler/METATHEORY.md).
+The two-consumer interface experiment is independently accepted and installed;
+it does not meet the near-5x proof-size target or justify scaling the same adapters
+unchanged. The source-to-Core, extractor and x86 gaps remain explicit.
+
+## Retained certificate-checker theorem (bootstrap boundary)
+
+The certificate path has a separate connected implication about an actual
+compiler certificate:
 
 ```text
 the certificate checker accepts exact source files and exact ELF bytes
@@ -35,7 +63,7 @@ the Lean checker reconstructs or authenticates each one. A native build of
 that checker is a performance optimization; the kernel-checked soundness
 theorem remains the trust boundary.
 
-## Current connected spine
+## Retained checker's connected spine
 
 `Compiler.EndToEndCheck.check` currently composes these concrete boundaries:
 
