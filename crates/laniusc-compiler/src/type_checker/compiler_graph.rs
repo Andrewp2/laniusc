@@ -470,36 +470,6 @@ pub(super) const SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS: &str =
     "type_check.semantic_artifact.local_const_references";
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
-/// Hash-consed canonical type identities (docs/canonical-type-ids.md).
-pub(super) const CANONICAL_CLEAR_PASS: &str = "type_check.canonical.clear";
-pub(super) const CANONICAL_VALIDATE_PASS: &str = "type_check.canonical.validate";
-pub(super) const CANONICAL_VALIDATE_KERNEL: &str = "type_checker/canonical/90_validate";
-/// Interning rounds. A type nested deeper than this keeps the previous
-/// graph identity (its canonical row stays pending).
-pub(super) const CANONICAL_ROUNDS: usize = 8;
-pub(super) const CANONICAL_ROUND_KERNELS: [&str; 4] = [
-    "type_checker/canonical/01_propose",
-    "type_checker/canonical/02_claim",
-    "type_checker/canonical/03_publish",
-    "type_checker/canonical/04_resolve",
-];
-pub(super) const CANONICAL_ROUND_PASSES: [[&str; 4]; CANONICAL_ROUNDS] = [
-    ["type_check.canonical.r0.propose", "type_check.canonical.r0.claim", "type_check.canonical.r0.publish", "type_check.canonical.r0.resolve"],
-    ["type_check.canonical.r1.propose", "type_check.canonical.r1.claim", "type_check.canonical.r1.publish", "type_check.canonical.r1.resolve"],
-    ["type_check.canonical.r2.propose", "type_check.canonical.r2.claim", "type_check.canonical.r2.publish", "type_check.canonical.r2.resolve"],
-    ["type_check.canonical.r3.propose", "type_check.canonical.r3.claim", "type_check.canonical.r3.publish", "type_check.canonical.r3.resolve"],
-    ["type_check.canonical.r4.propose", "type_check.canonical.r4.claim", "type_check.canonical.r4.publish", "type_check.canonical.r4.resolve"],
-    ["type_check.canonical.r5.propose", "type_check.canonical.r5.claim", "type_check.canonical.r5.publish", "type_check.canonical.r5.resolve"],
-    ["type_check.canonical.r6.propose", "type_check.canonical.r6.claim", "type_check.canonical.r6.publish", "type_check.canonical.r6.resolve"],
-    ["type_check.canonical.r7.propose", "type_check.canonical.r7.claim", "type_check.canonical.r7.publish", "type_check.canonical.r7.resolve"],
-];
-
-/// Whether the debug validation of canonical identities against the
-/// previous graph equality is compiled and recorded.
-pub(super) fn canonical_validation_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_VALIDATE_CANONICAL", false)
-}
-
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
 pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
 
@@ -3097,29 +3067,6 @@ fn build_graph(
         _decl_parent_type_decl as "decl_parent_type_decl" in Declarations => record_rows * 4;
         _decl_token_start as "decl_token_start" in Declarations => record_rows * 4;
         _decl_token_end as "decl_token_end" in Declarations => record_rows * 4;
-    });
-    // Canonical type identities: candidates are instance rows then constant
-    // atoms; records add the preseeded scalar IDs.
-    let canonical_candidates = type_rows + constant_rows;
-    let canonical_records = canonical_candidates + 64;
-    let canonical_arg_bytes = token_rows * 16
-        + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
-    graph_resources!(graph, Workspace {
-        _canonical_row as "canonical_row" in Types => type_rows * 4;
-        _canonical_atom as "canonical_atom" in Types => constant_rows * 4;
-        _canonical_cand_state as "canonical_cand_state" in Types => canonical_candidates * 4;
-        _canonical_cand_key_a as "canonical_cand_key_a" in Types => canonical_candidates * 16;
-        _canonical_cand_key_b as "canonical_cand_key_b" in Types => canonical_candidates * 16;
-        _canonical_cand_args as "canonical_cand_args" in Types => canonical_arg_bytes;
-        _canonical_cand_slot as "canonical_cand_slot" in Types => canonical_candidates * 4;
-        _canonical_cand_winner as "canonical_cand_winner" in Types => canonical_candidates * 4;
-        _canonical_ct_key_a as "canonical_ct_key_a" in Types => canonical_records * 16;
-        _canonical_ct_key_b as "canonical_ct_key_b" in Types => canonical_records * 16;
-        _canonical_ct_args as "canonical_ct_args" in Types => canonical_arg_bytes;
-        _canonical_ct_rep as "canonical_ct_rep" in Types => canonical_records * 4;
-        _canonical_ct_slot as "canonical_ct_slot" in Types => (canonical_records * 2).next_power_of_two() * 4;
-        _canonical_counts as "canonical_counts" in Types => 16;
-        _canonical_validation as "canonical_validation" in Types => 36 * 4;
     });
     let import_visible_rows = if source_file_capacity <= 1 {
         1
@@ -6316,50 +6263,17 @@ fn build_graph(
         "type_checker/semantic/artifact/00c_generic_call_results",
         &[],
     )?;
-    graph.add_kernel_initializer_by_name(
-        CANONICAL_CLEAR_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Types,
+    super::canonical_passes::register_canonical_passes(
+        &mut graph,
         kernels,
-        "type_checker/canonical/00_clear",
+        super::canonical_passes::CanonicalCapacity {
+            token_rows,
+            hir_rows,
+            type_rows,
+            constant_rows,
+            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
+        },
     )?;
-    for round in CANONICAL_ROUND_PASSES {
-        for (name, kernel) in round.into_iter().zip(CANONICAL_ROUND_KERNELS) {
-            graph.add_kernel_pass_by_name(
-                name,
-                CompilerPhase::TypeCheck,
-                ResourceDomain::Types,
-                kernels,
-                kernel,
-                &[],
-            )?;
-        }
-    }
-    // Candidate keys, slots and winners are written by a candidate before
-    // any later dispatch reads them. The first claim never meets a published
-    // record, so it cannot read record arguments.
-    graph.mark_pass_bindings_initialize(
-        CANONICAL_ROUND_PASSES[0][0],
-        &["canonical_cand_key_a", "canonical_cand_key_b", "canonical_cand_args"],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        CANONICAL_ROUND_PASSES[0][1],
-        &["canonical_cand_slot", "canonical_cand_winner"],
-    )?;
-    graph.mark_pass_bindings_first_invocation_skips_read(
-        CANONICAL_ROUND_PASSES[0][1],
-        &["canonical_ct_args"],
-    )?;
-    if canonical_validation_enabled() {
-        graph.add_kernel_pass_by_name(
-            CANONICAL_VALIDATE_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::Types,
-            kernels,
-            CANONICAL_VALIDATE_KERNEL,
-            &[],
-        )?;
-    }
     graph.add_kernel_pass_by_name(
         "type_check.semantic_artifact.generic_native_words",
         CompilerPhase::TypeCheck,

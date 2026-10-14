@@ -176,6 +176,8 @@ impl GpuTypeChecker {
             retain_callable_owners: 0,
             trait_obligation_mode: 0,
             authorized_replay_callable: u32::MAX,
+            canonical_library_id: canonical_passes::CANONICAL_NO_LIBRARY,
+            canonical_unit_id: canonical_passes::CANONICAL_NO_LIBRARY,
         };
         queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
 

@@ -207,7 +207,7 @@ Measurements:
 
 | | runs | failures | intern dispatch |
 |---|---|---|---|
-| protocol (RTX 3070 laptop, NVIDIA 615.71) | 32 | 0 duplicates, 0 broken chains, 0 wrong facts, 0 unpublished | mean 9.9 ms, max 45 ms per 1M-lane run (submit to readback) |
+| protocol (RTX 3070 laptop, NVIDIA 615.71) | 1000 (32 debug, 968 release) | 0 duplicates, 0 broken chains, 0 wrong facts, 0 unpublished | release: mean 4.9 ms, max 11.0 ms per 1M-lane run; debug: mean 9.9 ms, max 45 ms (submit to readback) |
 | incoherent control | 16 | 8/16 runs with duplicates (up to 1.6M) or broken chains (up to 1.75M) | — |
 
 **Decision:** the single-dispatch protocol is used, and the level-round
@@ -218,3 +218,184 @@ interns every ready candidate in one dispatch.
 To re-run the gate, use
 `LANIUS_CANONICAL_STRESS_RUNS=N LANIUS_CANONICAL_STRESS_BASE=K cargo test -p laniusc-compiler --lib canonical_intern`
 through the heavy lock.
+
+### Records
+
+Records live in four tables:
+
+| table | contents |
+|---|---|
+| `ct_head[id]` | `uint4(kind \| arity << 8 \| type_slots << 16, w0, w1, w2)` |
+| `ct_meta[id]` | `uint4(arg_base, height \| flags << 16, shash.lo, shash.hi)` |
+| `ct_extra[id]` | `uint2`: per-kind facts (see below) |
+| `ct_args[arg_base + i]` | canonical child references |
+
+The record kinds:
+
+| kind | words | args | extra |
+|---|---|---|---|
+| `CT_KIND_SCALAR` 1 | scalar code | — | — (IDs 1..17 are preseeded; no record) |
+| `CT_KIND_NAMED` 2 | stable declaration (library, unit, local) | ordered operands, type and constant | (local declaration token or INVALID, constant-operand mask) |
+| `CT_KIND_ARRAY` 3 | — | (element, length count class) | — |
+| `CT_KIND_SLICE` 4 / `CT_KIND_REF` 5 | — | (element) | — |
+| `CC_KIND_VALUE` 8 | (scalar, lo, hi) | — | (count or INVALID, count class) |
+| `CC_KIND_CAST` 9 | target scalar | (symbolic child) | (INVALID, count class of child) |
+| `CC_KIND_COUNT` 10 | count | — | (count, NONE) |
+| `CT_KIND_ENV` 16 | owner | type slots, then constant slots | — (reserved for P2 step 3) |
+
+A reference is one of three things:
+
+- a record ID in `[1, 2^30)`;
+- a parameter leaf:
+  - type parameters are `CT_PARAM_BIT | token`;
+  - constant parameters are `CT_PARAM_BIT | CT_CONST_PARAM_BIT | token`;
+- a sentinel: `CT_PENDING`, `CT_UNKNOWN` or `CT_NONE`, the three largest
+  values.
+
+Parameter leaves carry their declaration token, so `T` of two binders never
+collides.
+
+**Nominal identity.** A named type's key is its declaration triple.
+
+- Local declarations use `(job library, job unit, interface index)`, where
+  the interface index is
+  `interface_public_decl_index_by_local[decl_id_by_name_token[token]]`.
+  Declarations that are not exported use `CT_PRIVATE_LOCAL_BIT | local id`.
+- The job's (library, unit) arrives in `TypeCheckParams.canonical_library_id`
+  and `canonical_unit_id`. Jobs without a library use `0xfffffffe` for both.
+- A declaration reached locally and through an import therefore has one ID.
+  The bridge token in `ct_extra` comes from the local spelling in both cases,
+  so the stored facts do not depend on which lane published the record.
+
+**Constant identity is typed.**
+
+- `CC_VALUE(scalar, lo, hi)` is the typed identity. `3u32` and `3usize`
+  differ.
+- `cc_count_class(id)` is the count identity. It is a `CC_COUNT(n)` record
+  for any count-valid value, or the constant parameter itself. Array keys
+  store the count class of their length, so `[T; 3u32]` and `[T; 3usize]`
+  have one ID, as in the previous walkers.
+- **Projections:**
+  - a projection of a concrete count folds to `CC_VALUE` of the target
+    scalar, once every level fits;
+  - a symbolic projection becomes `CC_CAST(target; child)`, whose count class
+    is the child's.
+
+**Facts** are written at publish time in O(arity):
+
+- `ct_height` is 1 + the maximum child height. Parameters have height 0 and
+  scalars height 1. It is capped at 0xffff.
+- `ct_flags` holds `CTF_TYPE_PARAM` and `CTF_CONST_PARAM`. `ct_closed(id)`
+  means neither is set.
+- `ct_shash` is a 64-bit structural hash built from kinds, key words and
+  child hashes, never from IDs. It is deterministic across runs and jobs. It
+  is the only identity allowed to leave the GPU or decide an ordering, for
+  example symbol names, cache keys or sort keys.
+
+### Invariants
+
+1. **Uniqueness.** Two published records are never key-equal. Equal keys
+   always yield the same ID within one job, so identity is `==`.
+2. **Immutability.** A record is complete before its slot CAS, and it is
+   never written again. Only a lane's unpublished spare or its own
+   unpublished fixed record is ever rewritten.
+3. **Children first.** Children are canonical before their parent's key is
+   built. `ct_args` holds IDs or parameter leaves, never a sentinel.
+4. **IDs are job-local; `ct_shash` is not.** ID numbering depends on atomic
+   order. Nothing that leaves the GPU, or that orders output, may depend on
+   an ID.
+5. **Sentinels.**
+   - `CT_UNKNOWN` means the candidate has an unsupported shape (an
+     unsupported kind, more than 32 operands, an invalid parameter or a
+     capacity overflow).
+   - `CT_NONE` means there is nothing to intern (an empty row, or a
+     non-constant atom).
+   - `CT_PENDING` never survives the last round.
+
+### Rounds and termination
+
+A candidate is a checked instance row, a constant atom or a constant
+projection. A candidate is ready when all of its children have references.
+The candidate's own lane interns it, and no lane waits for another lane's
+result.
+
+- **`00_clear`** empties the slots and sets every candidate to `CT_PENDING`.
+- **`01_intern`** performs one round.
+  - Round 0 is a direct dispatch over all candidates: constants first, then
+    rows from the last.
+  - Rounds after that are indirect dispatches over the frontier list the
+    previous round produced.
+  - A candidate whose child is still pending appends itself to the next
+    frontier.
+- **`02_round_args`**, a single lane, closes a round:
+  - it swaps the frontier lists and writes the next round's dispatch
+    arguments;
+  - if a round resolved nothing (a cycle) or the round limit
+    `CT_MAX_ROUNDS = 64` is reached, the next round is *final*, and a final
+    round turns pending candidates into `CT_UNKNOWN`.
+- **The host records batches.** It records `CANONICAL_ROUNDS_PER_BATCH = 8`
+  rounds, then copies `ct_counts` to a host-visible buffer.
+  - It reads one done flag per batch: the pending count and the overflow bits.
+  - It records another batch only while candidates are pending, so the number
+    of rounds is the maximum candidate height (usually under 8, so there is
+    one readback per job).
+  - Empty indirect rounds dispatch zero workgroups.
+- The rounds run once per job, before `semantic_artifact.generic_native_words`
+  (the phase-0 site).
+
+### Capacities and overflow
+
+Each table has a fixed size:
+
+- **Records:** 32 + candidates + 2 × constant rows. That covers one fixed
+  record per candidate, plus at most one count class per constant candidate.
+- **Slots:** the next power of two at or above 2 × records.
+- **Arguments:** the checked argument storage, plus 2 words per row and 1
+  word per projection.
+
+So overflow means a broken invariant rather than a large input. It still sets
+a `CT_OVERFLOW_*` bit, and the host prints the counters. Consumers do not read
+IDs yet, so an overflowing candidate simply becomes `CT_UNKNOWN`. Before
+consumers rely on IDs (P3), overflow must become a job retry with doubled
+canonical capacities.
+
+### Validation
+
+Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
+`[canonical_validate]` line per job, using the counter names in
+`canonical_passes.rs`.
+
+- **`88_validate_table`** (1.2k instructions) checks uniqueness and facts
+  only. Per slot it checks for duplicate records, broken probe chains and
+  facts that differ when recomputed from the children. Per candidate it
+  counts pending, unknown and unpublished references.
+- **`89_crosscheck_buckets` and `90_validate`** compare against the previous
+  graph equality. Only `90_validate` imports `scoped_type_equality`, and it
+  calls `scoped_type_refs_equal` at one site (13.8k instructions fully
+  inlined; `01_intern` is 5.3k).
+  - **False merge:** a row whose ID is another row's record while
+    `scoped_type_refs_equal` says the rows differ. A top-level difference
+    between a declaration token and an imported triple is the intended
+    local/imported unification, and is counted as `normalized_merges`.
+  - **Missed merge:** two rows of one coarse bucket (kind, arity, declaration
+    spelling, type-operand IDs; constant operands are left out) that the old
+    walker accepts but that have different IDs.
+  - **Unknown rows:** rows whose candidate ended as `CT_UNKNOWN`.
+
+### API (frozen for P3–P5)
+
+The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
+not generic, and it imports `primitive_types` only.
+
+| group | functions |
+|---|---|
+| classify | `ct_is_resolved`, `ct_is_record`, `ct_is_stored`, `ct_is_param`, `ct_is_type_param`, `ct_is_const_param`, `ct_is_constant`, `ct_type_param(token)`, `ct_const_param(token)`, `ct_param_token` |
+| read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
+| facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
+| map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
+| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record` |
+| hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
+
+Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
+builder. They intern through `ct_intern_spare` with one lane-owned spare
+record, or through `ct_intern` with a record they own.
