@@ -41,6 +41,7 @@ bool feature_enabled(uint feature)
     return (semantic_feature_flags[0u] & feature) != 0u;
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(gParams.n_tokens, token_count[0u]);

@@ -48,6 +48,7 @@ static const uint TYPE_REF_INVALID = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
+[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0u], gParams.n_tokens);

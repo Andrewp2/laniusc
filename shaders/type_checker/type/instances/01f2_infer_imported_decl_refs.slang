@@ -29,6 +29,7 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }

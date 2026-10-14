@@ -68,6 +68,7 @@ static const uint TYPE_REF_ERROR = 4u;
 static const uint PREDICATE_STATUS_OK = 0u;
 static const uint MAX_METHOD_SIGNATURE_PARAMS = 65535u;
 
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 uint active_method_count() { return min(compact_method_count[0u], gParams.n_hir_nodes); }
 uint active_param_count() { return min(compact_param_count[0u], gParams.n_hir_nodes); }

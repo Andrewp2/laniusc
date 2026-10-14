@@ -96,8 +96,6 @@ fn main() -> Result<()> {
         let report_perf = env_truthy("LANIUS_SHADER_REPORT_PERF");
         let report_detailed_perf = env_truthy("LANIUS_SHADER_REPORT_DETAILED_PERF");
         let source_digest = shader_source_digest(&shader_root, &ep)?;
-        let noinline_min_instructions =
-            if noinline_harness_exempt(&artifact_key) { 0 } else { noinline_min_instructions };
         let compile_stamp = format!(
             "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nnoinline_min_instructions={}\nsource_digest={}\nextra={}\n",
             slangc.display(),
@@ -538,7 +536,12 @@ fn check_inlined_size_budget(
 }
 
 /// TEMPORARY test harness (see `spirv_size::mark_dont_inline`): zero, the
-/// default, leaves every call inlinable.
+/// default, leaves every call inlinable. Only kernels of at least
+/// `NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS` are marked; smaller ones compile
+/// fully inlined in under a minute, and marking them only exposes them to the
+/// driver's divergent out-of-line call hangs.
+const NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS: u64 = 100_000;
+
 fn shader_noinline_min_instructions() -> Result<u64> {
     match env::var("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS") {
         Err(env::VarError::NotPresent) => Ok(0),
@@ -552,13 +555,6 @@ fn shader_noinline_min_instructions() -> Result<u64> {
     }
 }
 
-/// Kernels the harness leaves fully inlined: out of line, their dispatches hang
-/// on NVIDIA depending on the input (01c fully inlined takes ~2 min to create
-/// once, then comes from the pipeline cache).
-fn noinline_harness_exempt(artifact_key: &str) -> bool {
-    matches!(artifact_key, "type_checker/semantic/artifact/01c_generic_native_words")
-}
-
 fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {
     let bytes = fs::read(spv_path)
         .with_context(|| format!("read shader artifact {}", spv_path.display()))?;
@@ -566,7 +562,11 @@ fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {
         .chunks_exact(4)
         .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
         .collect::<Vec<_>>();
-    let marked = spirv_size::mark_dont_inline(&mut words, min_instructions)
+    let marked = spirv_size::mark_dont_inline(
+        &mut words,
+        NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS,
+        min_instructions,
+    )
         .with_context(|| format!("mark DontInline helpers in {}", spv_path.display()))?;
     if marked == 0 {
         return Ok(());

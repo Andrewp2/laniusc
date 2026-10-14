@@ -60,6 +60,7 @@ public struct RangeSearchTreeFrame
     uint r;
 }
 
+[ForceInline]
 public RangeSearchTreeFrame range_search_tree_frame(uint node, uint l, uint r)
 {
     RangeSearchTreeFrame frame;

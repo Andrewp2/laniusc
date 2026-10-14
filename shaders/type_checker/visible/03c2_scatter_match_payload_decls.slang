@@ -39,7 +39,9 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+[ForceInline]
 uint active_token_count() { return min(token_count[0u], gParams.n_tokens); }
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 uint active_arm_count() { return min(compact_match_arm_count[0u], gParams.n_hir_nodes); }
 uint active_payload_count()

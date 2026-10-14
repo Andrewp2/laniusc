@@ -94,6 +94,7 @@ uint active_module_count()
     return max(1u, min(module_count_out[0], gParams.method_capacity));
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0], gParams.method_capacity);

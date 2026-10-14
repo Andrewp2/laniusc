@@ -44,9 +44,12 @@ static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 uint active_arm_count() { return min(compact_match_arm_count[0u], gParams.n_hir_nodes); }
+[ForceInline]
 bool valid_hir(uint node) { return node < active_hir_count(); }
+[ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 #include "../inference_expression_reference.slang"
 uint enum_variant_type_for_node(uint node)

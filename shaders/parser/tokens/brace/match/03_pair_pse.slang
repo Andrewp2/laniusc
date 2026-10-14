@@ -56,6 +56,7 @@ static const uint STATEMENT_CONTEXT_LET_RHS = 253u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 static const int INF = 2147483647;
 
+[ForceInline]
 uint active_token_count()
 {
     return min(lexer_token_count[0], gParams.n_tokens);
@@ -86,16 +87,19 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
 public struct BraceDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.n_tokens;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return brace_match_depth[row];

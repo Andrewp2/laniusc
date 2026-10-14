@@ -47,6 +47,7 @@ static const uint ERR_INVALID_ARRAY_LENGTH = 22u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+[ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 uint active_method_count() { return min(gParams.n_hir_nodes, compact_method_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }

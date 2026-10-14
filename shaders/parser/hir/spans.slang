@@ -67,6 +67,7 @@ uint path_leaf_end(uint path_node, uint n)
     return clamped_end_after_token(leaf_pos);
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0], gHir.token_capacity);
@@ -98,16 +99,19 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
 public struct BraceDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gHir.token_capacity;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return brace_match_depth[row];
