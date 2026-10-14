@@ -1,0 +1,2 @@
+struct View { items: [i32], len: i32 }
+fn main() -> i32 { let a: [i32; 2] = [1, 1]; let v: View = View { items: a, len: 2 }; v.items[0] = 41; return a[0] + v.items[1]; }

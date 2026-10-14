@@ -50,7 +50,7 @@ impl UniformBufferArena {
             let raw = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&label),
                 size: arena_bytes,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
                 mapped_at_creation: true,
             });
             self.arenas.push((
@@ -901,6 +901,21 @@ impl<T> Deref for LaniusBuffer<T> {
 }
 
 /// Create a UNIFORM buffer from a single ShaderType value (std140 layout in WGSL).
+/// Adds `COPY_SRC` while a debug dump or dispatch capture is requested, so
+/// bindings can be copied out; mappable staging buffers are left unchanged.
+pub(crate) fn with_debug_copy(usage: wgpu::BufferUsages) -> wgpu::BufferUsages {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let enabled = *ENABLED.get_or_init(|| {
+        std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_some()
+            || std::env::var_os("LANIUS_DEBUG_DUMP_BUFFERS").is_some()
+    });
+    if enabled && !usage.intersects(wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::MAP_WRITE) {
+        usage | wgpu::BufferUsages::COPY_SRC
+    } else {
+        usage
+    }
+}
+
 pub fn uniform_from_val<T>(device: &wgpu::Device, label: &str, value: &T) -> LaniusBuffer<T>
 where
     T: encase::ShaderType + encase::internal::WriteInto,
@@ -943,7 +958,7 @@ where
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
         mapped_at_creation: false,
     });
     queue.write_buffer(&raw, 0, bytes);
@@ -979,7 +994,7 @@ impl CapacityBufferCache {
             let raw = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
                 size: byte_size as u64,
-                usage,
+                usage: crate::gpu::buffers::with_debug_copy(usage),
                 mapped_at_creation: false,
             });
             buffers.insert(
@@ -1129,7 +1144,7 @@ where
         let raw = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: bytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
             mapped_at_creation: false,
         });
         queue.write_buffer(&raw, 0, bytes);
@@ -1230,7 +1245,7 @@ fn create_buffer_init_checked(
         return device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: 0,
-            usage,
+            usage: crate::gpu::buffers::with_debug_copy(usage),
             mapped_at_creation: false,
         });
     }
@@ -1244,7 +1259,7 @@ fn create_buffer_init_checked(
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: padded_size,
-        usage,
+        usage: crate::gpu::buffers::with_debug_copy(usage),
         mapped_at_creation: true,
     });
     let _ = device.poll(wgpu::PollType::Poll);
@@ -1303,9 +1318,9 @@ pub fn storage_ro_from_u32s_with_queue(
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_size as u64,
-        usage: wgpu::BufferUsages::STORAGE
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC,
+            | wgpu::BufferUsages::COPY_SRC),
         mapped_at_creation: false,
     });
     if !bytes.is_empty() {
@@ -1324,7 +1339,7 @@ pub fn readback_bytes(
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_size as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ),
         mapped_at_creation: false,
     });
     LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)
@@ -1369,9 +1384,9 @@ where
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: total as u64,
-        usage: wgpu::BufferUsages::STORAGE
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
+            | wgpu::BufferUsages::COPY_DST),
         mapped_at_creation: false,
     });
     let buffer = LaniusBuffer::new_labeled((raw, total as u64), count, label);
@@ -1390,9 +1405,9 @@ pub fn storage_rw_uninit_bytes(
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_size as u64,
-        usage: wgpu::BufferUsages::STORAGE
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
+            | wgpu::BufferUsages::COPY_DST),
         mapped_at_creation: false,
     });
     let buffer = LaniusBuffer::new_labeled((raw, byte_size as u64), count, label);

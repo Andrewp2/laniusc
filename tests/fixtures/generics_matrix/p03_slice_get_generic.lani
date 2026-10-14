@@ -1,0 +1,2 @@
+fn get<T>(values: [T], i: i32) -> T { return values[i]; }
+fn main() -> i32 { let a: [i32; 3] = [40, 1, 1]; return get(a, 0) + get(a, 1) + get(a, 2); }

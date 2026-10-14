@@ -1061,7 +1061,7 @@ impl CompilerGraphWorkspace {
                 let raw = device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some(&arena_label),
                     size: plan.bytes,
-                    usage: arena_usage,
+                    usage: crate::gpu::buffers::with_debug_copy(arena_usage),
                     mapped_at_creation: false,
                 });
                 let buffer: LaniusBuffer<u8> =
@@ -4941,7 +4941,7 @@ mod tests {
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("compiler_graph.physical_upstream_identity"),
             size: 256,
-            usage: wgpu::BufferUsages::STORAGE,
+            usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE),
             mapped_at_creation: false,
         });
         let views = [
@@ -5023,7 +5023,7 @@ mod tests {
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("compiler_graph.phase_reset_identity"),
             size: 256,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST),
             mapped_at_creation: false,
         });
         let first_import = TrackedBufferView::from_parts(&buffer, 0, 64, Some(41)).alias::<u8>(64);
@@ -5059,7 +5059,7 @@ mod tests {
         let upstream = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("compiler_graph.dead_phase_storage"),
             size: 256,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST),
             mapped_at_creation: false,
         });
         let upstream = TrackedBufferView::from_parts(&upstream, 0, 256, Some(71));

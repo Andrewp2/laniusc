@@ -1,0 +1,3 @@
+struct View<T> { items: [T], len: i32 }
+fn sum_view(v: View<i32>) -> i32 { let s: i32 = 0; let i: i32 = 0; while (i < v.len) { s += v.items[i]; i += 1; } return s; }
+fn main() -> i32 { let a: [i32; 3] = [40, 1, 1]; let v: View<i32> = View { items: a, len: 3 }; return sum_view(v); }

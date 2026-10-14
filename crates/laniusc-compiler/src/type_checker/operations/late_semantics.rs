@@ -102,6 +102,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) body_specialization: Vec<(u32, ComputeOperation)>,
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
+    pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
     pub(in crate::type_checker) generic_native_words: ComputeOperation,
     pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
@@ -343,6 +344,7 @@ impl SemanticProjectionOperations {
                 "type_check.semantic_artifact.generic_call_results",
                 "type_checker/semantic/artifact/00c_generic_call_results",
             )?,
+            canonical_types: CanonicalTypeOperations::new(device, graph, resources, passes)?,
             generic_native_words: ComputeOperation::direct(
                 device,
                 graph,
@@ -406,5 +408,82 @@ impl SemanticProjectionOperations {
                 "type_checker/semantic/artifact/00b_local_const_references",
             )?,
         })
+    }
+}
+
+/// Hash-consed canonical type identities (docs/canonical-type-ids.md).
+///
+/// One clear followed by a fixed number of propose/claim/publish/resolve
+/// rounds; each round interns the rows whose children already have IDs.
+pub(in crate::type_checker) struct CanonicalTypeOperations {
+    clear: ComputeOperation,
+    round: [ComputeOperation; 4],
+    later_rounds: Vec<[ComputeInvocation; 4]>,
+    validate: Option<ComputeOperation>,
+}
+
+impl CanonicalTypeOperations {
+    pub(in crate::type_checker) fn new(
+        device: &wgpu::Device,
+        graph: &compiler_graph::TypeCheckCompilerGraph,
+        resources: &ResourceMap<'_>,
+        passes: &TypeCheckPasses,
+    ) -> Result<Self> {
+        let words = |name| -> Result<u32> {
+            Ok(u32::try_from(typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4)?)
+        };
+        let candidates = words("canonical_cand_state")?;
+        let direct = |name, kernel, elements| {
+            ComputeOperation::direct(device, graph, resources, name, &passes.kernel(kernel), elements)
+        };
+        let clear = direct(
+            compiler_graph::CANONICAL_CLEAR_PASS,
+            "type_checker/canonical/00_clear",
+            words("canonical_ct_slot")?.max(words("canonical_ct_rep")?),
+        )?;
+        let [first, rest @ ..] = &compiler_graph::CANONICAL_ROUND_PASSES;
+        let mut round = Vec::with_capacity(4);
+        for (name, kernel) in first.iter().zip(compiler_graph::CANONICAL_ROUND_KERNELS) {
+            round.push(direct(name, kernel, candidates)?);
+        }
+        let round: [ComputeOperation; 4] =
+            round.try_into().map_err(|_| anyhow::anyhow!("canonical round has four passes"))?;
+        let later_rounds = rest
+            .iter()
+            .map(|names| -> Result<[ComputeInvocation; 4]> {
+                Ok([
+                    round[0].invocation(graph, names[0])?,
+                    round[1].invocation(graph, names[1])?,
+                    round[2].invocation(graph, names[2])?,
+                    round[3].invocation(graph, names[3])?,
+                ])
+            })
+            .collect::<Result<_>>()?;
+        let validate = if compiler_graph::canonical_validation_enabled() {
+            Some(direct(
+                compiler_graph::CANONICAL_VALIDATE_PASS,
+                compiler_graph::CANONICAL_VALIDATE_KERNEL,
+                words("canonical_row")?,
+            )?)
+        } else {
+            None
+        };
+        Ok(Self { clear, round, later_rounds, validate })
+    }
+
+    pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.clear.record(encoder)?;
+        for operation in &self.round {
+            operation.record(encoder)?;
+        }
+        for invocations in &self.later_rounds {
+            for (operation, invocation) in self.round.iter().zip(invocations) {
+                operation.record_invocation(encoder, invocation)?;
+            }
+        }
+        if let Some(validate) = &self.validate {
+            validate.record(encoder)?;
+        }
+        Ok(())
     }
 }

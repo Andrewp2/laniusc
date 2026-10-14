@@ -1,0 +1,4 @@
+struct Box<T> { value: T }
+struct Pair<A, B> { first: A, second: B }
+fn unbox<T>(b: Box<T>) -> T { return b.value; }
+fn main() -> i32 { let p: Pair<Box<i32>, Box<[i32; 2]>> = Pair { first: Box { value: 40 }, second: Box { value: [1, 1] } }; let arr: [i32; 2] = unbox(p.second); return unbox(p.first) + arr[0] + arr[1]; }

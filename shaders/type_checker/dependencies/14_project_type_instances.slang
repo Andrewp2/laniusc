@@ -61,6 +61,13 @@ RWStructuredBuffer<uint> call_explicit_arg_constant_kind;
 RWStructuredBuffer<uint> call_explicit_arg_constant_payload;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
+
+// Constant operands read checked type references through this kernel's binding.
+struct KernelTypeRefs : IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
+    uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
+}
 RWStructuredBuffer<uint> external_type_library_id;
 RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
@@ -166,7 +173,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint scalar = dependency_const_member_scalar(members + slot);
             uint constant_kind; uint constant_value;
-            if (scalar == 0u || !checked_explicit_constant_operand(argument.value, scalar,
+            if (scalar == 0u || !checked_explicit_constant_operand(KernelTypeRefs(), argument.value, scalar,
                 constant_kind, constant_value))
             { accepted = false; break; }
             constant_positions |= position;

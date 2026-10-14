@@ -3,6 +3,16 @@
 #include "method_candidates.slang"
 import dependency_return_layout;
 import type_checker.calls.explicit_dependency_binding;
+import type_checker.calls.explicit_constant_operand;
+
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
+// Constant operands read checked type references through this kernel's binding.
+struct KernelTypeRefs : IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
+    uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
+}
 
 StructuredBuffer<uint> declaration_field_count;
 RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
@@ -107,7 +117,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint member = dependency_find_method(winner.library_id, winner.unit_id, winner.local_index);
     if (member == INVALID || !dependency_public_implementation_method(member)) return;
     uint owner = dependency_member_word(member * MEMBER_WORDS);
-    bind_dependency_explicit_application(token, owner, winner.local_index);
+    bind_dependency_explicit_application(KernelTypeRefs(), token, owner, winner.local_index);
     publish_method_result(token, member, owner, dotted);
     if (dotted && valid_hir(receiver) && winner.receiver_mode != 0u)
         semantic_argument_mode_by_hir[receiver] = winner.receiver_mode == 2u ? 3u : 1u;

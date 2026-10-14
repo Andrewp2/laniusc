@@ -1,0 +1,3 @@
+struct Point { x: i32, y: i32 }
+fn swap<T>(values: [T], i: i32, j: i32) { let t: T = values[i]; values[i] = values[j]; values[j] = t; }
+fn main() -> i32 { let a: [Point; 2] = [Point { x: 40, y: 0 }, Point { x: 2, y: 0 }]; swap(a, 0, 1); if (a[0].x != 2) { return 1; } return a[0].x + a[1].x; }

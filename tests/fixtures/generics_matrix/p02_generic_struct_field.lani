@@ -1,0 +1,3 @@
+struct Pair<A, B> { first: A, second: B }
+fn make<A, B>(a: A, b: B) -> Pair<A, B> { return Pair { first: a, second: b }; }
+fn main() -> i32 { let p: Pair<i32, bool> = make(42, true); if (p.second) { return p.first; } return 1; }

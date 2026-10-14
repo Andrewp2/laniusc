@@ -1,0 +1,2 @@
+fn head<T>(a: [T; 2]) -> T { let s: [T] = a; return s[0]; }
+fn main() -> i32 { let a: [i32; 2] = [42, 1]; return head(a); }

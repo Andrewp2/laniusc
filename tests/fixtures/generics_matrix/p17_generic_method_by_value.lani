@@ -1,0 +1,3 @@
+struct Cell<T> { value: T, len: i32 }
+impl<T> Cell<T> { fn get(self) -> T { return self.value; } }
+fn main() -> i32 { let c: Cell<i32> = Cell { value: 42, len: 3 }; return c.get(); }

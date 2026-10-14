@@ -1,0 +1,4 @@
+struct Point { x: i32, y: i32 }
+enum Maybe<T> { Nothing, Just(T) }
+fn wrap<T>(v: T) -> Maybe<T> { return Just(v); }
+fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }

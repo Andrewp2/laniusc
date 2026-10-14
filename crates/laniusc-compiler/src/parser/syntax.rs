@@ -1676,7 +1676,9 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         compute.set_bind_group(0, Some(&bind_group), &[]);
         let (gx, gy, gz) = plan_compute(pass, token_capacity.max(512))?;
         crate::gpu::passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups(gx, gy, gz);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(gx, gy, gz);
+        }
     }
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("rb.parser.syntax.status_counters"),
@@ -2085,7 +2087,9 @@ fn record_compute(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     crate::gpu::passes_core::record_compute_dispatch();
-    compute.dispatch_workgroups(gx, gy, gz);
+    if !crate::gpu::passes_core::debug_operation_skipped() {
+        compute.dispatch_workgroups(gx, gy, gz);
+    }
     Ok(())
 }
 

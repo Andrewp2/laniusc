@@ -169,6 +169,11 @@ impl GpuTypeChecker {
                 if key.starts_with("type_checker/program_evidence/") {
                     return false;
                 }
+                if key == compiler_graph::CANONICAL_VALIDATE_KERNEL
+                    && !compiler_graph::canonical_validation_enabled()
+                {
+                    return false;
+                }
                 (key != "type_checker/predicates/01b2_sort_keys_small"
                     || supports_large_workgroup_storage)
                     && (!key.starts_with("scan/counted_pair/")
@@ -1684,6 +1689,13 @@ impl GpuTypeChecker {
                         &bind_groups.type_instances.member_substitute_after_array,
                     )?;
             }
+            // Array literals validate against substituted struct-field contexts.
+            if structs_required {
+                bind_groups
+                    .type_instances
+                    .struct_init_substitute
+                    .record(encoder)?;
+            }
             if arrays_required {
                 bind_groups
                     .type_instances
@@ -1704,12 +1716,6 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.type_instances_late_consumers.done");
             }
             host_timer.stamp("late_value_consumers");
-            if structs_required {
-                bind_groups
-                    .type_instances
-                    .struct_init_substitute
-                    .record(encoder)?;
-            }
             // Pattern validation consumes closed actual references, including
             // member/index results. Provisional declaration caches cannot
             // establish the nominal family of a compound scrutinee.
@@ -1822,6 +1828,7 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .generic_call_results
                 .record(encoder)?;
+            bind_groups.semantic_projection.canonical_types.record(encoder)?;
             bind_groups
                 .semantic_projection
                 .generic_native_words

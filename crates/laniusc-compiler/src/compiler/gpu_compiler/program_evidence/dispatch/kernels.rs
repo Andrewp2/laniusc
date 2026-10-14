@@ -278,7 +278,9 @@ fn record_phase_with_resources(
             compute.set_pipeline(&pass.pipeline);
             compute.set_bind_group(0, Some(&bindings), &[]);
             passes_core::record_compute_dispatch();
-            compute.dispatch_workgroups(count.div_ceil(threads), 1, 1);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                compute.dispatch_workgroups(count.div_ceil(threads), 1, 1);
+            }
         }
         done += count;
     }

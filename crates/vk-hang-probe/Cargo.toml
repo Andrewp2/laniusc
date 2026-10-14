@@ -1,0 +1,14 @@
+[package]
+name = "vk-hang-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Debug tool: replays one captured compute dispatch through raw Vulkan with
+# every buffer in host-coherent memory, so the host can watch buffers while a
+# dispatch is hung, and dumps the driver's pipeline executable properties.
+[dependencies]
+anyhow = "1.0"
+ash = "0.38"
+libc = "0.2"
+serde_json = "1.0"

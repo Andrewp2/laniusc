@@ -14,6 +14,8 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
+mod spirv_size;
+
 fn main() -> Result<()> {
     const DEFAULT_SHADER_COMPILE_TIMEOUT_MS: u64 = 120_000;
 
@@ -30,6 +32,8 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_COMPILE_TIMEOUT_MS");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_BUILD_JOBS");
     println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_INLINED_BUDGET");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS");
 
     let workspace_root = workspace_root()?;
     let shader_root = workspace_root.join("shaders");
@@ -57,6 +61,7 @@ fn main() -> Result<()> {
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
+    let noinline_min_instructions = shader_noinline_min_instructions()?;
 
     // Only compile files that contain an entrypoint attribute, e.g. [shader("compute")]
     for ep in sources {
@@ -92,7 +97,7 @@ fn main() -> Result<()> {
         let report_detailed_perf = env_truthy("LANIUS_SHADER_REPORT_DETAILED_PERF");
         let source_digest = shader_source_digest(&shader_root, &ep)?;
         let compile_stamp = format!(
-            "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nsource_digest={}\nextra={}\n",
+            "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nnoinline_min_instructions={}\nsource_digest={}\nextra={}\n",
             slangc.display(),
             opt_level,
             minimum_slang_opt,
@@ -101,6 +106,7 @@ fn main() -> Result<()> {
             report_downstream_time,
             report_perf,
             report_detailed_perf,
+            noinline_min_instructions,
             source_digest,
             extra
         );
@@ -132,6 +138,7 @@ fn main() -> Result<()> {
             report_detailed_perf,
             debug: env_truthy("LANIUS_SHADER_DEBUG"),
             extra_args,
+            noinline_min_instructions,
             compile_stamp,
         });
     }
@@ -147,6 +154,7 @@ fn main() -> Result<()> {
         .map(|(artifact_key, _, _)| artifact_key.clone())
         .collect();
     remove_stale_shader_artifacts(&shader_out_dir, &active_artifact_keys)?;
+    check_inlined_size_budget(&workspace_root, &shader_out_dir, &shader_artifacts)?;
     write_generated_shader_artifacts(&out_dir, &shader_artifacts)?;
     let shader_digest = shader_artifact_digest(&shader_artifacts)?;
     let shader_size_summary = shader_artifact_size_summary(&shader_artifacts)?;
@@ -301,6 +309,7 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/modules/10n_type_match_exprs"
             | "type_checker/conditions/aggregate_args"
             | "type_checker/conditions/compact_aggregate_requests"
+            | "type_checker/canonical/90_validate"
             | "type_checker/dependencies/14a_materialize_alias_targets"
             | "type_checker/type/instances/02d_materialize_applications"
             | "type_checker/modules/10e0l_normalize_type_aliases"
@@ -409,6 +418,154 @@ fn timeout_from_env_ms(name: &str, default_ms: u64) -> Result<Option<Duration>> 
     Ok((parsed != 0).then_some(Duration::from_millis(parsed)))
 }
 
+/// Drivers inline every call before compiling a pipeline, so the fully inlined
+/// size (see `spirv_size.rs`) is what pipeline creation pays for. Kernels above
+/// this take seconds to minutes and gigabytes to create on NVIDIA.
+const DEFAULT_MAX_INLINED_INSTRUCTIONS: u64 = 40_000;
+const INLINED_SIZE_BUDGET_FILE: &str = "crates/laniusc-shaders/inlined_size_budget.txt";
+
+/// Fails the build when a kernel's fully inlined size exceeds its budget:
+/// `DEFAULT_MAX_INLINED_INSTRUCTIONS`, or the per-kernel limit recorded in
+/// `INLINED_SIZE_BUDGET_FILE` for kernels that are already oversized. Those
+/// limits only ever go down. `LANIUS_SHADER_INLINED_BUDGET=warn` reports
+/// without failing, `off` skips the check. Every build writes all sizes to
+/// `inlined_sizes.txt` next to the artifact directory.
+fn check_inlined_size_budget(
+    workspace_root: &Path,
+    shader_out_dir: &Path,
+    shader_artifacts: &[(String, PathBuf, PathBuf)],
+) -> Result<()> {
+    let budget_path = workspace_root.join(INLINED_SIZE_BUDGET_FILE);
+    println!("cargo:rerun-if-changed={}", budget_path.display());
+    let mode = env::var("LANIUS_SHADER_INLINED_BUDGET").unwrap_or_default();
+    let mode = mode.trim().to_ascii_lowercase();
+    if mode == "off" || mode == "0" {
+        return Ok(());
+    }
+    let enforce = match mode.as_str() {
+        "" | "enforce" => true,
+        "warn" => false,
+        other => {
+            return Err(anyhow!(
+                "LANIUS_SHADER_INLINED_BUDGET must be enforce, warn or off, not {other:?}"
+            ));
+        }
+    };
+    let budget_text = fs::read_to_string(&budget_path)
+        .with_context(|| format!("read inlined size budget {}", budget_path.display()))?;
+    let mut limits = std::collections::HashMap::new();
+    for (line_index, line) in budget_text.lines().enumerate() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (limit, key) = line.split_once(char::is_whitespace).ok_or_else(|| {
+            anyhow!("{}:{}: expected `<limit> <artifact key>`", budget_path.display(), line_index + 1)
+        })?;
+        let limit = limit.parse::<u64>().with_context(|| {
+            format!("{}:{}: parse limit {limit:?}", budget_path.display(), line_index + 1)
+        })?;
+        limits.insert(key.trim().to_string(), limit);
+    }
+
+    let mut rows = Vec::new();
+    let mut over = Vec::new();
+    for (artifact_key, spv_path, _) in shader_artifacts {
+        let bytes = fs::read(spv_path)
+            .with_context(|| format!("read shader artifact {}", spv_path.display()))?;
+        let words = bytes
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+            .collect::<Vec<_>>();
+        let size = spirv_size::inlined_size(&words, 5)
+            .with_context(|| format!("measure inlined size of {}", spv_path.display()))?;
+        let limit = limits.get(artifact_key).copied().unwrap_or(DEFAULT_MAX_INLINED_INSTRUCTIONS);
+        if size.inlined > limit {
+            over.push((artifact_key.clone(), size.inlined, limit, size.top_helpers.clone()));
+        }
+        rows.push((size.inlined, size.own, limit, artifact_key.clone()));
+    }
+    rows.sort_by(|a, b| b.cmp(a));
+    let mut report = format!(
+        "# fully inlined instructions per kernel; default limit {DEFAULT_MAX_INLINED_INSTRUCTIONS}\n# {:>10} {:>8} {:>10}  kernel\n",
+        "inlined", "own", "limit"
+    );
+    for (inlined, own, limit, key) in &rows {
+        report.push_str(&format!("{inlined:>12} {own:>8} {limit:>10}  {key}\n"));
+    }
+    let report_path = shader_out_dir.parent().unwrap_or(shader_out_dir).join("inlined_sizes.txt");
+    fs::write(&report_path, report)
+        .with_context(|| format!("write inlined size report {}", report_path.display()))?;
+    let oversized = rows.iter().filter(|row| row.0 > DEFAULT_MAX_INLINED_INSTRUCTIONS).count();
+    if oversized != 0 {
+        println!(
+            "cargo:warning={oversized} kernels exceed {DEFAULT_MAX_INLINED_INSTRUCTIONS} fully inlined instructions (largest {} at {}); see {}",
+            rows[0].3,
+            rows[0].0,
+            report_path.display()
+        );
+    }
+    if over.is_empty() {
+        return Ok(());
+    }
+    over.sort_by_key(|row| std::cmp::Reverse(row.1));
+    let mut message = format!(
+        "{} kernels exceed their fully inlined size budget ({}):\n",
+        over.len(),
+        budget_path.display()
+    );
+    for (key, inlined, limit, helpers) in &over {
+        message.push_str(&format!("  {key}: {inlined} > {limit}; largest helpers (copies x own):"));
+        for (name, copies, own) in helpers {
+            message.push_str(&format!(" {name} {copies}x{own}"));
+        }
+        message.push('\n');
+    }
+    message.push_str(
+        "Shrink the kernel (one call site per large helper, branch-free leaf predicates, \
+         precomputed tables instead of re-walking) or split it into passes. \
+         LANIUS_SHADER_INLINED_BUDGET=warn reports without failing.",
+    );
+    if enforce {
+        return Err(anyhow!(message));
+    }
+    for line in message.lines() {
+        println!("cargo:warning={line}");
+    }
+    Ok(())
+}
+
+/// TEMPORARY test harness (see `spirv_size::mark_dont_inline`): zero, the
+/// default, leaves every call inlinable.
+fn shader_noinline_min_instructions() -> Result<u64> {
+    match env::var("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS") {
+        Err(env::VarError::NotPresent) => Ok(0),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(anyhow!("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS must be a UTF-8 instruction count"))
+        }
+        Ok(value) if value.trim().is_empty() => Ok(0),
+        Ok(value) => value.trim().parse::<u64>().with_context(|| {
+            format!("parse LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS={value:?} as an instruction count")
+        }),
+    }
+}
+
+fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {
+    let bytes = fs::read(spv_path)
+        .with_context(|| format!("read shader artifact {}", spv_path.display()))?;
+    let mut words = bytes
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    let marked = spirv_size::mark_dont_inline(&mut words, min_instructions)
+        .with_context(|| format!("mark DontInline helpers in {}", spv_path.display()))?;
+    if marked == 0 {
+        return Ok(());
+    }
+    let out = words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<_>>();
+    fs::write(spv_path, out).with_context(|| format!("write shader artifact {}", spv_path.display()))
+}
+
 fn shader_max_spv_bytes() -> Result<Option<u64>> {
     const DEFAULT_MAX_SPV_BYTES: u64 = 512 * 1024;
 
@@ -466,6 +623,7 @@ struct ShaderCompileJob {
     report_detailed_perf: bool,
     debug: bool,
     extra_args: Vec<String>,
+    noinline_min_instructions: u64,
     compile_stamp: String,
 }
 
@@ -624,6 +782,9 @@ fn compile_shader_job(
             job.ep,
             out.status.code()
         ));
+    }
+    if job.noinline_min_instructions != 0 {
+        mark_dont_inline(&job.spv_out, job.noinline_min_instructions)?;
     }
     validate_shader_artifact_size(&job.ep, &job.spv_out, max_shader_spv_bytes)?;
     fs::write(&job.stamp_out, &job.compile_stamp)

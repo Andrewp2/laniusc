@@ -134,9 +134,33 @@ bool same_named_identity(uint lhs, uint rhs)
         external_type_local_index[lhs] == external_type_local_index[rhs];
 }
 
+// A slice destination borrows an array value at the outer boundary, as call
+// arguments do: let, assignment, return and record fields view the array's
+// storage. Element types are invariant; nested aggregates never convert.
+bool array_borrow_matches(uint expected, uint actual)
+{
+    if (expected >= checked_type_capacity() || actual >= checked_type_capacity() ||
+        type_instance_kind[expected] != TYPE_INSTANCE_SLICE ||
+        type_instance_kind[actual] != TYPE_INSTANCE_ARRAY) return false;
+    uint expected_tag = type_instance_elem_ref_tag[expected];
+    uint expected_payload = type_instance_elem_ref_payload[expected];
+    uint actual_tag = type_instance_elem_ref_tag[actual];
+    uint actual_payload = type_instance_elem_ref_payload[actual];
+    if (checked_instance_is_closed(expected) && checked_instance_is_closed(actual))
+        return concrete_type_refs_equal<ScopedCheckedTypeGraph>(
+            expected_tag, expected_payload, actual_tag, actual_payload, checked_type_capacity());
+    return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+        expected_tag, expected_payload, INVALID,
+        actual_tag, actual_payload, INVALID,
+        checked_type_capacity(), gParams.n_tokens);
+}
+
+// Codegen passing mode per value node; 4 marks an array viewed as a slice.
+RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
+
 bool prepare_instance_compare(uint node, uint expected, uint actual, uint error_token)
 {
-    if (expected == actual) return true;
+    if (expected == actual || array_borrow_matches(expected, actual)) return true;
     // Concrete structural children can have different source rows, and body
     // replay can introduce private graph IDs. Compare their full checked
     // identities before the symbolic request path, including nested elements.
@@ -225,7 +249,8 @@ void validate_struct_literal_fields(uint node)
         if (expected_tag != TYPE_REF_INSTANCE || actual_tag == TYPE_REF_INVALID ||
             !checked_instance_is_closed(expected_payload)) continue;
         if (!concrete_type_refs_equal<ScopedCheckedTypeGraph>(expected_tag, expected_payload,
-            actual_tag, actual_payload, checked_type_capacity()))
+            actual_tag, actual_payload, checked_type_capacity()) &&
+            !(actual_tag == TYPE_REF_INSTANCE && array_borrow_matches(expected_payload, actual_payload)))
             record_min_token_error(status, field.name_token, ERR_ASSIGN_MISMATCH, 0u);
     }
 }
@@ -308,6 +333,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (actual_tag == TYPE_REF_EXTERNAL_CANONICAL &&
         resolved_dependency_call(expression_node))
         return;
+
+    // Let, assignment and return borrow an array as a slice view; codegen
+    // captures the descriptor at the value node. Record fields build the
+    // view inside the aggregate constructor instead.
+    if (expected_tag == TYPE_REF_INSTANCE && actual_tag == TYPE_REF_INSTANCE &&
+        expected_payload != actual_payload && valid_hir(expression_node) &&
+        array_borrow_matches(expected_payload, actual_payload))
+        semantic_argument_mode_by_hir[expression_node] = 4u;
 
     validate_refs(
         node,

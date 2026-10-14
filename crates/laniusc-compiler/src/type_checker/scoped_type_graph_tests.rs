@@ -289,7 +289,9 @@ fn physical_gpu_parameter_scoped_type_graph_preserves_identity_and_capacity() {
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, Some(&group), &[]);
         passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups(x, y, z);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(x, y, z);
+        }
     }
     results.copy_to(&mut encoder, 0, &readback, 0, byte_count as u64);
     gpu.queue.submit(Some(encoder.finish()));

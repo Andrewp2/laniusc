@@ -87,6 +87,10 @@ impl ClearBuffersOperation {
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
+        // Debug bisection drops clears and copies past the limit too.
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return;
+        }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for buffer in &self.buffers {
             encoder.clear_buffer(
@@ -144,6 +148,10 @@ impl ResetGraphAllocationsOperation {
         I: IntoIterator<Item = u64>,
     {
         record_compiler_operation(self.name);
+        // Debug bisection drops clears and copies past the limit too.
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return 0;
+        }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         let mut cleared = 0u64;
         let mut byte_sizes = byte_sizes.into_iter();
@@ -249,6 +257,10 @@ impl EmptyRelationsOperation {
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
+        // Debug bisection drops clears and copies past the limit too.
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return;
+        }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for count in &self.count_headers {
             debug_assert_eq!(count.byte_size, std::mem::size_of::<u32>());
@@ -312,6 +324,10 @@ impl ClearBufferOperation {
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
+        // Debug bisection drops clears and copies past the limit too.
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return;
+        }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         encoder.clear_buffer(
             &self.buffer.buffer,
@@ -429,6 +445,10 @@ impl CopyBuffersOperation {
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
+        // Debug bisection drops clears and copies past the limit too.
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return;
+        }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for (source, destination, size) in &self.copies {
             encoder.copy_buffer_to_buffer(
@@ -610,6 +630,10 @@ impl CopyBufferOperation {
             return;
         }
         record_compiler_operation(self.name);
+        // Debug bisection drops clears and copies past the limit too.
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return;
+        }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         encoder.copy_buffer_to_buffer(
             &self.source,

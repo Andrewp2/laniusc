@@ -262,7 +262,9 @@ fn run<const N: usize>(key: &str, cases: &[Case<N>]) {
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, Some(&group), &[]);
         passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups((cases.len() as u32).div_ceil(32), 1, 1);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups((cases.len() as u32).div_ceil(32), 1, 1);
+        }
     }
     resources["boundary_results"].copy_to(&mut encoder, 0, &readback, 0, (words * 4) as u64);
     gpu.queue.submit(Some(encoder.finish()));

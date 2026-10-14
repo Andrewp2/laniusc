@@ -423,7 +423,9 @@ fn physical_gpu_owned_constraints_preserve_matching_overlap_and_fixed_contracts(
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, Some(group), &[]);
         passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups(1, 1, 1);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(1, 1, 1);
+        }
     }
     results.copy_to(&mut encoder, 0, &readback, 0, (word_count * 4) as u64);
     gpu.queue.submit(Some(encoder.finish()));

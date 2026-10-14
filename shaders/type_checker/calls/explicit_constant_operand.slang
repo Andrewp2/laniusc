@@ -36,8 +36,16 @@ StructuredBuffer<uint> explicit_operand_decl_kind;
 StructuredBuffer<uint> explicit_operand_decl_hir;
 StructuredBuffer<uint> explicit_operand_const_type;
 StructuredBuffer<uint> explicit_operand_const_value;
-StructuredBuffer<uint> explicit_operand_type_ref_tag;
-StructuredBuffer<uint> explicit_operand_type_ref_payload;
+
+// Checked type references are read through the importing kernel's own binding.
+// Several importers also write `type_expr_ref_*` (at other tokens), so a
+// separate read-only alias of that buffer would bind it twice with conflicting
+// access in one dispatch.
+public interface IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token);
+    uint type_ref_payload(uint token);
+}
 
 // Lookup hash capacities are logical producer inputs. Workspace buffers can
 // be larger when reused by a smaller job; their physical extent cannot select
@@ -139,8 +147,8 @@ bool explicit_operand_inside_body(uint node)
 
 // expected_scalar=0 is reserved for callers that preserve a named operand's
 // own type (array-count projection). Generic binding always supplies a scalar.
-public bool checked_named_constant_operand(uint node, uint expected_scalar,
-    out uint kind, out uint value)
+public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
+    TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
 {
     kind = 0u; value = 0xffffffffu;
     if (expected_scalar != 0u && !constant_scalar_is_supported(expected_scalar)) return false;
@@ -207,9 +215,9 @@ public bool checked_named_constant_operand(uint node, uint expected_scalar,
         uint annotation = explicit_operand_const_type[owner];
         if (annotation >= count) return false;
         uint anchor = explicit_operand_hir_core[annotation].token_start;
-        if (anchor >= explicit_operand_token_capacity() || explicit_operand_type_ref_tag[anchor] != 1u)
+        if (anchor >= explicit_operand_token_capacity() || type_refs.type_ref_tag(anchor) != 1u)
             return false;
-        uint scalar = explicit_operand_type_ref_payload[anchor];
+        uint scalar = type_refs.type_ref_payload(anchor);
         // Ordinary computed constants have no checked value at this stage.
         // Only a literal initializer can use this source adapter.
         if (!checked_source_literal_value(explicit_operand_const_value[owner], scalar, concrete)) return false;
@@ -219,13 +227,13 @@ public bool checked_named_constant_operand(uint node, uint expected_scalar,
     return publish_explicit_constant_atom(node, concrete, kind, value);
 }
 
-public bool checked_explicit_constant_operand(uint node, uint expected_scalar,
-    out uint kind, out uint value)
+public bool checked_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
+    TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
 {
     kind = 0u; value = 0xffffffffu;
     if (!constant_scalar_is_supported(expected_scalar)) return false;
     uint3 literal;
     if (checked_source_literal_value(node, expected_scalar, literal))
         return publish_explicit_constant_atom(node, literal, kind, value);
-    return checked_named_constant_operand(node, expected_scalar, kind, value);
+    return checked_named_constant_operand(type_refs, node, expected_scalar, kind, value);
 }

@@ -31,6 +31,9 @@ static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_PASS_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
+static DEBUG_OPERATION_INDEX: AtomicU64 = AtomicU64::new(0);
+static DEBUG_OPERATION_SKIPPING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 static RECORDED_COMPUTE_PASSES_BY_LABEL: std::sync::LazyLock<
     std::sync::Mutex<HashMap<String, u64>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
@@ -313,12 +316,54 @@ pub(crate) fn recorded_compute_pass_counts_by_label() -> HashMap<String, u64> {
 /// several operations may be batched into one WGPU compute pass without
 /// ceasing to be distinct graph nodes.
 pub(crate) fn record_compiler_operation(label: &str) {
+    debug_operation_boundary(label);
     if compute_schedule_enabled() {
         COMPUTE_SCHEDULE
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .record_operation(label);
     }
+}
+
+struct DebugOperationConfig {
+    log: bool,
+    limit: Option<u64>,
+}
+
+fn debug_operation_config() -> &'static DebugOperationConfig {
+    static CONFIG: std::sync::OnceLock<DebugOperationConfig> = std::sync::OnceLock::new();
+    CONFIG.get_or_init(|| DebugOperationConfig {
+        log: crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_OPERATION_LOG", false),
+        limit: std::env::var("LANIUS_DEBUG_OPERATION_LIMIT")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok()),
+    })
+}
+
+/// Debug bisection for GPU hangs: `LANIUS_DEBUG_OPERATION_LOG=1` prints each
+/// logical operation in recording order, and `LANIUS_DEBUG_OPERATION_LIMIT=N`
+/// drops every dispatch from operation N onward (results are then garbage,
+/// but a hang that disappears identifies the first hanging operation).
+/// Operations labelled `*.readback` are never dropped.
+fn debug_operation_boundary(label: &str) {
+    let config = debug_operation_config();
+    if !config.log && config.limit.is_none() {
+        return;
+    }
+    let index = DEBUG_OPERATION_INDEX.fetch_add(1, Ordering::Relaxed);
+    // Readbacks still run so the final map waits on every earlier dispatch.
+    let skipping =
+        config.limit.is_some_and(|limit| index >= limit) && !label.ends_with(".readback");
+    DEBUG_OPERATION_SKIPPING.store(skipping, Ordering::Relaxed);
+    if config.log {
+        eprintln!("[lanius-op] {index}{} {label}", if skipping { " (skipped)" } else { "" });
+    }
+}
+
+/// Whether the current operation's dispatches are dropped by
+/// `LANIUS_DEBUG_OPERATION_LIMIT`.
+pub(crate) fn debug_operation_skipped() -> bool {
+    DEBUG_OPERATION_SKIPPING.load(Ordering::Relaxed)
 }
 
 /// Starts a compute pass and accounts for it at the only boundary that creates
@@ -735,6 +780,10 @@ pub(crate) fn defer_compute_direct_with_offsets(
     dynamic_offsets: &[u32],
     operation_label: &str,
 ) -> bool {
+    debug_capture_dispatch(operation_label, bind_group, groups);
+    if debug_operation_skipped() {
+        return true;
+    }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
         return false;
     }
@@ -764,6 +813,9 @@ pub(crate) fn defer_compute_indirect(
     dynamic_offsets: &[u32],
     operation_label: &str,
 ) -> bool {
+    if debug_operation_skipped() {
+        return true;
+    }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
         return false;
     }
@@ -792,6 +844,9 @@ pub(crate) fn defer_compute_direct_bind_groups(
     groups: (u32, u32, u32),
     operation_label: &str,
 ) -> bool {
+    if debug_operation_skipped() {
+        return true;
+    }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
         return false;
     }
@@ -866,7 +921,9 @@ pub(crate) fn record_or_defer_compute_direct(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     record_compute_dispatch();
-    compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+    if !crate::gpu::passes_core::debug_operation_skipped() {
+        compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+    }
     drop(compute);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
 }
@@ -924,7 +981,9 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     record_compute_dispatch();
-    compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
+    if !crate::gpu::passes_core::debug_operation_skipped() {
+        compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
+    }
     drop(compute);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
 }
@@ -939,6 +998,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
         )
     });
     if commands.is_empty() {
+        debug_capture_snapshot(encoder);
         return;
     }
     let host_timing = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
@@ -1021,6 +1081,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
             started.elapsed().as_secs_f64() * 1000.0,
         );
     }
+    debug_capture_snapshot(encoder);
 }
 
 /// Pushes a validation scope when `enabled` is true.
@@ -1573,7 +1634,7 @@ pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_typ
 }
 
 /// Blocks until a readback map completes or the configured timeout expires.
-pub(crate) fn map_readback_blocking(
+pub fn map_readback_blocking(
     device: &wgpu::Device,
     slice: &wgpu::BufferSlice<'_>,
     label: &str,
@@ -2030,6 +2091,260 @@ pub(crate) use make_main_pass;
 pub(crate) use make_shader_pass;
 pub(crate) use make_traced_main_pass;
 
+type DebugDumpEntry = (wgpu::Buffer, u64, u64);
+
+static DEBUG_DUMP_BUFFERS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::BTreeMap<String, DebugDumpEntry>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::BTreeMap::new()));
+
+fn debug_dump_names() -> &'static [String] {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        std::env::var("LANIUS_DEBUG_DUMP_BUFFERS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// Remembers a bound buffer whose reflected name is listed in
+/// `LANIUS_DEBUG_DUMP_BUFFERS` so `debug_dump_buffers` can print it.
+pub(crate) fn debug_register_dump_buffer(name: &str, buffer: &wgpu::Buffer, offset: u64, end: u64) {
+    if !debug_dump_names().iter().any(|wanted| wanted == name) {
+        return;
+    }
+    DEBUG_DUMP_BUFFERS
+        .lock()
+        .expect("debug dump registry poisoned")
+        .insert(name.to_owned(), (buffer.clone(), offset, end));
+}
+
+/// Debug capture of one dispatch for offline replay
+/// (`src/bin/shader_dispatch_replay.rs`). `LANIUS_DEBUG_CAPTURE_PASS=name`
+/// records the first bind group created with that label and the workgroup
+/// count of its first recorded dispatch; `debug_write_capture` then saves
+/// every bound range to `LANIUS_DEBUG_CAPTURE_DIR`. Run with
+/// `LANIUS_DEBUG_OPERATION_LIMIT` at the captured operation so the saved
+/// buffers hold exactly the state that dispatch would read.
+type CapturedBindings = Vec<(u32, String, wgpu::Buffer, u64, u64)>;
+
+struct DebugCapture {
+    bindings: CapturedBindings,
+    groups: Option<(u32, u32, u32)>,
+    /// Set once `debug_capture_snapshot` copied the bindings in-timeline.
+    snapshotted: bool,
+}
+
+#[derive(Default)]
+struct DebugCaptureState {
+    /// Bindings validated for the bind group being created right now.
+    pending: Option<CapturedBindings>,
+    candidates: Vec<(wgpu::BindGroup, CapturedBindings)>,
+    selected: Option<DebugCapture>,
+}
+
+static DEBUG_CAPTURE: std::sync::LazyLock<std::sync::Mutex<DebugCaptureState>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn debug_capture_pass() -> Option<&'static str> {
+    static PASS: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    PASS.get_or_init(|| std::env::var("LANIUS_DEBUG_CAPTURE_PASS").ok()).as_deref()
+}
+
+pub(crate) fn debug_capture_bind_group(label: &str, bindings: CapturedBindings) {
+    if debug_capture_pass() != Some(label) {
+        return;
+    }
+    DEBUG_CAPTURE.lock().expect("debug capture poisoned").pending = Some(bindings);
+}
+
+fn debug_capture_associate(label: &str, bind_group: &wgpu::BindGroup) {
+    if debug_capture_pass() != Some(label) {
+        return;
+    }
+    let mut state = DEBUG_CAPTURE.lock().expect("debug capture poisoned");
+    if let Some(bindings) = state.pending.take() {
+        state.candidates.push((bind_group.clone(), bindings));
+    }
+}
+
+/// Selects the bind group of the first dispatch of the captured pass that
+/// `LANIUS_DEBUG_OPERATION_LIMIT` drops (or of the first one, without a limit).
+pub(crate) fn debug_capture_dispatch(
+    label: &str,
+    bind_group: &wgpu::BindGroup,
+    groups: (u32, u32, u32),
+) {
+    if debug_capture_pass() != Some(label) {
+        return;
+    }
+    if debug_operation_config().limit.is_some() && !debug_operation_skipped() {
+        return;
+    }
+    let mut state = DEBUG_CAPTURE.lock().expect("debug capture poisoned");
+    if state.selected.is_some() {
+        return;
+    }
+    let bindings = state
+        .candidates
+        .iter()
+        .find(|(candidate, _)| candidate == bind_group)
+        .map(|(_, bindings)| bindings.clone());
+    match bindings {
+        Some(bindings) => {
+            state.selected = Some(DebugCapture { bindings, groups: Some(groups), snapshotted: false })
+        }
+        None => eprintln!("[lanius-capture] {label}: dispatch uses an unrecorded bind group"),
+    }
+}
+
+/// Copies the selected capture's bindings into private buffers at this point
+/// of the command stream, so later reuse of aliased memory cannot clobber them.
+pub(crate) fn debug_capture_snapshot(encoder: &mut wgpu::CommandEncoder) {
+    if debug_capture_pass().is_none() {
+        return;
+    }
+    let mut state = DEBUG_CAPTURE.lock().expect("debug capture poisoned");
+    let Some(capture) = state.selected.as_mut() else { return };
+    if capture.snapshotted {
+        return;
+    }
+    capture.snapshotted = true;
+    let device = &crate::gpu::device::global_result().expect("debug capture device").device;
+    for (_, _, buffer, offset, end) in capture.bindings.iter_mut() {
+        let bytes = end.saturating_sub(*offset) & !3;
+        let copy = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lanius-debug-capture-snapshot"),
+            size: bytes.max(4),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        if bytes != 0 {
+            encoder.copy_buffer_to_buffer(buffer, *offset, &copy, 0, bytes);
+        }
+        *buffer = copy;
+        *end = bytes;
+        *offset = 0;
+    }
+}
+
+pub(crate) fn debug_write_capture(device: &wgpu::Device, queue: &wgpu::Queue) {
+    let Some(pass) = debug_capture_pass() else { return };
+    let Some(capture) = DEBUG_CAPTURE.lock().expect("debug capture poisoned").selected.take() else {
+        eprintln!("[lanius-capture] {pass}: no bind group recorded");
+        return;
+    };
+    let dir = std::path::PathBuf::from(
+        std::env::var("LANIUS_DEBUG_CAPTURE_DIR").unwrap_or_else(|_| "lanius-capture".into()),
+    );
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        eprintln!("[lanius-capture] create {}: {err}", dir.display());
+        return;
+    }
+    let mut manifest = Vec::new();
+    for (binding, name, buffer, offset, end) in &capture.bindings {
+        let bytes = end.saturating_sub(*offset) & !3;
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lanius-debug-capture"),
+            size: bytes.max(4),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("lanius-debug-capture"),
+        });
+        if bytes != 0 {
+            encoder.copy_buffer_to_buffer(buffer, *offset, &staging, 0, bytes);
+        }
+        queue.submit(Some(encoder.finish()));
+        let slice = staging.slice(..);
+        if let Err(err) = map_readback_blocking(device, &slice, "lanius-debug-capture") {
+            eprintln!("[lanius-capture] {name}: {err:#}");
+            return;
+        }
+        let file = format!("{binding:03}_{name}.bin");
+        let data = slice.get_mapped_range();
+        if let Err(err) = std::fs::write(dir.join(&file), &data[..bytes as usize]) {
+            eprintln!("[lanius-capture] write {file}: {err}");
+            return;
+        }
+        manifest.push(serde_json::json!({ "binding": binding, "name": name, "file": file, "bytes": bytes }));
+    }
+    let groups = capture.groups.unwrap_or((0, 0, 0));
+    let manifest = serde_json::json!({
+        "pass": pass,
+        "groups": [groups.0, groups.1, groups.2],
+        "bindings": manifest,
+    });
+    match std::fs::write(dir.join("manifest.json"), manifest.to_string()) {
+        Ok(()) => eprintln!("[lanius-capture] {pass}: wrote {} bindings to {}", capture.bindings.len(), dir.display()),
+        Err(err) => eprintln!("[lanius-capture] write manifest: {err}"),
+    }
+}
+
+/// Debug aid: prints `LANIUS_DEBUG_DUMP_WORDS` (default 64) u32 words from
+/// word `LANIUS_DEBUG_DUMP_START` (default 0) of every buffer named in `LANIUS_DEBUG_DUMP_BUFFERS`, as last bound.
+/// The printed start is relative to the binding unless `LANIUS_DEBUG_DUMP_TAIL` is set.
+/// A no-op unless that variable is set.
+pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, stage: &str) {
+    if debug_dump_names().is_empty() {
+        return;
+    }
+    let words = crate::gpu::env::env_u64("LANIUS_DEBUG_DUMP_WORDS", 64).max(1);
+    let start = crate::gpu::env::env_u64("LANIUS_DEBUG_DUMP_START", 0);
+    let entries = DEBUG_DUMP_BUFFERS
+        .lock()
+        .expect("debug dump registry poisoned")
+        .clone();
+    for wanted in debug_dump_names() {
+        let Some((buffer, offset, end)) = entries.get(wanted) else {
+            eprintln!("[lanius-dump] {stage} {wanted}: never bound");
+            continue;
+        };
+        // `LANIUS_DEBUG_DUMP_TAIL=1` dumps the last words instead.
+        let offset = if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DUMP_TAIL", false) {
+            end.saturating_sub(words * 4).max(*offset)
+        } else {
+            offset.saturating_add(start * 4).min(*end)
+        };
+        let bytes = (end.saturating_sub(offset)).min(words * 4) & !3;
+        if bytes == 0 {
+            continue;
+        }
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lanius-debug-dump"),
+            size: bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("lanius-debug-dump"),
+        });
+        encoder.copy_buffer_to_buffer(buffer, offset, &staging, 0, bytes);
+        queue.submit(Some(encoder.finish()));
+        let slice = staging.slice(..);
+        if let Err(err) = map_readback_blocking(device, &slice, "lanius-debug-dump") {
+            eprintln!("[lanius-dump] {stage} {wanted}: {err:#}");
+            continue;
+        }
+        let mapped = slice.get_mapped_range();
+        let values = mapped
+            .chunks_exact(4)
+            .map(|chunk| {
+                let word = u32::from_le_bytes(chunk.try_into().expect("four-byte chunk"));
+                if word == u32::MAX { "-".to_owned() } else { word.to_string() }
+            })
+            .collect::<Vec<_>>();
+        eprintln!("[lanius-dump] {stage} {wanted}@{start}: {}", values.join(" "));
+    }
+}
+
 /// Helpers for creating bind groups from reflected Slang parameter names.
 pub mod bind_group {
     use std::collections::{HashMap, HashSet};
@@ -2188,6 +2503,7 @@ pub mod bind_group {
         }
 
         let mut buffers = Vec::<BoundBuffer<'_>>::new();
+        let mut captured = Vec::new();
         let trace_bindings = crate::gpu::env::env_bool_strict("LANIUS_GPU_BINDING_LIVENESS", false);
         for parameter in reflected_parameters_for_set(reflection, set_index) {
             let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
@@ -2262,6 +2578,10 @@ pub mod bind_group {
                     return Err(error);
                 }
             }
+            debug_register_dump_buffer(&parameter.name, binding.buffer, offset, end);
+            if let Some(index) = parameter.binding.index {
+                captured.push((index, parameter.name.clone(), binding.buffer.clone(), offset, end));
+            }
             buffers.push(BoundBuffer {
                 name: &parameter.name,
                 buffer: binding.buffer,
@@ -2270,6 +2590,7 @@ pub mod bind_group {
                 end,
             });
         }
+        debug_capture_bind_group(label, captured);
         Ok(())
     }
 
@@ -2305,9 +2626,9 @@ pub mod bind_group {
         }
         add_timing(&BIND_GROUP_RESOURCE_PLAN_NS, plan_started);
 
-        Ok(create_or_reuse_buffer_bind_group(
-            device, label, bgl, set_index, &entries,
-        ))
+        let bind_group = create_or_reuse_buffer_bind_group(device, label, bgl, set_index, &entries);
+        debug_capture_associate(resolved_label, &bind_group);
+        Ok(bind_group)
     }
 
     /// Creates a bind group from named resources, preferring reflected order.
@@ -2839,7 +3160,9 @@ pub(crate) fn record_reflected_compute(
             compute.set_bind_group(index as u32, Some(group.as_ref()), &[]);
         }
         record_compute_dispatch();
-        compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(groups.0, groups.1, groups.2);
+        }
     }
     if !deferred {
         crate::gpu::timer::stamp_active_operation(encoder, invocation.to_owned());
@@ -2927,7 +3250,9 @@ impl<'encoder> ComputePassBatch<'encoder> {
         self.pass
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
         record_compute_dispatch();
-        self.pass.dispatch_workgroups(gx, gy, gz);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            self.pass.dispatch_workgroups(gx, gy, gz);
+        }
         crate::gpu::timer::stamp_active_operation_in_pass(
             &mut self.pass,
             self.current_operation
@@ -2960,10 +3285,12 @@ impl<'encoder> ComputePassBatch<'encoder> {
         self.pass
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
         record_compute_dispatch();
-        self.pass.dispatch_workgroups_indirect(
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            self.pass.dispatch_workgroups_indirect(
             &dispatch_args.buffer,
             dispatch_args.byte_offset.saturating_add(offset),
         );
+        }
         crate::gpu::timer::stamp_active_operation_in_pass(
             &mut self.pass,
             self.current_operation
@@ -3008,7 +3335,9 @@ impl<'encoder> ComputePassBatch<'encoder> {
                 .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         record_compute_dispatch();
-        self.pass.dispatch_workgroups(gx, gy, gz);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            self.pass.dispatch_workgroups(gx, gy, gz);
+        }
         crate::gpu::timer::stamp_active_operation_in_pass(&mut self.pass, P::NAME);
         self.retained_bind_groups.push(bind_groups);
         Ok(())
@@ -3043,8 +3372,10 @@ impl<'encoder> ComputePassBatch<'encoder> {
                 .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         record_compute_dispatch();
-        self.pass
-            .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            self.pass
+                .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+        }
         crate::gpu::timer::stamp_active_operation_in_pass(&mut self.pass, P::NAME);
         self.retained_bind_groups.push(bind_groups);
         Ok(())
@@ -3123,7 +3454,9 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
                 pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
             }
             record_compute_dispatch();
-            pass.dispatch_workgroups(gx, gy, gz);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                pass.dispatch_workgroups(gx, gy, gz);
+            }
         }
 
         if !deferred {
@@ -3197,7 +3530,9 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
                 pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
             }
             record_compute_dispatch();
-            pass.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                pass.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+            }
         }
 
         if !deferred {

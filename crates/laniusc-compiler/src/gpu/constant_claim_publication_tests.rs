@@ -529,7 +529,9 @@ fn dispatch(encoder: &mut wgpu::CommandEncoder, pass: &PassData, group: &wgpu::B
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(group), &[]);
     passes_core::record_compute_dispatch();
-    compute.dispatch_workgroups(1, 1, 1);
+    if !crate::gpu::passes_core::debug_operation_skipped() {
+        compute.dispatch_workgroups(1, 1, 1);
+    }
 }
 
 fn assert_observation(case: &Case, words: &[u32], context: Option<[u32; 3]>, phase: &str) {

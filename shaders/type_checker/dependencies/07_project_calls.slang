@@ -9,6 +9,7 @@ import gpu_index;
 import type_checker.calls.explicit_dependency_binding;
 import type_checker.calls.explicit_application_owner;
 import type_checker.calls.explicit_binding_metadata;
+import type_checker.calls.explicit_constant_operand;
 import hir_records;
 
 struct Params
@@ -34,6 +35,13 @@ StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> resolved_value_type_qualifier_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+
+// Constant operands read checked type references through this kernel's binding.
+struct KernelTypeRefs : IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
+    uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
+}
 StructuredBuffer<HirRange> compact_path_type_arg_ranges;
 StructuredBuffer<uint> resolved_dependency_value_library_id;
 StructuredBuffer<uint> resolved_dependency_value_unit_id;
@@ -283,5 +291,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_explicit_application_status[application_token] = 1u;
         return;
     }
-    bind_dependency_explicit_application(application_token, declaration_i, 0u);
+    bind_dependency_explicit_application(KernelTypeRefs(), application_token, declaration_i, 0u);
 }

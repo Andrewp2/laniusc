@@ -4,6 +4,7 @@ import type_checker.constant_parameter_slots;
 import hir_records;
 import type_checker.calls.explicit_application_owner;
 import type_checker.calls.explicit_binding_metadata;
+import type_checker.calls.explicit_constant_operand;
 import type_checker.calls.claim_reference;
 import type_checker.checked_type_graph;
 import type_checker.concrete_type_equality;
@@ -31,6 +32,13 @@ RWStructuredBuffer<uint> call_explicit_application_owner_by_token;
 StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+
+// Constant operands read checked type references through this kernel's binding.
+struct KernelTypeRefs : IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
+    uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
+}
 RWStructuredBuffer<uint4> call_explicit_environment;
 RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> call_explicit_binding_payload;
@@ -239,7 +247,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         { call_explicit_application_status[token] = 4u; return; }
         if (constant)
         {
-            if (!bind_explicit_constant_operand(arguments.start + ordinal,
+            if (!bind_explicit_constant_operand(KernelTypeRefs(), arguments.start + ordinal,
                 type_const_param_scalar_by_token[parameter.name_token]))
             { call_explicit_application_status[token] = 3u; return; }
             constant_seen |= 1u << slot;

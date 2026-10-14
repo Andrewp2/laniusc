@@ -1,0 +1,5 @@
+struct Stack<T> { items: [T; 4], len: i32 }
+impl<T> Stack<T> {
+    fn top(&self) -> T { return self.items[self.len - 1]; }
+}
+fn main() -> i32 { let s: Stack<i32> = Stack { items: [1, 2, 42, 0], len: 3 }; return s.top(); }

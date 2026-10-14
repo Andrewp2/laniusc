@@ -972,6 +972,15 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
             hir_count, hir, links, payload);
         snapshot.schedule.execution_tie += 1u;
         snapshot.layout_word_offset = LIR_INVALID;
+        if (capture.y == 4u)
+        {
+            // Array-to-slice view: a slice descriptor whose words are the
+            // array's address and static length; the length rides in the
+            // layout offset column for the target's immediate.
+            snapshot.core.type_id = 128u;
+            snapshot.core.flags |= SEMANTIC_LIR_FLAG_ARRAY_PAIR | SEMANTIC_LIR_FLAG_PLACE_VIEW;
+            snapshot.layout_word_offset = semantic_array_length[node];
+        }
         return snapshot;
     }
     bool compound_assignment = semantic_lir_is_assignment(hir, payload) &&

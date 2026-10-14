@@ -148,7 +148,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r)]);
                 crate::gpu::passes_core::record_compute_dispatch();
-                pass.dispatch_workgroups(gx, gy, gz);
+                if !crate::gpu::passes_core::debug_operation_skipped() {
+                    pass.dispatch_workgroups(gx, gy, gz);
+                }
                 crate::gpu::timer::stamp_active_operation_in_pass(&mut pass, Self::NAME);
             }
         } else {
@@ -166,7 +168,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r)]);
                 crate::gpu::passes_core::record_compute_dispatch();
-                pass.dispatch_workgroups(gx, gy, gz);
+                if !crate::gpu::passes_core::debug_operation_skipped() {
+                    pass.dispatch_workgroups(gx, gy, gz);
+                }
                 drop(pass);
                 crate::gpu::timer::stamp_active_operation(encoder, Self::NAME.to_owned());
 

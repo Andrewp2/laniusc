@@ -320,7 +320,9 @@ mod tests {
             pass.set_pipeline(&up.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
             crate::gpu::passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            }
         }
         for step in &plan.down {
             let group = bind_group::create_bind_group_from_bindings(
@@ -345,7 +347,9 @@ mod tests {
             pass.set_pipeline(&down.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
             crate::gpu::passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            }
         }
         encoder.copy_buffer_to_buffer(
             &output.buffer,
@@ -487,7 +491,9 @@ mod tests {
             pass.set_pipeline(&up.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
             crate::gpu::passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            }
         }
         for step in &plan.down {
             let group = bind_group::create_bind_group_from_bindings(
@@ -528,7 +534,9 @@ mod tests {
             pass.set_pipeline(&down.pipeline);
             pass.set_bind_group(0, Some(&group), &[]);
             crate::gpu::passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            if !crate::gpu::passes_core::debug_operation_skipped() {
+                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
+            }
         }
         encoder.copy_buffer_to_buffer(
             &out_brace.buffer,

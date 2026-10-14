@@ -1,0 +1,4 @@
+struct Cell { arr: [i32; 2] }
+impl Cell { fn borrow(&self) -> &Cell { return self; } }
+fn items(c: &Cell) -> [i32] { return c.arr; }
+fn main() -> i32 { let c: Cell = Cell { arr: [1, 1] }; let v: [i32] = items(c.borrow()); v[0] = 41; return c.arr[0] + v[1]; }

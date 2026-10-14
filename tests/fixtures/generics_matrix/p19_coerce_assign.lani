@@ -1,0 +1,2 @@
+fn view(v: [i32]) -> [i32] { return v; }
+fn main() -> i32 { let a: [i32; 2] = [1, 1]; let b: [i32; 2] = [7, 7]; let s: [i32] = view(b); s = a; s[0] = 41; return a[0] + s[1] + b[0] - 7; }

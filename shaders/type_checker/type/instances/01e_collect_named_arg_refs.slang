@@ -46,6 +46,13 @@ RWStructuredBuffer<uint> type_instance_state;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 
+// Constant operands read checked type references through this kernel's binding.
+struct KernelTypeRefs : IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
+    uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
+}
+
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -180,7 +187,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint slot = constant ? type_const_param_slot_by_token[parameter.name_token]
             : type_generic_param_slot_by_token[parameter.name_token];
         if (slot >= 32u) { mark_instance_unsupported(arg.owner, leaf_token); return; }
-        if (constant && !checked_explicit_constant_operand(arg.value,
+        if (constant && !checked_explicit_constant_operand(KernelTypeRefs(), arg.value,
             type_const_param_scalar_by_token[parameter.name_token], constant_kind, constant_payload))
         { mark_instance_unsupported(arg.owner, leaf_token); return; }
         // Only this operand lane publishes its atom. The metadata lane reads
@@ -219,7 +226,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (constant_kind == 2u)
             {
                 uint replay_kind; uint replay_value;
-                if (!checked_named_constant_operand(arg.value, 0u, replay_kind, replay_value))
+                if (!checked_named_constant_operand(KernelTypeRefs(), arg.value, 0u, replay_kind, replay_value))
                 { mark_instance_unsupported(arg.owner, leaf_token); return; }
                 constant_kind = replay_kind; constant_payload = replay_value;
             }

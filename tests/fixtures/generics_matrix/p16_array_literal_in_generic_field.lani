@@ -1,0 +1,2 @@
+struct S<T> { items: [T; 2] }
+fn main() -> i32 { let s: S<i32> = S { items: [1, 2] }; return s.items[0] + 41; }

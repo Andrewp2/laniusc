@@ -8,6 +8,7 @@ default-run = "laniusc"
 members = [
     "crates/laniusc-compiler",
     "crates/laniusc-shaders",
+    "crates/vk-hang-probe",
 ]
 resolver = "3"
 

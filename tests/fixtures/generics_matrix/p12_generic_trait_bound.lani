@@ -1,0 +1,5 @@
+trait Area { fn area(self) -> i32; }
+struct Rect { w: i32, h: i32 }
+impl Area for Rect { fn area(self) -> i32 { return self.w * self.h; } }
+fn total<T>(a: T, b: T) -> i32 where T: Area { return a.area() + b.area(); }
+fn main() -> i32 { return total(Rect { w: 4, h: 10 }, Rect { w: 1, h: 2 }); }

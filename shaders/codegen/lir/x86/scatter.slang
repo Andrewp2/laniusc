@@ -464,7 +464,37 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.metadata = source.type_id |
             (packed_destination ? X86_LIR_METADATA_PACKED_I32_ARRAY : 0u) |
             (packed_destination && !packed_source ? X86_LIR_METADATA_AGGREGATE : 0u);
-        if (operation_row != 0u && descriptor && args.a < semantic_count &&
+        bool view = descriptor && (source.flags & SEMANTIC_LIR_FLAG_PLACE_VIEW) != 0u &&
+            args.a < semantic_count;
+        bool valid_view = true;
+        if (operation_row != 0u && view)
+        {
+            // Array-to-slice view: the array's aggregate address, then its
+            // static element count and element stride, as for slice fields.
+            uint word = operation_row - 1u;
+            uint length = semantic_lir_layout_word_offset[semantic_row];
+            core.op = X86_LIR_OP_AGGREGATE_INIT;
+            operands.a = args.a;
+            operands.b = word;
+            operands.metadata = SEMANTIC_LIR_TY_POINTER;
+            if (word == NATIVE_SLICE_LENGTH)
+            {
+                operands.a = length;
+                operands.metadata |= X86_LIR_METADATA_IMMEDIATE;
+            }
+            else if (word == NATIVE_SLICE_STRIDE)
+            {
+                OptIrNodeCore value = opt_ir_core[args.a];
+                uint stride = 0u;
+                valid_view = x86_fixed_array_stride(x86_array_storage_kind(value,
+                        direct_packed_i32_array(args.a, semantic_count)),
+                    x86_aggregate_value_word_count(value, opt_ir_operands[args.a]),
+                    length, stride);
+                operands.a = stride;
+                operands.metadata |= X86_LIR_METADATA_IMMEDIATE | X86_LIR_METADATA_ARRAY_PAIR;
+            }
+        }
+        else if (operation_row != 0u && descriptor && args.a < semantic_count &&
             x86_direct_array_pair(opt_ir_core[args.a]))
         {
             // VALUE_GET exposes direct descriptor slots; projections and
@@ -475,7 +505,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         target_lir_core[page_row] = core;
         target_lir_operands[page_row] = operands;
         target_semantic_origin[page_row] = semantic_row;
-        target_lir_flags[page_row] = args.a < semantic_count &&
+        target_lir_flags[page_row] = args.a < semantic_count && valid_view &&
             operation_row <= source.value_word_count ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
         return;
     }

@@ -129,6 +129,20 @@ uint2 argument_value_layout(uint node, uint hir_count)
         semantic_calls_by_hir[receiver_call - 1u].receiver_adjustment_kind == 2u))
         return uint2(0u, 0u); // capture after the checked receiver adjustment
     uint mode = semantic_argument_mode_by_hir[node];
+    if (mode == 4u)
+    {
+        // A fixed array coerced to a slice outside a call: capture a view
+        // descriptor {&array, length, stride} aliasing the array's storage.
+        uint tag = semantic_expr_ref_tag[node];
+        uint payload = semantic_expr_ref_payload[node];
+        uint capacity; uint stride;
+        type_instance_kind.GetDimensions(capacity, stride);
+        uint length = semantic_array_length[node];
+        if (tag == 3u && payload < capacity && type_instance_kind[payload] == 2u &&
+            length != LIR_INVALID && length != SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+            return uint2(NATIVE_SLICE_WORDS, 4u);
+        return uint2(0u, 0u);
+    }
     if (mode == 1u || mode == 2u)
     {
         uint tag = semantic_expr_ref_tag[node];

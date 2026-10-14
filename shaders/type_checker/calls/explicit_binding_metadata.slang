@@ -12,11 +12,12 @@ StructuredBuffer<HirRange> explicit_mapping_argument_ranges;
 
 // A binding slot is tagged by domain. Type and constant slot zero can coexist.
 public static const uint EXPLICIT_CONSTANT_SLOT = 0x80000000u;
-public bool bind_explicit_constant_operand(uint argument_row, uint expected_scalar)
+public bool bind_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
+    TypeRefs type_refs, uint argument_row, uint expected_scalar)
 {
     uint kind; uint payload;
-    if (!checked_explicit_constant_operand(explicit_mapping_arguments[argument_row].value, expected_scalar,
-        kind, payload)) return false;
+    if (!checked_explicit_constant_operand(type_refs, explicit_mapping_arguments[argument_row].value,
+        expected_scalar, kind, payload)) return false;
     uint operand = explicit_mapping_arguments[argument_row].value;
     call_explicit_arg_constant_kind[operand] = kind;
     call_explicit_arg_constant_payload[operand] = payload;

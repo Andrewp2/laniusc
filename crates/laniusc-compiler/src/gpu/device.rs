@@ -531,6 +531,11 @@ fn compiler_device_limits(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
 fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
     let mut flags = wgpu::InstanceFlags::from_build_config();
     flags.set(wgpu::InstanceFlags::DEBUG, debug_labels);
+    // Debug builds would otherwise enable the Khronos layer whenever it is
+    // installed, and no logger receives its messages. Enable it through the
+    // Vulkan loader instead (VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation)
+    // so it reports through its own log settings.
+    flags.remove(wgpu::InstanceFlags::VALIDATION | wgpu::InstanceFlags::GPU_BASED_VALIDATION);
     flags
 }
 

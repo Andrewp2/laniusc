@@ -106,3 +106,9 @@ mod runtime_metadata {
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/shader_artifacts_generated.rs"));
 }
+
+// The inlined-size budget runs in build.rs; compile it here so its tests run.
+#[cfg(test)]
+#[path = "../spirv_size.rs"]
+#[allow(dead_code)]
+mod spirv_size;

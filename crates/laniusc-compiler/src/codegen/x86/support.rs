@@ -314,7 +314,9 @@ pub(super) fn dispatch_compute_pass(
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, bind_group, &[]);
         crate::gpu::passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups(groups.0, groups.1, 1);
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(groups.0, groups.1, 1);
+        }
     }
     trace_event(trace_stage, "record.done");
 }

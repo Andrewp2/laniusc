@@ -1,0 +1,4 @@
+struct Point { x: i32, y: i32 }
+impl Point { fn borrow(&self) -> &Point { return self; } }
+fn pick<T>(v: &T) -> &T { return v; }
+fn main() -> i32 { let p: Point = Point { x: 40, y: 2 }; let q: &Point = pick(p.borrow()); return q.x + q.y; }

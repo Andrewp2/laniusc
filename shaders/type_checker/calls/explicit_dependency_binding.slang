@@ -4,8 +4,10 @@ import semantic_interface_layout;
 // page is resident. Receiver/impl headers have different lexical scope IDs.
 import dependency_interface;
 import type_checker.calls.explicit_binding_metadata;
+import type_checker.calls.explicit_constant_operand;
 
-public void bind_dependency_explicit_application(uint token, uint owner, uint scope)
+public void bind_dependency_explicit_application<TypeRefs : IExplicitOperandTypeRefs>(
+    TypeRefs type_refs, uint token, uint owner, uint scope)
 {
     HirRange arguments;
     if (!explicit_application_range(token, arguments)) return;
@@ -51,7 +53,8 @@ public void bind_dependency_explicit_application(uint token, uint owner, uint sc
         { call_explicit_application_status[token] = 4u; return; }
         if (constant)
         {
-            if (!bind_explicit_constant_operand(arguments.start + ordinal, dependency_const_member_scalar(row)))
+            if (!bind_explicit_constant_operand(type_refs, arguments.start + ordinal,
+                dependency_const_member_scalar(row)))
             { call_explicit_application_status[token] = 3u; return; }
             constant_seen |= 1u << slot;
         }

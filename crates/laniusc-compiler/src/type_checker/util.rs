@@ -41,7 +41,7 @@ pub(super) fn zeroed_type_check_params_buffer(
     let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents: &bytes,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
     });
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
 }
@@ -67,10 +67,10 @@ pub(super) fn typed_storage_u32_rw(
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_size,
-        usage: wgpu::BufferUsages::STORAGE
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST
-            | extra_usage,
+            | extra_usage),
         mapped_at_creation: false,
     });
     let buffer = LaniusBuffer::new_labeled((raw, byte_size), count, label);
@@ -100,7 +100,7 @@ pub(super) fn typed_storage_u32_fill_rw(
     let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents: &bytes,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage),
     });
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), count, label)
 }
@@ -112,7 +112,7 @@ pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) ->
     let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_size as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ),
         mapped_at_creation: false,
     });
     LaniusBuffer::new_labeled((raw, byte_size as u64), count, label)

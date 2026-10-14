@@ -392,6 +392,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             ));
         }
         let (type_check, typecheck_hir) = recorded.recorded;
+        crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
         self.type_checker
             .finish_recorded_check(device, &type_check)
             .map_err(|err| {
@@ -799,6 +800,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         finish_timer.stamp("parser_status");
         let recorded = deferred.recorded;
+        crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
         self.type_checker
             .finish_recorded_check(device, &recorded.type_check)
             .map_err(|err| {

@@ -31,6 +31,13 @@ StructuredBuffer<uint> module_type_path_type;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
+
+// Constant operands read checked type references through this kernel's binding.
+struct KernelTypeRefs : IExplicitOperandTypeRefs
+{
+    uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
+    uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
+}
 RWStructuredBuffer<uint> type_instance_elem_ref_tag;
 RWStructuredBuffer<uint> type_instance_elem_ref_payload;
 RWStructuredBuffer<uint> type_instance_len_kind;
@@ -146,7 +153,7 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
     if (accepted && checked_source_literal_value(operand, SCALAR_U32, literal))
         accepted = publish_checked_constant_atom_at(operand, literal, length);
     else if (accepted)
-        accepted = checked_named_constant_operand(operand, 0u, length.x, length.y);
+        accepted = checked_named_constant_operand(KernelTypeRefs(), operand, 0u, length.x, length.y);
     if (accepted)
         accepted = checked_source_array_length_valid(length.x, length.y, gParams.n_tokens);
     uint count;

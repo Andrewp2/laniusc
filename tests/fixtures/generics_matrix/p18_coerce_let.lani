@@ -1,0 +1,1 @@
+fn main() -> i32 { let a: [i32; 2] = [1, 1]; let s: [i32] = a; s[0] = 41; return a[0] + s[1]; }
