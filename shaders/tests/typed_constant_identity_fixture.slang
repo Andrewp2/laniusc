@@ -111,9 +111,11 @@ public struct LeftGraph : IScopedTypeGraph
     public static uint metadata(uint node, uint field) { return probe_metadata(node, field); }
     public static bool argument(uint node, uint slot, out uint tag, out uint payload)
     { return probe_argument(node, slot, tag, payload); }
+    [ForceInline]
     public static bool constant_value(uint row, out uint3 value) { return atom(row, false, value); }
     public static uint constant_parameter_scalar(uint reference)
     { return reference == 0u ? SCALAR_U32 : (reference == 1u ? SCALAR_U64 : 0u); }
+    [ForceInline]
     public static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { return projection(row, scalar, child); }
     public static bool parameter_is_valid(uint reference, bool constant) { return constant && reference < 2u; }

@@ -78,6 +78,7 @@ static const uint CALLABLE_DEPENDENCY = 3u;
 static const uint CALLABLE_ENUM_VARIANT = 4u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+[ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 uint active_path_count() { return min(gParams.n_hir_nodes, compact_path_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }

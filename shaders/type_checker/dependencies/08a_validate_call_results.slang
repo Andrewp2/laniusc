@@ -188,6 +188,7 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_count();
 }
 
+[ForceInline]
 bool valid_hir(uint node) { return valid_node(node); }
 
 bool valid_token(uint token)

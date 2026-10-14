@@ -115,6 +115,7 @@ public OwnedConstraintStatus owned_constraint_result(uint state, uint detail,
 public OwnedConstraintStatus owned_constraint_ok()
 { return owned_constraint_result(OWNED_CONSTRAINT_MATCHED, 0u); }
 
+[ForceInline]
 public OwnedConstraintStatus owned_constraint_invalid(uint detail)
 { return owned_constraint_result(OWNED_CONSTRAINT_INVALID_INPUT, detail); }
 

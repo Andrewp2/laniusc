@@ -6,10 +6,13 @@ import type_checker.scoped_type_equality;
 // environment, and accepted call inference owns its later publication.
 struct MethodReceiverGraph : IScopedTypeGraph
 {
+    [ForceInline]
     static bool constant_value(uint row, out uint3 value)
     { return checked_constant_atom_value(row, value); }
+    [ForceInline]
     static uint constant_parameter_scalar(uint reference)
     { return checked_constant_parameter_scalar(reference); }
+    [ForceInline]
     static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { return checked_constant_projection(row, scalar, child); }
     static bool parameter_is_valid(uint reference, bool constant)
@@ -19,6 +22,7 @@ struct MethodReceiverGraph : IScopedTypeGraph
     static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
     { return source_substitute_constant_parameter<MethodReceiverGraph>(environment, reference, kind, value); }
     static uint parameter_slot(uint token) { return type_generic_param_slot_by_token[token]; }
+    [ForceInline]
     static uint constant_parameter_slot(uint token) { return type_const_param_slot_by_token[token]; }
     static bool environment_argument(uint environment, uint slot, out uint tag, out uint payload)
     { tag = 0u; payload = 0xffffffffu; return false; }

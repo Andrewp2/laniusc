@@ -202,6 +202,7 @@ static const uint STATEMENT_CONTEXT_FOR_IN = 252u;
 static const uint STATEMENT_CONTEXT_LET_RHS = 253u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
+[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0], gParams.n_tokens);

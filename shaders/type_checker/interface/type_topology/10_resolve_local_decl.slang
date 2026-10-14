@@ -27,6 +27,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
+[ForceInline]
 bool valid_token(uint token) { return token < gParams.token_capacity; }
 uint path_leaf_token(uint node)
 {

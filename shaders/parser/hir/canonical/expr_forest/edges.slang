@@ -40,6 +40,7 @@ static const uint HIR_STMT_ASSIGN = 5u;
 static const uint HIR_STMT_FOR = 7u;
 
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
+[ForceInline]
 uint active_hir_count() { return min(canonical_count[0u], gCanonical.canonical_capacity); }
 uint active_arg_count() { return min(call_arg_count[0u], gCanonical.canonical_capacity); }
 uint active_field_count() { return min(field_count[0u], gCanonical.canonical_capacity); }

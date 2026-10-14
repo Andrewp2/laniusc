@@ -35,10 +35,13 @@ public uint checked_type_capacity()
 
 public struct ScopedCheckedTypeGraph : IScopedTypeGraph
 {
+    [ForceInline]
     public static bool constant_value(uint row, out uint3 value)
     { return checked_constant_atom_value(row, value); }
+    [ForceInline]
     public static uint constant_parameter_scalar(uint reference)
     { return checked_constant_parameter_scalar(reference); }
+    [ForceInline]
     public static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { return checked_constant_projection(row, scalar, child); }
     public static bool parameter_is_valid(uint reference, bool constant)
@@ -49,9 +52,12 @@ public struct ScopedCheckedTypeGraph : IScopedTypeGraph
     { return source_substitute_constant_parameter<ScopedCheckedTypeGraph>(environment, reference, kind, value); }
     public static bool environment_argument(uint environment, uint slot, out uint tag, out uint payload)
     { return application_environment_type_argument<ScopedCheckedTypeGraph>(environment, slot, tag, payload); }
+    [ForceInline]
     public static uint constant_parameter_slot(uint token) { return type_const_param_slot_by_token[token]; }
+    [ForceInline]
     public static bool environment_constant(uint environment, uint slot, out uint kind, out uint value)
     { return application_environment_constant<ScopedCheckedTypeGraph>(environment, slot, kind, value); }
+    [ForceInline]
     public static uint parameter_slot(uint token) { return type_generic_param_slot_by_token[token]; }
     public static uint metadata(uint instance, uint field)
     {
