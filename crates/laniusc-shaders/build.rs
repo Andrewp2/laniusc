@@ -538,7 +538,12 @@ fn check_inlined_size_budget(
 }
 
 /// TEMPORARY test harness (see `spirv_size::mark_dont_inline`): zero, the
-/// default, leaves every call inlinable.
+/// default, leaves every call inlinable. Only kernels of at least
+/// `NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS` are marked; smaller ones compile
+/// fully inlined in under a minute, and marking them only exposes them to the
+/// driver's divergent out-of-line call hangs.
+const NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS: u64 = 100_000;
+
 fn shader_noinline_min_instructions() -> Result<u64> {
     match env::var("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS") {
         Err(env::VarError::NotPresent) => Ok(0),
@@ -570,7 +575,11 @@ fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {
         .chunks_exact(4)
         .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
         .collect::<Vec<_>>();
-    let marked = spirv_size::mark_dont_inline(&mut words, min_instructions)
+    let marked = spirv_size::mark_dont_inline(
+        &mut words,
+        NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS,
+        min_instructions,
+    )
         .with_context(|| format!("mark DontInline helpers in {}", spv_path.display()))?;
     if marked == 0 {
         return Ok(());

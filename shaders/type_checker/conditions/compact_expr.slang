@@ -93,6 +93,7 @@ static const uint ERR_FLOAT_LITERAL = 25u;
 static const uint ERR_COMPUTED_FLOAT_CONSTANT = 26u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+[ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 uint scalar_type(uint node)

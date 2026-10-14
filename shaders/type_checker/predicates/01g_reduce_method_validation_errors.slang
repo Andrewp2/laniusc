@@ -23,6 +23,7 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint hir) { return hir != INVALID && hir < active_hir_count(); }
 

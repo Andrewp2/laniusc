@@ -3,23 +3,36 @@
 // 64-bit machine word. Narrow values have zero unused bits, not sign-fill bits.
 import primitive_types;
 
+// The small helpers below are branch-free and force-inlined: they are copied
+// into every constant reader, so each copy must stay straight-line code.
+[ForceInline]
 public bool integer_words_zero(uint2 value) { return all(value == uint2(0u, 0u)); }
+[ForceInline]
 public bool integer_words_less(uint2 left, uint2 right)
 {
-    return left.y < right.y || (left.y == right.y && left.x < right.x);
+    return (left.y < right.y) | ((left.y == right.y) & (left.x < right.x));
 }
 
+[ForceInline]
+public uint2 integer_words_select(bool condition, uint2 if_true, uint2 if_false)
+{
+    return select(bool2(condition, condition), if_true, if_false);
+}
+
+[ForceInline]
 public uint2 integer_words_add(uint2 left, uint2 right)
 {
     uint low = left.x + right.x;
     return uint2(low, left.y + right.y + uint(low < left.x));
 }
 
+[ForceInline]
 public uint2 integer_words_sub(uint2 left, uint2 right)
 {
     return uint2(left.x - right.x, left.y - right.y - uint(left.x < right.x));
 }
 
+[ForceInline]
 public uint2 integer_words_negate(uint2 value)
 {
     return integer_words_add(~value, uint2(1u, 0u));
@@ -39,56 +52,66 @@ public uint2 integer_words_multiply(uint2 left, uint2 right)
         high + left.x * right.y + left.y * right.x);
 }
 
+// Shift counts are taken modulo 32 inside each word; the selects choose the
+// word layout for 0, 1..31, 32..63 and 64+ bit shifts without branching.
+[ForceInline]
 public uint2 integer_words_shift_left(uint2 value, uint amount)
 {
-    if (amount == 0u) return value;
-    if (amount >= 64u) return uint2(0u, 0u);
-    if (amount >= 32u) return uint2(0u, value.x << (amount - 32u));
-    return uint2(value.x << amount, (value.y << amount) | (value.x >> (32u - amount)));
+    uint shift = amount & 31u;
+    uint carry = select(shift == 0u, 0u, value.x >> ((32u - shift) & 31u));
+    uint low = select(amount >= 32u, 0u, value.x << shift);
+    uint high = select(amount >= 32u, value.x << shift, (value.y << shift) | carry);
+    return integer_words_select(amount >= 64u, uint2(0u, 0u), uint2(low, high));
 }
 
+[ForceInline]
 public uint2 integer_words_shift_right(uint2 value, uint amount)
 {
-    if (amount == 0u) return value;
-    if (amount >= 64u) return uint2(0u, 0u);
-    if (amount >= 32u) return uint2(value.y >> (amount - 32u), 0u);
-    return uint2((value.x >> amount) | (value.y << (32u - amount)), value.y >> amount);
+    uint shift = amount & 31u;
+    uint carry = select(shift == 0u, 0u, value.y << ((32u - shift) & 31u));
+    uint low = select(amount >= 32u, value.y >> shift, (value.x >> shift) | carry);
+    uint high = select(amount >= 32u, 0u, value.y >> shift);
+    return integer_words_select(amount >= 64u, uint2(0u, 0u), uint2(low, high));
 }
 
+[ForceInline]
 public uint2 integer_words_mask(uint bits)
 {
-    if (bits >= 64u) return uint2(0xffffffffu, 0xffffffffu);
-    if (bits >= 32u) return uint2(0xffffffffu,
-        bits == 32u ? 0u : (1u << (bits - 32u)) - 1u);
-    return uint2(bits == 0u ? 0u : (1u << bits) - 1u, 0u);
+    uint low = select(bits >= 32u, 0xffffffffu, (1u << (bits & 31u)) - 1u);
+    uint high = select(bits >= 64u, 0xffffffffu,
+        select(bits > 32u, (1u << ((bits - 32u) & 31u)) - 1u, 0u));
+    return uint2(low, high);
 }
 
+[ForceInline]
 public uint2 integer_words_normalize(uint2 value, uint bits)
 {
     return value & integer_words_mask(bits);
 }
 
+// Sign bit bits-1 for 1 <= bits <= 64; never negative outside that range.
+[ForceInline]
 public bool integer_words_negative(uint2 value, uint bits)
 {
-    if (bits == 0u || bits > 64u) return false;
-    return bits > 32u ? (value.y & (1u << (bits - 33u))) != 0u
-        : (value.x & (1u << (bits - 1u))) != 0u;
+    uint word = select(bits > 32u, value.y, value.x);
+    return ((bits - 1u) < 64u) & (((word >> ((bits - 1u) & 31u)) & 1u) != 0u);
 }
 
+[ForceInline]
 public uint2 integer_words_sign_extend(uint2 value, uint bits)
 {
     uint2 mask = integer_words_mask(bits);
-    return integer_words_negative(value, bits) ? value | ~mask : value & mask;
+    return integer_words_select(integer_words_negative(value, bits), value | ~mask, value & mask);
 }
 
 public uint2 integer_words_cast(uint2 value, uint source_scalar, uint target_scalar)
 {
     uint source_bits = scalar_integer_bits(source_scalar);
-    uint target_bits = scalar_integer_bits(target_scalar);
-    value = scalar_is_signed_integer(source_scalar)
-        ? integer_words_sign_extend(value, source_bits)
-        : integer_words_normalize(value, source_bits);
-    return integer_words_normalize(value, target_bits);
+    uint2 mask = integer_words_mask(source_bits);
+    bool extend = scalar_is_signed_integer(source_scalar) &
+        integer_words_negative(value, source_bits);
+    value = integer_words_select(extend, value | ~mask, value & mask);
+    return integer_words_normalize(value, scalar_integer_bits(target_scalar));
 }
 
 public bool integer_words_less_signed(uint2 left, uint2 right, uint bits)
@@ -126,18 +149,15 @@ public bool integer_words_append_decimal(uint2 value, uint digit, out uint2 resu
     return true;
 }
 
+// Unsigned limits are 2^bits - 1, or zero for a negative magnitude. Signed
+// limits are 2^(bits-1) - 1, plus one for a negative magnitude.
 public bool integer_words_magnitude_fits(uint2 magnitude, uint scalar, bool negative)
 {
     uint bits = scalar_integer_bits(scalar);
-    if (bits == 0u) return false;
-    if (negative && !scalar_is_signed_integer(scalar)) return integer_words_zero(magnitude);
-    uint2 limit = integer_words_mask(bits);
-    if (scalar_is_signed_integer(scalar))
-    {
-        limit = integer_words_shift_left(uint2(1u, 0u), bits - 1u);
-        if (!negative) limit = integer_words_sub(limit, uint2(1u, 0u));
-    }
-    return !integer_words_less(limit, magnitude);
+    uint2 unsigned_limit = integer_words_select(negative, uint2(0u, 0u), integer_words_mask(bits));
+    uint2 signed_limit = integer_words_add(integer_words_mask(bits - 1u), uint2(uint(negative), 0u));
+    uint2 limit = integer_words_select(scalar_is_signed_integer(scalar), signed_limit, unsigned_limit);
+    return (bits != 0u) & !integer_words_less(limit, magnitude);
 }
 
 public bool integer_words_divide_unsigned(uint2 numerator, uint2 denominator,

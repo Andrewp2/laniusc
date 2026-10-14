@@ -342,16 +342,19 @@ public struct AngleDepthTree : IRangeSearchTree<int>
 
 public struct BraceDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.token_capacity;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return brace_match_depth[row];
@@ -360,16 +363,19 @@ public struct BraceDepthRows : IRangeSearchRows<int>
 
 public struct ParenDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.token_capacity;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return paren_match_depth[row];
@@ -378,16 +384,19 @@ public struct ParenDepthRows : IRangeSearchRows<int>
 
 public struct BracketDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.token_capacity;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return bracket_match_depth[row];
@@ -396,16 +405,19 @@ public struct BracketDepthRows : IRangeSearchRows<int>
 
 public struct AngleDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.token_capacity;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return angle_match_depth[row];
@@ -414,11 +426,13 @@ public struct AngleDepthRows : IRangeSearchRows<int>
 
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
 {
+    [ForceInline]
     public static bool aggregate_may_match(int aggregate, int query)
     {
         return aggregate <= query;
     }
 
+    [ForceInline]
     public static bool leaf_matches(int leaf, int query)
     {
         return leaf <= query;

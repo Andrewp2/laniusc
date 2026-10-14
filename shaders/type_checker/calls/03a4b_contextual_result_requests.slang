@@ -52,8 +52,11 @@ RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+[ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
+[ForceInline]
 bool valid_hir(uint node) { return node < active_hir_count(); }
+[ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
