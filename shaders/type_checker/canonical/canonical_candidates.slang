@@ -3,6 +3,7 @@
 // is interned once all of its children have canonical references; one
 // candidate is a few dozen loads and one ct_intern, with no local arrays.
 import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_constants;
 import type_checker.checked_type_graph;
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
@@ -102,19 +103,12 @@ uint row_child(uint row, uint kind, uint index, out bool constant)
     return operand(tag, payload, length);
 }
 
-// Key builders store a candidate's complete record and return KEY_BUILT, or
-// return the candidate's final reference (a sentinel) without a key. One
+// A builder stores a candidate's complete record and returns CT_KEY_BUILT,
+// or returns the candidate's final reference (a sentinel) without a key. One
 // ct_intern call then publishes whichever key was built.
-static const uint KEY_BUILT = 0u;
-
-CtKey empty_key()
-{
-    return ct_key_begin(0u, 0u, 0u, uint3(0u, 0u, 0u));
-}
-
 uint build_row(uint row, uint record, bool final, out CtKey key)
 {
-    key = empty_key();
+    key = ct_empty_key();
     uint kind = type_instance_kind[row];
     if (kind == 0u) return CT_NONE;
     if (kind > 4u) return CT_UNKNOWN;
@@ -155,29 +149,14 @@ uint build_row(uint row, uint record, bool final, out CtKey key)
     }
     if (!key.ok) return CT_UNKNOWN;
     ct_key_store(key, record, uint2(token, mask));
-    return KEY_BUILT;
+    return CT_KEY_BUILT;
 }
 
-// A symbolic projection: CC_CAST(target; child), counted like its child.
-uint build_cast(uint target, uint child, uint record, out CtKey key)
-{
-    key = empty_key();
-    uint child_scalar = ct_is_const_param(child) ? checked_constant_parameter_scalar(ct_param_token(child))
-        : ct_kind(child) == CC_KIND_CAST ? ct_words(child).x : 0u;
-    if (!scalar_is_integer(child_scalar)) return CT_UNKNOWN;
-    key = ct_key_begin(CC_KIND_CAST, 1u, 0u, uint3(target, 0u, 0u));
-    if (!ct_key_reserve_args(key)) return CT_UNKNOWN;
-    ct_key_arg(key, 0u, child);
-    if (!key.ok) return CT_UNKNOWN;
-    ct_key_store(key, record, uint2(INVALID, cc_count_class(child)));
-    return KEY_BUILT;
-}
-
-// Atoms intern their typed value. A projection of a concrete count folds to
-// the target's value once every level fits; a symbolic one is a CC_CAST.
+// Atoms intern their typed value; projections fold or cast
+// (canonical_constants.slang). Both end at the one value-key site.
 uint build_constant(uint candidate, uint record, bool final, out CtKey key)
 {
-    key = empty_key();
+    key = ct_empty_key();
     uint atom = candidate - ct_row_capacity();
     uint3 value;
     if (atom < ct_atom_capacity())
@@ -191,26 +170,13 @@ uint build_constant(uint candidate, uint record, bool final, out CtKey key)
         uint child = operand(CT_CONSTANT_TAG_BIT | child_ref.x, child_ref.y, false);
         if (child == CT_PENDING) return final ? CT_UNKNOWN : CT_PENDING;
         if (!ct_is_resolved(child)) return CT_UNKNOWN;
-        DeviceMemoryBarrier();
-        if (ct_kind(child) != CC_KIND_VALUE) return build_cast(target, child, record, key);
-        uint count = cc_count(child);
-        // A value that is not a count, or does not fit the target, has no
-        // folded identity: an unsupported shape, not an empty candidate.
-        if (count == INVALID || !constant_value_from_count(count, target, value)) return CT_UNKNOWN;
+        uint param_scalar = ct_is_const_param(child)
+            ? checked_constant_parameter_scalar(ct_param_token(child)) : 0u;
+        bool fold;
+        uint status = ct_build_projection(target, child, param_scalar, record, fold, value, key);
+        if (!fold) return status;
     }
-    // The count class is a small dynamic record interned first.
-    uint count;
-    bool countable = constant_value_to_count(value, count);
-    uint klass = CT_NONE;
-    if (countable)
-    {
-        uint spare = CT_NONE;
-        klass = cc_intern_count(count, spare);
-        if (!ct_is_resolved(klass)) return CT_UNKNOWN;
-    }
-    key = ct_key_begin(CC_KIND_VALUE, 0u, 0u, value);
-    ct_key_store(key, record, uint2(countable ? count : INVALID, klass));
-    return KEY_BUILT;
+    return ct_build_value(value, record, key);
 }
 
 // Intern one candidate; CT_PENDING means a child is not interned yet.
@@ -221,5 +187,5 @@ public uint canonical_intern_candidate(uint candidate, bool final)
     uint status;
     if (candidate < ct_row_capacity()) status = build_row(candidate, record, final, key);
     else status = build_constant(candidate, record, final, key);
-    return status == KEY_BUILT ? ct_intern(record, key) : status;
+    return status == CT_KEY_BUILT ? ct_intern(record, key) : status;
 }

@@ -4,8 +4,10 @@
 
 use crate::gpu::{
     compiler_graph::{
+        AccessMode,
         CompilerGraphBuilder,
         CompilerPhase,
+        ReflectedResourceBinding,
         ResourceClass,
         ResourceDesc,
         ResourceDomain,
@@ -18,9 +20,19 @@ pub(super) const CANONICAL_CLEAR_PASS: &str = "type_check.canonical.clear";
 pub(super) const CANONICAL_CLEAR_KERNEL: &str = "type_checker/canonical/00_clear";
 pub(super) const CANONICAL_INTERN_KERNEL: &str = "type_checker/canonical/01_intern";
 pub(super) const CANONICAL_ROUND_ARGS_KERNEL: &str = "type_checker/canonical/02_round_args";
-/// The late stage re-arms empty and unknown candidates and keeps the table.
+/// The early and late stages re-arm empty and unknown candidates and keep
+/// the table (the dependency pages fill it first).
+pub(super) const CANONICAL_EARLY_REARM_PASS: &str = "type_check.canonical.rearm";
 pub(super) const CANONICAL_REARM_PASS: &str = "type_check.canonical.late.rearm";
 pub(super) const CANONICAL_REARM_KERNEL: &str = "type_checker/canonical/03_rearm";
+/// Dependency signature types (tag 5) are interned per page while the page
+/// is resident: the begin pass makes the page's nodes the round-0
+/// candidates, and the rounds are the intern rounds of 05_intern_dependency.
+pub(super) const CANONICAL_DEPENDENCY_BEGIN_PASS: &str = "type_check.canonical.dependency.begin";
+pub(super) const CANONICAL_DEPENDENCY_BEGIN_KERNEL: &str =
+    "type_checker/canonical/04_dependency_begin";
+pub(super) const CANONICAL_DEPENDENCY_INTERN_KERNEL: &str =
+    "type_checker/canonical/05_intern_dependency";
 
 /// Pass names of one interning stage. Round 0 interns every pending
 /// candidate (direct); later rounds walk the GPU frontier (indirect), each
@@ -32,6 +44,14 @@ pub(super) struct CanonicalRoundPasses {
     pub round: &'static str,
     pub counts_readback: &'static str,
 }
+
+/// Interns the resident dependency page.
+pub(super) const CANONICAL_DEPENDENCY_ROUNDS: CanonicalRoundPasses = CanonicalRoundPasses {
+    round0: "type_check.canonical.dependency.round0",
+    round_args: "type_check.canonical.dependency.round_args",
+    round: "type_check.canonical.dependency.round",
+    counts_readback: "type_check.canonical.dependency.counts.readback",
+};
 
 /// Interns the declared instance rows and constants, ahead of the closed
 /// application index.
@@ -77,7 +97,7 @@ pub(super) const CANONICAL_DEBUG_KERNELS: [&str; 3] = [
 ];
 /// Words of `ct_counts` and of `canonical_validation`.
 pub(super) const CANONICAL_COUNT_WORDS: usize = 16;
-pub(super) const CANONICAL_VALIDATION_WORDS: usize = 36;
+pub(super) const CANONICAL_VALIDATION_WORDS: usize = 38;
 /// `ct_counts` words the host reads after each batch.
 pub(super) const CANONICAL_COUNT_PENDING: usize = 2;
 pub(super) const CANONICAL_COUNT_OVERFLOW: usize = 3;
@@ -113,12 +133,21 @@ pub(super) const CANONICAL_VALIDATION_COUNTERS: [&str; 16] = [
     "normalized_merges",
 ];
 
+/// Dependency-node counters (88_validate_table), after the witness pairs.
+pub(super) const CANONICAL_DEPENDENCY_COUNTERS: [(&str, usize); 2] =
+    [("unknown_dependency", 36), ("resolved_dependency", 37)];
+
 /// One `[canonical_validate]` line: every counter, then up to ten
 /// (row, other) witness pairs of false and missed merges.
 pub(super) fn canonical_validation_report(words: &[u32]) -> String {
     let mut line = String::from("[canonical_validate]");
     for (name, value) in CANONICAL_VALIDATION_COUNTERS.iter().zip(words) {
         line.push_str(&format!(" {name}={value}"));
+    }
+    for (name, index) in CANONICAL_DEPENDENCY_COUNTERS {
+        if let Some(value) = words.get(index) {
+            line.push_str(&format!(" {name}={value}"));
+        }
     }
     let witnesses = words.get(14).copied().unwrap_or(0).min(10) as usize;
     for pair in words.get(16..16 + 2 * witnesses).unwrap_or(&[]).chunks_exact(2) {
@@ -136,6 +165,10 @@ pub(super) struct CanonicalCapacity {
     pub constant_rows: u64,
     /// Checked argument words of body and generated rows beyond the tokens.
     pub extra_argument_rows: u64,
+    /// Dependency signature nodes over every page of the job (the constant
+    /// span total), and the largest page's node count.
+    pub dependency_rows: u64,
+    pub dependency_page_rows: u64,
 }
 
 fn storage(
@@ -153,41 +186,54 @@ fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<Resource
         .ok_or_else(|| format!("missing canonical resource {name}"))
 }
 
-/// Declares the canonical tables and registers the early stage (clear and
-/// rounds) in recording order. `register_canonical_late_passes` adds the late
-/// stage and the debug validation.
+/// Declares the canonical tables and registers the clear, ahead of the
+/// dependency pages. `register_canonical_dependency_passes`,
+/// `register_canonical_early_passes` and `register_canonical_late_passes`
+/// add the stages in recording order.
 ///
 /// Capacities (docs/canonical-type-ids.md, "Capacities"): candidates are
-/// instance rows, constant atoms and constant projections, each owning one
-/// fixed record. Dynamic records are count classes, at most one per
-/// constant candidate. Arguments are bounded by the checked argument storage
-/// plus an element/length pair per row and one child per projection, so an
-/// overflow means a broken invariant rather than a large input.
+/// instance rows, constant atoms and constant projections, and dependency
+/// nodes, each owning one fixed record. Dynamic records are count classes,
+/// at most one per constant candidate or node. Arguments are bounded by the
+/// checked argument storage plus an element/length pair per row, one child
+/// per projection and two per dependency node (signature trees have fewer
+/// edges than nodes), so an overflow means a broken invariant rather than a
+/// large input.
 pub(super) fn register_canonical_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     capacity: CanonicalCapacity,
 ) -> Result<(), String> {
-    let CanonicalCapacity { token_rows, hir_rows, type_rows, constant_rows, extra_argument_rows } =
-        capacity;
+    let CanonicalCapacity {
+        token_rows,
+        hir_rows,
+        type_rows,
+        constant_rows,
+        extra_argument_rows,
+        dependency_rows,
+        dependency_page_rows,
+    } = capacity;
     let candidates = type_rows + 2 * constant_rows;
-    let records = 32 + candidates + 2 * constant_rows;
+    let records = 32 + candidates + 2 * constant_rows + 2 * dependency_rows;
     let argument_bytes = token_rows * 16
         + extra_argument_rows * 128
         + hir_rows * 4
         + type_rows * 8
-        + constant_rows * 8;
+        + constant_rows * 8
+        + dependency_rows * 8;
     let workspace = ResourceClass::Workspace;
     storage(graph, "ct_head", workspace, records * 16)?;
     storage(graph, "ct_meta", workspace, records * 16)?;
     storage(graph, "ct_extra", workspace, records * 8)?;
     storage(graph, "ct_args", workspace, argument_bytes)?;
     storage(graph, "ct_slot", workspace, (records * 2).next_power_of_two() * 4)?;
-    let counts = storage(graph, "ct_counts", workspace, CANONICAL_COUNT_WORDS as u64 * 4)?;
+    storage(graph, "ct_counts", workspace, CANONICAL_COUNT_WORDS as u64 * 4)?;
     storage(graph, "canonical_row", workspace, type_rows * 4)?;
     storage(graph, "canonical_atom", workspace, constant_rows * 4)?;
     storage(graph, "canonical_projection", workspace, constant_rows * 4)?;
-    storage(graph, "canonical_frontier", workspace, candidates * 8)?;
+    storage(graph, "canonical_dependency_type", workspace, dependency_rows.max(1) * 4)?;
+    // Two lists, each for every candidate or every node of one page.
+    storage(graph, "canonical_frontier", workspace, candidates.max(dependency_page_rows) * 8)?;
     storage(graph, "canonical_validation", workspace, CANONICAL_VALIDATION_WORDS as u64 * 4)?;
     graph.add_resource(ResourceDesc {
         name: "canonical_round_args",
@@ -196,7 +242,7 @@ pub(super) fn register_canonical_passes(
         bytes: 12,
         usage: WorkspaceUsageClass::StorageIndirect,
     })?;
-    let counts_readback = storage(
+    storage(
         graph,
         "canonical_counts_readback",
         ResourceClass::External,
@@ -216,19 +262,58 @@ pub(super) fn register_canonical_passes(
         kernels,
         CANONICAL_CLEAR_KERNEL,
     )?;
-    register_rounds(graph, kernels, &CANONICAL_EARLY_ROUNDS, counts, counts_readback)?;
-    // Round 0 starts from an empty table: a record is read only after its
-    // publication, which follows its write. Round 0 also appends the first
-    // frontier before any round reads it.
+    Ok(())
+}
+
+/// Registers the per-page dependency interning, after the dependency
+/// type-instance projection that shares its page. `canonical_type_roots` is
+/// the page's alias-root relation.
+pub(super) fn register_canonical_dependency_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    canonical_type_roots: ResourceId,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        CANONICAL_DEPENDENCY_BEGIN_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        CANONICAL_DEPENDENCY_BEGIN_KERNEL,
+        &[],
+    )?;
+    let roots = [ReflectedResourceBinding {
+        binding: "canonical_type_roots",
+        resource: canonical_type_roots,
+        mode: Some(AccessMode::Read),
+    }];
+    let rounds = &CANONICAL_DEPENDENCY_ROUNDS;
+    register_rounds(graph, kernels, rounds, CANONICAL_DEPENDENCY_INTERN_KERNEL, &roots)?;
+    // The first round of the job starts from an empty table: a record is
+    // read only after its publication, which follows its write. Round 0 also
+    // appends the first frontier before any round reads it.
     graph.mark_pass_bindings_initialize(
-        CANONICAL_EARLY_ROUNDS.round0,
+        rounds.round0,
         &["ct_head", "ct_meta", "ct_extra", "ct_args", "canonical_frontier"],
     )?;
-    graph.mark_pass_bindings_initialize(
-        CANONICAL_EARLY_ROUNDS.round_args,
-        &["canonical_round_args"],
+    graph.mark_pass_bindings_initialize(rounds.round_args, &["canonical_round_args"])
+}
+
+/// Registers the early stage: re-arm the table the dependency pages started
+/// and intern the declared rows and constants, ahead of the closed
+/// application index.
+pub(super) fn register_canonical_early_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        CANONICAL_EARLY_REARM_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        CANONICAL_REARM_KERNEL,
+        &[],
     )?;
-    Ok(())
+    register_rounds(graph, kernels, &CANONICAL_EARLY_ROUNDS, CANONICAL_INTERN_KERNEL, &[])
 }
 
 /// Round 0, then batches of frontier rounds repeated until no candidate is
@@ -237,13 +322,15 @@ fn register_rounds(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     passes: &CanonicalRoundPasses,
-    counts: ResourceId,
-    counts_readback: ResourceId,
+    intern_kernel: &'static str,
+    intern_bindings: &[ReflectedResourceBinding],
 ) -> Result<(), String> {
-    for (name, kernel) in [
-        (passes.round0, CANONICAL_INTERN_KERNEL),
-        (passes.round_args, CANONICAL_ROUND_ARGS_KERNEL),
-        (passes.round, CANONICAL_INTERN_KERNEL),
+    let counts = resource(graph, "ct_counts")?;
+    let counts_readback = resource(graph, "canonical_counts_readback")?;
+    for (name, kernel, bindings) in [
+        (passes.round0, intern_kernel, intern_bindings),
+        (passes.round_args, CANONICAL_ROUND_ARGS_KERNEL, &[][..]),
+        (passes.round, intern_kernel, intern_bindings),
     ] {
         graph.add_kernel_pass_by_name(
             name,
@@ -251,7 +338,7 @@ fn register_rounds(
             ResourceDomain::Types,
             kernels,
             kernel,
-            &[],
+            bindings,
         )?;
     }
     graph.add_indirect_dispatch(passes.round, "canonical_round_args")?;
@@ -285,9 +372,7 @@ pub(super) fn register_canonical_late_passes(
         CANONICAL_REARM_KERNEL,
         &[],
     )?;
-    let counts = resource(graph, "ct_counts")?;
-    let counts_readback = resource(graph, "canonical_counts_readback")?;
-    register_rounds(graph, kernels, &CANONICAL_LATE_ROUNDS, counts, counts_readback)?;
+    register_rounds(graph, kernels, &CANONICAL_LATE_ROUNDS, CANONICAL_INTERN_KERNEL, &[])?;
     if canonical_validation_enabled() {
         // Bucket heads (a power of two at least the row count), then links.
         storage(

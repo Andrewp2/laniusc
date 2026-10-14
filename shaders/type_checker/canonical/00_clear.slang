@@ -32,6 +32,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < ct_row_capacity()) canonical_row[i] = CT_PENDING;
     if (i < ct_atom_capacity()) canonical_atom[i] = CT_PENDING;
     if (i < ct_projection_capacity()) canonical_projection[i] = CT_PENDING;
+    if (i < ct_dependency_capacity()) canonical_dependency_type[i] = CT_PENDING;
     uint count; uint stride;
     canonical_validation.GetDimensions(count, stride);
     if (i < count) canonical_validation[i] = 0u;

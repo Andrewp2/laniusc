@@ -176,8 +176,9 @@ a lane only reads records whose publication it has already observed.
 
 Allocation stays bounded:
 
-- **Candidates use fixed records.** Candidate `c` owns record `32 + c`, so
-  rows, atoms and projections never allocate.
+- **Candidates use fixed records.** Candidate `c` owns record `32 + c`, and
+  dependency node `i` (job-wide) owns record `32 + candidates + i`, so rows,
+  atoms, projections and dependency nodes never allocate.
 - **Dynamic records come from small keys.** Count classes (`cc_intern_count`)
   and other small keys use `ct_intern_small`. It looks the key up first and
   stores a record only on a miss.
@@ -249,6 +250,10 @@ A reference is one of three things:
 - a parameter leaf:
   - type parameters are `CT_PARAM_BIT | token`;
   - constant parameters are `CT_PARAM_BIT | CT_CONST_PARAM_BIT | token`;
+  - parameters of a dependency signature add `CT_DEP_PARAM_BIT` and carry
+    the declaration's slot instead of a token (`ct_dep_type_param(slot)`,
+    `ct_dep_const_param(slot)`); their binder is the declaration or callee
+    whose environment is applied, so they never equal a local parameter;
 - a sentinel: `CT_PENDING`, `CT_UNKNOWN` or `CT_NONE`, the three largest
   values.
 
@@ -319,7 +324,8 @@ projection. A candidate is ready when all of its children have references.
 The candidate's own lane interns it, and no lane waits for another lane's
 result.
 
-- **`00_clear`** empties the slots and sets every candidate to `CT_PENDING`.
+- **`00_clear`** empties the slots and sets every candidate and dependency
+  node to `CT_PENDING`.
 - **`01_intern`** performs one round.
   - Round 0 is a direct dispatch over all candidates: constants first, then
     rows from the last.
@@ -341,47 +347,63 @@ result.
     one readback per stage).
   - Empty indirect rounds dispatch zero workgroups.
 
-### Stages: early and late
+### Stages: dependency pages, early and late
 
-Each job interns twice into one table, so an ID from the early stage stays
-valid for the whole job.
+Each job interns into one table, so an ID stays valid for the whole job.
 
-- **Early** (`00_clear`, then rounds). It is recorded unconditionally after
+- **Clear** (`00_clear`). It is recorded unconditionally after
+  `type_instances.project`, ahead of the dependency pages.
+- **Dependency pages** (`04_dependency_begin`, then rounds of
+  `05_intern_dependency`). They run inside the per-page projection closure,
+  after `dependencies.type_instances.project`, so each page interns its
+  signature types (checked tag 5) while it is resident; a single resident
+  page is interned once in the same place. Node `t` of a page is stored at
+  `canonical_dependency_type[span + t]`, where `span` is the page's
+  constant-type span base (`dependency_constant_type_span_base`), and that
+  table persists across pages. The interface exports checked rows node by
+  node in the rows' operand order, so nodes mirror rows: kinds 3..6
+  (named, array, slice, reference) build the row keys, 9 and 10 the
+  constant keys (`canonical_constants.slang`, shared with the checked
+  constants), and 2 and 8 are slot leaves. A type alias node is its
+  signature node (`canonical_type_roots`); function types (7) are
+  `CT_UNKNOWN`, as rows have no function kind. An imported row and the
+  signature node it came from therefore share one ID.
+- **Early** (`03_rearm`, then rounds). It is recorded unconditionally after
   the declaration refs (`type_instances.decl_refs_for_bindings`) and before
   `type_instances.index_closed_applications`. It interns the source rows and
   the constants that exist by then.
 - **Late** (`03_rearm`, then rounds). It is recorded before
   `semantic_artifact.generic_native_words`. `03_rearm` sets every candidate
   that is `CT_NONE` or `CT_UNKNOWN` back to `CT_PENDING` and keeps the rest,
-  and late round 0 skips every candidate that is not pending. This stage
+  and round 0 skips every candidate that is not pending. This stage
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
 - Interned rows must not be rewritten afterwards. The cross-check at the end
   of the late stage would report a rewritten row as a false or missed merge.
-- Graph registration follows recording order. The early passes are
-  registered between the declaration refs and
-  `type_instances.infer_imported_decl_refs`. That pass is recorded later
-  (inside inference), so registering it after the canonical passes keeps its
-  workspace from sharing storage with the canonical tables.
-- **Not built yet:**
-  - **dependency pages (tag 5).** These need a persistent `dependency_type_ct`
-    per page, filled inside the per-page projection closure. Dependency type
-    nodes reference smaller indices, so rounds by height apply. Generic
-    parameters of a dependency declaration need a stable leaf, (declaration
-    triple, slot), as a record.
-  - **call and nominal environments (`CT_ENV`).** These wait for P1's
-    published binding tables (`call_env_type_binding`, `03a3b`).
+- Graph registration follows recording order. The clear is registered after
+  `type_instances.project` and the dependency passes after
+  `dependencies.type_instances.project`. The early passes are registered
+  between the declaration refs and `type_instances.infer_imported_decl_refs`.
+  That pass is recorded later (inside inference), so registering it after
+  the canonical passes keeps its workspace from sharing storage with the
+  canonical tables.
+- Each page costs one readback when its rounds fit one batch.
+- **Not built yet:** call and nominal environments (`CT_ENV`). These wait
+  for P1's published binding tables (`call_env_type_binding`, `03a3b`).
 
 ### Capacities and overflow
 
 Each table has a fixed size:
 
-- **Records:** 32 + candidates + 2 × constant rows. That covers one fixed
-  record per candidate, plus at most one count class per constant candidate.
+- **Records:** 32 + candidates + 2 × constant rows + 2 × dependency nodes.
+  That covers one fixed record per candidate and per dependency node, plus at
+  most one count class per constant candidate or constant node.
 - **Slots:** the next power of two at or above 2 × records.
-- **Arguments:** the checked argument storage, plus 2 words per row and 1
-  word per projection.
+- **Arguments:** the checked argument storage, plus 2 words per row, 1
+  word per projection and 2 words per dependency node (a signature tree has
+  fewer edges than nodes).
+- **Frontier:** two lists of max(candidates, largest page's nodes).
 
 So overflow means a broken invariant rather than a large input. It still sets
 a `CT_OVERFLOW_*` bit, and the host prints the counters. Consumers do not read
@@ -398,7 +420,9 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
 - **`88_validate_table`** (1.2k instructions) checks uniqueness and facts
   only. Per slot it checks for duplicate records, broken probe chains and
   facts that differ when recomputed from the children. Per candidate it
-  counts pending, unknown and unpublished references.
+  counts pending, unknown and unpublished references, and per dependency
+  node unknown and resolved ones (`unknown_dependency`,
+  `resolved_dependency`, after the witness pairs).
 - **`89_crosscheck_buckets` and `90_validate`** compare against the previous
   graph equality. Only `90_validate` imports `scoped_type_equality`, and it
   calls `scoped_type_refs_equal` at one site (13.8k instructions fully
@@ -411,6 +435,9 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
     spelling, type-operand IDs; constant operands are left out) that the old
     walker accepts but that have different IDs.
   - **Unknown rows:** rows whose candidate ended as `CT_UNKNOWN`.
+  - A row whose ID is a dependency node's record (no row owns it) is
+    confirmed against the next row of its bucket chain with the same ID,
+    which chains every such row of the bucket.
 
 ### API (frozen for P3–P5)
 
@@ -419,12 +446,14 @@ not generic, and it imports `primitive_types` only.
 
 | group | functions |
 |---|---|
-| classify | `ct_is_resolved`, `ct_is_record`, `ct_is_stored`, `ct_is_param`, `ct_is_type_param`, `ct_is_const_param`, `ct_is_constant`, `ct_type_param(token)`, `ct_const_param(token)`, `ct_param_token` |
+| classify | `ct_is_resolved`, `ct_is_record`, `ct_is_stored`, `ct_is_param`, `ct_is_type_param`, `ct_is_const_param`, `ct_is_dep_param`, `ct_is_constant`, `ct_type_param(token)`, `ct_const_param(token)`, `ct_dep_type_param(slot)`, `ct_dep_const_param(slot)`, `ct_param_token` |
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
 | build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record` |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
+| dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`, `ct_dependency_record(index)`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
+| constant keys | `canonical_constants.slang`: `ct_build_value(value, record, key)`, `ct_build_projection(target, child, param_scalar, record, fold, value, key)` |
 
 Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
 builder. They intern through `ct_intern_spare` with one lane-owned spare

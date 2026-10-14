@@ -413,10 +413,12 @@ impl SemanticProjectionOperations {
 
 /// Hash-consed canonical type identities (docs/canonical-type-ids.md).
 ///
-/// Two stages share one table. The early stage clears it and interns the
-/// declared rows and constants ahead of the closed application index; the
-/// late stage re-arms the candidates that were still empty or unknown and
-/// interns what later producers added. Each stage records round 0, then
+/// Three stages share one table, cleared ahead of the dependency pages. The
+/// dependency stage interns the resident page's signature types, once per
+/// page; the early stage interns the declared rows and constants ahead of
+/// the closed application index; the late stage interns what later
+/// producers added. The early and late stages first re-arm the candidates
+/// that are still empty or unknown. Each stage records round 0, then
 /// batches of frontier rounds (indirect dispatches sized on the GPU); every
 /// batch ends with a copy of the interning counters, and the host records
 /// another batch only while candidates are pending, so the number of rounds
@@ -432,6 +434,12 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     late_round_args: ComputeInvocation,
     late_round: ComputeInvocation,
     late_counts_readback: crate::gpu::operations::CopyBufferOperation,
+    early_rearm: ComputeInvocation,
+    dependency_begin: ComputeOperation,
+    dependency_round0: ComputeOperation,
+    dependency_round_args: ComputeInvocation,
+    dependency_round: ComputeOperation,
+    dependency_counts_readback: crate::gpu::operations::CopyBufferOperation,
     validate: Vec<ComputeOperation>,
     validation_readback: Option<crate::gpu::operations::CopyBufferOperation>,
 }
@@ -439,8 +447,19 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
 /// Which interning stage to record.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(in crate::type_checker) enum CanonicalStage {
+    Dependency,
     Early,
     Late,
+}
+
+impl CanonicalStage {
+    pub(in crate::type_checker) fn label(self) -> &'static str {
+        match self {
+            Self::Dependency => "dependency",
+            Self::Early => "early",
+            Self::Late => "late",
+        }
+    }
 }
 
 impl CanonicalTypeOperations {
@@ -473,11 +492,13 @@ impl CanonicalTypeOperations {
         };
         let early = &canonical_passes::CANONICAL_EARLY_ROUNDS;
         let late = &canonical_passes::CANONICAL_LATE_ROUNDS;
+        let dependency_rows = words("canonical_dependency_type")?;
         let clear = direct(
             canonical_passes::CANONICAL_CLEAR_PASS,
             canonical_passes::CANONICAL_CLEAR_KERNEL,
             words("ct_slot")?
                 .max(candidates)
+                .max(dependency_rows)
                 .max(canonical_passes::CANONICAL_VALIDATION_WORDS as u32),
         )?;
         let rearm = direct(
@@ -500,6 +521,30 @@ impl CanonicalTypeOperations {
         let late_round_args = round_args.invocation(graph, late.round_args)?;
         let late_round = round.invocation(graph, late.round)?;
         let late_counts_readback = counts_copy(late.counts_readback)?;
+        let early_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_PASS)?;
+        let dependency = &canonical_passes::CANONICAL_DEPENDENCY_ROUNDS;
+        // Round 0 covers the largest page; lanes past the page's nodes exit.
+        let page_rows = words("dependency_canonical_type_roots_a")?;
+        let dependency_begin = direct(
+            canonical_passes::CANONICAL_DEPENDENCY_BEGIN_PASS,
+            canonical_passes::CANONICAL_DEPENDENCY_BEGIN_KERNEL,
+            1,
+        )?;
+        let dependency_round0 = direct(
+            dependency.round0,
+            canonical_passes::CANONICAL_DEPENDENCY_INTERN_KERNEL,
+            page_rows,
+        )?;
+        let dependency_round_args = round_args.invocation(graph, dependency.round_args)?;
+        let dependency_round = ComputeOperation::indirect(
+            device,
+            graph,
+            resources,
+            dependency.round,
+            &passes.kernel(canonical_passes::CANONICAL_DEPENDENCY_INTERN_KERNEL),
+            &typed_buffer_from_resources(resources, "canonical_round_args")?,
+        )?;
+        let dependency_counts_readback = counts_copy(dependency.counts_readback)?;
         let validation_readback = if canonical_passes::canonical_validation_enabled() {
             Some(crate::gpu::operations::CopyBufferOperation::new(
                 graph,
@@ -520,7 +565,10 @@ impl CanonicalTypeOperations {
                 direct(
                     canonical_passes::CANONICAL_VALIDATE_PASS,
                     canonical_passes::CANONICAL_VALIDATE_KERNEL,
-                    words("ct_slot")?.max(candidates).max(words("canonical_crosscheck_links")?),
+                    words("ct_slot")?
+                        .max(candidates)
+                        .max(dependency_rows)
+                        .max(words("canonical_crosscheck_links")?),
                 )?,
                 direct(
                     canonical_passes::CANONICAL_CROSSCHECK_BUCKETS_PASS,
@@ -547,6 +595,12 @@ impl CanonicalTypeOperations {
             late_round_args,
             late_round,
             late_counts_readback,
+            early_rearm,
+            dependency_begin,
+            dependency_round0,
+            dependency_round_args,
+            dependency_round,
+            dependency_counts_readback,
             validate,
             validation_readback,
         })
@@ -554,6 +608,10 @@ impl CanonicalTypeOperations {
 
     fn record_round(&self, encoder: &mut wgpu::CommandEncoder, stage: CanonicalStage) -> Result<()> {
         match stage {
+            CanonicalStage::Dependency => {
+                self.dependency_round.record(encoder)?;
+                self.round_args.record_invocation(encoder, &self.dependency_round_args)
+            }
             CanonicalStage::Early => {
                 self.round.record(encoder)?;
                 self.round_args.record(encoder)
@@ -567,21 +625,32 @@ impl CanonicalTypeOperations {
 
     fn record_counts_readback(&self, encoder: &mut wgpu::CommandEncoder, stage: CanonicalStage) {
         match stage {
+            CanonicalStage::Dependency => self.dependency_counts_readback.record(encoder),
             CanonicalStage::Early => self.counts_readback.record(encoder),
             CanonicalStage::Late => self.late_counts_readback.record(encoder),
         }
     }
 
-    /// Records the stage's start (the clear, or the re-arm) and its first
-    /// batch: round 0 and frontier rounds.
+    /// Clears the table, ahead of the dependency pages.
+    pub(in crate::type_checker) fn record_clear(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.clear.record(encoder)
+    }
+
+    /// Records the stage's start (the page's begin, or the re-arm) and its
+    /// first batch: round 0 and frontier rounds.
     pub(in crate::type_checker) fn record_first_batch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         stage: CanonicalStage,
     ) -> Result<()> {
         match stage {
+            CanonicalStage::Dependency => {
+                self.dependency_begin.record(encoder)?;
+                self.dependency_round0.record(encoder)?;
+                self.round_args.record_invocation(encoder, &self.dependency_round_args)?;
+            }
             CanonicalStage::Early => {
-                self.clear.record(encoder)?;
+                self.rearm.record_invocation(encoder, &self.early_rearm)?;
                 self.round0.record(encoder)?;
                 self.round_args.record(encoder)?;
             }

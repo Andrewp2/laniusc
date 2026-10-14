@@ -4495,6 +4495,21 @@ fn build_graph(
     }
     TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
+    // Canonical identities start ahead of the dependency pages, which intern
+    // their signature types while each page is resident.
+    super::canonical_passes::register_canonical_passes(
+        &mut graph,
+        kernels,
+        super::canonical_passes::CanonicalCapacity {
+            token_rows,
+            hir_rows,
+            type_rows,
+            constant_rows,
+            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
+            dependency_rows: u64::from(dependency_capacity.constant_type_rows),
+            dependency_page_rows: dependency_type_rows,
+        },
+    )?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -4518,6 +4533,11 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_TYPE_INSTANCES_PROJECT.name, "path_dispatch_args")?;
+    super::canonical_passes::register_canonical_dependency_passes(
+        &mut graph,
+        kernels,
+        dependency_canonical_type_roots,
+    )?;
     TYPE_PATHS_PROJECT_AFTER_ALIAS_EQUIVALENCE.register_kernel(&mut graph, kernels)?;
     TYPE_CONSTANT_SCALARS_AFTER_ALIASES.register_kernel(&mut graph, kernels)?;
     // Match resident recording: child edges consume persistent local/imported
@@ -5098,17 +5118,7 @@ fn build_graph(
     TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.register_kernel(&mut graph, kernels)?;
     // Canonical identities of the declared rows, in recording order: after
     // the decl refs and ahead of the closed application index.
-    super::canonical_passes::register_canonical_passes(
-        &mut graph,
-        kernels,
-        super::canonical_passes::CanonicalCapacity {
-            token_rows,
-            hir_rows,
-            type_rows,
-            constant_rows,
-            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
-        },
-    )?;
+    super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(

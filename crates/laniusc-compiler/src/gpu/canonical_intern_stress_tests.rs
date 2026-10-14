@@ -159,6 +159,7 @@ fn physical_gpu_single_dispatch_interning_is_unique_under_contention() {
         ("canonical_row", 1),
         ("canonical_atom", 1),
         ("canonical_projection", 1),
+        ("canonical_dependency_type", 1),
         ("stress_result", LANES as usize),
         ("stress_errors", ERROR_WORDS),
     ] {

@@ -23,7 +23,11 @@ public static const uint CT_UNKNOWN = 0xfffffffeu;
 public static const uint CT_NONE = 0xfffffffdu;
 public static const uint CT_PARAM_BIT = 0x80000000u;
 public static const uint CT_CONST_PARAM_BIT = 0x40000000u;
-public static const uint CT_PARAM_TOKEN_MASK = 0x3fffffffu;
+public static const uint CT_PARAM_TOKEN_MASK = 0x1fffffffu;
+// Parameters of a dependency signature (tag 5) are slot leaves: their binder
+// is the dependency declaration or callee whose environment is applied.
+public static const uint CT_DEP_PARAM_BIT = 0x20000000u;
+public static const uint CT_DEP_PARAM_SLOTS = 32u;
 public static const uint CT_ID_LIMIT = 0x40000000u;
 // First record ID that is not a preseeded scalar.
 public static const uint CT_FIRST_RECORD = 32u;
@@ -70,6 +74,10 @@ public globallycoherent RWStructuredBuffer<uint> ct_counts;
 public globallycoherent RWStructuredBuffer<uint> canonical_row;
 public globallycoherent RWStructuredBuffer<uint> canonical_atom;
 public globallycoherent RWStructuredBuffer<uint> canonical_projection;
+// Canonical reference of every dependency type node by its job-wide index:
+// the page's span base (dependency_constant_type_span_base) plus the node.
+// Written while the page is resident; CT_PENDING until interned.
+public globallycoherent RWStructuredBuffer<uint> canonical_dependency_type;
 
 public static const uint CT_COUNT_NEXT_RECORD = 0u;
 public static const uint CT_COUNT_NEXT_ARG = 1u;
@@ -159,6 +167,21 @@ public uint ct_const_param(uint token)
 public uint ct_param_token(uint ref)
 {
     return ref & CT_PARAM_TOKEN_MASK;
+}
+
+public uint ct_dep_type_param(uint slot)
+{
+    return slot < CT_DEP_PARAM_SLOTS ? CT_PARAM_BIT | CT_DEP_PARAM_BIT | slot : CT_UNKNOWN;
+}
+
+public uint ct_dep_const_param(uint slot)
+{
+    return slot < CT_DEP_PARAM_SLOTS ? CT_PARAM_BIT | CT_CONST_PARAM_BIT | CT_DEP_PARAM_BIT | slot : CT_UNKNOWN;
+}
+
+public bool ct_is_dep_param(uint ref)
+{
+    return ct_is_param(ref) && (ref & CT_DEP_PARAM_BIT) != 0u;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +303,7 @@ public static const uint CT_CONSTANT_TAG_BIT = 0x80000000u;
 public uint ct_row_capacity() { uint n; uint s; canonical_row.GetDimensions(n, s); return n; }
 public uint ct_atom_capacity() { uint n; uint s; canonical_atom.GetDimensions(n, s); return n; }
 public uint ct_projection_capacity() { uint n; uint s; canonical_projection.GetDimensions(n, s); return n; }
+public uint ct_dependency_capacity() { uint n; uint s; canonical_dependency_type.GetDimensions(n, s); return n; }
 
 public uint ct_row_ref(uint row)
 {
@@ -296,7 +320,8 @@ public uint ct_constant_ref(uint kind, uint payload)
 
 // Interning candidates: rows [0, R), atoms [R, R + A), projections
 // [R + A, R + A + P). Candidate c owns the fixed record CT_FIRST_RECORD + c;
-// dynamic records (count classes) follow every candidate's record.
+// dependency node i owns the record after every candidate's; dynamic records
+// (count classes) follow.
 public uint ct_candidate_count()
 {
     return ct_row_capacity() + ct_atom_capacity() + ct_projection_capacity();
@@ -307,9 +332,14 @@ public uint ct_candidate_record(uint candidate)
     return CT_FIRST_RECORD + candidate;
 }
 
+public uint ct_dependency_record(uint index)
+{
+    return CT_FIRST_RECORD + ct_candidate_count() + index;
+}
+
 public uint ct_dynamic_base()
 {
-    return CT_FIRST_RECORD + ct_candidate_count();
+    return CT_FIRST_RECORD + ct_candidate_count() + ct_dependency_capacity();
 }
 
 public uint ct_candidate_state(uint candidate)

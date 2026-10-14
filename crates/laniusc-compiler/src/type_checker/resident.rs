@@ -199,7 +199,7 @@ fn record_canonical_types(
         if trace || overflow != 0 {
             eprintln!(
                 "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={} args={} overflow={overflow:#x}",
-                if stage == CanonicalStage::Early { "early" } else { "late" },
+                stage.label(),
                 counts[canonical_passes::CANONICAL_COUNT_ROUND],
                 counts[0],
                 counts[1],
@@ -892,7 +892,21 @@ impl GpuTypeChecker {
                 .bind_groups
                 .project_type_instances
                 .record(encoder)?;
+            let canonical = &bind_groups.semantic_projection.canonical_types;
+            canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                // Each page interns its signature types while it is resident.
+                let intern_page = |encoder: &mut wgpu::CommandEncoder| {
+                    record_canonical_types(
+                        device,
+                        queue,
+                        encoder,
+                        canonical,
+                        CanonicalStage::Dependency,
+                        &self.canonical_counts_readback,
+                        &self.canonical_validation_readback,
+                    )
+                };
                 let record_projection = |encoder: &mut wgpu::CommandEncoder| {
                     record_dependency_type_index(
                         &self.passes,
@@ -902,7 +916,8 @@ impl GpuTypeChecker {
                     )?;
                     dependency_visibility
                         .project_type_instances_group
-                        .record(encoder)
+                        .record(encoder)?;
+                    intern_page(encoder)
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                     record_each_dependency_page(device, queue, encoder, pages, record_projection)?;
@@ -910,6 +925,9 @@ impl GpuTypeChecker {
                     dependency_visibility
                         .project_type_instances_group
                         .record(encoder)?;
+                    if dependency_pages.is_some() {
+                        intern_page(encoder)?;
+                    }
                 }
             }
             module_path

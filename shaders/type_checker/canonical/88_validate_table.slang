@@ -3,6 +3,7 @@
 // Per slot: the published record's facts recompute from its key and its
 // children, its probe chain is unbroken, and no equal record precedes it.
 // Per candidate: nothing is pending and every stored reference is published.
+// Per dependency node: the same, for the nodes of every page of the job.
 // Counter layout: CANONICAL_VALIDATION_COUNTERS in canonical_passes.rs.
 import type_checker.canonical.canonical_api;
 
@@ -22,6 +23,9 @@ static const uint V_UNKNOWN_CONSTANTS = 10u;
 static const uint V_RESOLVED_CONSTANTS = 11u;
 static const uint V_OVERFLOW = 12u;
 static const uint V_ROUNDS = 13u;
+// After the witness pairs (90_validate).
+static const uint V_UNKNOWN_DEPENDENCY = 36u;
+static const uint V_RESOLVED_DEPENDENCY = 37u;
 
 void count(uint word)
 {
@@ -99,6 +103,20 @@ void validate_candidate(uint candidate)
     if (ct_is_stored(state) && !is_published(state)) count(V_UNPUBLISHED);
 }
 
+// Entries no page reached stay pending (the buffer may exceed the job's span).
+void validate_dependency(uint index)
+{
+    uint state = canonical_dependency_type[index];
+    if (state == CT_PENDING) return;
+    if (!ct_is_resolved(state))
+    {
+        count(V_UNKNOWN_DEPENDENCY);
+        return;
+    }
+    count(V_RESOLVED_DEPENDENCY);
+    if (ct_is_stored(state) && !is_published(state)) count(V_UNPUBLISHED);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -106,6 +124,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = dtid.x + dtid.y * 16776960u;
     if (i < ct_slot_capacity()) validate_slot(i);
     if (i < ct_candidate_count()) validate_candidate(i);
+    if (i < ct_dependency_capacity()) validate_dependency(i);
     uint links; uint stride;
     canonical_crosscheck_links.GetDimensions(links, stride);
     if (i < links) canonical_crosscheck_links[i] = 0u;

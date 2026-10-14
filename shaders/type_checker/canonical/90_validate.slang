@@ -8,6 +8,9 @@
 //   as a normalized merge instead.
 // - missed merge: two rows of one coarse bucket that the old walker accepts
 //   but that have different canonical IDs.
+// A row whose ID is a record no row owns (a dependency node's) is confirmed
+// against the next row of its bucket chain with the same ID instead of the
+// record's owner, which chains every such row of the bucket.
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_crosscheck;
 import type_checker.checked_type_graph;
@@ -54,6 +57,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint id = canonical_row[row];
     uint representative = id >= CT_FIRST_RECORD ? id - CT_FIRST_RECORD : INVALID;
     uint link = canonical_crosscheck_links[buckets + row];
+    bool anchored = representative < rows;
     // Step 0 compares the row with its representative (a merge to confirm);
     // later steps compare it with its bucket successors (merges to find).
     for (uint step = 0u; step <= BUCKET_WALK_LIMIT; step++)
@@ -70,7 +74,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (link == 0u || link - 1u >= rows) break;
             other = link - 1u;
             link = canonical_crosscheck_links[buckets + other];
-            if (canonical_row[other] == id || !coarse_equal(row, other)) continue;
+            merged = !anchored && canonical_row[other] == id;
+            anchored = anchored || merged;
+            if (!merged && (canonical_row[other] == id || !coarse_equal(row, other))) continue;
         }
         bool equal = scoped_type_refs_equal<ScopedCheckedTypeGraph>(3u, row, INVALID,
             3u, other, INVALID, checked_type_capacity(), gParams.n_tokens);
