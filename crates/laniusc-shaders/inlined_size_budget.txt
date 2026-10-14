@@ -8,7 +8,6 @@
 5064266 type_checker/dependencies/08a_validate_call_results
 2113725 type_checker/predicates/02b_validate_obligations
 2037291 type_checker/methods/07_resolve_table
-1770373 parser/tokens/to/kinds
 1600048 type_checker/dependencies/08_validate_call_args
 1536947 type_checker/calls/03k2_materialize_match_payloads
 1328395 type_checker/type/instances/02d_materialize_applications

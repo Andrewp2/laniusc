@@ -31,6 +31,8 @@ pub(in crate::parser) struct TokenFrontendPasses {
     pub tokens_bracket_01_kinds: PassData,
     pub tokens_bracket_match_03_pair_pse: PassData,
     pub tokens_brace_match_03_pair_pse: PassData,
+    pub tokens_delimiter_match_03_enclosing_opens: PassData,
+    pub tokens_to_angle_kinds: PassData,
     pub tokens_to_kinds: PassData,
     pub tokens_type_path_context_01_local: PassData,
     pub tokens_type_path_context_02_apply: PassData,
@@ -139,6 +141,14 @@ impl TokenFrontendPasses {
             tokens_brace_match_03_pair_pse: pass!(
                 "parser_tokens_brace_match_03_pair_pse",
                 "parser/tokens/brace/match/03_pair_pse"
+            ),
+            tokens_delimiter_match_03_enclosing_opens: pass!(
+                "parser_tokens_delimiter_match_03_enclosing_opens",
+                "parser/tokens/delimiter_match/03_enclosing_opens"
+            ),
+            tokens_to_angle_kinds: pass!(
+                "parser_tokens_to_angle_kinds",
+                "parser/tokens/to/angle_kinds"
             ),
             tokens_to_kinds: pass!("parser_tokens_to_kinds", "parser/tokens/to/kinds"),
             tokens_type_path_context_01_local: pass!(

@@ -3457,7 +3457,7 @@ mod tests {
         for consumer in [
             "parser.tokens.delimiters.owner_apply",
             "parser.tokens.bracket_match.pair_pse",
-            "parser.tokens_to_kinds.pass",
+            token_frontend::ENCLOSING_OPENS,
         ] {
             let pass = graph.pass_id(consumer).unwrap();
             for name in [
@@ -3609,6 +3609,8 @@ mod tests {
             "parser.tokens.where_clause.local",
             token_frontend::WHERE_CLAUSE_SCAN_UP,
             "parser.tokens.where_clause.apply",
+            token_frontend::ENCLOSING_OPENS,
+            token_frontend::ANGLE_KINDS,
             "parser.tokens_to_kinds.pass",
             "parser.tokens.type_path_context.local",
             token_frontend::TYPE_PATH_SCAN_UP,
