@@ -2,22 +2,22 @@
 # 40000 default (see check_inlined_size_budget in build.rs). Limits only go
 # down: when a kernel shrinks, lower or delete its line. Never add a kernel.
 # Recorded 2026-10-14 from the 7ae8a250 shaders.
-10278089 type_checker/calls/03d_bind_method_receiver_environment
-8027987 type_checker/calls/03k_project_argument_contexts
-6062583 type_checker/calls/03e_materialize_return_types
-5064266 type_checker/dependencies/08a_validate_call_results
-2113725 type_checker/predicates/02b_validate_obligations
+839803 type_checker/calls/03d_bind_method_receiver_environment
+1644071 type_checker/calls/03k_project_argument_contexts
+1308603 type_checker/calls/03e_materialize_return_types
+860758 type_checker/dependencies/08a_validate_call_results
+302685 type_checker/predicates/02b_validate_obligations
 404827 type_checker/methods/07_resolve_table
 1770373 parser/tokens/to/kinds
-1600048 type_checker/dependencies/08_validate_call_args
+377596 type_checker/dependencies/08_validate_call_args
 1536947 type_checker/calls/03k2_materialize_match_payloads
 1328395 type_checker/type/instances/02d_materialize_applications
 1303704 type_checker/calls/03e1_expand_application_fields
-1269356 type_checker/predicates/02a_count_obligations
+182732 type_checker/predicates/02a_count_obligations
 1250702 type_checker/dependencies/14a_materialize_alias_targets
 943737 type_checker/calls/03k3_project_record_contexts
 868704 tests/typed_constant_identity_array_constraints
-861156 type_checker/calls/03c_validate_array_results
+317844 type_checker/calls/03c_validate_array_results
 732128 type_checker/calls/03a1_emit_generic_claims
 359843 type_checker/predicates/01f2_validate_imported_methods
 680851 type_checker/calls/03a_collect_row_args
@@ -63,7 +63,7 @@
 135141 type_checker/calls/03a4_validate_generic_claims
 134187 tests/typed_constant_identity_claim_priority
 133609 type_checker/modules/10e0l_normalize_type_aliases
-133458 type_checker/calls/03a5_validate_const_claims
+56980 type_checker/calls/03a5_validate_const_claims
 132650 type_checker/type/instances/05_array_return_refs
 132379 tests/owned_typed_constants_overlap
 130606 type_checker/program_evidence/entries/46_hash_normalized_goals
@@ -97,10 +97,8 @@
 59082 type_checker/program_evidence/entries/02_05_admit_nodes
 58739 type_checker/calls/03i_materialize_array_literals
 54050 type_checker/predicates/01f_emit_method_validation_rows
-52281 tests/constant_claim_publication
 52024 tests/typed_constant_identity_claim_merge
 49828 type_checker/predicates/01f1_emit_method_param_validation_rows
-48491 type_checker/calls/03a7_validate_required_generics
 45020 parser/syntax/tokens
 43592 type_checker/program_evidence/entries/32_17_admit_evidence
 41873 codegen/lir/semantic/call_args

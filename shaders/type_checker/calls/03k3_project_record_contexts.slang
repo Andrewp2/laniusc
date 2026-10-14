@@ -8,6 +8,7 @@ import type_checker.scoped_type_equality;
 import type_checker.argument_context;
 import type_checker.scoped_type_constraints;
 import type_checker.calls.contextual_call_environment;
+import type_checker.calls.context_constant_publication;
 import type_checker.dependencies.canonical_field_types;
 import type_checker.type.instances.struct_field_lookup;
 import semantic_interface_layout;

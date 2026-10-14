@@ -20,6 +20,7 @@ import gpu_index;
 import status;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.contextual_call_environment;
+import type_checker.calls.context_constant_publication;
 import type_checker.local_struct_layout;
 import type_checker.argument_context;
 
@@ -349,7 +350,7 @@ void publish_result_environments(uint call, uint callee, uint2 inferred[32], uin
     InferredConstant constants[32], uint constant_mask)
 {
     publish_result_constraints(call, callee, inferred, mask);
-    if (!publish_context_constants<CheckedConcreteTypeGraph>(call, constants, constant_mask, gParams.visible_capacity))
+    if (!publish_context_constants<CheckedConcreteTypeGraph, CheckedContextConstantAdmission>(call, constants, constant_mask, gParams.visible_capacity))
     { record_min_token_error(status, callee, 6u, 0x474e0001u); return; }
 }
 

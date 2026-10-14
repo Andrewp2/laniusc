@@ -13,6 +13,9 @@ public RWStructuredBuffer<uint> call_context_constant_mask;
 public RWStructuredBuffer<uint> call_context_constant_kind;
 public RWStructuredBuffer<uint> call_context_constant_payload;
 public RWStructuredBuffer<uint> call_context_constant_identity_mode;
+// Bit per slot: the published reference passed the checked constant descriptor
+// in its identity mode. Every write of a present slot rewrites its bit.
+public RWStructuredBuffer<uint> call_context_constant_valid_mask;
 
 public bool checked_context_environment_argument(uint environment, uint slot,
     out uint tag, out uint payload)
@@ -57,49 +60,24 @@ public bool checked_context_environment_constant_binding(uint environment, uint 
     return true;
 }
 
+// Presence as above, plus the descriptor admission recorded at publication.
+public bool checked_context_environment_constant_evidence(uint environment, uint slot,
+    out uint kind, out uint payload, out uint identity_mode, out bool valid)
+{
+    valid = false;
+    if (!checked_context_environment_constant_binding(environment, slot, kind, payload, identity_mode))
+        return false;
+    uint call = call_context_owner_by_token[environment & 0x7fffffffu];
+    uint capacity; uint stride;
+    call_context_constant_valid_mask.GetDimensions(capacity, stride);
+    valid = call < capacity && (call_context_constant_valid_mask[call] & (1u << slot)) != 0u;
+    return true;
+}
+
 public bool checked_context_environment_constant(uint environment, uint slot,
     out uint kind, out uint payload)
 {
     uint identity_mode;
     return checked_context_environment_constant_binding(environment, slot, kind, payload, identity_mode) &&
         kind >= 1u && kind <= 3u && payload != 0xffffffffu && identity_mode <= 1u;
-}
-
-public bool publish_context_constants<Graph : IParameterScopedTypeGraph>(
-    uint call, InferredConstant constants[32], uint mask, uint tokens)
-{
-    uint2 published[32]; uint modes[32];
-    for (uint slot = 0u; slot < 32u; slot++)
-        if ((mask & (1u << slot)) != 0u)
-        {
-            uint2 prior = (call_context_constant_mask[call] & (1u << slot)) != 0u
-                ? uint2(call_context_constant_kind[call * 32u + slot], call_context_constant_payload[call * 32u + slot])
-                : uint2(0u, 0xffffffffu);
-            InferredConstant request = constants[slot];
-            if (prior.x != 0u)
-            {
-                uint prior_mode = call_context_constant_identity_mode[call * 32u + slot];
-                if (prior_mode > 1u) return false;
-                if (prior_mode != request.identity_mode)
-                {
-                    InferredConstant retained = inferred_constant_reference(prior);
-                    retained.identity_mode = prior_mode;
-                    if (!merge_inferred_constant_claim<Graph>(retained, request, tokens)) return false;
-                    request = retained;
-                }
-            }
-            // Same-mode publications replace a producer's provisional snapshot.
-            // Mixed count/exact evidence retains the compatible exact request.
-            if (!publish_inferred_constant<Graph>(request, tokens, prior, published[slot])) return false;
-            modes[slot] = request.identity_mode;
-        }
-    for (uint slot = 0u; slot < 32u; slot++)
-        if ((mask & (1u << slot)) != 0u)
-        {
-            call_context_constant_kind[call * 32u + slot] = published[slot].x;
-            call_context_constant_payload[call * 32u + slot] = published[slot].y;
-            call_context_constant_identity_mode[call * 32u + slot] = modes[slot];
-        }
-    call_context_constant_mask[call] |= mask;
-    return true;
 }

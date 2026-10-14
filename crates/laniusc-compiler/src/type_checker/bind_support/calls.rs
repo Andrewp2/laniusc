@@ -153,6 +153,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 CALLS_CONST_CLAIM_VALIDATE,
                 const_claim_index.dispatch_args(),
             )?,
+            publish_const_environment: ComputeOperation::indirect_spec(
+                device,
+                graph,
+                resources,
+                passes,
+                CALLS_CONST_ENVIRONMENT_PUBLISH,
+                const_claim_index.dispatch_args(),
+            )?,
             const_index: const_claim_index,
         });
 
@@ -192,6 +200,15 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         argument_matching,
         generic_claim_validation,
+        environment_admission: CallEnvironmentAdmission::new(
+            device,
+            graph,
+            passes,
+            resources,
+            hir_dispatch_args,
+            &token_dispatch_args,
+            struct_init_passes_required(parser_feature_flags),
+        )?,
         contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
         clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,

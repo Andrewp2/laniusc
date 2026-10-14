@@ -9,6 +9,7 @@ import status;
 import type_checker.calls.checked_call_type_graph;
 import type_checker.checked_type_graph;
 import type_checker.calls.contextual_call_environment;
+import type_checker.calls.context_constant_publication;
 import type_checker.scoped_type_constraints;
 import type_checker.argument_context;
 
@@ -145,7 +146,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call_context_ref_payload[call * 32u + slot] = inferred[slot].y;
         }
     call_context_arg_mask[call] |= mask;
-    if (!publish_context_constants<ScopedDeclaredResultTypeGraph>(call, constants, constant_mask, gParams.n_tokens))
+    if (!publish_context_constants<ScopedDeclaredResultTypeGraph, DeferredContextConstantAdmission>(call, constants, constant_mask, gParams.n_tokens))
     { record_min_token_error(status, compact_hir_core[call].token_start, 6u, 0x474e0001u); return; }
     call_context_owner_by_token[callee] = call;
     uint callee_node = compact_hir_payload[call].a;

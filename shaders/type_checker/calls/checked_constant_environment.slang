@@ -18,7 +18,15 @@ public StructuredBuffer<uint> call_const_claim_identity_mode;
 public StructuredBuffer<uint> call_const_claim_arg_row;
 public StructuredBuffer<uint> call_const_claim_lookup_head;
 public StructuredBuffer<uint> call_const_claim_lookup_next;
+// x=kind, y=value, z=identity mode | CALL_CONST_ENV_ACCEPTED, w=selected row.
+// Rejected relations retain the reference accumulated before the rejection.
+public StructuredBuffer<uint4> call_const_env_binding;
+public static const uint CALL_CONST_ENV_ACCEPTED = 0x80000000u;
 
+// 03a3b_publish_call_environment validates each complete (callee, slot)
+// argument relation once per claim index and stores the outcome at the
+// group's first chain row. Readers find that row and load it; they never
+// inspect or compare claim descriptors again.
 public bool checked_argument_environment_constant_binding(uint environment, uint slot,
     out uint kind, out uint value, out uint identity_mode, out uint selected_row)
 {
@@ -30,7 +38,6 @@ public bool checked_argument_environment_constant_binding(uint environment, uint
     uint count = min(call_const_claim_count_out[0u], capacity);
     if (count == 0u) return false;
     uint callee = environment & 0x7fffffffu;
-    uint tokens = checked_source_constant_parameter_capacity();
     uint link = call_const_claim_lookup_head[call_claim_lookup_bucket(callee, slot, count)];
     for (uint step = 0u; step < count && link != 0u; step++)
     {
@@ -38,27 +45,15 @@ public bool checked_argument_environment_constant_binding(uint environment, uint
         if (row >= count) return false;
         if (call_const_claim_callee[row] == callee && call_const_claim_slot[row] == slot)
         {
-            uint2 candidate = uint2(call_const_claim_ref_kind[row], call_const_claim_ref_payload[row]);
-            uint mode = call_const_claim_identity_mode[row];
-            // An unproduced provisional claim is not evidence. Every published
-            // reference, including a projection, must pass the descriptor check.
-            if (candidate.x != 0u || candidate.y != INVALID)
-            {
-                ConstantReferenceDescriptor descriptor; uint scalar;
-                if (!checked_constant_claim_descriptor(candidate, mode, tokens, descriptor, scalar) ||
-                    (selected_row != INVALID && !checked_constant_claims_compatible(
-                        uint2(kind, value), identity_mode, candidate, mode, tokens))) return false;
-                if (selected_row == INVALID || mode < identity_mode ||
-                    (mode == identity_mode && row < selected_row))
-                {
-                    kind = candidate.x; value = candidate.y;
-                    identity_mode = mode; selected_row = row;
-                }
-            }
+            uint4 binding = call_const_env_binding[row];
+            kind = binding.x; value = binding.y;
+            identity_mode = binding.z & ~CALL_CONST_ENV_ACCEPTED;
+            selected_row = binding.w;
+            return (binding.z & CALL_CONST_ENV_ACCEPTED) != 0u;
         }
         link = call_const_claim_lookup_next[row];
     }
-    return link == 0u && selected_row != INVALID;
+    return false;
 }
 
 public bool checked_argument_environment_constant_ref(uint environment, uint slot,
@@ -77,15 +72,15 @@ public bool checked_call_environment_constant_binding(uint environment, uint slo
 {
     static const uint INVALID = 0xffffffffu;
     kind = 0u; value = INVALID; identity_mode = 0u; selected_row = INVALID;
-    uint tokens = checked_source_constant_parameter_capacity();
-    ConstantReferenceDescriptor descriptor; uint scalar;
-    if (checked_explicit_environment_constant(environment, slot, kind, value))
-        return checked_constant_claim_descriptor(uint2(kind, value), 0u, tokens, descriptor, scalar);
-    uint2 context; uint context_mode;
-    bool has_context = checked_context_environment_constant_binding(environment, slot,
-        context.x, context.y, context_mode);
-    if (has_context && !checked_constant_claim_descriptor(context, context_mode, tokens, descriptor, scalar))
-        return false;
+    // Producers record descriptor admission when they publish explicit and
+    // contextual evidence; present but inadmissible evidence still rejects.
+    bool explicit_valid;
+    if (checked_explicit_environment_constant_evidence(environment, slot, kind, value, explicit_valid))
+        return explicit_valid;
+    uint2 context; uint context_mode; bool context_valid;
+    bool has_context = checked_context_environment_constant_evidence(environment, slot,
+        context.x, context.y, context_mode, context_valid);
+    if (has_context && !context_valid) return false;
     if (has_context && context_mode == 0u)
     { kind = context.x; value = context.y; return true; }
     uint2 argument; uint argument_mode; uint argument_row;
