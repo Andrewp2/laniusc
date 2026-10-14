@@ -80,6 +80,7 @@ static const uint TK_STRUCT_LIT_LBRACE = 125u;
 static const uint TK_STRUCT_LIT_RBRACE = 126u;
 static const int INF = 2147483647;
 
+[ForceInline]
 uint active_token_count()
 {
     return min(lexer_token_count[0], gParams.n_tokens);
@@ -203,16 +204,19 @@ public struct AngleDepthTree : IRangeSearchTree<int>
 
 public struct AngleDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.n_tokens;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return angle_match_depth[row];
@@ -342,16 +346,19 @@ public struct BracketDepthTree : IRangeSearchTree<int>
 
 public struct BracketDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.n_tokens;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return bracket_match_depth[row];
@@ -383,16 +390,19 @@ public struct ParenDepthTree : IRangeSearchTree<int>
 
 public struct ParenDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.n_tokens;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return paren_match_depth[row];
@@ -424,16 +434,19 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
 public struct BraceDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.n_tokens;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return brace_match_depth[row];
@@ -442,11 +455,13 @@ public struct BraceDepthRows : IRangeSearchRows<int>
 
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
 {
+    [ForceInline]
     public static bool aggregate_may_match(int aggregate, int query)
     {
         return aggregate <= query;
     }
 
+    [ForceInline]
     public static bool leaf_matches(int leaf, int query)
     {
         return leaf <= query;

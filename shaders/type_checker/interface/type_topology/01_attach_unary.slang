@@ -22,6 +22,7 @@ static const uint HIR_TYPE_FORM_REF = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.hir_capacity); }
 bool type_node(uint node) { return node < active_hir_count() && compact_hir_core[node].kind == HIR_TYPE; }
 bool argument_node(uint node)

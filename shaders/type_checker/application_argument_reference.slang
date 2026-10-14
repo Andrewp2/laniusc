@@ -6,11 +6,11 @@ public static const uint APPLICATION_CONSTANT_ARGUMENT = 0x80000000u;
 // Accepted nominal applications have at most 32 total ordered operands.
 // Callable environments retain separate type and constant slot domains.
 public static const uint NOMINAL_APPLICATION_ARGUMENT_LIMIT = 32u;
+// Constant kinds 1..3: one wrapping subtract and compare.
+[ForceInline]
 public bool application_argument_is_constant(uint tag)
 {
-    return tag == (APPLICATION_CONSTANT_ARGUMENT | 1u) ||
-           tag == (APPLICATION_CONSTANT_ARGUMENT | 2u) ||
-           tag == (APPLICATION_CONSTANT_ARGUMENT | 3u);
+    return (tag - (APPLICATION_CONSTANT_ARGUMENT | 1u)) < 3u;
 }
 public bool application_constant_argument(uint tag, uint payload, out uint kind, out uint value)
 {

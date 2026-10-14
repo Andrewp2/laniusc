@@ -56,6 +56,7 @@ uint linear_group_id(uint3 gid)
     return gid.x + gid.y * MAX_GROUPS_X;
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(lexer_token_count[0], gParams.n_tokens);
@@ -115,16 +116,19 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
 public struct BraceDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count()
     {
         return gParams.n_tokens;
     }
 
+    [ForceInline]
     public static uint block_size()
     {
         return WG_SIZE;
     }
 
+    [ForceInline]
     public static int row_value(uint row)
     {
         return brace_match_depth[row];

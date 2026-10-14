@@ -123,13 +123,14 @@ pub fn inlined_size(words: &[u32], top: usize) -> Result<InlinedSize> {
 }
 
 /// TEMPORARY test harness, opt-in via `LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS`:
-/// sets `DontInline` on every helper whose fully inlined size is at least
+/// in a kernel whose fully inlined size is at least `min_kernel`, sets
+/// `DontInline` on every helper whose fully inlined size is at least
 /// `min_instructions`, so oversized kernels can be created while they are
 /// being rewritten to fit the budget. NVIDIA hangs some dispatches whose lanes
 /// diverge inside out-of-line calls, so this is never a fix and never the
 /// default; delete it once `inlined_size_budget.txt` is empty. Returns how
 /// many functions were marked.
-pub fn mark_dont_inline(words: &mut [u32], min_instructions: u64) -> Result<usize> {
+pub fn mark_dont_inline(words: &mut [u32], min_kernel: u64, min_instructions: u64) -> Result<usize> {
     const DONT_INLINE: u32 = 0x2;
     const INLINE: u32 = 0x1;
     let mut controls: HashMap<u32, usize> = HashMap::new();
@@ -167,7 +168,6 @@ pub fn mark_dont_inline(words: &mut [u32], min_instructions: u64) -> Result<usiz
         post_order(entry, &functions, &mut state, &mut order)?;
     }
     let mut inlined: HashMap<u32, u64> = HashMap::new();
-    let mut marked = 0;
     for &id in &order {
         let function = &functions[&id];
         let size = function
@@ -175,7 +175,14 @@ pub fn mark_dont_inline(words: &mut [u32], min_instructions: u64) -> Result<usiz
             .iter()
             .fold(function.own_instructions, |size, callee| size.saturating_add(inlined[callee]));
         inlined.insert(id, size);
-        if size >= min_instructions && !entry_points.contains(&id) {
+    }
+    let kernel = entry_points.iter().map(|id| inlined[id]).fold(0, u64::saturating_add);
+    if kernel < min_kernel {
+        return Ok(0);
+    }
+    let mut marked = 0;
+    for &id in &order {
+        if inlined[&id] >= min_instructions && !entry_points.contains(&id) {
             let control = &mut words[controls[&id]];
             *control = (*control & !INLINE) | DONT_INLINE;
             marked += 1;

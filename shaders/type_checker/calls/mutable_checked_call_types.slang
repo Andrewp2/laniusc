@@ -15,6 +15,7 @@ public struct MutableCheckedCallTypeGraph : IScopedTypeGraph
     { return checked_constant_atom_value(row, value); }
     public static uint constant_parameter_scalar(uint reference)
     { return checked_constant_parameter_scalar(reference); }
+    [ForceInline]
     public static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { return checked_constant_projection(row, scalar, child); }
     public static bool parameter_is_valid(uint reference, bool constant)
@@ -23,6 +24,7 @@ public struct MutableCheckedCallTypeGraph : IScopedTypeGraph
     { return source_substitute_type_parameter<MutableCheckedCallTypeGraph>(environment, reference, tag, payload); }
     public static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
     { return source_substitute_constant_parameter<MutableCheckedCallTypeGraph>(environment, reference, kind, value); }
+    [ForceInline]
     public static uint constant_parameter_slot(uint token) { return MutableCheckedTypeGraph.constant_parameter_slot(token); }
     public static bool environment_constant(uint environment, uint slot, out uint kind, out uint value)
     {

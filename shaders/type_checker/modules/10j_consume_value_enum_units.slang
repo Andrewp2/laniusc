@@ -108,6 +108,7 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return gParams.n_tokens;
@@ -151,8 +152,11 @@ bool valid_unit_enum_variant_decl(uint decl_i, out uint variant_token, out uint 
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
+[ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
+[ForceInline]
 bool valid_hir(uint node) { return node < active_hir_count(); }
+[ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 #include "../result_expression_context.slang"
 

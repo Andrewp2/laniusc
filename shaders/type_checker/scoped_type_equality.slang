@@ -53,8 +53,10 @@ public bool source_substitute_constant_parameter<Graph : IScopedTypeGraph>(
 // belongs to the caller; its original parameter slot is never reapplied.
 public struct ScopedConstantEnvironment<Graph : IParameterScopedTypeGraph> : IConstantReferenceEnvironment
 {
+    [ForceInline]
     static bool parameter_is_valid(uint reference)
     { return Graph.parameter_is_valid(reference, true); }
+    [ForceInline]
     static bool substitute(uint environment, uint reference, out uint kind, out uint payload)
     { return Graph.substitute_constant_parameter(environment, reference, kind, payload); }
 }
@@ -68,26 +70,33 @@ public bool scoped_constant_reference<Graph : IParameterScopedTypeGraph>(
     return true;
 }
 
+// Typed identity (count_identity false) or count identity (true). The walker
+// below calls this once per visited node so it is expanded at one site only.
+public bool scoped_constant_refs_or_counts_equal<
+    LeftGraph : IParameterScopedTypeGraph, RightGraph : IParameterScopedTypeGraph>(
+    uint3 left, uint3 right, uint tokens, bool count_identity)
+{
+    ConstantReferenceDescriptor a; ConstantReferenceDescriptor b;
+    return scoped_constant_reference<LeftGraph>(left, tokens, a) &&
+        scoped_constant_reference<RightGraph>(right, tokens, b) &&
+        constant_reference_descriptors_equal<LeftGraph, ScopedConstantEnvironment<LeftGraph>,
+            RightGraph, ScopedConstantEnvironment<RightGraph>>(a, b, tokens, count_identity);
+}
+
+[ForceInline]
 public bool scoped_constant_refs_equal<
     LeftGraph : IParameterScopedTypeGraph, RightGraph : IParameterScopedTypeGraph>(
     uint3 left, uint3 right, uint tokens)
 {
-    ConstantReferenceDescriptor a; ConstantReferenceDescriptor b;
-    return scoped_constant_reference<LeftGraph>(left, tokens, a) &&
-        scoped_constant_reference<RightGraph>(right, tokens, b) &&
-        constant_reference_descriptors_equal<LeftGraph, ScopedConstantEnvironment<LeftGraph>,
-            RightGraph, ScopedConstantEnvironment<RightGraph>>(a, b, tokens, false);
+    return scoped_constant_refs_or_counts_equal<LeftGraph, RightGraph>(left, right, tokens, false);
 }
 
+[ForceInline]
 public bool scoped_constant_counts_equal<
     LeftGraph : IParameterScopedTypeGraph, RightGraph : IParameterScopedTypeGraph>(
     uint3 left, uint3 right, uint tokens)
 {
-    ConstantReferenceDescriptor a; ConstantReferenceDescriptor b;
-    return scoped_constant_reference<LeftGraph>(left, tokens, a) &&
-        scoped_constant_reference<RightGraph>(right, tokens, b) &&
-        constant_reference_descriptors_equal<LeftGraph, ScopedConstantEnvironment<LeftGraph>,
-            RightGraph, ScopedConstantEnvironment<RightGraph>>(a, b, tokens, true);
+    return scoped_constant_refs_or_counts_equal<LeftGraph, RightGraph>(left, right, tokens, true);
 }
 
 public bool scoped_constant_ref_hash<Graph : IParameterScopedTypeGraph>(
@@ -150,13 +159,16 @@ public bool scoped_type_refs_equal_graphs<
             contexts[depth] = context;
             counts[depth] = 0u;
             next[depth] = 0u;
+            // A constant argument (typed identity) or an array length (count
+            // identity) is compared once, after classification, by one call.
+            bool compare_constant = false; bool count_identity = false;
+            uint2 constant_left = uint2(0u, INVALID); uint2 constant_right = uint2(0u, INVALID);
             if (application_argument_is_constant(pair.x) || application_argument_is_constant(pair.z))
             {
-                uint2 left; uint2 right;
-                if (!application_constant_argument(pair.x, pair.y, left.x, left.y) ||
-                    !application_constant_argument(pair.z, pair.w, right.x, right.y) ||
-                    !scoped_constant_refs_equal<LeftGraph, RightGraph>(
-                        uint3(left, context.x), uint3(right, context.y), token_capacity)) return false;
+                if (!application_constant_argument(pair.x, pair.y, constant_left.x, constant_left.y) ||
+                    !application_constant_argument(pair.z, pair.w, constant_right.x, constant_right.y))
+                    return false;
+                compare_constant = true;
             }
             else if (pair.x == 0u || pair.x != pair.z || pair.y == INVALID || pair.w == INVALID)
                 return false;
@@ -197,14 +209,16 @@ public bool scoped_type_refs_equal_graphs<
                 {
                     if (kind == 2u)
                     {
-                        uint2 left = uint2(LeftGraph.metadata(pair.y, 5u), LeftGraph.metadata(pair.y, 6u));
-                        uint2 right = uint2(RightGraph.metadata(pair.w, 5u), RightGraph.metadata(pair.w, 6u));
-                        if (!scoped_constant_counts_equal<LeftGraph, RightGraph>(
-                            uint3(left, context.x), uint3(right, context.y), token_capacity)) return false;
+                        constant_left = uint2(LeftGraph.metadata(pair.y, 5u), LeftGraph.metadata(pair.y, 6u));
+                        constant_right = uint2(RightGraph.metadata(pair.w, 5u), RightGraph.metadata(pair.w, 6u));
+                        compare_constant = true; count_identity = true;
                     }
                     counts[depth] = 1u;
                 }
             }
+            if (compare_constant && !scoped_constant_refs_or_counts_equal<LeftGraph, RightGraph>(
+                uint3(constant_left, context.x), uint3(constant_right, context.y), token_capacity,
+                count_identity)) return false;
         }
         if (next[depth] == counts[depth])
         {

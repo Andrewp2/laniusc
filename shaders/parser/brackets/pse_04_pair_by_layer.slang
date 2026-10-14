@@ -79,11 +79,13 @@ public struct StackDepthRows : IRangeSearchRows<int>
 
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
 {
+    [ForceInline]
     public static bool aggregate_may_match(int aggregate, int query)
     {
         return aggregate <= query;
     }
 
+    [ForceInline]
     public static bool leaf_matches(int value, int query)
     {
         return value <= query;

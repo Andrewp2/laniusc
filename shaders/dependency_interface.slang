@@ -70,6 +70,7 @@ bool dependency_is_final_page()
     return (dependency_words[DEPENDENCY_PAGE_FLAGS_OFFSET] & 2u) != 0u;
 }
 
+[ForceInline]
 uint dependency_count(uint index)
 {
     return dependency_words[index];
@@ -80,21 +81,25 @@ uint dependency_module_count()
     return dependency_count(1u);
 }
 
+[ForceInline]
 uint dependency_declaration_count()
 {
     return dependency_count(3u);
 }
 
+[ForceInline]
 uint dependency_type_count()
 {
     return dependency_count(4u);
 }
 
+[ForceInline]
 uint dependency_member_count()
 {
     return dependency_count(6u);
 }
 
+[ForceInline]
 uint dependency_table_word(uint offset_header, uint index)
 {
     return dependency_words[dependency_words[offset_header] + index];
@@ -155,11 +160,13 @@ uint dependency_declaration_local_index(uint index)
     return dependency_table_word(DEPENDENCY_DECLARATION_LOCAL_OFFSET, index);
 }
 
+[ForceInline]
 uint dependency_declaration_word(uint index)
 {
     return dependency_table_word(DEPENDENCY_DECLARATION_OFFSET, index);
 }
 
+[ForceInline]
 uint dependency_type_word(uint index)
 {
     return dependency_table_word(DEPENDENCY_TYPE_OFFSET, index);
@@ -180,11 +187,13 @@ uint dependency_type_local_index(uint index)
     return dependency_table_word(DEPENDENCY_TYPE_LOCAL_OFFSET, index);
 }
 
+[ForceInline]
 uint dependency_type_edge_word(uint index)
 {
     return dependency_table_word(DEPENDENCY_TYPE_EDGE_OFFSET, index);
 }
 
+[ForceInline]
 uint dependency_member_word(uint index)
 {
     return dependency_table_word(DEPENDENCY_MEMBER_OFFSET, index);

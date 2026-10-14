@@ -90,6 +90,7 @@ uint linear_thread_id(uint3 dtid)
     return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0], gParams.n_tokens);

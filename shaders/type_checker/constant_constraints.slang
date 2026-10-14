@@ -256,19 +256,27 @@ public bool array_count_reference_constraint<Graph : IScopedTypeGraph>(uint2 pat
     uint3 open_pattern = uint3(pattern, 0xffffffffu);
     ConstantReferenceDescriptor pattern_descriptor;
     if (!scoped_constant_reference<Graph>(open_pattern, tokens, pattern_descriptor)) return false;
-    if (pattern_descriptor.disposition == CONSTANT_REFERENCE_CONCRETE)
-        return scoped_constant_counts_equal<Graph, Graph>(
-            uint3(pattern, environment), uint3(actual, 0xffffffffu), tokens);
+    // A concrete pattern, a bound parameter, or an unbound parameter compared
+    // in its own scope (environment is then 0xffffffff, so the scoped pattern
+    // equals open_pattern) is a count comparison, made at one call site.
+    bool compare_counts = pattern_descriptor.disposition == CONSTANT_REFERENCE_CONCRETE;
     uint parameter = pattern_descriptor.terminal.y;
-    uint slot = Graph.constant_parameter_slot(parameter);
-    if (slot >= 32u || !scalar_is_integer(pattern_descriptor.terminal_scalar)) return false;
-    uint2 bound;
-    if (Graph.environment_constant(environment, slot, bound.x, bound.y))
+    uint slot = 0xffffffffu;
+    if (!compare_counts)
+    {
+        slot = Graph.constant_parameter_slot(parameter);
+        if (slot >= 32u || !scalar_is_integer(pattern_descriptor.terminal_scalar)) return false;
+        uint2 bound;
+        if (Graph.environment_constant(environment, slot, bound.x, bound.y)) compare_counts = true;
+        else if (!infer_unbound)
+        {
+            if (!same_scope_identity || environment != 0xffffffffu) return false;
+            compare_counts = true;
+        }
+    }
+    if (compare_counts)
         return scoped_constant_counts_equal<Graph, Graph>(
             uint3(pattern, environment), uint3(actual, 0xffffffffu), tokens);
-    if (!infer_unbound)
-        return same_scope_identity && environment == 0xffffffffu &&
-            scoped_constant_counts_equal<Graph, Graph>(open_pattern, uint3(actual, 0xffffffffu), tokens);
 
     InferredConstantDescriptor candidate;
     if (!inferred_constant_request_descriptor<Graph>(inferred_constant_reference(actual),
@@ -299,14 +307,16 @@ public bool constant_reference_constraint<Graph : IScopedTypeGraph>(uint2 patter
     uint slot, uint environment, uint2 actual, uint tokens, bool infer_unbound,
     inout InferredConstant inferred[32], inout uint mask, bool same_scope_identity = true)
 {
-    if (pattern.x != 2u)
-        return scoped_constant_refs_equal<Graph, Graph>(
-            uint3(pattern, environment), uint3(actual, 0xffffffffu), tokens);
-    if (pattern.y >= tokens || slot >= 32u ||
-        !Graph.parameter_is_valid(pattern.y, true)) return false;
-    if (!infer_unbound && environment == 0xffffffffu && same_scope_identity)
-        return scoped_constant_refs_equal<Graph, Graph>(
-            uint3(pattern, environment), uint3(actual, 0xffffffffu), tokens);
-    return constant_parameter_constraint<Graph>(Graph.constant_parameter_scalar(pattern.y),
-        slot, environment, actual, tokens, infer_unbound, inferred, mask);
+    // A non-parameter pattern and a same-scope unbound parameter share one
+    // typed-identity comparison call.
+    if (pattern.x == 2u)
+    {
+        if (pattern.y >= tokens || slot >= 32u ||
+            !Graph.parameter_is_valid(pattern.y, true)) return false;
+        if (infer_unbound || environment != 0xffffffffu || !same_scope_identity)
+            return constant_parameter_constraint<Graph>(Graph.constant_parameter_scalar(pattern.y),
+                slot, environment, actual, tokens, infer_unbound, inferred, mask);
+    }
+    return scoped_constant_refs_equal<Graph, Graph>(
+        uint3(pattern, environment), uint3(actual, 0xffffffffu), tokens);
 }
