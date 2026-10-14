@@ -49,3 +49,6 @@ mod constant_claim_publication_tests;
 
 #[cfg(test)]
 mod canonical_type_leaf_boundary_tests;
+
+#[cfg(test)]
+mod canonical_intern_stress_tests;

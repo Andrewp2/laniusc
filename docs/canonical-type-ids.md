@@ -53,6 +53,9 @@ projections as records over child constant IDs.
 
 ## Interning without locks or spinning
 
+*Phase 0 design, superseded by the single-dispatch protocol in
+"Implementation (P2)" below.*
+
 Rows are interned one *height level* at a time, in rounds. A row is
 *ready* when all its children have canonical IDs. Each round has four
 dispatches, each doing O(arity) work per thread with no local arrays:
@@ -128,3 +131,90 @@ pipeline creation times.
 
 Non-goals for now: replacing body replay, or the type checker's inference
 rounds.
+
+## Implementation (P2, 2026-10-14)
+
+This section describes what is built. `shaders/type_checker/canonical/`
+holds the code and `crates/laniusc-compiler/src/type_checker/canonical_passes.rs`
+holds the passes. The design sections above remain the motivation. Where the
+two differ, this section is authoritative.
+
+### Interning protocol: single-dispatch and lock-free
+
+A lane interns a key in one pass, and no lane ever waits for another.
+
+1. **Write the complete record.** This covers the key (`ct_head`, `ct_args`)
+   and the facts (`ct_meta`, `ct_extra`). The record is either the lane's
+   fixed candidate record or a lane-owned *spare*.
+2. **Release.** Call `DeviceMemoryBarrier()`.
+3. **Publish.** `InterlockedCompareExchange(ct_slot[s], 0, record)` on the
+   first empty slot of the linear probe sequence, which starts at
+   `ct_probe_start(shash)`.
+4. **Handle an occupied slot.** The lane issues `DeviceMemoryBarrier()`
+   (acquire) and compares the occupant's record with its own key.
+   - Equal: adopt the occupant's ID.
+   - Different: probe on.
+   - A lane that loses a CAS re-reads the slot it lost and continues the same
+     way.
+5. **Publish a candidate's state.** A release fence comes first
+   (`ct_publish_candidate`). A lane that reads a child's reference from
+   `canonical_row`/`atom`/`projection` and then fences (acquire) therefore
+   sees the child's record, even if the child adopted a record that a third
+   lane published.
+
+Every table is declared `globallycoherent`. Slang 2026.2 emits the following
+SPIR-V for these constructs:
+
+- the memory model is `OpMemoryModel Logical GLSL450`;
+- the tables carry the `Coherent` decoration;
+- `DeviceMemoryBarrier` becomes `OpMemoryBarrier` with Device scope and
+  semantics `0x848` (AcquireRelease | UniformMemory | ImageMemory);
+- the CAS is a Device-scope `OpAtomicCompareExchange`.
+
+No SPIR-V is post-patched. The protocol never needs forward progress, because
+a lane only reads records whose publication it has already observed.
+
+Allocation stays bounded:
+
+- **Candidates use fixed records.** Candidate `c` owns record `32 + c`, so
+  rows, atoms and projections never allocate.
+- **Dynamic records come from small keys.** Count classes (`cc_intern_count`)
+  and other small keys use `ct_intern_small`. It looks the key up first and
+  stores a record only on a miss.
+- **Losers keep their record.** A lane that loses the race keeps its record as
+  a `spare` and reuses it for its next key, so allocation is at most live
+  records plus lanes.
+
+**Gate (week 1).** Two tests in
+`crates/laniusc-compiler/src/gpu/canonical_intern_stress_tests.rs` exercise the
+protocol:
+
+- `shaders/tests/canonical_intern_stress.slang` uses 1M lanes. Each lane
+  interns one nested chain of 1–12 levels. A level is a slice, an array whose
+  length is a count class, a 3–6-operand named type with shared leaves, or a
+  reference.
+  - Chains repeat 2^20 / {64, 4096, 65536, 2^20} times. Even seeds place equal
+    chains in the same wave and odd seeds spread them across waves.
+  - A second dispatch then rehashes every published record. It checks
+    duplicates, broken probe chains and facts recomputed from the children,
+    and walks each lane's result against its chain.
+  - The live-record count must equal a CPU count of distinct keys.
+- `canonical_intern_incoherent.slang` is the same protocol without coherence
+  or fences. It is a negative control showing that the check detects
+  failures.
+
+Measurements:
+
+| | runs | failures | intern dispatch |
+|---|---|---|---|
+| protocol (RTX 3070 laptop, NVIDIA 615.71) | 32 | 0 duplicates, 0 broken chains, 0 wrong facts, 0 unpublished | mean 9.9 ms, max 45 ms per 1M-lane run (submit to readback) |
+| incoherent control | 16 | 8/16 runs with duplicates (up to 1.6M) or broken chains (up to 1.75M) | — |
+
+**Decision:** the single-dispatch protocol is used, and the level-round
+fallback (propose/claim/publish/resolve) is deleted. Rounds still exist, but
+only because a candidate's children must be interned before it. Each round
+interns every ready candidate in one dispatch.
+
+To re-run the gate, use
+`LANIUS_CANONICAL_STRESS_RUNS=N LANIUS_CANONICAL_STRESS_BASE=K cargo test -p laniusc-compiler --lib canonical_intern`
+through the heavy lock.
