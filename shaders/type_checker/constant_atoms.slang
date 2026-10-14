@@ -18,9 +18,9 @@ public bool checked_constant_atom_value(uint row, out uint3 value)
     checked_constant_atoms.GetDimensions(count, stride);
     if (row >= count) return false;
     uint4 atom = checked_constant_atoms[row];
-    if (atom.w != 0u || !constant_value_is_valid(atom.xyz)) return false;
-    value = atom.xyz;
-    return true;
+    bool valid = (atom.w == 0u) & constant_value_is_valid(atom.xyz);
+    value = select(bool3(valid, valid, valid), atom.xyz, uint3(0u, 0u, 0u));
+    return valid;
 }
 
 public bool checked_constant_projection(uint row, out uint target_scalar, out uint2 child)
@@ -30,11 +30,11 @@ public bool checked_constant_projection(uint row, out uint target_scalar, out ui
     checked_constant_projections.GetDimensions(count, stride);
     if (row >= count) return false;
     uint4 projection = checked_constant_projections[row];
-    if (!scalar_is_integer(projection.x) || projection.y < 1u || projection.y > 3u ||
-        projection.z == 0xffffffffu || projection.w != 0u) return false;
-    target_scalar = projection.x;
-    child = projection.yz;
-    return true;
+    bool valid = scalar_is_integer(projection.x) & ((projection.y - 1u) < 3u) &
+        (projection.z != 0xffffffffu) & (projection.w == 0u);
+    target_scalar = select(valid, projection.x, 0u);
+    child = select(bool2(valid, valid), projection.yz, uint2(0u, 0xffffffffu));
+    return valid;
 }
 
 public uint checked_constant_parameter_scalar(uint parameter)
@@ -43,7 +43,7 @@ public uint checked_constant_parameter_scalar(uint parameter)
     type_const_param_scalar_by_token.GetDimensions(count, stride);
     if (parameter >= count) return 0u;
     uint scalar = type_const_param_scalar_by_token[parameter];
-    return constant_scalar_is_supported(scalar) ? scalar : 0u;
+    return select(constant_scalar_is_supported(scalar), scalar, 0u);
 }
 
 // The replay producer reserves 64 graph-node atoms followed by 32 standalone

@@ -1,8 +1,10 @@
+[ForceInline]
 public bool fixed_stack_empty(uint top)
 {
     return top == 0u;
 }
 
+[ForceInline]
 public bool fixed_stack_full<let CAPACITY: int>(uint top)
 {
     return top >= uint(CAPACITY);

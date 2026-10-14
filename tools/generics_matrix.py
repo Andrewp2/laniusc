@@ -28,6 +28,8 @@ parser.add_argument("--probes", default=str(ROOT / "tests/fixtures/generics_matr
 parser.add_argument("--out", default=str(ROOT / "target/generics_matrix"))
 parser.add_argument("--memory-max", default="6G")
 parser.add_argument("--timeout", type=float, default=120.0, help="seconds per compile")
+parser.add_argument("--hang-seconds", type=float, default=100.0,
+                    help="restart the daemon after a failed compile that took this long (GPU hang)")
 parser.add_argument("pattern", nargs="?", default="")
 args = parser.parse_args()
 
@@ -106,6 +108,11 @@ for probe in probes:
         elapsed = time.time() - started
         if not elf.exists():
             results.append((probe.stem, "COMPILE-FAIL", elapsed, diagnostic(msg)))
+            # A failure after a readback timeout means the GPU hung; the next
+            # job would only queue behind it, so start a fresh daemon.
+            if elapsed > args.hang_seconds:
+                daemon.kill()
+                daemon = Daemon()
         else:
             elf.chmod(0o755)
             try:

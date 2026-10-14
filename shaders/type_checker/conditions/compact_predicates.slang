@@ -101,6 +101,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+[ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 uint active_type_arg_count() { return min(gParams.n_hir_nodes, compact_type_arg_count[0u]); }
 uint active_predicate_count() { return min(gParams.n_hir_nodes, compact_predicate_count[0u]); }

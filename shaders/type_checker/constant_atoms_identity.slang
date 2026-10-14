@@ -5,10 +5,13 @@ import type_checker.concrete_type_equality;
 
 public struct CheckedSourceConstantGraph : IConstantIdentityGraph
 {
+    [ForceInline]
     public static bool constant_value(uint row, out uint3 value)
     { return checked_constant_atom_value(row, value); }
+    [ForceInline]
     public static uint constant_parameter_scalar(uint reference)
     { return checked_constant_parameter_scalar(reference); }
+    [ForceInline]
     public static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { return checked_constant_projection(row, scalar, child); }
 }

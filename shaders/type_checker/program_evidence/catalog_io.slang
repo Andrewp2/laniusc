@@ -71,6 +71,7 @@ public bool pev_output_span_address(uint table, uint row, uint field, uint field
         field >= desc.width || fields > desc.width - field) return false;
     arena = desc.arena; address = desc.offset + row * desc.width + field; return true;
 }
+[ForceInline]
 public bool pev_output_address(uint table, uint row, uint field, out uint arena, out uint address)
 { return pev_output_span_address(table, row, field, 1u, arena, address); }
 public bool pev_output_read(uint table, uint row, uint field, out uint value)

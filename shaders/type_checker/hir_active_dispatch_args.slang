@@ -31,6 +31,7 @@ uint active_hir_node_count()
         : min(gParams.n_hir_nodes, compact_hir_count[0u]);
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(gParams.n_tokens, token_count[0u]);

@@ -48,14 +48,19 @@ public struct AngleDepthTree : IRangeSearchTree<int>
 
 public struct AngleDepthRows : IRangeSearchRows<int>
 {
+    [ForceInline]
     public static uint item_count() { return gParams.n_tokens; }
+    [ForceInline]
     public static uint block_size() { return WG_SIZE; }
+    [ForceInline]
     public static int row_value(uint row) { return angle_match_depth[row]; }
 }
 
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
 {
+    [ForceInline]
     public static bool aggregate_may_match(int aggregate, int query) { return aggregate <= query; }
+    [ForceInline]
     public static bool leaf_matches(int leaf, int query) { return leaf <= query; }
 }
 

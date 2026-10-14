@@ -52,6 +52,7 @@ static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+[ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }

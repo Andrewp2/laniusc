@@ -48,6 +48,7 @@ uint linear_group_id(uint3 gid)
     return gid.x + gid.y * MAX_GROUPS_X;
 }
 
+[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0], gParams.n_tokens);
