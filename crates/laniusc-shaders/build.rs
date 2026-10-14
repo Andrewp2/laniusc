@@ -96,6 +96,8 @@ fn main() -> Result<()> {
         let report_perf = env_truthy("LANIUS_SHADER_REPORT_PERF");
         let report_detailed_perf = env_truthy("LANIUS_SHADER_REPORT_DETAILED_PERF");
         let source_digest = shader_source_digest(&shader_root, &ep)?;
+        let noinline_min_instructions =
+            if noinline_harness_exempt(&artifact_key) { 0 } else { noinline_min_instructions };
         let compile_stamp = format!(
             "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nnoinline_min_instructions={}\nsource_digest={}\nextra={}\n",
             slangc.display(),
@@ -548,6 +550,13 @@ fn shader_noinline_min_instructions() -> Result<u64> {
             format!("parse LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS={value:?} as an instruction count")
         }),
     }
+}
+
+/// Kernels the harness leaves fully inlined: out of line, their dispatches hang
+/// on NVIDIA depending on the input (01c fully inlined takes ~2 min to create
+/// once, then comes from the pipeline cache).
+fn noinline_harness_exempt(artifact_key: &str) -> bool {
+    matches!(artifact_key, "type_checker/semantic/artifact/01c_generic_native_words")
 }
 
 fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {
