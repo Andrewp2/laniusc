@@ -17,7 +17,6 @@ import codegen.lir.x86.common;
 import codegen.lir.x86.storage_layout;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.runtime_abi;
-import codegen.lir.x86.index_address_layout;
 import codegen.lir.x86.encoding;
 
 struct X86PlanInput
@@ -189,12 +188,14 @@ void plan_memmove_tail(uint words)
     plan_bytes(2u, 0x5f5eu); // pop rsi; pop rdi
 }
 
-// Element address in RAX; RCX and RDX are scratch registers.
+// Indexing owns one address calculation for loads, stores, and value copies.
+// A runtime view carries its signed byte stride; fixed arrays retain their
+// checked place. Element address in RAX; RCX and RDX are scratch registers.
 void plan_index_address(X86PlanInput input, uint words)
 {
     X86LirLocations locations = input.locations;
     plan_move64(locations.a, X86_REG);
-    if (x86_index_has_runtime_stride(input.core))
+    if (input.core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
     {
         if ((input.operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
             // mov rcx, [rax-16] (signed byte stride); mov rax, [rax]

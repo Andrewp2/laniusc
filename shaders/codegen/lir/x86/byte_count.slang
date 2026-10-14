@@ -1,6 +1,5 @@
 import primitive_types;
 import native_value_layout;
-import codegen.lir.x86.index_address_layout;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
