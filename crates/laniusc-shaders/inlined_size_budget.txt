@@ -7,7 +7,7 @@
 6062583 type_checker/calls/03e_materialize_return_types
 5064266 type_checker/dependencies/08a_validate_call_results
 2113725 type_checker/predicates/02b_validate_obligations
-2037291 type_checker/methods/07_resolve_table
+404827 type_checker/methods/07_resolve_table
 1770373 parser/tokens/to/kinds
 1600048 type_checker/dependencies/08_validate_call_args
 1536947 type_checker/calls/03k2_materialize_match_payloads
@@ -19,7 +19,7 @@
 868704 tests/typed_constant_identity_array_constraints
 861156 type_checker/calls/03c_validate_array_results
 732128 type_checker/calls/03a1_emit_generic_claims
-713272 type_checker/predicates/01f2_validate_imported_methods
+359843 type_checker/predicates/01f2_validate_imported_methods
 680851 type_checker/calls/03a_collect_row_args
 658587 type_checker/dependencies/15a_collect_methods
 649571 type_checker/methods/05_validate_keys
