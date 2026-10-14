@@ -71,8 +71,8 @@ proposal.
 `native_value_layout.slang` owns the three component positions and width;
 `storage_layout.slang` constructs strides from the backing place. Index loads,
 stores, and compound copies share `index_address.slang`; its pure sizing module
-is also consumed by byte counting. Index emission belongs to the existing
-specialized emitter. The shader size guard remains enabled at 524,288 bytes.
+is also consumed by byte counting. Index emission belongs to the shared x86
+instruction plan. The shader size guard remains enabled at 524,288 bytes.
 
 Semantic parameter/result projection, argument capture, field/element operations,
 descriptor copies, declaration homes, target row sizing, byte counting/emission,

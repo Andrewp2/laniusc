@@ -43,11 +43,9 @@
 205981 type_checker/methods/08_finalize_candidates
 202612 type_checker/program_evidence/entries/14_validate_contexts
 201890 type_checker/program_evidence/entries/64_publish_roots
-200603 codegen/lir/x86/emit
 190270 type_checker/modules/10m2_type_match_payloads
 187466 type_checker/modules/10j_consume_value_enum_units
 184303 type_checker/type/instances/05b_array_literal_return_refs
-181356 codegen/lir/x86/specialized_emit
 171736 type_checker/calls/03f_infer_return_bindings
 169775 type_checker/calls/03j_validate_array_literals
 169743 type_checker/program_evidence/entries/02_09_admit_implementations
@@ -104,4 +102,3 @@
 45020 parser/syntax/tokens
 43592 type_checker/program_evidence/entries/32_17_admit_evidence
 41873 codegen/lir/semantic/call_args
-41085 codegen/lir/x86/byte_count
