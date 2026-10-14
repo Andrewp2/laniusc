@@ -24,6 +24,16 @@ pub(super) struct TokensToKindsParams {
     match_tree_leaf_base: u32,
 }
 
+/// Debug aid for `token_kinds_dump`: `LANIUS_DEBUG_TOKEN_KINDS_SYMBOLS_ONLY=1`
+/// stops the token frontend after `parser.tokens_to_kinds`, so the semantic
+/// kinds buffer holds that pass's output for differential checks.
+fn debug_token_kinds_symbols_only() -> bool {
+    static VALUE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| {
+        std::env::var_os("LANIUS_DEBUG_TOKEN_KINDS_SYMBOLS_ONLY").is_some_and(|value| value == "1")
+    })
+}
+
 /// Cached bind groups for token-kind and identifier-kind frontend passes.
 pub(in crate::parser::driver) struct ResidentTokenKindOperations {
     pub(super) input_fingerprint: u64,
@@ -195,6 +205,9 @@ impl GpuParser {
             .tokens_to_kinds
             .record_elements(encoder, token_capacity + 2)?;
         stamp_timer(timer_ref, encoder, "parser.tokens_to_kinds.symbols.done");
+        if debug_token_kinds_symbols_only() {
+            return Ok(());
+        }
 
         self.record_type_path_context_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
 
