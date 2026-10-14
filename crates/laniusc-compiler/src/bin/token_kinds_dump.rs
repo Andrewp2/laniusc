@@ -5,7 +5,7 @@
 //
 // CLI (run from the workspace root, which holds tables/parse_tables.bin):
 //   cargo run --release --bin token_kinds_dump -- OUT.tsv PATH... \
-//       [--mutations=N] [--seed=S] [--concat]
+//       [--mutations=N] [--seed=S] [--concat] [--syntax]
 //
 // Each PATH is a .lani file or a directory searched recursively. Every output
 // line is `label<TAB>count<TAB>words...`. `--mutations=N` adds N randomly
@@ -14,7 +14,9 @@
 // one stream holding every file's tokens back to back, which exercises the
 // multi-block delimiter hierarchy. With LANIUS_DEBUG_TOKEN_KINDS_SYMBOLS_ONLY=1
 // the frontend stops after `parser.tokens_to_kinds`, so the dump is that
-// pass's output rather than the final parser alphabet.
+// pass's output rather than the final parser alphabet. `--syntax` also writes
+// the GPU syntax checker's verdict (`label#syntax`) for every lexed stream and
+// for N mutated copies of it.
 
 use std::{
     io::Write,
@@ -23,8 +25,12 @@ use std::{
 
 use anyhow::{Context, Result};
 use laniusc_compiler::{
-    lexer::driver::GpuLexer,
-    parser::{driver::GpuParser, tables::PrecomputedParseTables},
+    lexer::{driver::GpuLexer, types::Token},
+    parser::{
+        driver::GpuParser,
+        syntax::{GpuSyntaxError, check_tokens_on_gpu},
+        tables::PrecomputedParseTables,
+    },
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -43,7 +49,7 @@ fn collect_lani(path: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn mutate(raw: &[u32], alphabet: &[u32], rng: &mut StdRng) -> Vec<u32> {
+fn mutate<T: Clone>(raw: &[T], alphabet: &[T], rng: &mut StdRng) -> Vec<T> {
     let mut stream = raw.to_vec();
     let edits = rng.random_range(1..=8);
     for _ in 0..edits {
@@ -57,12 +63,27 @@ fn mutate(raw: &[u32], alphabet: &[u32], rng: &mut StdRng) -> Vec<u32> {
                 stream.swap(at, at + 1);
             }
             _ => {
-                let kind = alphabet[rng.random_range(0..alphabet.len())];
-                stream.insert(rng.random_range(0..=len), kind);
+                let item = alphabet[rng.random_range(0..alphabet.len())].clone();
+                stream.insert(rng.random_range(0..=len), item);
             }
         }
     }
     stream
+}
+
+async fn write_syntax(out: &mut impl Write, label: &str, tokens: &[Token]) -> Result<()> {
+    match check_tokens_on_gpu(tokens).await {
+        Ok(()) => writeln!(out, "{label}\tok")?,
+        Err(GpuSyntaxError::Rejected {
+            token,
+            code,
+            detail,
+        }) => writeln!(out, "{label}\trejected\t{token} {code:?} {detail}")?,
+        Err(GpuSyntaxError::Gpu(err)) => writeln!(out, "{label}\terror\t{err:#}")?,
+    }
+    // Flush per stream so a stalled check shows which stream it was.
+    out.flush()?;
+    Ok(())
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -72,6 +93,7 @@ async fn main() -> Result<()> {
     let mut mutations = 0usize;
     let mut seed = 1u64;
     let mut concat = false;
+    let mut syntax = false;
     for arg in std::env::args().skip(1) {
         if let Some(value) = arg.strip_prefix("--mutations=") {
             mutations = value.parse().context("parse --mutations")?;
@@ -79,6 +101,8 @@ async fn main() -> Result<()> {
             seed = value.parse().context("parse --seed")?;
         } else if arg == "--concat" {
             concat = true;
+        } else if arg == "--syntax" {
+            syntax = true;
         } else if out_path.is_none() {
             out_path = Some(PathBuf::from(arg));
         } else {
@@ -118,6 +142,7 @@ async fn main() -> Result<()> {
 
     let mut alphabet = std::collections::BTreeSet::new();
     let mut streams = Vec::new();
+    let mut token_streams: Vec<(String, Vec<Token>)> = Vec::new();
     for path in &inputs {
         let label = path.display().to_string();
         let source = match std::fs::read_to_string(path) {
@@ -127,15 +152,22 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
-        let raw = match lexer.lex(&source).await {
-            Ok(tokens) => tokens.iter().map(|token| token.kind as u32).collect::<Vec<_>>(),
+        let tokens = match lexer.lex(&source).await {
+            Ok(tokens) => tokens,
             Err(err) => {
                 writeln!(std::io::stderr(), "[token_kinds_dump] lex {label}: {err:#}")?;
                 continue;
             }
         };
+        let raw = tokens
+            .iter()
+            .map(|token| token.kind as u32)
+            .collect::<Vec<_>>();
         alphabet.extend(raw.iter().copied());
         write_stream(&label, &raw)?;
+        if syntax {
+            token_streams.push((label.clone(), tokens));
+        }
         streams.push((label, raw));
     }
 
@@ -155,6 +187,26 @@ async fn main() -> Result<()> {
             .flat_map(|(_, raw)| raw.iter().copied())
             .collect::<Vec<_>>();
         write_stream("<concat>", &all)?;
+    }
+    if syntax {
+        // One representative token per kind, so inserted tokens are plausible.
+        let mut token_alphabet = std::collections::BTreeMap::new();
+        for (_, tokens) in &token_streams {
+            for token in tokens {
+                token_alphabet
+                    .entry(token.kind as u32)
+                    .or_insert_with(|| token.clone());
+            }
+        }
+        let token_alphabet = token_alphabet.into_values().collect::<Vec<_>>();
+        let mut rng = StdRng::seed_from_u64(seed ^ 0x5157_4e54);
+        for (label, tokens) in &token_streams {
+            write_syntax(&mut out, &format!("{label}#syntax"), tokens).await?;
+            for index in 0..mutations {
+                let mutated = mutate(tokens, &token_alphabet, &mut rng);
+                write_syntax(&mut out, &format!("{label}#syntax#m{index}"), &mutated).await?;
+            }
+        }
     }
     eprintln!(
         "[token_kinds_dump] wrote {} streams ({} files) to {}",

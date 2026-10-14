@@ -1313,6 +1313,14 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                 "statement_event_block".into(),
                 buffers.impl_context_event_block.as_entire_binding(),
             ),
+            (
+                "depth_bracket_inblock".into(),
+                buffers.depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                buffers.block_prefix_bracket.as_entire_binding(),
+            ),
         ]);
         let local_bind_group = bind_group::create_bind_group_from_reflection(
             device,
@@ -1390,6 +1398,14 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             (
                 "statement_event_block_prefix".into(),
                 buffers.impl_context_event_block_prefix.as_entire_binding(),
+            ),
+            (
+                "depth_bracket_inblock".into(),
+                buffers.depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                buffers.block_prefix_bracket.as_entire_binding(),
             ),
             (
                 "token_impl_header_kind".into(),
