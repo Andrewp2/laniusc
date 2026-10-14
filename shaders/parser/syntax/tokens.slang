@@ -693,17 +693,6 @@ void validate_pending_before_statement_starter(uint i)
         record_pending_missing_semicolon(event);
 }
 
-void validate_pending_at_end(uint i)
-{
-    uint n_active = active_token_count();
-    if (n_active == 0u || i + 1u != n_active)
-        return;
-    uint kind = token_kind(i);
-    if (is_statement_semicolon_kind(kind) || is_lbrace_kind(kind) || is_rbrace_kind(kind))
-        return;
-    validate_pending_statement_at_boundary(i, false, false);
-}
-
 uint find_condition_close(uint start_i)
 {
     uint close_i = matching_close_paren_after(start_i);
@@ -1393,13 +1382,13 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (is_stmt_keyword(kind))
         validate_pending_before_statement_starter(i);
-    if (is_statement_semicolon_kind(kind))
-        validate_pending_statement_at_boundary(i, true, false);
-    else if (is_lbrace_kind(kind))
-        validate_pending_statement_at_boundary(i, false, true);
-    else if (is_rbrace_kind(kind))
-        validate_pending_statement_at_boundary(i, false, false);
-    validate_pending_at_end(i);
+    // One boundary validation per token: a semicolon, a body brace, a closing
+    // brace, or the last active token (which is none of those) ends a pending
+    // statement. A single call site keeps the deep validator inlined once.
+    bool boundary_semicolon = is_statement_semicolon_kind(kind);
+    bool boundary_body = !boundary_semicolon && is_lbrace_kind(kind);
+    if (boundary_semicolon || boundary_body || is_rbrace_kind(kind) || i + 1u == active_token_count())
+        validate_pending_statement_at_boundary(i, boundary_semicolon, boundary_body);
 
     if (token_in_generic_angle_list(i))
         return;

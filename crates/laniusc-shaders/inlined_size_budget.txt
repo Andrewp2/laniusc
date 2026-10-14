@@ -100,7 +100,6 @@
 52024 tests/typed_constant_identity_claim_merge
 49828 type_checker/predicates/01f1_emit_method_param_validation_rows
 48491 type_checker/calls/03a7_validate_required_generics
-45020 parser/syntax/tokens
 43592 type_checker/program_evidence/entries/32_17_admit_evidence
 41873 codegen/lir/semantic/call_args
 41085 codegen/lir/x86/byte_count
