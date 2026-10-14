@@ -3,20 +3,54 @@
 //! `compiler_graph.rs` so the canonical phases can change independently.
 
 use crate::gpu::{
-    compiler_graph::{CompilerGraphBuilder, CompilerPhase, ResourceClass, ResourceDesc, ResourceDomain},
+    compiler_graph::{
+        CompilerGraphBuilder,
+        CompilerPhase,
+        ResourceClass,
+        ResourceDesc,
+        ResourceDomain,
+        ResourceId,
+    },
     workspace::WorkspaceUsageClass,
 };
 
 pub(super) const CANONICAL_CLEAR_PASS: &str = "type_check.canonical.clear";
 pub(super) const CANONICAL_CLEAR_KERNEL: &str = "type_checker/canonical/00_clear";
-/// Round 0 interns every candidate (direct); later rounds walk the GPU
-/// frontier (indirect), each followed by the one-lane round close.
-pub(super) const CANONICAL_ROUND0_PASS: &str = "type_check.canonical.round0";
-pub(super) const CANONICAL_ROUND_PASS: &str = "type_check.canonical.round";
 pub(super) const CANONICAL_INTERN_KERNEL: &str = "type_checker/canonical/01_intern";
-pub(super) const CANONICAL_ROUND_ARGS_PASS: &str = "type_check.canonical.round_args";
 pub(super) const CANONICAL_ROUND_ARGS_KERNEL: &str = "type_checker/canonical/02_round_args";
-pub(super) const CANONICAL_COUNTS_READBACK_PASS: &str = "type_check.canonical.counts.readback";
+/// The late stage re-arms empty and unknown candidates and keeps the table.
+pub(super) const CANONICAL_REARM_PASS: &str = "type_check.canonical.late.rearm";
+pub(super) const CANONICAL_REARM_KERNEL: &str = "type_checker/canonical/03_rearm";
+
+/// Pass names of one interning stage. Round 0 interns every pending
+/// candidate (direct); later rounds walk the GPU frontier (indirect), each
+/// followed by the one-lane round close; every batch ends with a copy of the
+/// interning counters.
+pub(super) struct CanonicalRoundPasses {
+    pub round0: &'static str,
+    pub round_args: &'static str,
+    pub round: &'static str,
+    pub counts_readback: &'static str,
+}
+
+/// Interns the declared instance rows and constants, ahead of the closed
+/// application index.
+pub(super) const CANONICAL_EARLY_ROUNDS: CanonicalRoundPasses = CanonicalRoundPasses {
+    round0: "type_check.canonical.round0",
+    round_args: "type_check.canonical.round_args",
+    round: "type_check.canonical.round",
+    counts_readback: "type_check.canonical.counts.readback",
+};
+
+/// Interns what later producers added (generated and body applications,
+/// constants published during inference) into the same table.
+pub(super) const CANONICAL_LATE_ROUNDS: CanonicalRoundPasses = CanonicalRoundPasses {
+    round0: "type_check.canonical.late.round0",
+    round_args: "type_check.canonical.late.round_args",
+    round: "type_check.canonical.late.round",
+    counts_readback: "type_check.canonical.late.counts.readback",
+};
+
 /// Rounds recorded between two done-flag readbacks, and the round limit
 /// (`CT_MAX_ROUNDS` in canonical_api.slang). Rounds equal the maximum
 /// candidate height; the limit turns deeper candidates into UNKNOWN and sets
@@ -109,12 +143,19 @@ fn storage(
     name: &'static str,
     class: ResourceClass,
     bytes: u64,
-) -> Result<crate::gpu::compiler_graph::ResourceId, String> {
+) -> Result<ResourceId, String> {
     graph.add_storage(name, ResourceDomain::Types, class, bytes)
 }
 
-/// Declares the canonical tables and registers clear, rounds, the counter
-/// readback and (when enabled) the debug validation, in recording order.
+fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<ResourceId, String> {
+    graph
+        .resource_id(name)
+        .ok_or_else(|| format!("missing canonical resource {name}"))
+}
+
+/// Declares the canonical tables and registers the early stage (clear and
+/// rounds) in recording order. `register_canonical_late_passes` adds the late
+/// stage and the debug validation.
 ///
 /// Capacities (docs/canonical-type-ids.md, "Capacities"): candidates are
 /// instance rows, constant atoms and constant projections, each owning one
@@ -147,8 +188,7 @@ pub(super) fn register_canonical_passes(
     storage(graph, "canonical_atom", workspace, constant_rows * 4)?;
     storage(graph, "canonical_projection", workspace, constant_rows * 4)?;
     storage(graph, "canonical_frontier", workspace, candidates * 8)?;
-    let validation =
-        storage(graph, "canonical_validation", workspace, CANONICAL_VALIDATION_WORDS as u64 * 4)?;
+    storage(graph, "canonical_validation", workspace, CANONICAL_VALIDATION_WORDS as u64 * 4)?;
     graph.add_resource(ResourceDesc {
         name: "canonical_round_args",
         domain: ResourceDomain::DispatchArguments,
@@ -162,7 +202,7 @@ pub(super) fn register_canonical_passes(
         ResourceClass::External,
         CANONICAL_COUNT_WORDS as u64 * 4,
     )?;
-    let validation_readback = storage(
+    storage(
         graph,
         "canonical_validation_readback",
         ResourceClass::External,
@@ -176,10 +216,34 @@ pub(super) fn register_canonical_passes(
         kernels,
         CANONICAL_CLEAR_KERNEL,
     )?;
+    register_rounds(graph, kernels, &CANONICAL_EARLY_ROUNDS, counts, counts_readback)?;
+    // Round 0 starts from an empty table: a record is read only after its
+    // publication, which follows its write. Round 0 also appends the first
+    // frontier before any round reads it.
+    graph.mark_pass_bindings_initialize(
+        CANONICAL_EARLY_ROUNDS.round0,
+        &["ct_head", "ct_meta", "ct_extra", "ct_args", "canonical_frontier"],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        CANONICAL_EARLY_ROUNDS.round_args,
+        &["canonical_round_args"],
+    )?;
+    Ok(())
+}
+
+/// Round 0, then batches of frontier rounds repeated until no candidate is
+/// pending.
+fn register_rounds(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    passes: &CanonicalRoundPasses,
+    counts: ResourceId,
+    counts_readback: ResourceId,
+) -> Result<(), String> {
     for (name, kernel) in [
-        (CANONICAL_ROUND0_PASS, CANONICAL_INTERN_KERNEL),
-        (CANONICAL_ROUND_ARGS_PASS, CANONICAL_ROUND_ARGS_KERNEL),
-        (CANONICAL_ROUND_PASS, CANONICAL_INTERN_KERNEL),
+        (passes.round0, CANONICAL_INTERN_KERNEL),
+        (passes.round_args, CANONICAL_ROUND_ARGS_KERNEL),
+        (passes.round, CANONICAL_INTERN_KERNEL),
     ] {
         graph.add_kernel_pass_by_name(
             name,
@@ -190,35 +254,46 @@ pub(super) fn register_canonical_passes(
             &[],
         )?;
     }
-    graph.add_indirect_dispatch(CANONICAL_ROUND_PASS, "canonical_round_args")?;
-    // Round 0 starts from an empty table: a record is read only after its
-    // publication, which follows its write. Round 0 also appends the first
-    // frontier before any round reads it.
-    graph.mark_pass_bindings_initialize(
-        CANONICAL_ROUND0_PASS,
-        &["ct_head", "ct_meta", "ct_extra", "ct_args", "canonical_frontier"],
-    )?;
-    graph.mark_pass_bindings_initialize(CANONICAL_ROUND_ARGS_PASS, &["canonical_round_args"])?;
+    graph.add_indirect_dispatch(passes.round, "canonical_round_args")?;
     graph.add_buffer_copy_pass(
-        CANONICAL_COUNTS_READBACK_PASS,
+        passes.counts_readback,
         CompilerPhase::TypeCheck,
         "ct_counts",
         counts,
         "canonical_counts_readback",
         counts_readback,
     )?;
-    // Batches of frontier rounds repeat until no candidate is pending.
     graph.repeat_pass_range(
         CANONICAL_MAX_ROUNDS as u32,
-        CANONICAL_ROUND_ARGS_PASS,
-        CANONICAL_COUNTS_READBACK_PASS,
+        passes.round_args,
+        passes.counts_readback,
+    )
+}
+
+/// Registers the late stage: re-arm the empty and unknown candidates, intern
+/// them into the same table, then (when enabled) validate the final table.
+pub(super) fn register_canonical_late_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    type_rows: u64,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        CANONICAL_REARM_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        CANONICAL_REARM_KERNEL,
+        &[],
     )?;
+    let counts = resource(graph, "ct_counts")?;
+    let counts_readback = resource(graph, "canonical_counts_readback")?;
+    register_rounds(graph, kernels, &CANONICAL_LATE_ROUNDS, counts, counts_readback)?;
     if canonical_validation_enabled() {
         // Bucket heads (a power of two at least the row count), then links.
         storage(
             graph,
             "canonical_crosscheck_links",
-            workspace,
+            ResourceClass::Workspace,
             (type_rows.next_power_of_two() + type_rows) * 4,
         )?;
         for (name, kernel) in [
@@ -237,6 +312,8 @@ pub(super) fn register_canonical_passes(
         }
         // 88_validate_table clears the bucket heads and links.
         graph.mark_pass_bindings_initialize(CANONICAL_VALIDATE_PASS, &["canonical_crosscheck_links"])?;
+        let validation = resource(graph, "canonical_validation")?;
+        let validation_readback = resource(graph, "canonical_validation_readback")?;
         graph.add_buffer_copy_pass(
             CANONICAL_VALIDATION_READBACK_PASS,
             CompilerPhase::TypeCheck,

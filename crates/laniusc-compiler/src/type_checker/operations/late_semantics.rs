@@ -413,18 +413,34 @@ impl SemanticProjectionOperations {
 
 /// Hash-consed canonical type identities (docs/canonical-type-ids.md).
 ///
-/// A clear and round 0 over every candidate, then batches of frontier rounds
-/// (indirect dispatches sized on the GPU). Every batch ends with a copy of the
-/// interning counters; the host records another batch only while candidates
-/// are pending, so the number of rounds is the maximum candidate height.
+/// Two stages share one table. The early stage clears it and interns the
+/// declared rows and constants ahead of the closed application index; the
+/// late stage re-arms the candidates that were still empty or unknown and
+/// interns what later producers added. Each stage records round 0, then
+/// batches of frontier rounds (indirect dispatches sized on the GPU); every
+/// batch ends with a copy of the interning counters, and the host records
+/// another batch only while candidates are pending, so the number of rounds
+/// is the maximum candidate height.
 pub(in crate::type_checker) struct CanonicalTypeOperations {
     clear: ComputeOperation,
+    rearm: ComputeOperation,
     round0: ComputeOperation,
     round_args: ComputeOperation,
     round: ComputeOperation,
     counts_readback: crate::gpu::operations::CopyBufferOperation,
+    late_round0: ComputeInvocation,
+    late_round_args: ComputeInvocation,
+    late_round: ComputeInvocation,
+    late_counts_readback: crate::gpu::operations::CopyBufferOperation,
     validate: Vec<ComputeOperation>,
     validation_readback: Option<crate::gpu::operations::CopyBufferOperation>,
+}
+
+/// Which interning stage to record.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::type_checker) enum CanonicalStage {
+    Early,
+    Late,
 }
 
 impl CanonicalTypeOperations {
@@ -442,6 +458,21 @@ impl CanonicalTypeOperations {
         let direct = |name, kernel, elements| {
             ComputeOperation::direct(device, graph, resources, name, &passes.kernel(kernel), elements)
         };
+        let counts_copy = |name| {
+            crate::gpu::operations::CopyBufferOperation::new(
+                graph,
+                name,
+                "ct_counts",
+                &typed_buffer_from_resources::<u32>(resources, "ct_counts")?,
+                0,
+                "canonical_counts_readback",
+                &typed_buffer_from_resources::<u32>(resources, "canonical_counts_readback")?,
+                0,
+                canonical_passes::CANONICAL_COUNT_WORDS as u64 * 4,
+            )
+        };
+        let early = &canonical_passes::CANONICAL_EARLY_ROUNDS;
+        let late = &canonical_passes::CANONICAL_LATE_ROUNDS;
         let clear = direct(
             canonical_passes::CANONICAL_CLEAR_PASS,
             canonical_passes::CANONICAL_CLEAR_KERNEL,
@@ -449,35 +480,26 @@ impl CanonicalTypeOperations {
                 .max(candidates)
                 .max(canonical_passes::CANONICAL_VALIDATION_WORDS as u32),
         )?;
-        let round0 = direct(
-            canonical_passes::CANONICAL_ROUND0_PASS,
-            canonical_passes::CANONICAL_INTERN_KERNEL,
+        let rearm = direct(
+            canonical_passes::CANONICAL_REARM_PASS,
+            canonical_passes::CANONICAL_REARM_KERNEL,
             candidates,
         )?;
-        let round_args = direct(
-            canonical_passes::CANONICAL_ROUND_ARGS_PASS,
-            canonical_passes::CANONICAL_ROUND_ARGS_KERNEL,
-            1,
-        )?;
+        let round0 = direct(early.round0, canonical_passes::CANONICAL_INTERN_KERNEL, candidates)?;
+        let round_args = direct(early.round_args, canonical_passes::CANONICAL_ROUND_ARGS_KERNEL, 1)?;
         let round = ComputeOperation::indirect(
             device,
             graph,
             resources,
-            canonical_passes::CANONICAL_ROUND_PASS,
+            early.round,
             &passes.kernel(canonical_passes::CANONICAL_INTERN_KERNEL),
             &typed_buffer_from_resources(resources, "canonical_round_args")?,
         )?;
-        let counts_readback = crate::gpu::operations::CopyBufferOperation::new(
-            graph,
-            canonical_passes::CANONICAL_COUNTS_READBACK_PASS,
-            "ct_counts",
-            &typed_buffer_from_resources::<u32>(resources, "ct_counts")?,
-            0,
-            "canonical_counts_readback",
-            &typed_buffer_from_resources::<u32>(resources, "canonical_counts_readback")?,
-            0,
-            canonical_passes::CANONICAL_COUNT_WORDS as u64 * 4,
-        )?;
+        let counts_readback = counts_copy(early.counts_readback)?;
+        let late_round0 = round0.invocation(graph, late.round0)?;
+        let late_round_args = round_args.invocation(graph, late.round_args)?;
+        let late_round = round.invocation(graph, late.round)?;
+        let late_counts_readback = counts_copy(late.counts_readback)?;
         let validation_readback = if canonical_passes::canonical_validation_enabled() {
             Some(crate::gpu::operations::CopyBufferOperation::new(
                 graph,
@@ -514,22 +536,65 @@ impl CanonicalTypeOperations {
         } else {
             Vec::new()
         };
-        Ok(Self { clear, round0, round_args, round, counts_readback, validate, validation_readback })
+        Ok(Self {
+            clear,
+            rearm,
+            round0,
+            round_args,
+            round,
+            counts_readback,
+            late_round0,
+            late_round_args,
+            late_round,
+            late_counts_readback,
+            validate,
+            validation_readback,
+        })
     }
 
-    /// Records the clear and the first batch: round 0 and frontier rounds.
+    fn record_round(&self, encoder: &mut wgpu::CommandEncoder, stage: CanonicalStage) -> Result<()> {
+        match stage {
+            CanonicalStage::Early => {
+                self.round.record(encoder)?;
+                self.round_args.record(encoder)
+            }
+            CanonicalStage::Late => {
+                self.round.record_invocation(encoder, &self.late_round)?;
+                self.round_args.record_invocation(encoder, &self.late_round_args)
+            }
+        }
+    }
+
+    fn record_counts_readback(&self, encoder: &mut wgpu::CommandEncoder, stage: CanonicalStage) {
+        match stage {
+            CanonicalStage::Early => self.counts_readback.record(encoder),
+            CanonicalStage::Late => self.late_counts_readback.record(encoder),
+        }
+    }
+
+    /// Records the stage's start (the clear, or the re-arm) and its first
+    /// batch: round 0 and frontier rounds.
     pub(in crate::type_checker) fn record_first_batch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        stage: CanonicalStage,
     ) -> Result<()> {
-        self.clear.record(encoder)?;
-        self.round0.record(encoder)?;
-        self.round_args.record(encoder)?;
-        for _ in 1..canonical_passes::CANONICAL_ROUNDS_PER_BATCH {
-            self.round.record(encoder)?;
-            self.round_args.record(encoder)?;
+        match stage {
+            CanonicalStage::Early => {
+                self.clear.record(encoder)?;
+                self.round0.record(encoder)?;
+                self.round_args.record(encoder)?;
+            }
+            CanonicalStage::Late => {
+                self.rearm.record(encoder)?;
+                self.round0.record_invocation(encoder, &self.late_round0)?;
+                self.round_args.record_invocation(encoder, &self.late_round_args)?;
+            }
         }
-        self.counts_readback.record(encoder);
+        for _ in 1..canonical_passes::CANONICAL_ROUNDS_PER_BATCH {
+            self.record_round(encoder, stage)?;
+        }
+        self.record_counts_readback(encoder, stage);
         Ok(())
     }
 
@@ -538,12 +603,12 @@ impl CanonicalTypeOperations {
     pub(in crate::type_checker) fn record_batch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        stage: CanonicalStage,
     ) -> Result<()> {
         for _ in 0..canonical_passes::CANONICAL_ROUNDS_PER_BATCH {
-            self.round.record(encoder)?;
-            self.round_args.record(encoder)?;
+            self.record_round(encoder, stage)?;
         }
-        self.counts_readback.record(encoder);
+        self.record_counts_readback(encoder, stage);
         Ok(())
     }
 

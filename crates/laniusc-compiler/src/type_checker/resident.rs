@@ -184,10 +184,11 @@ fn record_canonical_types(
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
     canonical: &CanonicalTypeOperations,
+    stage: CanonicalStage,
     counts_readback: &LaniusBuffer<u32>,
     validation_readback: &LaniusBuffer<u32>,
 ) -> Result<()> {
-    canonical.record_first_batch(encoder)?;
+    canonical.record_first_batch(encoder, stage)?;
     let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
     let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
     for batch in 0..batches {
@@ -197,16 +198,19 @@ fn record_canonical_types(
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
         if trace || overflow != 0 {
             eprintln!(
-                "[typecheck.canonical] batch={batch} rounds={} pending={pending} records={} args={} overflow={overflow:#x}",
-                counts[4], counts[0], counts[1],
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={} args={} overflow={overflow:#x}",
+                if stage == CanonicalStage::Early { "early" } else { "late" },
+                counts[canonical_passes::CANONICAL_COUNT_ROUND],
+                counts[0],
+                counts[1],
             );
         }
         if pending == 0 || batch + 1 == batches {
             break;
         }
-        canonical.record_batch(encoder)?;
+        canonical.record_batch(encoder, stage)?;
     }
-    if canonical_passes::canonical_validation_enabled() {
+    if stage == CanonicalStage::Late && canonical_passes::canonical_validation_enabled() {
         canonical.record_validation(encoder)?;
         let words = submit_and_read_u32s(
             device,
@@ -1076,6 +1080,15 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_decl_refs.done");
             }
+            record_canonical_types(
+                device,
+                queue,
+                encoder,
+                &bind_groups.semantic_projection.canonical_types,
+                CanonicalStage::Early,
+                &self.canonical_counts_readback,
+                &self.canonical_validation_readback,
+            )?;
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }
@@ -1919,6 +1932,7 @@ impl GpuTypeChecker {
                 queue,
                 encoder,
                 &bind_groups.semantic_projection.canonical_types,
+                CanonicalStage::Late,
                 &self.canonical_counts_readback,
                 &self.canonical_validation_readback,
             )?;

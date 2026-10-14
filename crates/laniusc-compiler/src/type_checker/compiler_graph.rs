@@ -5096,6 +5096,19 @@ fn build_graph(
     VISIBLE_NAMES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_DECL_REFS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.register_kernel(&mut graph, kernels)?;
+    // Canonical identities of the declared rows, in recording order: after
+    // the decl refs and ahead of the closed application index.
+    super::canonical_passes::register_canonical_passes(
+        &mut graph,
+        kernels,
+        super::canonical_passes::CanonicalCapacity {
+            token_rows,
+            hir_rows,
+            type_rows,
+            constant_rows,
+            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
+        },
+    )?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(
@@ -6263,17 +6276,7 @@ fn build_graph(
         "type_checker/semantic/artifact/00c_generic_call_results",
         &[],
     )?;
-    super::canonical_passes::register_canonical_passes(
-        &mut graph,
-        kernels,
-        super::canonical_passes::CanonicalCapacity {
-            token_rows,
-            hir_rows,
-            type_rows,
-            constant_rows,
-            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
-        },
-    )?;
+    super::canonical_passes::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
     graph.add_kernel_pass_by_name(
         "type_check.semantic_artifact.generic_native_words",
         CompilerPhase::TypeCheck,
