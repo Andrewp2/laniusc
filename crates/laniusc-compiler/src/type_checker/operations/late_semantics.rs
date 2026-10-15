@@ -447,6 +447,8 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     dependency_counts_readback: crate::gpu::operations::CopyBufferOperation,
     validate: Vec<ComputeOperation>,
     validation_readback: Option<crate::gpu::operations::CopyBufferOperation>,
+    /// Records (`ct_head` rows) and argument words (`ct_args`).
+    capacity: [u32; 2],
 }
 
 /// Which interning stage to record.
@@ -608,7 +610,13 @@ impl CanonicalTypeOperations {
             dependency_counts_readback,
             validate,
             validation_readback,
+            capacity: [words("ct_head")? / 4, words("ct_args")?],
         })
+    }
+
+    /// Records and argument words of the canonical table.
+    pub(in crate::type_checker) fn capacity(&self) -> [u32; 2] {
+        self.capacity
     }
 
     fn record_round(&self, encoder: &mut wgpu::CommandEncoder, stage: CanonicalStage) -> Result<()> {

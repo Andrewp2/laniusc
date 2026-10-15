@@ -354,6 +354,9 @@ pub struct GpuTypeChecker {
     /// Debug-only canonical validation counters.
     canonical_validation_readback: LaniusBuffer<u32>,
     preflight_graph: preflight::TypeCheckPreflightGraph,
+    /// Canonical table capacity scale for the next workspace; doubled when a
+    /// job's canonical stage overflows, then kept for later jobs.
+    canonical_scale: std::sync::atomic::AtomicU32,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
     dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
@@ -375,6 +378,10 @@ struct ResidentTypeCheckCacheKey {
     call_arg_row_capacity: u32,
     parser_feature_flags: u32,
     semantic_interface_required: bool,
+    /// Canonical table capacity scale (`canonical_passes::CanonicalCapacity`).
+    /// It only grows: a job whose canonical stage overflowed is recorded again
+    /// with twice the scale, and later jobs keep it.
+    canonical_scale: u32,
     input_fingerprint: u64,
 }
 
@@ -404,6 +411,7 @@ impl ResidentTypeCheckCacheKey {
             call_arg_row_capacity: Self::capacity_bucket(self.call_arg_row_capacity, rows),
             parser_feature_flags: self.parser_feature_flags,
             semantic_interface_required: self.semantic_interface_required,
+            canonical_scale: self.canonical_scale.max(1),
             input_fingerprint: self.input_fingerprint,
         }
     }
@@ -426,6 +434,7 @@ impl ResidentTypeCheckCacheKey {
             parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
             semantic_interface_required: self.semantic_interface_required
                 || required.semantic_interface_required,
+            canonical_scale: self.canonical_scale.max(required.canonical_scale),
             // Buffer identities describe the bindings used by the replacement
             // workspace. Capacities and optional storage remain monotonic even
             // when one upstream slot grows and changes that identity.
@@ -445,6 +454,7 @@ impl ResidentTypeCheckCacheKey {
             && self.parser_feature_flags & required.parser_feature_flags
                 == required.parser_feature_flags
             && (self.semantic_interface_required || !required.semantic_interface_required)
+            && self.canonical_scale >= required.canonical_scale
     }
 }
 
@@ -463,6 +473,7 @@ mod resident_typecheck_cache_key_tests {
             call_arg_row_capacity: capacity,
             parser_feature_flags: features,
             semantic_interface_required: false,
+            canonical_scale: 1,
             input_fingerprint: fingerprint,
         }
     }
@@ -495,6 +506,31 @@ mod resident_typecheck_cache_key_tests {
         let grown = ordinary.grow_to_cover(interface);
         assert!(grown.covers(interface));
         assert!(grown.covers(ordinary));
+    }
+
+    #[test]
+    fn canonical_overflow_retry_rebuilds_and_keeps_the_larger_scale() {
+        let ordinary = key(100, 0, 11);
+        let mut retry = ordinary;
+        retry.canonical_scale = super::canonical_passes::canonical_retry_scale(1, 2).unwrap();
+        assert_eq!(retry.canonical_scale, 2);
+        assert!(!ordinary.covers(retry));
+        let grown = ordinary.grow_to_cover(retry);
+        assert_eq!(grown.canonical_scale, 2);
+        assert!(grown.covers(retry));
+        // A later job asks for scale 1 and reuses the grown workspace.
+        assert!(grown.covers(ordinary));
+        assert_eq!(grown.bucketed().canonical_scale, 2);
+    }
+
+    #[test]
+    fn canonical_retry_only_for_capacity_bits_and_below_the_limit() {
+        use super::canonical_passes::{CANONICAL_MAX_SCALE, canonical_retry_scale};
+        assert_eq!(canonical_retry_scale(1, 1), Some(2));
+        assert_eq!(canonical_retry_scale(4, 4 | 8), Some(8));
+        assert_eq!(canonical_retry_scale(1, 8), None);
+        assert_eq!(canonical_retry_scale(1, 0), None);
+        assert_eq!(canonical_retry_scale(CANONICAL_MAX_SCALE, 2), None);
     }
 }
 

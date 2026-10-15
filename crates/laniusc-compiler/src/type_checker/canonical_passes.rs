@@ -97,11 +97,61 @@ pub(super) const CANONICAL_DEBUG_KERNELS: [&str; 3] = [
 ];
 /// Words of `ct_counts` and of `canonical_validation`.
 pub(super) const CANONICAL_COUNT_WORDS: usize = 16;
-pub(super) const CANONICAL_VALIDATION_WORDS: usize = 39;
+pub(super) const CANONICAL_VALIDATION_WORDS: usize = 41;
 /// `ct_counts` words the host reads after each batch.
 pub(super) const CANONICAL_COUNT_PENDING: usize = 2;
 pub(super) const CANONICAL_COUNT_OVERFLOW: usize = 3;
 pub(super) const CANONICAL_COUNT_ROUND: usize = 4;
+/// `CT_OVERFLOW_*` bits a larger table fixes: the slot table, the records
+/// and the argument words. `CT_OVERFLOW_ROUNDS` (8) is a height limit that
+/// no capacity changes, so it never retries.
+pub(super) const CANONICAL_RETRY_OVERFLOW_BITS: u32 = 1 | 2 | 4;
+/// Largest canonical capacity scale. Each retry doubles the scale; past this
+/// limit an overflow fails the job instead of retrying it.
+pub(super) const CANONICAL_MAX_SCALE: u32 = 64;
+
+/// A canonical stage ran out of table capacity. The job is abandoned and
+/// recorded again with a doubled capacity scale (docs/canonical-type-ids.md,
+/// "Capacities and overflow").
+#[derive(Debug)]
+pub(super) struct CanonicalCapacityOverflow {
+    pub bits: u32,
+    pub stage: &'static str,
+    pub scale: u32,
+    /// Next record and next argument word, and their capacities.
+    pub records: [u32; 2],
+    pub args: [u32; 2],
+}
+
+impl std::fmt::Display for CanonicalCapacityOverflow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "canonical table overflow {:#x} in the {} stage at scale {} (records {}/{}, argument words {}/{})",
+            self.bits, self.stage, self.scale, self.records[0], self.records[1], self.args[0],
+            self.args[1],
+        )
+    }
+}
+
+impl std::error::Error for CanonicalCapacityOverflow {}
+
+/// The capacity scale of the retry after `overflow`, or `None` when the
+/// overflow is not a capacity overflow or the scale is at its limit.
+pub(super) fn canonical_retry_scale(scale: u32, overflow: u32) -> Option<u32> {
+    (overflow & CANONICAL_RETRY_OVERFLOW_BITS != 0 && scale < CANONICAL_MAX_SCALE)
+        .then(|| scale.max(1) * 2)
+}
+
+/// Debug only: divide the canonical table capacities by `2^n`
+/// (`LANIUS_DEBUG_CANONICAL_SHRINK=n`, at most 16), so that small programs
+/// overflow and exercise the retry.
+fn canonical_capacity_shrink() -> u32 {
+    std::env::var("LANIUS_DEBUG_CANONICAL_SHRINK")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .map_or(0, |shift| shift.min(16))
+}
 /// Local declarations of a job without an owning library use this library
 /// and unit; such jobs have no dependency interfaces to unify with.
 pub(super) const CANONICAL_NO_LIBRARY: u32 = 0xffff_fffe;
@@ -133,10 +183,16 @@ pub(super) const CANONICAL_VALIDATION_COUNTERS: [&str; 16] = [
     "normalized_merges",
 ];
 
-/// Counters after the witness pairs: dependency nodes (88_validate_table)
-/// and rows the old walker rejects against their bridged ID (90_validate).
-pub(super) const CANONICAL_LATE_COUNTERS: [(&str, usize); 3] =
-    [("unknown_dependency", 36), ("resolved_dependency", 37), ("bridge_mismatches", 38)];
+/// Counters after the witness pairs: dependency nodes (88_validate_table),
+/// rows the old walker rejects against their bridged ID (90_validate), the
+/// largest record height, and the generated application rows (88).
+pub(super) const CANONICAL_LATE_COUNTERS: [(&str, usize); 5] = [
+    ("unknown_dependency", 36),
+    ("resolved_dependency", 37),
+    ("bridge_mismatches", 38),
+    ("max_height", 39),
+    ("type_applications", 40),
+];
 
 /// One `[canonical_validate]` line: every counter, then up to ten
 /// (row, other) witness pairs of false and missed merges.
@@ -170,6 +226,9 @@ pub(super) struct CanonicalCapacity {
     /// span total), and the largest page's node count.
     pub dependency_rows: u64,
     pub dependency_page_rows: u64,
+    /// Capacity scale of the records and argument words: 1, doubled by each
+    /// overflow retry of the job (`canonical_retry_scale`).
+    pub scale: u32,
 }
 
 fn storage(
@@ -201,7 +260,9 @@ fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<Resource
 /// edges than nodes), so an overflow means a broken invariant rather than a
 /// large input. A body replay interns every candidate a second time (one
 /// more key, and a dynamic record when it was rewritten), which doubles the
-/// candidates' records and arguments.
+/// candidates' records and arguments. `scale` multiplies the records and the
+/// argument words; the host doubles it and records the job again when a
+/// stage overflows (`CanonicalCapacityOverflow`).
 pub(super) fn register_canonical_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
@@ -215,15 +276,17 @@ pub(super) fn register_canonical_passes(
         extra_argument_rows,
         dependency_rows,
         dependency_page_rows,
+        scale,
     } = capacity;
     let candidates = type_rows + 2 * constant_rows;
-    let records = 32 + 2 * (candidates + 2 * constant_rows) + 2 * dependency_rows;
+    let scaled = |base: u64| ((base * u64::from(scale.max(1))) >> canonical_capacity_shrink()).max(64);
+    let records = scaled(32 + 2 * (candidates + 2 * constant_rows) + 2 * dependency_rows);
     let candidate_argument_bytes = token_rows * 16
         + extra_argument_rows * 128
         + hir_rows * 4
         + type_rows * 8
         + constant_rows * 8;
-    let argument_bytes = 2 * candidate_argument_bytes + dependency_rows * 8;
+    let argument_bytes = scaled((2 * candidate_argument_bytes + dependency_rows * 8) / 4) * 4;
     let workspace = ResourceClass::Workspace;
     storage(graph, "ct_head", workspace, records * 16)?;
     storage(graph, "ct_meta", workspace, records * 16)?;
