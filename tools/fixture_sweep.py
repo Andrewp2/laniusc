@@ -5,6 +5,7 @@ usage:
   tools/fixture_sweep.py run [--laniusc PATH] [--shard I/N] [--resume] [--suite NAME]...
                              [--pattern TEXT] [--out DIR] [--timeout S] [--memory-max SIZE]
   tools/fixture_sweep.py report [--out DIR] [--write FILE.md]
+  tools/fixture_sweep.py diff --base OLD_DIR [--out DIR] [--write FILE.md]
   tools/fixture_sweep.py stdlib [--laniusc PATH] [--each] [--out DIR]
   tools/fixture_sweep.py list [--suite NAME]...
 
@@ -478,8 +479,7 @@ def normalized_message(message: str) -> str:
     return message[:160]
 
 
-def report(args) -> int:
-    out = pathlib.Path(args.out)
+def load_results(out: pathlib.Path) -> tuple[dict[str, dict], list]:
     shards = sorted(out.glob("results-shard-*.json"))
     if not shards:
         raise SystemExit(f"no shard results in {out}")
@@ -490,6 +490,12 @@ def report(args) -> int:
         documents.append((path, document))
         for result in document["results"]:
             results[result["name"]] = result
+    return results, documents
+
+
+def report(args) -> int:
+    out = pathlib.Path(args.out)
+    results, documents = load_results(out)
     lines = render_report(results, documents)
     stdlib_summary = out / "stdlib" / "stdlib_check.json"
     if stdlib_summary.exists():
@@ -591,6 +597,99 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
             if others:
                 lines.append(f"  - also: {others}{' ...' if len(same) > 8 else ''}")
         lines.append("")
+    return lines
+
+
+def outcome(result: dict | None) -> str:
+    if result is None:
+        return "absent"
+    return "ok" if result["status"] in OK_STATUSES else failure_group(result)
+
+
+def diff(args) -> int:
+    base_dir, new_dir = pathlib.Path(args.base), pathlib.Path(args.out)
+    base, base_documents = load_results(base_dir)
+    new, new_documents = load_results(new_dir)
+    lines = render_diff(base, new, base_documents, new_documents)
+    summaries = []
+    for directory in (base_dir, new_dir):
+        path = directory / "stdlib" / "stdlib_check.json"
+        summaries.append(json.loads(path.read_text()) if path.exists() else None)
+    lines += render_stdlib_diff(*summaries)
+    text = "\n".join(lines) + "\n"
+    print(text)
+    if args.write:
+        pathlib.Path(args.write).write_text(text)
+        print(f"wrote {args.write}")
+    return 0
+
+
+def render_diff(base: dict[str, dict], new: dict[str, dict], base_documents, new_documents) -> list[str]:
+    def build(documents) -> str:
+        version = documents[0][1].get("laniusc_version", {})
+        return f"`{version.get('shader-artifact-digest', '?')}`"
+
+    lines = ["# Fixture sweep diff", ""]
+    lines.append(f"Base {build(base_documents)} ({len(base)} fixtures), new {build(new_documents)} "
+                 f"({len(new)} fixtures).")
+    lines.append("")
+    names = sorted(set(base) | set(new))
+    changes = collections.defaultdict(list)  # (base outcome, new outcome) -> names
+    for name in names:
+        before, after = outcome(base.get(name)), outcome(new.get(name))
+        if before != after:
+            changes[(before, after)].append(name)
+    def count(test) -> int:
+        return sum(len(members) for (before, after), members in changes.items() if test(before, after))
+
+    fixed = count(lambda before, after: before not in ("ok", "absent") and after == "ok")
+    broken = count(lambda before, after: before == "ok" and after not in ("ok", "absent"))
+    moved = count(lambda before, after: "ok" not in (before, after) and "absent" not in (before, after))
+    added, removed = count(lambda before, _: before == "absent"), count(lambda _, after: after == "absent")
+    passing = [sum(1 for result in results.values() if result["status"] in OK_STATUSES)
+               for results in (base, new)]
+    lines.append(f"Passing (pass, compiled only or skipped): {passing[0]} -> {passing[1]}. "
+                 f"Newly passing {fixed}, newly failing {broken}, failing differently {moved}"
+                 + (f", fixtures added {added}" if added else "")
+                 + (f", fixtures removed {removed}" if removed else "") + ".")
+    lines.append("")
+    group_counts = [collections.Counter(outcome(result) for result in results.values()) for results in (base, new)]
+    lines.append("| group | base | new | change |")
+    lines.append("| --- | ---: | ---: | ---: |")
+    for group in sorted(set(group_counts[0]) | set(group_counts[1]),
+                        key=lambda group: (group != "ok", -max(group_counts[0][group], group_counts[1][group]))):
+        before, after = group_counts[0][group], group_counts[1][group]
+        lines.append(f"| {group} | {before} | {after} | {after - before:+d} |")
+    lines.append("")
+    lines.append("## Changed fixtures")
+    lines.append("")
+    for (before, after), members in sorted(changes.items(), key=lambda item: (item[0][1] != "ok", -len(item[1]))):
+        lines.append(f"### {before} -> {after} ({len(members)})")
+        lines.append("")
+        for name in members[:40]:
+            result = new.get(name) or {}
+            detail = result.get("location") or result.get("detail") or ""
+            message = result.get("message") or ""
+            lines.append(f"- `{name}`" + (f" {detail}" if detail and after != "ok" else "")
+                         + (f": {message[:120]}" if message and after != "ok" else ""))
+        if len(members) > 40:
+            lines.append(f"- ... and {len(members) - 40} more")
+        lines.append("")
+    return lines
+
+
+def render_stdlib_diff(base: dict | None, new: dict | None) -> list[str]:
+    if not base or not new or base.get("modules_checked") is None or new.get("modules_checked") is None:
+        return []
+    ok = [{record["module"] for record in summary["modules_checked"] if record["ok"]} for summary in (base, new)]
+    lines = ["## Stdlib per-module check", ""]
+    lines.append(f"Modules that compile on their own: {len(ok[0])}/{len(base['modules_checked'])} -> "
+                 f"{len(ok[1])}/{len(new['modules_checked'])}; `laniusc check` over all modules: "
+                 f"{base['check_status']} -> {new['check_status']}.")
+    for title, modules in (("Newly compiling", ok[1] - ok[0]), ("No longer compiling", ok[0] - ok[1])):
+        if modules:
+            lines.append(f"{title}: " + ", ".join(f"`{module}`" for module in sorted(modules)) + ".")
+    lines.append("")
     return lines
 
 
@@ -749,6 +848,10 @@ def main() -> int:
     rep = sub.add_parser("report", help="merge shard results and summarize")
     rep.add_argument("--out", default=str(DEFAULT_OUT))
     rep.add_argument("--write", help="also write the summary to this markdown file")
+    dif = sub.add_parser("diff", help="compare this sweep with an earlier one, fixture by fixture")
+    dif.add_argument("--base", required=True, help="the earlier sweep's --out directory")
+    dif.add_argument("--out", default=str(DEFAULT_OUT), help="the newer sweep's --out directory")
+    dif.add_argument("--write", help="also write the diff to this markdown file")
     std = sub.add_parser("stdlib", parents=[common], help="laniusc check over the whole stdlib")
     std.add_argument("--each", action="store_true", help="also compile one importing entry per module")
     std.add_argument("--budget-seconds", type=float, default=480.0,
@@ -761,6 +864,8 @@ def main() -> int:
         return sweep(args)
     if args.action == "report":
         return report(args)
+    if args.action == "diff":
+        return diff(args)
     if args.action == "stdlib":
         return stdlib_check(args)
     cases = load_cases(args.suite or list(SUITES), args.pattern)
