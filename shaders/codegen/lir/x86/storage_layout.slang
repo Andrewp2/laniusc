@@ -45,6 +45,3 @@ uint x86_native_word_displacement(uint ordinal)
 
 uint x86_packed_i32_element_offset(uint ordinal)
 { return ordinal * X86_PACKED_I32_BYTES; }
-
-uint x86_native_element_bytes(uint words)
-{ return words * X86_NATIVE_WORD_BYTES; }

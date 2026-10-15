@@ -62,72 +62,15 @@ uint x86_packed_i32_displacement(uint base_slot, uint element)
     return x86_native_word_displacement(base_slot + 1u) + x86_packed_i32_element_offset(element);
 }
 
-uint x86_packed_i32_stack_operand_bytes(uint base_slot, uint element,
-                                        uint reg)
-{
-    return (reg >= 8u ? 1u : 0u) + 2u +
-        x86_signed_displacement_bytes(
-            x86_packed_i32_displacement(base_slot, element));
-}
-
-uint x86_base_i32_load_bytes(uint byte_offset)
-{
-    return byte_offset == 0u ? 2u : byte_offset <= 0x7fu ? 3u : 6u;
-}
-
 uint x86_stack32_operand_bytes(uint slot, uint register)
 {
     return (register >= 8u ? 1u : 0u) + 2u +
         x86_stack_displacement_bytes(slot);
 }
 
-uint x86_stack_xmm32_operand_bytes(uint slot)
-{
-    return 4u + x86_stack_displacement_bytes(slot);
-}
-
 uint x86_stack64_operand_bytes(uint slot)
 {
     return 3u + x86_stack_displacement_bytes(slot);
-}
-
-uint x86_move_float_to_xmm_bytes(uint location, uint destination_xmm, bool wide)
-{
-    if (x86_location_is_xmm(location))
-    {
-        uint source_xmm = x86_location_xmm(location);
-        return source_xmm == destination_xmm ? 0u :
-            4u + (source_xmm >= 8u || destination_xmm >= 8u ? 1u : 0u);
-    }
-    if (x86_location_is_register(location))
-        return 4u + (wide || x86_location_payload(location) >= 8u ||
-            destination_xmm >= 8u ? 1u : 0u);
-    return x86_stack_xmm32_operand_bytes(x86_location_payload(location)) +
-        (destination_xmm >= 8u ? 1u : 0u);
-}
-
-uint x86_move_float_from_xmm_bytes(uint source_xmm, uint location, bool wide)
-{
-    if (x86_location_is_xmm(location))
-    {
-        uint destination_xmm = x86_location_xmm(location);
-        return destination_xmm == source_xmm ? 0u :
-            4u + (destination_xmm >= 8u || source_xmm >= 8u ? 1u : 0u);
-    }
-    if (x86_location_is_register(location))
-        return 4u + (wide || x86_location_payload(location) >= 8u ||
-            source_xmm >= 8u ? 1u : 0u);
-    return x86_stack_xmm32_operand_bytes(x86_location_payload(location)) +
-        (source_xmm >= 8u ? 1u : 0u);
-}
-
-uint x86_move_float_to_gpr_bytes(uint location, uint destination_gpr, bool wide)
-{
-    if (!x86_location_is_xmm(location))
-        return wide ? x86_move64_to_fixed_bytes(location, destination_gpr)
-            : x86_move32_to_fixed_bytes(location, destination_gpr);
-    return 4u + (wide || x86_location_xmm(location) >= 8u ||
-        destination_gpr >= 8u ? 1u : 0u);
 }
 
 uint x86_move_float_from_gpr_bytes(uint source_gpr, uint location, bool wide)
@@ -137,25 +80,6 @@ uint x86_move_float_from_gpr_bytes(uint source_gpr, uint location, bool wide)
             : x86_move32_from_fixed_bytes(source_gpr, location);
     return 4u + (wide || x86_location_xmm(location) >= 8u ||
         source_gpr >= 8u ? 1u : 0u);
-}
-
-uint x86_move_float_between_bytes(uint source, uint destination, bool wide)
-{
-    if (source == destination && source != X86_LOCATION_INVALID) return 0u;
-    if (x86_location_is_xmm(destination))
-        return x86_move_float_to_xmm_bytes(
-            source, x86_location_xmm(destination), wide);
-    if (x86_location_is_xmm(source))
-        return x86_move_float_from_xmm_bytes(
-            x86_location_xmm(source), destination, wide);
-    return wide ? x86_move64_between_bytes(source, destination)
-        : x86_move32_between_bytes(source, destination);
-}
-
-uint x86_imm_f32_to_location_bytes(uint value, uint destination)
-{
-    return (value == 0u ? 2u : 5u) +
-        x86_move_float_from_gpr_bytes(0u, destination, false);
 }
 
 uint x86_move32_to_fixed_bytes(uint location, uint fixed_register)
@@ -198,44 +122,6 @@ uint x86_move64_from_fixed_bytes(uint fixed_register, uint location)
     return x86_location_payload(location) == fixed_register ? 0u : 3u;
 }
 
-uint x86_move32_between_bytes(uint source, uint destination)
-{
-    if (source == destination && source != X86_LOCATION_INVALID) return 0u;
-    bool source_register = x86_location_is_register(source);
-    bool destination_register = x86_location_is_register(destination);
-    if (source_register && destination_register)
-    {
-        uint source_gpr = x86_location_payload(source);
-        uint destination_gpr = x86_location_payload(destination);
-        if (source_gpr == destination_gpr) return 0u;
-        return source_gpr >= 8u || destination_gpr >= 8u ? 3u : 2u;
-    }
-    if (source_register)
-        return x86_stack32_operand_bytes(x86_location_payload(destination),
-            x86_location_payload(source));
-    if (destination_register)
-        return x86_stack32_operand_bytes(x86_location_payload(source),
-            x86_location_payload(destination));
-    return x86_stack32_operand_bytes(x86_location_payload(source), 0u) +
-        x86_stack32_operand_bytes(x86_location_payload(destination), 0u);
-}
-
-uint x86_move64_between_bytes(uint source, uint destination)
-{
-    if (source == destination && source != X86_LOCATION_INVALID) return 0u;
-    bool source_register = x86_location_is_register(source);
-    bool destination_register = x86_location_is_register(destination);
-    if (source_register && destination_register)
-        return x86_location_payload(source) == x86_location_payload(destination)
-            ? 0u : 3u;
-    if (source_register)
-        return x86_stack64_operand_bytes(x86_location_payload(destination));
-    if (destination_register)
-        return x86_stack64_operand_bytes(x86_location_payload(source));
-    return x86_stack64_operand_bytes(x86_location_payload(source)) +
-        x86_stack64_operand_bytes(x86_location_payload(destination));
-}
-
 uint x86_saved_gpr_frame_bytes(uint mask, uint first_slot)
 {
     uint bytes = 0u;
@@ -249,19 +135,6 @@ uint x86_saved_gpr_frame_bytes(uint mask, uint first_slot)
         saved_ordinal += 1u;
     }
     return bytes;
-}
-
-uint x86_imm32_to_location_bytes(uint value, uint destination)
-{
-    if (value == 0u)
-        return x86_location_is_register(destination)
-            ? (x86_location_payload(destination) >= 8u ? 1u : 0u) + 2u
-            : 2u + x86_stack32_operand_bytes(
-                x86_location_payload(destination), 0u);
-    if (!x86_location_is_register(destination))
-        return 5u + x86_stack32_operand_bytes(
-            x86_location_payload(destination), 0u);
-    return x86_location_payload(destination) >= 8u ? 6u : 5u;
 }
 
 bool x86_lea_add32_supported(uint left, uint right, uint destination)
@@ -282,22 +155,6 @@ bool x86_lea_add32_preferred(uint left, uint right, uint destination)
     // ADD is one byte shorter. LEA wins when it avoids a setup move.
     return destination != left && destination != right &&
         x86_lea_add32_supported(left, right, destination);
-}
-
-uint x86_lea_add32_bytes(uint left, uint right, uint destination)
-{
-    uint base = x86_location_payload(left);
-    uint index = x86_location_payload(right);
-    if ((index & 7u) == 4u)
-    {
-        uint swap = base;
-        base = index;
-        index = swap;
-    }
-    uint prefix = base >= 8u || index >= 8u ||
-        x86_location_payload(destination) >= 8u ? 1u : 0u;
-    // RBP/R13 requires an explicit zero displacement in mod=01 form.
-    return prefix + 3u + ((base & 7u) == 5u ? 1u : 0u);
 }
 
 bool x86_direct_binary32_supported(uint operation)
@@ -365,27 +222,6 @@ bool x86_multiply_immediate_lea_scale(uint operation, uint immediate,
         (x86_location_payload(source) & 7u) != 4u;
 }
 
-uint x86_lea_scaled32_bytes(uint source, uint destination)
-{
-    uint source_gpr = x86_location_payload(source);
-    uint destination_gpr = x86_location_payload(destination);
-    uint prefix = source_gpr >= 8u || destination_gpr >= 8u ? 1u : 0u;
-    return prefix + 3u + ((source_gpr & 7u) == 5u ? 1u : 0u);
-}
-
-uint x86_imul_immediate32_bytes(uint immediate, uint source,
-                                uint destination)
-{
-    uint source_payload = x86_location_payload(source);
-    uint destination_gpr = x86_location_payload(destination);
-    bool source_register = x86_location_is_register(source);
-    uint prefix = destination_gpr >= 8u ||
-        (source_register && source_payload >= 8u) ? 1u : 0u;
-    return prefix + 2u + (source_register ? 0u :
-        x86_stack_displacement_bytes(source_payload)) +
-        (x86_immediate_fits_i8(immediate) ? 1u : 4u);
-}
-
 bool x86_add_sub_immediate_lea(uint operation, uint immediate, uint source,
                                uint destination, out uint displacement)
 {
@@ -396,17 +232,6 @@ bool x86_add_sub_immediate_lea(uint operation, uint immediate, uint source,
         x86_location_is_register(source) &&
         x86_location_is_register(destination) &&
         source != destination;
-}
-
-uint x86_lea_displaced32_bytes(uint displacement, uint source,
-                               uint destination)
-{
-    uint source_gpr = x86_location_payload(source);
-    uint destination_gpr = x86_location_payload(destination);
-    uint prefix = source_gpr >= 8u || destination_gpr >= 8u ? 1u : 0u;
-    uint sib = (source_gpr & 7u) == 4u ? 1u : 0u;
-    return prefix + 2u + sib +
-        (x86_immediate_fits_i8(displacement) ? 1u : 4u);
 }
 
 bool x86_binary_immediate_inc_dec(uint operation, uint immediate,
@@ -425,154 +250,6 @@ bool x86_binary_immediate_inc_dec(uint operation, uint immediate,
         source == destination && x86_location_is_register(destination);
 }
 
-uint x86_inc_dec32_bytes(uint destination)
-{
-    return (x86_location_payload(destination) >= 8u ? 1u : 0u) + 2u;
-}
-
-uint x86_binary_immediate_bytes(uint operation, uint immediate, uint source,
-                                uint destination)
-{
-    if (x86_binary_immediate_identity(operation, immediate))
-        return x86_move32_between_bytes(source, destination);
-    bool direct = x86_location_is_register(destination);
-    uint compute_destination = direct
-        ? destination : X86_LOCATION_REGISTER;
-    uint store = direct
-        ? 0u : x86_move32_from_fixed_bytes(0u, destination);
-    uint lea_scale;
-    if (x86_multiply_immediate_lea_scale(
-            operation, immediate, source, compute_destination, lea_scale))
-        return x86_lea_scaled32_bytes(source, compute_destination) + store;
-    uint displacement;
-    if (x86_add_sub_immediate_lea(
-            operation, immediate, source, compute_destination, displacement))
-        return x86_lea_displaced32_bytes(
-            displacement, source, compute_destination) + store;
-    bool decrement;
-    if (x86_binary_immediate_inc_dec(
-            operation, immediate, source, destination, decrement))
-        return x86_inc_dec32_bytes(destination);
-    uint multiply_shift;
-    bool shift_multiply = x86_multiply_immediate_shift(
-        operation, immediate, multiply_shift);
-    bool negate_multiply = x86_multiply_immediate_negate(
-        operation, immediate);
-    if (operation == X86_LIR_BINARY_MUL_I32 &&
-        !shift_multiply && !negate_multiply)
-        return x86_imul_immediate32_bytes(
-            immediate, source, compute_destination) + store;
-    if (direct)
-    {
-        uint prefix = x86_location_payload(destination) >= 8u ? 1u : 0u;
-        uint body = operation == X86_LIR_BINARY_SHL_I32 ||
-            operation == X86_LIR_BINARY_SHR_I32 ||
-            shift_multiply ? 3u : negate_multiply ? 2u :
-            x86_immediate_fits_i8(immediate) ? 3u : 6u;
-        return x86_move32_between_bytes(source, destination) + prefix + body;
-    }
-    uint body = operation == X86_LIR_BINARY_SHL_I32 ||
-        operation == X86_LIR_BINARY_SHR_I32 ||
-        x86_multiply_immediate_shift(operation, immediate, multiply_shift) ? 3u
-        : x86_multiply_immediate_negate(operation, immediate) ? 2u
-        : x86_immediate_fits_i8(immediate) ? 3u
-        : operation == X86_LIR_BINARY_MUL_I32 ? 6u : 5u;
-    return x86_move32_to_fixed_bytes(source, 0u) + body +
-        x86_move32_from_fixed_bytes(0u, destination);
-}
-
-uint x86_compare_immediate_instruction_bytes(uint immediate, uint source)
-{
-    if (immediate == 0u && x86_location_is_register(source))
-        return (x86_location_payload(source) >= 8u ? 1u : 0u) + 2u;
-    bool narrow = x86_immediate_fits_i8(immediate);
-    return x86_location_is_register(source)
-        ? (x86_location_payload(source) >= 8u ? 1u : 0u) +
-            (narrow ? 3u : 6u)
-        : 2u + x86_stack_displacement_bytes(
-            x86_location_payload(source)) + (narrow ? 1u : 4u);
-}
-
-uint x86_compare32_instruction_bytes(uint left, uint right)
-{
-    bool left_register = x86_location_is_register(left);
-    bool right_register = x86_location_is_register(right);
-    if (left_register && right_register)
-        return (x86_location_payload(left) >= 8u ||
-                x86_location_payload(right) >= 8u ? 1u : 0u) + 2u;
-    if (left_register || right_register)
-    {
-        uint reg = x86_location_payload(left_register ? left : right);
-        uint slot = x86_location_payload(left_register ? right : left);
-        return x86_stack32_operand_bytes(slot, reg);
-    }
-    return x86_move32_to_fixed_bytes(left, 0u) +
-        x86_move32_to_fixed_bytes(right, 1u) + 2u;
-}
-
-uint x86_compare_aggregate_word_bytes(uint left, uint right)
-{
-    return x86_move64_to_fixed_bytes(left, 0u) +
-        x86_move64_to_fixed_bytes(right, 1u) + 6u;
-}
-
-uint x86_test32_instruction_bytes(uint location)
-{
-    if (!x86_location_is_register(location))
-        return x86_move32_to_fixed_bytes(location, 0u) + 2u;
-    return (x86_location_payload(location) >= 8u ? 1u : 0u) + 2u;
-}
-
-uint x86_compare_immediate_bytes(uint immediate, uint source,
-                                 uint destination)
-{
-    return x86_compare_immediate_instruction_bytes(immediate, source) +
-        x86_boolean_result_bytes(destination);
-}
-
-uint x86_boolean_result_bytes(uint destination)
-{
-    if (!x86_location_is_register(destination))
-        return 6u + x86_move32_from_fixed_bytes(0u, destination);
-    return 6u + (x86_location_payload(destination) >= 4u ? 2u : 0u);
-}
-
-uint x86_direct_unary32_bytes(uint operation, uint source, uint destination)
-{
-    if (!x86_location_is_register(destination)) return 0u;
-    uint register = x86_location_payload(destination);
-    uint prefix = register >= 8u ? 1u : 0u;
-    uint move = x86_move32_between_bytes(source, destination);
-    if (operation == X86_LIR_UNARY_NEG_I32)
-        return move + prefix + 2u;
-    if (operation == X86_LIR_UNARY_NOT_BOOL)
-        return move + prefix + 2u + x86_boolean_result_bytes(destination);
-    return 0u;
-}
-
-uint x86_direct_binary32_opcode_bytes(uint operation, uint right,
-                                      uint destination)
-{
-    uint destination_gpr = x86_location_payload(destination);
-    bool right_register = x86_location_is_register(right);
-    uint prefix = destination_gpr >= 8u ||
-        (right_register && x86_location_payload(right) >= 8u) ? 1u : 0u;
-    uint opcode = operation == X86_LIR_BINARY_MUL_I32 ? 3u : 2u;
-    return prefix + opcode + (right_register ? 0u :
-        x86_stack_displacement_bytes(x86_location_payload(right)));
-}
-
-uint x86_binary_opcode_bytes(uint operation, uint type_id)
-{
-    if (operation == X86_LIR_BINARY_MUL_I32) return 3u;
-    bool is_unsigned = type_id == 4u || type_id == 6u;
-    if (operation == X86_LIR_BINARY_DIV_I32)
-        return is_unsigned ? 4u : 3u;
-    if (operation == X86_LIR_BINARY_REM_I32)
-        return is_unsigned ? 6u : 5u;
-    return 2u;
-}
-
 uint x86_power_of_two_shift(uint divisor)
 {
     uint shift = 0u;
@@ -584,41 +261,6 @@ bool x86_const_pow2_binary(uint operation)
 {
     return operation == X86_LIR_BINARY_DIV_CONST_POW2_I32 ||
         operation == X86_LIR_BINARY_REM_CONST_POW2_I32;
-}
-
-uint x86_const_pow2_binary_bytes(uint operation, uint divisor, uint type_id,
-                                 uint source, uint destination)
-{
-    if (operation == X86_LIR_BINARY_DIV_CONST_POW2_I32 && divisor == 1u)
-        return x86_move32_between_bytes(source, destination);
-    if (operation == X86_LIR_BINARY_REM_CONST_POW2_I32 && divisor == 1u)
-        return x86_imm32_to_location_bytes(0u, destination);
-    bool is_unsigned = type_id == 4u || type_id == 6u;
-    if (x86_location_is_register(destination))
-    {
-        uint register = x86_location_payload(destination);
-        uint prefix = register >= 8u ? 1u : 0u;
-        uint move = x86_move32_between_bytes(source, destination);
-        if (is_unsigned)
-        {
-            uint immediate = divisor - 1u;
-            return move + prefix +
-                (operation == X86_LIR_BINARY_DIV_CONST_POW2_I32 ||
-                 x86_immediate_fits_i8(immediate) ? 3u : 6u);
-        }
-        uint sign_correction = (register >= 8u ? 3u : 2u) +
-            3u + 3u + prefix + 2u;
-        uint finish = operation == X86_LIR_BINARY_DIV_CONST_POW2_I32
-            ? prefix + 3u
-            : prefix + (x86_immediate_fits_i8(divisor - 1u) ? 3u : 6u) +
-                prefix + 2u;
-        return move + sign_correction + finish;
-    }
-    uint body = is_unsigned
-        ? operation == X86_LIR_BINARY_DIV_CONST_POW2_I32 ? 3u : 5u
-        : operation == X86_LIR_BINARY_DIV_CONST_POW2_I32 ? 13u : 17u;
-    return x86_move32_to_fixed_bytes(source, 0u) + body +
-        x86_move32_from_fixed_bytes(0u, destination);
 }
 
 struct X86SignedDivisionMagic
@@ -674,19 +316,6 @@ bool x86_const_signed_binary(uint operation)
         operation == X86_LIR_BINARY_REM_CONST_I32;
 }
 
-uint x86_const_signed_binary_bytes(uint operation, uint divisor, uint source,
-                                   uint destination)
-{
-    X86SignedDivisionMagic magic = x86_signed_division_magic(divisor);
-    uint body = 21u + (magic.add_numerator ? 2u : 0u) +
-        (magic.shift != 0u ? 3u : 0u);
-    if (operation == X86_LIR_BINARY_REM_CONST_I32)
-        return x86_move32_to_fixed_bytes(source, 1u) + body + 8u +
-            x86_move32_from_fixed_bytes(1u, destination);
-    return x86_move32_to_fixed_bytes(source, 1u) + body +
-        x86_move32_from_fixed_bytes(0u, destination);
-}
-
 uint x86_saved_gpr_count(uint mask)
 {
     // R15 is reserved for the process initial-stack pointer used by the
@@ -720,63 +349,4 @@ uint x86_call_result_instruction_bytes(uint metadata, uint result_words,
     if (result_words > 1u)
         bytes += x86_stack64_operand_bytes(storage_slot + 1u);
     return bytes + x86_stack64_operand_bytes(storage_slot) + result_store;
-}
-
-// Shared scalar floating body counts for the existing specialized count pass.
-uint float_binary_instruction_bytes(uint destination, uint right, bool wide)
-{
-    if (x86_location_is_xmm(right))
-        return 4u + (destination >= 8u ||
-            x86_location_xmm(right) >= 8u ? 1u : 0u);
-    if (x86_location_is_register(right))
-        return x86_move_float_to_xmm_bytes(right, 14u, wide) +
-            5u;
-    return x86_stack_xmm32_operand_bytes(x86_location_payload(right)) +
-        (destination >= 8u ? 1u : 0u);
-}
-
-uint float_binary_bytes(uint operation, uint left, uint right, uint result, bool wide)
-{
-    uint destination = x86_location_is_xmm(result)
-        ? x86_location_xmm(result) : 15u;
-    bool destination_is_right = x86_location_is_xmm(right) &&
-        x86_location_xmm(right) == destination;
-    bool destination_is_left = x86_location_is_xmm(left) &&
-        x86_location_xmm(left) == destination;
-    if (destination_is_right && !destination_is_left &&
-        float_binary_commutative(operation))
-    {
-        uint swap = left;
-        left = right;
-        right = swap;
-        destination_is_right = false;
-    }
-    uint compute = destination_is_right && !destination_is_left
-        ? 15u : destination;
-    return x86_move_float_to_xmm_bytes(left, compute, wide) +
-        float_binary_instruction_bytes(compute, right, wide) +
-        x86_move_float_from_xmm_bytes(compute, result, wide);
-}
-
-uint float_compare_instruction_bytes(uint left, uint right, bool wide)
-{
-    uint left_xmm = x86_location_is_xmm(left)
-        ? x86_location_xmm(left) : 15u;
-    uint bytes = x86_move_float_to_xmm_bytes(left, left_xmm, wide) + (wide ? 1u : 0u);
-    if (x86_location_is_xmm(right))
-        bytes += 3u + (left_xmm >= 8u ||
-            x86_location_xmm(right) >= 8u ? 1u : 0u);
-    else if (x86_location_is_register(right))
-        bytes += x86_move_float_to_xmm_bytes(right, 14u, wide) +
-            4u;
-    else
-        bytes += 3u + x86_stack_displacement_bytes(
-            x86_location_payload(right)) + (left_xmm >= 8u ? 1u : 0u);
-    return bytes;
-}
-
-uint float_compare_bytes(uint left, uint right, uint result, bool wide)
-{
-    return float_compare_instruction_bytes(left, right, wide) + 11u +
-        x86_move32_from_fixed_bytes(0u, result);
 }

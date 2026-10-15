@@ -26,12 +26,10 @@
 174573 type_checker/dependencies/15a_collect_methods
 157247 type_checker/dependencies/08_validate_call_args
 150055 type_checker/program_evidence/entries/32_15_admit_calls
-148474 codegen/lir/x86/emit
 145409 type_checker/program_evidence/entries/32_13_admit_contexts
 140910 type_checker/conditions/compact_aggregate_requests
 137445 type_checker/program_evidence/entries/02_09_admit_implementations
 132359 tests/canonical_type_identity_boundary
-131724 codegen/lir/x86/specialized_emit
 126881 tests/owned_type_constraints_match
 124798 type_checker/methods/05_validate_keys
 124541 type_checker/program_evidence/entries/14_validate_contexts
