@@ -1,3 +1,4 @@
+// expect: 122
 module app::main;
 import core::mem;
 fn slice_from_raw_parts(data: ptr, length: i32) ->[u8] {
@@ -6,5 +7,5 @@ fn slice_from_raw_parts(data: ptr, length: i32) ->[u8] {
 fn main() -> i32 {
     let pointer: ptr = core::mem::string_data_ptr("Az");
     let bytes:[u8] = slice_from_raw_parts(pointer, 2);
-    return bytes[1];
+    return bytes[1] as i32;
 }

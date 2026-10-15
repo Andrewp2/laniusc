@@ -426,7 +426,8 @@ pub async fn type_check_source_pack_manifest_with_gpu(
 }
 
 /// Load an entry file plus standard-library root into a source pack and
-/// type-check it with the global frontend GPU compiler.
+/// type-check it with the global frontend GPU compiler, unit by unit as a
+/// build compiles it.
 pub async fn type_check_entry_with_stdlib<EP, RP>(
     entry_path: EP,
     stdlib_root: RP,
@@ -435,9 +436,9 @@ where
     EP: AsRef<Path>,
     RP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_stdlib(entry_path, stdlib_root)?;
+    let source_pack = load_entry_path_manifest_with_stdlib(entry_path, stdlib_root)?;
     global_frontend_gpu_compiler()?
-        .type_check_source_pack_manifest(&source_pack)
+        .type_check_path_manifest(&source_pack)
         .await
 }
 
@@ -451,9 +452,9 @@ where
     EP: AsRef<Path>,
     RP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_source_root(entry_path, source_root)?;
+    let source_pack = load_entry_path_manifest_with_source_root(entry_path, source_root)?;
     global_frontend_gpu_compiler()?
-        .type_check_source_pack_manifest(&source_pack)
+        .type_check_path_manifest(&source_pack)
         .await
 }
 
@@ -466,9 +467,9 @@ pub async fn type_check_entry_with_source_roots<EP>(
 where
     EP: AsRef<Path>,
 {
-    let source_pack = load_entry_with_source_roots(entry_path, roots)?;
+    let source_pack = load_entry_path_manifest_with_source_roots(entry_path, roots)?;
     global_frontend_gpu_compiler()?
-        .type_check_source_pack_manifest(&source_pack)
+        .type_check_path_manifest(&source_pack)
         .await
 }
 

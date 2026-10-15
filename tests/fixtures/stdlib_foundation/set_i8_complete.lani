@@ -38,7 +38,7 @@ fn main() -> i32 {
         std::set_i8::is_disjoint(left, right)) { return 5; }
     let ordinal: i32 = 0;
     while (ordinal < 256) {
-        let value: i8 = ordinal - 128;
+        let value: i8 = (ordinal - 128) as i8;
         if (!std::set_i8::contains(right, value) ||
             std::set_i8::at_or(right, ordinal, 0) != value) { return 6; }
         ordinal += 1;
@@ -82,7 +82,7 @@ fn main() -> i32 {
     ordinal = 0;
     while (ordinal < 256) {
         if (ordinal % 7 == 0) {
-            let value: i8 = ordinal - 128;
+            let value: i8 = (ordinal - 128) as i8;
             std::set_i8::insert(left, value);
         }
         ordinal += 1;
@@ -90,7 +90,7 @@ fn main() -> i32 {
     if (std::set_i8::len(left) != 37) { return 15; }
     ordinal = 0;
     while (ordinal < 256) {
-        let value: i8 = ordinal - 128;
+        let value: i8 = (ordinal - 128) as i8;
         if (std::set_i8::contains(left, value) != (ordinal % 7 == 0)) {
             return 16;
         }
@@ -98,7 +98,7 @@ fn main() -> i32 {
     }
     let selected: i32 = 0;
     while (selected < 37) {
-        let expected: i8 = selected * 7 - 128;
+        let expected: i8 = (selected * 7 - 128) as i8;
         if (std::set_i8::at_or(left, selected, 1) != expected) {
             return 17;
         }

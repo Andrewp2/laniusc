@@ -8,8 +8,11 @@ function: local helper functions and macro_rules! are inlined with their
 arguments, `for` loops over literal tables are unrolled, and every compile
 call opens a record that later runs and asserts attach to (status.code(),
 status.signal(), stdout, diagnostic.code, expect_err, ...).  Values it cannot
-evaluate become unknown instead of guesses.  Unreferenced fixtures fall back to
-"run, exit 0" (generics probes: exit 42); a `// expect: N` first line overrides.
+evaluate become unknown instead of guesses.  A `laniusc check|build FIXTURE`
+command is a compile too: the test's `status.success()` and stderr `LNC` checks
+are its outcome.  Unreferenced fixtures fall back to
+"run, exit 0" (generics probes: exit 42).  A first line `// expect: N` overrides
+that with "run, exit N", and `// expect: LNC0006` with "rejected with LNC0006".
 
 usage: tools/fixture_expectations.py [--json] [--summary]
 """
@@ -27,8 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FOUNDATION = "tests/fixtures/stdlib_foundation"
 GENERICS = ("tests/fixtures/generics_matrix", "tests/fixtures/generics_backlog")
-EXPECT_RE = re.compile(r"//\s*expect:\s*(-?\d+)")
+EXPECT_RE = re.compile(r"//\s*expect:\s*(?:(-?\d+)|(LNC\d{4}))")
 LNC_RE = re.compile(r"LNC\d{4}$")
+LNC_ANY = re.compile(r"LNC\d{4}")
+CLI_COMPILES = ("check", "build")
 
 
 @dataclass
@@ -746,6 +751,10 @@ class Interp:
             flags, injected, rec = set(), False, None
             if name.endswith("with_args") and len(args) > 3 and isinstance(args[3], (list, tuple)) and args[3]:
                 flags.add("args")
+            cli = next((a.ref["cli_rec"] for a in args if isinstance(a, W) and a.tag == "cmd"
+                        and a.ref.get("cli_rec") is not None), None)
+            if cli is not None:
+                return W("cli", cli)
             for a in args:
                 if isinstance(a, W) and a.tag == "cmd":
                     flags |= a.ref["flags"]
@@ -803,8 +812,22 @@ class Interp:
                 if name in ("code", "signal", "success") else UNK
         if tag == "stdout":
             return W("empty", v.ref) if name == "is_empty" else (v if name in IDENTITY_METHODS | {"as_bytes"} else UNK)
+        if tag == "cli_status":
+            return W("cli_success", v.ref) if name == "success" else UNK
+        if tag == "cli_text":
+            if name == "contains" and args and isinstance(args[0], str):
+                code = LNC_ANY.search(args[0])
+                if code:
+                    v.ref.code = v.ref.code or code.group()
+                return UNK
+            return v if name in IDENTITY_METHODS else UNK
         if tag == "cmd":
             spec = v.ref
+            if name in ("arg", "args") and not spec["wrapper"]:
+                listed = name == "args" and args and isinstance(args[0], (list, tuple))
+                self.cli_args(spec, args[0] if listed else args[:1])
+            if name in ("output", "status", "spawn") and spec.get("cli_rec") is not None:
+                return W("cli", spec["cli_rec"])
             if name in ("arg", "args") and not spec["wrapper"]:
                 spec["flags"].add("args")
             elif name == "current_dir":
@@ -863,7 +886,24 @@ class Interp:
             return self.compile(name, args)
         return UNK
 
+    def cli_args(self, spec, values):
+        """`laniusc check|build FIXTURE ...` compiles FIXTURE; the command's exit status and
+        stderr are the compile's outcome, not a run of the program."""
+        for value in values:
+            spec["argc"] = spec.get("argc", 0) + 1
+            if spec["argc"] == 1 and isinstance(value, str) and value in CLI_COMPILES:
+                spec["cli"] = str(value)
+            elif spec.get("cli") and spec.get("cli_rec") is None and isinstance(value, PathV) \
+                    and not value.text and value.path.suffix == ".lani":
+                rec = Record([value], "check" if spec["cli"] == "check" else "build", None, "cli", self.test)
+                self.records.append(rec)
+                self.cur = rec
+                spec["cli_rec"] = rec
+
     def field(self, v, name):
+        if isinstance(v, W) and v.tag == "cli":
+            return W("cli_status", v.ref) if name == "status" else \
+                W("cli_text", v.ref) if name in ("stderr", "stdout") else UNK
         if isinstance(v, W) and v.tag == "run":
             return W(name, v.ref) if name in ("status", "stdout") else UNK
         if isinstance(v, W) and v.tag == "err":
@@ -924,6 +964,10 @@ class Interp:
                 v.ref.stdout = b""
             elif isinstance(v, W) and v.tag == "success" and v.ref.exit is MISSING:
                 v.ref.exit = 0
+            elif isinstance(v, W) and v.tag == "cli_success":
+                v.ref.outcome = v.ref.outcome or "ok"
+            elif isinstance(v, W) and v.tag == "not" and isinstance(v.ref, W) and v.ref.tag == "cli_success":
+                v.ref.ref.outcome = "err"
 
     def eq(self, a, b):
         if isinstance(a, (tuple, list)) and isinstance(b, (tuple, list)) and len(a) == len(b):
@@ -1093,7 +1137,11 @@ def load_expectations(repo_root: Path = ROOT, *, with_report: bool = False):
                             "default" + (":name-reject" if reject else ":generics" if generics else "")
                             + (" (tests only compile modified copies)" if path.resolve() in modified else
                                f" (unresolved refs: {', '.join(refs[:3])})" if refs else ""))
-        if override and e.kind != "module":
+        if override and e.kind != "module" and override.group(2):
+            e.kind, e.exit_code, e.signal, e.stdout = "compile_error", None, None, None
+            e.error_code = override.group(2)
+            e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
+        elif override and e.kind != "module":
             e.kind, e.exit_code, e.signal = "run", int(override.group(1)), None
             e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
         result.append(e)

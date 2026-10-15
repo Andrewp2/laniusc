@@ -67,6 +67,7 @@ uint active_match_payload_count()
 
 #include "match_reference.slang"
 #include "receiver_layout.slang"
+#include "receiver_temporary.slang"
 
 uint match_payload_for_pattern(uint node)
 {
@@ -296,6 +297,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         CheckedCallArtifact call = semantic_calls_by_hir[encoded - 1u];
         if (extra != 0u) extra = LIR_INVALID; // one source expression has one value consumer
         else extra = receiver_adjustment_rows(call);
+        // A receiver that is not a place is stored in the call's local,
+        // then borrowed: one store and one address row.
+        if (extra == 0u && receiver_temporary_token(encoded - 1u, call, count) != LIR_INVALID)
+            extra = 2u;
         words = receiver_native_words(call.receiver_matched_ref_tag, call.receiver_matched_ref_payload, count);
     }
     if (extra == 0u && encoded == 0u) return;

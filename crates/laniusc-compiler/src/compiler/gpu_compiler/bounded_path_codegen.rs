@@ -28,6 +28,76 @@ impl<'gpu> GpuCompiler<'gpu> {
         default_resident_source_unit_limits()
     }
 
+    /// Type-check a path-backed source pack through the units a build of it
+    /// compiles. A single library that fits one unit is checked as one pack;
+    /// anything else is checked unit by unit, in dependency order, against its
+    /// dependencies' interfaces. Checking and compiling then see the same
+    /// units, so a headerless entry gets the implicit module it gets when
+    /// compiled instead of joining a flat pack with the stdlib.
+    pub async fn type_check_path_manifest(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+    ) -> Result<(), CompileError> {
+        let limits = self.resident_source_unit_limits();
+        if !path_manifest_requires_file_backed_build(source_pack, limits)
+            && !path_manifest_has_multiple_libraries(source_pack)
+        {
+            let source_pack = load_explicit_source_pack_from_path_manifest(source_pack)?;
+            return self.type_check_source_pack_manifest(&source_pack).await;
+        }
+        let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
+        let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
+        let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
+        let schedule = &build_plan.schedule;
+        let batches = schedule.try_execution_batches(batch_limits).map_err(schedule_error)?;
+        let page_len = batch_limits.max_jobs_per_batch.max(1);
+        // The library-frontend jobs of the build, in its waves; codegen and
+        // link jobs have nothing to check.
+        let mut interfaces = (0..schedule.jobs.len())
+            .map(|_| None)
+            .collect::<Vec<Option<crate::compiler::GpuSemanticInterfaceArtifact>>>();
+        for batch in batches.batches {
+            for job_index in batch.job_indices {
+                let job = schedule_job(schedule, job_index)?;
+                if job.phase != crate::codegen::unit::SourcePackJobPhase::LibraryFrontend {
+                    continue;
+                }
+                let mut dependencies =
+                    collect_interface_handle_clones(&interfaces, schedule, job)?.into_iter();
+                let mut pages = Vec::new();
+                loop {
+                    let page = dependencies.by_ref().take(page_len).collect::<Vec<_>>();
+                    if page.is_empty() {
+                        break;
+                    }
+                    pages.push(page);
+                }
+                let files = source_pack.source_files_for_job(job);
+                super::source_pack_executor::validate_gpu_source_pack_descriptor_job_source_file_records(
+                    "library-interface",
+                    job,
+                    files,
+                )?;
+                let unit_id = u32::try_from(job.phase_unit_index).map_err(|_| {
+                    source_pack_artifact_store_error("checked source-unit index exceeds u32")
+                })?;
+                let sources = read_explicit_source_path_files("checked library-interface job", files)?;
+                let paths = files.iter().map(|file| Some(file.path.clone())).collect::<Vec<_>>();
+                let interface = self
+                    .check_source_pack_unit_with_dependency_pages(
+                        job.library_id,
+                        unit_id,
+                        &sources,
+                        Some(&paths),
+                        &pages,
+                    )
+                    .await?;
+                interfaces[job.job_index] = Some(interface);
+            }
+        }
+        Ok(())
+    }
+
     /// Compile a path-backed source pack to Wasm, retaining the resident fast
     /// path when it fits one unit and otherwise executing bounded units.
     pub async fn compile_path_manifest_to_wasm(

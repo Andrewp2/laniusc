@@ -14,7 +14,7 @@ import socketserver
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from generate_typical_project import generate as generate_typical_project
@@ -40,14 +40,16 @@ VIEWER_DATA_END = "<!-- lanius-performance-data:end -->"
 LANIUS_MODES = ("process_cold", "daemon_cold_workspace", "daemon_warm_workspace")
 DEFAULT_BENCHMARK_SEED = 20260808
 DEFAULT_SAMPLE_COUNT = 20
+# How long a daemon may take to exit after acknowledging shutdown before it is killed.
+SHUTDOWN_EXIT_TIMEOUT_S = 60.0
 CANONICAL_SINGLE_FILE_PRESET = "single-file-1mb"
 GENERIC_SINGLE_FILE_PRESET = "single-file-generic-1mb"
 GENERIC_NARROW_SINGLE_FILE_PRESET = "single-file-generic-narrow-1mb"
 GENERIC_PROJECT_PRESET = "project-generic-1mb"
 GENERIC_NARROW_PROJECT_PRESET = "project-generic-narrow-1mb"
 GENERIC_PROFILE = "generic-stdlib-heavy"
-# Four record types as type arguments: ~160 concrete generic bodies instead of
-# ~2200, under the compiler's current 256-body specialization limit (LNC0017).
+# Four record types as type arguments keep the generic body count small:
+# ~176 concrete bodies instead of ~2,220, with the same mix.
 GENERIC_NARROW_PROFILE = "generic-stdlib-heavy-type-pool-4"
 GPU_COMPILER_PHASES = frozenset(
     {
@@ -128,8 +130,8 @@ CANONICAL_WORKLOAD_PRESETS = {
         generator="generic",
         layout="project",
     ),
-    # Same mix and size with fewer distinct type arguments, so the programs fit
-    # today's specialization limit and the generic paths can be timed now.
+    # Same mix and size with only four record types as type arguments (see
+    # GENERIC_NARROW_PROFILE above).
     GENERIC_NARROW_SINGLE_FILE_PRESET: WorkloadSpec(
         kind="single_file",
         seeds=tuple(range(20, 40)),
@@ -312,7 +314,21 @@ def resolve_workload_spec(args: argparse.Namespace) -> WorkloadSpec:
             raise ValueError(
                 f"--preset {args.preset} fixes its workload; remove {', '.join(conflicting)}"
             )
-        return CANONICAL_WORKLOAD_PRESETS[args.preset]
+        spec = CANONICAL_WORKLOAD_PRESETS[args.preset]
+        first = getattr(args, "first_seeds", None)
+        if first is not None:
+            if not 1 <= first < len(spec.seeds):
+                raise ValueError(f"--first-seeds must be between 1 and {len(spec.seeds) - 1}")
+            # A partial run gets its own preset label, so it never passes for the full preset.
+            spec = replace(
+                spec,
+                seeds=spec.seeds[:first],
+                sample_count=first,
+                preset=f"{spec.preset}-first-{first}-seeds",
+            )
+        return spec
+    if getattr(args, "first_seeds", None) is not None:
+        raise ValueError("--first-seeds applies only to --preset")
 
     seed = args.seed if args.seed is not None else DEFAULT_BENCHMARK_SEED
     sample_count = args.samples if args.samples is not None else DEFAULT_SAMPLE_COUNT
@@ -406,6 +422,12 @@ def parse_args() -> argparse.Namespace:
         "--samples",
         type=int,
         help=f"custom workload sample count (default: {DEFAULT_SAMPLE_COUNT})",
+    )
+    run.add_argument(
+        "--first-seeds",
+        type=int,
+        help="time only the preset's first N seeds (plus its primer seed), to fit a GPU hold; "
+        "the result is labeled PRESET-first-N-seeds and is not comparable to full runs",
     )
     run.add_argument("--target", choices=("x86_64", "wasm"), default="x86_64")
     run.add_argument("--modes", default=",".join(LANIUS_MODES))
@@ -582,17 +604,24 @@ def run_lanius(args: argparse.Namespace) -> int:
             "daemon_warm_workspace",
         }:
             profile_case = representative_case
-            measurement["profile"] = profile_daemon_job(
-                mode,
-                laniusc,
-                cases,
-                primer_case,
-                profile_case,
-                args.target,
-                artifact_dir,
-                args.startup_timeout,
-                args.job_timeout,
-            )
+            try:
+                measurement["profile"] = profile_daemon_job(
+                    mode,
+                    laniusc,
+                    cases,
+                    primer_case,
+                    profile_case,
+                    args.target,
+                    artifact_dir,
+                    args.startup_timeout,
+                    args.job_timeout,
+                )
+            except Exception as error:
+                # The profile is a separate, traced run; losing it must not lose the
+                # timed samples, so keep the measurement and say what went wrong.
+                measurement["profile_error"] = f"{type(error).__name__}: {error}"[:500]
+                print(f"lanius_perf: warning: {mode}: profile run failed: {measurement['profile_error']}",
+                      file=sys.stderr, flush=True)
         document["measurements"].append(measurement)
 
     if not document["measurements"]:
@@ -636,6 +665,9 @@ def report_validation(mode: str, measurement: dict) -> list[str]:
     print(line, flush=True)
     for failure in [*failed, *(verification or {}).get("failures", [])]:
         print(f"lanius_perf:   {json.dumps(failure)[:800]}", flush=True)
+    for record in validation.get("daemon_shutdown_problems", []):
+        print(f"lanius_perf: warning: {mode}: daemon did not exit cleanly after the samples: "
+              f"{json.dumps(record)}", file=sys.stderr, flush=True)
     return problems
 
 
@@ -944,6 +976,7 @@ def measure_mode(
     daemon_argv = daemon_command(laniusc, target)
     raw_samples: list[dict] = []
     ready_samples = []
+    shutdowns: list[dict] = []
     sample_commands = []
     suffix = "wasm" if target == "wasm" else "bin"
     last_output = artifact_dir / f"{mode}-0.{suffix}"
@@ -1003,8 +1036,10 @@ def measure_mode(
                         sample_from_response(index, wall_ms, response, case)
                     )
                     sample_outputs.append((index, case, output))
-            finally:
-                daemon.shutdown(job_timeout)
+            except BaseException:
+                daemon.kill()
+                raise
+            shutdowns.append(daemon.shutdown(job_timeout))
             sample_requests.append(request)
             last_output = output
         commands = {
@@ -1089,8 +1124,10 @@ def measure_mode(
                 sample_outputs.append((index, case, output))
                 sample_requests.append(request)
                 last_output = output
-        finally:
-            daemon.shutdown(job_timeout)
+        except BaseException:
+            daemon.kill()
+            raise
+        shutdowns.append(daemon.shutdown(job_timeout))
         commands = {
             "daemon_start": command_record(daemon_argv, ROOT),
             "capacity_primer_counts_by_seed": primer_counts,
@@ -1131,6 +1168,10 @@ def measure_mode(
         validation["output_verification"] = verification
     if failed_compiles:
         validation["failed_compiles"] = failed_compiles
+    unclean = [record for record in shutdowns if not record["exited"] or record["killed"]]
+    if unclean:
+        # The samples are still valid; the daemon's exit is a separate defect.
+        validation["daemon_shutdown_problems"] = unclean
 
     return {
         "id": f"lanius-{target}-{mode}",
@@ -1305,8 +1346,13 @@ def profile_daemon_job(
             ),
             job_timeout,
         )
-    finally:
-        daemon.shutdown(job_timeout)
+    except BaseException:
+        daemon.kill()
+        raise
+    shutdown = daemon.shutdown(job_timeout)
+    if not shutdown["exited"] or shutdown["killed"]:
+        print(f"lanius_perf: warning: profile {mode}: daemon did not exit cleanly, so its "
+              f"trace may be incomplete: {json.dumps(shutdown)}", file=sys.stderr, flush=True)
     trace = json.loads(trace_path.read_text())
     timeline = profile_timeline(trace, "daemon.job.profile")
     compiler_graphs = response.pop("compiler_graphs", [])
@@ -1992,17 +2038,35 @@ class Daemon:
             raise RuntimeError(f"{description} was not a JSON object")
         return value
 
-    def shutdown(self, timeout: float) -> None:
+    def shutdown(self, timeout: float, exit_timeout: float = SHUTDOWN_EXIT_TIMEOUT_S) -> dict:
+        """Ask the daemon to exit; kill it if it does not. Never raises, so a slow or
+        stuck exit cannot discard samples already measured: the returned record says
+        what happened and callers keep it with the result."""
+        record = {"acknowledged": False, "exited": False, "killed": False}
         if self.process.poll() is None:
+            started = time.perf_counter()
             try:
                 self.request({"id": "shutdown", "command": "shutdown"}, timeout)
+                record["acknowledged"] = True
                 assert self.process.stdin is not None
                 self.process.stdin.close()
-                self.process.wait(timeout=timeout)
-            except Exception:
-                self.process.kill()
-                self.process.wait()
-                raise
+                self.process.wait(timeout=exit_timeout)
+                record["exited"] = True
+            except Exception as error:
+                record["error"] = f"{type(error).__name__}: {error}"[:300]
+                self.kill()
+                record["killed"] = True
+            record["seconds"] = round(time.perf_counter() - started, 3)
+        else:
+            record["exited"] = True
+            record["exit_status_before_shutdown"] = self.process.returncode
+        self.stderr_file.close()
+        return record
+
+    def kill(self) -> None:
+        if self.process.poll() is None:
+            self.process.kill()
+            self.process.wait()
         self.stderr_file.close()
 
 

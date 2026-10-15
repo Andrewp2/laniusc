@@ -633,15 +633,16 @@ the dependency page node by node. It now reads canonical IDs:
   literal projection that does not fit its target is `CT_UNKNOWN` and fails
   as an invalid view (failure 4) rather than in the walker.
 
-Materialization (`materialize_application.slang`) expands each constant and
-identity walker once. Source constants and canonical constants share one
-`materialize_checked_constant` site (through the canonical view's graph),
-array lengths of new rows use the same site, and every lookup (the caller's
-root rows, the checked index, then the lane's new rows) shares one equality
-site per domain. 03e1 went from 474k to 90k inlined instructions this way.
-The per-root expansion that used it (type/instances/02d and
-`expand_materialized_instance.slang`) is gone: the field closure over
-canonical IDs (`ct_expand.slang`) replaced it on the source and body paths.
+Materialization (`materialize_application.slang`, since deleted) expanded
+each constant and identity walker once. Source constants and canonical
+constants shared one `materialize_checked_constant` site (through the
+canonical view's graph), array lengths of new rows used the same site, and
+every lookup (the caller's root rows, the checked index, then the lane's new
+rows) shared one equality site per domain. 03e1 went from 474k to 90k inlined
+instructions this way. Its users are gone: the field closure over canonical
+IDs (`ct_expand.slang`) replaced the per-root expansion (type/instances/02d
+and `expand_materialized_instance.slang`) on the source and body paths, and
+modules/10e0l normalizes aliases with frames in workgroup memory.
 
 Field types under a receiver are substituted by canonical ID as well.
 `ct_scoped_reference` (`substitution/ct_scoped.slang`) takes the field's

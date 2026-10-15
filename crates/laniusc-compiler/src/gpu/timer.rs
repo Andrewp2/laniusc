@@ -11,6 +11,7 @@ use wgpu;
 
 static OPERATION_CAPTURE_SCOPE_COUNT: AtomicU64 = AtomicU64::new(0);
 static OPERATION_TIMESTAMP_COUNT: AtomicU64 = AtomicU64::new(0);
+static OPERATION_TIMESTAMPS_DROPPED: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     static ACTIVE_OPERATION_TIMER: std::cell::RefCell<Vec<Arc<Mutex<GpuTimerRecordingState>>>> =
@@ -62,9 +63,17 @@ pub struct GpuTimestampSample {
 /// Default minimum span duration printed by timing helpers.
 pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.2;
 
-/// Query capacity for one fully attributed compiler job. Exhaustion is a hard
+/// Query capacity for one compiler phase timer. Exhaustion is a hard
 /// profiling error so captures can never silently omit kernel events.
 pub const COMPILE_QUERY_CAPACITY: u32 = 4_096;
+
+/// Most timestamps one job timing session holds. A session spans a whole job,
+/// whose dispatch count grows with the program: a generic 1 MB unit with 184
+/// monomorphization replays stamps 8,681 operations more than the 4,096 one
+/// WGPU query set holds. So the session adds query sets as it fills them, and
+/// only past this bound stops stamping and counts the stamps it dropped
+/// (`operation_timestamps_dropped`), which fails the profiled job.
+pub(crate) const JOB_SESSION_QUERY_CAPACITY: u32 = 256 * wgpu::QUERY_SET_MAX_QUERIES;
 
 /// Returns whether compile GPU timestamps are needed for console output or tracing.
 pub(crate) fn compile_timing_requested() -> bool {
@@ -76,13 +85,49 @@ pub(crate) fn compile_timing_requested() -> bool {
 /// A timer for measuring GPU execution time.
 pub struct GpuTimer {
     period_in_nanoseconds: f32,
-    resolve_buffer: wgpu::Buffer,
-    readback_buffer: wgpu::Buffer,
+    buffers: Mutex<TimestampBuffers>,
     recording: Arc<Mutex<GpuTimerRecordingState>>,
 }
 
+/// Where `GpuTimer::resolve` copies the timestamps for `try_read`.
+struct TimestampBuffers {
+    resolve: wgpu::Buffer,
+    readback: wgpu::Buffer,
+    /// Timestamps the buffers hold.
+    queries: u32,
+    /// Timestamps the last `resolve` copied into `readback`.
+    resolved: u32,
+}
+
+impl TimestampBuffers {
+    fn new(device: &wgpu::Device, queries: u32) -> Self {
+        let size = u64::from(queries) * u64::from(wgpu::QUERY_SIZE);
+        Self {
+            resolve: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("TimestampResolve"),
+                size,
+                usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            }),
+            readback: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("TimestampReadback"),
+                size,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            }),
+            queries,
+            resolved: 0,
+        }
+    }
+}
+
 struct GpuTimerRecordingState {
-    query_set: wgpu::QuerySet,
+    /// Timestamp `i` is query `i % queries_per_set` of `query_sets[i /
+    /// queries_per_set]`. A timer whose capacity exceeds one WGPU query set
+    /// creates the later sets when it first needs them.
+    query_sets: Vec<wgpu::QuerySet>,
+    queries_per_set: u32,
+    device: wgpu::Device,
     next: u32,
     capacity: u32,
     phase: GpuCompilerPhase,
@@ -122,39 +167,22 @@ impl Drop for GpuOperationCaptureGuard {
 }
 
 impl GpuTimer {
-    /// Creates a new GpuTimer with the given maximum number of queries.
+    /// Creates a new GpuTimer with the given maximum number of queries. Up to
+    /// `wgpu::QUERY_SET_MAX_QUERIES` are allocated now, the rest as needed.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         max_queries: u32,
         phase: GpuCompilerPhase,
     ) -> Self {
-        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
-            label: Some("LaniusTimestamps"),
-            ty: wgpu::QueryType::Timestamp,
-            count: max_queries,
-        });
-
-        let resolve_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("TimestampResolve"),
-            size: (max_queries as u64) * 8,
-            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("TimestampReadback"),
-            size: (max_queries as u64) * 8,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
+        let queries_per_set = max_queries.clamp(1, wgpu::QUERY_SET_MAX_QUERIES);
         Self {
             period_in_nanoseconds: queue.get_timestamp_period(),
-            resolve_buffer,
-            readback_buffer,
+            buffers: Mutex::new(TimestampBuffers::new(device, queries_per_set)),
             recording: Arc::new(Mutex::new(GpuTimerRecordingState {
-                query_set,
+                query_sets: vec![create_query_set(device, queries_per_set)],
+                queries_per_set,
+                device: device.clone(),
                 next: 0,
                 capacity: max_queries,
                 phase,
@@ -234,9 +262,13 @@ impl GpuTimer {
         recording.stamp_metadata.clear();
         recording.next = 0;
         recording.operation_capture_enabled = false;
+        self.buffers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .resolved = 0;
     }
 
-    /// Resolves the timestamp queries.
+    /// Resolves the timestamp queries recorded so far for `try_read`.
     pub fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
         let recording = self
             .recording
@@ -246,32 +278,59 @@ impl GpuTimer {
         if query_count == 0 {
             return;
         }
-        encoder.resolve_query_set(
-            &recording.query_set,
-            0..query_count,
-            &self.resolve_buffer,
-            0,
-        );
+        let mut buffers = self
+            .buffers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if buffers.queries < query_count {
+            *buffers = TimestampBuffers::new(
+                &recording.device,
+                query_count.next_multiple_of(recording.queries_per_set),
+            );
+        }
+        // A timer with more than one set has full sets of
+        // QUERY_SET_MAX_QUERIES, so every set's destination offset is a
+        // multiple of QUERY_RESOLVE_BUFFER_ALIGNMENT.
+        for (set, query_set) in recording.query_sets.iter().enumerate() {
+            let first = set as u32 * recording.queries_per_set;
+            if first >= query_count {
+                break;
+            }
+            let queries = (query_count - first).min(recording.queries_per_set);
+            encoder.resolve_query_set(
+                query_set,
+                0..queries,
+                &buffers.resolve,
+                u64::from(first) * u64::from(wgpu::QUERY_SIZE),
+            );
+        }
         encoder.copy_buffer_to_buffer(
-            &self.resolve_buffer,
+            &buffers.resolve,
             0,
-            &self.readback_buffer,
+            &buffers.readback,
             0,
-            (query_count as u64) * 8,
+            u64::from(query_count) * u64::from(wgpu::QUERY_SIZE),
         );
+        buffers.resolved = query_count;
     }
 
-    /// Attempts to read the recorded timestamps.
+    /// Attempts to read the timestamps the last `resolve` copied out.
     pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<GpuTimestampSample>> {
         let recording = self
             .recording
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let query_count = recording.next;
+        let buffers = self
+            .buffers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let query_count = buffers.resolved.min(recording.next);
         if query_count == 0 {
             return None;
         }
-        let slice = self.readback_buffer.slice(..(query_count as u64) * 8);
+        let slice = buffers
+            .readback
+            .slice(..u64::from(query_count) * u64::from(wgpu::QUERY_SIZE));
         let (sender, receiver) = std::sync::mpsc::channel();
         crate::gpu::passes_core::trace_gpu_progress("gpu.timer.readback.map.start");
         slice.map_async(wgpu::MapMode::Read, move |v| {
@@ -295,7 +354,7 @@ impl GpuTimer {
                 vals.push(u64::from_le_bytes(arr));
             }
             drop(data);
-            self.readback_buffer.unmap();
+            buffers.readback.unmap();
 
             let mut out = Vec::with_capacity(query_count as usize);
             for (i, val) in vals.iter().enumerate() {
@@ -352,6 +411,12 @@ pub(crate) fn operation_timestamp_count() -> u64 {
     OPERATION_TIMESTAMP_COUNT.load(Ordering::Relaxed)
 }
 
+/// Process-wide count of operation timestamps a job timing session dropped
+/// because it held `JOB_SESSION_QUERY_CAPACITY` timestamps already.
+pub(crate) fn operation_timestamps_dropped() -> u64 {
+    OPERATION_TIMESTAMPS_DROPPED.load(Ordering::Relaxed)
+}
+
 /// Records the completion timestamp for one generic GPU operation.
 pub(crate) fn stamp_active_operation(encoder: &mut wgpu::CommandEncoder, label: impl Into<String>) {
     ACTIVE_OPERATION_TIMER.with(|active| {
@@ -360,6 +425,7 @@ pub(crate) fn stamp_active_operation(encoder: &mut wgpu::CommandEncoder, label: 
             if job_session_full(&recording, 0) {
                 // The job then fails the timestamp coverage check instead of
                 // panicking the daemon.
+                OPERATION_TIMESTAMPS_DROPPED.fetch_add(1, Ordering::Relaxed);
                 return;
             }
             stamp_recording(&recording, encoder, label.into());
@@ -370,7 +436,8 @@ pub(crate) fn stamp_active_operation(encoder: &mut wgpu::CommandEncoder, label: 
 
 /// Whether `recording` is a job timing session with at most `reserve` free
 /// queries. Sessions span whole jobs, whose dispatch counts grow with the
-/// program, so they stop stamping instead of exhausting their query set.
+/// program, so past `JOB_SESSION_QUERY_CAPACITY` they stop stamping instead of
+/// panicking the daemon.
 fn job_session_full(recording: &Arc<Mutex<GpuTimerRecordingState>>, reserve: u32) -> bool {
     let recording = recording
         .lock()
@@ -387,6 +454,7 @@ pub(crate) fn stamp_active_operation_in_pass(
         let recording = active.borrow().last().cloned();
         if let Some(recording) = recording {
             if job_session_full(&recording, 0) {
+                OPERATION_TIMESTAMPS_DROPPED.fetch_add(1, Ordering::Relaxed);
                 return;
             }
             assert!(
@@ -416,8 +484,8 @@ pub(crate) fn stamp_job_session_pass_begin(encoder: &mut wgpu::CommandEncoder, l
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .job_session;
             // Pass boundaries only refine attribution: keep the last quarter
-            // of the query set for operation stamps.
-            let reserve = COMPILE_QUERY_CAPACITY / 4;
+            // of the session's capacity for operation stamps.
+            let reserve = JOB_SESSION_QUERY_CAPACITY / 4;
             if job_session && !job_session_full(&recording, reserve) {
                 stamp_recording(&recording, encoder, format!("{label}.submission.begin"));
             }
@@ -491,7 +559,7 @@ impl GpuJobTimingSession {
         let mut timer = GpuTimer::new(
             device,
             queue,
-            COMPILE_QUERY_CAPACITY,
+            JOB_SESSION_QUERY_CAPACITY,
             GpuCompilerPhase::ArtifactEmission,
         );
         timer
@@ -582,12 +650,114 @@ fn reserve_timestamp(
         recording.capacity,
     );
     let index = recording.next;
+    let set = (index / recording.queries_per_set) as usize;
+    if set == recording.query_sets.len() {
+        let query_set = create_query_set(&recording.device, recording.queries_per_set);
+        recording.query_sets.push(query_set);
+    }
     recording.next += 1;
     let phase = recording.phase;
     recording.stamp_metadata.push((label, phase));
-    (recording.query_set.clone(), index)
+    (
+        recording.query_sets[set].clone(),
+        index % recording.queries_per_set,
+    )
+}
+
+fn create_query_set(device: &wgpu::Device, queries: u32) -> wgpu::QuerySet {
+    device.create_query_set(&wgpu::QuerySetDescriptor {
+        label: Some("LaniusTimestamps"),
+        ty: wgpu::QueryType::Timestamp,
+        count: queries,
+    })
 }
 
 fn is_submission_boundary(label: &str) -> bool {
     label.ends_with(".submission.begin")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A job-session timer on the physical GPU, or None when the adapter
+    /// cannot write timestamps between commands.
+    fn job_session_timer(
+        capacity: u32,
+    ) -> Option<(&'static crate::gpu::device::GpuDevice, GpuTimer)> {
+        let gpu = crate::gpu::device::global();
+        let needed =
+            wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        if !gpu.device.features().contains(needed) {
+            return None;
+        }
+        let timer = GpuTimer::new(
+            &gpu.device,
+            &gpu.queue,
+            capacity,
+            GpuCompilerPhase::ArtifactEmission,
+        );
+        timer.recording.lock().unwrap().job_session = true;
+        Some((gpu, timer))
+    }
+
+    fn encoder(gpu: &crate::gpu::device::GpuDevice) -> wgpu::CommandEncoder {
+        gpu.device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("test.job_session_timestamps"),
+            })
+    }
+
+    #[test]
+    fn physical_gpu_job_session_stamps_past_one_query_set() {
+        let Some((gpu, timer)) = job_session_timer(JOB_SESSION_QUERY_CAPACITY) else {
+            return;
+        };
+        let operations = 2 * wgpu::QUERY_SET_MAX_QUERIES + 100;
+        let mut encoder = encoder(gpu);
+        {
+            let _capture = timer.capture_operations();
+            for operation in 0..operations {
+                stamp_active_operation(&mut encoder, format!("op{operation}"));
+            }
+        }
+        timer.resolve(&mut encoder);
+        gpu.queue.submit(Some(encoder.finish()));
+        let stamps = timer
+            .try_read(&gpu.device)
+            .expect("read the job session's timestamps");
+
+        assert_eq!(timer.recording.lock().unwrap().query_sets.len(), 3);
+        assert_eq!(stamps.len(), operations as usize);
+        for (operation, stamp) in stamps.iter().enumerate() {
+            assert_eq!(stamp.label, format!("op{operation}"));
+        }
+        // Unwritten queries resolve to zero, so ordered nonzero ticks show
+        // every set was written and resolved to its own offset.
+        assert!(stamps[0].ticks > 0);
+        assert!(
+            stamps.windows(2).all(|pair| pair[0].ticks <= pair[1].ticks),
+            "timestamps out of order across query sets"
+        );
+    }
+
+    #[test]
+    fn physical_gpu_full_job_session_counts_the_stamps_it_drops() {
+        let Some((gpu, timer)) = job_session_timer(3) else {
+            return;
+        };
+        let dropped_before = operation_timestamps_dropped();
+        let mut encoder = encoder(gpu);
+        {
+            let _capture = timer.capture_operations();
+            for operation in 0..5 {
+                stamp_active_operation(&mut encoder, format!("op{operation}"));
+            }
+        }
+        assert_eq!(operation_timestamps_dropped() - dropped_before, 2);
+        timer.resolve(&mut encoder);
+        gpu.queue.submit(Some(encoder.finish()));
+        let stamps = timer.try_read(&gpu.device).expect("read the stamps kept");
+        assert_eq!(stamps.len(), 3);
+    }
 }

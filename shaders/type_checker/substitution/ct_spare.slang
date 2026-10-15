@@ -47,6 +47,13 @@ public uint ct_spare_publish(CtKey key, uint2 extra, bool intern, inout CtSpare 
 {
     uint found = ct_lookup(key);
     if (found != CT_NONE || !intern) return found;
+    return ct_spare_intern(key, extra, spare);
+}
+
+// Publish a built key through the spare after the caller's lookup missed.
+// ct_intern still returns an equal record published since then.
+public uint ct_spare_intern(CtKey key, uint2 extra, inout CtSpare spare)
+{
     if (spare.record == CT_NONE) spare.record = ct_alloc_record();
     if (spare.record == CT_UNKNOWN) { spare.record = CT_NONE; return CT_UNKNOWN; }
     ct_key_store(key, spare.record, extra);
