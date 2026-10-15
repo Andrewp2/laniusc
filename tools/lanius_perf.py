@@ -128,8 +128,8 @@ CANONICAL_WORKLOAD_PRESETS = {
         generator="generic",
         layout="project",
     ),
-    # Same mix and size with fewer distinct type arguments, so the programs fit
-    # today's specialization limit and the generic paths can be timed now.
+    # Same mix and size with only four record types as type arguments (see
+    # GENERIC_NARROW_PROFILE above).
     GENERIC_NARROW_SINGLE_FILE_PRESET: WorkloadSpec(
         kind="single_file",
         seeds=tuple(range(20, 40)),
