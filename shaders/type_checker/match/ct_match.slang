@@ -279,6 +279,23 @@ public uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pa
     return ct_match_roots<S, CtTwoRoots>(slots, roots, prior, intern, spare, count_mask);
 }
 
+// The type and constant slots that `pattern` uses, whatever it is matched
+// against: the shape pass of `pattern` against itself, with its owner
+// checks. False when a parameter has no slot of its own kind or a node is
+// one no pattern has.
+public bool ct_pattern_masks<S : ICtSlots>(S slots, uint pattern, out uint type_mask, out uint const_mask)
+{
+    type_mask = 0u;
+    const_mask = 0u;
+    SlotClaims claims;
+    claims.binding = CT_NONE;
+    claims.klass = NO_CLASS;
+    claims.scalar = 0u;
+    claims.exact = false;
+    return ct_is_resolved(pattern) &&
+        match_pass<S>(slots, pattern, pattern, false, 0u, type_mask, const_mask, claims);
+}
+
 // ct_match over the roots of `roots`.
 public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, uint prior, bool intern,
     inout CtSpare spare, out uint count_mask)

@@ -19,6 +19,7 @@ import type_checker.instance_arguments;
 import status;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
 import type_checker.canonical.canonical_mutable_rows;
 import type_checker.canonical.canonical_dependency;
 import type_checker.substitution.ct_spare;
@@ -179,6 +180,7 @@ static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 uint parameter_type_capacity() { return mutable_type_capacity(); }
 #define ARGUMENT_TYPE_GRAPH MutableCheckedTypeGraph
 #include "argument_value_reference.slang"
+#include "argument_pattern_ids.slang"
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -262,40 +264,6 @@ void publish_generic_return_type(
         atomic_u32_compare_exchange(call_return_type, callee_i, prior, arg_ty);
 }
 
-// Parameter slots of the callee's patterns: a local parameter by its
-// declaration's slot, a dependency parameter by the slot it carries.
-struct ClaimSlots : ICtSlots
-{
-    uint type_slot(uint token)
-    {
-        uint slot = generic_slot_for_type_ref(TYPE_REF_GENERIC_PARAM, token);
-        return slot < CT_SLOT_NONE ? slot : CT_SLOT_NONE;
-    }
-    uint const_slot(uint token)
-    {
-        uint slot = valid_token(token) ? type_const_param_slot_by_token[token] : INVALID;
-        return slot < CT_SLOT_NONE ? slot : CT_SLOT_NONE;
-    }
-    uint const_scalar(uint token)
-    {
-        uint scalar = valid_token(token) ? type_const_param_scalar_by_token[token] : 0u;
-        return constant_scalar_is_supported(scalar) ? scalar : 0u;
-    }
-}
-
-// The canonical ID of a parameter pattern or argument operand: a dependency
-// node (its alias root's) or slot parameter, else the checked row interned.
-uint operand_id(uint2 operand, inout CtSpare spare)
-{
-    if (operand.x == TYPE_REF_EXTERNAL_GENERIC)
-        return operand.y < CT_DEP_PARAM_SLOTS ? ct_dep_type_param(operand.y) : CT_UNKNOWN;
-    if (operand.x != TYPE_REF_EXTERNAL_CANONICAL)
-        return ct_intern_checked<CtMutableRows>(operand.x, operand.y, spare.record);
-    uint roots; uint stride;
-    canonical_type_roots.GetDimensions(roots, stride);
-    return operand.y < roots ? ct_dependency_state(canonical_type_roots[operand.y]) : CT_UNKNOWN;
-}
-
 void emit_argument_claims(uint arg_row)
 {
     if (arg_row >= min(call_arg_row_count_out[0u], active_hir_node_count())) return;
@@ -362,7 +330,7 @@ void emit_argument_claims(uint arg_row)
         {
             if (step == 2u && !explicit_root) break;
             uint2 operand = step == 0u ? declared : step == 1u ? uint2(tag, payload) : bound;
-            uint id = operand_id(operand, spare);
+            uint id = operand_id<CtMutableRows>(operand, spare);
             if (step == 0u)
             {
                 pattern = id;
