@@ -626,8 +626,10 @@ to 90k inlined instructions this way.
 
 ### Constant claims: typed and count identity
 
-Call inference collects claims for each constant parameter slot
-(`merge_inferred_constant_claim` in `type_checker/constant_constraints.slang`).
+Call inference collects claims for each constant parameter slot. `ct_match`
+merges them by ID (`SlotClaims` in `match/ct_match.slang`). 03a8 checks an
+explicit constant against a retained claim with
+`checked_constant_claims_compatible` (`calls/constant_claim_identity.slang`).
 A claim is exact (`identity_mode` 0, from a constant argument) or a count
 claim (`identity_mode` 1, from an array length matched against `[T; N]`).
 
