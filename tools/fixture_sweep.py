@@ -49,6 +49,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 STDLIB = ROOT / "stdlib"
 DEFAULT_OUT = ROOT / "target" / "fixture_sweep"
 SUITES = ("stdlib_foundation", "generics_matrix", "generics_backlog")
+# Harness needs (tools/fixture_expectations.py) that leave the plain compile and
+# run meaningful: the recorded exit status and stdout are the plain run's.
+RUNNABLE_NEEDS = {"multiple-expectations", "fault-injection", "source-pack"}
+# Needs without which the fixture is not the program its test compiles.
+SKIPPED_NEEDS = {"source-concat", "generated-stdlib"}
+OK_STATUSES = ("PASS", "COMPILED-ONLY", "SKIPPED")
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +280,13 @@ def sweep(args) -> int:
         stdlib_root = expectation.stdlib_root or STDLIB
         started = time.time()
         record = {"name": name, "suite": suite_of(expectation.path), "expected": describe_expectation(expectation)}
+        skip = sorted(SKIPPED_NEEDS & set(expectation.harness))
+        if skip:
+            record.update(status="SKIPPED", detail="needs " + ",".join(skip), elapsed_s=0.0)
+            results.append(record)
+            print(f"{'SKIPPED':22} {0.0:6.1f}s  {name}", flush=True)
+            write(complete=len(results) == len(cases))
+            continue
         try:
             response = daemon.request({
                 "id": f"fixture-{number}", "command": "compile", "emit": "x86_64",
@@ -308,7 +321,7 @@ def sweep(args) -> int:
                 record.update(status="FAIL-ACCEPTED", detail=f"compiled; want {expectation.error_code or 'an error'}")
             elif expectation.kind == "check_only":
                 record.update(status="PASS", detail="compiled (check-only fixture)")
-            elif expectation.harness and any(need != "multiple-expectations" for need in expectation.harness):
+            elif set(expectation.harness) - RUNNABLE_NEEDS:
                 record.update(status="COMPILED-ONLY", detail="needs " + ",".join(expectation.harness))
             else:
                 run = run_elf(elf)
@@ -324,7 +337,7 @@ def sweep(args) -> int:
         record["elapsed_s"] = round(time.time() - started, 3)
         results.append(record)
         line = f"{record['status']:22} {record['elapsed_s']:6.1f}s  {name}"
-        if record["status"] not in ("PASS", "COMPILED-ONLY"):
+        if record["status"] not in OK_STATUSES:
             line += f"\n    {record.get('code') or ''} {record.get('location') or ''} {record.get('detail', '')[:200]}"
         print(line, flush=True)
         # Written after every fixture, so a hold that is cut short keeps its
@@ -336,7 +349,7 @@ def sweep(args) -> int:
             break
     daemon.kill()
     write(complete=len(results) == len(cases))
-    passed = sum(1 for result in results if result["status"] in ("PASS", "COMPILED-ONLY"))
+    passed = sum(1 for result in results if result["status"] in OK_STATUSES)
     print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled; wrote {relative(result_path)}")
     return 0 if passed == len(results) else 1
 
@@ -361,9 +374,30 @@ def laniusc_version(laniusc: str) -> dict:
 # Report
 
 
+SCALAR = r"(?:u8|u16|u32|u64|i8|i16|i32|i64|usize|isize|char|f32|f64|bool)"
+# `x as u32` casts, and `let a: u32 = b;` where b has another scalar type: the
+# stdlib leans on both, and one missing feature should not hide other bugs.
+AS_CAST_RE = re.compile(rf"\bas\s+{SCALAR}\b")
+IMPLICIT_SCALAR_RE = re.compile(rf"^let\s+\w+\s*:\s*{SCALAR}\s*=\s*[\w.]+\s*;$")
+
+
+def scalar_conversion(result: dict) -> str | None:
+    if result.get("code") != "LNC0006":
+        return None
+    line = result.get("source_line") or ""
+    if AS_CAST_RE.search(line):
+        return "scalar conversion: `as` cast"
+    if IMPLICIT_SCALAR_RE.match(line):
+        return "scalar conversion: implicit (let with scalar annotation)"
+    return None
+
+
 def failure_group(result: dict) -> str:
     status = result["status"]
     if status == "FAIL-COMPILE":
+        conversion = scalar_conversion(result)
+        if conversion:
+            return f"compile error LNC0006, {conversion}"
         return f"compile error {result.get('code') or '(no code)'}"
     if status == "FAIL-WRONG-CODE":
         return f"wrong diagnostic {result.get('code') or '(no code)'}"
@@ -408,7 +442,7 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
     by_suite = collections.defaultdict(collections.Counter)
     for result in results.values():
         by_suite[result["suite"]][result["status"]] += 1
-    failures = [result for result in results.values() if result["status"] not in ("PASS", "COMPILED-ONLY")]
+    failures = [result for result in results.values() if result["status"] not in OK_STATUSES]
     groups = collections.defaultdict(list)
     for result in failures:
         groups[failure_group(result)].append(result)
@@ -423,12 +457,13 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
         for _, document in documents)
     lines.append(f"Shards: {shard_times}")
     lines.append("")
-    lines.append("| suite | fixtures | pass | compiled only | fail |")
-    lines.append("| --- | ---: | ---: | ---: | ---: |")
+    lines.append("| suite | fixtures | pass | compiled only | skipped | fail |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
     for suite, counts in sorted(by_suite.items()):
         total = sum(counts.values())
-        failed = total - counts["PASS"] - counts["COMPILED-ONLY"]
-        lines.append(f"| {suite} | {total} | {counts['PASS']} | {counts['COMPILED-ONLY']} | {failed} |")
+        failed = total - sum(counts[status] for status in OK_STATUSES)
+        lines.append(f"| {suite} | {total} | {counts['PASS']} | {counts['COMPILED-ONLY']} | "
+                     f"{counts['SKIPPED']} | {failed} |")
     lines.append("")
     lines.append("## Failures by group")
     lines.append("")
@@ -447,6 +482,9 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
                 key = member.get("detail") or ""  # keep the exit codes: 101 is a trap, 1 an error
             elif member["status"] == "FAIL-STDOUT":
                 key = "stdout differs"
+            elif (member.get("location") or "").startswith("stdlib/"):
+                # Many fixtures fail on the same stdlib line; list it once.
+                key = f"at {member['location']}: {normalized_message(member.get('message') or '')}"
             else:
                 key = normalized_message(member.get("message") or member.get("detail") or "")
             messages[key].append(member)
