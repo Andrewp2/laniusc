@@ -493,7 +493,8 @@ def command_check(args):
                                 info["slots"], "cpu", "gpu", args.max_diffs)
     changed = gpu_changed_words(capture, manifest)
     print(f"the GPU dispatch changed {sum(changed.values())} words in {len(changed)} buffer(s)"
-          + ("" if changed else ": the inputs exercise nothing; capture another dispatch (LANIUS_DEBUG_CAPTURE_INDEX)"))
+          + ("" if changed else " (it did no work or rewrote the values already there; a dispatch that "
+                                "changes data, see LANIUS_DEBUG_CAPTURE_INDEX, makes a stronger check)"))
     print("MATCH" if not differing else f"MISMATCH in {differing} buffer(s)")
     return 1 if differing else 0
 
@@ -502,13 +503,10 @@ def gpu_changed_words(capture, manifest):
     """{binding name: words the GPU dispatch changed} for a capture."""
     changed = {}
     for binding in manifest["bindings"]:
-        if not binding.get("post_file"):
-            continue
-        before = (capture / binding["file"]).read_bytes()
-        after = (capture / binding["post_file"]).read_bytes()
-        count = sum(1 for i in range(0, min(len(before), len(after)), 4) if before[i:i + 4] != after[i:i + 4])
-        if count:
-            changed[binding["name"]] = count
+        if binding.get("post_file"):
+            count = words_changed(capture / binding["file"], capture / binding["post_file"])
+            if count:
+                changed[binding["name"]] = count
     return changed
 
 
@@ -525,8 +523,20 @@ def command_compare(args):
     print("a vs b:")
     differing = compare_buffers(replay_outputs(out_a, shared), replay_outputs(out_b, shared), shared,
                                 "a", "b", args.max_diffs)
+    capture, manifest = load_capture(args.capture)
+    inputs = {binding["name"]: capture / binding["file"] for binding in manifest["bindings"]}
+    changed = sum(words_changed(inputs.get(name), path) for name, path in replay_outputs(out_a, shared).items())
+    print(f"kernel a changed {changed} words of its inputs"
+          + ("" if changed else " (no work on this capture: SAME OUTPUTS proves little)"))
     print("SAME OUTPUTS" if not differing else f"DIFFERENT in {differing} buffer(s)")
     return 1 if differing else 0
+
+
+def words_changed(before, after):
+    if not before or not before.exists() or not after.exists():
+        return 0
+    a, b = before.read_bytes(), after.read_bytes()
+    return sum(1 for i in range(0, min(len(a), len(b)), 4) if a[i:i + 4] != b[i:i + 4])
 
 
 def command_build(args):
