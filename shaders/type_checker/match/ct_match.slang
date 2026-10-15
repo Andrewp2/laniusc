@@ -17,6 +17,8 @@
 // - A slot that the prior environment binds is checked against that binding,
 //   as if it were an exact claim.
 // - A root slice pattern may accept an actual array (the root coercion).
+// - Any number of roots match jointly (ct_match_roots): their claims merge
+//   as one pattern's would. ct_match is the one- or two-root case.
 //
 // The bindings are interned as a CT_ENV record (owner 0; bound type slots,
 // then bound constant slots, as type_checker/substitution builds call
@@ -236,6 +238,32 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
     return false;
 }
 
+// The roots of one match, in order. Every pass asks for every root again,
+// so a provider recomputes its roots rather than storing them.
+public interface ICtRoots
+{
+    uint count();
+    // Root `root`: its pattern and actual (both CT_NONE: no root) and
+    // whether a slice pattern accepts an actual array there. False fails
+    // the match.
+    [mutating] bool root(uint root, out uint pattern, out uint actual, out bool slice);
+}
+
+// Up to two roots (pattern1 CT_NONE for one); `flags` are CT_MATCH_SLICE_ROOT*.
+struct CtTwoRoots : ICtRoots
+{
+    uint4 ids;
+    uint flags;
+    uint count() { return ids.z == CT_NONE ? 1u : 2u; }
+    [mutating] bool root(uint root, out uint pattern, out uint actual, out bool slice)
+    {
+        pattern = root == 0u ? ids.x : ids.z;
+        actual = root == 0u ? ids.y : ids.w;
+        slice = ((flags >> root) & 1u) != 0u;
+        return true;
+    }
+}
+
 // Match up to two roots jointly (pattern1 CT_NONE for one) under `prior`, a
 // CT_ENV or CT_NONE. Returns the interned environment of every parameter
 // slot the patterns use, or CT_MATCH_OK without `intern`; CT_MATCH_FAILED
@@ -244,6 +272,16 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
 // claim identity is a count's).
 public uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pattern1, uint actual1,
     uint prior, uint flags, bool intern, inout CtSpare spare, out uint count_mask)
+{
+    CtTwoRoots roots;
+    roots.ids = uint4(pattern0, actual0, pattern1, actual1);
+    roots.flags = flags;
+    return ct_match_roots<S, CtTwoRoots>(slots, roots, prior, intern, spare, count_mask);
+}
+
+// ct_match over the roots of `roots`.
+public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, uint prior, bool intern,
+    inout CtSpare spare, out uint count_mask)
 {
     count_mask = 0u;
     uint type_mask = 0u;
@@ -270,12 +308,14 @@ public uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pa
         claims.exact = claims.binding != CT_NONE;
         claims.klass = claims.exact && constant ? cc_count_class(claims.binding) : NO_CLASS;
         claims.scalar = 0u;
-        for (uint root = 0u; root < 2u; root++)
+        uint roots_count = roots.count();
+        for (uint root = 0u; root < roots_count; root++)
         {
-            uint pattern = root == 0u ? pattern0 : pattern1;
-            if (root == 1u && pattern == CT_NONE) break;
-            if (!match_pass<S>(slots, pattern, root == 0u ? actual0 : actual1, ((flags >> root) & 1u) != 0u,
-                item, type_mask, const_mask, claims)) return CT_MATCH_FAILED;
+            uint pattern; uint actual; bool slice;
+            if (!roots.root(root, pattern, actual, slice)) return CT_MATCH_FAILED;
+            if (pattern == CT_NONE && actual == CT_NONE) continue;
+            if (!match_pass<S>(slots, pattern, actual, slice, item, type_mask, const_mask, claims))
+                return CT_MATCH_FAILED;
         }
         if (item == 0u) continue;
         uint binding = claims.binding;
