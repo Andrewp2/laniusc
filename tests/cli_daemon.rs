@@ -486,6 +486,9 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
     );
     assert_eq!(responses[7]["event"], "shutdown");
 
+    for path in [&artifact, &repeat_artifact, &second_artifact] {
+        common::x86_jumps::assert_x86_64_file_jumps_stay_in_functions(path);
+    }
     let run = common::short_process_output_with_timeout(
         "run daemon-emitted x86 artifact",
         &mut Command::new(&artifact),
