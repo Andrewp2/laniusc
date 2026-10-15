@@ -107,8 +107,20 @@ pub(super) const CANONICAL_COUNT_ROUND: usize = 4;
 /// no capacity changes, so it never retries.
 pub(super) const CANONICAL_RETRY_OVERFLOW_BITS: u32 = 1 | 2 | 4;
 /// Largest canonical capacity scale. Each retry doubles the scale; past this
-/// limit an overflow fails the job instead of retrying it.
+/// limit an overflow fails the job instead of retrying it. At this scale the
+/// dynamic records and the argument words reach their worst-case bounds.
 pub(super) const CANONICAL_MAX_SCALE: u32 = 64;
+/// Floors of the scale-1 dynamic records and argument words. Measured use is
+/// far below both (docs/canonical-type-ids.md, "Capacities and overflow").
+pub(super) const CANONICAL_MIN_DYNAMIC_RECORDS: u64 = 4096;
+pub(super) const CANONICAL_MIN_ARGUMENT_WORDS: u64 = 16384;
+
+/// A dynamic capacity at `scale`: 1/CANONICAL_MAX_SCALE of the worst-case
+/// `bound` (at least `floor`) times the scale, never more than the bound.
+pub(super) fn canonical_scaled_capacity(bound: u64, floor: u64, scale: u32) -> u64 {
+    let base = bound.div_ceil(u64::from(CANONICAL_MAX_SCALE)).max(floor);
+    (base * u64::from(scale.clamp(1, CANONICAL_MAX_SCALE))).min(bound.max(floor))
+}
 
 /// A canonical stage ran out of table capacity. The job is abandoned and
 /// recorded again with a doubled capacity scale (docs/canonical-type-ids.md,
@@ -143,7 +155,7 @@ pub(super) fn canonical_retry_scale(scale: u32, overflow: u32) -> Option<u32> {
         .then(|| scale.max(1) * 2)
 }
 
-/// Debug only: divide the canonical table capacities by `2^n`
+/// Debug only: divide the dynamic records and the argument words by `2^n`
 /// (`LANIUS_DEBUG_CANONICAL_SHRINK=n`, at most 16), so that small programs
 /// overflow and exercise the retry.
 fn canonical_capacity_shrink() -> u32 {
@@ -257,12 +269,15 @@ fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<Resource
 /// at most one per constant candidate or node. Arguments are bounded by the
 /// checked argument storage plus an element/length pair per row, one child
 /// per projection and two per dependency node (signature trees have fewer
-/// edges than nodes), so an overflow means a broken invariant rather than a
-/// large input. A body replay interns every candidate a second time (one
-/// more key, and a dynamic record when it was rewritten), which doubles the
-/// candidates' records and arguments. `scale` multiplies the records and the
-/// argument words; the host doubles it and records the job again when a
-/// stage overflows (`CanonicalCapacityOverflow`).
+/// edges than nodes). A body replay interns every candidate a second time
+/// (one more key, and a dynamic record when it was rewritten), which doubles
+/// the candidates' records and arguments. Those worst-case bounds are what
+/// the tables hold at `CANONICAL_MAX_SCALE`, where an overflow means a broken
+/// invariant rather than a large input. A job starts at scale 1, with the
+/// fixed records and 1/CANONICAL_MAX_SCALE of the dynamic records and of the
+/// argument words (`canonical_scaled_capacity`); the host doubles the scale
+/// and records the job again when a stage overflows
+/// (`CanonicalCapacityOverflow`).
 pub(super) fn register_canonical_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
@@ -279,14 +294,27 @@ pub(super) fn register_canonical_passes(
         scale,
     } = capacity;
     let candidates = type_rows + 2 * constant_rows;
-    let scaled = |base: u64| ((base * u64::from(scale.max(1))) >> canonical_capacity_shrink()).max(64);
-    let records = scaled(32 + 2 * (candidates + 2 * constant_rows) + 2 * dependency_rows);
+    let shrink = canonical_capacity_shrink();
+    // The fixed records (ct_dynamic_base) are exact. The dynamic records and
+    // the argument words start at 1/CANONICAL_MAX_SCALE of their worst-case
+    // bounds, and reach the bounds at the largest retry scale.
+    // The debug shrink divides only what a retry grows, so a shrunken job
+    // still succeeds once the scale covers its use.
+    let fixed = 32 + candidates + dependency_rows.max(1);
+    let dynamic = canonical_scaled_capacity(candidates + 4 * constant_rows + dependency_rows,
+        CANONICAL_MIN_DYNAMIC_RECORDS, scale);
+    let records = fixed + (dynamic >> shrink).max(1);
     let candidate_argument_bytes = token_rows * 16
         + extra_argument_rows * 128
         + hir_rows * 4
         + type_rows * 8
         + constant_rows * 8;
-    let argument_bytes = scaled((2 * candidate_argument_bytes + dependency_rows * 8) / 4) * 4;
+    let argument_words = canonical_scaled_capacity(
+        (2 * candidate_argument_bytes + dependency_rows * 8) / 4,
+        CANONICAL_MIN_ARGUMENT_WORDS,
+        scale,
+    );
+    let argument_bytes = (argument_words >> shrink).max(4) * 4;
     let workspace = ResourceClass::Workspace;
     storage(graph, "ct_head", workspace, records * 16)?;
     storage(graph, "ct_meta", workspace, records * 16)?;

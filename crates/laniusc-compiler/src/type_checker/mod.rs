@@ -532,6 +532,26 @@ mod resident_typecheck_cache_key_tests {
         assert_eq!(canonical_retry_scale(1, 0), None);
         assert_eq!(canonical_retry_scale(CANONICAL_MAX_SCALE, 2), None);
     }
+
+    #[test]
+    fn canonical_dynamic_capacity_reaches_its_bound_at_the_largest_scale() {
+        use super::canonical_passes::{CANONICAL_MAX_SCALE, canonical_scaled_capacity};
+        // A bound that the scale does not divide still reaches it exactly.
+        let bound = 5_499_963;
+        assert_eq!(canonical_scaled_capacity(bound, 4096, 1), bound.div_ceil(64));
+        assert_eq!(canonical_scaled_capacity(bound, 4096, CANONICAL_MAX_SCALE), bound);
+        let mut previous = 0;
+        let mut scale = 1;
+        while scale <= CANONICAL_MAX_SCALE {
+            let capacity = canonical_scaled_capacity(bound, 4096, scale);
+            assert!(capacity > previous && capacity <= bound);
+            previous = capacity;
+            scale *= 2;
+        }
+        // A small job keeps the floor at every scale.
+        assert_eq!(canonical_scaled_capacity(100, 4096, 1), 4096);
+        assert_eq!(canonical_scaled_capacity(100, 4096, CANONICAL_MAX_SCALE), 4096);
+    }
 }
 
 struct TypeSemanticBuffers {
