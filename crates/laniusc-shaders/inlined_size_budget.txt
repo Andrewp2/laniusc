@@ -1,6 +1,7 @@
 # Per-kernel fully inlined instruction limits for kernels already above the
 # 40000 default (see check_inlined_size_budget in build.rs). Limits only go
-# down: when a kernel shrinks, lower or delete its line. Never add a kernel.
+# down: when a kernel shrinks, run tools/ratchet_inlined_budget.py after the
+# build (it also lowers local_array_budget.txt). Never add a kernel.
 # Recorded 2026-10-14 from the 7ae8a250 shaders.
 416393 type_checker/program_evidence/entries/59_admit_implementation_proofs
 392453 type_checker/program_evidence/native_layout/entries/05_materialize_proof_value
