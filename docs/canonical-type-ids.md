@@ -535,15 +535,19 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
     read through the bridge (`bridge_mismatches`, after the dependency
     counters). Each row's whole bridged tree is compared, since a bridged
     record's operands are bridged too.
-  - **False merge:** a row whose ID is another row's record while
-    `scoped_type_refs_equal` says the rows differ. A top-level difference
+  - **False merge:** a row and its representative, the smallest row with
+    the same ID, while `scoped_type_refs_equal` says the rows differ.
+    `89_crosscheck_buckets` records the representative of each record in
+    `canonical_crosscheck_owner` (one word per record, declared only when
+    validation is on), since a record ID does not name the row that took
+    it. A top-level difference
     between a declaration token and an imported triple is the intended
     local/imported unification, and is counted as `normalized_merges`.
   - **Missed merge:** two rows of one coarse bucket (kind, arity, declaration
     spelling, type-operand IDs; constant operands are left out) that the old
     walker accepts but that have different IDs.
   - **Unknown rows:** rows whose candidate ended as `CT_UNKNOWN`.
-  - A row whose ID is a dependency node's record (no row owns it) is
+  - A row whose ID has no representative (a preseeded scalar ID) is
     confirmed against the next row of its bucket chain with the same ID,
     which chains every such row of the bucket.
 

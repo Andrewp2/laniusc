@@ -576,7 +576,8 @@ impl CanonicalTypeOperations {
                     words("ct_slot")?
                         .max(candidates)
                         .max(dependency_rows)
-                        .max(words("canonical_crosscheck_links")?),
+                        .max(words("canonical_crosscheck_links")?)
+                        .max(words("canonical_crosscheck_owner")?),
                 )?,
                 direct(
                     canonical_passes::CANONICAL_CROSSCHECK_BUCKETS_PASS,
