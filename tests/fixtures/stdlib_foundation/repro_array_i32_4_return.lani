@@ -1,3 +1,5 @@
+// stdlib-root: repro_array_i32_4_return_root
+// expect: 0
 module app::main;
 import core::array_i32_4;
 fn main() -> i32 {

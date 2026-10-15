@@ -1,3 +1,5 @@
+// stdlib-root: repro_transitive_host_root
+// expect: 0
 module app::main;
 import test::probe_direct_exit;
 fn main() -> i32 {

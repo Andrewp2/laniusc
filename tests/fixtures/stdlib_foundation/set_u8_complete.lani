@@ -15,7 +15,7 @@ fn main() -> i32 {
     let right: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
     let index: i32 = 0;
     while (index < 256) {
-        let byte: u8 = index;
+        let byte: u8 = index as u8;
         if (index % 3 == 0 && !std::set_u8::insert(left, byte)) { return 2; }
         if (index % 5 == 0 && !std::set_u8::insert(right, byte)) { return 3; }
         index += 1;
@@ -50,7 +50,7 @@ fn main() -> i32 {
 
     index = 0;
     while (index < 256) {
-        let byte: u8 = index;
+        let byte: u8 = index as u8;
         let in_left: bool = index % 3 == 0;
         let in_right: bool = index % 5 == 0;
         if (std::set_u8::contains(empty, byte) ||

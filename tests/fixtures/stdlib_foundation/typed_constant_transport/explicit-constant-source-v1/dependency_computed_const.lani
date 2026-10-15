@@ -1,4 +1,7 @@
+// expect: 0
+// Fails explicitly until checked constexpr values land (README; known_gaps.txt);
+// then VALUE is 4294967296, never zero.
 module app::computed;
 const VALUE:u64 = 4294967295 + 1;
 fn value<const N:u64>()->u64 { return N; }
-fn main()->i32 { let result:u64 = value<app::computed::VALUE>(); return 0; }
+fn main()->i32 { let result:u64 = value<app::computed::VALUE>(); if (result != 4294967296) { return 1; } return 0; }

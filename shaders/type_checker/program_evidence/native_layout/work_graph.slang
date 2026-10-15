@@ -50,6 +50,24 @@ public bool plm_constant_count(uint2 reference, out uint count)
     return reference.x == 0x80000001u && plm_constant_value(reference.y, value) &&
         constant_value_to_count(value, count);
 }
+// plm_type_ref(reference) when `type`, or plm_constant_ref(reference) when
+// `constant`, through one read of the referenced node: the four reference
+// tags each name at most one node, and these predicates only read it.
+bool plm_reference_of_kind(uint2 reference, bool type, bool constant)
+{
+    if (reference.y == PEV_INVALID) return false;
+    if (reference.x == 1u) return type && pev_scalar_is_valid(reference.y);
+    bool node = type && reference.x == 3u;
+    bool value = constant && reference.x == 0x80000001u;
+    bool projection = constant && reference.x == 0x80000003u;
+    uint4 low; uint4 high;
+    if (!(node || value || projection) || !plm_node(reference.y, false, low, high)) return false;
+    if (node) return low.x <= 4u;
+    if (value) return low.x == 6u && all(high == uint4(0u, 0u, 0u, 0u)) && constant_value_is_valid(low.yzw);
+    return low.x == 5u && scalar_is_integer(low.y) && all(low.zw == uint2(0u, 0u)) &&
+        all(high.zw == uint2(0u, 0u)) && high.x >= 0x80000001u && high.x <= 0x80000003u &&
+        high.y != PEV_INVALID;
+}
 public bool plm_child(uint4 low, uint4 high, uint ordinal, out uint2 reference, out uint domain)
 {
     reference = uint2(0u, PEV_INVALID); domain = PEV_ADMITTED_DOMAIN_TYPE;
@@ -68,7 +86,7 @@ public bool plm_child(uint4 low, uint4 high, uint ordinal, out uint2 reference, 
     { domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = select(bool2(ordinal == 0u, ordinal == 0u), high.xy, high.zw); }
     else if (type_child) reference = high.xy;
     else return false;
-    return (!constant_child && plm_type_ref(reference)) || (!type_child && plm_constant_ref(reference));
+    return plm_reference_of_kind(reference, !constant_child, !type_child);
 }
 public struct NativeLayoutTypeGraph : IParameterScopedTypeGraph, IProofNormalizationGraph
 {
@@ -169,12 +187,41 @@ public struct NativeLayoutRecipeBindings : IProofNormalizationBindings
     }
 }
 
+// The graphs of a materialization's copies: a recipe root's input proof terms
+// on side 0, the expanded nominal's operands that replace its parameters on
+// side 1, and the source term's solver proof terms on side PLM_SIDE_SOLVER.
+// The source is copied without an environment, so its walk never substitutes
+// and never leaves that side (and never consults the recipe bindings).
+public static const uint PLM_SIDE_SOLVER = 2u;
+public struct PlmCopyGraphs : IProofNormalizationPair
+{
+    public static bool node(uint side, uint row, out uint4 low, out uint4 high)
+    {
+        if (side == PLM_SIDE_SOLVER) return SolverProofTermGraph.node(row, low, high);
+        if (side == 0u) return InputProofNormalizationGraph.node(row, low, high);
+        return NativeLayoutTypeGraph.node(row, low, high);
+    }
+    public static bool child(uint side, uint4 low, uint4 high, uint ordinal,
+        out uint2 reference, out uint domain)
+    {
+        if (side == PLM_SIDE_SOLVER) return SolverProofTermGraph.child(low, high, ordinal, reference, domain);
+        if (side == 0u) return InputProofNormalizationGraph.child(low, high, ordinal, reference, domain);
+        return NativeLayoutTypeGraph.child(low, high, ordinal, reference, domain);
+    }
+    public static bool constant_value(uint side, uint row, out uint3 value)
+    {
+        if (side == PLM_SIDE_SOLVER) return SolverProofTermGraph.constant_value(row, value);
+        if (side == 0u) return InputProofNormalizationGraph.constant_value(row, value);
+        return NativeLayoutTypeGraph.constant_value(row, value);
+    }
+}
+
 // Count, emit, and exact-check share the existing one-shot transform. All three
 // operate on immutable source/replacement graphs. The exclusive job publishes
 // new row counts only after the check; unrelated invocations cannot read it.
 public EvidenceStatus plm_copy_closed_root<Graphs : IProofNormalizationPair,
     Bindings : IProofNormalizationBindings>(
-    uint2 source, uint environment, uint owner, out uint2 result)
+    uint2 source, uint environment, uint owner, uint side, out uint2 result)
 {
     result = uint2(0u, PEV_INVALID);
     ProofNormalizationReservation reservation = (ProofNormalizationReservation)0;
@@ -185,8 +232,8 @@ public EvidenceStatus plm_copy_closed_root<Graphs : IProofNormalizationPair,
     {
         reservation.sink_mode = pass;
         ProofNormalizationCounts measured; uint2 normalized; bool closed;
-        EvidenceStatus status = pev_normalize_proof_root<Graphs, Bindings, NativeLayoutSink>(
-            source, environment, owner, PEV_ADMITTED_DOMAIN_TYPE, pass != 0u, reservation,
+        EvidenceStatus status = pev_normalize_proof_root_on_side<Graphs, Bindings, NativeLayoutSink>(
+            source, environment, owner, PEV_ADMITTED_DOMAIN_TYPE, pass != 0u, reservation, side,
             normalized, closed, measured);
         if (status.state != PEV_VALID) return status;
         if (pass == 0u)

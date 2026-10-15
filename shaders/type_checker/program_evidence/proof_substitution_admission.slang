@@ -24,11 +24,11 @@ import type_checker.scoped_type_equality;
 // A substitution walk admits, in order: the conclusion goal's roots, the
 // implementation head match, then each binding's request leaf and, for a
 // binding owning projection nodes, its candidate value. The walk is a state
-// machine: pps_substitution_feed consumes the result of one call and names
-// the next, and pps_substitution_call makes it. A kernel therefore expands
-// one normalization, one root unification and one constant resolution (the
-// head's fit rechecks and the constant binding requests) for all of them,
-// including the fixed prerequisite checks of implementation proof admission.
+// machine: its feeds consume the result of one call and name the next, which
+// the caller makes. pps_substitution_feed_goal runs up to the head match and
+// pps_substitution_feed_bindings from it, so the walk's dispatches
+// (proof_substitution_walk.slang) each expand one normalization, root
+// unification or constant resolution site for every call of its stage.
 //
 // INTERIM: the normalization, unification and constant resolution called
 // here still keep per-thread DFS state, moved to the thread scratch table.
@@ -82,7 +82,7 @@ public struct PpsSubstitutionCall
 // The phase of the call last named.
 static const uint PPS_WALK_START = 0u;
 static const uint PPS_WALK_GOAL = 1u;
-static const uint PPS_WALK_HEAD = 2u;
+public static const uint PPS_WALK_HEAD = 2u;
 static const uint PPS_WALK_RECHECK = 3u;
 static const uint PPS_WALK_BINDING = 4u;
 static const uint PPS_WALK_LEAF = 5u;
@@ -122,17 +122,17 @@ public void pps_substitution_walk_begin(uint substitution, uint context,
     call.kind = PPS_CALL_START;
 }
 
-// Consumes `result` (and `closed`) of `call` and names the next call, or
-// PPS_CALL_DONE. A failure is the walk's result. The order of reads, checks
-// and engine steps is exactly pps_substitution_row, pev_match_implementation_goal
-// and the binding loop run in sequence.
-public EvidenceStatus pps_substitution_feed(inout PpsSubstitutionWalk walk,
+// Consumes `result` (and `closed`) of `call` and names the next call. The
+// order of reads, checks and engine steps is exactly pps_substitution_row,
+// pev_match_implementation_goal and the binding loop run in sequence. A
+// failure is the walk's result.
+//
+// The goal stage (START and GOAL) ends by naming the head's PPS_CALL_ROOTS.
+public EvidenceStatus pps_substitution_feed_goal(inout PpsSubstitutionWalk walk,
     inout PpsSubstitutionCall call, EvidenceStatus result, bool closed)
 {
     if (walk.phase != PPS_WALK_START && result.state != PEV_VALID) return result;
     EvidenceStatus status;
-    bool goal_root = false; bool recheck = false; bool next_binding = false;
-    bool binding_rest = false; bool binding_failed = false;
     if (walk.phase == PPS_WALK_START)
     {
         uint4 substitutions; uint accepted;
@@ -156,17 +156,16 @@ public EvidenceStatus pps_substitution_feed(inout PpsSubstitutionWalk walk,
         status = pps_goal_admission_begin(row.w, walk.context, walk.goal);
         if (status.state != PEV_VALID) return status;
         walk.owner = walk.goal.owner; walk.require_closed = walk.goal.require_closed;
-        walk.index = 0u; goal_root = true;
+        walk.index = 0u;
     }
-    else if (walk.phase == PPS_WALK_GOAL)
+    else
     {
         // pps_admit_goal: each root as pps_admit_term, then its hash.
         if (walk.require_closed && !closed) return pev_invalid(10u, call.term.y, walk.owner);
         status = pps_goal_admission_mix<RecomputedGoalHash>(walk.goal, walk.index, call.term, closed);
         if (status.state != PEV_VALID) return status;
         walk.index++;
-        goal_root = walk.index <= walk.goal.high.x;
-        if (!goal_root)
+        if (walk.index > walk.goal.high.x)
         {
             bool conclusion_closed;
             status = pps_goal_admission_finish<RecomputedGoalHash>(walk.goal, conclusion_closed);
@@ -181,7 +180,24 @@ public EvidenceStatus pps_substitution_feed(inout PpsSubstitutionWalk walk,
             return pev_ok();
         }
     }
-    else if (walk.phase == PPS_WALK_HEAD)
+    uint2 root; uint domain;
+    status = pps_goal_admission_root(walk.goal, walk.index, root, domain);
+    if (status.state != PEV_VALID) return status;
+    call.kind = PPS_CALL_TERM; call.term = root; call.domain = domain; call.side = 0u;
+    walk.phase = PPS_WALK_GOAL;
+    return pev_ok();
+}
+
+// The binding stage: from the result of the head's PPS_CALL_ROOTS (HEAD)
+// through the rechecks and bindings to PPS_CALL_DONE.
+public EvidenceStatus pps_substitution_feed_bindings(inout PpsSubstitutionWalk walk,
+    inout PpsSubstitutionCall call, EvidenceStatus result, bool closed)
+{
+    if (result.state != PEV_VALID) return result;
+    EvidenceStatus status;
+    bool recheck = false; bool next_binding = false;
+    bool binding_rest = false; bool binding_failed = false;
+    if (walk.phase == PPS_WALK_HEAD)
     {
         // pev_finish_implementation_goal, its fit rechecks resolved as calls.
         if (walk.state.status.state == OWNED_CONSTRAINT_NO_MATCH)
@@ -236,15 +252,6 @@ public EvidenceStatus pps_substitution_feed(inout PpsSubstitutionWalk walk,
             return pev_invalid(68u, walk.substitution, walk.binding.y);
         walk.all_closed = walk.all_closed && walk.value_closed;
         walk.index++; next_binding = true;
-    }
-    if (goal_root)
-    {
-        uint2 root; uint domain;
-        status = pps_goal_admission_root(walk.goal, walk.index, root, domain);
-        if (status.state != PEV_VALID) return status;
-        call.kind = PPS_CALL_TERM; call.term = root; call.domain = domain; call.side = 0u;
-        walk.phase = PPS_WALK_GOAL;
-        return pev_ok();
     }
     if (recheck)
     {
@@ -325,54 +332,5 @@ public EvidenceStatus pps_substitution_feed(inout PpsSubstitutionWalk walk,
         return pev_invalid(68u, walk.substitution, walk.row.x);
     walk.concrete = walk.all_closed;
     call.kind = PPS_CALL_DONE;
-    return pev_ok();
-}
-
-// Makes a walk's call: its one normalization, root unification and constant
-// resolution site.
-public EvidenceStatus pps_substitution_call(inout PpsSubstitutionWalk walk,
-    PpsSubstitutionCall call, out bool closed)
-{
-    closed = false;
-    if (call.kind == PPS_CALL_ROOTS) return pev_match_roots(call.match, walk.state);
-    if (call.kind == PPS_CALL_RESOLVE)
-    {
-        walk.resolved = owned_constraints_resolve<CatalogImplementationPatternGraph,
-            SolverProofTermGraph>(call.resolve_term, call.targets, walk.state, walk.resolution);
-        return pev_ok();
-    }
-    if (call.kind == PPS_CALL_SKIP) return pev_ok();
-    uint2 unused; ProofNormalizationCounts measured;
-    ProofNormalizationReservation empty = (ProofNormalizationReservation)0;
-    return pev_normalize_proof_root_on_side<PpsAdmissionGraphs, NoProofNormalizationBindings,
-        NoProofNormalizationSink>(call.term, PEV_INVALID, walk.owner, call.domain, false, empty,
-        call.side, unused, closed, measured);
-}
-
-// Complete layout admission and the emission barrier precede this call. The
-// caller advances node, substitution and binding prefixes only after the whole
-// wave succeeds, including independent allocation coverage.
-public EvidenceStatus pps_admit_substitution(uint substitution, uint context,
-    OwnedConstraintLimits limits, out OwnedConstraintState match_state,
-    out bool concrete)
-{
-    match_state = (OwnedConstraintState)0;
-    match_state.status = owned_constraint_invalid(3u);
-    concrete = false;
-    PpsSubstitutionWalk walk; PpsSubstitutionCall call;
-    pps_substitution_walk_begin(substitution, context, limits, walk, call);
-    EvidenceStatus result = pev_ok(); bool closed = false;
-    [loop]
-    for (;;)
-    {
-        EvidenceStatus status = pps_substitution_feed(walk, call, result, closed);
-        if (status.state != PEV_VALID) return status;
-        if (call.kind == PPS_CALL_DONE) break;
-        result = pps_substitution_call(walk, call, closed);
-    }
-    // Failed row validation never exposes a successfully finished head match.
-    // Successful state retains the match budgets for fixed prerequisite checks.
-    match_state = walk.state;
-    concrete = walk.concrete;
     return pev_ok();
 }

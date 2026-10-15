@@ -11,8 +11,15 @@ status.signal(), stdout, diagnostic.code, expect_err, ...).  Values it cannot
 evaluate become unknown instead of guesses.  A `laniusc check|build FIXTURE`
 command is a compile too: the test's `status.success()` and stderr `LNC` checks
 are its outcome.  Unreferenced fixtures fall back to
-"run, exit 0" (generics probes: exit 42).  A first line `// expect: N` overrides
-that with "run, exit N", and `// expect: LNC0006` with "rejected with LNC0006".
+"run, exit 0" (generics probes: exit 42); those are guesses.  Directives in the
+fixture's leading `//` comment lines replace the expectation:
+
+  // expect: N              run, exit status N
+  // expect: signal N       run, killed by signal N (4 = SIGILL, the trap)
+  // expect: LNC0006        rejected with that diagnostic code
+  // expect: reject         rejected with any code
+  // expect-error: LNC0006  the same as `// expect: LNC0006` (`// expect-error:` alone: any code)
+  // stdlib-root: DIR       compile with --stdlib-root DIR, relative to the fixture's directory
 
 usage: tools/fixture_expectations.py [--json] [--summary]
 """
@@ -30,7 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FOUNDATION = "tests/fixtures/stdlib_foundation"
 GENERICS = ("tests/fixtures/generics_matrix", "tests/fixtures/generics_backlog")
-EXPECT_RE = re.compile(r"//\s*expect:\s*(?:(-?\d+)|(LNC\d{4}))")
+DIRECTIVE_RE = re.compile(r"//\s*(expect|expect-error|stdlib-root):\s*(.*?)\s*$")
 LNC_RE = re.compile(r"LNC\d{4}$")
 LNC_ANY = re.compile(r"LNC\d{4}")
 CLI_COMPILES = ("check", "build")
@@ -47,6 +54,51 @@ class Expectation:
     stdlib_root: Path | None   # None = repo stdlib/
     harness: list[str]         # needs a plain run cannot reproduce
     source: str                # provenance
+
+
+def read_directives(path: Path) -> dict[str, str]:
+    """`// expect:`, `// expect-error:` and `// stdlib-root:` lines in the leading comment block."""
+    found = {}
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line.startswith("//"):
+            break
+        match = DIRECTIVE_RE.match(line)
+        if match is None:
+            continue
+        name, value = match.groups()
+        if name == "expect-error":
+            name, value = "expect", value or "reject"
+        if name in found:
+            raise ValueError(f"{path}:{number}: a second `// {name}:` line")
+        found[name] = value
+    return found
+
+
+def apply_directives(e: Expectation, directives: dict[str, str]) -> Expectation:
+    """Replace the tests' or the default expectation with the fixture's own directives."""
+    expect, root = directives.get("expect"), directives.get("stdlib-root")
+    if e.kind == "module" or (expect is None and root is None):
+        return e
+    if root is not None:
+        e.stdlib_root = (e.path.parent / root).resolve()
+        if not e.stdlib_root.is_dir():
+            raise ValueError(f"{e.path}: `// stdlib-root: {root}` is not a directory")
+    if expect is None:
+        return e
+    exit_code = re.fullmatch(r"-?\d+", expect)
+    signal = re.fullmatch(r"signal\s+(\d+)", expect)
+    code = re.fullmatch(r"(?:error\s+)?(LNC\d{4})", expect)
+    if exit_code or signal:
+        e.kind, e.error_code = "run", None
+        e.exit_code, e.signal = (int(expect), None) if exit_code else (None, int(signal.group(1)))
+    elif code or expect in ("reject", "error"):
+        e.kind, e.exit_code, e.signal, e.stdout = "compile_error", None, None, None
+        e.error_code = code.group(1) if code else None
+    else:
+        raise ValueError(f"{e.path}: `// expect: {expect}`: want N, `signal N`, LNCdddd or `reject`")
+    e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
+    return e
 
 
 # ---------------------------------------------------------------- tokenizer
@@ -1120,8 +1172,6 @@ def load_expectations(repo_root: Path = ROOT, *, with_report: bool = False):
     for path in fixture_paths(repo_root):
         rel = str(path.relative_to(repo_root))
         generics = rel.startswith(GENERICS)
-        first = path.read_text().split("\n", 1)[0]
-        override = EXPECT_RE.match(first.strip())
         if not has_main(path):
             e = Expectation(path, "module", None, None, None, None, None, [], "no fn main")
         elif path.resolve() in by_path:
@@ -1137,14 +1187,7 @@ def load_expectations(repo_root: Path = ROOT, *, with_report: bool = False):
                             "default" + (":name-reject" if reject else ":generics" if generics else "")
                             + (" (tests only compile modified copies)" if path.resolve() in modified else
                                f" (unresolved refs: {', '.join(refs[:3])})" if refs else ""))
-        if override and e.kind != "module" and override.group(2):
-            e.kind, e.exit_code, e.signal, e.stdout = "compile_error", None, None, None
-            e.error_code = override.group(2)
-            e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
-        elif override and e.kind != "module":
-            e.kind, e.exit_code, e.signal = "run", int(override.group(1)), None
-            e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
-        result.append(e)
+        result.append(apply_directives(e, read_directives(path)))
     if with_report:
         return result, {"conflicts": conflicts, "errors": errors}
     return result

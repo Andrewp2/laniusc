@@ -26,8 +26,8 @@ fn main() -> i32 {
     let pattern: [i32; 8] = [49, 48, 49, 48, 48, 49, 48, 49];
     let index: u32 = 0;
     while (index < 8) {
-        let slot: i32 = index;
-        let actual: i32 = core::binary::byte_at_or_u32(165, index, 0);
+        let slot: i32 = index as i32;
+        let actual: i32 = core::binary::byte_at_or_u32(165, index, 0) as i32;
         if (actual != pattern[slot]) {
             return 3;
         }
@@ -123,12 +123,12 @@ fn main() -> i32 {
         let length: u32 = core::binary::len_u8(value);
         let offset: u32 = 0;
         while (offset < length) {
-            let slot: i32 = offset;
-            let ascii: i32 = core::binary::byte_at_or_u8(value, offset, 0);
+            let slot: i32 = offset as i32;
+            let ascii: i32 = core::binary::byte_at_or_u8(value, offset, 0) as i32;
             digits[slot] = ascii;
             offset += 1;
         }
-        let size: i32 = length;
+        let size: i32 = length as i32;
         if (core::binary::parse_ascii_u8_or(digits_view, size, 99) != value) {
             return 11;
         }
