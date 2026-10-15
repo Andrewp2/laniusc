@@ -114,7 +114,7 @@ fn main() -> i32 {
     if (std::deque_i16::capacity(sweep) != 3) { return 20; }
     let raw: i32 = -32768;
     while (raw <= 32767) {
-        let halfword_value: i16 = raw;
+        let halfword_value: i16 = raw as i16;
         sweep = std::deque_i16::try_push_back(sweep, halfword_value);
         if (std::deque_i16::len(sweep) != 1 ||
             std::deque_i16::front_or(sweep, 0) != halfword_value ||

@@ -51,8 +51,8 @@ fn check(values: [u32]) -> i32 {
 
     let ordinal: i32 = 0;
     while (ordinal < 256) {
-        let key: i8 = ordinal - 128;
-        let value: u32 = ordinal;
+        let key: i8 = (ordinal - 128) as i8;
+        let value: u32 = ordinal as u32;
         std::map_i8_u32::put(keys, values, key, value);
         ordinal += 1;
     }
@@ -61,8 +61,8 @@ fn check(values: [u32]) -> i32 {
     }
     ordinal = 0;
     while (ordinal < 256) {
-        let key: i8 = ordinal - 128;
-        let value: u32 = ordinal;
+        let key: i8 = (ordinal - 128) as i8;
+        let value: u32 = ordinal as u32;
         if (!std::map_i8_u32::contains_key(keys, key) ||
             std::map_i8_u32::get_or(keys, values, key, maximum) != value ||
             std::map_i8_u32::key_at_or(keys, ordinal, 0) != key ||

@@ -6,7 +6,7 @@ fn main() -> i32 {
     let units: [u16; 2] = [zero, zero];
     let code: u32 = 0;
     while (code <= 65535) {
-        let unit: u16 = code;
+        let unit: u16 = code as u16;
         let surrogate: bool = code >= 55296 && code <= 57343;
         let high_surrogate: bool = code >= 55296 && code <= 56319;
         let low_surrogate: bool = code >= 56320 && code <= 57343;

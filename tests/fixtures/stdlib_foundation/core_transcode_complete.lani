@@ -159,7 +159,7 @@ fn main() -> i32 {
     let ascii_back: [u8; 1] = [untouched_byte];
     let code: i32 = 0;
     while (code < 128) {
-        let byte: u8 = code;
+        let byte: u8 = code as u8;
         ascii[0] = byte;
         let forward: core::transcode::TranscodeResult =
             core::transcode::utf8_to_utf16(ascii, 1, ascii_units, 1);

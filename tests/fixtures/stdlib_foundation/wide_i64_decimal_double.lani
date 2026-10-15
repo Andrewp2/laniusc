@@ -14,7 +14,7 @@ fn main() -> i32 {
     let value: core::wide_i64::WideI64 =
         core::wide_i64::parse_ascii_decimal_or(input, length, core::wide_i64::zero());
     let doubled: core::wide_i64::WideI64 = core::wide_i64::wrapping_add(value, value);
-    let digits: i32 = core::wide_i64::decimal_len(doubled);
+    let digits: i32 = core::wide_i64::decimal_len(doubled) as i32;
     if (std::io_decimal::write_wide_i64(1, doubled) != digits) { return 4; }
     if (!std::io_byte::write_stdout_byte(10)) { return 4; }
     return 0;

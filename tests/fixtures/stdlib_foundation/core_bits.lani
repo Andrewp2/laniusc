@@ -216,7 +216,7 @@ fn main() -> i32 {
         let signed: i32 = one_hot as i32;
         let mirrored: u32 = top_bit >> position;
         let expected_reverse: i32 = mirrored as i32;
-        let offset: i32 = position;
+        let offset: i32 = position as i32;
         if (core::bits::count_ones_i32(signed) != 1) {
             return 50 + offset;
         }

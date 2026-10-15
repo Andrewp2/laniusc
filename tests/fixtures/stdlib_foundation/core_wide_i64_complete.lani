@@ -84,16 +84,16 @@ fn main() -> i32 {
     let index: u32 = 0;
     while (index < 20) {
         let byte: u8 = core::wide_i64::decimal_byte_at_or(minimum, index, 0);
-        let code: i32 = byte;
-        let offset: i32 = index;
+        let code: i32 = byte as i32;
+        let offset: i32 = index as i32;
         if (code != minimum_ascii[offset]) { return 10; }
         index += 1;
     }
     index = 0;
     while (index < 19) {
         let byte: u8 = core::wide_i64::decimal_byte_at_or(maximum, index, 0);
-        let code: i32 = byte;
-        let offset: i32 = index;
+        let code: i32 = byte as i32;
+        let offset: i32 = index as i32;
         if (code != maximum_ascii[offset]) { return 11; }
         index += 1;
     }

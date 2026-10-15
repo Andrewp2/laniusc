@@ -36,8 +36,8 @@ fn main() -> i32 {
     let code: i32 = 0;
     while (code < 256) {
         if (code % 3 == 0) {
-            let key: u8 = code;
-            let widened: u32 = key;
+            let key: u8 = code as u8;
+            let widened: u32 = key as u32;
             if (!std::map_u8_u32::insert(keys, values, key, maximum - widened)) {
                 return 2;
             }
@@ -59,9 +59,9 @@ fn main() -> i32 {
 
     code = 0;
     while (code < 256) {
-        let key: u8 = code;
+        let key: u8 = code as u8;
         let present: bool = code % 3 == 0;
-        let widened: u32 = key;
+        let widened: u32 = key as u32;
         let expected: u32 = 77;
         if (present) { expected = maximum - widened; }
         if (std::map_u8_u32::contains_key(keys, key) != present ||
@@ -87,7 +87,7 @@ fn main() -> i32 {
 
     code = 0;
     while (code < 256) {
-        let key: u8 = code;
+        let key: u8 = code as u8;
         std::map_u8_u32::put(keys, values, key, maximum);
         code += 1;
     }

@@ -38,7 +38,7 @@ fn main() -> i32 {
         std::set_i8::is_disjoint(left, right)) { return 5; }
     let ordinal: i32 = 0;
     while (ordinal < 256) {
-        let value: i8 = ordinal - 128;
+        let value: i8 = (ordinal - 128) as i8;
         if (!std::set_i8::contains(right, value) ||
             std::set_i8::at_or(right, ordinal, 0) != value) { return 6; }
         ordinal += 1;
