@@ -10,18 +10,17 @@ public bool pev_batch_admission_row(uint table, uint local, out uint row)
 {
     row = PEV_INVALID;
     if (!pev_batch_is_building()) return false;
-    uint count;
-    if (!pev_table_count(table, count))
+    uint count; EvidenceStatus failure = pev_ok();
+    if (!pev_table_count(table, count)) failure = pev_invalid(1u, table, PEV_INVALID);
+    else
     {
-        pev_batch_failure(pev_invalid(1u, table, PEV_INVALID)); return false;
+        if (!pev_dispatch_row(local, count, row)) return false;
+        // Preserve the generic dispatcher's reverse prefix/suffix membership gate.
+        if (!pev_batch_row(table, row)) failure = pev_invalid(1u, row, table);
     }
-    if (!pev_dispatch_row(local, count, row)) return false;
-    // Preserve the generic dispatcher's reverse prefix/suffix membership gate.
-    if (!pev_batch_row(table, row))
-    {
-        pev_batch_failure(pev_invalid(1u, row, table)); return false;
-    }
-    return true;
+    if (failure.state == PEV_VALID) return true;
+    pev_batch_failure(failure);
+    return false;
 }
 
 // These are the reference-row and Env11 invocation projections previously in

@@ -69,14 +69,14 @@ public EvidenceStatus pev_admit_goal_roots(
         !pev_row_span(7u, first_argument, argument_count)) return pev_invalid(1u, subject, first_argument);
     uint2 ref;
     if (!pev_read_root(subject, ref) || !pev_admitted_type_reference_shape(ref)) return pev_invalid(4u, subject, PEV_INVALID);
-    uint visits;
-    EvidenceStatus result = pev_admit_catalog_definition_root(subject, owner, closed, visits);
-    if (result.state != PEV_VALID) return result;
+    // Ordinal 0 is the subject root; ordinal i > 0 is ordered operand i - 1.
     [loop]
-    for (uint i = 0u; i < argument_count; i++)
+    for (uint ordinal = 0u; ordinal <= argument_count; ordinal++)
     {
         // Independent visits/depth budget for every ordered operand.
-        result = pev_admit_catalog_definition_root(first_argument + i, owner, closed, visits);
+        uint visits;
+        EvidenceStatus result = pev_admit_catalog_definition_root(
+            ordinal == 0u ? subject : first_argument + ordinal - 1u, owner, closed, visits);
         if (result.state != PEV_VALID) return result;
     }
     return pev_ok();

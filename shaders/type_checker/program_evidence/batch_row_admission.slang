@@ -50,12 +50,20 @@ public EvidenceStatus pev_applicable_predicate_count(uint owner, out uint count)
     }
     return pev_ok();
 }
+[ForceInline]
 public EvidenceStatus pev_applicable_predicate_at(uint owner, uint ordinal, out uint predicate)
 {
-    predicate = PEV_INVALID;
     uint count;
+    return pev_applicable_predicate_lookup(owner, ordinal, false, count, predicate);
+}
+// The applicable predicate count, then (unless count_only) the predicate at
+// ordinal. Both uses share one count site.
+public EvidenceStatus pev_applicable_predicate_lookup(uint owner, uint ordinal, bool count_only,
+    out uint count, out uint predicate)
+{
+    predicate = PEV_INVALID;
     EvidenceStatus status = pev_applicable_predicate_count(owner, count);
-    if (status.state != PEV_VALID) return status;
+    if (status.state != PEV_VALID || count_only) return status;
     if (ordinal >= count) return pev_invalid(22u, owner, ordinal);
     for (uint depth = 0u; depth < PEV_DEPTH_LIMIT && owner != PEV_INVALID; depth++)
     {
@@ -172,18 +180,27 @@ public EvidenceStatus pev_batch_context_header(uint context, out uint4 low, out 
     // for origin_call; merely naming an earlier Call does not supply that proof.
     return pev_ok();
 }
-public EvidenceStatus pev_batch_call_header(uint call, out uint4 low, out uint4 high)
+// A call row checks its own fields and then its context row; a context row
+// checks only itself. Both reach pev_batch_context_header at one site.
+public EvidenceStatus pev_batch_owner_header(uint row, bool is_call, out uint4 low, out uint4 high)
 {
     low = uint4(PEV_INVALID, PEV_INVALID, PEV_INVALID, PEV_INVALID);
     high = low;
-    if (!pev_batch_row(15u, call) || !pev_read4(15u, call, 0u, low) ||
-        !pev_read4(15u, call, 4u, high) || low.y == PEV_INVALID ||
-        !pev_catalog_row(4u, low.w) || !pev_batch_span(16u, high.y, high.z))
-        return pev_invalid(1u, call, 15u);
-    if (high.w != 0u) return pev_invalid(21u, call, 15u);
+    uint context_row = row;
+    if (is_call)
+    {
+        if (!pev_batch_row(15u, row) || !pev_read4(15u, row, 0u, low) ||
+            !pev_read4(15u, row, 4u, high) || low.y == PEV_INVALID ||
+            !pev_catalog_row(4u, low.w) || !pev_batch_span(16u, high.y, high.z))
+            return pev_invalid(1u, row, 15u);
+        if (high.w != 0u) return pev_invalid(21u, row, 15u);
+        context_row = low.x;
+    }
     uint4 context; uint4 extra;
-    EvidenceStatus status = pev_batch_context_header(low.x, context, extra);
+    EvidenceStatus status = pev_batch_context_header(context_row, context, extra);
+    if (!is_call) { low = context; high = extra; return status; }
     if (status.state != PEV_VALID) return status;
+    uint call = row;
     if (low.z != context.y) return pev_invalid(3u, call, low.z);
     uint4 callee; uint4 environment; uint environment_owner;
     if (!pev_read4(4u, low.w, 0u, callee) || !pev_batch_row(11u, high.x) ||
@@ -191,6 +208,11 @@ public EvidenceStatus pev_batch_call_header(uint call, out uint4 low, out uint4 
         environment_owner != call || environment.w != 1u || environment.x != callee.y)
         return pev_invalid(3u, call, high.x);
     return pev_ok();
+}
+[ForceInline]
+public EvidenceStatus pev_batch_call_header(uint call, out uint4 low, out uint4 high)
+{
+    return pev_batch_owner_header(call, true, low, high);
 }
 
 public EvidenceStatus pev_admit_batch_environment(uint environment, uint owner_kind, uint owner_row)
@@ -200,23 +222,35 @@ public EvidenceStatus pev_admit_batch_environment(uint environment, uint owner_k
         !pev_word(11u, environment, 4u, backlink)) return pev_invalid(1u, environment, 11u);
     if (owner_kind > 1u || env.w != owner_kind || backlink != owner_row)
         return pev_invalid(3u, environment, owner_row);
-    uint4 owner; uint4 extra;
-    if (owner_kind == 1u)
+    // Step 0 reads the owning call or context and admits the environment once.
+    // A context owner then reads its origin call at step 1 through the same
+    // header site; origin_extra holds that call's second row half.
+    uint header_row = owner_row; bool header_call = owner_kind == 1u;
+    uint4 owner; uint4 origin_extra; EvidenceStatus status;
+    [loop]
+    for (uint step = 0u; ; step++)
     {
-        EvidenceStatus status = pev_batch_call_header(owner_row, owner, extra);
-        if (status.state != PEV_VALID) return status;
-        if (extra.x != environment) return pev_invalid(3u, environment, owner_row);
-        uint4 callee;
-        if (!pev_read4(4u, owner.w, 0u, callee)) return pev_invalid(14u, environment, owner.w);
-        return pev_admit_environment(environment, callee.y, owner.z, 1u);
+        uint4 extra;
+        status = pev_batch_owner_header(header_row, header_call, owner, extra);
+        origin_extra = extra;
+        if (status.state != PEV_VALID || step == 1u) break;
+        uint expected_owner; uint caller_owner;
+        if (owner_kind == 1u)
+        {
+            if (extra.x != environment) return pev_invalid(3u, environment, owner_row);
+            uint4 callee;
+            if (!pev_read4(4u, owner.w, 0u, callee)) return pev_invalid(14u, environment, owner.w);
+            expected_owner = callee.y; caller_owner = owner.z;
+        }
+        else
+        {
+            if (extra.y != 1u || owner.z != environment) return pev_invalid(3u, environment, owner_row);
+            expected_owner = owner.y; caller_owner = owner.y;
+        }
+        status = pev_admit_environment(environment, expected_owner, caller_owner, owner_kind);
+        if (status.state != PEV_VALID || owner_kind == 1u) return status;
+        header_row = extra.z; header_call = true;
     }
-    EvidenceStatus status = pev_batch_context_header(owner_row, owner, extra);
-    if (status.state != PEV_VALID) return status;
-    if (extra.y != 1u || owner.z != environment) return pev_invalid(3u, environment, owner_row);
-    status = pev_admit_environment(environment, owner.y, owner.y, 0u);
-    if (status.state != PEV_VALID) return status;
-    uint4 origin; uint4 origin_extra;
-    status = pev_batch_call_header(extra.z, origin, origin_extra);
     if (status.state != PEV_VALID) return status;
     uint4 source;
     if (!pev_read4(11u, origin_extra.x, 0u, source) || source.x != env.x || source.w != 1u ||
@@ -257,14 +291,30 @@ public EvidenceStatus pev_admit_batch_binding(uint binding)
     return pev_ok();
 }
 
-public EvidenceStatus pev_admit_batch_assumption(uint assumption)
+// Assumption admission is split around its claimed context's header so a
+// context stage can read that header at the same site as its own.
+public EvidenceStatus pev_read_batch_assumption(uint assumption, out uint4 row)
 {
-    uint4 row; uint2 tail; uint4 context; uint4 extra;
+    uint2 tail;
     if (!pev_batch_row(14u, assumption) || !pev_read4(14u, assumption, 0u, row) ||
         !pev_read2(14u, assumption, 4u, tail)) return pev_invalid(1u, assumption, 14u);
     if (any(tail != uint2(0u, 0u))) return pev_invalid(21u, assumption, 14u);
-    EvidenceStatus status = pev_batch_context_header(row.x, context, extra);
+    return pev_ok();
+}
+public EvidenceStatus pev_admit_batch_assumption(uint assumption)
+{
+    uint4 row; uint4 context; uint4 extra;
+    EvidenceStatus status = pev_read_batch_assumption(assumption, row);
     if (status.state != PEV_VALID) return status;
+    status = pev_batch_context_header(row.x, context, extra);
+    if (status.state != PEV_VALID) return status;
+    return pev_admit_batch_assumption_in(assumption, row, context, extra);
+}
+// The checks that follow the header (context, extra) of the claimed row.x.
+public EvidenceStatus pev_admit_batch_assumption_in(uint assumption, uint4 row,
+    uint4 context, uint4 extra)
+{
+    EvidenceStatus status;
     if (extra.y == 2u || assumption < context.w || assumption - context.w >= extra.x || row.z != context.z)
         return pev_invalid(3u, assumption, row.x);
     uint predicate;
@@ -288,66 +338,143 @@ public EvidenceStatus pev_admit_batch_assumption(uint assumption)
     // normalized conclusion is compared with this requirement during replay.
     return pev_ok();
 }
-public EvidenceStatus pev_admit_batch_obligation(uint obligation)
+// Obligation admission is split around its claimed call's header so a call
+// stage can read that header at the same site as its own.
+public EvidenceStatus pev_read_batch_obligation(uint obligation, out uint4 row)
 {
-    uint4 row; uint4 call; uint4 extra;
     if (!pev_batch_row(16u, obligation) || !pev_read4(16u, obligation, 0u, row))
         return pev_invalid(1u, obligation, 16u);
     if (row.w != 0u) return pev_invalid(21u, obligation, 16u);
-    EvidenceStatus status = pev_batch_call_header(row.x, call, extra);
+    return pev_ok();
+}
+public EvidenceStatus pev_admit_batch_obligation(uint obligation)
+{
+    uint4 row; uint4 call; uint4 extra;
+    EvidenceStatus status = pev_read_batch_obligation(obligation, row);
     if (status.state != PEV_VALID) return status;
+    status = pev_batch_call_header(row.x, call, extra);
+    if (status.state != PEV_VALID) return status;
+    return pev_admit_batch_obligation_in(obligation, row, call, extra);
+}
+// The checks that follow the header (call, extra) of the claimed row.x:
+// the span and callee checks naming the predicate to look up, the lookup,
+// then the claimed predicate.
+public EvidenceStatus pev_batch_obligation_predicate(uint obligation, uint4 row,
+    uint4 call, uint4 extra, out uint owner, out uint ordinal)
+{
+    owner = PEV_INVALID; ordinal = 0u;
     if (obligation < extra.y || obligation - extra.y >= extra.z || row.z != extra.x)
         return pev_invalid(3u, obligation, row.x);
-    uint4 callee; uint predicate;
+    uint4 callee;
     if (!pev_read4(4u, call.w, 0u, callee)) return pev_invalid(14u, obligation, call.w);
-    status = pev_applicable_predicate_at(callee.y, obligation - extra.y, predicate);
+    owner = callee.y; ordinal = obligation - extra.y;
+    return pev_ok();
+}
+public EvidenceStatus pev_admit_batch_obligation_in(uint obligation, uint4 row,
+    uint4 call, uint4 extra)
+{
+    uint owner; uint ordinal; uint predicate;
+    EvidenceStatus status = pev_batch_obligation_predicate(obligation, row, call, extra, owner, ordinal);
+    if (status.state != PEV_VALID) return status;
+    status = pev_applicable_predicate_at(owner, ordinal, predicate);
     if (status.state != PEV_VALID) return status;
     if (row.y != predicate) return pev_invalid(3u, obligation, row.y);
     return pev_ok();
 }
 public EvidenceStatus pev_admit_batch_context(uint context)
 {
-    uint4 row; uint4 extra;
-    EvidenceStatus status = pev_batch_context_header(context, row, extra);
-    if (status.state != PEV_VALID) return status;
-    uint count;
-    status = pev_applicable_predicate_count(row.y, count);
-    if (status.state != PEV_VALID) return status;
-    if (count != extra.x) return pev_invalid(22u, context, count);
-    if (extra.y == 1u)
+    // Ordinal 0 reads this context's own header; ordinal i > 0 admits
+    // assumption i - 1, whose claimed context header is read at the same site.
+    uint4 row = uint4(0u, 0u, 0u, 0u); uint assumptions = 0u;
+    [loop]
+    for (uint ordinal = 0u; ordinal <= assumptions; ordinal++)
     {
-        status = pev_admit_batch_environment(row.z, 0u, context);
+        uint assumption = row.w + ordinal - 1u;
+        uint header_row = context; uint4 claim = uint4(0u, 0u, 0u, 0u);
+        EvidenceStatus status;
+        if (ordinal != 0u)
+        {
+            status = pev_read_batch_assumption(assumption, claim);
+            if (status.state != PEV_VALID) return status;
+            header_row = claim.x;
+        }
+        uint4 header; uint4 extra;
+        status = pev_batch_context_header(header_row, header, extra);
         if (status.state != PEV_VALID) return status;
-    }
-    for (uint i = 0u; i < extra.x; i++)
-    {
-        status = pev_admit_batch_assumption(row.w + i);
+        if (ordinal == 0u)
+        {
+            row = header;
+            uint count;
+            status = pev_applicable_predicate_count(row.y, count);
+            if (status.state != PEV_VALID) return status;
+            if (count != extra.x) return pev_invalid(22u, context, count);
+            if (extra.y == 1u)
+            {
+                status = pev_admit_batch_environment(row.z, 0u, context);
+                if (status.state != PEV_VALID) return status;
+            }
+            assumptions = extra.x;
+            continue;
+        }
+        status = pev_admit_batch_assumption_in(assumption, claim, header, extra);
         if (status.state != PEV_VALID) return status;
         uint claimed_context;
-        if (!pev_word(14u, row.w + i, 0u, claimed_context) || claimed_context != context)
-            return pev_invalid(3u, context, row.w + i);
+        if (!pev_word(14u, assumption, 0u, claimed_context) || claimed_context != context)
+            return pev_invalid(3u, context, assumption);
     }
     return pev_ok();
 }
 public EvidenceStatus pev_admit_batch_call(uint call)
 {
-    uint4 row; uint4 extra;
-    EvidenceStatus status = pev_batch_call_header(call, row, extra);
-    if (status.state != PEV_VALID) return status;
-    status = pev_admit_batch_environment(extra.x, 1u, call);
-    if (status.state != PEV_VALID) return status;
-    uint4 callee; uint count;
-    if (!pev_read4(4u, row.w, 0u, callee)) return pev_invalid(14u, call, row.w);
-    status = pev_applicable_predicate_count(callee.y, count);
-    if (status.state != PEV_VALID) return status;
-    if (count != extra.z) return pev_invalid(22u, call, count);
-    for (uint i = 0u; i < extra.z; i++)
+    // Ordinal 0 reads this call's own header; ordinal i > 0 admits obligation
+    // i - 1, whose claimed call header is read at the same site.
+    uint first_obligation = 0u; uint obligations = 0u;
+    [loop]
+    for (uint ordinal = 0u; ordinal <= obligations; ordinal++)
     {
-        status = pev_admit_batch_obligation(extra.y + i);
+        uint obligation = first_obligation + ordinal - 1u;
+        uint header_row = call; uint4 claim = uint4(0u, 0u, 0u, 0u);
+        EvidenceStatus status;
+        if (ordinal != 0u)
+        {
+            status = pev_read_batch_obligation(obligation, claim);
+            if (status.state != PEV_VALID) return status;
+            header_row = claim.x;
+        }
+        uint4 header; uint4 extra;
+        status = pev_batch_call_header(header_row, header, extra);
         if (status.state != PEV_VALID) return status;
+        // The call counts its callee's applicable predicates; an obligation
+        // looks up its own predicate. Both share one lookup site.
+        uint owner; uint predicate_ordinal = 0u;
+        if (ordinal == 0u)
+        {
+            status = pev_admit_batch_environment(extra.x, 1u, call);
+            if (status.state != PEV_VALID) return status;
+            uint4 callee;
+            if (!pev_read4(4u, header.w, 0u, callee)) return pev_invalid(14u, call, header.w);
+            owner = callee.y;
+        }
+        else
+        {
+            status = pev_batch_obligation_predicate(obligation, claim, header, extra,
+                owner, predicate_ordinal);
+            if (status.state != PEV_VALID) return status;
+        }
+        uint count; uint predicate;
+        status = pev_applicable_predicate_lookup(owner, predicate_ordinal, ordinal == 0u,
+            count, predicate);
+        if (status.state != PEV_VALID) return status;
+        if (ordinal == 0u)
+        {
+            if (count != extra.z) return pev_invalid(22u, call, count);
+            first_obligation = extra.y; obligations = extra.z;
+            continue;
+        }
+        if (claim.y != predicate) return pev_invalid(3u, obligation, claim.y);
         uint claimed_call;
-        if (!pev_word(16u, extra.y + i, 0u, claimed_call) || claimed_call != call)
-            return pev_invalid(3u, call, extra.y + i);
+        if (!pev_word(16u, obligation, 0u, claimed_call) || claimed_call != call)
+            return pev_invalid(3u, call, obligation);
     }
     return pev_ok();
 }

@@ -225,6 +225,17 @@ public bool pev_catalog_is_building()
     return pev_header_is_valid() && pev_output_read(0u, 0u, 0u, state) &&
         state == PEV_CATALOG_BUILDING;
 }
+// Failure record field 1..5: detail, subject, related, required, available;
+// field 6 the given serial word; field 7 zero.
+public uint pev_failure_field(EvidenceStatus status, uint field, uint serial)
+{
+    uint value = select(field == 6u, serial, 0u);
+    value = select(field == 5u, status.available, value);
+    value = select(field == 4u, status.required, value);
+    value = select(field == 3u, status.related_row, value);
+    value = select(field == 2u, status.subject_row, value);
+    return select(field == 1u, status.detail, value);
+}
 public void pev_catalog_failure(EvidenceStatus status)
 {
     if (status.state == PEV_VALID) return;
@@ -234,12 +245,10 @@ public void pev_catalog_failure(EvidenceStatus status)
     InterlockedCompareExchange(program_evidence_catalog[address], PEV_CATALOG_BUILDING, PEV_CATALOG_BUSY, previous);
     if (previous != PEV_CATALOG_BUILDING) return;
     // One winner owns every diagnostic field; no mixed failure record races.
-    pev_output_write(0u, 0u, 1u, status.detail);
-    pev_output_write(0u, 0u, 2u, status.subject_row);
-    pev_output_write(0u, 0u, 3u, status.related_row);
-    pev_output_write(0u, 0u, 4u, status.required);
-    pev_output_write(0u, 0u, 5u, status.available);
-    pev_output_write(0u, 0u, 6u, 0u); pev_output_write(0u, 0u, 7u, 0u);
+    // Fields 1..7 in order through one write site.
+    [loop]
+    for (uint field = 1u; field < 8u; field++)
+        pev_output_write(0u, 0u, field, pev_failure_field(status, field, 0u));
     // Only the thread that claimed BUILDING->BUSY may publish this failure.
     // Use CAS here too: Slang2026.2 mislowers InterlockedExchange.
     InterlockedCompareExchange(program_evidence_catalog[address], PEV_CATALOG_BUSY, status.state, previous);
