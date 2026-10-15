@@ -69,10 +69,18 @@ bool declared_expression_context<TGraph : IScopedTypeGraph>(uint node,
                     uint scope = struct_init_field_expected_context_instance[field.name_token];
                     uint tokens; uint stride;
                     struct_init_field_expected_context_instance.GetDimensions(tokens, stride);
+#ifdef DECLARED_CONTEXT_CANONICAL
+                    // The includer reads the checked graph through canonical
+                    // IDs (checked_canonical.slang).
+                    if (reference.x != 0u && reference.y != INVALID &&
+                        canonical_scoped_reference<DECLARED_CONTEXT_CANONICAL>(reference.x, reference.y, scope, tokens,
+                            reference.x, reference.y)) return true;
+#else
                     if (reference.x != 0u && reference.y != INVALID &&
                         instance_scoped_reference<TGraph>(reference.x, reference.y, scope,
                             type_capacity, tokens, type_instance_lookup_head, type_instance_lookup_next,
                             reference.x, reference.y)) return true;
+#endif
                 }
             }
         break;

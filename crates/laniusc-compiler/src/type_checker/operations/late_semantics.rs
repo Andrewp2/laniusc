@@ -103,6 +103,8 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
+    /// The rows of the IDs the late canonical stage added.
+    pub(in crate::type_checker) late_row_seed: ComputeOperation,
     pub(in crate::type_checker) generic_native_words: ComputeOperation,
     pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
@@ -350,6 +352,23 @@ impl SemanticProjectionOperations {
                 "type_checker/semantic/artifact/00c_generic_call_results",
             )?,
             canonical_types: CanonicalTypeOperations::new(device, graph, resources, passes)?,
+            late_row_seed: {
+                let words = |name| -> Result<u32> {
+                    Ok(u32::try_from(
+                        typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
+                    )?)
+                };
+                ComputeOperation::direct(
+                    device,
+                    graph,
+                    resources,
+                    compiler_graph::SUBSTITUTION_LATE_SEED_PASS,
+                    &passes.kernel(substitution_passes::SUBSTITUTION_SEED_KERNEL),
+                    words("canonical_row")?
+                        + words("canonical_atom")?
+                        + words("canonical_projection")?,
+                )?
+            },
             generic_native_words: ComputeOperation::direct(
                 device,
                 graph,

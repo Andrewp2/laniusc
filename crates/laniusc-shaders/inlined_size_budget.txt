@@ -47,7 +47,6 @@
 74248 tests/typed_constant_identity_inference
 73796 type_checker/dependencies/08_validate_call_args
 73677 type_checker/program_evidence/entries/41_normalize_original
-71777 type_checker/semantic/artifact/01b_array_index_refs
 68204 type_checker/type/instances/02e_project_imported_fields
 61794 type_checker/program_evidence/entries/15_build_assumption_index
 61572 tests/owned_typed_constants_match
