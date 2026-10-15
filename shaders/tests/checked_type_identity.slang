@@ -19,10 +19,10 @@ static const uint INVALID = 0xffffffffu;
 static const uint ATOM = 0x80000001u;
 static const uint CONSTANT_PARAMETER = 0x80000002u;
 static const uint PROJECTION = 0x80000003u;
-static const uint VALUES = 10u;
+static const uint VALUES = 13u;
 static const uint PROJECTIONS = 5u;
 static const uint ROWS = 6u;
-static const uint COMPARISONS = 34u;
+static const uint COMPARISONS = 36u;
 static const uint CLOSURE_CHECKS = 3u;
 
 // Type parameter tokens 1 and 2 have slots 0 and 1; constant parameter
@@ -55,7 +55,10 @@ uint3 atom_value(uint i)
     case 6u: return uint3(SCALAR_BOOL, 1u, 0u);
     case 7u: return uint3(SCALAR_F32, 0u, 0u);          // +0.0
     case 8u: return uint3(SCALAR_F32, 0x80000000u, 0u); // -0.0: other bits
-    default: return uint3(SCALAR_U32, 256u, 0u);
+    case 9u: return uint3(SCALAR_U32, 256u, 0u);
+    case 10u: return uint3(SCALAR_F64, 0x42u, 0x7ff80000u); // NaN, payload 0x42
+    case 11u: return uint3(SCALAR_F64, 0x42u, 0x7ff80000u);
+    default: return uint3(SCALAR_F64, 0x43u, 0x7ff80000u);  // NaN, other payload
     }
 }
 
@@ -145,6 +148,9 @@ Comparison comparison_case(uint i, uint2 row_ids)
     case 30u: return comparison(2u, 9u, 2u, 9u, false, true);
     case 31u: return comparison(2u, 1u, 2u, 2u, true, false);
     case 32u: return comparison(0u, 0u, 0u, 0u, false, false);
+    // NaN identity is bitwise: the same payload is one constant.
+    case 33u: return comparison(ATOM, 10u, ATOM, 11u, false, true);
+    case 34u: return comparison(ATOM, 10u, ATOM, 12u, false, false);
     default:
     {
         // Caller-supplied IDs: rows compare by ID, not by payload.

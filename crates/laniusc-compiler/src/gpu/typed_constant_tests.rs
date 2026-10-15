@@ -109,7 +109,7 @@ fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_priority() {
 }
 
 const CHECKED_IDENTITY: &str = "tests/checked_type_identity";
-const CHECKED_IDENTITY_CHECKS: usize = 50;
+const CHECKED_IDENTITY_CHECKS: usize = 52;
 
 /// The identity cases above on canonical IDs (checked_type_identity.slang):
 /// typed constant identity, folded and symbolic casts, count-class array
