@@ -17,7 +17,6 @@
 6540 type_checker/program_evidence/entries/41_normalize_original
 6540 type_checker/program_evidence/entries/42_normalize_prerequisite
 6400 type_checker/calls/03k3_project_record_contexts
-6400 type_checker/type/instances/02d_materialize_applications
 6144 type_checker/program_evidence/entries/43_validate_original_normalization
 6144 type_checker/program_evidence/entries/44_validate_prerequisite_normalization
 6144 type_checker/program_evidence/entries/46_hash_normalized_goals
@@ -38,7 +37,6 @@
 3328 tests/canonical_type_identity_boundary
 3328 type_checker/dependencies/08_validate_call_args
 3328 type_checker/predicates/01f2_validate_imported_methods
-3328 type_checker/type/instances/02e_project_imported_fields
 2816 type_checker/modules/10e0l_normalize_type_aliases
 2560 type_checker/type/instances/04a3_nested_struct_contexts
 2076 tests/typed_constant_identity_graph

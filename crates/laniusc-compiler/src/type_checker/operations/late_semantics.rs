@@ -104,6 +104,11 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     /// this `i` (right after the bindings): the operations from there on
     /// read the IDs of the specialized rows.
     pub(in crate::type_checker) body_canonical_split: usize,
+    /// The body field closure (in place of type/instances/02d) runs ahead of
+    /// `body_specialization[i]` for this `i` (right after the body
+    /// application index).
+    pub(in crate::type_checker) body_field_closure: substitution_passes::FieldClosureOperations,
+    pub(in crate::type_checker) body_field_closure_at: usize,
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
@@ -177,6 +182,7 @@ impl SemanticProjectionOperations {
             ],
         )?;
         let body_canonical_split = std::cell::Cell::new(0usize);
+        let body_field_closure_at = std::cell::Cell::new(0usize);
         Ok(Self {
             body_specialization: [
                 (
@@ -216,16 +222,12 @@ impl SemanticProjectionOperations {
                     "type_checker/type/instances/02c_index_closed_applications",
                 ),
                 (
-                    "type_check.body_specialization.materialize_applications",
-                    "type_checker/type/instances/02d_materialize_applications",
-                ),
-                (
                     "type_check.body_specialization.index_generated_applications",
                     "type_checker/type/instances/02c_index_closed_applications",
                 ),
                 (
                     "type_check.body_specialization.imported_fields",
-                    "type_checker/type/instances/02e_project_imported_fields",
+                    compiler_graph::IMPORTED_FIELDS_KERNEL,
                 ),
                 (
                     "type_check.body_specialization.member_receivers",
@@ -294,6 +296,9 @@ impl SemanticProjectionOperations {
                 if name == compiler_graph::BODY_CANONICAL_AFTER_PASS {
                     body_canonical_split.set(index + 1);
                 }
+                if name == compiler_graph::BODY_FIELD_CLOSURE_AFTER_PASS {
+                    body_field_closure_at.set(index + 1);
+                }
                 // These relations are initialized only for the corresponding
                 // parser feature. A reused workspace can contain unrelated
                 // scratch in their slots when the feature is absent.
@@ -321,6 +326,7 @@ impl SemanticProjectionOperations {
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
                     u32::try_from(instances.byte_size / 4)?
                 } else if kernel.starts_with("type_checker/type/instances/02")
+                    || kernel == compiler_graph::IMPORTED_FIELDS_KERNEL
                     || kernel.ends_with("09_route_bound_members")
                     || kernel.ends_with("03b_member_substitute")
                     || kernel.ends_with("04b_struct_init_substitute")
@@ -343,6 +349,15 @@ impl SemanticProjectionOperations {
             })
             .collect::<Result<_>>()?,
             body_canonical_split: body_canonical_split.get(),
+            body_field_closure: substitution_passes::FieldClosureOperations::new(
+                device,
+                graph,
+                resources,
+                passes,
+                &substitution_passes::BODY_FIELD_CLOSURE,
+                &typed_buffer_from_resources(resources, "token_active_dispatch_args")?,
+            )?,
+            body_field_closure_at: body_field_closure_at.get(),
             retained_callables: CompactionOperation::indirect(
                 device,
                 graph,

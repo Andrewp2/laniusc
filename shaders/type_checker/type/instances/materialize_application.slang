@@ -6,13 +6,6 @@ import type_checker.checked_array_counts;
 #ifndef MATERIALIZE_NORMALIZE_ALIASES
 #define MATERIALIZE_NORMALIZE_ALIASES 0
 #endif
-// Expansion (expand_materialized_instance.slang) passes its visited rows.
-#ifndef MATERIALIZE_ROOT_CANDIDATES
-#define MATERIALIZE_ROOT_CANDIDATES 0
-#endif
-#if MATERIALIZE_ROOT_CANDIDATES && MATERIALIZE_NORMALIZE_ALIASES
-#error root candidates are not supported while normalizing aliases
-#endif
 #include "allocate_application.slang"
 // Shared GPU materialization under record or call parameter environments.
 // The including pass owns immutable source inputs and private output rows.
@@ -104,13 +97,7 @@ uint allocate_normalized_application<Graph : IScopedTypeGraph>(uint3 ref, uint r
 // This lane can reuse its completed nodes immediately. Other lanes see the
 // immutable source index; duplicate complete nodes are safe and compare by
 // their entire structure, rather than allocation order or native width.
-// With MATERIALIZE_ROOT_CANDIDATES, a root pattern equal to one of the
-// caller's `root_rows` resolves to that row, so the caller can recognize
-// visited rows by ID; the same equality site serves both purposes.
 bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH_LIMIT], inout uint created_count,
-#if MATERIALIZE_ROOT_CANDIDATES
-    uint root_rows[DEPTH_LIMIT], uint root_count,
-#endif
     out uint2 result, out uint failure)
 {
     uint3 refs[DEPTH_LIMIT];
@@ -238,25 +225,17 @@ bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH
                 // Looking it up again can compare the same tree repeatedly or
                 // allocate a duplicate before the next index publication.
                 bool retain = ref.x == 3u && ref.z == INVALID;
-                // Candidates: the caller's root rows (an equal one is returned
-                // instead of the reference or a new row), then the immutable
-                // checked index, then this lane's new rows.
+                // Candidates: the immutable checked index, then this lane's
+                // new rows.
                 uint buckets; uint stride;
                 type_instance_lookup_head.GetDimensions(buckets, stride);
                 uint link = retain || buckets == 0u ? 0u : type_instance_lookup_head[hash % buckets];
                 uint chain = 0u;
                 uint created_next = retain ? created_count : 0u;
-#if MATERIALIZE_ROOT_CANDIDATES
-                uint root_next = depth == 0u ? 0u : root_count;
-#endif
                 [loop]
                 for (;;)
                 {
                     uint candidate;
-#if MATERIALIZE_ROOT_CANDIDATES
-                    if (root_next < root_count) candidate = root_rows[root_next++];
-                    else
-#endif
                     if (link != 0u && chain < mutable_type_capacity() && link - 1u < mutable_type_capacity())
                     {
                         candidate = link - 1u; chain++;

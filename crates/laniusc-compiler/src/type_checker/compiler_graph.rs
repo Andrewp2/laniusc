@@ -479,6 +479,10 @@ pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
 /// specialization pass: the body passes after it read the specialized
 /// rows' IDs.
 pub(super) const BODY_CANONICAL_AFTER_PASS: &str = "type_check.body_specialization.bindings";
+/// The body field closure (`substitution_passes::BODY_FIELD_CLOSURE`)
+/// follows this body specialization pass.
+pub(super) const BODY_FIELD_CLOSURE_AFTER_PASS: &str =
+    "type_check.body_specialization.index_applications";
 // Accepted value facts and application edges share one lexical substitution.
 // Keep function/parameter signature columns symbolic: sibling calls have their
 // own accepted environments, even when they target the body being replayed.
@@ -4598,13 +4602,6 @@ fn build_graph(
     let member_result_overrides = reflected_bindings![
         "canonical_type_roots" => dependency_canonical_type_roots: Read,
     ];
-    let imported_field_overrides = reflected_bindings![
-        "canonical_type_roots" => dependency_canonical_type_roots: Read,
-        "imported_field_ref_tag" => _imported_field_ref_tag: Write,
-        "imported_field_ref_payload" => _imported_field_ref_payload: Write,
-        "imported_field_name_hash" => _imported_field_name_hash: Write,
-        "imported_layout_groups" => _imported_layout_groups: Write,
-    ];
     let application_bindings = reflected_bindings![
         "canonical_type_roots" => dependency_canonical_type_roots: Read,
         "type_native_word_count" => _type_native_word_count: Write,
@@ -6226,18 +6223,13 @@ fn build_graph(
             ResourceDomain::Tokens,
         ),
         (
-            "type_check.body_specialization.materialize_applications",
-            "type_checker/type/instances/02d_materialize_applications",
-            ResourceDomain::Tokens,
-        ),
-        (
             "type_check.body_specialization.index_generated_applications",
             "type_checker/type/instances/02c_index_closed_applications",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.imported_fields",
-            "type_checker/type/instances/02e_project_imported_fields",
+            IMPORTED_FIELDS_KERNEL,
             ResourceDomain::Tokens,
         ),
         (
@@ -6307,10 +6299,8 @@ fn build_graph(
             domain,
             kernels,
             kernel,
-            if kernel == "type_checker/type/instances/02d_materialize_applications" {
-                application_bindings
-            } else if kernel == "type_checker/type/instances/02e_project_imported_fields" {
-                imported_field_overrides
+            if kernel == IMPORTED_FIELDS_KERNEL {
+                imported_field_ct_overrides
             } else if kernel == "type_checker/type/instances/03a_member_receivers" {
                 member_receiver_overrides
             } else if kernel == "type_checker/type/instances/03_member_results"
@@ -6324,6 +6314,16 @@ fn build_graph(
         if name == BODY_CANONICAL_AFTER_PASS {
             super::canonical_passes::register_canonical_body_passes(&mut graph, kernels)?;
             super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
+        }
+        if name == BODY_FIELD_CLOSURE_AFTER_PASS {
+            super::substitution_passes::register_field_closure_passes(
+                &mut graph,
+                kernels,
+                &super::substitution_passes::BODY_FIELD_CLOSURE,
+                ResourceDomain::Tokens,
+                "token_active_dispatch_args",
+                &application_bindings[..],
+            )?;
         }
     }
     graph.add_kernel_pass_by_name(

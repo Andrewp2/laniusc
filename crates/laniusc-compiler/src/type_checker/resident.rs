@@ -2042,6 +2042,12 @@ impl GpuTypeChecker {
                             timer.stamp(encoder, "typecheck.substitution.body_start.done");
                         }
                     }
+                    if index == projection.body_field_closure_at {
+                        projection.body_field_closure.record(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_field_closure.done");
+                        }
+                    }
                     if *required_feature != 0 && parser_feature_flags & required_feature == 0 {
                         continue;
                     }

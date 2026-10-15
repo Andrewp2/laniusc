@@ -72,6 +72,15 @@ pub(super) const SOURCE_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     level: "type_check.substitution.expand.source_level",
 };
 
+/// A body specialization's applications, after its canonical stage and the
+/// body application index (in place of type/instances/02d there).
+pub(super) const BODY_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
+    roots: "type_check.body_specialization.expand.roots",
+    roots_kernel: "type_checker/substitution/03_expand_source_roots",
+    advance: "type_check.body_specialization.expand.advance",
+    level: "type_check.body_specialization.expand.level",
+};
+
 /// Call results and argument contexts, in each inference round after the
 /// return types (in place of calls/03e1).
 pub(super) const CALL_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {

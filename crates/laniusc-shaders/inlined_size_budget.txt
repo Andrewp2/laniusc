@@ -27,7 +27,6 @@
 110056 type_checker/program_evidence/entries/14_validate_contexts
 109374 type_checker/program_evidence/entries/64_publish_roots
 100066 type_checker/calls/03a4b_contextual_result_requests
-95932 type_checker/type/instances/02d_materialize_applications
 90893 type_checker/program_evidence/entries/09_build_implementation_index
 90279 type_checker/predicates/02b_validate_obligations
 88912 tests/owned_typed_constants_overlap
@@ -42,7 +41,6 @@
 73677 type_checker/program_evidence/entries/41_normalize_original
 72444 type_checker/dependencies/08_validate_call_args
 71777 type_checker/semantic/artifact/01b_array_index_refs
-68204 type_checker/type/instances/02e_project_imported_fields
 61794 type_checker/program_evidence/entries/15_build_assumption_index
 61572 tests/owned_typed_constants_match
 61529 type_checker/program_evidence/entries/02_08_admit_predicates

@@ -632,10 +632,10 @@ identity walker once. Source constants and canonical constants share one
 `materialize_checked_constant` site (through the canonical view's graph),
 array lengths of new rows use the same site, and every lookup (the caller's
 root rows, the checked index, then the lane's new rows) shares one equality
-site per domain. Expansion (`expand_materialized_instance.slang`) passes its
-visited rows as root candidates, so a field equal to a visited row resolves
-to that row and the visited check is an ID comparison. 03e1 went from 474k
-to 90k inlined instructions this way.
+site per domain. 03e1 went from 474k to 90k inlined instructions this way.
+The per-root expansion that used it (type/instances/02d and
+`expand_materialized_instance.slang`) is gone: the field closure over
+canonical IDs (`ct_expand.slang`) replaced it on the source and body paths.
 
 ### Constant claims: typed and count identity
 
