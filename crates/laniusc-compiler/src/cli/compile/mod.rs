@@ -42,15 +42,24 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
     )? {
         source_pack::Action::Done => return Ok(()),
         source_pack::Action::Emit(emitted) => emitted,
-        source_pack::Action::NotRequested => compile_non_source_pack(
-            &inputs,
-            stdlib_root.as_deref(),
-            &source_roots,
-            package_manifest.as_deref(),
-            package_lockfile.as_deref(),
-            check_only,
-            &emit,
-        )?,
+        source_pack::Action::NotRequested => {
+            let emitted = compile_non_source_pack(
+                &inputs,
+                stdlib_root.as_deref(),
+                &source_roots,
+                package_manifest.as_deref(),
+                package_lockfile.as_deref(),
+                check_only,
+                &emit,
+            );
+            // Debug dumps and dispatch captures are written even when the
+            // compile failed: a failing compile is usually why they were asked for.
+            if let Ok(gpu) = device::global_result() {
+                crate::gpu::passes_core::debug_dump_buffers(&gpu.device, &gpu.queue, &emit);
+                crate::gpu::passes_core::debug_write_capture(&gpu.device, &gpu.queue);
+            }
+            emitted?
+        }
     };
 
     device::persist_pipeline_cache();
