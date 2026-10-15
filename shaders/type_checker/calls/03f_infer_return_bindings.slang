@@ -1,13 +1,22 @@
 // Carry an expression's accepted complete type into an unannotated declaration.
 // Initializers and result rows are immutable here; each statement owns its
 // declaration, so name/index/member readers need no source-text inference.
+//
+// Types compare by canonical ID (docs/canonical-type-ids.md). A lane plans
+// its declaration's new type, interns it and the published one on demand
+// from one site, then validates, compares and publishes.
 import hir_records;
 import hir_expr_semantics;
 import primitive_types;
 import dependency_interface;
-import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.checked_type_identity;
+import type_checker.checked_slots;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+// Shares the candidate keys' decl_id_by_name_token binding.
+import type_checker.canonical.canonical_candidates;
+import type_checker.substitution.ct_checked;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -23,7 +32,6 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> visible_type;
 RWStructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
-StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> module_key_segment_count;
@@ -120,13 +128,65 @@ uint named_for_range_kind(uint instance, out bool resident, out uint scalar)
     return kind;
 }
 
-void publish_for_binding(uint node, uint token, uint tag, uint payload, uint iterable_kind)
+static const uint INVALID = 0xffffffffu;
+static const uint PLAN_NONE = 0u;
+static const uint PLAN_FOR = 1u;
+static const uint PLAN_LET = 2u;
+
+// One declaration a lane may publish: its token, the planned type `value`,
+// the published type `previous`, and what the IDs must still decide.
+struct BindingPlan
 {
+    uint mode;
+    uint node;
+    uint token;
+    uint2 value;
+    uint2 previous;
+    uint iterable_kind;
+    // PLAN_FOR: the value is an iterable's element and must be well formed.
+    bool element;
+    // PLAN_LET: the value is a call result row and must be closed.
+    bool call_result;
+    uint initializer;
+    uint initializer_kind;
+}
+
+BindingPlan no_plan()
+{
+    BindingPlan plan;
+    plan.mode = PLAN_NONE;
+    plan.node = INVALID;
+    plan.token = INVALID;
+    plan.value = uint2(0u, INVALID);
+    plan.previous = uint2(0u, INVALID);
+    plan.iterable_kind = 0u;
+    plan.element = false;
+    plan.call_result = false;
+    plan.initializer = INVALID;
+    plan.initializer_kind = 0u;
+    return plan;
+}
+
+// Scoped equality of two operands with their canonical IDs.
+bool same_type(uint2 left, uint left_id, uint2 right, uint right_id)
+{
+    return checked_types_equal_ids(CheckedSlots(), left.x, left.y, left_id,
+        right.x, right.y, right_id, true);
+}
+
+void publish_for_binding(BindingPlan plan, uint value_id, uint previous_id)
+{
+    uint node = plan.node;
+    uint token = plan.token;
+    uint tag = plan.value.x;
+    uint payload = plan.value.y;
+    uint iterable_kind = plan.iterable_kind;
+    // An element must be a well-formed type: equal to itself.
+    if (plan.element && !same_type(plan.value, value_id, plan.value, value_id))
+    { tag = 0u; payload = INVALID; iterable_kind = 0u; }
     bool same = decl_type_ref_tag[token] == tag && decl_type_ref_payload[token] == payload;
     if (!same && tag != 0u)
-        same = scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-            decl_type_ref_tag[token], decl_type_ref_payload[token], 0xffffffffu,
-            tag, payload, 0xffffffffu, checked_type_capacity(), gParams.n_tokens);
+        same = same_type(plan.previous, previous_id, uint2(tag, payload), value_id);
     bool changed = !same || semantic_iterable_kind_by_hir[node] != iterable_kind;
     decl_type_ref_tag[token] = tag;
     decl_type_ref_payload[token] = payload;
@@ -135,10 +195,10 @@ void publish_for_binding(uint node, uint token, uint tag, uint payload, uint ite
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
 }
 
-void infer_for_binding(uint node, HirPayload statement, uint count)
+BindingPlan plan_for_binding(uint node, HirPayload statement, uint count)
 {
-    static const uint INVALID = 0xffffffffu;
-    if (statement.b >= gParams.n_tokens) return;
+    BindingPlan plan = no_plan();
+    if (statement.b >= gParams.n_tokens) return plan;
     uint source = for_value_root(statement.c, count);
     uint tag = 0u; uint payload = INVALID; uint iterable_kind = 0u;
     if (source < count)
@@ -179,21 +239,111 @@ void infer_for_binding(uint node, HirPayload statement, uint count)
                     tag = type_instance_elem_ref_tag[instance];
                     payload = type_instance_elem_ref_payload[instance];
                     iterable_kind = kind == 2u ? 3u : 0u;
-                    if (!scoped_type_refs_equal<ScopedCheckedTypeGraph>(tag, payload, INVALID,
-                        tag, payload, INVALID, checked_type_capacity(), gParams.n_tokens))
-                    { tag = 0u; payload = INVALID; iterable_kind = 0u; }
+                    plan.element = true;
                 }
                 else if (kind == 1u)
                 {
                     bool resident; uint scalar;
                     iterable_kind = named_for_range_kind(instance, resident, scalar);
-                    if (!resident) return;
+                    if (!resident) return plan;
                     if (iterable_kind != 0u) { tag = 1u; payload = scalar; }
                 }
             }
         }
     }
-    publish_for_binding(node, statement.b, tag, payload, iterable_kind);
+    plan.mode = PLAN_FOR;
+    plan.node = node;
+    plan.token = statement.b;
+    plan.value = uint2(tag, payload);
+    plan.previous = uint2(decl_type_ref_tag[statement.b], decl_type_ref_payload[statement.b]);
+    plan.iterable_kind = iterable_kind;
+    return plan;
+}
+
+BindingPlan plan_let_binding(uint node, uint kind, HirPayload statement, uint count)
+{
+    BindingPlan plan = no_plan();
+    if ((kind != 7u && kind != 8u) || statement.a != 1u ||
+        statement.b >= gParams.n_tokens || statement.d < count) return plan;
+    uint initializer = statement.c;
+    for (uint depth = 0u; depth < 64u && initializer < count; depth++)
+    {
+        uint kind = compact_hir_core[initializer].kind;
+        HirPayload value = compact_hir_payload[initializer];
+        if ((kind == 14u || kind == 16u || kind == 17u) && value.a == 1u)
+            initializer = value.b;
+        else break;
+    }
+    if (initializer >= count) return plan;
+    uint initializer_kind = compact_hir_core[initializer].kind;
+    // Only these forms publish into the accepted expression relation used
+    // below. Other initializer producers retain ownership of their facts:
+    // kinds 14, 16, 17, 19-24, 28, 33 and 34, as bits of (kind - 14).
+    uint owned_kind = initializer_kind - 14u;
+    if (owned_kind > 20u || ((0x1847edu >> owned_kind) & 1u) == 0u) return plan;
+    if (owned_kind == 0u || owned_kind - 2u <= 1u)
+    {
+        uint operation = compact_hir_payload[initializer].a;
+        // Range and other non-scalar forms have separate type producers.
+        // Scalar operators are forms 4-25; a cast (36) has its target type.
+        if (operation - 4u > 21u && operation != 36u) return plan;
+    }
+    uint tag = call_inference_result_tag[initializer];
+    uint payload = call_inference_result_payload[initializer];
+    if (tag == 0u && initializer_kind == 19u)
+    {
+        payload = call_result_instance[initializer];
+        tag = 3u;
+        plan.call_result = true;
+    }
+    plan.mode = PLAN_LET;
+    plan.node = node;
+    plan.token = statement.b;
+    plan.value = uint2(tag, payload);
+    plan.previous = uint2(decl_type_ref_tag[statement.b], decl_type_ref_payload[statement.b]);
+    plan.initializer = initializer;
+    plan.initializer_kind = initializer_kind;
+    return plan;
+}
+
+void publish_let_binding(BindingPlan plan, uint value_id, uint previous_id, uint count)
+{
+    uint token = plan.token;
+    uint tag = plan.value.x;
+    uint payload = plan.value.y;
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    // A call result row must be closed: no parameter leaf, concrete counts.
+    if (plan.call_result && !(ct_is_resolved(value_id) && ct_closed(value_id)))
+    { clear_unavailable_inferred_declaration(token); return; }
+    if (tag != 1u && tag != 2u && tag != 3u)
+    { clear_unavailable_inferred_declaration(token); return; }
+    if ((tag == 1u && (payload == 0u || payload == 0xffffffffu)) ||
+        (tag == 2u && (payload >= gParams.n_tokens || type_generic_param_slot_by_token[payload] == 0xffffffffu)) ||
+        (tag == 3u && (payload >= capacity || type_instance_kind[payload] == 0u)))
+    { clear_unavailable_inferred_declaration(token); return; }
+    if (decl_type_ref_tag[token] != tag || decl_type_ref_payload[token] != payload)
+    {
+        bool changed = !same_type(plan.previous, previous_id, plan.value, value_id);
+        decl_type_ref_tag[token] = tag;
+        decl_type_ref_payload[token] = payload;
+        if (changed)
+        {
+            uint ignored;
+            InterlockedAdd(call_inference_state[1u], 1u, ignored);
+        }
+    }
+    // A newly structural result must not retain a previous scalar cache.
+    visible_type[token] = tag == 1u ? payload : 0u;
+    if (plan.initializer_kind != 19u) return;
+    uint callee = compact_hir_payload[plan.initializer].a;
+    if (callee >= count) return;
+    uint callee_token = compact_hir_core[callee].kind == 21u
+        ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
+    if (callee_token >= gParams.n_tokens) callee_token = compact_hir_core[callee].token_start;
+    if (callee_token < gParams.n_tokens && call_return_type[callee_token] != 0u &&
+        call_return_type[callee_token] != 0xffffffffu)
+        visible_type[token] = call_return_type[callee_token];
 }
 
 [shader("compute")]
@@ -205,76 +355,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= count) return;
     uint kind = compact_hir_core[node].kind;
     HirPayload statement = compact_hir_payload[node];
+    BindingPlan plan;
     if (kind == 30u || (kind == 7u && statement.a == 7u))
+        plan = plan_for_binding(node, statement, count);
+    else
+        plan = plan_let_binding(node, kind, statement, count);
+    if (plan.mode == PLAN_NONE) return;
+    uint spare = CT_NONE;
+    uint2 ids = uint2(CT_UNKNOWN, CT_UNKNOWN);
+    [loop]
+    for (uint index = 0u; index < 2u; index++)
     {
-        infer_for_binding(node, statement, count);
-        return;
+        uint2 operand = index == 0u ? plan.value : plan.previous;
+        uint id = ct_intern_checked<CtCheckedRows>(operand.x, operand.y, spare);
+        if (index == 0u) ids.x = id;
+        else ids.y = id;
     }
-    if ((kind != 7u && kind != 8u) || statement.a != 1u ||
-        statement.b >= gParams.n_tokens || statement.d < count) return;
-    uint initializer = statement.c;
-    for (uint depth = 0u; depth < 64u && initializer < count; depth++)
-    {
-        uint kind = compact_hir_core[initializer].kind;
-        HirPayload value = compact_hir_payload[initializer];
-        if ((kind == 14u || kind == 16u || kind == 17u) && value.a == 1u)
-            initializer = value.b;
-        else break;
-    }
-    if (initializer >= count) return;
-    uint initializer_kind = compact_hir_core[initializer].kind;
-    // Only these forms publish into the accepted expression relation used
-    // below. Other initializer producers retain ownership of their facts:
-    // kinds 14, 16, 17, 19-24, 28, 33 and 34, as bits of (kind - 14).
-    uint owned_kind = initializer_kind - 14u;
-    if (owned_kind > 20u || ((0x1847edu >> owned_kind) & 1u) == 0u) return;
-    if (owned_kind == 0u || owned_kind - 2u <= 1u)
-    {
-        uint operation = compact_hir_payload[initializer].a;
-        // Range and other non-scalar forms have separate type producers.
-        // Scalar operators are forms 4-25; a cast (36) has its target type.
-        if (operation - 4u > 21u && operation != 36u) return;
-    }
-    uint tag = call_inference_result_tag[initializer];
-    uint payload = call_inference_result_payload[initializer];
-    uint capacity; uint stride;
-    type_instance_kind.GetDimensions(capacity, stride);
-    if (tag == 0u && initializer_kind == 19u)
-    {
-        payload = call_result_instance[initializer];
-        if (!checked_instance_is_closed(payload))
-        { clear_unavailable_inferred_declaration(statement.b); return; }
-        tag = 3u;
-    }
-    if (tag != 1u && tag != 2u && tag != 3u)
-    { clear_unavailable_inferred_declaration(statement.b); return; }
-    if ((tag == 1u && (payload == 0u || payload == 0xffffffffu)) ||
-        (tag == 2u && (payload >= gParams.n_tokens || type_generic_param_slot_by_token[payload] == 0xffffffffu)) ||
-        (tag == 3u && (payload >= capacity || type_instance_kind[payload] == 0u)))
-    { clear_unavailable_inferred_declaration(statement.b); return; }
-    if (decl_type_ref_tag[statement.b] != tag || decl_type_ref_payload[statement.b] != payload)
-    {
-        uint previous_tag = decl_type_ref_tag[statement.b];
-        uint previous_payload = decl_type_ref_payload[statement.b];
-        bool changed = !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-            previous_tag, previous_payload, 0xffffffffu, tag, payload, 0xffffffffu,
-            checked_type_capacity(), gParams.n_tokens);
-        decl_type_ref_tag[statement.b] = tag;
-        decl_type_ref_payload[statement.b] = payload;
-        if (changed)
-        {
-            uint ignored;
-            InterlockedAdd(call_inference_state[1u], 1u, ignored);
-        }
-    }
-    // A newly structural result must not retain a previous scalar cache.
-    visible_type[statement.b] = tag == 1u ? payload : 0u;
-    if (initializer_kind != 19u) return;
-    uint callee = compact_hir_payload[initializer].a;
-    if (callee >= count) return;
-    uint token = compact_hir_core[callee].kind == 21u
-        ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
-    if (token >= gParams.n_tokens) token = compact_hir_core[callee].token_start;
-    if (token < gParams.n_tokens && call_return_type[token] != 0u && call_return_type[token] != 0xffffffffu)
-        visible_type[statement.b] = call_return_type[token];
+    if (plan.mode == PLAN_FOR) publish_for_binding(plan, ids.x, ids.y);
+    else publish_let_binding(plan, ids.x, ids.y, count);
 }

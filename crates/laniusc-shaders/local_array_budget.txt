@@ -41,7 +41,6 @@
 4096 tests/canonical_type_constraint_boundary
 4096 type_checker/calls/03a0_bind_explicit_applications
 3328 tests/canonical_type_identity_boundary
-3328 type_checker/calls/03a8_validate_explicit_applications
 3328 type_checker/dependencies/08_validate_call_args
 3328 type_checker/predicates/01f2_validate_imported_methods
 3328 type_checker/type/instances/02e_project_imported_fields
@@ -49,17 +48,11 @@
 2076 tests/typed_constant_identity_graph
 2048 codegen/lir/semantic/aggregate_elements
 2048 tests/parameter_scoped_type_graph
-2048 type_checker/calls/03c_validate_array_results
-2048 type_checker/calls/03f_infer_return_bindings
 2048 type_checker/calls/03g_project_expression_types
 2048 type_checker/calls/03h_project_array_literal_elements
 2048 type_checker/calls/03i_materialize_array_literals
-2048 type_checker/calls/03j_validate_array_literals
 2048 type_checker/calls/03k1_project_literal_contexts
 2048 type_checker/canonical/90_validate
-2048 type_checker/conditions/aggregate_args
-2048 type_checker/conditions/compact_aggregate_requests
-2048 type_checker/methods/08_finalize_candidates
 2048 type_checker/methods/09_route_bound_members
 2048 type_checker/predicates/01f1_emit_method_param_validation_rows
 2048 type_checker/predicates/01f_emit_method_validation_rows
