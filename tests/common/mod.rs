@@ -9,10 +9,11 @@ use std::{
     fmt,
     fs,
     future::Future,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output, Stdio},
     sync::{
+        Arc,
         Mutex,
         MutexGuard,
         atomic::{AtomicU64, Ordering},
@@ -316,6 +317,14 @@ pub fn short_process_output_with_timeout(
     })
 }
 
+/// How long a timed-out command's pipe readers get to reach end of file once
+/// the command is killed. They normally finish at once; a process the
+/// command started can hold a pipe open, and then the reader is left behind
+/// because the test binary exits right after.
+const PIPE_READER_GRACE: Duration = Duration::from_secs(2);
+/// How much of each stream a timeout message repeats, from the end.
+const TIMEOUT_OUTPUT_TAIL_BYTES: usize = 4096;
+
 fn command_output_result_with_timeout(
     context: impl fmt::Display,
     command: &mut Command,
@@ -331,36 +340,143 @@ fn command_output_result_with_timeout(
         Ok(child) => child,
         Err(err) => return Err(err),
     };
+    // Read both pipes while the child runs. A child that prints more than a
+    // pipe holds (64 KiB on Linux) blocks in write until someone reads, so
+    // reading only after it exits hangs it until the timeout. objdump's
+    // listing for the x86 jump check passes that size for most programs.
+    let stdout = PipeCapture::start(child.stdout.take());
+    let stderr = PipeCapture::start(child.stderr.take());
     let start = Instant::now();
+    let mut status = None;
 
     loop {
-        match child.try_wait() {
-            Ok(Some(_status)) => {
-                return Ok(child
-                    .wait_with_output()
-                    .unwrap_or_else(|err| panic!("{context}: collect command output: {err}")));
+        if status.is_none() {
+            match child.try_wait() {
+                Ok(exited) => status = exited,
+                Err(err) => panic!("{context}: wait for command: {err}"),
             }
-            Ok(None) => {}
-            Err(err) => panic!("{context}: wait for command: {err}"),
+        }
+        // The output is complete once the child has exited and both pipes
+        // have reached end of file.
+        if let Some(status) = status
+            && stdout.finished()
+            && stderr.finished()
+        {
+            return Ok(Output {
+                status,
+                stdout: stdout.finish(&context),
+                stderr: stderr.finish(&context),
+            });
         }
 
         if start.elapsed() >= timeout {
-            if let Err(err) = child.kill() {
-                warn!("{context}: failed to terminate timed-out helper process: {err}");
+            if status.is_none() {
+                if let Err(err) = child.kill() {
+                    warn!("{context}: failed to terminate timed-out helper process: {err}");
+                }
+                if let Err(err) = child.wait() {
+                    warn!("{context}: failed to wait for timed-out helper process: {err}");
+                }
             }
-            let output = child
-                .wait_with_output()
-                .unwrap_or_else(|err| panic!("{context}: collect timed-out command output: {err}"));
+            let exited = match status {
+                Some(status) => format!(
+                    "; the command itself exited ({status}), but a process it started still holds its output open"
+                ),
+                None => String::new(),
+            };
+            let grace_end = Instant::now() + PIPE_READER_GRACE;
+            let stdout = stdout.finish_after_timeout(grace_end);
+            let stderr = stderr.finish_after_timeout(grace_end);
             exit_after_timeout(format_args!(
-                "{}\nstdout:\n{}\nstderr:\n{}",
+                "{}{exited}\nstdout {stdout}\nstderr {stderr}",
                 timeout_message(&context, timeout, details),
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
             ));
         }
 
         thread::sleep(Duration::from_millis(CHILD_PROCESS_POLL_INTERVAL_MS));
     }
+}
+
+/// A thread that reads one of a child's pipes into a shared buffer, so the
+/// output read so far is still available if the pipe never closes.
+struct PipeCapture {
+    bytes: Arc<Mutex<Vec<u8>>>,
+    reader: Option<thread::JoinHandle<io::Result<()>>>,
+}
+
+impl PipeCapture {
+    fn start<R: Read + Send + 'static>(pipe: Option<R>) -> Self {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let reader = pipe.map(|mut pipe| {
+            let bytes = Arc::clone(&bytes);
+            thread::spawn(move || {
+                let mut chunk = [0u8; 8192];
+                loop {
+                    match pipe.read(&mut chunk) {
+                        Ok(0) => return Ok(()),
+                        Ok(read) => lock_pipe_bytes(&bytes).extend_from_slice(&chunk[..read]),
+                        Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
+                        Err(err) => return Err(err),
+                    }
+                }
+            })
+        });
+        Self { bytes, reader }
+    }
+
+    /// Whether the reader has stopped: end of file, or a read error.
+    fn finished(&self) -> bool {
+        self.reader
+            .as_ref()
+            .map_or(true, |reader| reader.is_finished())
+    }
+
+    /// Joins a finished reader and returns everything it read.
+    fn finish(mut self, context: &str) -> Vec<u8> {
+        if let Some(reader) = self.reader.take() {
+            match reader.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => panic!("{context}: collect command output: {err}"),
+                Err(_) => panic!("{context}: command output reader panicked"),
+            }
+        }
+        std::mem::take(&mut *lock_pipe_bytes(&self.bytes))
+    }
+
+    /// Waits until `grace_end` for the reader of a killed command to finish,
+    /// joins it if it did, and describes the output it read: its size and
+    /// its last `TIMEOUT_OUTPUT_TAIL_BYTES` bytes.
+    fn finish_after_timeout(mut self, grace_end: Instant) -> String {
+        while !self.finished() && Instant::now() < grace_end {
+            thread::sleep(Duration::from_millis(CHILD_PROCESS_POLL_INTERVAL_MS));
+        }
+        let state = match self.reader.take() {
+            Some(reader) if reader.is_finished() => match reader.join() {
+                Ok(Ok(())) => "",
+                Ok(Err(_)) | Err(_) => ", then reading it failed",
+            },
+            // Dropping the handle detaches the reader; the binary exits next.
+            Some(_) => ", and the pipe is still open",
+            None => "",
+        };
+        let bytes = lock_pipe_bytes(&self.bytes);
+        let kept = bytes.len().min(TIMEOUT_OUTPUT_TAIL_BYTES);
+        let tail = String::from_utf8_lossy(&bytes[bytes.len() - kept..]);
+        if kept == bytes.len() {
+            format!("({} bytes{state}):\n{tail}", bytes.len())
+        } else {
+            format!(
+                "({} bytes{state}; the last {kept} follow):\n{tail}",
+                bytes.len()
+            )
+        }
+    }
+}
+
+fn lock_pipe_bytes(bytes: &Mutex<Vec<u8>>) -> MutexGuard<'_, Vec<u8>> {
+    bytes
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub fn run_with_timeout<T, F>(context: &str, f: F) -> T
@@ -531,9 +647,15 @@ fn timeout_message(context: &str, timeout: Duration, details: TimeoutDetails) ->
 }
 
 fn exit_after_timeout(args: fmt::Arguments<'_>) -> ! {
-    eprintln!("{args}");
-    if let Err(err) = io::stderr().flush() {
-        warn!("failed to flush stderr during timeout: {err}");
+    // Write to the stderr handle, not with eprintln!: libtest keeps what the
+    // print macros write in each test's capture buffer, and _exit below
+    // discards that buffer, so a captured run would print nothing.
+    let written = {
+        let mut stderr = io::stderr().lock();
+        writeln!(stderr, "{args}").and_then(|()| stderr.flush())
+    };
+    if let Err(err) = written {
+        warn!("failed to write the timeout message to stderr: {err}");
     }
     immediate_process_exit(TEST_TIMEOUT_EXIT_CODE);
 }
