@@ -40,8 +40,8 @@ void specialize_argument(RWStructuredBuffer<uint> tags, RWStructuredBuffer<uint>
 [numthreads(256, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID)
 {
-    uint count = min(body_specialization_inputs[705u].x, 32u);
-    if (count == 0u) return;
+    // Entry 0's constant count, or any extra entries (which may bind constants).
+    if (body_specialization_inputs[705u].x == 0u && body_specialization_inputs[705u].y == 0u) return;
     uint instance = dtid.x + dtid.y * 65535u * 256u;
     uint capacity; uint stride;
     type_instance_kind.GetDimensions(capacity, stride);

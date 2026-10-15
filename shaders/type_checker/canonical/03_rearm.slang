@@ -11,8 +11,9 @@
 // references that still name them.
 import type_checker.canonical.canonical_api;
 
-// Header (argument count, ...); [705].x is the constant binding count. A
-// replay has at least one argument in one of the two domains.
+// Header (argument count, ...); [705].x is the constant binding count and
+// [705].y the extra batched entries. A replay has at least one argument in
+// one of the two domains.
 StructuredBuffer<uint4> body_specialization_inputs;
 
 [shader("compute")]
@@ -24,7 +25,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < count)
     {
         uint state = ct_candidate_state(i);
-        bool replay = body_specialization_inputs[0u].x != 0u || body_specialization_inputs[705u].x != 0u;
+        bool replay = body_specialization_inputs[0u].x != 0u || body_specialization_inputs[705u].x != 0u ||
+            body_specialization_inputs[705u].y != 0u;
         bool interned = ct_is_resolved(state);
         if (state == CT_NONE || state == CT_UNKNOWN || (replay && interned))
         {

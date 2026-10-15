@@ -303,7 +303,8 @@ impl CompiledUnitCache {
 impl CompiledSourcePackUnit {
     fn resident_byte_len(&self) -> usize {
         let mut bytes = std::mem::size_of::<Self>()
-            .saturating_add(self.body_native_layouts.as_ref().map_or(0, |widths| widths.len().saturating_mul(4)))
+            .saturating_add(self.body_native_layouts.as_ref().map_or(0, |entries| entries.iter()
+                .map(|widths| widths.len().saturating_mul(4)).fold(0usize, usize::saturating_add)))
             .saturating_add(interface_resident_bytes(&self.interface))
             .saturating_add(
                 self.template_sources
