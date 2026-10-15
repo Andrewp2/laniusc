@@ -175,9 +175,22 @@ public uint ct_dep_type_param(uint slot)
     return slot < CT_DEP_PARAM_SLOTS ? CT_PARAM_BIT | CT_DEP_PARAM_BIT | slot : CT_UNKNOWN;
 }
 
-public uint ct_dep_const_param(uint slot)
+// A dependency constant parameter also carries its declared scalar, so a
+// substitution is checked without its signature node.
+public uint ct_dep_const_param(uint slot, uint scalar)
 {
-    return slot < CT_DEP_PARAM_SLOTS ? CT_PARAM_BIT | CT_CONST_PARAM_BIT | CT_DEP_PARAM_BIT | slot : CT_UNKNOWN;
+    return slot < CT_DEP_PARAM_SLOTS && scalar < 32u
+        ? CT_PARAM_BIT | CT_CONST_PARAM_BIT | CT_DEP_PARAM_BIT | (scalar << 5u) | slot : CT_UNKNOWN;
+}
+
+public uint ct_dep_param_slot(uint ref)
+{
+    return ref & (CT_DEP_PARAM_SLOTS - 1u);
+}
+
+public uint ct_dep_param_scalar(uint ref)
+{
+    return (ref >> 5u) & 31u;
 }
 
 public bool ct_is_dep_param(uint ref)

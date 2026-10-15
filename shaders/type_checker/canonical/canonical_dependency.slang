@@ -130,7 +130,8 @@ uint build_dependency(uint t, bool final, out CtKey key)
     if (kind == 2u) return ct_dep_type_param(dependency_generic_type_slot(t));
     if (kind == 8u)
         return constant_scalar_is_supported(dependency_const_parameter_scalar(t))
-            ? ct_dep_const_param(dependency_generic_const_slot(t)) : CT_UNKNOWN;
+            ? ct_dep_const_param(dependency_generic_const_slot(t), dependency_const_parameter_scalar(t))
+            : CT_UNKNOWN;
     bool fold = false;
     uint3 value = uint3(0u, 0u, 0u);
     if (kind == 9u)

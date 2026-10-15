@@ -33,6 +33,12 @@ const ARRAY_N_PROJECTED_63: u32 = N_PROJECTED_64 + 1;
 const ARRAY_N_PROJECTED_64: u32 = N_PROJECTED_64 + 2;
 const BOX_T_N_PROJECTED_63: u32 = N_PROJECTED_64 + 3;
 const BOX_T_N_PROJECTED_64: u32 = N_PROJECTED_64 + 4;
+/// Interns the fixture page into the canonical table before each query.
+const INTERN: &str = "tests/canonical_type_boundary_intern";
+const CT_PENDING: u32 = u32::MAX;
+/// 32 preseeded IDs, 3 candidates and one fixed record per page node, plus
+/// headroom.
+const RECORDS: usize = 256;
 
 #[derive(encase::ShaderType)]
 struct Params {
@@ -229,6 +235,8 @@ fn run<const N: usize>(key: &str, cases: &[Case<N>]) {
         environments: f.environments.len() as u32, queries: cases.len() as u32,
         tokens: TOKENS, reserved0: 0, reserved1: 0, reserved2: 0,
     });
+    let page_types = f.roots.len();
+    assert!(32 + 3 + page_types <= RECORDS);
     let mut resources = Resources::new();
     for (name, words) in [
         ("boundary_nodes", flatten(&f.nodes)),
@@ -244,18 +252,43 @@ fn run<const N: usize>(key: &str, cases: &[Case<N>]) {
         ("checked_constant_atoms", flatten(&(0..=4)
             .map(|value| [4, value, 0, 0]).collect::<Vec<_>>())),
         ("checked_constant_projections", vec![4, 1, 3, 0]),
+        // The canonical table, filled by INTERN from the page: constant
+        // views read the canonical IDs of dependency constants. The job's
+        // candidate tables hold one pending entry each.
+        ("ct_head", vec![0; RECORDS * 4]),
+        ("ct_meta", vec![0; RECORDS * 4]),
+        ("ct_extra", vec![0; RECORDS * 2]),
+        ("ct_args", vec![0; 1024]),
+        ("ct_slot", vec![0; 1024]),
+        ("ct_counts", vec![0; 16]),
+        ("canonical_row", vec![CT_PENDING]),
+        ("canonical_atom", vec![CT_PENDING]),
+        ("canonical_projection", vec![CT_PENDING]),
+        ("canonical_dependency_type", vec![CT_PENDING; page_types]),
     ] {
         let buffer = storage_rw_for_array::<u32>(&gpu.device, name, words.len());
         let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
         buffer.write(&gpu.queue, 0, &bytes);
         resources.insert(name, buffer);
     }
+    let intern = make_pass_data_from_shader_key(&gpu.device, INTERN, "main", INTERN).unwrap();
+    let intern_group = group(&gpu.device, &intern, &resources, &params);
     let pass = make_pass_data_from_shader_key(&gpu.device, key, "main", key).unwrap();
     assert_eq!(pass.thread_group_size, [32, 1, 1]);
     let group = group(&gpu.device, &pass, &resources, &params);
     let words = cases.len() * N;
     let readback = readback_bytes(&gpu.device, key, words * 4, words);
     let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(key) });
+    {
+        let mut compute = passes_core::begin_counted_compute_pass(&mut encoder,
+            &wgpu::ComputePassDescriptor { label: Some(INTERN), timestamp_writes: None });
+        compute.set_pipeline(&intern.pipeline);
+        compute.set_bind_group(0, Some(&intern_group), &[]);
+        passes_core::record_compute_dispatch();
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+    }
     {
         let mut compute = passes_core::begin_counted_compute_pass(&mut encoder,
             &wgpu::ComputePassDescriptor { label: Some(key), timestamp_writes: None });

@@ -165,7 +165,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     check(53u, ct_bridge_operand(CT_UNKNOWN).y, INVALID);
     check(54u, ct_bridge_operand(CT_PENDING).y, INVALID);
     check(55u, ct_bridge_operand(0u).y, INVALID);
-    check(56u, ct_bridge_operand(ct_dep_const_param(1u)).y, INVALID);
+    check(56u, ct_bridge_operand(ct_dep_const_param(1u, SCALAR_USIZE)).y, INVALID);
     uint2 operand = ct_bridge_operand(ct_const_param(9u));
     check(57u, operand.x, CONSTANT_TAG | 2u);
     check(58u, operand.y, 9u);
