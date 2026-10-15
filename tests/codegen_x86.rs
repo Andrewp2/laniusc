@@ -11607,3 +11607,127 @@ fn main() -> i32 {
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code("x86 alloc_failed", "alloc_failed", &bytes, 1);
 }
+
+// A `&self` method called on a value that is not a place, such as a call
+// result, borrows a compiler-generated local that holds the stored value.
+#[test]
+fn x86_borrowed_receiver_temporary_holds_struct_call_result() {
+    assert_source_exit(
+        "receiver_temporary_struct_call",
+        r#"
+struct W { v: i32 }
+impl W { fn get(&self) -> i32 { return self.v; } }
+fn make() -> W { return W { v: 42 }; }
+fn main() -> i32 { return make().get(); }
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_receiver_temporary_holds_enum_call_result() {
+    assert_source_exit(
+        "receiver_temporary_enum_call",
+        r#"
+enum M { Has(i32), Not }
+impl M { fn get(&self) -> i32 { return match (self) { Has(v) -> v, Not -> 0 }; } }
+fn make() -> M { let m: M = Has(42); return m; }
+fn main() -> i32 { return make().get(); }
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_receiver_temporary_holds_method_call_result() {
+    assert_source_exit(
+        "receiver_temporary_method_chain",
+        r#"
+struct W { v: i32 }
+impl W {
+    fn get(&self) -> i32 { return self.v; }
+    fn twice(&self) -> W { return W { v: self.v * 2 }; }
+}
+fn main() -> i32 {
+    let w: W = W { v: 21 };
+    if (w.twice().twice().get() != 84) { return 1; }
+    if (w.get() != 21) { return 2; }
+    return w.twice().get();
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_receiver_temporary_feeds_a_negated_condition() {
+    assert_source_exit(
+        "receiver_temporary_condition",
+        r#"
+struct W { v: i32 }
+impl W { fn ok(&self) -> bool { return self.v == 42; } }
+fn make(v: i32) -> W { return W { v: v }; }
+fn main() -> i32 {
+    if (!make(42).ok()) { return 1; }
+    if (make(41).ok()) { return 2; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_receiver_temporary_is_stored_on_every_evaluation() {
+    assert_source_exit(
+        "receiver_temporary_loop",
+        r#"
+struct W { v: i32 }
+impl W { fn get(&self) -> i32 { return self.v; } }
+fn make(v: i32) -> W { return W { v: v }; }
+fn main() -> i32 {
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        total = total + make(i).get() + make(10).get();
+        i = i + 1;
+    }
+    if (total != 46) { return 1; }
+    return make(42).get();
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_receiver_temporary_holds_imported_option_result() {
+    let sources = [
+        include_str!("../stdlib/core/result_i32.lani"),
+        include_str!("../stdlib/core/option_i32.lani"),
+        r#"
+module app::main;
+import core::option_i32;
+fn main() -> i32 {
+    let absent: core::option_i32::OptionI32 = core::option_i32::none();
+    let present: core::option_i32::OptionI32 = core::option_i32::some(7);
+    if (!absent.or(present).contains(7)) { return 1; }
+    if (absent.or(absent).contains(7)) { return 2; }
+    return 42;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 imported option receiver temporary",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("imported option receiver temporary should compile to x86_64");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 imported option receiver temporary",
+        "receiver_temporary_imported_option",
+        &bytes,
+        42,
+    );
+}

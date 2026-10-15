@@ -1,4 +1,5 @@
 import hir_records;
+import checked_semantic_artifact;
 import codegen.lir.semantic.common;
 import gpu_index;
 
@@ -14,9 +15,12 @@ StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> semantic_value_id;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
+StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 RWStructuredBuffer<uint> semantic_local_flag;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
+
+#include "receiver_temporary.slang"
 
 bool match_payload_binding(uint hir)
 {
@@ -77,8 +81,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
         bool match_result = core.kind == HIR_MATCH_EXPR;
         bool match_binding = match_payload_binding(hir);
+        // A call whose `&self` receiver is not a place owns the receiver's
+        // stored copy.
+        bool receiver_temporary = core.kind == HIR_CALL_EXPR &&
+            receiver_temporary_token(hir, semantic_calls_by_hir[hir], hir_count) < gParams.n_tokens;
         semantic_local_flag[hir] = match_result ? 3u
-            : source_local || match_binding || semantic_lir_is_short_circuit(core, payload)
+            : source_local || match_binding || receiver_temporary ||
+                semantic_lir_is_short_circuit(core, payload)
                 ? 1u : range_for ? 2u : 0u;
         return;
     }
