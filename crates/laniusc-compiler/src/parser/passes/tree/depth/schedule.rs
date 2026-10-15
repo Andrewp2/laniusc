@@ -48,6 +48,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthSchedul
                 b.tree_depth_block_max.as_entire_binding(),
             ),
             (
+                "tree_depth_block_close".into(),
+                b.tree_depth_block_close.as_entire_binding(),
+            ),
+            (
                 "hir_raw_relation_dispatch_args".into(),
                 b.hir_raw_relation_dispatch_args.as_entire_binding(),
             ),

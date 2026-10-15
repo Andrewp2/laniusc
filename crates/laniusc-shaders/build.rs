@@ -1,7 +1,7 @@
 // build.rs — compile Slang entrypoints (no duplicate module sources).
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     env,
     fs,
     io,
@@ -423,23 +423,58 @@ fn timeout_from_env_ms(name: &str, default_ms: u64) -> Result<Option<Duration>> 
 const DEFAULT_MAX_INLINED_INSTRUCTIONS: u64 = 40_000;
 const INLINED_SIZE_BUDGET_FILE: &str = "crates/laniusc-shaders/inlined_size_budget.txt";
 
-/// Fails the build when a kernel's fully inlined size exceeds its budget:
-/// `DEFAULT_MAX_INLINED_INSTRUCTIONS`, or the per-kernel limit recorded in
-/// `INLINED_SIZE_BUDGET_FILE` for kernels that are already oversized. Those
-/// limits only ever go down. `LANIUS_SHADER_INLINED_BUDGET=warn` reports
-/// without failing, `off` skips the check. Every build writes all sizes to
-/// `inlined_sizes.txt` next to the artifact directory.
+/// Per-thread bytes of written local arrays (see `spirv_size::InlinedSize`)
+/// allowed in a kernel without a budget line: none. NVIDIA reserves the largest
+/// per-thread local memory of any created pipeline for every resident thread
+/// of the process (~61k on an RTX 3070), and kernels with such arrays run 20 to
+/// 300 times slower in warm daemon jobs.
+const DEFAULT_MAX_LOCAL_BYTES: u64 = 0;
+/// The per-kernel target for kernels that still have a budget line.
+const LOCAL_BYTES_TARGET: u64 = 1024;
+const LOCAL_ARRAY_BUDGET_FILE: &str = "crates/laniusc-shaders/local_array_budget.txt";
+
+/// Reads `<limit> <artifact key>` lines (`#` starts a comment).
+fn read_kernel_budget(path: &Path) -> Result<HashMap<String, u64>> {
+    let text = fs::read_to_string(path).with_context(|| format!("read kernel budget {}", path.display()))?;
+    let mut limits = HashMap::new();
+    for (line_index, line) in text.lines().enumerate() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (limit, key) = line.split_once(char::is_whitespace).ok_or_else(|| {
+            anyhow!("{}:{}: expected `<limit> <artifact key>`", path.display(), line_index + 1)
+        })?;
+        let limit = limit
+            .parse::<u64>()
+            .with_context(|| format!("{}:{}: parse limit {limit:?}", path.display(), line_index + 1))?;
+        limits.insert(key.trim().to_string(), limit);
+    }
+    Ok(limits)
+}
+
+/// Fails the build when a kernel exceeds its fully inlined size budget
+/// (`DEFAULT_MAX_INLINED_INSTRUCTIONS`, or its line in
+/// `INLINED_SIZE_BUDGET_FILE`) or its local array budget
+/// (`DEFAULT_MAX_LOCAL_BYTES`, or its line in `LOCAL_ARRAY_BUDGET_FILE`).
+/// Budget lines exist only for kernels that were already over the default,
+/// and their limits only ever go down (tools/ratchet_inlined_budget.py).
+/// `LANIUS_SHADER_INLINED_BUDGET=warn` reports without failing, `off` skips
+/// both checks. Every build writes all figures to `inlined_sizes.txt` next to
+/// the artifact directory.
 fn check_inlined_size_budget(
     workspace_root: &Path,
     shader_out_dir: &Path,
     shader_artifacts: &[(String, PathBuf, PathBuf)],
 ) -> Result<()> {
     let budget_path = workspace_root.join(INLINED_SIZE_BUDGET_FILE);
+    let local_budget_path = workspace_root.join(LOCAL_ARRAY_BUDGET_FILE);
     println!("cargo:rerun-if-changed={}", budget_path.display());
+    println!("cargo:rerun-if-changed={}", local_budget_path.display());
     let mode = env::var("LANIUS_SHADER_INLINED_BUDGET").unwrap_or_default();
     let mode = mode.trim().to_ascii_lowercase();
     if mode == "off" || mode == "0" {
-        return Ok(());
+        return check_driver_hazards(shader_artifacts);
     }
     let enforce = match mode.as_str() {
         "" | "enforce" => true,
@@ -450,81 +485,120 @@ fn check_inlined_size_budget(
             ));
         }
     };
-    let budget_text = fs::read_to_string(&budget_path)
-        .with_context(|| format!("read inlined size budget {}", budget_path.display()))?;
-    let mut limits = std::collections::HashMap::new();
-    for (line_index, line) in budget_text.lines().enumerate() {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        let (limit, key) = line.split_once(char::is_whitespace).ok_or_else(|| {
-            anyhow!("{}:{}: expected `<limit> <artifact key>`", budget_path.display(), line_index + 1)
-        })?;
-        let limit = limit.parse::<u64>().with_context(|| {
-            format!("{}:{}: parse limit {limit:?}", budget_path.display(), line_index + 1)
-        })?;
-        limits.insert(key.trim().to_string(), limit);
-    }
+    let limits = read_kernel_budget(&budget_path)?;
+    let local_limits = read_kernel_budget(&local_budget_path)?;
 
+    struct Row {
+        inlined: u64,
+        own: u64,
+        limit: u64,
+        local: u64,
+        local_limit: u64,
+        key: String,
+    }
     let mut rows = Vec::new();
     let mut over = Vec::new();
+    let mut local_over = Vec::new();
+    let mut hazards = Vec::new();
     for (artifact_key, spv_path, _) in shader_artifacts {
-        let bytes = fs::read(spv_path)
-            .with_context(|| format!("read shader artifact {}", spv_path.display()))?;
-        let words = bytes
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
-            .collect::<Vec<_>>();
-        let size = spirv_size::inlined_size(&words, 5)
-            .with_context(|| format!("measure inlined size of {}", spv_path.display()))?;
+        let size = measure_shader_artifact(spv_path)?;
+        if !size.all_ones_divisions.is_empty() {
+            hazards.push((artifact_key.clone(), size.all_ones_divisions.clone()));
+        }
         let limit = limits.get(artifact_key).copied().unwrap_or(DEFAULT_MAX_INLINED_INSTRUCTIONS);
+        let local_limit = local_limits.get(artifact_key).copied().unwrap_or(DEFAULT_MAX_LOCAL_BYTES);
         if size.inlined > limit {
             over.push((artifact_key.clone(), size.inlined, limit, size.top_helpers.clone()));
         }
-        rows.push((size.inlined, size.own, limit, artifact_key.clone()));
+        if size.local_bytes > local_limit {
+            local_over.push((artifact_key.clone(), size.local_bytes, local_limit, spv_path.clone()));
+        }
+        rows.push(Row {
+            inlined: size.inlined,
+            own: size.own,
+            limit,
+            local: size.local_bytes,
+            local_limit,
+            key: artifact_key.clone(),
+        });
     }
-    rows.sort_by(|a, b| b.cmp(a));
+    rows.sort_by(|a, b| (b.inlined, b.own, &b.key).cmp(&(a.inlined, a.own, &a.key)));
     let mut report = format!(
-        "# fully inlined instructions per kernel; default limit {DEFAULT_MAX_INLINED_INSTRUCTIONS}\n# {:>10} {:>8} {:>10}  kernel\n",
-        "inlined", "own", "limit"
+        "# fully inlined instructions and per-thread local array bytes per kernel\n\
+         # (default limits {DEFAULT_MAX_INLINED_INSTRUCTIONS} and {DEFAULT_MAX_LOCAL_BYTES}; llimit is the local limit)\n\
+         # {:>10} {:>8} {:>10} {:>8} {:>8}  kernel\n",
+        "inlined", "own", "limit", "local", "llimit"
     );
-    for (inlined, own, limit, key) in &rows {
-        report.push_str(&format!("{inlined:>12} {own:>8} {limit:>10}  {key}\n"));
+    for row in &rows {
+        report.push_str(&format!(
+            "{:>12} {:>8} {:>10} {:>8} {:>8}  {}\n",
+            row.inlined, row.own, row.limit, row.local, row.local_limit, row.key
+        ));
     }
     let report_path = shader_out_dir.parent().unwrap_or(shader_out_dir).join("inlined_sizes.txt");
     fs::write(&report_path, report)
         .with_context(|| format!("write inlined size report {}", report_path.display()))?;
-    let oversized = rows.iter().filter(|row| row.0 > DEFAULT_MAX_INLINED_INSTRUCTIONS).count();
+    let oversized = rows.iter().filter(|row| row.inlined > DEFAULT_MAX_INLINED_INSTRUCTIONS).count();
     if oversized != 0 {
         println!(
             "cargo:warning={oversized} kernels exceed {DEFAULT_MAX_INLINED_INSTRUCTIONS} fully inlined instructions (largest {} at {}); see {}",
-            rows[0].3,
-            rows[0].0,
+            rows[0].key,
+            rows[0].inlined,
             report_path.display()
         );
     }
-    if over.is_empty() {
+    let local_oversized = rows.iter().filter(|row| row.local > LOCAL_BYTES_TARGET).count();
+    if let Some(largest) = rows.iter().max_by_key(|row| row.local).filter(|_| local_oversized != 0) {
+        println!(
+            "cargo:warning={local_oversized} kernels exceed {LOCAL_BYTES_TARGET} bytes of per-thread local arrays (largest {} at {}); see {}",
+            largest.key,
+            largest.local,
+            report_path.display()
+        );
+    }
+    driver_hazard_result(&hazards)?;
+    if over.is_empty() && local_over.is_empty() {
         return Ok(());
     }
-    over.sort_by_key(|row| std::cmp::Reverse(row.1));
-    let mut message = format!(
-        "{} kernels exceed their fully inlined size budget ({}):\n",
-        over.len(),
-        budget_path.display()
-    );
-    for (key, inlined, limit, helpers) in &over {
-        message.push_str(&format!("  {key}: {inlined} > {limit}; largest helpers (copies x own):"));
-        for (name, copies, own) in helpers {
-            message.push_str(&format!(" {name} {copies}x{own}"));
+    let mut message = String::new();
+    if !over.is_empty() {
+        over.sort_by_key(|row| std::cmp::Reverse(row.1));
+        message.push_str(&format!(
+            "{} kernels exceed their fully inlined size budget ({}):\n",
+            over.len(),
+            budget_path.display()
+        ));
+        for (key, inlined, limit, helpers) in &over {
+            message.push_str(&format!("  {key}: {inlined} > {limit}; largest helpers (copies x own):"));
+            for (name, copies, own) in helpers {
+                message.push_str(&format!(" {name} {copies}x{own}"));
+            }
+            message.push('\n');
         }
-        message.push('\n');
+        message.push_str(
+            "Shrink the kernel (one call site per large helper, branch-free leaf predicates, \
+             precomputed tables instead of re-walking) or split it into passes.\n",
+        );
     }
-    message.push_str(
-        "Shrink the kernel (one call site per large helper, branch-free leaf predicates, \
-         precomputed tables instead of re-walking) or split it into passes. \
-         LANIUS_SHADER_INLINED_BUDGET=warn reports without failing.",
-    );
+    if !local_over.is_empty() {
+        local_over.sort_by_key(|row| std::cmp::Reverse(row.1));
+        message.push_str(&format!(
+            "{} kernels exceed their per-thread local array budget ({}):\n",
+            local_over.len(),
+            local_budget_path.display()
+        ));
+        for (key, local, limit, spv_path) in &local_over {
+            message.push_str(&format!(
+                "  {key}: {local} > {limit} bytes; list its arrays with tools/spv_local_bytes.py --vars {}\n",
+                spv_path.display()
+            ));
+        }
+        message.push_str(
+            "Kernels keep no per-thread stacks, worklists or visited sets: use stackless tree \
+             searches, level rounds over GPU-wide tables or precomputed paths instead.\n",
+        );
+    }
+    message.push_str("LANIUS_SHADER_INLINED_BUDGET=warn reports without failing.");
     if enforce {
         return Err(anyhow!(message));
     }
@@ -532,6 +606,58 @@ fn check_inlined_size_budget(
         println!("cargo:warning={line}");
     }
     Ok(())
+}
+
+fn measure_shader_artifact(spv_path: &Path) -> Result<spirv_size::InlinedSize> {
+    let bytes =
+        fs::read(spv_path).with_context(|| format!("read shader artifact {}", spv_path.display()))?;
+    let words = bytes
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    spirv_size::inlined_size(&words, 5)
+        .with_context(|| format!("measure inlined size of {}", spv_path.display()))
+}
+
+/// The driver hazards alone, for builds with the budgets off.
+fn check_driver_hazards(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Result<()> {
+    let mut hazards = Vec::new();
+    for (artifact_key, spv_path, _) in shader_artifacts {
+        let size = measure_shader_artifact(spv_path)?;
+        if !size.all_ones_divisions.is_empty() {
+            hazards.push((artifact_key.clone(), size.all_ones_divisions));
+        }
+    }
+    driver_hazard_result(&hazards)
+}
+
+/// Fails on SPIR-V that the driver cannot compile, in every budget mode: a
+/// pipeline that fails to compile loses the device for the whole process.
+fn driver_hazard_result(hazards: &[(String, Vec<(String, &'static str)>)]) -> Result<()> {
+    if hazards.is_empty() {
+        return Ok(());
+    }
+    let mut message = format!(
+        "{} kernels divide the constant 0xffffffff by a runtime value (OpUDiv), which NVIDIA 615 \
+         cannot compile: pipeline creation fails with \"NVVM compilation failed: 3\" and the \
+         device is lost (see ALL_ONES_DIVIDEND_HAZARDS in spirv_size.rs):\n",
+        hazards.len()
+    );
+    for (key, divisions) in hazards {
+        message.push_str(&format!("  {key}:"));
+        let mut seen = HashSet::new();
+        for (function, op_name) in divisions {
+            if seen.insert((function, op_name)) {
+                message.push_str(&format!(" {op_name} in {function};"));
+            }
+        }
+        message.push('\n');
+    }
+    message.push_str(
+        "Guard overflow with shifts and bit counts, or compare against a limit computed without \
+         dividing 0xffffffff.",
+    );
+    Err(anyhow!(message))
 }
 
 /// TEMPORARY test harness (see `spirv_size::mark_dont_inline`): zero, the

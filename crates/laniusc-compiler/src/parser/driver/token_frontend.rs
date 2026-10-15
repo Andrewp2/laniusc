@@ -183,16 +183,6 @@ impl GpuParser {
         let bind_groups = bind_guard
             .as_ref()
             .expect("resident token-kind parser bind groups allocated");
-        self.record_token_delimiters_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
-        self.record_match_pattern_phase_timed(
-            encoder,
-            token_buf,
-            token_count_buf,
-            bufs,
-            timer_ref,
-        )?;
-        self.record_where_clause_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
-        bufs.clear_operations().record_token_feature_flags(encoder);
         write_uniform(
             &self.queue,
             &bind_groups.tokens_to_kinds_params,
@@ -202,11 +192,24 @@ impl GpuParser {
                 match_tree_leaf_base: bufs.token_brace_match_min_tree_base,
             },
         );
-
-        bind_groups
-            .token_enclosing_opens
-            .record_elements(encoder, token_capacity)?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.enclosing_opens.done");
+        self.record_token_delimiters_timed(
+            encoder,
+            token_buf,
+            token_count_buf,
+            bufs,
+            &bind_groups.token_enclosing_opens,
+            token_capacity,
+            timer_ref,
+        )?;
+        self.record_match_pattern_phase_timed(
+            encoder,
+            token_buf,
+            token_count_buf,
+            bufs,
+            timer_ref,
+        )?;
+        self.record_where_clause_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
+        bufs.clear_operations().record_token_feature_flags(encoder);
         bind_groups
             .tokens_to_angle_kinds
             .record_elements(encoder, token_capacity)?;
@@ -556,12 +559,15 @@ impl GpuParser {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn record_token_delimiters_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
         bufs: &ParserBuffers,
+        token_enclosing_opens: &ComputeOperation,
+        token_capacity: u32,
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
         self.record_cached_token_operation(
@@ -597,6 +603,10 @@ impl GpuParser {
         );
         self.record_raw_delimiter_matching(encoder, token_buf, token_count_buf, bufs)?;
         stamp_timer(timer_ref, encoder, "parser.tokens.raw_delimiter_match.done");
+        // Delimiter ownership is published as soon as the raw match depths
+        // and their search trees exist; pairing and classification read it.
+        token_enclosing_opens.record_elements(encoder, token_capacity)?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.enclosing_opens.done");
         self.record_token_delimiter_owner_local(encoder, token_buf, token_count_buf, bufs)?;
         stamp_timer(
             timer_ref,

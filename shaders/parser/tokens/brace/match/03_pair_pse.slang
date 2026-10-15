@@ -1,4 +1,10 @@
-import segment_tree;
+// Gives every raw `}` the semantic kind of the `{` it closes, and the
+// statement kind that owns a braced right-hand side.
+//
+// A raw `}` has brace match depth equal to its depth before minus one, which
+// is exactly the brace query that tokens_delimiter_match_03_enclosing_opens
+// publishes, so token_enclosing_open[close].y is the opener it closes. No
+// hierarchy search runs here.
 
 struct Params
 {
@@ -17,9 +23,7 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
-StructuredBuffer<int> brace_match_depth;
-StructuredBuffer<int> brace_match_block_min;
-StructuredBuffer<int> brace_match_min_tree;
+StructuredBuffer<uint4> token_enclosing_open;
 StructuredBuffer<uint> statement_context_kind;
 
 RWStructuredBuffer<uint> brace_semantic_kind;
@@ -54,69 +58,11 @@ static const uint STATEMENT_CONTEXT_ASSIGN_RHS = 251u;
 static const uint STATEMENT_CONTEXT_FOR_IN = 252u;
 static const uint STATEMENT_CONTEXT_LET_RHS = 253u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
-static const int INF = 2147483647;
 
 [ForceInline]
 uint active_token_count()
 {
     return min(lexer_token_count[0], gParams.n_tokens);
-}
-
-public struct BraceDepthTree : IRangeSearchTree<int>
-{
-    public static uint n_blocks()
-    {
-        return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.match_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return brace_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return brace_match_min_tree[node];
-    }
-}
-
-public struct BraceDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline]
-    public static uint item_count()
-    {
-        return gParams.n_tokens;
-    }
-
-    [ForceInline]
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    [ForceInline]
-    public static int row_value(uint row)
-    {
-        return brace_match_depth[row];
-    }
-}
-
-public struct BraceDepthAtMost : IRangeSearchPredicate<int, int>
-{
-    public static bool aggregate_may_match(int aggregate, int query)
-    {
-        return aggregate <= query;
-    }
-
-    public static bool leaf_matches(int leaf, int query)
-    {
-        return leaf <= query;
-    }
 }
 
 uint close_kind_for_open_kind(uint open_kind)
@@ -169,22 +115,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (token_words[close_i].kind != TK_RBRACE)
         return;
 
-    int close_depth = brace_match_depth[close_i];
-    if (close_depth == INF)
-        return;
-
-    uint open_i;
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            BraceDepthTree,
-            BraceDepthRows,
-            BraceDepthAtMost>(
-            close_i,
-            close_depth,
-            open_i))
-        return;
-
+    uint open_i = token_enclosing_open[close_i].y;
     if (open_i >= count || token_words[open_i].kind != TK_LBRACE)
         return;
 
