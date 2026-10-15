@@ -47,6 +47,21 @@ public interface IExplicitOperandTypeRefs
     uint type_ref_payload(uint token);
 }
 
+// A single-segment operand inside a function body means the module
+// declaration that path resolution found only when no lexical value
+// declaration can shadow it. A kernel dispatched after the job's visible
+// declaration tables can prove that; any other kernel accepts module-scope
+// names only.
+public interface IExplicitOperandBodyNames
+{
+    bool body_name_unshadowed(uint name_token);
+}
+
+public struct ModuleScopeOperandNames : IExplicitOperandBodyNames
+{
+    public bool body_name_unshadowed(uint name_token) { return false; }
+}
+
 // Lookup hash capacities are logical producer inputs. Workspace buffers can
 // be larger when reused by a smaller job; their physical extent cannot select
 // the lookup modulus. Bind this alias to the same packet as the producer even
@@ -55,6 +70,10 @@ struct ExplicitOperandParams { uint n_tokens; uint source_len; uint n_hir_nodes;
 ConstantBuffer<ExplicitOperandParams> gExplicitOperandParams;
 uint explicit_operand_hir_capacity() { return gExplicitOperandParams.n_hir_nodes; }
 uint explicit_operand_token_capacity() { return gExplicitOperandParams.n_tokens; }
+public uint explicit_operand_name_id(uint token)
+{
+    return token < explicit_operand_token_capacity() ? explicit_operand_name_ids[token] : 0xffffffffu;
+}
 
 // Binding aliases reuse existing immutable lexical facts. The include owns
 // scope traversal and name lookup; this adapter adds no competing lookup rule.
@@ -150,6 +169,15 @@ bool explicit_operand_inside_body(uint node)
 public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
     TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
 {
+    return checked_scoped_named_constant_operand(type_refs, ModuleScopeOperandNames(), node,
+        expected_scalar, kind, value);
+}
+
+public bool checked_scoped_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
+    BodyNames : IExplicitOperandBodyNames>(
+    TypeRefs type_refs, BodyNames body_names, uint node, uint expected_scalar,
+    out uint kind, out uint value)
+{
     kind = 0u; value = 0xffffffffu;
     if (expected_scalar != 0u && !constant_scalar_is_supported(expected_scalar)) return false;
     uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
@@ -192,7 +220,8 @@ public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
         if (lexical_parameter_row(node, name, 1u) < parameters) return false;
         // Early nominal checking precedes canonical lexical value resolution.
         // Do not accidentally bind a module constant shadowed by a body local.
-        if (explicit_operand_inside_body(node)) return false;
+        if (explicit_operand_inside_body(node) && !body_names.body_name_unshadowed(name))
+            return false;
     }
     if (explicit_operand_resolved_value_status[path] != 0u) return false;
     uint3 concrete;
@@ -230,10 +259,20 @@ public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
 public bool checked_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
     TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
 {
+    return checked_scoped_explicit_constant_operand(type_refs, ModuleScopeOperandNames(), node,
+        expected_scalar, kind, value);
+}
+
+public bool checked_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
+    BodyNames : IExplicitOperandBodyNames>(
+    TypeRefs type_refs, BodyNames body_names, uint node, uint expected_scalar,
+    out uint kind, out uint value)
+{
     kind = 0u; value = 0xffffffffu;
     if (!constant_scalar_is_supported(expected_scalar)) return false;
     uint3 literal;
     if (checked_source_literal_value(node, expected_scalar, literal))
         return publish_explicit_constant_atom(node, literal, kind, value);
-    return checked_named_constant_operand(type_refs, node, expected_scalar, kind, value);
+    return checked_scoped_named_constant_operand(type_refs, body_names, node, expected_scalar,
+        kind, value);
 }

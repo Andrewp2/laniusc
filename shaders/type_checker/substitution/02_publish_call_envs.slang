@@ -33,10 +33,32 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_generic_claim_arg_row;
 StructuredBuffer<uint> call_arg_row_literal_context_mask;
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> type_decl_generic_param_count;
 
 static const uint INVALID = 0xffffffffu;
 
 uint hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
+bool valid_node(uint node) { return node < hir_count(); }
+bool valid_token(uint token) { return token < gParams.n_tokens; }
+
+#include "../calls/callable_generic_requirements.slang"
+
+// The low `count` bits.
+uint low_bits(uint count) { return count == 0u ? 0u : 0xffffffffu >> (32u - min(count, 32u)); }
+
+// The candidate type and constant slots of a call: its callee's composed
+// arity (a method's own parameters and its impl's) once the callee is
+// resolved, else every slot. A non-generic call then publishes the empty
+// environment without visiting a slot.
+uint2 candidate_masks(uint token)
+{
+    if (call_dependency_library_id[token] == INVALID && !valid_token(call_fn_index[token]))
+        return uint2(0xffffffffu, 0xffffffffu);
+    uint2 counts = required_callable_generic_counts(token);
+    return uint2(low_bits(counts.x), low_bits(counts.y));
+}
 
 // Numeric literals can receive context within their category; named values,
 // Boolean literals and structural values keep their known types.
@@ -144,12 +166,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     CallEnvBindings bindings;
     bindings.token = token;
     bindings.spare = CT_NONE;
+    uint2 masks = candidate_masks(token);
     for (uint which = 0u; which < 2u; which++)
     {
         bindings.which = which;
         uint prior = which == 0u ? published.x : published.y;
-        // Every slot is a candidate; an unbound one is a hole.
-        uint environment = ct_env_publish(bindings, 0xffffffffu, 0xffffffffu,
+        // An unbound candidate slot is a hole.
+        uint environment = ct_env_publish(bindings, masks.x, masks.y,
             CT_ENV_PARTIAL, prior, spare);
         if (!ct_is_resolved(environment) || environment == prior) continue;
         if (which == 0u) call_env_ct[token].x = environment;
