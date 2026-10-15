@@ -59,7 +59,6 @@
 51727 type_checker/type/instances/05b_array_literal_return_refs
 51540 tests/owned_type_constraints_coverage
 49216 tests/canonical_type_constraint_boundary
-48620 type_checker/modules/10j_consume_value_enum_units
 48528 type_checker/predicates/01f2_validate_imported_methods
 47765 type_checker/program_evidence/entries/52_resolve_work
 47605 type_checker/methods/08_finalize_candidates
