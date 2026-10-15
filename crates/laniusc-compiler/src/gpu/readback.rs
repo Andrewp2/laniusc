@@ -536,6 +536,26 @@ mod lifecycle_tests {
             .read_regions(&gpu.device, &gpu.queue, &regions, "gather test")
             .unwrap();
         assert_eq!(read, expected);
+
+        // Other regions of the same sources reuse the gather's bind groups;
+        // their pair ranges must still come out right.
+        let mut regions = Vec::new();
+        let mut expected = Vec::new();
+        for i in 0..150u64 {
+            let (buffer, seed) = if i % 2 == 0 { (&first, 7u8) } else { (&second, 101u8) };
+            let offset = (i * 76 + 8) % 8000 / 4 * 4;
+            let len = [8usize, 4, 2, 16][i as usize % 4];
+            regions.push(ReadbackRegion::from_buffer(buffer, offset, len, "gather region").unwrap());
+            expected.push(
+                (offset as usize..offset as usize + len)
+                    .map(|b| (b as u8).wrapping_mul(31).wrapping_add(seed))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let read = readback
+            .read_regions(&gpu.device, &gpu.queue, &regions, "gather test again")
+            .unwrap();
+        assert_eq!(read, expected);
         assert!(pollster::block_on(validation.pop()).is_none());
     }
 }

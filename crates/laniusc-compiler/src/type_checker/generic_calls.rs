@@ -825,6 +825,25 @@ pub(crate) fn dependency_method_requirements(
     (types <= 32 && constants <= 32).then_some((types, constants))
 }
 
+/// Trace spans for the unit snapshot's stages, so the host work between its
+/// readbacks shows up in a profile. Each span includes its stage's readback.
+struct UnitFactsHostTimer(Option<std::time::Instant>);
+
+impl UnitFactsHostTimer {
+    fn new() -> Self {
+        Self(crate::gpu::trace::enabled().then(std::time::Instant::now))
+    }
+
+    fn stamp(&mut self, stage: &str) {
+        if let Some(last) = self.0 {
+            let now = std::time::Instant::now();
+            let name = format!("generic_calls.unit_facts.{stage}");
+            crate::gpu::trace::record_host_span("host.compiler", &name, last, now);
+            self.0 = Some(now);
+        }
+    }
+}
+
 pub(super) fn words(bytes: &[u8]) -> Vec<u32> {
     bytes
         .chunks_exact(4)
@@ -1627,6 +1646,7 @@ pub(super) fn read_unit_facts(
     let Some(inputs) = semantic.generic_call_inputs.as_ref() else {
         return Ok(CheckedUnitFacts::default());
     };
+    let mut timer = UnitFactsHostTimer::new();
     // This page is physical staging only. Each read copies the current accepted
     // rows while the caller holds the resident pipeline lock; no facts survive
     // here between jobs. Resident workspace trim clears the owning cache.
@@ -1705,6 +1725,7 @@ pub(super) fn read_unit_facts(
         ],
         "generic call counts",
     )?;
+    timer.stamp("counts");
     // Inactive producer families may share reused scratch. Current job flags,
     // not previous buffer contents, determine whether those counts are valid.
     let claim_count = if inputs.call_facts_active {
@@ -1857,6 +1878,7 @@ pub(super) fn read_unit_facts(
         .iter()
         .map(|bytes| words(bytes))
         .collect::<Vec<_>>();
+    timer.stamp("claims");
     // The compact producer owns all three columns. Invalid spans must fail
     // retention rather than silently remove a call from program obligations.
     let mut call_spans = BTreeMap::new();
@@ -2017,6 +2039,7 @@ pub(super) fn read_unit_facts(
     if let Some(regions) = contract_metadata {
         metadata_regions.extend(regions);
     }
+    timer.stamp("plan_rows");
     let metadata = readback
         .read_regions(device, queue, &metadata_regions, "generic call rows")?
         .iter()
@@ -2034,6 +2057,7 @@ pub(super) fn read_unit_facts(
         &nominal_headers,
         &metadata[nominal_metadata_start..caller_metadata_start],
     )?;
+    timer.stamp("rows");
     // Both result domains share one sparse mask readback. Masks own validity;
     // unpublished context payload cells need no initialization or readback.
     let mut context_masks = vec![0; call_ids.len()];
@@ -2150,6 +2174,7 @@ pub(super) fn read_unit_facts(
             });
         }
     }
+    timer.stamp("masks_and_owners");
     let mut contracts = if interface_exported {
         checked_contracts::read_contracts(
             &readback,
@@ -2179,6 +2204,7 @@ pub(super) fn read_unit_facts(
             },
         )?;
     }
+    timer.stamp("contracts");
     if call_ids.is_empty() {
         return Ok(CheckedUnitFacts {
             generic_calls: Vec::new(),
@@ -2418,6 +2444,7 @@ pub(super) fn read_unit_facts(
     for &token in &local_tokens {
         specialization_symbols.insert(token, 0x4000_0000 | token);
     }
+    timer.stamp("local_lookups");
     let mut calls = BTreeMap::new();
     for (&call_hir, record) in call_ids.iter().zip(call_records) {
         let target = match record[11] {
@@ -2667,6 +2694,7 @@ pub(super) fn read_unit_facts(
             call.arguments.sort_by_key(|arg| arg.slot);
         }
     }
+    timer.stamp("calls");
     let native_call_owners: Vec<_> = call_ids
         .iter()
         .enumerate()
@@ -2694,6 +2722,7 @@ pub(super) fn read_unit_facts(
     }
     let call_owners = native_call_owners.iter().copied()
         .filter(|owner| calls.contains_key(&owner.call_hir)).collect();
+    timer.stamp("owners");
     Ok(CheckedUnitFacts {
         generic_calls: calls.into_values().collect(),
         contracts,
