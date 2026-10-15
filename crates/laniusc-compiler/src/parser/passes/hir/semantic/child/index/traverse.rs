@@ -5,7 +5,8 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Computes each semantic row's sibling index with a local predecessor walk.
+/// Computes each semantic row's sibling index with a range query over the
+/// child-index heaps.
 pub struct HirSemanticChildIndexTraversePass {
     data: PassData,
 }
@@ -51,12 +52,16 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticChild
                 b.hir_semantic_parent.as_entire_binding(),
             ),
             (
-                "hir_semantic_first_child".into(),
-                b.hir_semantic_first_child.as_entire_binding(),
+                "hir_semantic_child_local".into(),
+                b.hir_semantic_child_local.as_entire_binding(),
             ),
             (
-                "hir_semantic_next_sibling".into(),
-                b.hir_semantic_next_sibling.as_entire_binding(),
+                "hir_semantic_child_blocks".into(),
+                b.hir_semantic_child_blocks.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_child_top".into(),
+                b.hir_semantic_child_top.as_entire_binding(),
             ),
             (
                 "hir_semantic_child_index".into(),

@@ -3,10 +3,12 @@ implemented yet. Run with `tools/generics_matrix.py --probes tests/fixtures/gene
 When a probe passes, move it to `tests/fixtures/generics_matrix/`.
 
 Probes:
-- b00: a generic impl method called through a `T: Area` bound ("call resolution failed").
 - b01: a where-clause bound on a concrete subject (`where bool: Inner<[i32; M]>`).
   The predicates collector admits only type-parameter subjects (LNC0008). Moved out
   of the matrix (was p26); the code-38 impl-head fix it also needed is covered by p27.
+- b02: a bound proved through two levels of a generic impl
+  (`total(Twice { inner: Twice { inner: Rect {..} } })`, `impl<T> Area for Twice<T>
+  where T: Area`). The call fails LNC0008 (no matching impl); one level is p30.
 
 Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
@@ -46,8 +48,6 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
   Blocks a generic unwrap or expect; no existing module panics.
 
-Known gaps that need multi-file probes (not runnable by the single-file matrix yet):
-- A trait from another source-root module implemented in the caller module:
-  `pub impl gen::lib::Score for Rec` fails with LNC0007 (unknown type at the
-  trait path), and `import gen::lib; pub impl Score for Rec` fails with
-  LNC0021. Repros by P10 in its scratchpad (p10/xmod/x1..x5).
+Passed and moved to the matrix: b00 (a generic impl method called through a
+`T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
+P10 found (x1..x5) are the directory probes m00..m05.

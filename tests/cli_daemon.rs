@@ -520,6 +520,94 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
 }
 
 #[test]
+fn cli_daemon_traced_compile_stamps_every_dispatch() {
+    let source = common::temp_artifact_path("laniusc_daemon_trace", "source", Some("lani"));
+    let artifact = common::temp_artifact_path("laniusc_daemon_trace", "artifact", None);
+    let repeat_artifact = common::temp_artifact_path("laniusc_daemon_trace", "repeat", None);
+    let trace = common::temp_artifact_path("laniusc_daemon_trace", "trace", Some("json"));
+    let requests = common::temp_artifact_path("laniusc_daemon_trace", "requests", Some("jsonl"));
+    fs::write(
+        &source,
+        "fn main() -> i32 {\n    print(7);\n    return 0;\n}\n",
+    )
+    .expect("write traced daemon source fixture");
+    let compile = |id: &str, output: &PathBuf| {
+        serde_json::json!({
+            "id": id,
+            "command": "compile",
+            "emit": "x86_64",
+            "input": source,
+            "output": output,
+        })
+    };
+    let shutdown = serde_json::json!({"id": "shutdown", "command": "shutdown"});
+    fs::write(
+        &requests,
+        format!(
+            "{}\n{}\n{shutdown}\n",
+            compile("cold", &artifact),
+            compile("warm", &repeat_artifact)
+        ),
+    )
+    .expect("write traced daemon request fixture");
+
+    let stdin = fs::File::open(&requests).expect("open traced daemon request fixture");
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("daemon")
+        .arg("--stdio")
+        .arg("--backend")
+        .arg("x86_64")
+        .arg("--stdlib-root")
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+        .env("LANIUS_PERFETTO_TRACE", &trace)
+        .stdin(Stdio::from(stdin));
+    let output =
+        common::codegen_command_output_with_timeout("laniusc traced daemon job", &mut command);
+    common::assert_command_success("laniusc traced daemon job", &output);
+    let daemon_stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let responses = String::from_utf8(output.stdout)
+        .expect("daemon stdout should be UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("daemon response JSON"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(responses.len(), 4, "ready, two compiles and shutdown: {responses:?}");
+    for response in &responses[1..3] {
+        // A traced job fails unless every recorded dispatch has a timestamp.
+        assert_eq!(
+            response["ok"], true,
+            "traced compile response: {response}\ndaemon stderr:\n{daemon_stderr}"
+        );
+        let dispatches = response["recorded_compute_dispatches_during_job"]
+            .as_u64()
+            .expect("traced compile reports its dispatches");
+        assert!(dispatches > 0, "traced compile recorded no dispatches: {response}");
+        assert_eq!(
+            response["operation_timestamps_during_job"].as_u64(),
+            Some(dispatches),
+            "traced compile response: {response}"
+        );
+    }
+    let trace_text = fs::read_to_string(&trace).expect("daemon writes the trace at shutdown");
+    for job in ["daemon.job.cold", "daemon.job.warm"] {
+        assert!(trace_text.contains(job), "trace has no {job} span");
+    }
+    for path in [&artifact, &repeat_artifact] {
+        let run = common::short_process_output_with_timeout(
+            "run traced daemon-emitted x86 artifact",
+            &mut Command::new(path),
+        );
+        common::assert_command_success("run traced daemon-emitted x86 artifact", &run);
+        assert_eq!(run.stdout, b"7\n");
+    }
+
+    for path in [source, artifact, repeat_artifact, trace, requests] {
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[test]
 fn cli_daemon_first_wasm_job_creates_no_pipelines_and_runs() {
     common::require_node();
 

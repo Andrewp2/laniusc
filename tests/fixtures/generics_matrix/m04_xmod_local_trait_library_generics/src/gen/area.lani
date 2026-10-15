@@ -1,0 +1,26 @@
+module gen::area;
+
+import gen::lib;
+
+pub struct Rec {
+    f0: i32,
+}
+
+trait Local {
+    fn local(self) -> i32;
+}
+
+impl Local for Rec {
+    fn local(self) -> i32 {
+        return self.f0 + 2;
+    }
+}
+
+fn local_of<T>(value: T) -> i32 where T: Local {
+    return value.local();
+}
+
+pub fn evaluate() -> i32 {
+    let b: gen::lib::Box<Rec> = gen::lib::boxed(Rec { f0: 40 });
+    return local_of(gen::lib::unbox(b));
+}

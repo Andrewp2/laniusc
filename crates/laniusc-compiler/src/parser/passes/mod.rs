@@ -276,6 +276,12 @@ pub struct ParserPasses {
         hir::semantic::parent::traverse::HirSemanticParentTraversePass,
     pub hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation,
     pub hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass,
+    pub hir_semantic_child_index_rows:
+        hir::semantic::child::index::index_tree::HirSemanticChildIndexRowsPass,
+    pub hir_semantic_child_index_blocks:
+        hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass,
+    pub hir_semantic_child_index_top:
+        hir::semantic::child::index::index_tree::HirSemanticChildIndexTopPass,
     pub hir_semantic_child_index_traverse:
         hir::semantic::child::index::traverse::HirSemanticChildIndexTraversePass,
     pub hir_record_clear_base: hir::record::clear::base::HirRecordClearBasePass,
@@ -307,6 +313,9 @@ pub struct ParserPasses {
     pub hir_canonical_stmt_compact: hir::canonical::stmt_compact::HirCanonicalStmtCompactPass,
     pub hir_canonical_identity_aliases:
         hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass,
+    pub hir_canonical_end_rows: hir::canonical::parent::HirCanonicalEndRowsPass,
+    pub hir_canonical_end_blocks: hir::canonical::parent::HirCanonicalEndBlocksPass,
+    pub hir_canonical_end_top: hir::canonical::parent::HirCanonicalEndTopPass,
     pub hir_canonical_core: hir::canonical::core::HirCanonicalCorePass,
     pub hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass,
     pub hir_canonical_expr_forest_edges:
@@ -503,6 +512,18 @@ impl ParserPasses {
                 device,
             )?,
             hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass::new(device)?,
+            hir_semantic_child_index_rows:
+                hir::semantic::child::index::index_tree::HirSemanticChildIndexRowsPass::new(
+                    device,
+                )?,
+            hir_semantic_child_index_blocks:
+                hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass::new(
+                    device,
+                )?,
+            hir_semantic_child_index_top:
+                hir::semantic::child::index::index_tree::HirSemanticChildIndexTopPass::new(
+                    device,
+                )?,
             hir_semantic_child_index_traverse:
                 hir::semantic::child::index::traverse::HirSemanticChildIndexTraversePass::new(
                     device,
@@ -554,6 +575,10 @@ impl ParserPasses {
                 hir::canonical::stmt_compact::HirCanonicalStmtCompactPass::new(device)?,
             hir_canonical_identity_aliases:
                 hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass::new(device)?,
+            hir_canonical_end_rows: hir::canonical::parent::HirCanonicalEndRowsPass::new(device)?,
+            hir_canonical_end_blocks:
+                hir::canonical::parent::HirCanonicalEndBlocksPass::new(device)?,
+            hir_canonical_end_top: hir::canonical::parent::HirCanonicalEndTopPass::new(device)?,
             hir_canonical_core: hir::canonical::core::HirCanonicalCorePass::new(device)?,
             hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass::new(device)?,
             hir_canonical_expr_forest_edges:
@@ -1022,6 +1047,15 @@ pub fn record_canonical_hir_materialization(
         "parser.hir_canonical.params_and_type_args",
     );
 
+    p.hir_canonical_end_rows
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    p.hir_canonical_end_blocks.record_pass(
+        ctx,
+        E1D(hir::canonical::parent::leaf_base(
+            ctx.buffers.hir_canonical_capacity,
+        )),
+    )?;
+    p.hir_canonical_end_top.record_pass(ctx, E1D(256))?;
     p.hir_canonical_core
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
