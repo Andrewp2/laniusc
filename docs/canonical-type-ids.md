@@ -581,6 +581,156 @@ claims of one symbolic count (`N as u8` retargeted to `u64`, then `N: u64`)
 are admitted, then the exact claim `N: u64` is accepted and holds the slot. It used to expect
 the exact claim to be rejected, which disagreed with the code.
 
+### Matching (P4, 2026-10-14)
+
+`shaders/type_checker/match/ct_match.slang` matches a declared pattern
+against an actual type, both as canonical IDs, and binds the pattern's
+parameters so that the pattern under the bindings is the actual. It
+replaces `scoped_type_and_constant_constraints`,
+`canonical_type_and_constant_constraints` and the receiver pattern helpers.
+
+```
+uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
+    uint pattern1, uint actual1, uint prior, uint flags, bool intern,
+    inout CtSpare spare, out uint count_mask)
+```
+
+- **Two roots.** Up to two (pattern, actual) pairs are matched jointly
+  (`pattern1 = CT_NONE` for one), so a typed self parameter and an impl
+  root bind one environment. `prior` (a `CT_ENV`, or `CT_NONE`) binds slots
+  in advance; a pattern slot it binds is checked as an exact claim.
+- **Any number of roots.** `ct_match_roots<S, R : ICtRoots>(slots, inout
+  roots, prior, intern, spare, count_mask)` takes its roots from a provider:
+  `count()`, and `root(i, out pattern, out actual, out slice)` with a slice
+  flag per root (both IDs `CT_NONE`: no root; false fails the match). The
+  claims of all roots merge as one pattern's would. Every pass asks for
+  every root again, so a provider recomputes its roots instead of storing
+  them. `ct_match` is the two-root provider.
+- **Result.** With `intern`, the interned `CT_ENV` of every slot the
+  patterns use (words `(0, type mask, constant mask)`, arguments the bound
+  type slots, then the bound constant slots). Without it, `CT_MATCH_OK`.
+  `CT_MATCH_FAILED` when they do not match, `CT_MATCH_OVERFLOW` when
+  interning failed. `count_mask` is the constant slots that have count claims
+  only.
+- **Slots.** Type and constant parameters have separate slot numbers
+  (`impl<T, const N: usize>`: T is type slot 0, N constant slot 0). A local
+  leaf's slot and declared scalar come from the kernel's own tables through
+  `ICtSlots` (`substitution/ct_spare.slang`). A dependency leaf carries both.
+- **What is visited.** Only open pattern nodes. A closed child is compared
+  by ID; heads are compared as a whole (kind, arity, type slots, words), so
+  named types compare their declarations and casts their targets. A root
+  slice pattern accepts an actual array with `CT_MATCH_SLICE_ROOT0/1`.
+- **Constants.** A named constant operand or a cast operand is an exact
+  claim (the actual typed constant, in the declared scalar). An array
+  length is a count claim (the actual length's count class, which must fit
+  the declared scalar). All claims of a slot share one count class, all
+  exact claims one ID, and an exact claim wins ("Constant claims" above). A
+  slot with count claims only is bound to the count in the declared scalar:
+  a value, the counted parameter itself, or a cast of it, which keeps its
+  pending fit. Every actual array keeps its own fit obligations.
+- **No stack, no lane array.** A shape pass checks heads and closed children
+  and collects the slot masks. Then one pass per bound slot folds that
+  slot's occurrences. Each pass walks the pattern by re-descending from the
+  root along a packed child path (5 bits per level, depth 24). The child
+  selection is a helper that returns the next open child: slangc 2026.2
+  miscompiles a loop that carries a sentinel out of a `break`.
+- **Deviations from the scoped engines.** A cast in a pattern's array length
+  is erased by its count class. A pattern cast does not accept an actual
+  value of the same count. Local and imported spellings of one nominal type
+  are one ID.
+
+`tests/ct_match_cases` (GPU test `physical_gpu_ct_match_cases`, or CPU
+replay of a synthetic capture) checks 25 cases: repeated parameters, shared
+slot numbers, prior bindings, exact over count claims, count classes and
+symbolic casts, the slice coercion, two roots, and that matching the same
+pair twice returns the same environment.
+
+Converted consumers:
+
+- `methods/05_validate_keys`: alpha-equivalent receivers match each other
+  both ways (ID comparison, no interning).
+- `methods/07_resolve_table` and `dependencies/15a_collect_methods`: the
+  receiver against each candidate's receiver pattern, with a typed self
+  parameter as the second root. The receiver is interned once
+  (`ct_intern_checked`), since inference produces it.
+- `calls/03d_bind_method_receiver_environment`: the receiver (phase 0) and
+  the self argument (phase 1, with the phase 0 environment as `prior`)
+  against the method's patterns; the bindings become the call's context.
+- `dependencies/08a_validate_call_results`: the declared result pattern
+  against the receiving type, then an imported canonical result against it
+  under the call's claims.
+- `calls/03k3_project_record_contexts`: a record literal without a
+  receiving type matches its declared field types jointly against its field
+  values (`ct_match_roots`, one root per field, each with the slice
+  coercion), and the bindings become its context. A field whose value has
+  no type yet is no root. A mismatch in the final round matches growing
+  prefixes to report the first conflicting field, as the field-by-field
+  merge did. Field lookup errors are now reported before any field is
+  matched, so a literal with both a lookup error and an earlier mismatch
+  reports the lookup error.
+- `dependencies/08_validate_call_args` substitutes instead of matching: the
+  parameter's declared type under the call's value environment
+  (`call_env_ct`, lookup only) must be the argument's ID; a declared slice
+  root compares elements with an array argument. The passing mode is the
+  bound type's kind. `type_check.match.call_envs.validation` republishes the
+  call environments right before dependency call validation, since the
+  final inference round admits context constants after its own
+  publication.
+- `calls/03a1_emit_generic_claims`: each argument's parameter pattern
+  against the argument's type (slice coercion at the root). A pattern that
+  is a type parameter with an explicit binding is checked against the bound
+  type instead; a bound slice accepts an array of the same element. The
+  bindings become the argument's claim span, each claim spelled by the row
+  `ct_realize` gives its ID (constants as typed constant rows), and a
+  constant slot's identity mode is exact unless it has count claims only.
+
+A kernel keeps one `ct_intern_checked` site, one `ct_match` site and one
+publisher site (each site inlines a full copy): the operands it interns and
+the publisher's requests share one loop.
+
+#### Publishing a match (`match/ct_context_publish.slang`)
+
+`ct_publish_context<C : ICtClaims>(call, token, env, types, constants,
+count_mask, flags, interned, out request)` writes the bindings of `env` in
+the slot masks as call `call`'s context (`call_context_ref_*`,
+`call_context_constant_*`, the masks). Pass 0 checks every slot and gives
+each binding a checked operand, pass 1 writes, so a rejected publication
+writes nothing.
+
+- **Priors.** `CT_PUBLISH_TYPE_PRIORS`: the call's explicit and contextual
+  types must equal the bindings. `CT_PUBLISH_ENV_CONSTANTS`: constants merge
+  with the call environment's binding. The context table's claim of the same
+  identity mode is replaced; a claim of the other mode must be compatible
+  and the exact one is kept ("Constant claims"). `CT_PUBLISH_CLAIMS`: the
+  argument claims (`C`) bind the pattern already, so a claimed type slot is
+  checked, not written, and every constant slot must agree with the call's
+  binding. `CT_PUBLISH_ADMIT` sets the constants' valid bits.
+- **Spelling.** A binding is written as an existing operand of its ID when a
+  prior spells it, else as the row `ct_realize` gives the ID.
+- **No interning inside.** A prior operand without an ID ends the call with
+  `CT_PUBLISH_INTERN` and the operand in `request`. The caller interns it at
+  its own site and calls again with `interned = (operand, ID)`. An operand
+  that does not intern agrees with no binding, so the caller rejects instead.
+  A same-mode context claim only lends its spelling and is never requested.
+- **Outcomes.** `CT_PUBLISHED`, `CT_PUBLISH_REJECTED`, `CT_PUBLISH_BUSY` (a
+  row another lane is writing: retry next round), `CT_PUBLISH_CAPACITY` (the
+  caller records ERR 6, 0x474e0001). Callers own the owner tokens.
+
+#### Struct-literal field expectations (`match/field_expected.slang`)
+
+`struct_init_field_expected_ct[field token]` is the field's expected type in
+caller scope: `ct_subst` of its declaration-side reference under the
+literal's application, with a checked row realized for it. `CT_NONE` when
+the field has no context instance (its reference is already in caller
+scope), `CT_UNKNOWN` when the substitution failed. `match/01_field_expected_ids`
+writes every token after each `04_struct_init_fields` that a reader follows
+(before call inference and in each inference round; `match_passes.rs`).
+Readers take the row with `ct_realized_ref` instead of the scoped hash walk
+of `instance_scoped_reference`; 08a and 03k3 do so by defining
+`CANONICAL_FIELD_EXPECTATION` before including
+`result_expression_context.slang`. A field whose substituted type had no row
+used to give no context; it now gets the realized row.
+
 ### API (frozen for P3–P5)
 
 The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
