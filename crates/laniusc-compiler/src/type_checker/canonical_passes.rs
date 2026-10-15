@@ -103,9 +103,11 @@ pub(super) const CANONICAL_COUNT_PENDING: usize = 2;
 pub(super) const CANONICAL_COUNT_OVERFLOW: usize = 3;
 pub(super) const CANONICAL_COUNT_ROUND: usize = 4;
 /// `CT_OVERFLOW_*` bits a larger table fixes: the slot table, the records
-/// and the argument words. `CT_OVERFLOW_ROUNDS` (8) is a height limit that
-/// no capacity changes, so it never retries.
-pub(super) const CANONICAL_RETRY_OVERFLOW_BITS: u32 = 1 | 2 | 4;
+/// and the argument words, and (16, `CT_OVERFLOW_SUBST_MEMO` in
+/// ct_subst.slang) the substitution memo, which grows with the scale
+/// (`substitution_passes::memo_entries`). `CT_OVERFLOW_ROUNDS` (8) is a
+/// height limit that no capacity changes, so it never retries.
+pub(super) const CANONICAL_RETRY_OVERFLOW_BITS: u32 = 1 | 2 | 4 | 16;
 /// Largest canonical capacity scale. Each retry doubles the scale; past this
 /// limit an overflow fails the job instead of retrying it. At this scale the
 /// dynamic records and the argument words reach their worst-case bounds.

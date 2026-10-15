@@ -42,9 +42,17 @@ static const uint CT_SUBST_WORK_LIMIT = 1024u;
 static const uint CT_SUBST_DEPTH_LIMIT = 64u;
 static const uint CT_SUBST_PROBE_LIMIT = 64u;
 
+// The canonical overflow bit of a full memo. The host reads ct_counts after
+// every canonical batch; the late stage runs after every substitution
+// producer, so a full memo abandons the job and records it again with a
+// larger memo (canonical_passes.rs, CANONICAL_RETRY_OVERFLOW_BITS).
+public static const uint CT_OVERFLOW_SUBST_MEMO = 16u;
+
 public void ct_subst_flag(uint bits)
 {
     InterlockedOr(ct_subst_counts[CT_SUBST_COUNT_OVERFLOW], bits);
+    if ((bits & CT_SUBST_OVERFLOW_MEMO) != 0u)
+        InterlockedOr(ct_counts[CT_COUNT_OVERFLOW], CT_OVERFLOW_SUBST_MEMO);
 }
 
 // ---------------------------------------------------------------------------

@@ -77,9 +77,14 @@ pub(super) fn substitution_canonical_extra(hir_rows: u64) -> (u64, u64) {
     (records, argument_words)
 }
 
-/// Memo entries: a power of two, at least two per HIR row.
-fn memo_entries(hir_rows: u64) -> u64 {
-    (2 * hir_rows).max(4096).next_power_of_two()
+/// Largest memo growth: a retry past this canonical scale keeps the memo.
+const MEMO_MAX_SCALE: u32 = 16;
+
+/// Memo entries: a power of two, at least two per HIR row, times the
+/// canonical scale. A full memo sets `CT_OVERFLOW_SUBST_MEMO`, which records
+/// the job again at twice the scale (`CANONICAL_RETRY_OVERFLOW_BITS`).
+pub(super) fn memo_entries(hir_rows: u64, scale: u32) -> u64 {
+    ((2 * hir_rows).max(4096) * u64::from(scale.clamp(1, MEMO_MAX_SCALE))).next_power_of_two()
 }
 
 fn storage(
@@ -99,8 +104,9 @@ pub(super) fn register_substitution_passes(
     token_rows: u64,
     hir_rows: u64,
     records: u64,
+    scale: u32,
 ) -> Result<(), String> {
-    storage(graph, "ct_subst_memo", memo_entries(hir_rows) * 16)?;
+    storage(graph, "ct_subst_memo", memo_entries(hir_rows, scale) * 16)?;
     storage(graph, "ct_subst_counts", SUBSTITUTION_COUNT_WORDS * 4)?;
     storage(graph, "ct_row_of", records.max(1) * 4)?;
     storage(graph, "call_env_ct", token_rows.max(1) * 8)?;

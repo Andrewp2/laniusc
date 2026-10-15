@@ -530,6 +530,8 @@ mod resident_typecheck_cache_key_tests {
         assert_eq!(canonical_retry_scale(1, 1), Some(2));
         assert_eq!(canonical_retry_scale(4, 4 | 8), Some(8));
         assert_eq!(canonical_retry_scale(1, 8), None);
+        // A full substitution memo (CT_OVERFLOW_SUBST_MEMO) also retries.
+        assert_eq!(canonical_retry_scale(2, 16), Some(4));
         assert_eq!(canonical_retry_scale(1, 0), None);
         assert_eq!(canonical_retry_scale(CANONICAL_MAX_SCALE, 2), None);
     }

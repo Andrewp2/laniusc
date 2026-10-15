@@ -5145,6 +5145,7 @@ fn build_graph(
         token_rows,
         hir_rows,
         canonical_records,
+        canonical_scale,
     )?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
