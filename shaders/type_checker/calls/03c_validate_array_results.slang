@@ -1,7 +1,3 @@
-import type_checker.checked_array_counts;
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
-import type_checker.calls.checked_constant_environment;
 // Compact-HIR array call-result validation.
 //
 // This pass runs after bounded generic array call inference. It keeps
@@ -12,15 +8,26 @@ import type_checker.calls.checked_constant_environment;
 // source bytes, token spelling, helper
 // names, or callee function bodies. Over-width call/parameter windows fail
 // closed before bounded cache slots are consumed.
+//
+// Types compare by canonical ID (docs/canonical-type-ids.md). Rows written
+// during inference are interned on demand, from one site per lane. An
+// argument's declared parameter array is substituted under the call's value
+// environment (call_env.slang) and compared with the actual array as a whole:
+// element and length count class.
 
 import hir_records;
-import external_type_identity;
-import type_checker.concrete_type_equality;
-import type_checker.instance_arguments;
+import status;
+import type_checker.checked_array_counts;
+import type_checker.checked_type_graph;
+import type_checker.checked_slots;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.checked_call_environment;
-import type_checker.scoped_type_equality;
-import status;
+import type_checker.calls.checked_constant_environment;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
+import type_checker.substitution.ct_subst;
+import type_checker.substitution.call_env;
 
 struct Params
 {
@@ -55,24 +62,9 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> method_call_name_id;
 
 StructuredBuffer<uint> call_return_generic_slot;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> call_return_type;
@@ -108,58 +100,6 @@ static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-
-public struct CheckedConcreteTypeGraph : IScopedTypeGraph
-{
-    public static bool constant_value(uint row, out uint3 value)
-    { return checked_constant_atom_value(row, value); }
-    public static uint constant_parameter_scalar(uint reference)
-    { return checked_constant_parameter_scalar(reference); }
-    public static bool constant_projection(uint row, out uint scalar, out uint2 child)
-    { return checked_constant_projection(row, scalar, child); }
-    public static bool parameter_is_valid(uint reference, bool constant)
-    { return source_parameter_is_valid<CheckedConcreteTypeGraph>(reference, constant); }
-    public static bool substitute_type_parameter(uint environment, uint reference, out uint tag, out uint payload)
-    { return source_substitute_type_parameter<CheckedConcreteTypeGraph>(environment, reference, tag, payload); }
-    public static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
-    { return source_substitute_constant_parameter<CheckedConcreteTypeGraph>(environment, reference, kind, value); }
-    public static uint constant_parameter_slot(uint token) { return type_const_param_slot_by_token[token]; }
-    public static bool environment_constant(uint environment, uint slot, out uint kind, out uint value)
-    { return checked_call_environment_constant_ref(environment, slot, kind, value); }
-    public static uint parameter_slot(uint token)
-    { return type_generic_param_slot_by_token[token]; }
-    public static bool environment_argument(uint environment, uint slot, out uint tag, out uint payload)
-    { return checked_call_environment_argument(environment, slot, tag, payload); }
-    public static uint metadata(uint instance, uint field)
-    {
-        switch (field)
-        {
-        case 0u: return type_instance_kind[instance];
-        case 1u: return type_instance_decl_token[instance];
-        case 2u: return type_instance_arg_count[instance];
-        case 3u: return type_instance_elem_ref_tag[instance];
-        case 4u: return type_instance_elem_ref_payload[instance];
-        case 5u: return type_instance_len_kind[instance];
-        case 6u: return type_instance_len_payload[instance];
-        case 7u: return external_type_library_id[instance];
-        case 8u: return external_type_unit_id[instance];
-        case 9u: return external_type_local_index[instance];
-        default: return INVALID;
-        }
-    }
-
-    public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
-    {
-        uint source_capacity; uint stride;
-        type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-        return checked_instance_argument(instance, slot, source_capacity,
-            type_instance_arg_count, type_instance_arg_start,
-            type_instance_arg_ref_tag, type_instance_arg_ref_payload,
-            type_instance_arg_row_start, type_instance_arg_row_count_out,
-            type_instance_arg_row_ref_tag, type_instance_arg_row_ref_payload, tag, payload);
-    }
-}
-
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -328,40 +268,24 @@ bool call_window_fits_cache(uint callee_token, uint call_node)
     return false;
 }
 
-uint bounded_array_instance_from_ref(uint tag, uint payload)
+// Bounded-array lookups. A candidate is an array instance row whose length
+// descriptor is not checked yet; bounded_arrays keeps the candidates with a
+// valid descriptor, from one check site per lane.
+uint array_candidate(uint tag, uint payload)
 {
     if (tag != TYPE_REF_INSTANCE || !valid_instance(payload))
         return INVALID;
-    if (type_instance_kind[payload] != TYPE_INSTANCE_ARRAY)
-        return INVALID;
-
-    uint len_kind = type_instance_len_kind[payload];
-    if (!checked_source_array_length_valid(len_kind, type_instance_len_payload[payload], gParams.n_tokens))
-        return INVALID;
-    return payload;
+    return type_instance_kind[payload] == TYPE_INSTANCE_ARRAY ? payload : INVALID;
 }
 
-uint array_instance_from_decl_token(uint decl_token)
+uint decl_array_candidate(uint decl_token)
 {
     if (!valid_token(decl_token))
         return INVALID;
-    return bounded_array_instance_from_ref(
-        decl_type_ref_tag[decl_token],
-        decl_type_ref_payload[decl_token]);
+    return array_candidate(decl_type_ref_tag[decl_token], decl_type_ref_payload[decl_token]);
 }
 
-uint array_instance_from_name_token(uint name_token)
-{
-    if (!valid_token(name_token))
-        return INVALID;
-    uint decl_token = visible_decl[name_token];
-    uint instance = array_instance_from_decl_token(decl_token);
-    return instance != INVALID || decl_token == name_token
-        ? instance
-        : array_instance_from_decl_token(name_token);
-}
-
-uint array_instance_from_callee_return(uint callee_token)
+uint callee_return_candidate(uint callee_token)
 {
     if (!valid_token(callee_token))
         return INVALID;
@@ -372,31 +296,46 @@ uint array_instance_from_callee_return(uint callee_token)
     if (!valid_token(decl_token))
         decl_token = callee_token;
 
-    return bounded_array_instance_from_ref(
-        fn_return_ref_tag[decl_token],
-        fn_return_ref_payload[decl_token]);
+    return array_candidate(fn_return_ref_tag[decl_token], fn_return_ref_payload[decl_token]);
 }
 
-uint array_instance_from_call_param_row(uint param_row)
+uint call_param_row_candidate(uint param_row)
 {
     if (param_row == INVALID || param_row >= call_param_row_count_out[0u])
         return INVALID;
-    return bounded_array_instance_from_ref(
-        call_param_row_ref_tag[param_row],
-        call_param_row_ref_payload[param_row]);
+    return array_candidate(call_param_row_ref_tag[param_row], call_param_row_ref_payload[param_row]);
 }
 
-bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
+// A name's candidates: its visible declaration's (.x) and its own (.y).
+uint2 name_array_candidates(uint name_token)
 {
-    if (lhs_tag == TYPE_REF_SCALAR || rhs_tag == TYPE_REF_SCALAR)
-        return lhs_tag == rhs_tag && lhs_payload == rhs_payload;
-    if (lhs_tag == TYPE_REF_GENERIC_PARAM && rhs_tag == TYPE_REF_GENERIC_PARAM)
+    if (!valid_token(name_token))
+        return uint2(INVALID, INVALID);
+    return uint2(decl_array_candidate(visible_decl[name_token]), decl_array_candidate(name_token));
+}
+
+uint4 bounded_arrays(uint4 candidates)
+{
+    uint4 bounded = uint4(INVALID, INVALID, INVALID, INVALID);
+    [loop]
+    for (uint index = 0u; index < 4u; index++)
     {
-        uint lhs_slot = valid_token(lhs_payload) ? type_generic_param_slot_by_token[lhs_payload] : INVALID;
-        uint rhs_slot = valid_token(rhs_payload) ? type_generic_param_slot_by_token[rhs_payload] : INVALID;
-        return lhs_slot != INVALID && lhs_slot == rhs_slot;
+        uint row = candidates[index];
+        if (row != INVALID && checked_source_array_length_valid(type_instance_len_kind[row],
+                type_instance_len_payload[row], gParams.n_tokens))
+            bounded[index] = row;
     }
-    return lhs_tag == rhs_tag && lhs_payload == rhs_payload;
+    return bounded;
+}
+
+// The bounded array declared for a name: its visible declaration's, else
+// its own when the name is not its own declaration. `bounded` holds the
+// checked name_array_candidates.
+uint name_bounded_array(uint name_token, uint2 bounded)
+{
+    if (!valid_token(name_token))
+        return INVALID;
+    return bounded.x != INVALID || visible_decl[name_token] == name_token ? bounded.x : bounded.y;
 }
 
 bool concrete_array_elem_ref(uint tag, uint payload)
@@ -430,13 +369,6 @@ uint array_type_code_from_instance(uint instance)
     return elem_ty == TY_UNKNOWN ? TY_UNKNOWN : TY_ARRAY_BASE + elem_ty;
 }
 
-bool same_array_len(uint lhs, uint rhs)
-{
-    return checked_source_array_lengths_equal(
-        uint2(type_instance_len_kind[lhs], type_instance_len_payload[lhs]),
-        uint2(type_instance_len_kind[rhs], type_instance_len_payload[rhs]), gParams.n_tokens);
-}
-
 bool concrete_bounded_array_instance(uint instance)
 {
     if (!valid_instance(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
@@ -447,100 +379,6 @@ bool concrete_bounded_array_instance(uint instance)
     return concrete_array_elem_ref(
         type_instance_elem_ref_tag[instance],
         type_instance_elem_ref_payload[instance]);
-}
-
-bool same_bounded_array_instance(uint lhs, uint rhs)
-{
-    if (!valid_instance(lhs) || !valid_instance(rhs))
-        return false;
-    if (type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
-        type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY)
-        return false;
-    return concrete_type_refs_equal<CheckedConcreteTypeGraph>(
-        TYPE_REF_INSTANCE, lhs, TYPE_REF_INSTANCE, rhs, type_capacity());
-}
-
-bool array_elem_matches_call_environment(
-    uint callee_token,
-    uint expected_instance,
-    uint actual_instance)
-{
-    uint expected_tag = type_instance_elem_ref_tag[expected_instance];
-    uint expected_payload = type_instance_elem_ref_payload[expected_instance];
-    uint actual_tag = type_instance_elem_ref_tag[actual_instance];
-    uint actual_payload = type_instance_elem_ref_payload[actual_instance];
-
-    // Parameter inference has accepted complete bindings. Compare the entire
-    // element under that environment, including nominal arguments and nested
-    // array/slice elements; scalar cache codes cannot represent these facts.
-    return scoped_type_refs_equal<CheckedConcreteTypeGraph>(
-        expected_tag, expected_payload, 0x80000000u | callee_token,
-        actual_tag, actual_payload, INVALID, type_capacity(), gParams.n_tokens);
-}
-
-bool array_len_matches_call_state(
-    uint row,
-    uint callee_token,
-    uint expected_instance,
-    uint actual_instance)
-{
-    return scoped_constant_counts_equal<CheckedConcreteTypeGraph, CheckedConcreteTypeGraph>(
-        uint3(type_instance_len_kind[expected_instance], type_instance_len_payload[expected_instance],
-            0x80000000u | callee_token),
-        uint3(type_instance_len_kind[actual_instance], type_instance_len_payload[actual_instance], INVALID),
-        gParams.n_tokens);
-}
-
-bool array_instance_matches_call_state(
-    uint row,
-    uint callee_token,
-    uint expected_instance,
-    uint actual_instance)
-{
-    if (!valid_instance(expected_instance) || !valid_instance(actual_instance))
-        return false;
-    if (type_instance_kind[expected_instance] != TYPE_INSTANCE_ARRAY ||
-        type_instance_kind[actual_instance] != TYPE_INSTANCE_ARRAY)
-        return false;
-    if (!concrete_bounded_array_instance(actual_instance))
-        return false;
-    return array_elem_matches_call_environment(callee_token, expected_instance, actual_instance) &&
-           array_len_matches_call_state(row, callee_token, expected_instance, actual_instance);
-}
-
-void validate_array_call_arg_row(uint row)
-{
-    if (row >= call_arg_row_count_out[0])
-        return;
-
-    uint call_node = call_arg_row_call_node[row];
-    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
-        return;
-
-    uint callee_token = call_callee_token(call_node);
-    if (!valid_token(callee_token))
-        return;
-    if (method_call_name_id[callee_token] != INVALID)
-        return;
-
-    uint expected_instance = array_instance_from_call_param_row(call_arg_param_row[row]);
-    if (expected_instance == INVALID)
-        return;
-    if (!call_window_fits_cache(callee_token, call_node))
-        return;
-
-    uint arg_node = call_arg_row_node[row];
-    uint actual_instance = array_instance_from_name_token(name_token_for_expr(arg_node));
-    if (!concrete_bounded_array_instance(actual_instance))
-        return;
-    if (array_instance_matches_call_state(row, callee_token, expected_instance, actual_instance))
-        return;
-
-    record_min_token_error(
-        status,
-        callee_token,
-        ERR_ASSIGN_MISMATCH,
-        TY_ARRAY_BASE * 256u + TY_UNKNOWN);
 }
 
 uint direct_generic_array_result(uint callee)
@@ -567,15 +405,88 @@ uint direct_generic_array_result(uint callee)
         ? instance : INVALID;
 }
 
-void validate_array_call_let(uint node)
+// One lane validates the let statement at its index and then the argument
+// row at its index. Each check first applies the old pre-comparison effects,
+// then names the rows it compares; the lane interns them from one site and
+// finishes the check with their IDs.
+static const uint CHECK_NONE = 0u;
+// The let's expected array against the checked call result (`other`).
+static const uint CHECK_LET_CHECKED = 1u;
+// Against the direct generic array claim (`other`); a match publishes it.
+static const uint CHECK_LET_GENERIC = 2u;
+// Against the declared return (`other`), then the actual result (`actual`).
+static const uint CHECK_LET_DECLARED = 3u;
+// The parameter array (`expected`) under the call's value environment
+// against the actual argument array (`other`).
+static const uint CHECK_ARGUMENT = 4u;
+
+struct ArrayCheck
 {
+    uint mode;
+    uint call_node;
+    uint callee_token;
+    uint decl_token;
+    uint expected;
+    uint other;
+    uint actual;
+    uint actual_ty;
+}
+
+ArrayCheck no_check()
+{
+    ArrayCheck check;
+    check.mode = CHECK_NONE;
+    check.call_node = INVALID;
+    check.callee_token = INVALID;
+    check.decl_token = INVALID;
+    check.expected = INVALID;
+    check.other = INVALID;
+    check.actual = INVALID;
+    check.actual_ty = TY_UNKNOWN;
+    return check;
+}
+
+// An array row that a same-array comparison may read, or INVALID.
+uint comparable_array(uint instance)
+{
+    return valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY
+        ? instance : INVALID;
+}
+
+bool same_id(uint left, uint right)
+{
+    return ct_is_resolved(left) && left == right;
+}
+
+// The let's candidates: expected (.x), declared return (.y) and the first
+// argument name's (.zw).
+uint4 let_candidates(uint node)
+{
+    uint4 candidates = uint4(INVALID, INVALID, INVALID, INVALID);
+    if (!valid_node(node) || stmt_slot(node, 0u) != STMT_RECORD_KIND_LET)
+        return candidates;
+    candidates.x = decl_array_candidate(stmt_slot(node, 1u));
+    uint call_node = resolve_expr(stmt_slot(node, 2u));
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
+        return candidates;
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token))
+        return candidates;
+    candidates.y = callee_return_candidate(callee_token);
+    candidates.zw = name_array_candidates(first_call_arg_name_token(callee_token, call_node));
+    return candidates;
+}
+
+ArrayCheck prepare_let(uint node, uint4 bounded)
+{
+    ArrayCheck check = no_check();
     if (!valid_node(node) ||
         stmt_slot(node, 0u) != STMT_RECORD_KIND_LET)
-        return;
+        return check;
 
     uint decl_token = stmt_slot(node, 1u);
     uint expected_ty = valid_token(decl_token) ? visible_type[decl_token] : TY_UNKNOWN;
-    uint expected_instance = array_instance_from_decl_token(decl_token);
+    uint expected_instance = bounded.x;
     if (expected_instance != INVALID)
     {
         uint instance_ty = array_type_code_from_instance(expected_instance);
@@ -583,62 +494,52 @@ void validate_array_call_let(uint node)
             expected_ty = instance_ty;
     }
     if (expected_instance == INVALID && !is_array_type(expected_ty))
-        return;
+        return check;
 
     uint expr_node = stmt_slot(node, 2u);
     uint call_node = resolve_expr(expr_node);
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
-        return;
+        return check;
 
     uint callee_token = call_callee_token(call_node);
     if (!valid_token(callee_token))
-        return;
+        return check;
     if (method_call_name_id[callee_token] != INVALID)
-        return;
+        return check;
     if (!call_window_fits_cache(callee_token, call_node))
-        return;
+        return check;
+    check.call_node = call_node;
+    check.callee_token = callee_token;
+    check.decl_token = decl_token;
+    check.expected = expected_instance;
     uint checked_result = call_result_instance[call_node];
     if (expected_instance != INVALID && valid_instance(checked_result) &&
         type_instance_kind[checked_result] == TYPE_INSTANCE_ARRAY)
     {
         // Complete local/imported return materialization is authoritative.
         // A dependency callee has no local fn_return_ref row to compare.
-        if (!concrete_type_refs_equal<CheckedConcreteTypeGraph>(TYPE_REF_INSTANCE, expected_instance,
-            TYPE_REF_INSTANCE, checked_result, type_capacity()))
-            record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
-                TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
-        return;
+        check.mode = CHECK_LET_CHECKED;
+        check.other = checked_result;
+        return check;
     }
     uint generic_instance = direct_generic_array_result(callee_token);
     if (generic_instance != INVALID && expected_instance != INVALID)
     {
-        if (concrete_type_refs_equal<CheckedConcreteTypeGraph>(TYPE_REF_INSTANCE, expected_instance,
-                TYPE_REF_INSTANCE, generic_instance, type_capacity()))
-        {
-            call_result_instance[call_node] = generic_instance;
-            return;
-        }
-        record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
-            TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
-        return;
+        check.mode = CHECK_LET_GENERIC;
+        check.other = generic_instance;
+        return check;
     }
     if (!is_array_type(call_return_type[callee_token]))
-        return;
+        return no_check();
 
     uint actual_ty = call_return_type[callee_token];
     bool specialize_symbolic_result = is_symbolic_array_type(actual_ty);
     if (specialize_symbolic_result && expected_ty != TY_UNKNOWN)
         call_return_type[callee_token] = expected_ty;
     if (expected_instance == INVALID)
-        return;
+        return no_check();
 
-    uint declared_instance = array_instance_from_callee_return(callee_token);
-    if (declared_instance != INVALID &&
-        same_bounded_array_instance(expected_instance, declared_instance))
-    {
-        return;
-    }
-
+    uint declared_instance = bounded.y;
     uint actual_instance = INVALID;
     if (declared_instance != INVALID)
     {
@@ -647,26 +548,145 @@ void validate_array_call_let(uint node)
     else if (specialize_symbolic_result)
     {
         actual_instance =
-            array_instance_from_name_token(first_call_arg_name_token(callee_token, call_node));
+            name_bounded_array(first_call_arg_name_token(callee_token, call_node), bounded.zw);
     }
-    if (actual_instance != INVALID &&
-        same_bounded_array_instance(expected_instance, actual_instance))
+    check.mode = CHECK_LET_DECLARED;
+    check.other = comparable_array(declared_instance);
+    check.actual = comparable_array(actual_instance);
+    check.actual_ty = actual_ty;
+    return check;
+}
+
+void finish_let(ArrayCheck check, uint3 ids)
+{
+    uint callee_token = check.callee_token;
+    if (check.mode == CHECK_LET_CHECKED)
     {
+        if (!same_id(ids.x, ids.y))
+            record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
+                TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
         return;
     }
+    if (check.mode == CHECK_LET_GENERIC)
+    {
+        if (same_id(ids.x, ids.y))
+        {
+            call_result_instance[check.call_node] = check.other;
+            return;
+        }
+        record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
+            TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
+        return;
+    }
+    if (check.mode != CHECK_LET_DECLARED) return;
+    if (check.other != INVALID && same_id(ids.x, ids.y))
+        return;
+    if (check.actual != INVALID && same_id(ids.x, ids.z))
+        return;
 
     record_min_token_error(
         status,
-        valid_token(callee_token) ? callee_token : decl_token,
+        valid_token(callee_token) ? callee_token : check.decl_token,
         ERR_ASSIGN_MISMATCH,
-        TY_ARRAY_BASE * 256u + actual_ty);
+        TY_ARRAY_BASE * 256u + check.actual_ty);
+}
+
+// The argument row's candidates: its parameter (.x) and its name's (.zw).
+uint4 argument_candidates(uint row)
+{
+    uint4 candidates = uint4(INVALID, INVALID, INVALID, INVALID);
+    if (row >= call_arg_row_count_out[0])
+        return candidates;
+    candidates.x = call_param_row_candidate(call_arg_param_row[row]);
+    candidates.zw = name_array_candidates(name_token_for_expr(call_arg_row_node[row]));
+    return candidates;
+}
+
+ArrayCheck prepare_argument(uint row, uint4 bounded)
+{
+    ArrayCheck check = no_check();
+    if (row >= call_arg_row_count_out[0])
+        return check;
+
+    uint call_node = call_arg_row_call_node[row];
+    if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
+        return check;
+
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token))
+        return check;
+    if (method_call_name_id[callee_token] != INVALID)
+        return check;
+
+    uint expected_instance = bounded.x;
+    if (expected_instance == INVALID)
+        return check;
+    if (!call_window_fits_cache(callee_token, call_node))
+        return check;
+
+    uint arg_node = call_arg_row_node[row];
+    uint actual_instance = name_bounded_array(name_token_for_expr(arg_node), bounded.zw);
+    if (!concrete_bounded_array_instance(actual_instance))
+        return check;
+    check.mode = CHECK_ARGUMENT;
+    check.call_node = call_node;
+    check.callee_token = callee_token;
+    check.expected = expected_instance;
+    check.other = actual_instance;
+    return check;
+}
+
+void finish_argument(ArrayCheck check, uint3 ids)
+{
+    if (check.mode != CHECK_ARGUMENT) return;
+    // Parameter inference has accepted complete bindings. The whole
+    // parameter array, including nominal arguments, nested elements and its
+    // length, is substituted under them; scalar cache codes cannot represent
+    // these facts. A missing substitution is a mismatch.
+    uint expected = ids.x;
+    uint environment = ct_is_resolved(expected) && !ct_closed(expected)
+        ? ct_call_env(check.callee_token).x : CT_NONE;
+    CtSpare spare = ct_spare_none();
+    uint substituted = environment == CT_NONE || ct_is_record(environment)
+        ? ct_subst(CheckedSlots(), environment, expected, false, spare) : CT_UNKNOWN;
+    if (same_id(substituted, ids.y))
+        return;
+
+    record_min_token_error(
+        status,
+        check.callee_token,
+        ERR_ASSIGN_MISMATCH,
+        TY_ARRAY_BASE * 256u + TY_UNKNOWN);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    validate_array_call_let(node);
-    validate_array_call_arg_row(node);
+    uint lane = linear_thread_id(dtid);
+    uint spare = CT_NONE;
+    [loop]
+    for (uint phase = 0u; phase < 2u; phase++)
+    {
+        uint4 candidates;
+        if (phase == 0u) candidates = let_candidates(lane);
+        else candidates = argument_candidates(lane);
+        uint4 bounded = bounded_arrays(candidates);
+        ArrayCheck check;
+        if (phase == 0u) check = prepare_let(lane, bounded);
+        else check = prepare_argument(lane, bounded);
+        uint3 ids = uint3(CT_UNKNOWN, CT_UNKNOWN, CT_UNKNOWN);
+        [loop]
+        for (uint index = 0u; index < 3u; index++)
+        {
+            uint row = index == 0u ? check.expected : index == 1u ? check.other : check.actual;
+            if (check.mode == CHECK_NONE || row == INVALID) continue;
+            uint id = ct_intern_checked<CtCheckedRows>(TYPE_REF_INSTANCE, row, spare);
+            if (index == 0u) ids.x = id;
+            else if (index == 1u) ids.y = id;
+            else ids.z = id;
+        }
+        if (phase == 0u) finish_let(check, ids);
+        else finish_argument(check, ids);
+    }
 }

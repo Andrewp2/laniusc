@@ -211,6 +211,60 @@ fn cli_version_short_flag_matches_long_flag() {
     );
 }
 
+/// Kernels are read from disk at run time; LANIUS_SHADER_ARTIFACT_ROOT points a
+/// binary at a snapshot of them (tools/pin_laniusc.py), and --version reports the
+/// snapshot's metadata.
+#[test]
+fn cli_version_reads_shader_metadata_from_artifact_root_override() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_nanos();
+    let root = env::temp_dir().join(format!(
+        "laniusc-artifact-root-override-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("create snapshot shader directory");
+    fs::write(
+        root.join("artifacts.env"),
+        "digest=0123456789abcdef\ncount=1\nmax_spv_bytes=4\nmax_spv_name=tests/pinned\n\
+         size_guard_status=enforced\nsize_guard_max_bytes=524288\n",
+    )
+    .expect("write snapshot artifact metadata");
+
+    let version_fields = |override_root: &std::ffi::OsStr| {
+        let mut command = Command::new(laniusc_bin());
+        command
+            .arg("--version")
+            .env("LANIUS_SHADER_ARTIFACT_ROOT", override_root);
+        let output = common::short_process_output_with_timeout("laniusc --version", &mut command);
+        common::assert_command_success("laniusc --version", &output);
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        (parse_version_fields(stdout.lines().skip(1), &stdout), stdout)
+    };
+
+    let (fields, stdout) = version_fields(root.as_os_str());
+    assert_eq!(
+        fields.get("shader-artifact-digest").map(String::as_str),
+        Some("0123456789abcdef"),
+        "--version should report the overriding artifact root's digest\nstdout:\n{stdout}"
+    );
+    assert_eq!(
+        fields.get("shader-artifact-max-name").map(String::as_str),
+        Some("tests/pinned"),
+        "--version should read every artifact field from the override\nstdout:\n{stdout}"
+    );
+
+    // An empty override keeps the build's own kernels.
+    let (fields, stdout) = version_fields(std::ffi::OsStr::new(""));
+    let digest = fields.get("shader-artifact-digest").map(String::as_str);
+    assert!(
+        digest.is_some_and(|digest| digest != "0123456789abcdef" && digest != "unknown"),
+        "an empty override should fall back to the build's artifact root\nstdout:\n{stdout}"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
 #[test]
 fn cli_doctor_reports_no_run_toolchain_contract_without_compiling_source() {
     let mut command = Command::new(laniusc_bin());
