@@ -47,6 +47,21 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
 - b11: a diverging match arm, `None -> core::panic::panic()`, in a generic
   function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
   Blocks a generic unwrap or expect; no existing module panics.
+- b12: a user type implementing a stdlib trait (`pub impl core::set::Key for
+  Point` in app::main), used through the bound in core::set. The compiler
+  stops with LNC0057 "compiler execution failed" instead of a diagnostic.
+  Blocks user item types in core::set.
+
+Not probes here:
+- An imported call's record result passed straight to another call, e.g.
+  `try_reserve(new(), 1)` or `try_push(try_push(v, 30), 12)`, fails with
+  LNC0006 at the inner call when the program is compiled (P10 group A, owned
+  by P4). It blocks the set_char/map_char_u32 allocation-failure fixtures and
+  their i32 counterparts.
+- `laniusc check` of a lone module rejects (LNC0006) a generic function that
+  returns another generic function's `Option<T>` result, `return get(value,
+  0);`, although programs calling it compile. core::vec repeats get's body in
+  first and last instead.
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls

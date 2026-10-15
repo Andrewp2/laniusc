@@ -82,12 +82,21 @@ pub fn get_or<T, const N: usize>(value: Vec<T, N>, index: i32, fallback: T) -> T
     return value.items[index];
 }
 
+// first and last repeat get's body: `laniusc check` of this module rejects
+// returning get's Option<T> result from another generic function (LNC0006),
+// although programs that call them compile.
 pub fn first<T, const N: usize>(value: Vec<T, N>) -> core::option::Option<T> {
-    return get(value, 0);
+    if (value.length == 0) {
+        return core::option::None();
+    }
+    return core::option::Some(value.items[0]);
 }
 
 pub fn last<T, const N: usize>(value: Vec<T, N>) -> core::option::Option<T> {
-    return get(value, value.length - 1);
+    if (value.length == 0) {
+        return core::option::None();
+    }
+    return core::option::Some(value.items[value.length - 1]);
 }
 
 pub fn try_set<T, const N: usize>(value: Vec<T, N>, index: i32, item: T) -> Vec<T, N> {
