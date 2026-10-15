@@ -1158,6 +1158,15 @@ struct WaveStep {
     indirect: Option<u64>,
 }
 
+impl WaveStep {
+    fn launch<'a>(&self, template: &'a WaveTemplate) -> Launch<'a> {
+        match self.indirect {
+            None => Launch::Direct((1, 1, 1)),
+            Some(offset) => Launch::Indirect(&template.slots.buffer, offset),
+        }
+    }
+}
+
 /// Recorded steps of some planning points with bind groups built once: each
 /// step reads its parameters and indirect arguments from its slot, which the
 /// point's planner rewrites every time it runs.
@@ -1346,14 +1355,45 @@ impl ProofKernels {
         Ok(WaveTemplate { slots: slot_buffer, steps, chunks, dispatches })
     }
 
-    /// Records every step of a template once, in order.
-    pub fn record_wave(&self, encoder: &mut wgpu::CommandEncoder, template: &WaveTemplate) {
-        for step in &template.steps {
-            let launch = match step.indirect {
-                None => Launch::Direct((1, 1, 1)),
-                Some(offset) => Launch::Indirect(&template.slots.buffer, offset),
-            };
-            dispatch_pass(encoder, &self.passes[step.pass], &step.bindings, launch);
+    /// Records every step of each template, in order, in one compute pass:
+    /// most steps of a recorded round dispatch no workgroups, and a pass per
+    /// step cost more than the steps. Operation limits and timers that cannot
+    /// stamp inside a pass keep a pass per step.
+    pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
+        if crate::gpu::timer::operation_capture_requires_split_passes()
+            || passes_core::debug_operation_limited()
+        {
+            for template in templates {
+                for step in &template.steps {
+                    dispatch_pass(encoder, &self.passes[step.pass], &step.bindings, step.launch(template));
+                }
+            }
+            return;
+        }
+        passes_core::flush_deferred_compute(encoder);
+        let timed = crate::gpu::timer::operation_capture_active();
+        let mut compute = passes_core::begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some("program_evidence.solver_wave"),
+                timestamp_writes: None,
+            },
+        );
+        for template in templates {
+            for step in &template.steps {
+                let pass = &self.passes[step.pass];
+                compute.set_pipeline(&pass.pipeline);
+                compute.set_bind_group(0, Some(&step.bindings), &[]);
+                passes_core::record_compute_dispatch();
+                match step.launch(template) {
+                    Launch::Direct(groups) => compute.dispatch_workgroups(groups.0, groups.1, groups.2),
+                    Launch::Indirect(buffer, offset) => compute.dispatch_workgroups_indirect(buffer, offset),
+                }
+                // Profiled jobs need one timestamp per recorded dispatch.
+                if timed {
+                    crate::gpu::timer::stamp_active_operation_in_pass(&mut compute, pass.shader_id.clone());
+                }
+            }
         }
     }
 }

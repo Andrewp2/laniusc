@@ -701,10 +701,6 @@ impl GpuProgramEvidence {
             solver.wave_template(&self.device, points, chunks, &state, &self.storage,
                 &packet.input, &packet.output, resources)
         };
-        // Later rounds record one chunk step per span. A longer span stops the
-        // rounds at its point, and the rest of that round is recorded again
-        // with enough chunk steps.
-        let regular = template(&WavePoint::ROUND, 1)?;
         // The first work and the first round span every source obligation.
         let opening_chunks = chunks(plan.obligations.count);
         let first = template(&[WavePoint::FirstWork], opening_chunks)?;
@@ -713,17 +709,41 @@ impl GpuProgramEvidence {
         } else {
             None
         };
-        solver.record_wave(&mut commands, &first);
-        let opening = opening.as_ref().unwrap_or(&regular);
-        solver.record_wave(&mut commands, opening);
-        let mut rounds = 15u32;
-        let mut dispatches = first.dispatches + opening.dispatches;
+        // Later rounds record one chunk step per span. A longer span stops the
+        // rounds at its point, and the rest of that round is recorded again
+        // with enough chunk steps.
+        let mut regular = if opening.is_none() {
+            Some(template(&WavePoint::ROUND, 1)?)
+        } else {
+            None
+        };
+        // Most solves finish in their first round, so the first submit records
+        // only the opening round; each later submit records twice the rounds
+        // of the one before, up to 64.
+        let mut first_due = true;
+        let mut partial: Option<kernels::WaveTemplate> = None;
+        let mut opening_due = true;
+        let mut rounds = 0u32;
         let mut submits = 0u32;
         loop {
-            for _ in 0..rounds {
-                solver.record_wave(&mut commands, &regular);
+            if rounds != 0 && regular.is_none() {
+                regular = Some(template(&WavePoint::ROUND, 1)?);
             }
-            dispatches += rounds as usize * regular.dispatches;
+            let dispatches = {
+                let mut recorded: Vec<&kernels::WaveTemplate> = Vec::new();
+                if first_due {
+                    recorded.push(&first);
+                }
+                recorded.extend(partial.as_ref());
+                if opening_due {
+                    recorded.push(opening.as_ref().or(regular.as_ref()).expect("opening round template"));
+                }
+                if let Some(regular) = regular.as_ref() {
+                    recorded.extend(std::iter::repeat_n(regular, rounds as usize));
+                }
+                solver.record_waves(&mut commands, &recorded);
+                recorded.iter().map(|template| template.dispatches).sum::<usize>()
+            };
             passes_core::flush_deferred_compute(&mut commands);
             self.queue.submit(Some(commands.finish()));
             submits += 1;
@@ -755,7 +775,7 @@ impl GpuProgramEvidence {
                 return Ok(Some(progress));
             }
             commands = encoder();
-            dispatches = 0;
+            first_due = false;
             match words[wave::STOP] {
                 wave::DONE => {
                     ensure!(
@@ -793,19 +813,24 @@ impl GpuProgramEvidence {
                 wave::OVERFLOW => {
                     let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
                         .ok_or_else(|| anyhow!("solver wave overflowed at an unknown point"))?;
-                    let partial = template(point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
-                    // The point plans again from the same counters.
+                    let resumed = template(point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    // The point plans again from the same counters. The
+                    // opening round follows a resumed first work.
                     state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
                     if debug {
                         eprintln!(
                             "[lanius-pev] solver wave resumes at {point:?} with {} chunk steps",
-                            partial.chunks
+                            resumed.chunks
                         );
                     }
-                    solver.record_wave(&mut commands, &partial);
-                    dispatches += partial.dispatches;
+                    partial = Some(resumed);
+                    opening_due = point == WavePoint::FirstWork;
                 }
-                wave::RUNNING => rounds = (rounds * 2).min(64),
+                wave::RUNNING => {
+                    partial = None;
+                    opening_due = false;
+                    rounds = if rounds == 0 { 2 } else { (rounds * 2).min(64) };
+                }
                 wave::STOPPED => {
                     return Err(anyhow!("solver wave stopped while the batch and store are building"));
                 }
