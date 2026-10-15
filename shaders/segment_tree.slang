@@ -277,8 +277,9 @@ public bool range_search_first_index_in_block_at_or_after<
     uint span = (end > start) ? (end - start) : 0u;
     for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
+        // Later offsets are past the span too.
         if (offset >= span)
-            continue;
+            break;
 
         uint row = start + offset;
         if (TPredicate.leaf_matches(TRows.row_value(row), query))
@@ -313,8 +314,9 @@ public bool range_search_last_index_in_block_before<
     uint span = (scan_end > start) ? (scan_end - start) : 0u;
     for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
+        // Later offsets are past the span too.
         if (offset >= span)
-            continue;
+            break;
 
         uint row = scan_end - 1u - offset;
         if (TPredicate.leaf_matches(TRows.row_value(row), query))
@@ -349,8 +351,9 @@ public bool range_search_last_index_in_block_between<
     uint span = (end > start) ? (end - start) : 0u;
     for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
+        // Later offsets are past the span too.
         if (offset >= span)
-            continue;
+            break;
 
         uint row = end - 1u - offset;
         if (TPredicate.leaf_matches(TRows.row_value(row), query))

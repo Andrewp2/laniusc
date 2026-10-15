@@ -13,7 +13,7 @@ fn saturate(value: i32) -> i16 {
     if (value>32767) {
         return MAX;
     }
-    let narrowed: i16 = value;
+    let narrowed: i16 = value as i16;
     return narrowed;
 }
 pub fn min(left: i16, right: i16) -> i16 {
@@ -53,8 +53,8 @@ pub fn saturating_abs(value: i16) -> i16 {
 // The mathematical GCD of MIN and zero, or MIN and MIN, is 32768 and returns
 // fallback because it cannot be represented as i16. gcd(0, 0) is zero.
 pub fn gcd_or(left: i16, right: i16, fallback: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     if (a<0) {
         a = -a;
     }
@@ -69,7 +69,7 @@ pub fn gcd_or(left: i16, right: i16, fallback: i16) -> i16 {
     if (a>32767) {
         return fallback;
     }
-    let narrowed: i16 = a;
+    let narrowed: i16 = a as i16;
     return narrowed;
 }
 // Returns a nonnegative LCM, zero for a zero operand, or fallback above MAX.
@@ -77,8 +77,8 @@ pub fn lcm_or(left: i16, right: i16, fallback: i16) -> i16 {
     if (left == 0 || right == 0) {
         return 0;
     }
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     if (a<0) {
         a = -a;
     }
@@ -96,22 +96,22 @@ pub fn lcm_or(left: i16, right: i16, fallback: i16) -> i16 {
     if (product>32767) {
         return fallback;
     }
-    let narrowed: i16 = product;
+    let narrowed: i16 = product as i16;
     return narrowed;
 }
 pub fn saturating_add(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     return saturate(a + b);
 }
 pub fn saturating_sub(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     return saturate(a - b);
 }
 pub fn saturating_mul(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     return saturate(a * b);
 }
 // Normalize before narrowing: an out-of-range signed cast does not currently
@@ -127,38 +127,38 @@ fn wrap(value: i32) -> i16 {
     return reduced as i16;
 }
 pub fn wrapping_add(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     let result: i32 = a + b;
     return wrap(result);
 }
 pub fn wrapping_sub(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     let result: i32 = a - b;
     return wrap(result);
 }
 pub fn wrapping_mul(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     let result: i32 = a * b;
     return wrap(result);
 }
 // Returns fallback when the product is outside the signed 16-bit range.
 pub fn mul_or(left: i16, right: i16, fallback: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     let product: i32 = a * b;
     if (!in_range(product)) {
         return fallback;
     }
-    let narrowed: i16 = product;
+    let narrowed: i16 = product as i16;
     return narrowed;
 }
 // Defines 0^0 as one. An unrepresentable power returns fallback.
 pub fn pow_or(base: i16, exponent: u32, fallback: i16) -> i16 {
     let result: i32 = 1;
-    let factor: i32 = base;
+    let factor: i32 = base as i32;
     let remaining: u32 = exponent;
     while (remaining>0) {
         if (remaining % 2 != 0) {
@@ -177,12 +177,12 @@ pub fn pow_or(base: i16, exponent: u32, fallback: i16) -> i16 {
             factor = square;
         }
     }
-    let narrowed: i16 = result;
+    let narrowed: i16 = result as i16;
     return narrowed;
 }
 pub fn saturating_abs_diff(left: i16, right: i16) -> i16 {
-    let a: i32 = left;
-    let b: i32 = right;
+    let a: i32 = left as i32;
+    let b: i32 = right as i32;
     if (a >= b) {
         return saturate(a - b);
     }
@@ -211,8 +211,8 @@ pub fn is_multiple_of(value: i16, divisor: i16) -> bool {
     if (divisor == 0) {
         return false;
     }
-    let a: i32 = value;
-    let b: i32 = divisor;
+    let a: i32 = value as i32;
+    let b: i32 = divisor as i32;
     return a % b == 0;
 }
 // A zero divisor or MIN/-1 returns fallback before division.
@@ -220,18 +220,18 @@ pub fn div_or(value: i16, divisor: i16, fallback: i16) -> i16 {
     if (divisor == 0 || value == MIN && divisor == -1) {
         return fallback;
     }
-    let a: i32 = value;
-    let b: i32 = divisor;
-    let quotient: i16 = a / b;
+    let a: i32 = value as i32;
+    let b: i32 = divisor as i32;
+    let quotient: i16 = (a / b) as i16;
     return quotient;
 }
 pub fn rem_or(value: i16, divisor: i16, fallback: i16) -> i16 {
     if (divisor == 0 || value == MIN && divisor == -1) {
         return fallback;
     }
-    let a: i32 = value;
-    let b: i32 = divisor;
-    let remainder: i16 = a % b;
+    let a: i32 = value as i32;
+    let b: i32 = divisor as i32;
+    let remainder: i16 = (a % b) as i16;
     return remainder;
 }
 // Euclidean division has a nonnegative remainder. Failure uses fallback.
@@ -239,8 +239,8 @@ pub fn div_euclid_or(value: i16, divisor: i16, fallback: i16) -> i16 {
     if (divisor == 0 || value == MIN && divisor == -1) {
         return fallback;
     }
-    let a: i32 = value;
-    let b: i32 = divisor;
+    let a: i32 = value as i32;
+    let b: i32 = divisor as i32;
     let quotient: i32 = a / b;
     let remainder: i32 = a % b;
     if (remainder<0) {
@@ -250,15 +250,15 @@ pub fn div_euclid_or(value: i16, divisor: i16, fallback: i16) -> i16 {
             quotient += 1;
         }
     }
-    let narrowed: i16 = quotient;
+    let narrowed: i16 = quotient as i16;
     return narrowed;
 }
 pub fn rem_euclid_or(value: i16, divisor: i16, fallback: i16) -> i16 {
     if (divisor == 0 || value == MIN && divisor == -1) {
         return fallback;
     }
-    let a: i32 = value;
-    let b: i32 = divisor;
+    let a: i32 = value as i32;
+    let b: i32 = divisor as i32;
     let remainder: i32 = a % b;
     if (remainder<0) {
         if (b>0) {
@@ -267,7 +267,7 @@ pub fn rem_euclid_or(value: i16, divisor: i16, fallback: i16) -> i16 {
             remainder -= b;
         }
     }
-    let narrowed: i16 = remainder;
+    let narrowed: i16 = remainder as i16;
     return narrowed;
 }
 pub fn is_power_of_two(value: i16) -> bool {

@@ -81,6 +81,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirBinarySpansPa
                 "hir_binary_span_start_a".into(),
                 b.hir_binary_span_start_a.as_entire_binding(),
             ),
+            (
+                "hir_binary_span_link_b".into(),
+                b.hir_binary_span_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_binary_span_start_b".into(),
+                b.hir_binary_span_start_b.as_entire_binding(),
+            ),
         ])
     }
 }

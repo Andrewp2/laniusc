@@ -46,7 +46,9 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint TK_COMMA = 36u;
 static const uint TK_SEMICOLON = 37u;
+// An arm may use either arrow: `->` lexes as TK_ARROW, `=>` as TK_MATCH_ARROW.
 static const uint TK_ARROW = 75u;
+static const uint TK_MATCH_ARROW = 113u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_MATCH_LBRACE = 119u;
@@ -195,7 +197,7 @@ uint match_pattern_event_for(uint token_i, uint kind)
             : 0u;
         return encode_match_pattern_event(token_i, payload);
     }
-    if (kind == TK_ARROW || kind == TK_RBRACE || kind == TK_SEMICOLON)
+    if (kind == TK_ARROW || kind == TK_MATCH_ARROW || kind == TK_RBRACE || kind == TK_SEMICOLON)
         return encode_match_pattern_event(token_i, 0u);
     if (kind == TK_COMMA && top_level_match_arm_comma(token_i))
         return encode_match_pattern_event(token_i, MATCH_PATTERN_CONTEXT);

@@ -8,6 +8,7 @@ import type_checker.program_evidence.proof_store_abi;
 import type_checker.program_evidence.proof_term_graph;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_scratch;
 
 public static const uint PPS_WORK_REQUEST = 0u;
 public static const uint PPS_WORK_NORMALIZED = 1u;
@@ -109,7 +110,7 @@ public bool pps_goal_equal(uint left, uint right)
         uint2 l = a.yz; uint2 r = b.yz;
         if (i != 0u && (!pps_read2(PPS_TERM_ROOTS, a.w + i - 1u, 0u, l) ||
             !pps_read2(PPS_TERM_ROOTS, b.w + i - 1u, 0u, r))) return false;
-        if (!scoped_type_refs_equal<SolverProofTermGraph>(l.x, l.y, PEV_INVALID,
+        if (!scoped_type_refs_equal_scratch<SolverProofTermGraph>(l.x, l.y, PEV_INVALID,
             r.x, r.y, PEV_INVALID, nodes, atoms)) return false;
     }
     return true;

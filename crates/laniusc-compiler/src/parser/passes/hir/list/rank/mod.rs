@@ -18,6 +18,10 @@ pub enum ListRankInvocation {
     ArrayElements,
     StringRecords,
     StringOffsets,
+    PathSegments,
+    TypeRoots,
+    VariantPayloadOwners,
+    BinarySpans,
 }
 
 impl ListRankInvocation {
@@ -29,6 +33,10 @@ impl ListRankInvocation {
             Self::ArrayElements => "hir_array_element_rank_prefix_00_local",
             Self::StringRecords => "hir_string_compact_local",
             Self::StringOffsets => "hir_string_offset_local",
+            Self::PathSegments => "hir_path_segment_rank_prefix_00_local",
+            Self::TypeRoots => "hir_type_root_rank_prefix_00_local",
+            Self::VariantPayloadOwners => "hir_variant_payload_owner_rank_prefix_00_local",
+            Self::BinarySpans => "hir_binary_span_rank_prefix_00_local",
         }
     }
 
@@ -58,6 +66,22 @@ impl ListRankInvocation {
                 "hir_string_offset_prefix_01_blocks.up",
                 "hir_string_offset_prefix_01_blocks.down",
             ),
+            Self::PathSegments => (
+                "hir_path_segment_rank_prefix_01_blocks.up",
+                "hir_path_segment_rank_prefix_01_blocks.down",
+            ),
+            Self::TypeRoots => (
+                "hir_type_root_rank_prefix_01_blocks.up",
+                "hir_type_root_rank_prefix_01_blocks.down",
+            ),
+            Self::VariantPayloadOwners => (
+                "hir_variant_payload_owner_rank_prefix_01_blocks.up",
+                "hir_variant_payload_owner_rank_prefix_01_blocks.down",
+            ),
+            Self::BinarySpans => (
+                "hir_binary_span_rank_prefix_01_blocks.up",
+                "hir_binary_span_rank_prefix_01_blocks.down",
+            ),
         }
     }
 
@@ -69,6 +93,10 @@ impl ListRankInvocation {
             Self::ArrayElements => "hir_array_element_rank_compact_scatter",
             Self::StringRecords => "hir_string_compact_scatter",
             Self::StringOffsets => "hir_string_offset_scatter",
+            Self::PathSegments => "hir_path_segment_rank_compact_scatter",
+            Self::TypeRoots => "hir_type_root_rank_compact_scatter",
+            Self::VariantPayloadOwners => "hir_variant_payload_owner_rank_compact_scatter",
+            Self::BinarySpans => "hir_binary_span_rank_compact_scatter",
         }
     }
 
@@ -86,6 +114,22 @@ impl ListRankInvocation {
             Self::ArrayElements => (
                 "hir_array_element_rank_step.a_to_b",
                 "hir_array_element_rank_step.b_to_a",
+            ),
+            Self::PathSegments => (
+                "hir_path_segment_step.a_to_b",
+                "hir_path_segment_step.b_to_a",
+            ),
+            Self::TypeRoots => (
+                "hir_type_root_owner_step.a_to_b",
+                "hir_type_root_owner_step.b_to_a",
+            ),
+            Self::VariantPayloadOwners => (
+                "hir_canonical_variant_payload_owner_step.a_to_b",
+                "hir_canonical_variant_payload_owner_step.b_to_a",
+            ),
+            Self::BinarySpans => (
+                "hir_binary_span_step.a_to_b",
+                "hir_binary_span_step.b_to_a",
             ),
             Self::StringRecords | Self::StringOffsets => {
                 ("hir_list_rank_step.a_to_b", "hir_list_rank_step.b_to_a")

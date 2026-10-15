@@ -106,13 +106,13 @@ pub fn wrapping_mul(left: i8, right: i8) -> i8 {
 }
 
 pub fn checked_add(left: i8, right: i8) -> core::option_i8::OptionI8 {
-    let wide_left: i32 = left;
-    let wide_right: i32 = right;
+    let wide_left: i32 = left as i32;
+    let wide_right: i32 = right as i32;
     let sum: i32 = wide_left + wide_right;
     if (sum < -128 || sum > 127) {
         return core::option_i8::none();
     }
-    let narrowed: i8 = sum;
+    let narrowed: i8 = sum as i8;
     return core::option_i8::some(narrowed);
 }
 
@@ -121,13 +121,13 @@ pub fn saturating_add(left: i8, right: i8) -> i8 {
 }
 
 pub fn checked_sub(left: i8, right: i8) -> core::option_i8::OptionI8 {
-    let wide_left: i32 = left;
-    let wide_right: i32 = right;
+    let wide_left: i32 = left as i32;
+    let wide_right: i32 = right as i32;
     let difference: i32 = wide_left - wide_right;
     if (difference < -128 || difference > 127) {
         return core::option_i8::none();
     }
-    let narrowed: i8 = difference;
+    let narrowed: i8 = difference as i8;
     return core::option_i8::some(narrowed);
 }
 

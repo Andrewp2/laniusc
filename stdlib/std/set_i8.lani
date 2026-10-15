@@ -7,16 +7,16 @@ module std::set_i8;
 import std::set_u8;
 
 fn code(item: i8) -> u8 {
-    let signed: i32 = item;
+    let signed: i32 = item as i32;
     let shifted: i32 = signed + 128;
-    let byte: u8 = shifted;
+    let byte: u8 = shifted as u8;
     return byte;
 }
 
 fn item_from_code(byte: u8) -> i8 {
-    let widened: i32 = byte;
+    let widened: i32 = byte as i32;
     let signed: i32 = widened - 128;
-    let item: i8 = signed;
+    let item: i8 = signed as i8;
     return item;
 }
 

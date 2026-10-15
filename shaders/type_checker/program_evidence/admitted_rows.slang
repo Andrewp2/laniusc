@@ -14,15 +14,20 @@ public static const uint PEV_ADMITTED_DOMAIN_EITHER = 0u;
 public static const uint PEV_ADMITTED_DOMAIN_TYPE = 1u;
 public static const uint PEV_ADMITTED_DOMAIN_CONSTANT = 2u;
 
+// Row decoders read their row once and combine pure field tests without
+// short-circuit branches (a failed read leaves an all-INVALID row).
 public bool pev_read_admitted_parameter(uint atom, out uint4 parameter)
 {
-    return pev_read4(1u, atom, 0u, parameter) && parameter.x == 5u &&
-        parameter.z <= 1u && parameter.y != PEV_INVALID && parameter.w != PEV_INVALID;
+    uint4 row;
+    bool read = pev_read4(1u, atom, 0u, row);
+    parameter = row;
+    return read & (row.x == 5u) & (row.z <= 1u) & (row.y != PEV_INVALID) & (row.w != PEV_INVALID);
 }
 public bool pev_admitted_parameter_has_domain(uint atom, bool constant)
 {
     uint4 parameter;
-    return pev_read_admitted_parameter(atom, parameter) && parameter.z == (constant ? 1u : 0u);
+    bool admitted = pev_read_admitted_parameter(atom, parameter);
+    return admitted & (parameter.z == select(constant, 1u, 0u));
 }
 public bool pev_admitted_type_reference_shape(uint2 reference)
 {
@@ -118,13 +123,35 @@ public EvidenceStatus pev_admitted_owner_parameter_counts(
     return pev_ok();
 }
 
+// Field projection of one admitted 8-word node row, shared by the input and
+// normalized-store graphs; a straight-line select over the field number.
+[ForceInline]
+public uint pev_node_row_field(uint4 low, uint4 high, uint field)
+{
+    bool named = low.x == 1u; bool array = low.x == 2u;
+    // Field 1: existing walkers call this declaration identity. Here it is an
+    // exact interned nominal atom; its identity capacity is the atom table
+    // count. It is neither a HIR/token row nor a forged public nominal triple.
+    // Fields 5/6: packed graphs implement ITypeIdentityGraph through
+    // IParameterScoped. Their environments use exact owned atoms; nominal
+    // domain-slot summaries are outside that capability. Ordered tagged
+    // arguments remain complete.
+    uint upper = select(field == 5u, select(array, high.z & 0x7fffffffu, PEV_INVALID),
+        select((field == 6u) & array, high.w, PEV_INVALID));
+    uint middle = select(field == 3u, high.x, select(field == 4u, high.y, upper));
+    uint lower = select(field == 1u, select(named, low.y, PEV_INVALID), select(named, low.w, 0u));
+    return select(field == 0u, low.x, select(field <= 2u, lower, middle));
+}
 // Shape validation happened once for every Node row, including unused nodes.
 // Keep the local bounds required for projections; do not revisit child shapes.
 public bool pev_read_admitted_node(uint node, out uint4 low, out uint4 high)
 {
-    if (!pev_read8(5u, node, low, high) || low.x < 1u || low.x > 5u) return false;
-    return low.x != 1u || (low.w <= 32u && (low.w != 0u || low.z == 0u) &&
-        pev_row_span(6u, low.z, low.w));
+    uint4 l; uint4 h;
+    bool read = pev_read8(5u, node, l, h);
+    low = l; high = h;
+    if (!(read & (l.x >= 1u) & (l.x <= 5u))) return false;
+    if (l.x != 1u) return true;
+    return (l.w <= 32u) & ((l.w != 0u) | (l.z == 0u)) & pev_row_span(6u, l.z, l.w);
 }
 public bool pev_read_admitted_child(
     uint4 low, uint4 high, uint slot, out uint2 reference, out uint domain)

@@ -532,6 +532,7 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "LNC0072", "invalid cast", "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
+    DiagnosticCodeInfo::error("LNC0073", "generic instantiation depth exceeded", "type checking", DiagnosticPrimaryLabelPolicy::Required),
 ];
 
 /// Stable diagnostic categories used by registry and category metadata output.
@@ -4617,6 +4618,7 @@ mod tests {
             ("LNC0070", "invalid floating literal", "type checking"),
             ("LNC0071", "computed floating constant is not supported", "type checking"),
             ("LNC0072", "invalid cast", "type checking"),
+            ("LNC0073", "generic instantiation depth exceeded", "type checking"),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());

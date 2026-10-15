@@ -94,11 +94,11 @@ public struct CandidateProofTermGraph : IProofNormalizationGraph
                 pps_term_candidate_span(PPS_TERM_EDGES, low.z, low.w) &&
                 pps_read_term_candidate_edge(low.z + slot, reference);
         }
-        if (low.x == 5u && slot == 0u)
-        { domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = high.xy; return pps_term_candidate_constant_reference(reference); }
-        if (low.x == 2u && slot == 1u)
+        // A projection's operand (kind 5, slot 0) and an array's length (kind 2,
+        // slot 1) share one constant reference check.
+        if ((low.x == 5u && slot == 0u) || (low.x == 2u && slot == 1u))
         {
-            domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = high.zw;
+            domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = low.x == 5u ? high.xy : high.zw;
             return pps_term_candidate_constant_reference(reference);
         }
         if (low.x >= 2u && low.x <= 4u && slot == 0u)

@@ -518,15 +518,17 @@ The `ct_*` tables of the generated project at scale 1:
 
 The per-row outputs, at about 8.5 MB, are now most of what remains.
 
-With the validator on, the generated project shows:
+With the validator on, the generated project, the stdlib and the
+option-results probe match a pinned generics-gpu build from before
+compaction (`tools/pin_laniusc.py`):
 
-- 201 live records;
-- no duplicates, broken chains, inconsistent facts, unpublished or pending
-  states, or missed merges.
+- the same live records and resolved rows (201 and 295 on the generated
+  project);
+- no false or missed merges, bridge mismatches, duplicates, broken chains,
+  inconsistent facts, or unpublished or pending states.
 
-The validator's `false_merges` counts (133 on the generated project, 14 on
-the option-results probe and 1,516 on the stdlib) still need a comparison
-against a pinned build from before compaction (`tools/pin_laniusc.py`).
+Every generics matrix probe also shows no false or missed merges and no
+bridge mismatches.
 
 Record IDs depend on atomic order, so the old and new kernels cannot be
 compared buffer for buffer. The CPU replay compare of captured `01_intern`
@@ -554,15 +556,19 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
     read through the bridge (`bridge_mismatches`, after the dependency
     counters). Each row's whole bridged tree is compared, since a bridged
     record's operands are bridged too.
-  - **False merge:** a row whose ID is another row's record while
-    `scoped_type_refs_equal` says the rows differ. A top-level difference
+  - **False merge:** a row and its representative, the smallest row with
+    the same ID, while `scoped_type_refs_equal` says the rows differ.
+    `89_crosscheck_buckets` records the representative of each record in
+    `canonical_crosscheck_owner` (one word per record, declared only when
+    validation is on), since a record ID does not name the row that took
+    it. A top-level difference
     between a declaration token and an imported triple is the intended
     local/imported unification, and is counted as `normalized_merges`.
   - **Missed merge:** two rows of one coarse bucket (kind, arity, declaration
     spelling, type-operand IDs; constant operands are left out) that the old
     walker accepts but that have different IDs.
   - **Unknown rows:** rows whose candidate ended as `CT_UNKNOWN`.
-  - A row whose ID is a dependency node's record (no row owns it) is
+  - A row whose ID has no representative (a preseeded scalar ID) is
     confirmed against the next row of its bucket chain with the same ID,
     which chains every such row of the bucket.
 
@@ -656,8 +662,10 @@ consumers.
 
 ### Constant claims: typed and count identity
 
-Call inference collects claims for each constant parameter slot
-(`merge_inferred_constant_claim` in `type_checker/constant_constraints.slang`).
+Call inference collects claims for each constant parameter slot. `ct_match`
+merges them by ID (`SlotClaims` in `match/ct_match.slang`). 03a8 checks an
+explicit constant against a retained claim with
+`checked_constant_claims_compatible` (`calls/constant_claim_identity.slang`).
 A claim is exact (`identity_mode` 0, from a constant argument) or a count
 claim (`identity_mode` 1, from an array length matched against `[T; N]`).
 
@@ -845,8 +853,9 @@ used to give no context; it now gets the realized row.
 
 ### API (frozen for P3–P5)
 
-The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
-not generic, and it imports `primitive_types` only.
+The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It
+imports `primitive_types` only. Its one generic is `ct_lookup_with`, over
+the `ICtKeyArgs` interface.
 
 | group | functions |
 |---|---|
@@ -854,7 +863,7 @@ not generic, and it imports `primitive_types` only.
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
-| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_intern_key(key)`, `ct_lookup(key)`, `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_key`) |
+| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_intern_key(key)`, `ct_lookup(key)`, `ct_lookup_with(key, args)` and `ct_key_write_args(key, args)` (`ICtKeyArgs`), `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_key`) |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
 | dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
 | bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |
@@ -865,3 +874,15 @@ Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
 builder. They intern through `ct_intern_key` (a record only for a new
 key), through `ct_intern_spare` with one lane-owned spare record, or through
 `ct_intern` with a record they own.
+
+A producer that often finds its key already published can look it up
+before reserving argument words:
+
+1. Build the key with `ct_key_fold` only.
+2. `ct_lookup_with(key, args)` compares against `args.arg(i)` instead of
+   `ct_args`. A hit costs no argument words.
+3. On a miss (`CT_NONE`), `ct_key_write_args(key, args)` reserves and writes
+   the words, and the key is interned as usual.
+
+`ct_key_reserve_args` before the lookup would leave the words of every hit
+reserved and unused.

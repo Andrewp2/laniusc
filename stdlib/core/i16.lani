@@ -106,13 +106,13 @@ pub fn wrapping_mul(left: i16, right: i16) -> i16 {
 }
 
 pub fn checked_add(left: i16, right: i16) -> core::option_i16::OptionI16 {
-    let wide_left: i32 = left;
-    let wide_right: i32 = right;
+    let wide_left: i32 = left as i32;
+    let wide_right: i32 = right as i32;
     let sum: i32 = wide_left + wide_right;
     if (sum < -32768 || sum > 32767) {
         return core::option_i16::none();
     }
-    let narrowed: i16 = sum;
+    let narrowed: i16 = sum as i16;
     return core::option_i16::some(narrowed);
 }
 
@@ -121,13 +121,13 @@ pub fn saturating_add(left: i16, right: i16) -> i16 {
 }
 
 pub fn checked_sub(left: i16, right: i16) -> core::option_i16::OptionI16 {
-    let wide_left: i32 = left;
-    let wide_right: i32 = right;
+    let wide_left: i32 = left as i32;
+    let wide_right: i32 = right as i32;
     let difference: i32 = wide_left - wide_right;
     if (difference < -32768 || difference > 32767) {
         return core::option_i16::none();
     }
-    let narrowed: i16 = difference;
+    let narrowed: i16 = difference as i16;
     return core::option_i16::some(narrowed);
 }
 

@@ -25,13 +25,11 @@ public void pev_batch_failure(EvidenceStatus status)
     uint previous;
     InterlockedCompareExchange(program_evidence_output[address], PEV_BATCH_BUILDING, PEV_BATCH_BUSY, previous);
     if (previous != PEV_BATCH_BUILDING) return;
-    pev_output_write(10u, 0u, 1u, status.detail);
-    pev_output_write(10u, 0u, 2u, status.subject_row);
-    pev_output_write(10u, 0u, 3u, status.related_row);
-    pev_output_write(10u, 0u, 4u, status.required);
-    pev_output_write(10u, 0u, 5u, status.available);
-    pev_output_write(10u, 0u, 6u, program_evidence_batch[4u]);
-    pev_output_write(10u, 0u, 7u, 0u);
+    // Fields 1..7 in order through one write site.
+    uint serial = program_evidence_batch[4u];
+    [loop]
+    for (uint field = 1u; field < 8u; field++)
+        pev_output_write(10u, 0u, field, pev_failure_field(status, field, serial));
     // Only the BUILDING->BUSY winner owns this failure record. Use CAS for
     // atomic publication: Slang2026.2 mislowers InterlockedExchange.
     InterlockedCompareExchange(program_evidence_output[address], PEV_BATCH_BUSY, status.state, previous);

@@ -1,5 +1,8 @@
 // Computes exact CFG reachability with persistent, batched GPU workers. Work
-// is linear in reachable blocks and edges and independent of CFG depth.
+// is linear in reachable blocks and edges. A lane keeps one newly reached
+// successor and visits it itself instead of round-tripping it through the
+// queue, so a chain of blocks costs one lane's loads per block, not a global
+// pop/publish/finish cycle per block.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -23,10 +26,12 @@ RWStructuredBuffer<uint> opt_ir_reachability_work_state;
 RWStructuredBuffer<uint> opt_ir_reachability_work_queue;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 
+static const uint INVALID = 0xffffffffu;
 static const uint WORKER_COUNT = 32u;
 
 groupshared uint batch_begin;
 groupshared uint batch_count;
+groupshared uint batch_done;
 
 void report_capacity(uint required)
 {
@@ -47,6 +52,52 @@ void report_structure_failure(uint block)
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, block);
 }
 
+// Marks the successors of a reached block. Returns one successor this lane
+// reached first (to visit next), publishing the others.
+uint visit(uint block, uint block_total, uint edge_total)
+{
+    // Another worker marked the block; read the flag at the coherence point.
+    if (block >= block_total || ssa_atomic_load(opt_ir_reachable, block) == 0u)
+    {
+        report_structure_failure(block);
+        return INVALID;
+    }
+    OptIrBlock source = opt_ir_blocks[block];
+    uint edge_start = opt_ir_block_edge_start(source);
+    uint edge_count = opt_ir_block_edge_count(source);
+    if (edge_start > edge_total ||
+        edge_count > edge_total - min(edge_start, edge_total))
+    {
+        report_structure_failure(block);
+        return INVALID;
+    }
+    uint next = INVALID;
+    for (uint ordinal = 0u; ordinal < edge_count; ++ordinal)
+    {
+        OptIrEdge edge = opt_ir_edges[edge_start + ordinal];
+        uint target = opt_ir_edge_to_block(edge.packed_target);
+        if (edge.from_block != block || target >= block_total)
+        {
+            report_structure_failure(block);
+            continue;
+        }
+        uint prior;
+        InterlockedCompareExchange(opt_ir_reachable[target], 0u, 1u, prior);
+        if (prior != 0u) continue;
+        if (next == INVALID)
+        {
+            next = target;
+            continue;
+        }
+        uint required = 0u;
+        if (!ssa_work_publish(target, gParams.block_capacity,
+                opt_ir_reachability_work_state,
+                opt_ir_reachability_work_queue, required))
+            report_capacity(required);
+    }
+    return next;
+}
+
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
@@ -59,60 +110,35 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 
     for (;;)
     {
+        // One lane schedules; every lane takes the same exit and barrier path.
         if (ltid.x == 0u)
+        {
             ssa_work_try_pop_batch(gParams.block_capacity, 32u,
                 opt_ir_reachability_work_state, batch_begin, batch_count);
-        GroupMemoryBarrierWithGroupSync();
-        if (batch_count == 0u)
-        {
-            if (ssa_work_quiescent(opt_ir_reachability_work_state)) return;
-            continue;
+            batch_done = batch_count == 0u &&
+                    ssa_work_quiescent(opt_ir_reachability_work_state)
+                ? 1u : 0u;
         }
+        GroupMemoryBarrierWithGroupSync();
+        uint begin = batch_begin;
+        uint count = batch_count;
+        bool done = batch_done != 0u;
+        GroupMemoryBarrierWithGroupSync();
+        if (done) return;
+        if (count == 0u) continue;
 
-        if (ltid.x < batch_count)
+        if (ltid.x < count)
         {
             uint block = ssa_work_read_published(
-                opt_ir_reachability_work_queue,
-                batch_begin + ltid.x);
-            if (block >= block_total || opt_ir_reachable[block] == 0u)
-                report_structure_failure(block);
-            else
-            {
-                OptIrBlock source = opt_ir_blocks[block];
-                uint edge_start = opt_ir_block_edge_start(source);
-                uint edge_count = opt_ir_block_edge_count(source);
-                if (edge_start > edge_total ||
-                    edge_count > edge_total - min(edge_start, edge_total))
-                    report_structure_failure(block);
-                else
-                {
-                    for (uint ordinal = 0u; ordinal < edge_count; ++ordinal)
-                    {
-                        OptIrEdge edge = opt_ir_edges[edge_start + ordinal];
-                        uint target = opt_ir_edge_to_block(edge.packed_target);
-                        if (edge.from_block != block || target >= block_total)
-                        {
-                            report_structure_failure(block);
-                            continue;
-                        }
-                        uint prior;
-                        InterlockedCompareExchange(
-                            opt_ir_reachable[target], 0u, 1u, prior);
-                        if (prior != 0u) continue;
-                        uint required = 0u;
-                        if (!ssa_work_publish(target, gParams.block_capacity,
-                                opt_ir_reachability_work_state,
-                                opt_ir_reachability_work_queue, required))
-                            report_capacity(required);
-                    }
-                }
-            }
+                opt_ir_reachability_work_queue, begin + ltid.x);
+            // The batch stays outstanding until every lane is done, so the
+            // blocks a lane visits itself keep the queue from quiescing.
+            for (uint steps = 0u; block != INVALID && steps <= block_total; ++steps)
+                block = visit(block, block_total, edge_total);
         }
 
         GroupMemoryBarrierWithGroupSync();
         if (ltid.x == 0u)
-            ssa_work_finish_batch(
-                opt_ir_reachability_work_state, batch_count);
-        GroupMemoryBarrierWithGroupSync();
+            ssa_work_finish_batch(opt_ir_reachability_work_state, count);
     }
 }

@@ -471,6 +471,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "typecheck.done");
         }
+        // Run the type check's tail while the host records the semantic
+        // interface and lowering. Their recording writes only their own
+        // buffers through the queue.
+        crate::gpu::passes_core::submit_recorded_prefix(
+            device,
+            queue,
+            encoder,
+            "compile.source-pack.typecheck",
+        );
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
         // Body replay keeps the template's public contract. Its checked graph
@@ -511,6 +520,14 @@ impl<'gpu> GpuCompiler<'gpu> {
             timer.stamp(encoder, "semantic_interface.done");
         }
         downstream_host_timer.stamp("semantic_interface");
+        if semantic_interface.is_some() {
+            crate::gpu::passes_core::submit_recorded_prefix(
+                device,
+                queue,
+                encoder,
+                "compile.source-pack.semantic_interface",
+            );
+        }
         if lowering_target.is_some() && object_request.is_some() {
             return Err(CompileError::GpuCodegen(
                 "one lowering job cannot request both an executable and an object".into(),
@@ -551,14 +568,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
             let (library_id, unit_id) = request.ids();
-            let selected_replay_hir = match request.frontend_trait_check() {
-                gpu_type_checker::FrontendTraitCheck::AuthorizedReplay { selected_function_hir } =>
-                    Some(selected_function_hir),
+            let selected_replay_hirs = match request.frontend_trait_check() {
+                gpu_type_checker::FrontendTraitCheck::AuthorizedReplay { .. } =>
+                    request.selected_function_hirs(),
                 gpu_type_checker::FrontendTraitCheck::Strict
-                | gpu_type_checker::FrontendTraitCheck::PendingOriginal => None,
+                | gpu_type_checker::FrontendTraitCheck::PendingOriginal => &[],
             };
             pipeline
-                .record_object(queue, encoder, library_id, unit_id, selected_replay_hir,
+                .record_object(queue, encoder, library_id, unit_id, selected_replay_hirs,
                     timer.as_deref_mut())
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
@@ -1572,12 +1589,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                     "local body replay requires a complete checked environment".into(),
                 ));
             }
-            let specialization = gpu_type_checker::CheckedBodySpecialization {
-                target_symbol: specialization_symbol,
-                source_unit: [template.interface.library_id, template.interface.unit_id],
-                arguments: call.arguments.clone(),
-                constants: call.constants.clone(),
-            };
+            let specialization = gpu_type_checker::CheckedBodySpecializationBatch::single(
+                gpu_type_checker::CheckedBodySpecialization {
+                    target_symbol: specialization_symbol,
+                    source_unit: [template.interface.library_id, template.interface.unit_id],
+                    arguments: call.arguments.clone(),
+                    constants: call.constants.clone(),
+                },
+            )
+            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
             let compiled = self
                 .compile_source_pack_unit_with_body_specialization(
                     template.template_sources.clone(),
@@ -1662,15 +1682,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                 "generic body requires matching type and constant parameters",
             )));
         }
-        let specialization = gpu_type_checker::CheckedBodySpecialization {
-            target_symbol,
-            source_unit: [template.interface.library_id, template.interface.unit_id],
-            arguments: call.arguments.clone(),
-            constants: call.constants.clone(),
-        };
-        specialization
-            .packet()
-            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
+        let specialization = gpu_type_checker::CheckedBodySpecializationBatch::single(
+            gpu_type_checker::CheckedBodySpecialization {
+                target_symbol,
+                source_unit: [template.interface.library_id, template.interface.unit_id],
+                arguments: call.arguments.clone(),
+                constants: call.constants.clone(),
+            },
+        )
+        .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
         let compiled = self
             .compile_source_pack_unit_with_body_specialization(
                 template.template_sources.clone(),
@@ -1740,6 +1760,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     library_id,
                     unit_id,
                     specialization: body_specialization.unwrap().specialization,
+                    selected_function_hirs: body_specialization.unwrap().selected_function_hirs,
                     template_contracts: body_specialization.unwrap().contracts.as_ref(),
                     frontend_trait_check: body_specialization.unwrap().frontend_trait_check,
                 }
@@ -2076,7 +2097,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         hir_node_capacity: u32,
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         semantic_interface_required: bool,
-        body_specialization: Option<&gpu_type_checker::CheckedBodySpecialization>,
+        body_specialization: Option<&gpu_type_checker::CheckedBodySpecializationBatch>,
         frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
@@ -2268,7 +2289,9 @@ impl PendingReplayUnit {
 // No caller can attach a proof flag to an unrelated template or specialization.
 #[derive(Clone, Copy)]
 struct BodySpecializationInput<'a> {
-    specialization: &'a gpu_type_checker::CheckedBodySpecialization,
+    specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
+    /// The lexical callables whose bodies this replay may publish, in entry order.
+    selected_function_hirs: &'a [u32],
     interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
     contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
     frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
@@ -2276,12 +2299,13 @@ struct BodySpecializationInput<'a> {
 
 impl<'a> BodySpecializationInput<'a> {
     fn strict(
-        specialization: &'a gpu_type_checker::CheckedBodySpecialization,
+        specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
         interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
         contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
     ) -> Self {
         Self {
             specialization,
+            selected_function_hirs: &[],
             interface,
             contracts,
             frontend_trait_check: gpu_type_checker::FrontendTraitCheck::Strict,
@@ -2292,6 +2316,7 @@ impl<'a> BodySpecializationInput<'a> {
         let template = request.template();
         Self {
             specialization: request.specialization(),
+            selected_function_hirs: request.selected_function_hirs(),
             interface: template.interface(),
             contracts: template.checked_contracts(),
             frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
@@ -2317,7 +2342,8 @@ enum LoweringObjectRequest<'a> {
     X86_64Specialized {
         library_id: u32,
         unit_id: u32,
-        specialization: &'a gpu_type_checker::CheckedBodySpecialization,
+        specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
+        selected_function_hirs: &'a [u32],
         template_contracts: &'a gpu_type_checker::CheckedUnitContracts,
         frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
     },
@@ -2345,10 +2371,17 @@ impl<'a> LoweringObjectRequest<'a> {
         }
     }
 
-    fn body_specialization(self) -> Option<&'a gpu_type_checker::CheckedBodySpecialization> {
+    fn body_specialization(self) -> Option<&'a gpu_type_checker::CheckedBodySpecializationBatch> {
         match self {
             Self::X86_64Specialized { specialization, .. } => Some(specialization),
             _ => None,
+        }
+    }
+
+    fn selected_function_hirs(self) -> &'a [u32] {
+        match self {
+            Self::X86_64Specialized { selected_function_hirs, .. } => selected_function_hirs,
+            _ => &[],
         }
     }
     fn target(self) -> LoweringTarget {
@@ -2543,7 +2576,7 @@ fn finish_source_pack_unit(
 }
 
 struct CheckedSourcePackArtifacts {
-    body_native_layouts: Option<Vec<u32>>,
+    body_native_layouts: Option<Vec<Vec<u32>>>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
     x86_object: Option<crate::codegen::x86::GpuX86RelocatableObject>,
@@ -2559,7 +2592,8 @@ struct CheckedSourcePackArtifacts {
 pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// Canonical seed-node widths copied after GPU native admission, only for
     /// concrete replay. These refine the cache independently of semantic keys.
-    pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[u32]>>,
+    /// One vector per batched replay entry, in entry order.
+    pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
     pub(in crate::compiler) generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,
@@ -3071,6 +3105,8 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     6 => "a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required",
                     7 => "a retained native width witness conflicts with the GPU-derived replay layout",
                     8 => "a replay seed has malformed graph roots or exceeds the supported native width",
+                    16 => "checked call inference did not converge: its passes changed more than 32 facts per HIR node and token",
+                    17 => "call inference needed more than 1024 dependent rounds; add a type annotation to break the chain",
                     _ => "a nested type application could not be instantiated from its checked environment",
                 }),
         ),
@@ -3144,7 +3180,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 .with_primary_label(diagnostic_label_from_source_span(
                     path, source, start, len, invalid_cast_label(detail),
                 ))
-                .with_note("`as` converts between integer and floating-point scalar types, and from bool to an integer type"),
+                .with_note("`as` converts between integer and floating-point types, from bool or char to an integer type, and from u8 to char"),
         ),
         GpuTypeCheckCode::InvalidArrayLength => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
@@ -4461,7 +4497,7 @@ fn main() -> i32 {
                 matches!(argument.ty, CheckedGenericType::Nominal { words: Some(2), .. })))
             .expect("fresh forwarded call retains the GPU-produced native witness");
         assert!(forwarded.has_complete_arguments(), "{forwarded:?}");
-        let widths = replay.body_native_layouts.as_ref().expect("completed GPU seed layouts");
+        let widths = &replay.body_native_layouts.as_ref().expect("completed GPU seed layouts")[0];
         assert_eq!(widths.last(), Some(&2), "native cache receives the actual nominal width");
         assert!(!widths.contains(&u32::MAX), "all local seed layouts were materialized");
         assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts));
@@ -4521,8 +4557,8 @@ fn main() -> i32 {
         }
         let replay = pollster::block_on(compiler.compile_body_specialization(&template, &empty))
             .expect("GPU must derive zero as a complete width");
-        let saved = replay.body_native_layouts.as_ref().expect("zero seed readback").clone();
-        assert_eq!(saved.as_ref(), &[0, 0, 0]);
+        let saved = replay.body_native_layouts.as_ref().expect("zero seed readback")[0].clone();
+        assert_eq!(saved.as_slice(), &[0, 0, 0]);
 
         let mut conflicting = full.clone();
         let CheckedGenericType::Array { words, .. } = &mut conflicting.arguments[0].ty else {
@@ -4542,9 +4578,9 @@ fn main() -> i32 {
         for (call, expected) in [(&full, &[0, 2][..]), (&empty, &[0, 0, 0][..])] {
             let recovered = pollster::block_on(compiler.compile_body_specialization(&template, call))
                 .expect("fresh replay after a rejected width witness");
-            assert_eq!(recovered.body_native_layouts.as_deref(), Some(expected));
+            assert_eq!(recovered.body_native_layouts.as_deref().map(|layouts| layouts[0].as_slice()), Some(expected));
         }
-        assert_eq!(saved.as_ref(), &[0, 0, 0], "later jobs preserve owned layout readback");
+        assert_eq!(saved.as_slice(), &[0, 0, 0], "later jobs preserve owned layout readback");
     }
 
     #[test]
@@ -4592,8 +4628,8 @@ fn main() -> i32 {
             assert!(!call.has_complete_arguments());
             let replay = pollster::block_on(compiler.compile_body_specialization(&library, &call))
                 .expect("descriptor layout is complete without a foreign payload recipe");
-            let widths = replay.body_native_layouts.as_deref().expect("descriptor seed readback");
-            assert_eq!(widths, &[u32::MAX, descriptor_words],
+            let widths = &replay.body_native_layouts.as_deref().expect("descriptor seed readback")[0];
+            assert_eq!(widths.as_slice(), &[u32::MAX, descriptor_words],
                 "opaque referent identity survives while only descriptor storage is required");
             assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &library.checked_contracts));
         }

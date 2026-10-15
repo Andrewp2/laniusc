@@ -5,6 +5,7 @@ import type_checker.constant_atoms;
 import hir_records;
 import type_checker.checked_type_graph;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_stackless;
 import fixed.compact_method;
 import type_checker.predicates.method_contract_lookup;
 import type_checker.predicates.trait_reference;
@@ -356,7 +357,7 @@ bool complete_method_types_mismatch(uint trait_type, uint impl_type, uint impl_o
     uint left_tag; uint left_payload; uint right_tag; uint right_payload;
     if (!type_node_ref(trait_type, left_tag, left_payload) ||
         !type_node_ref(impl_type, right_tag, right_payload)) return true;
-    return !scoped_type_refs_equal<TraitMethodContractGraph>(
+    return !scoped_type_refs_equal_stackless<TraitMethodContractGraph>(
         left_tag, left_payload, impl_owner, right_tag, right_payload, INVALID,
         checked_type_capacity(), gParams.n_tokens);
 }

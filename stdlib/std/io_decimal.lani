@@ -13,7 +13,7 @@ pub fn write_u32(handle: i32, value: u32) -> i32 {
     let position: u32 = 0;
     while (position<length) {
         let byte: u8 = core::decimal::byte_at_or_u32(value, position, 0);
-        let byte_i32: i32 = byte;
+        let byte_i32: i32 = byte as i32;
         let written: i32 = std::io::write_byte(handle, byte_i32);
         if (written<0) {
             return written;
@@ -23,7 +23,7 @@ pub fn write_u32(handle: i32, value: u32) -> i32 {
         }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 
 // Writes a signed decimal value, including the sign for negatives. Returns
@@ -34,7 +34,7 @@ pub fn write_i32(handle: i32, value: i32) -> i32 {
     let position: u32 = 0;
     while (position<length) {
         let byte: u8 = core::decimal::byte_at_or_i32(value, position, 0);
-        let byte_i32: i32 = byte;
+        let byte_i32: i32 = byte as i32;
         let written: i32 = std::io::write_byte(handle, byte_i32);
         if (written<0) {
             return written;
@@ -44,7 +44,7 @@ pub fn write_i32(handle: i32, value: i32) -> i32 {
         }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 
 // Write a full-width two-word unsigned value. Return the byte count (1..20),
@@ -55,13 +55,13 @@ pub fn write_wide_u64(handle: i32, value: core::wide_u64::WideU64) -> i32 {
     let position: u32 = 0;
     while (position < length) {
         let byte: u8 = core::wide_u64::decimal_byte_at_or(value, position, 0);
-        let code: i32 = byte;
+        let code: i32 = byte as i32;
         let written: i32 = std::io::write_byte(handle, code);
         if (written < 0) { return written; }
         if (written != 1) { return -1; }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 
 // Signed values include a leading minus byte when negative. Return the
@@ -71,13 +71,13 @@ pub fn write_wide_i64(handle: i32, value: core::wide_i64::WideI64) -> i32 {
     let position: u32 = 0;
     while (position < length) {
         let byte: u8 = core::wide_i64::decimal_byte_at_or(value, position, 0);
-        let code: i32 = byte;
+        let code: i32 = byte as i32;
         let written: i32 = std::io::write_byte(handle, code);
         if (written < 0) { return written; }
         if (written != 1) { return -1; }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 
 // Narrow integer writers widen without changing the value, then inherit the
@@ -150,7 +150,7 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
             }
             started = true;
             digits = true;
-            let ascii: u8 = byte;
+            let ascii: u8 = byte as u8;
             let limit: u32 = 4294967295;
             if (!core::decimal::can_append_ascii_digit_u32(value, ascii, limit)) {
                 return fallback;
@@ -214,7 +214,7 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
             }
             started = true;
             digits = true;
-            let ascii: u8 = byte;
+            let ascii: u8 = byte as u8;
             let limit: u32 = 2147483647;
             if (negative) {
                 limit = 2147483648;
@@ -234,10 +234,10 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
         if (magnitude == 2147483648) {
             return -2147483648;
         }
-        let positive: i32 = magnitude;
+        let positive: i32 = magnitude as i32;
         return -positive;
     }
-    let positive: i32 = magnitude;
+    let positive: i32 = magnitude as i32;
     return positive;
 }
 
@@ -285,7 +285,7 @@ pub fn read_wide_u64_stdin_or(
             started = true;
             digits = true;
             let digit_i32: i32 = byte - 48;
-            let digit: u32 = digit_i32;
+            let digit: u32 = digit_i32 as u32;
             let order: i32 = core::wide_u64::compare(value, threshold);
             if (order > 0 || (order == 0 && digit > 5)) { return fallback; }
             value = append_wide_digit(value, digit);
@@ -336,7 +336,7 @@ pub fn read_wide_i64_stdin_or(
             started = true;
             digits = true;
             let digit_i32: i32 = byte - 48;
-            let digit: u32 = digit_i32;
+            let digit: u32 = digit_i32 as u32;
             let last_digit: u32 = 7;
             if (negative) { last_digit = 8; }
             let order: i32 = core::wide_u64::compare(magnitude, threshold);

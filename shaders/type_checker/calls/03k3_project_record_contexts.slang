@@ -78,6 +78,17 @@ bool valid_hir(uint node) { return node < active_hir_count(); }
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 uint checked_type_capacity() { return mutable_type_capacity(); }
 bool valid_instance(uint instance) { return instance < checked_type_capacity(); }
+// Producers can publish one application as different checked rows: the
+// nested-literal pass its indexed field row, a canonical context or a
+// materialized result the realized row of the application's ID. Rows with
+// one canonical ID are the same context.
+bool same_context_instance(uint current, uint instance)
+{
+    if (current == instance) return true;
+    if (!valid_instance(current) || !valid_instance(instance)) return false;
+    uint id = ct_row_ref(current);
+    return ct_is_resolved(id) && id == ct_row_ref(instance);
+}
 bool checked_instance_is_closed(uint instance)
 {
     return concrete_instance_is_closed<MutableCheckedTypeGraph, CheckedSourceConstantGraph,
@@ -415,7 +426,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
     }
-    if (struct_lit_context_decl_token[node] == declaration && struct_lit_context_instance[node] == instance) return;
+    // Rewriting an equal application as another row would count as a change
+    // every round: the nested-literal pass publishes its row again before
+    // this one, so call inference would never converge.
+    if (struct_lit_context_decl_token[node] == declaration &&
+        same_context_instance(struct_lit_context_instance[node], instance)) return;
     struct_lit_context_decl_token[node] = declaration;
     struct_lit_context_instance[node] = instance;
     uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);

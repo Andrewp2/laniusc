@@ -1,6 +1,6 @@
-// Explicit 32-bit to 8- and 16-bit conversions. Narrowing a value outside
-// the target range currently misexecutes on x86_64. These helpers normalize
-// or check before assigning into a narrower typed local.
+// Explicit 32-bit to 8- and 16-bit conversions. A bare `as` cast truncates;
+// these helpers name the wrapping, checked and saturating policies and
+// normalize or check the value before the narrowing cast.
 module core::narrow;
 
 // Keep the low 8 bits; signed results use two's-complement interpretation.
@@ -8,14 +8,14 @@ pub fn i8_from_i32_wrapping(value: i32) -> i8 {
     let masked: i32 = value & 255;
     let normalized: i32 = masked;
     if (normalized >= 128) { normalized -= 256; }
-    let narrowed: i8 = normalized;
+    let narrowed: i8 = normalized as i8;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn i8_from_i32_or(value: i32, fallback: i8) -> i8 {
     if (value < -128 || value > 127) { return fallback; }
-    let narrowed: i8 = value;
+    let narrowed: i8 = value as i8;
     return narrowed;
 }
 
@@ -23,44 +23,44 @@ pub fn i8_from_i32_or(value: i32, fallback: i8) -> i8 {
 pub fn i8_from_i32_saturating(value: i32) -> i8 {
     if (value < -128) { return -128; }
     if (value > 127) { return 127; }
-    let narrowed: i8 = value;
+    let narrowed: i8 = value as i8;
     return narrowed;
 }
 
 // Keep the low 8 bits; signed results use two's-complement interpretation.
 pub fn i8_from_u32_wrapping(value: u32) -> i8 {
     let masked: u32 = value & 255;
-    let normalized: i32 = masked;
+    let normalized: i32 = masked as i32;
     if (normalized >= 128) { normalized -= 256; }
-    let narrowed: i8 = normalized;
+    let narrowed: i8 = normalized as i8;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn i8_from_u32_or(value: u32, fallback: i8) -> i8 {
     if (value > 127) { return fallback; }
-    let narrowed: i8 = value;
+    let narrowed: i8 = value as i8;
     return narrowed;
 }
 
 // Clamp to the target range before narrowing.
 pub fn i8_from_u32_saturating(value: u32) -> i8 {
     if (value > 127) { return 127; }
-    let narrowed: i8 = value;
+    let narrowed: i8 = value as i8;
     return narrowed;
 }
 
 // Keep the low 8 bits; signed results use two's-complement interpretation.
 pub fn u8_from_i32_wrapping(value: i32) -> u8 {
     let masked: i32 = value & 255;
-    let narrowed: u8 = masked;
+    let narrowed: u8 = masked as u8;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn u8_from_i32_or(value: i32, fallback: u8) -> u8 {
     if (value < 0 || value > 255) { return fallback; }
-    let narrowed: u8 = value;
+    let narrowed: u8 = value as u8;
     return narrowed;
 }
 
@@ -68,28 +68,28 @@ pub fn u8_from_i32_or(value: i32, fallback: u8) -> u8 {
 pub fn u8_from_i32_saturating(value: i32) -> u8 {
     if (value < 0) { return 0; }
     if (value > 255) { return 255; }
-    let narrowed: u8 = value;
+    let narrowed: u8 = value as u8;
     return narrowed;
 }
 
 // Keep the low 8 bits; signed results use two's-complement interpretation.
 pub fn u8_from_u32_wrapping(value: u32) -> u8 {
     let masked: u32 = value & 255;
-    let narrowed: u8 = masked;
+    let narrowed: u8 = masked as u8;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn u8_from_u32_or(value: u32, fallback: u8) -> u8 {
     if (value > 255) { return fallback; }
-    let narrowed: u8 = value;
+    let narrowed: u8 = value as u8;
     return narrowed;
 }
 
 // Clamp to the target range before narrowing.
 pub fn u8_from_u32_saturating(value: u32) -> u8 {
     if (value > 255) { return 255; }
-    let narrowed: u8 = value;
+    let narrowed: u8 = value as u8;
     return narrowed;
 }
 
@@ -98,14 +98,14 @@ pub fn i16_from_i32_wrapping(value: i32) -> i16 {
     let masked: i32 = value & 65535;
     let normalized: i32 = masked;
     if (normalized >= 32768) { normalized -= 65536; }
-    let narrowed: i16 = normalized;
+    let narrowed: i16 = normalized as i16;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn i16_from_i32_or(value: i32, fallback: i16) -> i16 {
     if (value < -32768 || value > 32767) { return fallback; }
-    let narrowed: i16 = value;
+    let narrowed: i16 = value as i16;
     return narrowed;
 }
 
@@ -113,44 +113,44 @@ pub fn i16_from_i32_or(value: i32, fallback: i16) -> i16 {
 pub fn i16_from_i32_saturating(value: i32) -> i16 {
     if (value < -32768) { return -32768; }
     if (value > 32767) { return 32767; }
-    let narrowed: i16 = value;
+    let narrowed: i16 = value as i16;
     return narrowed;
 }
 
 // Keep the low 16 bits; signed results use two's-complement interpretation.
 pub fn i16_from_u32_wrapping(value: u32) -> i16 {
     let masked: u32 = value & 65535;
-    let normalized: i32 = masked;
+    let normalized: i32 = masked as i32;
     if (normalized >= 32768) { normalized -= 65536; }
-    let narrowed: i16 = normalized;
+    let narrowed: i16 = normalized as i16;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn i16_from_u32_or(value: u32, fallback: i16) -> i16 {
     if (value > 32767) { return fallback; }
-    let narrowed: i16 = value;
+    let narrowed: i16 = value as i16;
     return narrowed;
 }
 
 // Clamp to the target range before narrowing.
 pub fn i16_from_u32_saturating(value: u32) -> i16 {
     if (value > 32767) { return 32767; }
-    let narrowed: i16 = value;
+    let narrowed: i16 = value as i16;
     return narrowed;
 }
 
 // Keep the low 16 bits; signed results use two's-complement interpretation.
 pub fn u16_from_i32_wrapping(value: i32) -> u16 {
     let masked: i32 = value & 65535;
-    let narrowed: u16 = masked;
+    let narrowed: u16 = masked as u16;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn u16_from_i32_or(value: i32, fallback: u16) -> u16 {
     if (value < 0 || value > 65535) { return fallback; }
-    let narrowed: u16 = value;
+    let narrowed: u16 = value as u16;
     return narrowed;
 }
 
@@ -158,27 +158,27 @@ pub fn u16_from_i32_or(value: i32, fallback: u16) -> u16 {
 pub fn u16_from_i32_saturating(value: i32) -> u16 {
     if (value < 0) { return 0; }
     if (value > 65535) { return 65535; }
-    let narrowed: u16 = value;
+    let narrowed: u16 = value as u16;
     return narrowed;
 }
 
 // Keep the low 16 bits; signed results use two's-complement interpretation.
 pub fn u16_from_u32_wrapping(value: u32) -> u16 {
     let masked: u32 = value & 65535;
-    let narrowed: u16 = masked;
+    let narrowed: u16 = masked as u16;
     return narrowed;
 }
 
 // An out-of-range input returns the caller's fallback.
 pub fn u16_from_u32_or(value: u32, fallback: u16) -> u16 {
     if (value > 65535) { return fallback; }
-    let narrowed: u16 = value;
+    let narrowed: u16 = value as u16;
     return narrowed;
 }
 
 // Clamp to the target range before narrowing.
 pub fn u16_from_u32_saturating(value: u32) -> u16 {
     if (value > 65535) { return 65535; }
-    let narrowed: u16 = value;
+    let narrowed: u16 = value as u16;
     return narrowed;
 }

@@ -15,7 +15,7 @@ pub fn from_words(high: u32, low: u32) -> WideI64 {
 pub fn from_i32(value: i32) -> WideI64 {
     let upper: u32 = 0;
     if (value < 0) { upper = 4294967295; }
-    let lower: u32 = value;
+    let lower: u32 = value as u32;
     return from_words(upper, lower);
 }
 
@@ -234,7 +234,7 @@ pub fn can_parse_ascii_decimal(values: [i32], len: i32) -> bool {
         let code: i32 = values[index];
         if (code < 48 || code > 57) { return false; }
         let digit_i32: i32 = code - 48;
-        let digit: u32 = digit_i32;
+        let digit: u32 = digit_i32 as u32;
         let relation: i32 = core::wide_u64::compare(current, limit);
         if (relation > 0 ||
             (relation == 0 && digit > maximum_last_digit)) {
@@ -264,7 +264,7 @@ pub fn parse_ascii_decimal_or(values: [i32], len: i32, fallback: WideI64) -> Wid
     let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
     while (index < len) {
         let digit_i32: i32 = values[index] - 48;
-        let digit: u32 = digit_i32;
+        let digit: u32 = digit_i32 as u32;
         magnitude = core::wide_u64::wrapping_add(
             core::wide_u64::wrapping_mul(magnitude,
                 core::wide_u64::from_u32(10)),

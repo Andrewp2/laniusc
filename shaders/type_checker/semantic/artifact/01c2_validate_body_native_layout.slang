@@ -15,6 +15,7 @@ StructuredBuffer<uint> type_native_scalar_identity;
 RWStructuredBuffer<uint> status;
 
 #include "../../type/instances/body_type_graph_reference.slang"
+#include "../../type/instances/body_specialization_entries.slang"
 
 static const uint INVALID = 0xffffffffu;
 
@@ -65,13 +66,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 record_min_token_error(status, 0u, 6u, 0x474e0007u);
         }
     }
-    if (lane >= header.x) return;
-    uint4 argument = body_specialization_inputs[lane * 2u + 1u];
-    if (argument.x != lane || argument.y != 10u || argument.z >= header.z)
-    { record_min_token_error(status, 0u, 6u, 0x474e0008u); return; }
-    uint tag; uint payload;
-    body_type_graph_reference(argument.z, source_capacity, tag, payload);
-    uint width = root_words(tag, payload, capacity);
-    if (width == INVALID) record_min_token_error(status, 0u, 6u, 0x474e0006u);
-    else if (width > 0xffffu) record_min_token_error(status, 0u, 6u, 0x474e0008u);
+    // Every entry's argument roots, entry 0 first (its header was checked above).
+    uint entries = body_entry_count();
+    for (uint entry = 0u; entry < entries; entry++)
+    {
+        uint arguments = body_entry_header(entry).x;
+        if (arguments > 32u)
+        { if (lane == 0u) record_min_token_error(status, 0u, 6u, 0x474e0008u); return; }
+        if (lane >= arguments) continue;
+        uint4 argument = body_entry_argument(entry, lane);
+        if (argument.x != lane || argument.y != 10u || argument.z >= header.z)
+        { record_min_token_error(status, 0u, 6u, 0x474e0008u); return; }
+        uint tag; uint payload;
+        body_type_graph_reference(argument.z, source_capacity, tag, payload);
+        uint width = root_words(tag, payload, capacity);
+        if (width == INVALID) record_min_token_error(status, 0u, 6u, 0x474e0006u);
+        else if (width > 0xffffu) record_min_token_error(status, 0u, 6u, 0x474e0008u);
+    }
 }

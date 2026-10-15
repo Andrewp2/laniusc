@@ -73,7 +73,7 @@ pub fn try_append_scalar(value: std::vec_u8::VecU8, scalar: u32) -> std::vec_u8:
     if (width_u32 == 0 || !is_valid(value)) {
         return value;
     }
-    let width: i32 = width_u32;
+    let width: i32 = width_u32 as i32;
     let length: i32 = std::vec_u8::len(value);
     if (length > std::vec_u8::MAX_CAPACITY - width) {
         return value;
@@ -128,7 +128,7 @@ pub fn try_append_scalars(
         if (width_u32 == 0) {
             return value;
         }
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         if (width > remaining - extra) {
             return value;
         }
@@ -215,7 +215,7 @@ pub fn try_append_codes(
     let index: i32 = 0;
     while (index < len) {
         let raw_byte: i32 = codes[index];
-        let byte: u8 = raw_byte;
+        let byte: u8 = raw_byte as u8;
         grown = std::vec_u8::try_push(grown, byte);
         index += 1;
     }
@@ -254,7 +254,7 @@ pub fn try_insert_scalar(
     if (offset < 0) {
         return value;
     }
-    let width: i32 = width_u32;
+    let width: i32 = width_u32 as i32;
     if (length > std::vec_u8::MAX_CAPACITY - width) {
         return value;
     }
@@ -277,8 +277,8 @@ pub fn try_insert_scalar(
     let byte_index: u32 = 0;
     while (byte_index < width_u32) {
         let encoded: u8 = core::utf8::encoded_byte_or(scalar, byte_index, 0);
-        let target: i32 = byte_index;
-        let code: i32 = encoded;
+        let target: i32 = byte_index as i32;
+        let code: i32 = encoded as i32;
         cells[offset + target] = code;
         byte_index += 1;
     }
@@ -579,7 +579,7 @@ pub fn try_splice_bytes(
     let index: i32 = 0;
     while (index < bytes_len) {
         let byte: u8 = bytes[index];
-        let code: i32 = byte;
+        let code: i32 = byte as i32;
         current_cells[start + index] = code;
         index += 1;
     }
@@ -616,7 +616,7 @@ pub fn try_replace_scalar(
     if (end <= start || end > length) {
         return value;
     }
-    let new_width: i32 = new_width_u32;
+    let new_width: i32 = new_width_u32 as i32;
     let old_width: i32 = end - start;
     let changed: std::vec_u8::VecU8 = value;
     if (new_width > old_width) {
@@ -663,8 +663,8 @@ pub fn try_replace_scalar(
     let byte_index: u32 = 0;
     while (byte_index < new_width_u32) {
         let encoded: u8 = core::utf8::encoded_byte_or(scalar, byte_index, 0);
-        let target: i32 = byte_index;
-        let code: i32 = encoded;
+        let target: i32 = byte_index as i32;
+        let code: i32 = encoded as i32;
         current_cells[start + target] = code;
         byte_index += 1;
     }
