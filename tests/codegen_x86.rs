@@ -11784,3 +11784,56 @@ fn main() -> i32 {
         42,
     );
 }
+
+#[test]
+fn x86_parenthesized_receivers_borrow_or_copy_the_wrapped_expression() {
+    assert_source_exit(
+        "parenthesized_receivers",
+        r#"
+struct Inner { v: i32 }
+impl Inner { fn get(&self) -> i32 { return self.v; } }
+struct W { v: i32, inner: Inner }
+impl W {
+    fn get(&self) -> i32 { return self.v; }
+    fn take(self) -> i32 { return self.v + 1; }
+}
+fn make() -> W { return W { v: 5, inner: Inner { v: 6 } }; }
+fn main() -> i32 {
+    let w: W = W { v: 7, inner: Inner { v: 8 } };
+    if ((w).get() != 7) { return 1; }
+    if (((w)).get() != 7) { return 2; }
+    if ((w.inner).get() != 8) { return 3; }
+    if ((make()).get() != 5) { return 4; }
+    if ((w).take() != 8) { return 5; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_field_of_a_temporary_is_stored_then_borrowed() {
+    assert_source_exit(
+        "receiver_temporary_field",
+        r#"
+struct Inner { v: i32 }
+impl Inner { fn get(&self) -> i32 { return self.v; } }
+struct Mid { pad: i32, inner: Inner }
+struct Outer { pad: i32, mid: Mid, inner: Inner }
+impl Outer { fn shifted(&self) -> Outer { return make(self.inner.v + 1); } }
+fn make(v: i32) -> Outer {
+    return Outer { pad: 1, mid: Mid { pad: 2, inner: Inner { v: v * 2 } }, inner: Inner { v: v } };
+}
+fn main() -> i32 {
+    if (make(7).inner.get() != 7) { return 1; }
+    if (make(7).mid.inner.get() != 14) { return 2; }
+    let o: Outer = make(3);
+    if (o.shifted().inner.get() != 4) { return 3; }
+    if (o.shifted().mid.inner.get() != 8) { return 4; }
+    return 42;
+}
+"#,
+        42,
+    );
+}

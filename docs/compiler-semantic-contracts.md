@@ -18,11 +18,26 @@ stores again, so a receiver in a loop sees the current value.
   `ADDRESS` of it. The call argument reads the last row.
 
 The predicate is in `codegen/lir/semantic/receiver_temporary.slang`. Names,
-fields, indexes and paths still borrow their own storage. Some receivers are
-still rejected as before:
+fields, indexes and paths still borrow their own storage.
 
-- a parenthesized receiver;
-- a field or index of a temporary (`make().inner.get()`);
+Parentheses own no rows. Lowering adjusts, borrows or stores the expression
+inside them, so `(w).get()`, `(w.inner).get()` and `(make()).get()` work like
+the same calls without parentheses (`receiver_source.slang`).
+
+A field of a temporary, such as `make().inner.get()` or
+`o.shifted().mid.inner.get()`, stores the struct, enum or array under the
+fields. That value is the holder. Its `semantic_receiver_call_by_hir` entry is
+the call plus one, with `RECEIVER_TEMPORARY_HOLDER` (the high bit) set. The
+holder gets two rows: `PLACE_STORE` into the home, then a `PLACE_LOAD` view of
+it, which becomes its value row. The fields then take their addresses from the
+view, as they would from a `let` local. A holder that is a reference is not
+stored, since the projection dereferences it.
+
+These receivers are still rejected:
+
+- an index of a temporary (`make_array()[0].get()`);
+- a parenthesized base of a field (`(make()).inner.get()`), since the field
+  reads its base row through the parentheses;
 - a receiver that the method dereferences first.
 
 Wasm has no place operations, so it still rejects every borrowed receiver. The
