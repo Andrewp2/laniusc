@@ -289,6 +289,7 @@ def sweep(args) -> int:
             "schema": "lanius.fixture-sweep.v1",
             "laniusc": args.laniusc,
             "laniusc_version": version,
+            "source_root": str(ROOT),
             "shard": f"{index}/{count}",
             "suites": suites,
             "pattern": args.pattern,
@@ -863,6 +864,7 @@ def check_each_module(args, modules, out: pathlib.Path) -> list[dict]:
 
 
 def main() -> int:
+    global ROOT, STDLIB
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="action", required=True)
     common = argparse.ArgumentParser(add_help=False)
@@ -896,7 +898,17 @@ def main() -> int:
     lst = sub.add_parser("list", help="print the fixtures and expectations without running anything")
     lst.add_argument("--suite", action="append", choices=SUITES)
     lst.add_argument("--pattern", default="")
+    for subparser in (run, std, lst):
+        subparser.add_argument(
+            "--source-root",
+            help="take tests/ and stdlib/ from this tree instead of this checkout, so a pinned compiler "
+                 "is swept with its own commit's fixtures and stdlib (e.g. a `git archive` export)")
     args = parser.parse_args()
+    if getattr(args, "source_root", None):
+        ROOT = pathlib.Path(args.source_root).resolve()
+        STDLIB = ROOT / "stdlib"
+        if not (ROOT / "tests").is_dir() or not STDLIB.is_dir():
+            parser.error(f"--source-root {ROOT} needs tests/ and stdlib/")
     if args.action == "run":
         return sweep(args)
     if args.action == "report":
