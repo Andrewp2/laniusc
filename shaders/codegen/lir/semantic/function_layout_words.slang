@@ -125,33 +125,36 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (root >= hir_count || compact_hir_core[root].kind != HIR_STRUCT_ITEM) return;
 
-    uint stack_struct[MAX_LAYOUT_DEPTH];
-    uint stack_next[MAX_LAYOUT_DEPTH];
-    uint stack_total[MAX_LAYOUT_DEPTH];
-    uint stack_multiplier[MAX_LAYOUT_DEPTH];
-    uint stack_parent_field[MAX_LAYOUT_DEPTH];
+    // The traversal keeps two words per nested frame: the field row it was
+    // entered through and its running word total. Everything else a frame
+    // needs follows from that row (compact_fields is immutable here): its
+    // parent's struct is the row's owner, the parent resumes after the row's
+    // ordinal, and its multiplier is the row's array length. The top frame's
+    // struct and next ordinal live in `current` and `next`.
+    uint entry_field[MAX_LAYOUT_DEPTH];
+    uint frame_total[MAX_LAYOUT_DEPTH];
     uint depth = 0u;
-    stack_struct[0u] = root;
-    stack_next[0u] = 0u;
-    stack_total[0u] = 0u;
-    stack_multiplier[0u] = 1u;
-    stack_parent_field[0u] = INVALID;
+    uint current = root;
+    uint next = 0u;
+    entry_field[0u] = INVALID;
+    frame_total[0u] = 0u;
 
     for (;;)
     {
-        uint current = stack_struct[depth];
         uint count = semantic_struct_field_count_by_hir[current];
         uint start = semantic_struct_field_start_by_hir[current];
-        if (stack_next[depth] >= count)
+        if (next >= count)
         {
-            if (stack_multiplier[depth] != 0u &&
-                stack_total[depth] > (INVALID - 1u) / stack_multiplier[depth])
+            uint parent_field = entry_field[depth];
+            uint multiplier = depth == 0u
+                ? 1u : array_length(compact_fields[parent_field].value, hir_count);
+            if (multiplier != 0u &&
+                frame_total[depth] > (INVALID - 1u) / multiplier)
             {
                 semantic_struct_word_count_by_hir[root] = INVALID;
                 return;
             }
-            uint completed = stack_total[depth] * stack_multiplier[depth];
-            uint parent_field = stack_parent_field[depth];
+            uint completed = frame_total[depth] * multiplier;
             if (depth == 0u)
             {
                 semantic_struct_word_count_by_hir[root] = completed;
@@ -160,19 +163,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
             depth -= 1u;
             if (depth == 0u && parent_field != INVALID)
             {
-                semantic_struct_field_word_offset_by_row[parent_field] = stack_total[0u];
+                semantic_struct_field_word_offset_by_row[parent_field] = frame_total[0u];
                 semantic_struct_field_word_count_by_row[parent_field] = completed;
             }
-            if (stack_total[depth] >= INVALID - completed)
+            if (frame_total[depth] >= INVALID - completed)
             {
                 semantic_struct_word_count_by_hir[root] = INVALID;
                 return;
             }
-            stack_total[depth] += completed;
+            frame_total[depth] += completed;
+            HirField entered = compact_fields[parent_field];
+            current = entered.owner;
+            next = entered.ordinal + 1u;
             continue;
         }
 
-        uint ordinal = stack_next[depth]++;
+        uint ordinal = next++;
         uint field_row = start != INVALID ? start + ordinal : INVALID;
         if (field_row >= gParams.n_hir_nodes)
         {
@@ -195,17 +201,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint capacity; uint stride;
             type_instance_native_words.GetDimensions(capacity, stride);
             uint words = instance < capacity ? type_instance_native_words[instance] : INVALID;
-            if (words == INVALID || stack_total[depth] >= INVALID - words)
+            if (words == INVALID || frame_total[depth] >= INVALID - words)
             {
                 semantic_struct_word_count_by_hir[root] = INVALID;
                 return;
             }
             if (depth == 0u)
             {
-                semantic_struct_field_word_offset_by_row[field_row] = stack_total[0u];
+                semantic_struct_field_word_offset_by_row[field_row] = frame_total[0u];
                 semantic_struct_field_word_count_by_row[field_row] = words;
             }
-            stack_total[depth] += words;
+            frame_total[depth] += words;
             continue;
         }
 
@@ -259,17 +265,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // must not become the child's multiplier on the second pass.
             if (cached_width != 0u)
                 multiplier = cached_width;
-            if (multiplier == INVALID || stack_total[depth] >= INVALID - multiplier)
+            if (multiplier == INVALID || frame_total[depth] >= INVALID - multiplier)
             {
                 semantic_struct_word_count_by_hir[root] = INVALID;
                 return;
             }
             if (depth == 0u)
             {
-                semantic_struct_field_word_offset_by_row[field_row] = stack_total[0u];
+                semantic_struct_field_word_offset_by_row[field_row] = frame_total[0u];
                 semantic_struct_field_word_count_by_row[field_row] = multiplier;
             }
-            stack_total[depth] += multiplier;
+            frame_total[depth] += multiplier;
             continue;
         }
 
@@ -278,19 +284,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
             semantic_struct_word_count_by_hir[root] = INVALID;
             return;
         }
-        for (uint ancestor = 0u; ancestor <= depth; ancestor += 1u)
+        // The frames' structs are the root (frame 0's), the owner of each
+        // deeper frame's entry row (its parent's), and `current`.
+        bool cycle = child == current;
+        for (uint ancestor = 1u; ancestor <= depth; ancestor += 1u)
+            cycle = cycle || compact_fields[entry_field[ancestor]].owner == child;
+        if (cycle)
         {
-            if (stack_struct[ancestor] == child)
-            {
-                semantic_struct_word_count_by_hir[root] = INVALID;
-                return;
-            }
+            semantic_struct_word_count_by_hir[root] = INVALID;
+            return;
         }
+        // A struct field's multiplier is its array length, which the pop
+        // above recomputes from entry_field.
         depth += 1u;
-        stack_struct[depth] = child;
-        stack_next[depth] = 0u;
-        stack_total[depth] = 0u;
-        stack_multiplier[depth] = multiplier;
-        stack_parent_field[depth] = field_row;
+        entry_field[depth] = field_row;
+        frame_total[depth] = 0u;
+        current = child;
+        next = 0u;
     }
 }
