@@ -45,10 +45,46 @@ pub(super) const BODY_ENTRY_TABLE_START: usize = BODY_SPECIALIZATION_WORDS / 4;
 pub(super) const BODY_ENTRY_ROWS: usize = 1 + 2 * MAX_BODY_TYPE_ARGUMENTS;
 pub(super) const BODY_BATCH_WORDS: usize =
     BODY_SPECIALIZATION_WORDS + BODY_GRAPH_EXT_ROWS * 4 + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS * 4;
+/// Impl bindings of one replay (see `BodyImplBinding`). They follow the whole
+/// entry capacity at a fixed row, BODY_IMPL_BINDING_ROW in
+/// shaders/type_checker/type/instances/body_impl_bindings.slang: a header row
+/// (binding count, 0, 0, 0), then two rows per binding.
+pub(crate) const MAX_BODY_IMPL_BINDINGS: usize = 8192;
+pub(super) const BODY_IMPL_BINDING_ROW: usize = BODY_BATCH_WORDS / 4;
+pub(super) const BODY_IMPL_BINDING_WORDS: usize = 4 + MAX_BODY_IMPL_BINDINGS * 8;
+/// The complete body_specialization_inputs buffer.
+pub(super) const BODY_INPUT_WORDS: usize = BODY_BATCH_WORDS + BODY_IMPL_BINDING_WORDS;
 
 /// Selects an instance copy's declaration by the source byte of its `fn`
 /// keyword (`COPY_TARGET | byte`); 00d2 resolves it to the copy's HIR row.
 pub(crate) const BODY_COPY_TARGET: u32 = 0xc000_0000;
+
+/// The native target of one bound member in one replayed instance: the
+/// implementation that program evidence selected for a bound on a type slot
+/// of the instance's environment, outside the replayed unit. 09
+/// (methods/09_route_bound_members) routes a bound member call that finds
+/// no implementation in the replayed unit to it. Keyed by
+/// (instance, slot, required symbol, trait unit); the instance is the batch
+/// entry, or the instance row of a future in-compile instance table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct BodyImplBinding {
+    pub instance: u32,
+    pub slot: u32,
+    /// The trait member's interface symbol (0x80000000 | its HIR row in the
+    /// trait's unit).
+    pub required_symbol: u32,
+    /// The trait's (library, unit); [u32::MAX; 2] for a trait of the
+    /// replayed unit, which the member symbol alone names.
+    pub trait_unit: [u32; 2],
+    /// (library, unit, native symbol) of the implementation method.
+    pub target: [u32; 3],
+}
+
+impl BodyImplBinding {
+    fn key(&self) -> (u32, u32, u32, [u32; 2]) {
+        (self.instance, self.slot, self.required_symbol, self.trait_unit)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecialization {
@@ -325,6 +361,8 @@ pub(crate) struct CheckedBodySpecializationBatch {
     constant_nodes: Vec<Vec<u32>>,
     /// Per entry: its single-entry graph node ordinal -> shared ordinal.
     shared_by_local: Vec<Vec<u32>>,
+    /// Sorted by key, unique (set_impl_bindings).
+    impl_bindings: Vec<BodyImplBinding>,
 }
 
 impl CheckedBodySpecializationBatch {
@@ -339,6 +377,7 @@ impl CheckedBodySpecializationBatch {
             roots: Vec::new(),
             constant_nodes: Vec::new(),
             shared_by_local: Vec::new(),
+            impl_bindings: Vec::new(),
         };
         ensure!(batch.try_push(entry)?, "one body specialization exceeds the packet capacity");
         Ok(batch)
@@ -368,6 +407,42 @@ impl CheckedBodySpecializationBatch {
         self.copy_first_row = row;
         self.copy_owners = owners;
         Ok(())
+    }
+
+    /// Install the replay's impl bindings (any order). Each names an entry of
+    /// this batch and a type slot; one key has one target. More than
+    /// MAX_BODY_IMPL_BINDINGS fails: the table is never truncated.
+    pub(crate) fn set_impl_bindings(&mut self, mut bindings: Vec<BodyImplBinding>) -> Result<()> {
+        bindings.sort_unstable();
+        bindings.dedup();
+        ensure!(bindings.len() <= MAX_BODY_IMPL_BINDINGS,
+            "a replay needs {} implementation bindings; at most {MAX_BODY_IMPL_BINDINGS} fit one packet",
+            bindings.len());
+        for binding in &bindings {
+            ensure!((binding.instance as usize) < self.entries.len()
+                && (binding.slot as usize) < MAX_BODY_TYPE_ARGUMENTS
+                && binding.required_symbol != u32::MAX
+                && binding.target.iter().all(|&word| word != u32::MAX)
+                && (binding.trait_unit == [u32::MAX; 2]
+                    || binding.trait_unit.iter().all(|&word| word != u32::MAX)),
+                "invalid implementation binding {binding:?}");
+        }
+        ensure!(bindings.windows(2).all(|pair| pair[0].key() != pair[1].key()),
+            "one bound member of an instance has two implementation targets");
+        self.impl_bindings = bindings;
+        Ok(())
+    }
+
+    pub(crate) fn impl_bindings(&self) -> &[BodyImplBinding] {
+        &self.impl_bindings
+    }
+
+    /// The binding section: header (count, 0, 0, 0), then per binding
+    /// (instance, slot, required symbol, trait library) and (trait unit,
+    /// target library, target unit, target symbol). Uploaded at
+    /// BODY_IMPL_BINDING_ROW on every replay.
+    pub(crate) fn impl_binding_words(&self) -> Vec<u32> {
+        impl_binding_words(&self.impl_bindings)
     }
 
     /// The template owner of each owner row of the instance copies, for a
@@ -595,6 +670,18 @@ impl super::GpuTypeChecker {
         let bytes = readback.read_regions(device, queue, &regions, "body native layouts")?;
         specialization.admitted_layouts(&super::generic_calls::words(&bytes[0]))
     }
+}
+
+/// See `CheckedBodySpecializationBatch::impl_binding_words`. An empty table
+/// (every job without a replay) is the zero header.
+pub(crate) fn impl_binding_words(bindings: &[BodyImplBinding]) -> Vec<u32> {
+    let mut words = Vec::with_capacity(4 + bindings.len() * 8);
+    words.extend([bindings.len() as u32, 0, 0, 0]);
+    for binding in bindings {
+        words.extend([binding.instance, binding.slot, binding.required_symbol, binding.trait_unit[0],
+            binding.trait_unit[1], binding.target[0], binding.target[1], binding.target[2]]);
+    }
+    words
 }
 
 /// Postorder graph of complete checked types. A nominal node keeps every
@@ -1671,5 +1758,74 @@ mod tests {
         // Batches without copies alias nothing.
         let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar], vec![])).unwrap();
         assert!(plain.instance_owner_aliases(&callables, &methods).unwrap().is_empty());
+    }
+
+    fn binding(instance: u32, slot: u32, symbol: u32, target: u32) -> BodyImplBinding {
+        BodyImplBinding {
+            instance,
+            slot,
+            required_symbol: 0x8000_0000 | symbol,
+            trait_unit: [u32::MAX; 2],
+            target: [0, 1, 0x4000_0000 | target],
+        }
+    }
+
+    #[test]
+    fn impl_bindings_are_sorted_by_key_and_laid_out_in_two_rows() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.try_push(entry(6, vec![scalar], vec![])).unwrap());
+        let imported = BodyImplBinding { trait_unit: [2, 4], ..binding(0, 0, 7, 21) };
+        batch.set_impl_bindings(vec![binding(1, 0, 7, 30), binding(0, 1, 7, 20), imported,
+            binding(0, 0, 7, 10), binding(0, 0, 7, 10)]).unwrap();
+        // Duplicates collapse; the order is (instance, slot, symbol, trait
+        // unit), with a local trait's (INVALID, INVALID) unit last.
+        assert_eq!(batch.impl_bindings(), &[imported, binding(0, 0, 7, 10), binding(0, 1, 7, 20),
+            binding(1, 0, 7, 30)]);
+        let words = batch.impl_binding_words();
+        assert_eq!(words.len(), 4 + 4 * 8);
+        assert_eq!(&words[..4], &[4, 0, 0, 0]);
+        assert_eq!(&words[4..12], &[0, 0, 0x8000_0007, 2, 4, 0, 1, 0x4000_0015]);
+        assert_eq!(&words[12..20], &[0, 0, 0x8000_0007, u32::MAX, u32::MAX, 0, 1, 0x4000_000a]);
+        assert!(words.len() <= BODY_IMPL_BINDING_WORDS);
+        // A plain job uploads the header alone.
+        assert_eq!(impl_binding_words(&[]), vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn impl_bindings_reject_conflicts_unknown_instances_and_overflow() {
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(5, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap();
+        let err = batch.set_impl_bindings(vec![binding(0, 0, 7, 10), binding(0, 0, 7, 11)]).unwrap_err();
+        assert!(err.to_string().contains("two implementation targets"), "{err}");
+        assert!(batch.set_impl_bindings(vec![binding(1, 0, 7, 10)]).is_err(), "entry 1 does not exist");
+        assert!(batch.set_impl_bindings(vec![binding(0, MAX_BODY_TYPE_ARGUMENTS as u32, 7, 10)]).is_err());
+        // One past the capacity is an error, never a truncated table.
+        let many = (0..=MAX_BODY_IMPL_BINDINGS as u32).map(|symbol| binding(0, 0, symbol, symbol)).collect();
+        let err = batch.set_impl_bindings(many).unwrap_err();
+        assert!(err.to_string().contains(&format!("needs {}", MAX_BODY_IMPL_BINDINGS + 1)), "{err}");
+        assert!(batch.impl_bindings().is_empty(), "a failed install leaves no bindings");
+        let full = (0..MAX_BODY_IMPL_BINDINGS as u32).map(|symbol| binding(0, 0, symbol, symbol)).collect();
+        batch.set_impl_bindings(full).unwrap();
+        assert_eq!(batch.impl_binding_words().len(), BODY_IMPL_BINDING_WORDS);
+    }
+
+    #[test]
+    fn impl_binding_section_matches_the_shader_reader() {
+        let reader = include_str!("../../../../shaders/type_checker/type/instances/body_impl_bindings.slang");
+        let value = |name: &str| -> usize {
+            let line = reader.lines()
+                .find(|line| line.starts_with(&format!("static const uint {name} = ")))
+                .unwrap_or_else(|| panic!("{name} is not a literal in body_impl_bindings.slang"));
+            line.split('=').nth(1).unwrap().trim().trim_end_matches(';').trim_end_matches('u').parse().unwrap()
+        };
+        assert_eq!(value("BODY_MAX_IMPL_BINDINGS"), MAX_BODY_IMPL_BINDINGS);
+        // The search halves [0, count) until it is empty: log2(capacity) + 1 steps.
+        assert_eq!(value("BODY_IMPL_BINDING_SEARCH_STEPS"), MAX_BODY_IMPL_BINDINGS.ilog2() as usize + 1);
+        // The shader places the section after the extension rows and every extra entry.
+        assert!(reader.contains("BODY_GRAPH_EXT_START + BODY_GRAPH_EXT_ROWS + (BODY_MAX_ENTRIES - 1u) * BODY_EXTRA_ENTRY_ROWS"));
+        assert_eq!(BODY_IMPL_BINDING_ROW,
+            BODY_ENTRY_TABLE_START + BODY_GRAPH_EXT_ROWS + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS);
+        assert_eq!(BODY_INPUT_WORDS, (BODY_IMPL_BINDING_ROW + 1 + 2 * MAX_BODY_IMPL_BINDINGS) * 4);
     }
 }
