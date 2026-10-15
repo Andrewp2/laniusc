@@ -17479,3 +17479,96 @@ fn parser_value_path_angles_stay_inside_their_statement_and_container() {
         assert!(parse_resident_source(source).ll1.accepted, "separate statements and functions");
     }
 }
+
+fn residency_unit_source(unit: usize, functions: usize) -> String {
+    let mut source = String::new();
+    for function in 0..functions {
+        source.push_str(&format!(
+            "fn unit{unit}_f{function}(a: i32, b: i32) -> i32 {{ let c: i32 = a * {} + b; if (c > {unit}) {{ return c - b; }} return c; }}\n",
+            function + unit
+        ));
+    }
+    source.push_str(&format!("fn main() -> i32 {{ return unit{unit}_f0({unit}, 1); }}\n"));
+    source
+}
+
+/// One process parses many distinct units, as parse_fuzz and a long-running
+/// daemon do. Each unit's one-shot parser buffers must be freed after it:
+/// the reflected bind-group cache used to keep every buffer it had bound
+/// alive, and parse_fuzz ran out of VRAM after ~58 files.
+#[test]
+fn parser_frees_gpu_memory_across_distinct_units() {
+    common::block_on_gpu_with_timeout("parser residency over distinct units", async move {
+        let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tables/parse_tables.bin"
+        )))
+        .expect("load precomputed parse tables");
+        let lexer = GpuLexer::new().await.expect("create GPU lexer");
+        let parser = GpuParser::new().await.expect("create GPU parser");
+        let device = laniusc_compiler::gpu::device::global().device.clone();
+        let allocated = || {
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            device
+                .generate_allocator_report()
+                .map(|report| report.total_allocated_bytes)
+        };
+        async fn parse_unit(
+            lexer: &GpuLexer,
+            parser: &GpuParser,
+            tables: &PrecomputedParseTables,
+            source: String,
+        ) {
+            let tokens = lexer.lex(&source).await.expect("lex residency unit");
+            let mut kinds = tokens.iter().map(|token| token.kind as u32).collect::<Vec<_>>();
+            kinds.insert(0, 0);
+            kinds.push(0);
+            parser.parse(&kinds, tables).await.expect("parse residency unit");
+            let resident = lexer
+                .with_resident_tokens(&source, |_, _, buffers| {
+                    parser.parse_resident_tokens(buffers.n, &buffers.tokens_out, &buffers.token_count, tables)
+                })
+                .await
+                .expect("resident lex residency unit")
+                .expect("resident parse residency unit");
+            assert!(resident.ll1.accepted, "residency unit must parse: {:?}", resident.ll1);
+        }
+        // The largest unit goes first, so later units fit the resident
+        // capacity and only their one-shot buffers come and go.
+        parse_unit(&lexer, &parser, &tables, residency_unit_source(0, 160)).await;
+        let Some(warm) = allocated() else {
+            eprintln!("parser residency: the adapter has no allocator report; skipped");
+            return;
+        };
+        let cached_bind_groups = laniusc_compiler::gpu::passes_core::reflected_bind_group_cache_len;
+        let warm_bind_groups = cached_bind_groups();
+        let mut largest_step = 0u64;
+        let mut previous = warm;
+        for unit in 1..=24usize {
+            let functions = 8 + (unit * 37) % 113;
+            parse_unit(&lexer, &parser, &tables, residency_unit_source(unit, functions)).await;
+            let now = allocated().expect("allocator report");
+            largest_step = largest_step.max(now.saturating_sub(previous));
+            previous = now;
+            eprintln!(
+                "parser residency: unit {unit} ({functions} functions) allocated {} MiB, cached bind groups {}",
+                now >> 20,
+                cached_bind_groups()
+            );
+        }
+        // Released buffers are dropped once 64 MiB of them accumulate, so the
+        // allocation may exceed the warm unit's by that window plus what one
+        // unit allocates, never by a per-unit amount times the unit count.
+        let bound = warm + (64 << 20) + 2 * largest_step;
+        assert!(
+            previous <= bound,
+            "24 distinct units grew the GPU allocation from {} MiB to {} MiB (bound {} MiB, largest step {} MiB, cached bind groups {} -> {})",
+            warm >> 20,
+            previous >> 20,
+            bound >> 20,
+            largest_step >> 20,
+            warm_bind_groups,
+            cached_bind_groups()
+        );
+    })
+}

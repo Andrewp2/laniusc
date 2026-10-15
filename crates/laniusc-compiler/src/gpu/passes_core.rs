@@ -146,6 +146,77 @@ struct ReflectedBufferBindingIdentity {
 struct CachedBindGroup {
     bind_group: wgpu::BindGroup,
     last_used_job: u64,
+    /// Allocation ids of the tracked buffers it binds, when it was created.
+    /// Once one of them is released, no owner can ask for this bind group
+    /// again, and keeping it would keep the released buffer resident.
+    tracked_allocations: Vec<u64>,
+}
+
+/// Released tracked bytes after which the reflected caches drop the bind
+/// groups of released buffers (`prune_bind_groups_of_released_buffers`).
+const PRUNE_AFTER_RELEASED_BUFFER_BYTES: u64 = 64 << 20;
+/// `released_tracked_buffer_bytes` at the last prune.
+static PRUNED_AT_RELEASED_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
+
+/// Drops every cached bind group that binds a tracked buffer released since
+/// the bind group was created. Each bind group and its cache key hold the
+/// buffer, so without this a workspace that is replaced or dropped stays
+/// resident as long as the kernel's cache: one-shot parses (parse_fuzz) and
+/// growing resident workspaces kept every earlier allocation.
+pub(crate) fn prune_bind_groups_of_released_buffers() {
+    let live = crate::gpu::buffers::live_tracked_allocation_ids();
+    let mut caches = reflected_bind_group_caches()
+        .lock()
+        .expect("reflected bind-group cache registry poisoned");
+    caches.retain(|_, cache| {
+        let Some(cache) = cache.upgrade() else {
+            return false;
+        };
+        let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
+        cache.invocations.retain(|_, invocation| {
+            invocation.variants.retain(|_, cached| {
+                cached.tracked_allocations.iter().all(|id| live.contains(id))
+            });
+            !invocation.variants.is_empty()
+        });
+        true
+    });
+}
+
+/// How many bind groups the reflected caches hold (for residency checks).
+pub fn reflected_bind_group_cache_len() -> usize {
+    reflected_bind_group_caches()
+        .lock()
+        .expect("reflected bind-group cache registry poisoned")
+        .values()
+        .filter_map(Weak::upgrade)
+        .map(|cache| {
+            cache
+                .lock()
+                .expect("reflected bind-group cache poisoned")
+                .invocations
+                .values()
+                .map(|invocation| invocation.variants.len())
+                .sum::<usize>()
+        })
+        .sum()
+}
+
+/// Runs `prune_bind_groups_of_released_buffers` once at least
+/// `PRUNE_AFTER_RELEASED_BUFFER_BYTES` were released since the last prune.
+/// Called before creating a bind group, with no cache lock held: a job that
+/// creates bind groups is the one that replaced the released buffers.
+fn prune_bind_groups_of_released_buffers_if_due() {
+    let released = crate::gpu::buffers::released_tracked_buffer_bytes();
+    let pruned_at = PRUNED_AT_RELEASED_BUFFER_BYTES.load(Ordering::Relaxed);
+    if released.saturating_sub(pruned_at) < PRUNE_AFTER_RELEASED_BUFFER_BYTES
+        || PRUNED_AT_RELEASED_BUFFER_BYTES
+            .compare_exchange(pruned_at, released, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+    {
+        return;
+    }
+    prune_bind_groups_of_released_buffers();
 }
 
 static NEXT_BIND_GROUP_JOB: AtomicU64 = AtomicU64::new(1);
@@ -2567,6 +2638,7 @@ pub mod bind_group {
         }
         add_timing(&BIND_GROUP_CACHE_NS, cache_started);
 
+        prune_bind_groups_of_released_buffers_if_due();
         record_bind_group_creation(label);
         let create_started = bind_group_timing_enabled().then(Instant::now);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -2578,6 +2650,12 @@ pub mod bind_group {
         add_timing(&BIND_GROUP_WGPU_CREATE_NS, create_started);
         let cache_insert_started = bind_group_timing_enabled().then(Instant::now);
         if let (Some(cache), Some(identity)) = (cache, identity) {
+            let tracked_allocations = identity
+                .iter()
+                .filter_map(|binding| {
+                    crate::gpu::buffers::tracked_buffer_identity(&binding.buffer).map(|(id, _, _)| id)
+                })
+                .collect();
             cache
                 .lock()
                 .expect("reflected bind-group cache poisoned")
@@ -2592,6 +2670,7 @@ pub mod bind_group {
                     CachedBindGroup {
                         bind_group: bind_group.clone(),
                         last_used_job: ACTIVE_BIND_GROUP_JOB.load(Ordering::Relaxed),
+                        tracked_allocations,
                     },
                 );
         }
