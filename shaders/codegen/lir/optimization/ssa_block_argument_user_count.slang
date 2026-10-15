@@ -24,8 +24,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> opt_ir_access_total;
 StructuredBuffer<uint> opt_ir_ssa_demand_total;
 StructuredBuffer<uint> opt_ir_ssa_demand_resolutions;
-StructuredBuffer<uint> opt_ir_ssa_block_argument_total;
-StructuredBuffer<OptIrBlockArgument> opt_ir_ssa_block_arguments;
 StructuredBuffer<uint> opt_ir_ssa_block_argument_incoming_total;
 RWStructuredBuffer<OptIrBlockArgumentIncoming>
     opt_ir_ssa_block_argument_incoming;
@@ -47,8 +45,7 @@ void report_structure_failure(uint row)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint argument = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint argument_total = min(
-        opt_ir_ssa_block_argument_total[0u], gParams.demand_capacity);
+    uint argument_total = opt_ir_active_ssa_block_argument_total(gParams.demand_capacity);
     if (argument >= argument_total) return;
 
     uint incoming_total = min(
@@ -59,7 +56,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint demand_total = min(
         opt_ir_ssa_demand_total[0u], gParams.demand_capacity);
     OptIrBlockArgument block_argument =
-        opt_ir_ssa_block_arguments[argument];
+        opt_ir_ssa_block_argument(argument);
     uint incoming_end = opt_ir_ssa_block_argument_incoming_end(
         argument, argument_total, incoming_total);
     bool valid = block_argument.incoming_start <= incoming_end &&

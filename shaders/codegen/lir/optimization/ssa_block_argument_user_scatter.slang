@@ -19,8 +19,6 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> opt_ir_ssa_block_argument_total;
-StructuredBuffer<OptIrBlockArgument> opt_ir_ssa_block_arguments;
 StructuredBuffer<uint> opt_ir_ssa_block_argument_incoming_total;
 StructuredBuffer<OptIrBlockArgumentIncoming>
     opt_ir_ssa_block_argument_incoming;
@@ -52,8 +50,7 @@ void report_capacity(uint required, uint available)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint argument = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint argument_total = min(
-        opt_ir_ssa_block_argument_total[0u], gParams.demand_capacity);
+    uint argument_total = opt_ir_active_ssa_block_argument_total(gParams.demand_capacity);
     if (argument >= argument_total) return;
 
     uint incoming_total = min(
@@ -65,7 +62,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         report_capacity(raw_user_total, user_capacity);
     uint user_total = min(raw_user_total, user_capacity);
     OptIrBlockArgument block_argument =
-        opt_ir_ssa_block_arguments[argument];
+        opt_ir_ssa_block_argument(argument);
     uint incoming_end = opt_ir_ssa_block_argument_incoming_end(
         argument, argument_total, incoming_total);
     if (block_argument.incoming_start > incoming_end ||
