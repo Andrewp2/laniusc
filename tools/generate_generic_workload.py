@@ -43,37 +43,38 @@ comments and strings stripped):
 
 The generated program sits between the two, as stdlib-heavy user code does.
 Measured on the 1 MB, seed 20 program (`--stats`):
-* 28.2k nonblank lines (29.8k physical) in 1,000,000 bytes; the canonical
+* 28.0k nonblank lines (29.6k physical) in 1,000,000 bytes; the canonical
   single-file-1mb corpus has 31.7k shorter lines;
 * 87% of lines are leaf functions, 6% record types with their impls, 4% area
   dispatchers, 2% per-area generic helpers, 1% the shared library. Leaf sizes
   follow tools/typical_project_profile.json's step bands (65% 1-3 steps, 25%
-  4-8, 8% 9-20, 2% 21-55): median 16 lines, p90 46, p99 121;
+  4-8, 8% 9-20, 2% 21-55): median 16 lines, p90 48, p99 125;
 * 30% of steps are plain scalar arithmetic like the canonical benchmark; 70%
   go through the generic library, weighted towards the common stdlib shapes
   (Box/Pair/Option/Result/Stack/slices first, then methods of generic types,
   nested applications, trait bounds and const-length arrays); see STEP_KINDS;
-* 114 type applications per KSLOC (corpora: 59 user, 129 stdlib-like); 66% of
+* 121 type applications per KSLOC (corpora: 59 user, 129 stdlib-like); 66% of
   free-function call sites call generic functions; method calls are 25% of
   calls (the Lanius library leans on free functions, as stdlib/core does);
 * each area declares 4 record types (2 or 3 i32 fields), each with a `Score`
   impl, a `Weight` impl and an inherent `borrow(&self)`, so traits have ~88
   impls each; one generic `Ledger<T>` with an `impl<T>` block; and one bounded
   generic fold `fold<T>(items: [T], ...) where T: Score`;
-* 80% of record steps use the area's own records, 20% another area's: 808
-  distinct concrete type applications and ~2,260 concrete generic bodies
+* 80% of record steps use the area's own records, 20% another area's: 815
+  distinct concrete type applications and ~2,220 concrete generic bodies
   (functions and methods per type-argument list).
 `--type-pool N` draws record type arguments from the first N record types
-only (N = 4: 59 applications, ~160 bodies), which fits the compiler's current
-256-body specialization limit (LNC0017) without changing the mix.
+only (N = 4: 67 applications, ~176 bodies by this count) without changing the
+mix. The compiler's scheduler counted more than its 256-body limit (LNC0017)
+for a 369 KB pool-4 program, so its identity is finer than this estimate.
 
 Only shapes that tests/fixtures/generics_matrix shows working, and
 combinations of them validated with `--probes` on the GPU, are emitted by
 default. `--backlog` adds steps that need features that do not work yet:
 methods of generic impls called through a trait bound
-(tests/fixtures/generics_backlog/b00), conditional marker impls (matrix p27)
-and const-generic structs (matrix p24 shape). Match arms are kept to `name`
-or `a + b`, because an arm like `(v ^ x) & 4095` is a syntax error today.
+(tests/fixtures/generics_backlog/b00) and conditional marker impls (matrix
+p27). Match arms are kept to `name` or `a + b`, because an arm whose
+expression starts with `(` is a syntax error today.
 
 `--probes DIR` writes one small program per step kind, plus one mixing all of
 them, with a matrix-style `// expect: N` first line (N is the checksum modulo
@@ -125,6 +126,8 @@ STEP_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
     "nested_box_pair": (3, ("Pair", "make_pair", "Box", "boxed", "unbox"), True),
     "nested_maybe_box": (3, ("Maybe", "just", "Box", "boxed"), True),
     "wrap_const": (3, ("Wrap", "Wrap_impl"), False),
+    "const_buffer": (4, ("Buffer", "keep_length", "buffer_first"), False),
+    "const_buffer_rec": (2, ("Buffer", "buffer_first"), True),
     "repeat_rec": (3, ("repeat3",), True),
     "view_i32": (3, ("View", "view_first"), False),
     "pick_ref": (3, ("pick",), True),
@@ -145,10 +148,6 @@ BACKLOG_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
     # Conditional marker impls over generic structs and const-length arrays
     # (generics_matrix p27, failing on the code-38 bug).
     "marker_bound": (3, ("Cell", "Mark", "keep"), False),
-    # Const-generic structs (generics_matrix p24 shape): the semantic
-    # interface export fails with status 0x80 on the 2026-10-14 build.
-    "const_buffer": (4, ("Buffer", "keep_length", "buffer_first"), False),
-    "const_buffer_rec": (2, ("Buffer", "buffer_first"), True),
 }
 PLAIN_KINDS = ("add", "mul", "xor", "branch")
 
