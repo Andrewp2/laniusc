@@ -14,6 +14,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
+mod reflection_names;
 mod spirv_size;
 
 fn main() -> Result<()> {
@@ -156,6 +157,7 @@ fn main() -> Result<()> {
         .map(|(artifact_key, _, _)| artifact_key.clone())
         .collect();
     remove_stale_shader_artifacts(&shader_out_dir, &active_artifact_keys)?;
+    check_reflection_binding_names(&shader_artifacts)?;
     check_inlined_size_budget(&workspace_root, &shader_out_dir, &shader_artifacts)?;
     write_generated_shader_artifacts(&out_dir, &shader_artifacts)?;
     let shader_digest = shader_artifact_digest(&shader_artifacts)?;
@@ -630,6 +632,44 @@ fn check_driver_hazards(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Resu
         }
     }
     driver_hazard_result(&hazards)
+}
+
+/// Fails the build, in every budget mode, when a kernel's reflection lists two
+/// top-level bindings with one name. The runtime binds parameters by name, so
+/// such a kernel cannot be bound: the type-check graph refuses to build and
+/// every program fails with LNC0047 before any dispatch. The usual cause is a
+/// kernel redeclaring a global that an imported module also declares.
+fn check_reflection_binding_names(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Result<()> {
+    let mut duplicates = Vec::new();
+    for (artifact_key, _, reflection_path) in shader_artifacts {
+        let json = fs::read_to_string(reflection_path).with_context(|| {
+            format!(
+                "read shader reflection artifact {}",
+                reflection_path.display()
+            )
+        })?;
+        let names = reflection_names::duplicate_binding_names(&json)
+            .with_context(|| format!("parse shader reflection {}", reflection_path.display()))?;
+        if !names.is_empty() {
+            duplicates.push((artifact_key, names));
+        }
+    }
+    if duplicates.is_empty() {
+        return Ok(());
+    }
+    let mut message = format!(
+        "{} kernels reflect two top-level bindings with the same name, which the runtime cannot \
+         bind by name (the type-check graph fails with LNC0047):\n",
+        duplicates.len()
+    );
+    for (key, names) in &duplicates {
+        message.push_str(&format!("  {key}: {}\n", names.join(", ")));
+    }
+    message.push_str(
+        "Declare each global once: drop the kernel's copy of a global that an imported module \
+         already declares (mark the module's declaration `public` if the kernel uses it).",
+    );
+    Err(anyhow!(message))
 }
 
 /// Fails on SPIR-V that the driver cannot compile, in every budget mode: a
