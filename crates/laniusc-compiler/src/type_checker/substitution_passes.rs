@@ -28,6 +28,21 @@ pub(super) const SUBSTITUTION_CALL_ENVS_KERNEL: &str =
     "type_checker/substitution/02_publish_call_envs";
 /// Words of `ct_subst_counts` (`CT_SUBST_COUNT_WORDS` in ct_subst.slang).
 pub(super) const SUBSTITUTION_COUNT_WORDS: u64 = 8;
+/// Imported alias targets (dependencies/14a) are realized after the last
+/// dependency page: dispatches that leave a busy target for the next one,
+/// then one that reports it. The candidates 14a interned ahead of the early
+/// canonical stage are re-armed afterwards.
+pub(super) const ALIAS_TARGETS_REALIZE_PASS: &str = "type_check.substitution.alias_targets.realize";
+pub(super) const ALIAS_TARGETS_REALIZE_KERNEL: &str =
+    "type_checker/substitution/08_realize_alias_targets";
+pub(super) const ALIAS_TARGETS_REALIZE_FINAL_PASS: &str =
+    "type_check.substitution.alias_targets.realize_final";
+pub(super) const ALIAS_TARGETS_REALIZE_FINAL_KERNEL: &str =
+    "type_checker/substitution/08a_realize_alias_targets_final";
+pub(super) const EARLY_REARM_PASS: &str = "type_check.substitution.rearm_early";
+pub(super) const EARLY_REARM_KERNEL: &str = "type_checker/substitution/09_rearm_early_candidates";
+/// Realization dispatches ahead of the reporting one.
+const ALIAS_TARGET_RETRIES: usize = 2;
 
 /// The field closure (ct_expand.slang): each run queues its roots, then
 /// expands the queue in level rounds and closes with one more advance.
@@ -68,12 +83,14 @@ pub(super) const CALL_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
 /// a job beyond the candidates' own: per call, a value and an expected
 /// environment for each change of its bindings and the substituted nodes of
 /// its parameter patterns; array contexts add one array and one count per
-/// literal level. A record overflow fails closed (the producers see
+/// literal level; imported alias targets intern their leaf rows ahead of
+/// the early stage (a record per type row at most) and their substituted
+/// signatures. A record overflow fails closed (the producers see
 /// `CT_UNKNOWN`), so this bounds what a job can express rather than what
 /// it uses.
-pub(super) fn substitution_canonical_extra(hir_rows: u64) -> (u64, u64) {
-    let records = 4 * hir_rows;
-    let argument_words = 8 * hir_rows;
+pub(super) fn substitution_canonical_extra(hir_rows: u64, type_rows: u64) -> (u64, u64) {
+    let records = 4 * hir_rows + type_rows;
+    let argument_words = 8 * hir_rows + 4 * type_rows;
     (records, argument_words)
 }
 
@@ -95,10 +112,11 @@ fn storage(
     graph.add_storage(name, ResourceDomain::Types, ResourceClass::Workspace, bytes)
 }
 
-/// Declares the substitution state and registers its clear and the row
-/// seed, after the early canonical stage has interned the source rows.
-/// `records` is the canonical record capacity (`ct_head` rows).
-pub(super) fn register_substitution_passes(
+/// Declares the substitution state and registers its clear, ahead of the
+/// dependency pages (imported alias targets substitute before the early
+/// canonical stage). `records` is the canonical record capacity (`ct_head`
+/// rows).
+pub(super) fn register_substitution_state(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     token_rows: u64,
@@ -131,12 +149,53 @@ pub(super) fn register_substitution_passes(
         kernels,
         SUBSTITUTION_CLEAR_KERNEL,
     )?;
+    Ok(())
+}
+
+/// Registers the row seed, after the early canonical stage has interned the
+/// source rows.
+pub(super) fn register_substitution_seed(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+) -> Result<(), String> {
     graph.add_kernel_pass_by_name(
         SUBSTITUTION_SEED_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::Types,
         kernels,
         SUBSTITUTION_SEED_KERNEL,
+        &[],
+    )?;
+    Ok(())
+}
+
+/// Registers the realization of the imported alias targets and the early
+/// re-arm, after dependencies/14a. `realize_bindings` resolve the row
+/// arena's write-only layout words and the alias targets.
+pub(super) fn register_alias_target_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    realize_bindings: &[ReflectedResourceBinding],
+) -> Result<(), String> {
+    for (name, kernel) in [
+        (ALIAS_TARGETS_REALIZE_PASS, ALIAS_TARGETS_REALIZE_KERNEL),
+        (ALIAS_TARGETS_REALIZE_FINAL_PASS, ALIAS_TARGETS_REALIZE_FINAL_KERNEL),
+    ] {
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Tokens,
+            kernels,
+            kernel,
+            realize_bindings,
+        )?;
+    }
+    graph.add_kernel_pass_by_name(
+        EARLY_REARM_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EARLY_REARM_KERNEL,
         &[],
     )?;
     Ok(())
@@ -260,6 +319,9 @@ impl FieldClosureOperations {
 pub(in crate::type_checker) struct SubstitutionOperations {
     clear: ComputeOperation,
     seed: ComputeOperation,
+    alias_realize: ComputeOperation,
+    alias_realize_final: ComputeOperation,
+    rearm_early: ComputeOperation,
 }
 
 impl SubstitutionOperations {
@@ -282,10 +344,44 @@ impl SubstitutionOperations {
         let direct = |name, kernel, elements| {
             ComputeOperation::direct(device, graph, resources, name, &passes.kernel(kernel), elements)
         };
+        let alias_targets = words("imported_type_alias_target")? / 2;
         Ok(Self {
             clear: direct(SUBSTITUTION_CLEAR_PASS, SUBSTITUTION_CLEAR_KERNEL, clear_elements)?,
             seed: direct(SUBSTITUTION_SEED_PASS, SUBSTITUTION_SEED_KERNEL, candidates)?,
+            alias_realize: direct(
+                ALIAS_TARGETS_REALIZE_PASS,
+                ALIAS_TARGETS_REALIZE_KERNEL,
+                alias_targets,
+            )?,
+            alias_realize_final: direct(
+                ALIAS_TARGETS_REALIZE_FINAL_PASS,
+                ALIAS_TARGETS_REALIZE_FINAL_KERNEL,
+                alias_targets,
+            )?,
+            rearm_early: direct(EARLY_REARM_PASS, EARLY_REARM_KERNEL, candidates)?,
         })
+    }
+
+    /// Records the clear alone: ahead of the dependency pages, whose alias
+    /// targets substitute before the early canonical stage.
+    pub(in crate::type_checker) fn record_clear(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.clear.record(encoder)
+    }
+
+    /// Records the realization of the imported alias targets and the early
+    /// re-arm; after the last dependency page's alias targets.
+    pub(in crate::type_checker) fn record_alias_targets(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        for _ in 0..ALIAS_TARGET_RETRIES {
+            self.alias_realize.record(encoder)?;
+        }
+        self.alias_realize_final.record(encoder)?;
+        self.rearm_early.record(encoder)
     }
 
     /// Records the clear and the seed; after the early canonical stage.

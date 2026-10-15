@@ -4516,7 +4516,7 @@ fn build_graph(
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
     let (substitution_records, substitution_argument_words) =
-        super::substitution_passes::substitution_canonical_extra(hir_rows);
+        super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
     let canonical_records = super::canonical_passes::register_canonical_passes(
         &mut graph,
         kernels,
@@ -4532,6 +4532,16 @@ fn build_graph(
             extra_records: substitution_records,
             extra_argument_words: substitution_argument_words,
         },
+    )?;
+    // Substitution state, cleared ahead of the dependency pages: imported
+    // alias targets substitute before the early stage.
+    super::substitution_passes::register_substitution_state(
+        &mut graph,
+        kernels,
+        token_rows,
+        hir_rows,
+        canonical_records,
+        canonical_scale,
     )?;
     add_dependency_type_index_passes(
         &mut graph,
@@ -4735,12 +4745,19 @@ fn build_graph(
         ResourceDomain::Tokens, kernels, DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.kernel,
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "imported_type_alias_target" => imported_type_alias_target: ReadWrite,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, "path_dispatch_args")?;
+    super::substitution_passes::register_alias_target_passes(
+        &mut graph,
+        kernels,
+        reflected_bindings![
             "type_native_word_count" => _type_native_word_count: Write,
             "type_native_scalar_identity" => _type_native_scalar_identity: Write,
             "imported_type_alias_target" => imported_type_alias_target: ReadWrite,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, "path_dispatch_args")?;
     if let Some(type_alias_normalized_ref) = type_alias_normalized_ref {
         graph.add_kernel_pass_by_name(
             TYPE_ALIASES_NORMALIZE.name, CompilerPhase::TypeCheck, ResourceDomain::Tokens,
@@ -5153,14 +5170,7 @@ fn build_graph(
     // the decl refs and ahead of the closed application index.
     super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
-    super::substitution_passes::register_substitution_passes(
-        &mut graph,
-        kernels,
-        token_rows,
-        hir_rows,
-        canonical_records,
-        canonical_scale,
-    )?;
+    super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(

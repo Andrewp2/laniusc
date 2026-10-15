@@ -950,6 +950,11 @@ impl GpuTypeChecker {
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                // Imported alias targets substitute before the early stage.
+                bind_groups.calls.substitution.record_clear(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.clear_ahead_of_pages.done");
+                }
                 // Each page interns its signature types while it is resident.
                 let intern_page = |encoder: &mut wgpu::CommandEncoder| {
                     record_canonical_types(
@@ -1040,6 +1045,12 @@ impl GpuTypeChecker {
                     record_each_dependency_page(device, queue, encoder, pages, materialize_alias_targets)?;
                 } else {
                     materialize_alias_targets(encoder)?;
+                }
+                // Every page has contributed its targets: realize them, then
+                // re-arm the candidates they interned for the early stage.
+                bind_groups.calls.substitution.record_alias_targets(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.alias_targets.done");
                 }
             }
             if aliases_required {

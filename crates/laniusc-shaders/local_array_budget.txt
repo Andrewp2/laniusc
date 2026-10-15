@@ -24,7 +24,6 @@
 6144 type_checker/program_evidence/entries/59_admit_assumption_proofs
 5888 type_checker/dependencies/08a_validate_call_results
 5888 type_checker/methods/07_resolve_table
-5376 type_checker/dependencies/14a_materialize_alias_targets
 5120 type_checker/calls/03d_bind_method_receiver_environment
 5120 type_checker/dependencies/15a_collect_methods
 5072 tests/owned_type_constraints_coverage
