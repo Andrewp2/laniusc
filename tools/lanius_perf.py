@@ -604,17 +604,24 @@ def run_lanius(args: argparse.Namespace) -> int:
             "daemon_warm_workspace",
         }:
             profile_case = representative_case
-            measurement["profile"] = profile_daemon_job(
-                mode,
-                laniusc,
-                cases,
-                primer_case,
-                profile_case,
-                args.target,
-                artifact_dir,
-                args.startup_timeout,
-                args.job_timeout,
-            )
+            try:
+                measurement["profile"] = profile_daemon_job(
+                    mode,
+                    laniusc,
+                    cases,
+                    primer_case,
+                    profile_case,
+                    args.target,
+                    artifact_dir,
+                    args.startup_timeout,
+                    args.job_timeout,
+                )
+            except Exception as error:
+                # The profile is a separate, traced run; losing it must not lose the
+                # timed samples, so keep the measurement and say what went wrong.
+                measurement["profile_error"] = f"{type(error).__name__}: {error}"[:500]
+                print(f"lanius_perf: warning: {mode}: profile run failed: {measurement['profile_error']}",
+                      file=sys.stderr, flush=True)
         document["measurements"].append(measurement)
 
     if not document["measurements"]:
