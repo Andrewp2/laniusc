@@ -1,0 +1,172 @@
+// Generic fixed-capacity vector stored inline in an [T; N] array.
+// Values are copied: every operation that changes a vector returns the new
+// vector and leaves its argument unchanged. A failed operation (full, or an
+// index out of range) returns the vector unchanged; compare len to detect it.
+// The caller supplies the backing array, because the language has no array
+// repeat expression and no size_of<T> for heap-backed generic storage. Slots
+// at and beyond len hold unspecified earlier values and are never read.
+// Searching and sorting need T: core::cmp::Eq or Ord. Their members are
+// static and their traits are imported, and neither dispatches through a bound
+// yet (tests/fixtures/generics_backlog/b02, b05), so this module has no
+// contains or sort; core::set searches through its own Key trait. A const
+// parameter cannot be a cast operand on x86 yet (b06), so N is bound to a
+// local before its cast.
+module core::vec;
+import core::option;
+
+pub struct Vec<T, const N: usize> {
+    items: [T; N],
+    length: i32,
+}
+
+// An empty vector over storage. Its contents are only filler.
+pub fn from_storage<T, const N: usize>(storage: [T; N]) -> Vec<T, N> {
+    return Vec { items: storage, length: 0 };
+}
+
+// A full vector holding items in order.
+pub fn from_array<T, const N: usize>(items: [T; N]) -> Vec<T, N> {
+    let count: usize = N;
+    return Vec { items: items, length: count as i32 };
+}
+
+pub fn len<T, const N: usize>(value: Vec<T, N>) -> i32 {
+    return value.length;
+}
+
+pub fn capacity<T, const N: usize>(value: Vec<T, N>) -> i32 {
+    let count: usize = N;
+    return count as i32;
+}
+
+pub fn is_empty<T, const N: usize>(value: Vec<T, N>) -> bool {
+    return value.length == 0;
+}
+
+pub fn is_full<T, const N: usize>(value: Vec<T, N>) -> bool {
+    return (value.length as usize) == N;
+}
+
+pub fn try_push<T, const N: usize>(value: Vec<T, N>, item: T) -> Vec<T, N> {
+    if ((value.length as usize) == N) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    next.items[next.length] = item;
+    next.length = next.length + 1;
+    return next;
+}
+
+// Remove the last item; an empty vector is returned unchanged. Read last
+// first when the removed item is needed.
+pub fn try_pop<T, const N: usize>(value: Vec<T, N>) -> Vec<T, N> {
+    if (value.length == 0) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    next.length = next.length - 1;
+    return next;
+}
+
+pub fn get<T, const N: usize>(value: Vec<T, N>, index: i32) -> core::option::Option<T> {
+    if (index < 0 || index >= value.length) {
+        return core::option::None();
+    }
+    return core::option::Some(value.items[index]);
+}
+
+pub fn get_or<T, const N: usize>(value: Vec<T, N>, index: i32, fallback: T) -> T {
+    if (index < 0 || index >= value.length) {
+        return fallback;
+    }
+    return value.items[index];
+}
+
+pub fn first<T, const N: usize>(value: Vec<T, N>) -> core::option::Option<T> {
+    return get(value, 0);
+}
+
+pub fn last<T, const N: usize>(value: Vec<T, N>) -> core::option::Option<T> {
+    return get(value, value.length - 1);
+}
+
+pub fn try_set<T, const N: usize>(value: Vec<T, N>, index: i32, item: T) -> Vec<T, N> {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    next.items[index] = item;
+    return next;
+}
+
+// Insert before index (0..=len), shifting later items up by one.
+pub fn try_insert<T, const N: usize>(value: Vec<T, N>, index: i32, item: T) -> Vec<T, N> {
+    if (index < 0 || index > value.length || (value.length as usize) == N) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    let cursor: i32 = next.length;
+    while (cursor > index) {
+        next.items[cursor] = next.items[cursor - 1];
+        cursor -= 1;
+    }
+    next.items[index] = item;
+    next.length = next.length + 1;
+    return next;
+}
+
+// Remove the item at index, shifting later items down and keeping order.
+pub fn try_remove<T, const N: usize>(value: Vec<T, N>, index: i32) -> Vec<T, N> {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    let cursor: i32 = index;
+    while (cursor + 1 < next.length) {
+        next.items[cursor] = next.items[cursor + 1];
+        cursor += 1;
+    }
+    next.length = next.length - 1;
+    return next;
+}
+
+pub fn try_swap<T, const N: usize>(value: Vec<T, N>, left: i32, right: i32) -> Vec<T, N> {
+    if (left < 0 || right < 0 || left >= value.length || right >= value.length) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    let saved: T = next.items[left];
+    next.items[left] = next.items[right];
+    next.items[right] = saved;
+    return next;
+}
+
+pub fn reverse<T, const N: usize>(value: Vec<T, N>) -> Vec<T, N> {
+    let next: Vec<T, N> = value;
+    let low: i32 = 0;
+    let high: i32 = next.length - 1;
+    while (low < high) {
+        let saved: T = next.items[low];
+        next.items[low] = next.items[high];
+        next.items[high] = saved;
+        low += 1;
+        high -= 1;
+    }
+    return next;
+}
+
+// Keep at most new_len items. A longer or negative request changes nothing.
+pub fn truncate<T, const N: usize>(value: Vec<T, N>, new_len: i32) -> Vec<T, N> {
+    if (new_len < 0 || new_len >= value.length) {
+        return value;
+    }
+    let next: Vec<T, N> = value;
+    next.length = new_len;
+    return next;
+}
+
+pub fn clear<T, const N: usize>(value: Vec<T, N>) -> Vec<T, N> {
+    let next: Vec<T, N> = value;
+    next.length = 0;
+    return next;
+}

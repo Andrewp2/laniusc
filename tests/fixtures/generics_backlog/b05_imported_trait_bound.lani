@@ -1,0 +1,15 @@
+import core::cmp;
+fn count<T>(items: [T; 3], item: T) -> i32 where T: core::cmp::Eq<T> {
+    let index: i32 = 0;
+    let hits: i32 = 0;
+    while (index < 3) {
+        if (T::eq(items[index], item)) { hits += 1; }
+        index += 1;
+    }
+    return hits;
+}
+fn main() -> i32 {
+    let numbers: [i32; 3] = [7, 7, 4];
+    let letters: [char; 3] = ['a', 'b', 'a'];
+    return count(numbers, 7) + count(letters, 'a') + 38;
+}

@@ -1,0 +1,37 @@
+// A generic two-field value, and the Option operations that build or split
+// pairs. Values are copied; nothing here allocates.
+module core::pair;
+import core::option;
+
+pub struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+pub fn new<A, B>(first: A, second: B) -> Pair<A, B> {
+    return Pair { first: first, second: second };
+}
+
+pub fn first<A, B>(value: Pair<A, B>) -> A {
+    return value.first;
+}
+
+pub fn second<A, B>(value: Pair<A, B>) -> B {
+    return value.second;
+}
+
+pub fn swap<A, B>(value: Pair<A, B>) -> Pair<B, A> {
+    return Pair { first: value.second, second: value.first };
+}
+
+// Some(pair) when both are Some, otherwise None. A match arm cannot hold a
+// nested match expression yet, so the right side is matched in a helper.
+pub fn zip<A, B>(left: core::option::Option<A>, right: core::option::Option<B>) -> core::option::Option<Pair<A, B>> {
+    let absent: core::option::Option<Pair<A, B>> = core::option::None();
+    return match (left) { Some(a) -> zip_right(a, right), None -> absent };
+}
+
+fn zip_right<A, B>(a: A, right: core::option::Option<B>) -> core::option::Option<Pair<A, B>> {
+    let absent: core::option::Option<Pair<A, B>> = core::option::None();
+    return match (right) { Some(b) -> core::option::Some(Pair { first: a, second: b }), None -> absent };
+}

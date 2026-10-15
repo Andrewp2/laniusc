@@ -8,6 +8,44 @@ Probes:
   The predicates collector admits only type-parameter subjects (LNC0008). Moved out
   of the matrix (was p26); the code-38 impl-head fix it also needed is covered by p27.
 
+Gaps found while writing the generic core::vec, core::set and core::pair
+(2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
+what the current compiler prints. "Blocks" counts the existing per-type
+stdlib modules that a generic replacement cannot cover until the gap closes.
+- b02: a static trait member called on a type parameter, `T::same(a, b)`
+  with `where T: Same<T>`. LNC0027 "call resolution failed" at 7:13. No call
+  key is published for a type-parameter head. This is the shape of
+  core::cmp::Eq and Ord. Blocks 75 modules (see b05).
+- b03: a self method through a bound on a trait with type arguments,
+  `where T: Conv<i32>` and `a.conv()`. LNC0027 at 3:62.
+  07a_offer_bound_members offers no member for a bound with arguments.
+  Needed for the same 75 modules.
+- b04: `Self` in a trait member signature, `fn same(self, other: Self)`.
+  LNC0007 "unknown type" at 1:35. With b05 this is the other route to an Eq
+  without type arguments.
+- b05: a bound on an imported trait, `where T: core::cmp::Eq<T>` and
+  `T::eq(a, b)`. LNC0005 "unresolved identifier" at 6:13 (LNC0027 when the
+  call is inside a stdlib module). Blocks every module family that compares
+  elements: option_* (11, contains), result_* (12, contains), slice_* (10),
+  range_* (6), vec_* (10, sort and search), set_* (8), map_* (8) and deque_*
+  (10, contains), 75 modules in all. core::set works around it with its own
+  Key trait, so only types implemented in core::set can be set items.
+- b06: a const parameter as a cast operand, `N as i32`. Checks, but x86
+  rejects it with LNC0017 "operation is not implemented by the x86 backend"
+  at 1:59. `let n: usize = N; n as i32` and `(len as usize) == N` work.
+  Blocks no module.
+- b07: a match expression as a match arm value. LNC0016 "syntax error" at
+  3:12. A helper function works around it (core::pair::zip). Blocks none.
+- b08: the array repeat expression `[10; 4]`. LNC0016 at 2:30 ("expected `]`
+  or `,`, found `;`"). Generic fixed-capacity containers take their backing
+  array from the caller instead. Blocks none.
+- b09: `core::mem::size_of<T>()` does not exist. LNC0027 at 3:24. A generic
+  heap-backed container cannot size its allocation; this blocks the 36
+  allocating vec_*, set_*, map_* and deque_* modules.
+- b10: a diverging match arm, `None -> core::panic::panic()`, in a generic
+  function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
+  Blocks a generic unwrap or expect; no existing module panics.
+
 Known gaps that need multi-file probes (not runnable by the single-file matrix yet):
 - A trait from another source-root module implemented in the caller module:
   `pub impl gen::lib::Score for Rec` fails with LNC0007 (unknown type at the
