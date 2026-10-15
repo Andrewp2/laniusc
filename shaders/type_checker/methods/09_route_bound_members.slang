@@ -3,20 +3,40 @@
 //
 // Body specialization has substituted the call's accepted receiver. The
 // required member names its trait; a candidate is an implementation method of
-// that trait with the same name whose closed receiver pattern equals the
-// receiver. Generic implementations would need their own call environment,
-// which symbolic call inference cannot have produced for this call; they are
-// rejected explicitly rather than routed (and so is a receiver with no match).
+// that trait with the same name whose receiver pattern matches the receiver.
+// Types compare by canonical ID (docs/canonical-type-ids.md). The receiver is
+// a replay row written after the early canonical stage, so it is interned
+// here, on demand. A pattern is the ID the early stage gave its declaration
+// row: replay rewrites the rows of the selected environment in place (the
+// impl header of a replayed method too) but not their early IDs, so the ID
+// is still the declared pattern.
+//
+// A nongeneric implementation matches when its pattern is the receiver. A
+// generic one matches when its type parameters bind so that the pattern is the
+// receiver; the routed call then owns that environment, and each binding is
+// published as the call's context argument (contextual_call_environment.slang)
+// in the receiver's own checked spelling at the parameter's position, which is
+// what host retention reads to replay the routed body. Bindings are found
+// without a stack or local array: a walk over the pattern's open nodes
+// re-descends from the root along a packed child path, and the call's context
+// rows hold the bindings until the mask publishes them. Constant parameters,
+// a parameter that the receiver does not bind and methods with parameters of
+// their own are not routed; neither is a receiver with no match.
 // Outside replay every accepted receiver of these calls is still a parameter,
 // so nothing is routed and the enclosing body stays a template.
+//
+// One thread per call expression (HIR domain): the call owns the context rows,
+// and its callee member names the method token.
 
 import gpu_index;
 import hir_records;
 import status;
 import type_checker.methods.lookup;
-import type_checker.instance_arguments;
-import type_checker.scoped_type_equality;
 import type_checker.methods.candidate;
+import type_checker.checked_type_graph;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -46,27 +66,13 @@ StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_bound_reference;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_hir_node;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> external_type_library_id;
-StructuredBuffer<uint> external_type_unit_id;
-StructuredBuffer<uint> external_type_local_index;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<MethodCandidate> method_candidate;
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> backend_call_fn_index;
+RWStructuredBuffer<uint> call_context_owner_by_token;
+RWStructuredBuffer<uint> call_context_arg_mask;
+RWStructuredBuffer<uint> call_context_ref_tag;
+RWStructuredBuffer<uint> call_context_ref_payload;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -74,10 +80,13 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TRAIT_REFERENCE_DEPENDENCY = 0x80000000u;
 static const uint HIR_ITEM = 2u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_UNROUTED_BOUND_MEMBER = 0xffffff0eu;
-
-#include "receiver_graph.slang"
+// A packed child path: five bits per level, six levels.
+static const uint PATH_DEPTH_LIMIT = 6u;
+static const uint BIND_STEP_LIMIT = 256u;
 
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint node) { return node < active_hir_count(); }
@@ -103,11 +112,150 @@ bool implements_trait(uint impl, uint trait)
         decl_hir_node[reference] == trait;
 }
 
+// The method token of call expression `call` (its callee member's name), or
+// INVALID.
+uint method_call_token(uint call)
+{
+    if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return INVALID;
+    uint member = compact_hir_payload[call].a;
+    return valid_hir(member) && compact_hir_core[member].kind == HIR_MEMBER_EXPR
+        ? compact_hir_payload[member].c : INVALID;
+}
+
+// Whether call `call` has context rows (contextual_call_environment.slang).
+bool has_context_rows(uint call)
+{
+    uint rows; uint stride;
+    call_context_ref_tag.GetDimensions(rows, stride);
+    return call < rows / 32u;
+}
+
+uint path_index(uint path, uint level) { return (path >> (level * 5u)) & 31u; }
+
+// The canonical node at `path` (its first `depth` levels) under `root`.
+uint id_at(uint root, uint path, uint depth)
+{
+    uint node = root;
+    for (uint level = 0u; level < depth; level++) node = ct_arg(node, path_index(path, level));
+    return node;
+}
+
+// Child `index` of a checked operand, in canonical child order (a named
+// type's operands; the element of an array, slice or reference).
+uint2 checked_child(uint2 operand, uint index)
+{
+    if (operand.x != 3u || operand.y >= checked_type_capacity()) return uint2(0u, INVALID);
+    uint kind = type_instance_kind[operand.y];
+    uint tag = 0u; uint payload = INVALID;
+    if (kind == 1u) CtCheckedRows.argument(operand.y, index, tag, payload);
+    else if (index == 0u && kind >= 2u && kind <= 4u)
+    {
+        tag = type_instance_elem_ref_tag[operand.y];
+        payload = type_instance_elem_ref_payload[operand.y];
+    }
+    return uint2(tag, payload);
+}
+
+// The first child of pattern node `node` at or after `from` that is an open
+// record, or `arity`. slangc 2026.2 miscompiles a loop that sets a sentinel
+// and breaks (AGENT_RULES 23:40), so the walk asks this helper.
+uint next_open_child(uint node, uint from, uint arity)
+{
+    for (uint index = from; index < arity; index++)
+    {
+        uint child = ct_arg(node, index);
+        if (!ct_is_param(child) && ct_is_record(child) && !ct_closed(child)) return index;
+    }
+    return arity;
+}
+
+// Bind parameter leaf `leaf`, child `index` of the pattern node at `path`, to
+// `value`, the receiver's ID there. A slot bound before must agree by ID; a
+// new one keeps the receiver's checked operand at that position in the call's
+// context row and joins `bound`.
+bool bind_leaf(uint leaf, uint value, uint2 receiver, uint path, uint depth, uint index,
+    uint call, uint slot_limit, inout uint bound)
+{
+    if (!ct_is_type_param(leaf) || ct_is_dep_param(leaf) || !ct_closed(value) ||
+        ct_is_constant(value)) return false;
+    uint tokens; uint stride;
+    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
+    uint token = ct_param_token(leaf);
+    uint slot = token < tokens ? type_generic_param_slot_by_token[token] : INVALID;
+    if (slot >= slot_limit) return false;
+    uint row = call * 32u + slot;
+    if ((bound & (1u << slot)) != 0u)
+        return ct_ref(call_context_ref_tag[row], call_context_ref_payload[row]) == value;
+    uint2 operand = receiver;
+    for (uint level = 0u; level < depth; level++) operand = checked_child(operand, path_index(path, level));
+    operand = checked_child(operand, index);
+    if (operand.x == 0u || operand.y == INVALID || ct_ref(operand.x, operand.y) != value) return false;
+    call_context_ref_tag[row] = operand.x;
+    call_context_ref_payload[row] = operand.y;
+    bound |= 1u << slot;
+    return true;
+}
+
+// Whether generic pattern `pattern` matches the receiver (`actual` its ID,
+// `receiver` its checked operand), binding type slots below `slot_limit`.
+// Only open pattern nodes are visited; a closed child is compared by ID.
+bool bind_pattern(uint pattern, uint actual, uint2 receiver, uint call, uint slot_limit,
+    inout uint bound)
+{
+    if (!ct_is_record(pattern) || ct_closed(pattern)) return false;
+    uint depth = 0u;
+    uint path = 0u;
+    uint cursor = 0u;
+    bool enter = true;
+    for (uint step = 0u; step < BIND_STEP_LIMIT; step++)
+    {
+        uint node = id_at(pattern, path, depth);
+        uint other = id_at(actual, path, depth);
+        uint arity = ct_arity(node);
+        if (enter)
+        {
+            // Heads (kind, arity, type slots, words) agree: the declaration
+            // of a named type.
+            if (!ct_is_stored(other) || any(ct_head[node] != ct_head[other])) return false;
+            for (uint index = 0u; index < arity; index++)
+            {
+                uint child = ct_arg(node, index);
+                uint value = ct_arg(other, index);
+                if (ct_is_param(child))
+                {
+                    if (!bind_leaf(child, value, receiver, path, depth, index, call, slot_limit, bound))
+                        return false;
+                }
+                else if (ct_closed(child) && (child != value || !ct_is_resolved(child))) return false;
+            }
+        }
+        uint next = next_open_child(node, cursor, arity);
+        if (next < arity)
+        {
+            if (depth + 1u >= PATH_DEPTH_LIMIT) return false;
+            uint shift = depth * 5u;
+            path = (path & ~(31u << shift)) | (next << shift);
+            depth++;
+            cursor = 0u;
+            enter = true;
+            continue;
+        }
+        if (depth == 0u) return true;
+        depth--;
+        cursor = path_index(path, depth) + 1u;
+        enter = false;
+    }
+    return false;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint token = linear_thread_id_2d(dtid, 65535u, 256u);
+    // One thread per call expression: calls own their context rows by HIR
+    // node, and a receiver's HIR parent is not its member.
+    uint node = linear_thread_id_2d(dtid, 65535u, 256u);
+    uint token = method_call_token(node);
     if (token >= min(token_count[0u], gParams.n_tokens) ||
         method_call_receiver_hir[token] == INVALID ||
         call_dependency_library_id[token] != INVALID) return;
@@ -116,44 +264,87 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint tag = method_call_receiver_ref_tag[token];
     uint payload = method_call_receiver_ref_payload[token];
     if (tag == TYPE_REF_GENERIC_PARAM || tag == 0u || payload == INVALID) return;
+    uint2 receiver = uint2(tag, payload);
+    uint call = has_context_rows(node) ? node : INVALID;
     uint count = min(compact_method_count[0u], gParams.n_hir_nodes);
+    uint spare = CT_NONE;
+    uint actual = ct_intern_checked<CtCheckedRows>(tag, payload, spare);
     MethodReceiverHead head;
     uint selected = INVALID;
+    uint selected_row = INVALID;
+    bool selected_generic = false;
     uint matches = 0u;
-    if (count != 0u && method_receiver_head<MethodReceiverGraph>(tag, payload,
-        method_receiver_type_capacity(), gParams.n_tokens, head))
+    // Context rows written by generic candidates, and the bindings published.
+    uint written = 0u;
+    uint published = 0u;
+    bool rebound = false;
+    if (count != 0u && ct_closed(actual) && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
+        checked_type_capacity(), gParams.n_tokens, head))
     {
         uint name_id = method_call_name_id[token];
         uint link = method_lookup_head[method_lookup_bucket(head, name_id, count)];
-        for (uint visited = 0u; link != 0u && visited < count; visited++)
+        // The chain, then the selected generic candidate once more: its
+        // bindings are the ones left in the context rows. One binding site.
+        [loop]
+        for (uint visited = 0u; visited <= count; visited++)
         {
-            uint row = link - 1u;
-            if (row >= count) { matches = 2u; break; }
-            link = method_lookup_next[row];
+            uint row = INVALID;
+            if (link != 0u)
+            {
+                row = link - 1u;
+                if (row >= count) { matches = 2u; break; }
+                link = method_lookup_next[row];
+            }
+            else if (matches == 1u && selected_generic) { row = selected_row; rebound = true; }
+            else break;
             HirMethodCore core = compact_method_cores[row];
             uint candidate = core.name_token;
             if (candidate >= gParams.n_tokens || method_decl_name_id[candidate] != name_id ||
-                !implements_trait(core.impl_node, trait) ||
-                compact_generic_param_ranges[core.impl_node].count != 0u ||
-                !scoped_type_refs_equal<MethodReceiverGraph>(
-                    method_decl_receiver_ref_tag[candidate],
-                    method_decl_receiver_ref_payload[candidate], INVALID,
-                    tag, payload, INVALID, method_receiver_type_capacity(), gParams.n_tokens))
-                continue;
+                !implements_trait(core.impl_node, trait)) continue;
+            uint pattern = ct_ref(method_decl_receiver_ref_tag[candidate],
+                method_decl_receiver_ref_payload[candidate]);
+            uint parameters = compact_generic_param_ranges[core.impl_node].count;
+            bool generic = parameters != 0u;
+            bool matched = false;
+            if (!generic) matched = ct_is_resolved(pattern) && pattern == actual;
+            else
+            {
+                uint member = fn_hir_by_decl_token[candidate];
+                uint bound = 0u;
+                matched = call != INVALID && parameters < 32u && valid_hir(member) &&
+                    compact_generic_param_ranges[member].count == 0u &&
+                    bind_pattern(pattern, actual, receiver, call, parameters, bound) &&
+                    bound == (1u << parameters) - 1u;
+                written |= bound;
+                if (rebound) { published = matched ? bound : 0u; break; }
+            }
+            if (!matched) continue;
             if (selected != candidate) matches++;
             selected = candidate;
+            selected_row = row;
+            selected_generic = generic;
         }
     }
-    if (matches != 1u)
+    // The accepted selection and its callee are one fact for call artifacts.
+    MethodCandidate candidate = method_candidate[token];
+    bool routed = matches == 1u && (!selected_generic || published != 0u) &&
+        candidate.state == METHOD_CANDIDATE_UNIQUE &&
+        candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
+        candidate.local_index == call_fn_index[token];
+    // The routed generic callee owns the call's context; rows written for
+    // other candidates hold no binding.
+    if (call != INVALID && (written != 0u || (routed && selected_generic)))
+    {
+        call_context_arg_mask[call] = routed && selected_generic
+            ? published : call_context_arg_mask[call] & ~written;
+        if (routed && selected_generic) call_context_owner_by_token[token] = call;
+    }
+    if (matches != 1u || (selected_generic && published == 0u))
     {
         record_min_token_error(status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_UNROUTED_BOUND_MEMBER);
         return;
     }
-    // The accepted selection and its callee are one fact for call artifacts.
-    MethodCandidate candidate = method_candidate[token];
-    if (candidate.state != METHOD_CANDIDATE_UNIQUE ||
-        candidate.callable_kind != METHOD_CALLABLE_LOCAL ||
-        candidate.local_index != call_fn_index[token]) return;
+    if (!routed) return;
     candidate.local_index = selected;
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;

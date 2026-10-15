@@ -312,7 +312,6 @@ impl SemanticProjectionOperations {
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
                     u32::try_from(instances.byte_size / 4)?
                 } else if kernel.starts_with("type_checker/type/instances/02")
-                    || kernel.ends_with("09_route_bound_members")
                     || kernel.ends_with("03b_member_substitute")
                     || kernel.ends_with("04b_struct_init_substitute")
                 {

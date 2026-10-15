@@ -55,7 +55,6 @@
 2048 type_checker/calls/03i_materialize_array_literals
 2048 type_checker/calls/03k1_project_literal_contexts
 2048 type_checker/canonical/90_validate
-2048 type_checker/methods/09_route_bound_members
 2048 type_checker/modules/10j_consume_value_enum_units
 2048 type_checker/modules/10m2_type_match_payloads
 2048 type_checker/modules/10n_type_match_exprs
