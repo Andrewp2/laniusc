@@ -727,8 +727,12 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.workspace_ready");
             }
-            queue.write_buffer(
-                &bind_groups.if_depth_params,
+            // Both uniforms are suballocated from the workspace uniform arena.
+            // Writing through the view puts the bytes at its own offset; a raw
+            // `queue.write_buffer(.., 0, ..)` overwrote the arena's first
+            // occupant, the constant storage plan.
+            bind_groups.if_depth_params.write(
+                queue,
                 0,
                 &uniform_bytes(&IfDepthParams {
                     n_tokens: token_capacity,
@@ -737,8 +741,8 @@ impl GpuTypeChecker {
                     scan_step: 0,
                 }),
             );
-            queue.write_buffer(
-                &bind_groups.fn_params,
+            bind_groups.fn_params.write(
+                queue,
                 0,
                 &uniform_bytes(&FnContextParams {
                     n_tokens: token_capacity,

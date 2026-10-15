@@ -78,7 +78,7 @@ where
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(value)
         .expect("failed to write parser uniform buffer");
-    queue.write_buffer(buffer, 0, ub.as_ref());
+    buffer.write(queue, 0, ub.as_ref());
 }
 
 // Optional singleton, mirroring the lexer's `lex_on_gpu`.
