@@ -4,12 +4,13 @@
 // Body specialization has substituted the call's accepted receiver. The
 // required member names its trait; a candidate is an implementation method of
 // that trait with the same name whose receiver pattern matches the receiver.
-// Types compare by canonical ID (docs/canonical-type-ids.md). The receiver is
-// a replay row written after the early canonical stage, so it is interned
-// here, on demand. A pattern is the ID the early stage gave its declaration
-// row: replay rewrites the rows of the selected environment in place (the
-// impl header of a replayed method too) but not their early IDs, so the ID
-// is still the declared pattern.
+// Types compare by canonical ID (docs/canonical-type-ids.md). A replay
+// re-arms every row before the match passes (03_rearm), so the receiver and
+// each pattern are interned here, on demand. Replay rewrites only the rows of
+// the selected environment; when that is a generic impl's own method, its
+// rewritten header has another head than any receiver in the body (the
+// lookup chain is keyed by head), except for a blanket impl, which is not
+// routed.
 //
 // A nongeneric implementation matches when its pattern is the receiver. A
 // generic one matches when its type parameters bind so that the pattern is the
@@ -268,7 +269,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint call = has_context_rows(node) ? node : INVALID;
     uint count = min(compact_method_count[0u], gParams.n_hir_nodes);
     uint spare = CT_NONE;
-    uint actual = ct_intern_checked<CtCheckedRows>(tag, payload, spare);
+    uint actual = CT_UNKNOWN;
     MethodReceiverHead head;
     uint selected = INVALID;
     uint selected_row = INVALID;
@@ -278,40 +279,51 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint written = 0u;
     uint published = 0u;
     bool rebound = false;
-    if (count != 0u && ct_closed(actual) && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
+    if (count != 0u && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
         checked_type_capacity(), gParams.n_tokens, head))
     {
         uint name_id = method_call_name_id[token];
         uint link = method_lookup_head[method_lookup_bucket(head, name_id, count)];
-        // The chain, then the selected generic candidate once more: its
-        // bindings are the ones left in the context rows. One binding site.
+        // Step 0 interns the receiver; then the chain, then the selected
+        // generic candidate once more: its bindings are the ones left in the
+        // context rows. One interning site and one binding site.
         [loop]
-        for (uint visited = 0u; visited <= count; visited++)
+        for (uint visited = 0u; visited <= count + 1u; visited++)
         {
             uint row = INVALID;
-            if (link != 0u)
+            uint candidate = INVALID;
+            uint impl = INVALID;
+            uint2 operand = receiver;
+            if (visited != 0u)
             {
-                row = link - 1u;
-                if (row >= count) { matches = 2u; break; }
-                link = method_lookup_next[row];
+                if (link != 0u)
+                {
+                    row = link - 1u;
+                    if (row >= count) { matches = 2u; break; }
+                    link = method_lookup_next[row];
+                }
+                else if (matches == 1u && selected_generic) { row = selected_row; rebound = true; }
+                else break;
+                HirMethodCore core = compact_method_cores[row];
+                candidate = core.name_token;
+                impl = core.impl_node;
+                if (candidate >= gParams.n_tokens || method_decl_name_id[candidate] != name_id ||
+                    !implements_trait(impl, trait)) continue;
+                operand = uint2(method_decl_receiver_ref_tag[candidate],
+                    method_decl_receiver_ref_payload[candidate]);
             }
-            else if (matches == 1u && selected_generic) { row = selected_row; rebound = true; }
-            else break;
-            HirMethodCore core = compact_method_cores[row];
-            uint candidate = core.name_token;
-            if (candidate >= gParams.n_tokens || method_decl_name_id[candidate] != name_id ||
-                !implements_trait(core.impl_node, trait)) continue;
-            uint pattern = ct_ref(method_decl_receiver_ref_tag[candidate],
-                method_decl_receiver_ref_payload[candidate]);
-            uint parameters = compact_generic_param_ranges[core.impl_node].count;
+            uint id = ct_intern_checked<CtCheckedRows>(operand.x, operand.y, spare);
+            if (visited == 0u) { actual = id; continue; }
+            uint pattern = id;
+            uint parameters = compact_generic_param_ranges[impl].count;
             bool generic = parameters != 0u;
             bool matched = false;
-            if (!generic) matched = ct_is_resolved(pattern) && pattern == actual;
+            if (!generic) matched = ct_closed(actual) && ct_is_resolved(pattern) && pattern == actual;
             else
             {
                 uint member = fn_hir_by_decl_token[candidate];
                 uint bound = 0u;
-                matched = call != INVALID && parameters < 32u && valid_hir(member) &&
+                matched = ct_closed(actual) && call != INVALID && parameters < 32u && valid_hir(member) &&
                     compact_generic_param_ranges[member].count == 0u &&
                     bind_pattern(pattern, actual, receiver, call, parameters, bound) &&
                     bound == (1u << parameters) - 1u;
