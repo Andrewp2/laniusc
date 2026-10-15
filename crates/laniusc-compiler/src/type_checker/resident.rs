@@ -1133,6 +1133,19 @@ impl GpuTypeChecker {
                         )?;
                 }
             }
+            // Bound-member method selection reads accepted bounds, their owner
+            // chains and member contracts in every method transaction.
+            predicates.clear_bound_arg_facts.record(encoder)?;
+            predicates.collect_bound_arg_facts.record(encoder)?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.predicates_bound_args.done");
+            }
+            predicates.collect_method_contracts.record(encoder)?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.predicates_method_contracts.done");
+            }
+            predicates.collect.record(encoder)?;
+            predicates.validate_bound_args.record(encoder)?;
             bind_groups.scope_hir.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.scope.done");
@@ -1750,17 +1763,6 @@ impl GpuTypeChecker {
                     .validate_aggregate_access
                     .record(encoder)?;
             }
-            predicates.clear_bound_arg_facts.record(encoder)?;
-            predicates.collect_bound_arg_facts.record(encoder)?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.predicates_bound_args.done");
-            }
-            predicates.collect_method_contracts.record(encoder)?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.predicates_method_contracts.done");
-            }
-            predicates.collect.record(encoder)?;
-            predicates.validate_bound_args.record(encoder)?;
             predicates.collect_impls.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_collect.done");

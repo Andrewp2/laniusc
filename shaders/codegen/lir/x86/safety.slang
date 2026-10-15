@@ -2,8 +2,6 @@ import primitive_types;
 import codegen.lowering_ir;
 import codegen.lir.x86.location_common;
 
-uint x86_safety_exit_bytes() { return 12u; }
-
 bool x86_safety_integer_division(X86LirCore core, X86LirOperands operands)
 {
     return core.op == X86_LIR_OP_BINARY &&

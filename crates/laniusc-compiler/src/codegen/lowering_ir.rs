@@ -2475,6 +2475,8 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_calls_by_hir", checked_calls),
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_generic_param_ranges", hir_generic_param_ranges),
+            PassAccess::read("compact_method_count", hir_method_count),
+            PassAccess::read("compact_method_cores", hir_method_cores),
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_fn_return_type", hir_fn_return_type),
             PassAccess::read("compact_param_count", hir_param_count),
@@ -9464,54 +9466,6 @@ fn build_lowering_compiler_graph(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.specialized.emit",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: target_domain,
-            accesses: vec![
-                PassAccess::read(
-                    "x86_place_storage_by_token",
-                    x86_place_storage_by_token.expect("x86 place storage resource"),
-                ),
-                PassAccess::read("target_lir_total", target_total),
-                PassAccess::read("target_lir_core", target_core),
-                PassAccess::read(
-                    "target_lir_operands",
-                    target_operands.expect("x86 operand resource"),
-                ),
-                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
-                PassAccess::read("target_function_count", function_count),
-                PassAccess::read("target_functions", functions),
-                PassAccess::read(
-                    "target_function_index_by_semantic",
-                    function_index_by_semantic,
-                ),
-                PassAccess::read("semantic_lir_function_total", semantic_function_total),
-                PassAccess::read("semantic_lir_functions", semantic_functions),
-                PassAccess::read("semantic_lir_params", semantic_params),
-                PassAccess::read("semantic_param_value_layout", semantic_param_value_layout),
-                PassAccess::read("semantic_place_storage_by_token", semantic_place_storage_by_token),
-                // Minimum Slang optimization retains the shared emitter's
-                // resource declarations in this shader's reflection.
-                PassAccess::read("semantic_lir_string_total", semantic_string_total),
-                PassAccess::read("semantic_lir_strings", semantic_strings),
-                PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
-                PassAccess::read("semantic_lir_string_data", semantic_string_data),
-                PassAccess::read(
-                    "x86_decl_location_by_token",
-                    x86_decl_location_by_token.expect("x86 declaration location resource"),
-                ),
-                PassAccess::read(
-                    "x86_saved_gpr_mask_by_function",
-                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
-                ),
-                PassAccess::read("target_lir_locations", x86_target_locations.unwrap()),
-                PassAccess::read("target_byte_length", byte_lengths),
-                PassAccess::read("target_byte_offset", byte_offsets),
-                PassAccess::read("x86_artifact_layout", x86.layout),
-                PassAccess::write("artifact_bytes", x86.artifact_bytes),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.x86.emit",
             phase: CompilerPhase::Artifact,
             dispatch_domain: target_domain,
@@ -11885,10 +11839,6 @@ mod tests {
             ),
             ("lir.x86.artifact.layout", "codegen/lir/x86/artifact_layout"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
-            (
-                "lir.x86.specialized.emit",
-                "codegen/lir/x86/specialized_emit",
-            ),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
             (

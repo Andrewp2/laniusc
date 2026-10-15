@@ -246,8 +246,7 @@ fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
 fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
     matches!(
         artifact_key,
-        "codegen/lir/x86/emit"
-            | "tests/owned_type_constraints_match"
+        "tests/owned_type_constraints_match"
             | "tests/owned_type_constraints_fixed"
             | "tests/owned_type_constraints_overlap"
             | "tests/owned_type_constraints_coverage"
@@ -265,7 +264,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "tests/canonical_type_identity_boundary"
             | "tests/constant_claim_publication"
             | "tests/parameter_scoped_type_graph"
-            | "codegen/lir/x86/specialized_emit"
             | "codegen/lir/semantic/scatter"
             | "codegen/lir/semantic/call_args"
             | "codegen/lir/semantic/function_templates"

@@ -539,6 +539,18 @@ pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str)] = &
         "call_generic_claim_ref_tag",
         "call_generic_claim_ref_payload",
     ),
+    // Per-call receiver facts: bound-member routing and native receiver
+    // passing need the selected body's concrete receiver, not `P`.
+    (
+        "type_check.body_specialization.method_receivers",
+        "method_call_receiver_ref_tag",
+        "method_call_receiver_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.method_parameters",
+        "method_call_parameter_ref_tag",
+        "method_call_parameter_ref_payload",
+    ),
     (
         "type_check.body_specialization.explicit_bindings",
         "call_explicit_binding_tag",
@@ -5236,6 +5248,78 @@ fn build_graph(
         "type_checker/type/instances/03b_member_substitute",
         &[],
     )?;
+    // Bound predicates, their owner chains and member contracts are needed by
+    // bound-member method selection (07a), so they are published before the
+    // first method transaction. Impl indexing and obligations stay late.
+    let predicate_clear_overrides = reflected_bindings![
+        "predicate_trait_impl_trait_type_node" => predicate_trait_impl_trait_type_node: Write,
+        "predicate_owner_node" => predicate_owner_node: Write,
+        "predicate_subject_token" => predicate_subject_token: Write,
+        "predicate_bound_token" => predicate_bound_token: Write,
+        "predicate_bound_reference" => predicate_bound_reference: Write,
+        "predicate_bound_arg_count" => predicate_bound_arg_count: Write,
+        "predicate_bound_first_arg_token" => predicate_bound_first_arg_token: Write,
+        "predicate_bound_second_arg_token" => predicate_bound_second_arg_token: Write,
+        "predicate_status" => predicate_status: Write,
+        "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
+        "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
+        "predicate_method_validation_status" => predicate_method_validation_status: Write,
+        "predicate_method_validation_required_symbol" => predicate_method_validation_required_symbol: Write,
+        "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
+        "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
+        "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
+        "predicate_impl_lookup_head" => predicate_impl_lookup_head: Write,
+    ];
+    graph.add_kernel_pass_by_name(
+        PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/00_clear_bound_arg_facts",
+        predicate_clear_overrides,
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/00b_collect_bound_arg_facts",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_COLLECT_METHOD_CONTRACTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/00c_collect_method_contracts",
+        reflected_bindings![
+            "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
+            "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
+            "predicate_method_contract_name_id" => predicate_method_contract_name_id: Write,
+            "predicate_method_contract_param_count" => predicate_method_contract_param_count: Write,
+            "predicate_method_contract_return_type_node" => predicate_method_contract_return_type_node: Write,
+            "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
+            "predicate_method_contract_status" => predicate_method_contract_status: Write,
+            "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
+            "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_COLLECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/01_collect",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_VALIDATE_BOUND_ARGS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/01a_validate_bound_args",
+        &[],
+    )?;
     graph.add_kernel_pass_by_name(
         SCOPE_HIR_PASS,
         CompilerPhase::TypeCheck,
@@ -5255,6 +5339,7 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS_DIRECT.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_DIRECT.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_DIRECT.register_kernel(&mut graph, kernels)?;
+    METHODS_OFFER_BOUND_MEMBERS_DIRECT.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -5311,6 +5396,7 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE.register_kernel(&mut graph, kernels)?;
+    METHODS_OFFER_BOUND_MEMBERS.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -5407,6 +5493,7 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_INFERENCE.register_kernel(&mut graph, kernels)?;
+    METHODS_OFFER_BOUND_MEMBERS_INFERENCE.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -5826,75 +5913,6 @@ fn build_graph(
         &[],
     )?;
     {
-        let predicate_clear_overrides = reflected_bindings![
-            "predicate_trait_impl_trait_type_node" => predicate_trait_impl_trait_type_node: Write,
-            "predicate_owner_node" => predicate_owner_node: Write,
-            "predicate_subject_token" => predicate_subject_token: Write,
-            "predicate_bound_token" => predicate_bound_token: Write,
-            "predicate_bound_reference" => predicate_bound_reference: Write,
-            "predicate_bound_arg_count" => predicate_bound_arg_count: Write,
-            "predicate_bound_first_arg_token" => predicate_bound_first_arg_token: Write,
-            "predicate_bound_second_arg_token" => predicate_bound_second_arg_token: Write,
-            "predicate_status" => predicate_status: Write,
-            "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
-            "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
-            "predicate_method_validation_status" => predicate_method_validation_status: Write,
-            "predicate_method_validation_required_symbol" => predicate_method_validation_required_symbol: Write,
-            "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
-            "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
-            "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
-            "predicate_impl_lookup_head" => predicate_impl_lookup_head: Write,
-        ];
-        graph.add_kernel_pass_by_name(
-            PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/00_clear_bound_arg_facts",
-            predicate_clear_overrides,
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/00b_collect_bound_arg_facts",
-            &[],
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_COLLECT_METHOD_CONTRACTS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/00c_collect_method_contracts",
-            reflected_bindings![
-                "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
-                "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
-                "predicate_method_contract_name_id" => predicate_method_contract_name_id: Write,
-                "predicate_method_contract_param_count" => predicate_method_contract_param_count: Write,
-                "predicate_method_contract_return_type_node" => predicate_method_contract_return_type_node: Write,
-                "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
-                "predicate_method_contract_status" => predicate_method_contract_status: Write,
-                "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
-                "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
-            ],
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_COLLECT_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/01_collect",
-            &[],
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_VALIDATE_BOUND_ARGS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/01a_validate_bound_args",
-            &[],
-        )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_COLLECT_IMPLS_PASS,
             CompilerPhase::TypeCheck,
@@ -6259,6 +6277,11 @@ fn build_graph(
             "type_check.body_specialization.predicates",
             "type_checker/predicates/03_validate_body_obligations",
             ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.bound_members",
+            "type_checker/methods/09_route_bound_members",
+            ResourceDomain::Tokens,
         ),
     ] {
         graph.add_kernel_pass_by_name(
@@ -7744,15 +7767,18 @@ mod tests {
         assert!(resolve_table.index() < resolve.index());
         for ordered in [
             [METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name, METHODS_RESET_CANDIDATES_DIRECT.name,
-             METHODS_RESOLVE_TABLE_DIRECT.name, DEPENDENCY_METHODS_COLLECT.name,
+             METHODS_RESOLVE_TABLE_DIRECT.name, METHODS_OFFER_BOUND_MEMBERS_DIRECT.name,
+             DEPENDENCY_METHODS_COLLECT.name,
              METHODS_FINALIZE_CANDIDATES_DIRECT.name, DEPENDENCY_METHODS_PROJECT.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER.name],
             [METHODS_MARK_CALL_RETURN_KEYS.name, METHODS_RESET_CANDIDATES.name,
-             METHODS_RESOLVE_TABLE.name, DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+             METHODS_RESOLVE_TABLE.name, METHODS_OFFER_BOUND_MEMBERS.name,
+             DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
              METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name],
             [METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.name, METHODS_RESET_CANDIDATES_INFERENCE.name,
-             METHODS_RESOLVE_TABLE_INFERENCE.name, DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
+             METHODS_RESOLVE_TABLE_INFERENCE.name, METHODS_OFFER_BOUND_MEMBERS_INFERENCE.name,
+             DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
              METHODS_FINALIZE_CANDIDATES_INFERENCE.name, DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name],
         ] {
@@ -7791,6 +7817,7 @@ mod tests {
             METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
             METHODS_RESET_CANDIDATES_INFERENCE,
             METHODS_RESOLVE_TABLE_INFERENCE,
+            METHODS_OFFER_BOUND_MEMBERS_INFERENCE,
             DEPENDENCY_METHODS_COLLECT_INFERENCE,
             METHODS_FINALIZE_CANDIDATES_INFERENCE,
             DEPENDENCY_METHODS_PROJECT_INFERENCE,
