@@ -55,6 +55,7 @@ mod resident;
 mod substitution_passes;
 mod semantic_interface;
 pub use semantic_interface::RecordedSemanticInterface;
+pub use semantic_interface::SemanticInterfaceExportFailure;
 mod util;
 
 use anyhow::Result;
