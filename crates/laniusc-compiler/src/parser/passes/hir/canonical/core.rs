@@ -54,7 +54,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCore
                 "canonical_alias_to_dense".into(),
                 b.hir_canonical_alias_to_dense.as_entire_binding(),
             ),
-            ("parent".into(), b.parent.as_entire_binding()),
+            (
+                "hir_canonical_end_local_max".into(),
+                b.hir_canonical_end_local_max.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_end_blocks".into(),
+                b.hir_canonical_end_blocks.as_entire_binding(),
+            ),
+            (
+                "hir_canonical_end_top".into(),
+                b.hir_canonical_end_top.as_entire_binding(),
+            ),
             ("subtree_end".into(), b.subtree_end.as_entire_binding()),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),

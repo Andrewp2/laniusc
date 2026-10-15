@@ -3564,6 +3564,51 @@ fn register_canonical_materialization(
         ],
     )?;
 
+    // Search heaps over the canonical subtree ends, for the core's nearest
+    // canonical ancestor search.
+    static_pass(
+        graph,
+        &passes.hir_canonical_end_rows,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("canonical_count", "hir_canonical_count", None),
+            (
+                "canonical_prefix_before_raw",
+                "hir_canonical_prefix_before_raw",
+                None,
+            ),
+            ("canonical_dense_to_raw", "hir_canonical_dense_to_raw", None),
+            (
+                "hir_canonical_end_local_max",
+                "hir_canonical_end_local_max",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    static_pass(
+        graph,
+        &passes.hir_canonical_end_blocks,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("canonical_count", "hir_canonical_count", None),
+            (
+                "hir_canonical_end_blocks",
+                "hir_canonical_end_blocks",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    static_pass(
+        graph,
+        &passes.hir_canonical_end_top,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("canonical_count", "hir_canonical_count", None)],
+    )?;
+    // Each level of the top heap reads the level below it.
+    graph.mark_pass_bindings_initialize("hir_canonical_end_top", &["hir_canonical_end_top"])?;
     static_pass(
         graph,
         &passes.hir_canonical_core,
@@ -3583,7 +3628,6 @@ fn register_canonical_materialization(
                 "hir_canonical_alias_to_dense",
                 None,
             ),
-            ("parent", "parent", None),
             (
                 "hir_method_impl_receiver_type",
                 "hir_method_impl_receiver_type_node",
