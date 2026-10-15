@@ -343,6 +343,7 @@ impl GpuX86Linker {
                 "codegen.x86.link.page.rodata",
                 &rodata_bytes,
             );
+            let inputs_uploaded = started.elapsed();
             let elf_params = self.reusable_uniform_u32(
                 device,
                 queue,
@@ -403,6 +404,7 @@ impl GpuX86Linker {
                 0,
                 u32_words_bytes(&[1, 0, u32::MAX, page.relocation_indices.len() as u32]),
             );
+            let params_written = started.elapsed();
 
             let relocation_batch_count = page
                 .relocation_indices
@@ -436,6 +438,7 @@ impl GpuX86Linker {
                 .as_ref()
                 .expect("x86 executable-page graph installed");
             let graph = &graph_state.materialized;
+            let graph_ready = started.elapsed();
             let output = graph.buffer::<u32>("out_words")?;
             let output_status = graph.buffer::<u32>("status")?;
             let readback = self.reusable_readback(
@@ -456,6 +459,7 @@ impl GpuX86Linker {
             resources.buffer("link_relocation_c", &relocation_c);
             resources.buffer("link_relocation_status", &relocation_status);
             resources.buffer("page_readback", &readback);
+            let bindings_ready = started.elapsed();
 
             let output_clear = ClearBufferOperation::entire(
                 graph,
@@ -631,14 +635,18 @@ impl GpuX86Linker {
             readback.unmap();
             if timing {
                 eprintln!(
-                    "x86_link_timing phase=page index={} output_bytes={} text_bytes={} rodata_bytes={} relocations={} source_read_ms={:.3} resources_ms={:.3} initialize_submit_ms={:.3} relocate_submit_ms={:.3} readback_submit_ms={:.3} gpu_wait_ms={:.3} output_write_ms={:.3} total_ms={:.3}",
+                    "x86_link_timing phase=page index={} output_bytes={} text_bytes={} rodata_bytes={} relocations={} source_read_ms={:.3} upload_ms={:.3} params_ms={:.3} graph_ms={:.3} bindings_ms={:.3} ops_ms={:.3} initialize_submit_ms={:.3} relocate_submit_ms={:.3} readback_submit_ms={:.3} gpu_wait_ms={:.3} output_write_ms={:.3} total_ms={:.3}",
                     page_index,
                     page.output_len,
                     page.text_input.len(),
                     page.rodata_input.len(),
                     page.relocation_indices.len(),
                     sources_read.as_secs_f64() * 1000.0,
-                    (resources_prepared - sources_read).as_secs_f64() * 1000.0,
+                    (inputs_uploaded - sources_read).as_secs_f64() * 1000.0,
+                    (params_written - inputs_uploaded).as_secs_f64() * 1000.0,
+                    (graph_ready - params_written).as_secs_f64() * 1000.0,
+                    (bindings_ready - graph_ready).as_secs_f64() * 1000.0,
+                    (resources_prepared - bindings_ready).as_secs_f64() * 1000.0,
                     (initialized - resources_prepared).as_secs_f64() * 1000.0,
                     (relocations_submitted - initialized).as_secs_f64() * 1000.0,
                     (readback_submitted - relocations_submitted).as_secs_f64() * 1000.0,
