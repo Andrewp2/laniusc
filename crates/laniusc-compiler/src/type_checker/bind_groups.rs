@@ -87,6 +87,7 @@ impl GpuTypeChecker {
             call_generic_claim_capacity,
             predicate_capacity,
             dependency_capacity,
+            allocation.canonical_scale,
             parser_feature_flags,
             allocation.semantic_interface_required,
             passes,

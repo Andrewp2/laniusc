@@ -532,13 +532,41 @@ fn parse_backend(value: String) -> Result<BackendSelection, CliError> {
     }
 }
 
+/// Whether a resident daemon for `backends` can load the kernel `key`.
+fn daemon_loads_kernel(backends: GpuCompilerBackends, key: &str) -> bool {
+    let wasm_only = key.starts_with("codegen/wasm/") || key.starts_with("codegen/lir/wasm/");
+    let x86_only = key.starts_with("codegen/x86/") || key.starts_with("codegen/lir/x86/");
+    !key.starts_with("tests/") && (backends.wasm || !wasm_only) && (backends.x86 || !x86_only)
+}
+
 async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     let startup = Instant::now();
+    let prepare_all_kernels =
+        crate::gpu::env::env_bool_strict("LANIUS_DAEMON_PREPARE_ALL_KERNELS", true);
+    let backends = options.backend.compiler_backends();
+    if prepare_all_kernels {
+        // Before any other pipeline: see `prepare_largest_local_memory_kernels`.
+        let gpu = device::global_result()
+            .map_err(|err| CliError::from(format!("initialize GPU device: {err}")))?;
+        crate::gpu::kernels::prepare_largest_local_memory_kernels(&gpu.device, |key| {
+            daemon_loads_kernel(backends, key)
+        })
+        .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
+    }
     let compiler: Arc<GpuCompiler<'static>> = Arc::new(
         GpuCompiler::new_with_backends(options.backend.compiler_backends())
             .await
             .map_err(CliError::from_compile_error)?,
     );
+    // Create every pipeline the selected backends can load before the first
+    // job, so the driver's local-memory reservation is placed in device memory
+    // ahead of any buffer (see `prepare_remaining_kernels`).
+    if prepare_all_kernels {
+        crate::gpu::kernels::prepare_remaining_kernels(&compiler.gpu().device, |key| {
+            daemon_loads_kernel(backends, key)
+        })
+        .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
+    }
     #[cfg(not(debug_assertions))]
     if matches!(options.backend, BackendSelection::X86) {
         // Program evidence and specialization create pipelines on demand after
@@ -601,6 +629,7 @@ async fn run_session(
             "resident_set_bytes": resident_set_bytes(),
             "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
             "wgpu_resources": wgpu_resource_metrics(),
+            "gpu_allocator": gpu_allocator_metrics(),
             "compute_pipelines_created": pipeline_creation_count(),
             "recorded_compute_passes": recorded_compute_pass_count(),
             "recorded_compute_dispatches": recorded_compute_dispatch_count(),
@@ -867,8 +896,11 @@ async fn run_session(
             // Keep stdio responses bounded: a cold/growth job can create hundreds
             // of distinct labels and fill the child's captured-output pipe before
             // the test harness starts reading it. The focused diagnostic is for
-            // small unexpected deltas on otherwise resident jobs.
-            if created.buffers.saturating_add(created.bind_groups) <= 32
+            // small unexpected deltas on otherwise resident jobs; a client that
+            // reads every response raises the limit with
+            // LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT.
+            if created.buffers.saturating_add(created.bind_groups)
+                <= crate::gpu::env::env_u64("LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT", 32)
                 && let (Some(before), Some(after)) = (&breakdown_before, &breakdown_after)
             {
                 response.insert(
@@ -1130,6 +1162,14 @@ async fn compile_request(
         _ => unreachable!("backend support check accepted an unknown target"),
     };
     let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+    // A dispatch selected by `LANIUS_DEBUG_CAPTURE_PASS` and
+    // `LANIUS_DEBUG_CAPTURE_INDEX` counts dispatches across jobs, so a resident
+    // job's dispatch can be captured; it is written after the job recording it.
+    if crate::gpu::dispatch_capture::capture_pass().is_some()
+        && let Ok(gpu) = device::global_result()
+    {
+        crate::gpu::passes_core::debug_write_capture(&gpu.device, &gpu.queue);
+    }
     let unit_cache_after = compiler.compiled_unit_cache_stats();
     let emitted = match emitted {
         Ok(emitted) => emitted,
@@ -1169,6 +1209,7 @@ async fn compile_request(
         "resident_set_bytes": resident_set_bytes(),
         "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
         "wgpu_resources": wgpu_resource_metrics(),
+        "gpu_allocator": gpu_allocator_metrics(),
     })
 }
 
@@ -1273,6 +1314,39 @@ fn wgpu_resource_metrics() -> Value {
         "command_buffers": registry(stats.command_buffers),
         "compute_pipelines": registry(stats.compute_pipelines),
         "query_sets": registry(stats.query_sets),
+    })
+}
+
+/// With `LANIUS_GPU_ALLOCATOR_REPORT=1`, wgpu's device-memory allocator report:
+/// bytes allocated and reserved in blocks, and the largest allocations summed
+/// by label. It covers every wgpu buffer, including those that are not
+/// `LaniusBuffer`s, but not driver-internal memory such as the local-memory
+/// reservation.
+fn gpu_allocator_metrics() -> Value {
+    if !crate::gpu::env::env_bool_strict("LANIUS_GPU_ALLOCATOR_REPORT", false) {
+        return Value::Null;
+    }
+    let Some(report) = device::global().device.generate_allocator_report() else {
+        return Value::Null;
+    };
+    let mut by_label = std::collections::HashMap::<&str, (u64, u64)>::new();
+    for allocation in &report.allocations {
+        let entry = by_label.entry(allocation.name.as_str()).or_default();
+        entry.0 += 1;
+        entry.1 += allocation.size;
+    }
+    let mut by_label = by_label.into_iter().collect::<Vec<_>>();
+    by_label.sort_by_key(|(_, (_, bytes))| std::cmp::Reverse(*bytes));
+    json!({
+        "allocated_bytes": report.total_allocated_bytes,
+        "reserved_bytes": report.total_reserved_bytes,
+        "blocks": report.blocks.len(),
+        "allocations": report.allocations.len(),
+        "largest_by_label": by_label
+            .iter()
+            .take(60)
+            .map(|(label, (count, bytes))| json!({"label": label, "allocations": count, "bytes": bytes}))
+            .collect::<Vec<_>>(),
     })
 }
 

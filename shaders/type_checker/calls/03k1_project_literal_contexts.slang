@@ -68,9 +68,15 @@ uint direct_range_literal_context(uint literal)
     return 0u;
 }
 
-bool match_literal_context(uint node, bool floating, out uint2 reference)
+static const uint MATCH_ROLE_NONE = 0u;
+static const uint MATCH_ROLE_PATTERN = 1u;
+static const uint MATCH_ROLE_RESULT = 2u;
+
+// The nearest enclosing match within the statement owns a literal that is an
+// arm pattern (scrutinee context) or an arm result (the match's own context).
+uint match_literal_role(uint node, out uint match)
 {
-    reference = uint2(0u, INVALID);
+    match = INVALID;
     uint parent = compact_hir_core[node].parent;
     for (uint depth = 0u; depth < 32u && valid_hir(parent); depth++)
     {
@@ -79,34 +85,57 @@ bool match_literal_context(uint node, bool floating, out uint2 reference)
         {
             HirPayload value = compact_hir_payload[parent];
             uint count = min(compact_match_arm_count[0u], active_hir_count());
-            if (value.b >= count || value.c > count - value.b) return false;
+            if (value.b >= count || value.c > count - value.b) return MATCH_ROLE_NONE;
+            match = parent;
             for (uint row = value.b; row < value.b + value.c; row++)
             {
                 HirMatchArm arm = compact_match_arms[row];
-                if (arm.owner == parent && argument_context_root(arm.pattern,
-                    active_hir_count(), compact_hir_core, compact_hir_payload) == node)
-                {
-                    uint scrutinee = argument_context_root(value.a, active_hir_count(),
-                        compact_hir_core, compact_hir_payload);
-                    if (!valid_hir(scrutinee)) return false;
-                    reference = uint2(call_inference_result_tag[scrutinee],
-                        call_inference_result_payload[scrutinee]);
-                    return numeric_context(reference, floating) != 0u;
-                }
-                if (arm.owner == parent && argument_context_root(arm.result,
-                    active_hir_count(), compact_hir_core, compact_hir_payload) == node)
-                    return declared_expression_context<ScopedCheckedTypeGraph>(
-                        parent, checked_type_capacity(), reference);
+                if (arm.owner != parent) continue;
+                if (argument_context_root(arm.pattern, active_hir_count(),
+                    compact_hir_core, compact_hir_payload) == node) return MATCH_ROLE_PATTERN;
+                if (argument_context_root(arm.result, active_hir_count(),
+                    compact_hir_core, compact_hir_payload) == node) return MATCH_ROLE_RESULT;
             }
-            return false;
+            return MATCH_ROLE_NONE;
         }
         if (core.kind == HIR_STMT || core.kind == HIR_LET_STMT ||
             core.kind == HIR_RETURN_STMT || core.kind == 3u || core.kind == 1u) break;
         if (core.parent == parent) break;
         parent = core.parent;
     }
-    return false;
+    return MATCH_ROLE_NONE;
 }
+
+// A lexical const annotation owns exactly its initializer's value root.
+uint const_annotation_context(uint current, bool floating)
+{
+    uint ancestor = compact_hir_core[current].parent;
+    for (uint depth = 0u; depth < 32u && valid_hir(ancestor); depth++)
+    {
+        HirCore owner = compact_hir_core[ancestor];
+        if (owner.kind == 25u)
+        {
+            uint token = compact_hir_payload[ancestor].b;
+            if (valid_token(token) && argument_context_root(compact_const_value[ancestor],
+                active_hir_count(), compact_hir_core, compact_hir_payload) == current)
+                return numeric_context(uint2(decl_type_ref_tag[token], decl_type_ref_payload[token]), floating);
+            return 0u;
+        }
+        if (owner.kind == 3u || owner.kind == 1u || owner.parent == ancestor) break;
+        ancestor = owner.parent;
+    }
+    return 0u;
+}
+
+bool array_instance(uint instance)
+{
+    return valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY;
+}
+
+// Which node the single declared-context read below answers for.
+static const uint QUERY_OPERAND = 0u; // the current operand root
+static const uint QUERY_MATCH = 1u;   // the match whose arm result is the operand
+static const uint QUERY_ARRAY = 2u;   // an enclosing array literal layer
 
 uint checked_literal_context(uint literal)
 {
@@ -119,67 +148,104 @@ uint checked_literal_context(uint literal)
     if (range_context != 0u) return range_context;
     uint current = literal;
     uint peer = 0u;
-    // The parser owns an acyclic expression forest. Its checked active row
-    // count is the traversal bound, rather than an arbitrary digit/depth cap.
-    for (uint step = 0u; step < active_hir_count(); step++)
+    // Declared contexts are read at one call site: each site inlines the
+    // whole reader (~26k instructions), and three copies made this kernel
+    // 87k and its dispatch ~50x slower than the same work at 34k. Each round
+    // answers one query: the operand, then the match owning it as an arm
+    // result, then (once the operand is an array element) each enclosing
+    // array layer, innermost first. The parser owns an acyclic expression
+    // forest, so the checked active row count bounds the operand climb;
+    // array layers are bounded as in `expected_array_literal_instance`.
+    uint query = literal;
+    uint mode = QUERY_OPERAND;
+    uint array_node = INVALID; uint array_layers = 0u; uint array_depth = 0u;
+    uint operand_steps = 0u;
+    while (true)
     {
+        if (mode == QUERY_OPERAND)
+        {
+            if (operand_steps >= active_hir_count()) return peer;
+            operand_steps++;
+            uint context = const_annotation_context(current, floating);
+            if (context != 0u) return context;
+        }
         uint2 reference;
-        uint ancestor = compact_hir_core[current].parent;
-        for (uint depth = 0u; depth < 32u && valid_hir(ancestor); depth++)
+        bool declared = declared_expression_context<ScopedCheckedTypeGraph>(query,
+            checked_type_capacity(), reference);
+        if (mode == QUERY_ARRAY)
         {
-            HirCore owner = compact_hir_core[ancestor];
-            if (owner.kind == 25u)
+            uint expected = declared && reference.x == TYPE_REF_INSTANCE ? reference.y : INVALID;
+            bool found = array_instance(expected);
+            if (!found && query != array_node && call_inference_result_tag[query] == TYPE_REF_INSTANCE)
             {
-                uint token = compact_hir_payload[ancestor].b;
-                if (valid_token(token) && argument_context_root(compact_const_value[ancestor],
-                    active_hir_count(), compact_hir_core, compact_hir_payload) == current)
-                {
-                    uint context = numeric_context(uint2(decl_type_ref_tag[token], decl_type_ref_payload[token]), floating);
-                    if (context != 0u) return context;
-                }
-                break;
+                expected = call_inference_result_payload[query];
+                found = array_instance(expected);
             }
-            if (owner.kind == 3u || owner.kind == 1u || owner.parent == ancestor) break;
-            ancestor = owner.parent;
+            if (!found)
+            {
+                uint parent = compact_hir_core[query].parent;
+                if (!valid_hir(parent) || compact_hir_core[parent].kind != HIR_ARRAY_EXPR) return peer;
+                array_layers++; query = parent;
+                if (++array_depth < 64u) continue;
+            }
+            for (uint layer = 0u; layer < array_layers; layer++)
+            {
+                if (!array_instance(expected) ||
+                    type_instance_elem_ref_tag[expected] != TYPE_REF_INSTANCE) return peer;
+                expected = type_instance_elem_ref_payload[expected];
+            }
+            return array_instance(expected) ? numeric_context(uint2(
+                type_instance_elem_ref_tag[expected], type_instance_elem_ref_payload[expected]), floating) : peer;
         }
-        if (declared_expression_context<ScopedCheckedTypeGraph>(current,
-            checked_type_capacity(), reference))
+        if (declared)
         {
             uint context = numeric_context(reference, floating);
             if (context != 0u) return context;
         }
-        if (match_literal_context(current, floating, reference))
+        if (mode == QUERY_OPERAND)
         {
-            uint context = numeric_context(reference, floating);
-            if (context != 0u) return context;
+            uint match;
+            uint role = match_literal_role(current, match);
+            if (role == MATCH_ROLE_PATTERN)
+            {
+                uint scrutinee = argument_context_root(compact_hir_payload[match].a,
+                    active_hir_count(), compact_hir_core, compact_hir_payload);
+                uint context = valid_hir(scrutinee) ? numeric_context(uint2(
+                    call_inference_result_tag[scrutinee], call_inference_result_payload[scrutinee]),
+                    floating) : 0u;
+                if (context != 0u) return context;
+            }
+            else if (role == MATCH_ROLE_RESULT)
+            {
+                mode = QUERY_MATCH; query = match;
+                continue;
+            }
         }
+        mode = QUERY_OPERAND;
         uint parent = compact_hir_expr_parent[current];
-        if (!valid_hir(parent) || parent == current) break;
+        if (!valid_hir(parent) || parent == current) return peer;
         HirCore core = compact_hir_core[parent];
         HirPayload value = compact_hir_payload[parent];
         if (core.kind == HIR_ARRAY_EXPR)
         {
-            uint expected = expected_array_literal_instance(parent);
-            return valid_instance(expected) ? numeric_context(uint2(
-                type_instance_elem_ref_tag[expected], type_instance_elem_ref_payload[expected]), floating) : peer;
+            mode = QUERY_ARRAY; array_node = parent; query = parent;
+            continue;
         }
-        if (core.kind != 14u && core.kind != 16u && core.kind != 17u) break;
-        if (hir_is_forward_expression(core.kind, value.a) && value.b == current)
-        { current = parent; continue; }
-        if (value.a == 13u && value.b == current)
-        { current = parent; continue; }
-        if (core.kind != 16u || (value.b != current && value.c != current)) break;
+        if (core.kind != 14u && core.kind != 16u && core.kind != 17u) return peer;
+        if ((hir_is_forward_expression(core.kind, value.a) || value.a == 13u) && value.b == current)
+        { current = parent; query = parent; continue; }
+        if (core.kind != 16u || (value.b != current && value.c != current)) return peer;
         bool comparison = value.a >= 7u && value.a <= 12u;
         bool arithmetic = floating ? ((value.a >= 14u && value.a <= 16u) || value.a == 20u)
             : integer_arithmetic_form(value.a);
-        if (!comparison && !arithmetic) break;
+        if (!comparison && !arithmetic) return peer;
         bool shift = value.a == 24u || value.a == 25u;
         // The shift amount has an independent integer type and range.
-        if (shift && value.c == current) break;
+        if (shift && value.c == current) return peer;
         if (!shift && peer == 0u)
             peer = checked_numeric_peer(value.b == current ? value.c : value.b, floating);
-        if (comparison) break;
-        current = parent;
+        if (comparison) return peer;
+        current = parent; query = parent;
     }
     return peer;
 }
