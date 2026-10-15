@@ -4,9 +4,14 @@
 // candidate is a few dozen loads and one ct_intern, with no local arrays.
 // A re-interned job (CT_COUNT_REINTERN) looks each key up first and moves a
 // rewritten candidate whose fixed record is published to a dynamic record.
+//
+// The builders read instance rows through an ICtRowReader, and this module
+// imports no type graph: the checked graph and the mutable graph declare the
+// same row tables with different access, so a kernel on either graph can
+// build keys (canonical_checked_rows: CtCheckedRows, canonical_mutable_rows:
+// CtMutableRows).
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_constants;
-import type_checker.checked_type_graph;
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
 import constant_value;
@@ -23,10 +28,27 @@ public StructuredBuffer<uint> interface_public_decl_local_id;
 static const uint INVALID = 0xffffffffu;
 static const uint NOMINAL_LIMIT = 32u;
 
+// The instance-row and token-slot reads of candidate keys.
+public interface ICtRowReader
+{
+    static uint kind(uint row);
+    static uint decl_token(uint row);
+    static uint arg_count(uint row);
+    // Checked argument `index` of a named row (tag 0 when absent).
+    static bool argument(uint row, uint index, out uint tag, out uint payload);
+    static uint2 elem(uint row);
+    // Array length operand: (constant kind, payload).
+    static uint2 len(uint row);
+    // Imported nominal identity: (library, unit, local index).
+    static uint3 external(uint row);
+    // Generic type-parameter slot of a token; INVALID past the token rows.
+    static uint generic_slot(uint token);
+}
+
 uint token_capacity()
 {
     uint count; uint stride;
-    type_generic_param_slot_by_token.GetDimensions(count, stride);
+    type_const_param_slot_by_token.GetDimensions(count, stride);
     return count;
 }
 
@@ -49,18 +71,18 @@ uint constant_parameter(uint token, bool count)
 
 // Canonical reference of one checked operand, with parameter admission. A
 // `count` operand (an array length) must be an integer parameter.
-uint operand(uint tag, uint payload, bool count)
+uint operand<R : ICtRowReader>(uint tag, uint payload, bool count)
 {
     if (tag == 2u)
-        return payload < token_capacity() && type_generic_param_slot_by_token[payload] != INVALID
+        return payload < token_capacity() && R.generic_slot(payload) != INVALID
             ? ct_type_param(payload) : CT_UNKNOWN;
     if (tag == (CT_CONSTANT_TAG_BIT | 2u)) return constant_parameter(payload, count);
     return ct_ref(tag, payload);
 }
 
-bool named_identity(uint row, out uint3 words, out uint token)
+bool named_identity<R : ICtRowReader>(uint row, out uint3 words, out uint token)
 {
-    uint declaration = type_instance_decl_token[row];
+    uint declaration = R.decl_token(row);
     uint library = ct_counts[CT_COUNT_LIBRARY];
     uint unit = ct_counts[CT_COUNT_UNIT];
     words = uint3(0u, 0u, 0u);
@@ -75,7 +97,7 @@ bool named_identity(uint row, out uint3 words, out uint token)
         token = declaration;
         return true;
     }
-    words = uint3(external_type_library_id[row], external_type_unit_id[row], external_type_local_index[row]);
+    words = R.external(row);
     if (any(words == INVALID)) return false;
     // An imported reference to this job's own declaration keeps the same
     // bridge token as its local spelling, so the published facts do not
@@ -90,35 +112,37 @@ bool named_identity(uint row, out uint3 words, out uint token)
 
 // Child `index` of a row before count-class mapping. Arrays: element, length.
 // `constant` reports a constant-domain operand of a named application.
-uint row_child(uint row, uint kind, uint index, out bool constant)
+uint row_child<R : ICtRowReader>(uint row, uint kind, uint index, out bool constant)
 {
-    uint tag = type_instance_elem_ref_tag[row];
-    uint payload = type_instance_elem_ref_payload[row];
+    uint2 elem = R.elem(row);
+    uint tag = elem.x;
+    uint payload = elem.y;
     bool length = kind == 2u && index == 1u;
-    if (kind == 1u && !ScopedCheckedTypeGraph.argument(row, index, tag, payload)) tag = 0u;
+    if (kind == 1u && !R.argument(row, index, tag, payload)) tag = 0u;
     if (length)
     {
-        tag = CT_CONSTANT_TAG_BIT | type_instance_len_kind[row];
-        payload = type_instance_len_payload[row];
+        uint2 len = R.len(row);
+        tag = CT_CONSTANT_TAG_BIT | len.x;
+        payload = len.y;
     }
     constant = kind == 1u && (tag & CT_CONSTANT_TAG_BIT) != 0u;
-    return operand(tag, payload, length);
+    return operand<R>(tag, payload, length);
 }
 
 // A builder builds a candidate's complete key and returns CT_KEY_BUILT, or
 // returns the candidate's final reference (a sentinel) without a key. One
 // ct_intern call then publishes whichever key was built.
-uint build_row(uint row, bool final, out CtKey key)
+uint build_row<R : ICtRowReader>(uint row, bool final, out CtKey key)
 {
     key = ct_empty_key();
-    uint kind = type_instance_kind[row];
+    uint kind = R.kind(row);
     if (kind == 0u) return CT_NONE;
     if (kind > 4u) return CT_UNKNOWN;
-    uint arity = kind == 1u ? type_instance_arg_count[row] : kind == 2u ? 2u : 1u;
+    uint arity = kind == 1u ? R.arg_count(row) : kind == 2u ? 2u : 1u;
     if (arity > NOMINAL_LIMIT) return CT_UNKNOWN;
     uint3 words = uint3(0u, 0u, 0u);
     uint token = INVALID;
-    if (kind == 1u && !named_identity(row, words, token)) return CT_UNKNOWN;
+    if (kind == 1u && !named_identity<R>(row, words, token)) return CT_UNKNOWN;
     // Pass 0 checks readiness, so nothing is reserved for a row that must
     // wait; pass 1 writes the key. Published references never change, so
     // both passes read the same children (at one call site).
@@ -136,7 +160,7 @@ uint build_row(uint row, bool final, out CtKey key)
         for (uint index = 0u; index < arity; index++)
         {
             bool constant;
-            uint child = row_child(row, kind, index, constant);
+            uint child = row_child<R>(row, kind, index, constant);
             if (pass == 0u)
             {
                 if (child == CT_PENDING) return final ? CT_UNKNOWN : CT_PENDING;
@@ -155,7 +179,7 @@ uint build_row(uint row, bool final, out CtKey key)
 
 // Atoms intern their typed value; projections fold or cast
 // (canonical_constants.slang). Both end at the one value-key site.
-uint build_constant(uint candidate, bool final, out CtKey key)
+uint build_constant<R : ICtRowReader>(uint candidate, bool final, out CtKey key)
 {
     key = ct_empty_key();
     uint atom = candidate - ct_row_capacity();
@@ -168,7 +192,7 @@ uint build_constant(uint candidate, bool final, out CtKey key)
     {
         uint target; uint2 child_ref;
         if (!checked_constant_projection(atom - ct_atom_capacity(), target, child_ref)) return CT_NONE;
-        uint child = operand(CT_CONSTANT_TAG_BIT | child_ref.x, child_ref.y, false);
+        uint child = operand<R>(CT_CONSTANT_TAG_BIT | child_ref.x, child_ref.y, false);
         if (child == CT_PENDING) return final ? CT_UNKNOWN : CT_PENDING;
         if (!ct_is_resolved(child)) return CT_UNKNOWN;
         uint param_scalar = ct_is_const_param(child)
@@ -186,17 +210,17 @@ uint build_constant(uint candidate, bool final, out CtKey key)
 // interned yet. Callers outside this stage intern the key through
 // ct_intern_spare, never into the candidate's fixed record. Each call site
 // expands both builders, so call it once per kernel.
-public uint canonical_build_candidate_key(uint candidate, bool final, out CtKey key)
+public uint canonical_build_candidate_key<R : ICtRowReader>(uint candidate, bool final, out CtKey key)
 {
-    if (candidate < ct_row_capacity()) return build_row(candidate, final, key);
-    return build_constant(candidate, final, key);
+    if (candidate < ct_row_capacity()) return build_row<R>(candidate, final, key);
+    return build_constant<R>(candidate, final, key);
 }
 
 // Intern one candidate; CT_PENDING means a child is not interned yet.
-public uint canonical_intern_candidate(uint candidate, bool final)
+public uint canonical_intern_candidate<R : ICtRowReader>(uint candidate, bool final)
 {
     CtKey key;
-    uint status = canonical_build_candidate_key(candidate, final, key);
+    uint status = canonical_build_candidate_key<R>(candidate, final, key);
     if (status != CT_KEY_BUILT) return status;
     uint record = ct_candidate_record(candidate);
     if (ct_counts[CT_COUNT_REINTERN] != 0u)
