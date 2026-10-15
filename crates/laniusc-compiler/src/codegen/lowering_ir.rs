@@ -1720,6 +1720,13 @@ fn build_lowering_compiler_graph(
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    // Variant-row and field-row dispatches of the aggregate layout rounds.
+    let semantic_layout_dispatch_args = graph.add_indirect_storage(
+        "lir.semantic.layout_dispatch_args",
+        ResourceDomain::DispatchArguments,
+        ResourceClass::Workspace,
+        24,
+    )?;
     let semantic_local_flags = graph.add_resource(workspace(
         "lir.semantic.local_flags",
         ResourceDomain::HirNodes,
@@ -1922,6 +1929,13 @@ fn build_lowering_compiler_graph(
     ))?;
     let semantic_place_original_count = graph.add_resource(workspace(
         "lir.semantic.place_original_count",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    // Which of a HIR node's rows carries its value (count publishes it,
+    // scatter resolves operands with it).
+    let semantic_value_row_by_hir = graph.add_resource(workspace(
+        "lir.semantic.value_row_by_hir",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
@@ -2284,6 +2298,11 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_field_count", hir_field_count),
             PassAccess::read("compact_fields", hir_fields),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::write(
+                "semantic_layout_dispatch_args",
+                semantic_layout_dispatch_args,
+            ),
             PassAccess::write(
                 "semantic_aggregate_hir_by_name_token",
                 semantic_aggregate_hir_by_name_token,
@@ -2360,6 +2379,7 @@ fn build_lowering_compiler_graph(
             semantic_struct_word_count_by_hir,
         ),
         PassAccess::read_write("lowering_status", lowering_status),
+        PassAccess::indirect(INDIRECT_DISPATCH_BINDING, semantic_layout_dispatch_args),
     ];
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.layout.enum_variants",
@@ -2402,57 +2422,73 @@ fn build_lowering_compiler_graph(
                 "semantic_struct_field_word_count_by_row",
                 semantic_struct_field_word_count_by_row,
             ),
+            PassAccess::indirect(INDIRECT_DISPATCH_BINDING, semantic_layout_dispatch_args),
         ],
     })?;
+    let struct_word_layout_accesses = vec![
+        PassAccess::read_write("checked_constant_atoms", checked_constant_atoms),
+        PassAccess::read_write("checked_constant_projections", checked_constant_projections),
+        PassAccess::read("type_const_param_scalar_by_token", type_const_param_scalar),
+        PassAccess::read("type_const_param_value_by_token", type_const_param_value),
+        PassAccess::read("type_const_param_slot_by_token", type_const_param_slot),
+        PassAccess::read("type_instance_kind", type_instance_kind),
+        PassAccess::read("type_instance_len_kind", type_instance_len_kind),
+        PassAccess::read("type_instance_len_payload", type_instance_len_payload),
+        PassAccess::read("compact_hir_count", hir_count),
+        PassAccess::read("compact_hir_core", hir_core),
+        PassAccess::read("compact_hir_payload", hir_payload),
+        PassAccess::read("compact_field_count", hir_field_count),
+        PassAccess::read("compact_fields", hir_fields),
+        PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+        PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+        PassAccess::read("type_instance_native_words", type_instance_native_words),
+        PassAccess::read(
+            "semantic_aggregate_decl_token",
+            semantic_aggregate_decl_tokens,
+        ),
+        PassAccess::read(
+            "semantic_aggregate_hir_by_name_token",
+            semantic_aggregate_hir_by_name_token,
+        ),
+        PassAccess::read(
+            "semantic_struct_field_start_by_hir",
+            semantic_struct_field_start_by_hir,
+        ),
+        PassAccess::read(
+            "semantic_struct_field_count_by_hir",
+            semantic_struct_field_count_by_hir,
+        ),
+        PassAccess::read_write(
+            "semantic_struct_word_count_by_hir",
+            semantic_struct_word_count_by_hir,
+        ),
+        PassAccess::write(
+            "semantic_struct_field_word_offset_by_row",
+            semantic_struct_field_word_offset_by_row,
+        ),
+        PassAccess::read_write(
+            "semantic_struct_field_word_count_by_row",
+            semantic_struct_field_word_count_by_row,
+        ),
+    ];
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.layout.words",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read_write("checked_constant_atoms", checked_constant_atoms),
-            PassAccess::read_write("checked_constant_projections", checked_constant_projections),
-            PassAccess::read("type_const_param_scalar_by_token", type_const_param_scalar),
-            PassAccess::read("type_const_param_value_by_token", type_const_param_value),
-            PassAccess::read("type_const_param_slot_by_token", type_const_param_slot),
-            PassAccess::read("type_instance_kind", type_instance_kind),
-            PassAccess::read("type_instance_len_kind", type_instance_len_kind),
-            PassAccess::read("type_instance_len_payload", type_instance_len_payload),
-            PassAccess::read("compact_hir_count", hir_count),
-            PassAccess::read("compact_hir_core", hir_core),
-            PassAccess::read("compact_hir_payload", hir_payload),
-            PassAccess::read("compact_fields", hir_fields),
-            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
-            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
-            PassAccess::read("type_instance_native_words", type_instance_native_words),
-            PassAccess::read(
-                "semantic_aggregate_decl_token",
-                semantic_aggregate_decl_tokens,
-            ),
-            PassAccess::read(
-                "semantic_aggregate_hir_by_name_token",
-                semantic_aggregate_hir_by_name_token,
-            ),
-            PassAccess::read(
-                "semantic_struct_field_start_by_hir",
-                semantic_struct_field_start_by_hir,
-            ),
-            PassAccess::read(
-                "semantic_struct_field_count_by_hir",
-                semantic_struct_field_count_by_hir,
-            ),
-            PassAccess::read_write(
-                "semantic_struct_word_count_by_hir",
-                semantic_struct_word_count_by_hir,
-            ),
-            PassAccess::write(
-                "semantic_struct_field_word_offset_by_row",
-                semantic_struct_field_word_offset_by_row,
-            ),
-            PassAccess::read_write(
-                "semantic_struct_field_word_count_by_row",
-                semantic_struct_field_word_count_by_row,
-            ),
-        ],
+        accesses: struct_word_layout_accesses.clone(),
+    })?;
+    // The fixed-point rounds take one lane per field row (see
+    // function_layout_words.slang's root_rows).
+    let mut struct_word_round_accesses = struct_word_layout_accesses;
+    struct_word_round_accesses.push(PassAccess::indirect(
+        INDIRECT_DISPATCH_BINDING,
+        semantic_layout_dispatch_args,
+    ));
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.functions.layout.words.round",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::Declarations,
+        accesses: struct_word_round_accesses,
     })?;
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.layout.validate",
@@ -3045,6 +3081,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_aggregate_hir_by_name_token", semantic_aggregate_hir_by_name_token),
             PassAccess::read("semantic_struct_word_count_by_hir", semantic_struct_word_count_by_hir),
             PassAccess::write("semantic_place_original_count", semantic_place_original_count),
+            PassAccess::write("semantic_lir_value_row_by_hir", semantic_value_row_by_hir),
 
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
@@ -3319,6 +3356,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_argument_mode_by_hir", checked_argument_modes),
             PassAccess::read("semantic_lir_count", semantic_counts),
             PassAccess::read("semantic_lir_offset", semantic_offsets),
+            PassAccess::read("semantic_lir_value_row_by_hir", semantic_value_row_by_hir),
             PassAccess::read("semantic_lir_total", semantic_total),
             PassAccess::read("semantic_execution_rank", execution_rank_a),
             PassAccess::write("semantic_lir_schedule", semantic_schedule),
@@ -11188,6 +11226,30 @@ mod tests {
             ("lir.semantic.scan.apply", "scan/counted/02_apply"),
             ("lir.semantic.scatter", "codegen/lir/semantic/scatter"),
             ("lir.semantic.call_args", "codegen/lir/semantic/call_args"),
+            (
+                "lir.semantic.functions.layout.collect",
+                "codegen/lir/semantic/function_layout_collect",
+            ),
+            (
+                "lir.semantic.functions.layout.enum_variants",
+                "codegen/lir/semantic/function_layout_enum_variants",
+            ),
+            (
+                "lir.semantic.functions.layout.enum_fields",
+                "codegen/lir/semantic/function_layout_enum_fields",
+            ),
+            (
+                "lir.semantic.functions.layout.words",
+                "codegen/lir/semantic/function_layout_words",
+            ),
+            (
+                "lir.semantic.functions.layout.words.round",
+                "codegen/lir/semantic/function_layout_words",
+            ),
+            (
+                "lir.semantic.functions.layout.validate",
+                "codegen/lir/semantic/function_layout_enum_variants",
+            ),
         ] {
             let reflection = crate::reflection::parse_reflection_from_file(
                 crate::shader_artifacts::artifact_path(&format!("{artifact}.reflect.json")),

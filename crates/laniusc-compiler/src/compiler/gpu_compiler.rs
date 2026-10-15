@@ -25,6 +25,7 @@ mod unit_cache;
 use helpers::{
     StageExecutionFailure,
     first_nonempty_source_span,
+    invalid_cast_label,
     parser_execution_failed_for_source,
     parser_execution_failed_for_source_pack,
     source_lexer_error_for_source,

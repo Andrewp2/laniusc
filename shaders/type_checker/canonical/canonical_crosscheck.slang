@@ -9,6 +9,26 @@ import type_checker.checked_type_graph;
 
 // [0, buckets): chain heads (row + 1); [buckets, buckets + rows): next links.
 public RWStructuredBuffer<uint> canonical_crosscheck_links;
+// Per record: the smallest row interned to it (89_crosscheck_buckets), or
+// 0xffffffff. Records are allocated per new key, so a record ID does not name
+// the row that took it; this is the row the others of its ID are checked
+// against.
+public RWStructuredBuffer<uint> canonical_crosscheck_owner;
+
+public uint crosscheck_owner_capacity()
+{
+    uint words; uint stride;
+    canonical_crosscheck_owner.GetDimensions(words, stride);
+    return words;
+}
+
+// The representative row of `id`, or 0xffffffff for a preseeded scalar or
+// an ID no checked row holds.
+public uint crosscheck_owner(uint id)
+{
+    if (id < CT_FIRST_RECORD || id >= crosscheck_owner_capacity()) return 0xffffffffu;
+    return canonical_crosscheck_owner[id];
+}
 
 public uint crosscheck_rows()
 {

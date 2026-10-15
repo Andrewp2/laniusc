@@ -6,7 +6,8 @@ import type_checker.canonical.canonical_dependency;
 import dependency_interface;
 
 // Two frontier lists of half the buffer each; round r reads list r & 1 and
-// appends to list (r + 1) & 1.
+// appends to list (r + 1) & 1. An append past the end sets
+// CT_OVERFLOW_FRONTIER (01_intern).
 RWStructuredBuffer<uint> canonical_frontier;
 
 [shader("compute")]
@@ -28,7 +29,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else
     {
-        if (i >= ct_counts[CT_COUNT_PENDING]) return;
+        if (i >= min(ct_counts[CT_COUNT_PENDING], list)) return;
         node = canonical_frontier[(round & 1u) * list + i];
     }
     uint id = canonical_intern_dependency(node, ct_counts[CT_COUNT_FINAL] != 0u);
@@ -44,4 +45,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint slot;
     InterlockedAdd(ct_counts[CT_COUNT_FRONTIER + next], 1u, slot);
     if (slot < list) canonical_frontier[next * list + slot] = node;
+    else InterlockedOr(ct_counts[CT_COUNT_OVERFLOW], CT_OVERFLOW_FRONTIER);
 }

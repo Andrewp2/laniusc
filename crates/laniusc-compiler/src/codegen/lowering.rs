@@ -887,6 +887,7 @@ struct GpuSemanticLoweringOperations {
     function_layout_validate: ComputeOperation,
     function_layout_enum_fields: ComputeOperation,
     function_layout_words: ComputeOperation,
+    function_layout_words_round: ComputeOperation,
     function_scatter: ComputeOperation,
     function_params: ComputeOperation,
     project: ComputeOperation,
@@ -1218,6 +1219,10 @@ impl GpuSemanticLoweringStage {
                 passes.function_layout_words.reflection.as_ref(),
             ),
             (
+                "lir.semantic.functions.layout.words.round",
+                passes.function_layout_words.reflection.as_ref(),
+            ),
+            (
                 "lir.semantic.function_scan.local",
                 passes.scan_local.reflection.as_ref(),
             ),
@@ -1406,6 +1411,30 @@ impl GpuSemanticLoweringStage {
             },
         );
 
+        // function_layout_words.slang root_rows: HIR rows for the first
+        // pass, first field rows for the fixed-point rounds.
+        let words_params = uniform_from_val(
+            device,
+            "lir.semantic.functions.layout.words.params",
+            &SemanticFunctionParams {
+                n_hir_nodes: hir_nodes,
+                param_capacity: capacities.parameters,
+                n_tokens: capacities.tokens,
+                local_capacity: 0,
+            },
+        );
+        let words_round_params = uniform_from_val(
+            device,
+            "lir.semantic.functions.layout.words.round.params",
+            &SemanticFunctionParams {
+                n_hir_nodes: hir_nodes,
+                param_capacity: capacities.parameters,
+                n_tokens: capacities.tokens,
+                local_capacity: 1,
+            },
+        );
+        let layout_dispatch_args = alias("lir.semantic.layout_dispatch_args", 6)?;
+
         let graph_bindings = workspace.bindings(&graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(&graph, &graph_bindings);
@@ -1423,6 +1452,23 @@ impl GpuSemanticLoweringStage {
                     device, &context, &resources, $name, $pass, $params, $elements,
                 )
             };
+        }
+        // Dispatch arguments are byte offsets into layout_dispatch_args:
+        // variant rows at 0, field rows at 12.
+        macro_rules! layout_round {
+            ($name:expr, $pass:expr, $params:expr, $offset:expr $(,)?) => {{
+                let mut resources = resources.clone();
+                resources.buffer("gParams", $params);
+                ComputeOperation::indirect_at(
+                    device,
+                    &context,
+                    &resources,
+                    $name,
+                    $pass,
+                    &layout_dispatch_args,
+                    $offset,
+                )
+            }};
         }
 
         let function_scan = GpuResidentExclusiveScan::new(
@@ -1609,29 +1655,35 @@ impl GpuSemanticLoweringStage {
                 &function_params,
                 hir_nodes.max(capacities.aggregate_elements),
             )?,
-            function_layout_enum_variants: direct_uniform!(
+            function_layout_enum_variants: layout_round!(
                 "lir.semantic.functions.layout.enum_variants",
                 &passes.function_layout_enum_variants,
                 &function_params,
-                hir_nodes,
+                0,
             )?,
-            function_layout_validate: direct_uniform!(
+            function_layout_validate: layout_round!(
                 "lir.semantic.functions.layout.validate",
                 &passes.function_layout_enum_variants,
                 &function_validation_params,
-                hir_nodes,
+                0,
             )?,
-            function_layout_enum_fields: direct_uniform!(
+            function_layout_enum_fields: layout_round!(
                 "lir.semantic.functions.layout.enum_fields",
                 &passes.function_layout_enum_fields,
                 &function_params,
-                capacities.aggregate_elements,
+                12,
             )?,
             function_layout_words: direct_uniform!(
                 "lir.semantic.functions.layout.words",
                 &passes.function_layout_words,
-                &function_params,
+                &words_params,
                 hir_nodes,
+            )?,
+            function_layout_words_round: layout_round!(
+                "lir.semantic.functions.layout.words.round",
+                &passes.function_layout_words,
+                &words_round_params,
+                12,
             )?,
             function_scatter: direct_uniform!(
                 "lir.semantic.functions.scatter",
@@ -1879,10 +1931,12 @@ impl GpuSemanticLoweringStage {
         // Struct widths that do not depend on enum fields are available to
         // the variant pass; the second walk incorporates enum-valued fields.
         operations.function_layout_words.record(encoder)?;
+        // Each round dispatches over the variant and field rows only, not
+        // every HIR row: 192 dispatches of mostly idle lanes were the cost.
         for _ in 0..AGGREGATE_LAYOUT_ROUNDS {
             operations.function_layout_enum_variants.record(encoder)?;
             operations.function_layout_enum_fields.record(encoder)?;
-            operations.function_layout_words.record(encoder)?;
+            operations.function_layout_words_round.record(encoder)?;
         }
         operations.function_layout_validate.record(encoder)?;
         operations.function_templates.record(encoder)?;

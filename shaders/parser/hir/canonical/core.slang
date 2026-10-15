@@ -104,7 +104,8 @@ static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
 
 uint semantic_kind(uint production)
 {
-    if (production == PROD_TYPE_IDENT || production == PROD_TYPE_ARRAY_LEN_NAME)
+    if (production == PROD_TYPE_IDENT || production == PROD_TYPE_ARRAY_LEN_NAME ||
+        production == PROD_CAST_TYPE_NAME)
         return HIR_SEMANTIC_TYPE_PATH;
     if (production == PROD_BOUND_TYPE_IDENT) return HIR_SEMANTIC_BOUND_PATH;
     if (production == PROD_BOUND_TYPE_REF) return HIR_SEMANTIC_BOUND_REFERENCE;

@@ -196,6 +196,9 @@ impl GpuProgramEvidence {
         let kernels = kernels::CatalogKernels::load(&device)?;
         let storage = Arena::from_words(&workspace, "program_evidence.catalog", &catalog.words)?;
         let recipe_kernels = kernels::RecipeKernels::load(&device)?;
+        // One-shot processes create these pipelines lazily; save driver
+        // compiles now rather than only at a normal exit.
+        crate::gpu::device::persist_created_pipelines_for_device(&device);
         let native_recipes = Arena::from_words(&workspace, "program_evidence.native_recipes", &catalog.native_layout.words)?;
         let (header, empty_output) = catalog_bootstrap(&catalog)?;
         let input = Arena::from_words(&workspace, "program_evidence.catalog_directory", &header)?;
@@ -627,6 +630,7 @@ impl GpuProgramEvidence {
         if self.proof_kernels.is_none() {
             self.proof_kernels = Some(kernels::ProofKernels::load(&self.device)?);
         }
+        crate::gpu::device::persist_created_pipelines_for_device(&self.device);
         let submission = packet.packet.prepare_submission()?;
         // Any transfer, dispatch, map, or semantic failure terminates this arena.
         // In particular a map error may not expose a stale prior successful row.

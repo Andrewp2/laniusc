@@ -103,14 +103,14 @@ uint classify(uint prod)
     if (prod == PROD_MODULE)
         return HIR_MODULE_ITEM;
     if (prod == PROD_PATH || prod == PROD_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH ||
-        prod == PROD_ARRAY_LENGTH_PATH)
+        prod == PROD_ARRAY_LENGTH_PATH || prod == PROD_CAST_TYPE_PATH)
         return HIR_PATH_EXPR;
     if (prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF ||
         prod == PROD_PARAM_SELF_REF)
         return HIR_PARAM;
     if (prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF ||
         prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF ||
-        prod == PROD_TYPE_ARRAY_LEN_NAME)
+        prod == PROD_TYPE_ARRAY_LEN_NAME || prod == PROD_CAST_TYPE_NAME)
         return HIR_TYPE;
     if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK ||
         prod == PROD_BLOCK || prod == PROD_IF_BLOCK)
@@ -140,7 +140,10 @@ uint classify(uint prod)
         return HIR_MATCH_EXPR;
     if (prod >= PROD_ASSIGN && prod <= PROD_ASSIGN_END)
         return HIR_ASSIGN_EXPR;
-    if (prod >= PROD_OREXPR && prod <= PROD_MUL_END)
+    // Casts are operator rows like the binary tails: the operand is the left
+    // edge and the target type row is the right edge.
+    if ((prod >= PROD_OREXPR && prod <= PROD_MUL_END) ||
+        prod - PROD_CAST <= PROD_CAST_END - PROD_CAST)
         return HIR_BINARY_EXPR;
     if ((prod >= PROD_POS && prod <= PROD_BASE) ||
         prod == PROD_GENERIC_ARGUMENT_NEGATIVE || prod == PROD_GENERIC_ARGUMENT_POSITIVE)

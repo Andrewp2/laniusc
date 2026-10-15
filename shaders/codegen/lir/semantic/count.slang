@@ -44,6 +44,7 @@ StructuredBuffer<uint> type_instance_elem_ref_payload;
 RWStructuredBuffer<uint2> semantic_argument_value_layout;
 RWStructuredBuffer<uint> semantic_lir_count;
 RWStructuredBuffer<uint> semantic_place_original_count;
+RWStructuredBuffer<uint> semantic_lir_value_row_by_hir;
 StructuredBuffer<uint> semantic_place_function_flags;
 StructuredBuffer<uint> semantic_receiver_call_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
@@ -252,6 +253,22 @@ void count_original(uint3 dtid)
     semantic_lir_count[node] = rows != 0u ? rows + capture_rows : 0u;
 }
 
+// Which of a node's rows carries its value, for the operands scatter reads
+// (LIR_INVALID: none). Projection adjustments append loads after the
+// original rows; structured match control, short-circuit logic and
+// argument snapshots end in their value-producing row; any other value is
+// the node's first row.
+uint value_row_in_node(uint node, uint original, uint projection)
+{
+    if (projection == LIR_INVALID) return LIR_INVALID;
+    if (projection != 0u) return original + projection - 1u;
+    if (original == 0u) return LIR_INVALID;
+    return semantic_argument_value_layout[node].x != 0u ||
+        compact_hir_core[node].kind == HIR_MATCH_EXPR ||
+        semantic_lir_is_short_circuit(compact_hir_core[node], compact_hir_payload[node])
+        ? original - 1u : 0u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -262,6 +279,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint original = semantic_lir_count[node];
     semantic_place_original_count[node] = original;
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint projection = node < count ? projection_adjustment_rows(node, count) : LIR_INVALID;
+    semantic_lir_value_row_by_hir[node] = value_row_in_node(node, original, projection);
     if (node >= count || semantic_function_id[node] == LIR_INVALID) return;
     if (compact_hir_core[node].kind == 3u && semantic_place_function_flags[node] != 0u)
     {
@@ -269,7 +288,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_lir_count[node] = function.param_count + function.local_count;
         return;
     }
-    uint extra = projection_adjustment_rows(node, count);
+    uint extra = projection;
     uint words = 0u;
     uint encoded = semantic_receiver_call_by_hir[node];
     if (encoded != 0u)

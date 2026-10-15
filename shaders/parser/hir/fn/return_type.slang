@@ -3,9 +3,11 @@
 // Only canonical type rows can contribute an output. Starting from those rows,
 // walk grammar forwarding parents until reaching either the return-type wrapper
 // or another canonical type. The latter means this is a nested type rather than
-// the return root. Once the return wrapper is found, the remaining path to the
-// function declaration is fixed signature grammar, independent of user type
-// nesting. This avoids propagating owner columns through every raw parse row.
+// the return root. The walk also stops at the first production outside type
+// grammar, so a type in a statement or item never climbs to the root. Once
+// the return wrapper is found, the remaining path to the function declaration
+// is fixed signature grammar, independent of user type nesting. This avoids
+// propagating owner columns through every raw parse row.
 
 import generated_parse_production_ids;
 struct Params
@@ -74,6 +76,41 @@ bool function_decl_node(uint node)
            production == PROD_TRAIT_METHOD_PUB;
 }
 
+// Productions derivable from `type_expr` in grammar/lanius.bnf, leaving out
+// the scalar constant arguments, which never have a type below them.
+bool type_grammar_production(uint production)
+{
+    switch (production)
+    {
+    case PROD_TYPE_IDENT:
+    case PROD_TYPE_ARRAY:
+    case PROD_TYPE_REF:
+    case PROD_TYPE_PATH:
+    case PROD_TYPE_PATH_IDENT:
+    case PROD_TYPE_PATH_MORE:
+    case PROD_TYPE_PATH_END:
+    case PROD_TYPE_ARGS_NONE:
+    case PROD_TYPE_ARGS_SOME:
+    case PROD_TYPE_ARGS_MORE:
+    case PROD_TYPE_ARGS_END:
+    case PROD_TYPE_ARGS_AFTER_COMMA_MORE:
+    case PROD_TYPE_ARGS_AFTER_COMMA_TRAILING:
+    case PROD_GENERIC_ARGUMENT_TYPE:
+    case PROD_GENERIC_ARGUMENT_CONSTANT:
+    case PROD_TYPE_ARRAY_TAIL:
+    case PROD_TYPE_SLICE_TAIL:
+    case PROD_TYPE_ARRAY_LEN_NAME:
+    case PROD_TYPE_ARRAY_LEN_CONSTANT:
+    case PROD_ARRAY_LENGTH_PATH:
+    case PROD_ARRAY_LENGTH_PATH_IDENT:
+    case PROD_ARRAY_LENGTH_PATH_MORE:
+    case PROD_ARRAY_LENGTH_PATH_END:
+        return true;
+    default:
+        return false;
+    }
+}
+
 uint next_parent(uint node)
 {
     uint next = valid_original_node(node) ? parent[node] : INVALID;
@@ -97,7 +134,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool inside_return_type = false;
     while (valid_original_node(cursor))
     {
-        if (node_kind[cursor] == PROD_RET_TYPE)
+        uint production = node_kind[cursor];
+        if (production == PROD_RET_TYPE)
         {
             inside_return_type = true;
             cursor = next_parent(cursor);
@@ -108,7 +146,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // published return root.
         if (hir_kind[cursor] == HIR_TYPE && raw_to_hir[cursor] != INVALID)
             return;
-        if (function_decl_node(cursor))
+        // Everything between a return wrapper and a type below it is type
+        // grammar. Any other production (a let, a parameter, an item list)
+        // means this type is not in a return type, so stop here instead of
+        // climbing statement and item lists toward the root.
+        if (!type_grammar_production(production))
             return;
         cursor = next_parent(cursor);
     }

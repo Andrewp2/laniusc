@@ -39,6 +39,7 @@ static const uint INVALID = 0xffffffffu;
 
 groupshared uint batch_begin;
 groupshared uint batch_count;
+groupshared uint batch_done;
 
 void report_capacity(uint required, uint available)
 {
@@ -113,24 +114,32 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 
     for (;;)
     {
+        // One lane schedules; every lane takes the same exit and
+        // barrier path, and reads the batch before it can change.
         if (ltid.x == 0u)
+        {
             ssa_work_try_pop_batch(
                 queue_capacity,
                 32u,
                 opt_ir_ssa_work_state,
                 batch_begin,
                 batch_count);
-        GroupMemoryBarrierWithGroupSync();
-        if (batch_count == 0u)
-        {
-            if (ssa_work_quiescent(opt_ir_ssa_work_state)) return;
-            continue;
+            batch_done = batch_count == 0u &&
+                    ssa_work_quiescent(opt_ir_ssa_work_state)
+                ? 1u : 0u;
         }
+        GroupMemoryBarrierWithGroupSync();
+        uint work_begin = batch_begin;
+        uint work_count = batch_count;
+        bool work_done = batch_done != 0u;
+        GroupMemoryBarrierWithGroupSync();
+        if (work_done) return;
+        if (work_count == 0u) continue;
 
-        if (ltid.x < batch_count)
+        if (ltid.x < work_count)
         {
             uint source_row = ssa_work_read_published(
-                opt_ir_ssa_work_queue, batch_begin + ltid.x);
+                opt_ir_ssa_work_queue, work_begin + ltid.x);
             uint hash_capacity = gParams.demand_capacity * 2u + 1u;
             uint declaration_key = source_row < hash_capacity
                 ? ssa_atomic_load(opt_ir_ssa_sparse_declaration, source_row)
@@ -199,7 +208,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         GroupMemoryBarrierWithGroupSync();
         if (ltid.x == 0u)
             ssa_work_finish_batch(
-                opt_ir_ssa_work_state, batch_count);
-        GroupMemoryBarrierWithGroupSync();
+                opt_ir_ssa_work_state, work_count);
     }
 }

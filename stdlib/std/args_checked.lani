@@ -39,7 +39,7 @@ pub fn read_exact_into(index: i32, buffer: ptr, capacity: usize) -> bool {
     if (expected<0) {
         return false;
     }
-    let needed: usize = expected;
+    let needed: usize = expected as usize;
     if (needed>capacity) {
         return false;
     }

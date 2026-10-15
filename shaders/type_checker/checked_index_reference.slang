@@ -214,3 +214,34 @@ public bool checked_named_index_reference(uint node, uint hir_count, uint token_
     return checked_index_elements(indices, instance_kinds, element_tags, element_payloads,
         tag, payload);
 }
+
+// The same projections with the type rows read through a graph adapter, for
+// kernels that bind the rows writable (calls/03a1).
+public bool checked_member_index_reference<Graph : ITypeStructureGraph>(uint node, uint hir_count,
+    uint token_capacity, StructuredBuffer<HirCore> cores, StructuredBuffer<HirPayload> payloads,
+    StructuredBuffer<uint> member_tags, StructuredBuffer<uint> member_payloads, uint type_capacity,
+    out uint tag, out uint payload)
+{
+    tag = 0u; payload = 0xffffffffu;
+    uint root; uint indices;
+    if (!checked_index_root(node, hir_count, cores, payloads, root, indices) ||
+        cores[root].kind != 21u) return false;
+    uint token = payloads[root].c;
+    if (token >= token_capacity) return false;
+    tag = member_tags[token]; payload = member_payloads[token];
+    return checked_index_elements<Graph>(indices, type_capacity, tag, payload);
+}
+
+public bool checked_named_index_reference<Graph : ITypeStructureGraph>(uint node, uint hir_count,
+    uint token_capacity, StructuredBuffer<HirCore> cores, StructuredBuffer<HirPayload> payloads,
+    StructuredBuffer<uint> visible_declarations, StructuredBuffer<uint> declaration_tags,
+    StructuredBuffer<uint> declaration_payloads, uint type_capacity, out uint tag, out uint payload)
+{
+    tag = 0u; payload = 0xffffffffu;
+    uint declaration; uint indices;
+    if (!checked_named_index_base(node, hir_count, token_capacity, cores, payloads,
+        visible_declarations, declaration, indices)) return false;
+    tag = declaration_tags[declaration];
+    payload = declaration_payloads[declaration];
+    return checked_index_elements<Graph>(indices, type_capacity, tag, payload);
+}

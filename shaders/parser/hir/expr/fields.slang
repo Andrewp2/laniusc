@@ -69,7 +69,9 @@ static const uint HIR_EXPR_RANGE_TO = 32u;
 static const uint HIR_EXPR_RANGE_FULL = 33u;
 static const uint HIR_EXPR_RANGE_INCLUSIVE = 34u;
 static const uint HIR_EXPR_RANGE_TO_INCLUSIVE = 35u;
+static const uint HIR_EXPR_CAST = 36u;
 
+static const uint HIR_TYPE = 5u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_BINARY_EXPR = 16u;
@@ -382,6 +384,35 @@ bool publish_binary_tail_expr(uint i)
     return true;
 }
 
+// `x as A as B` is left-associative like the binary tails: a cast tail's
+// operand is the layer's first child or the preceding cast tail, and the
+// layer's value is the last tail of its chain.
+uint cast_tail_chain_result(uint tail)
+{
+    if (!valid_node(tail) || node_kind[tail] != PROD_CAST_TAIL)
+        return INVALID;
+    uint result = rightmost_leaf_parent(tail);
+    return valid_node(result) && node_kind[result] == PROD_CAST_TAIL ? result : INVALID;
+}
+
+bool publish_cast_tail_expr(uint i)
+{
+    uint p = parent_node(i);
+    uint operand = INVALID;
+    if (valid_node(p) && node_kind[p] == PROD_CAST)
+        operand = first_child_node(p);
+    else if (valid_node(p) && node_kind[p] == PROD_CAST_TAIL)
+        operand = p;
+    uint target = first_child_node(i);
+    if (!valid_node(operand) || !valid_node(target) || hir_kind[target] != HIR_TYPE)
+        return false;
+    // The value-token lane names the target type's first token, where the
+    // type collector publishes its checked reference.
+    write_expr_record(i, HIR_EXPR_CAST, operand, target, hir_token_pos[target]);
+    publish_expr_result(i, i);
+    return true;
+}
+
 uint range_bound_value_node(uint range_bound)
 {
     if (!valid_node(range_bound) || node_kind[range_bound] != PROD_RANGE_BOUND_NAME)
@@ -626,6 +657,19 @@ void publish_expr(uint i)
     if (is_binary_tail_production(prod))
     {
         publish_binary_tail_expr(i);
+        return;
+    }
+
+    if (prod == PROD_CAST_TAIL)
+    {
+        publish_cast_tail_expr(i);
+        return;
+    }
+
+    if (prod == PROD_CAST)
+    {
+        uint cast = cast_tail_chain_result(next_sibling_node(child));
+        publish_forward(i, valid_node(cast) ? cast : child);
         return;
     }
 

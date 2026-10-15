@@ -528,6 +528,10 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "LNC0071", "computed floating constant is not supported", "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
+    DiagnosticCodeInfo::error(
+        "LNC0072", "invalid cast", "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
     DiagnosticCodeInfo::error("LNC0073", "generic instantiation depth exceeded", "type checking", DiagnosticPrimaryLabelPolicy::Required),
 ];
 
@@ -2835,6 +2839,7 @@ fn expected_keyword_text(kind: TokenKind) -> Option<&'static str> {
         TokenKind::Type => Some("type"),
         TokenKind::Where => Some("where"),
         TokenKind::SelfValue => Some("self"),
+        TokenKind::As => Some("as"),
         _ => None,
     }
 }
@@ -3520,6 +3525,7 @@ fn source_identifier_token_kind(text: &str) -> TokenKind {
         "type" => TokenKind::Type,
         "where" => TokenKind::Where,
         "self" => TokenKind::SelfValue,
+        "as" => TokenKind::As,
         _ => TokenKind::Ident,
     }
 }
@@ -3661,6 +3667,7 @@ fn syntax_token_is_keyword(kind: TokenKind) -> bool {
             | TokenKind::Type
             | TokenKind::Where
             | TokenKind::SelfValue
+            | TokenKind::As
     )
 }
 
@@ -4610,6 +4617,7 @@ mod tests {
             ("LNC0068", "invalid assignment target", "type checking"),
             ("LNC0070", "invalid floating literal", "type checking"),
             ("LNC0071", "computed floating constant is not supported", "type checking"),
+            ("LNC0072", "invalid cast", "type checking"),
             ("LNC0073", "generic instantiation depth exceeded", "type checking"),
         ];
 

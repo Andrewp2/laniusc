@@ -1,0 +1,9 @@
+import core::nominal_constants;
+// The unit has no methods of its own and no member expression: the
+// type-qualified call of the imported impl's method must enable method
+// resolution by itself. The method's explicit arguments bind U and M.
+fn main() -> i32 {
+    let flags: [bool; 2] = [true, false];
+    if (core::nominal_constants::Buffer<3, i32>::width<bool, 2>(flags) != 32) { return 2; }
+    return 42;
+}

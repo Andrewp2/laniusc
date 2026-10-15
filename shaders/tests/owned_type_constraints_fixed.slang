@@ -9,7 +9,7 @@ struct FixedFixtureOperations : IOwnedFixtureOperations
         switch (opcode)
         {
         case OP_BEGIN_MATCH:
-            owned_constraints_begin<LeftGraph>(args.x, 17u, 17u, 128u, budget, state); return true;
+            owned_constraints_begin<LeftGraph>(args.x, 17u, 17u, 128u, budget, owned_constraint_frame(0u), state); return true;
         case OP_MATCH:
             owned_constraints_match<LeftGraph, GoalGraph>(args.xy, args.zw, state); return true;
         case OP_FINISH_MATCH:

@@ -35,9 +35,9 @@ fn magnitude_i32(value: i32) -> u32 {
     }
     if (value < 0) {
         let positive: i32 = -value;
-        return positive;
+        return positive as u32;
     }
-    return value;
+    return value as u32;
 }
 
 pub fn len_i32(value: i32) -> u32 {

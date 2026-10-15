@@ -23,6 +23,7 @@ pub struct TestCpuToken {
 fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
     match bytes {
         b"pub" => Some(TokenKind::Pub),
+        b"as" => Some(TokenKind::As),
         b"fn" => Some(TokenKind::Fn),
         b"in" => Some(TokenKind::In),
         b"let" => Some(TokenKind::Let),

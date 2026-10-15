@@ -471,6 +471,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "typecheck.done");
         }
+        // Run the type check's tail while the host records the semantic
+        // interface and lowering. Their recording writes only their own
+        // buffers through the queue.
+        crate::gpu::passes_core::submit_recorded_prefix(
+            device,
+            queue,
+            encoder,
+            "compile.source-pack.typecheck",
+        );
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
         // Body replay keeps the template's public contract. Its checked graph
@@ -511,6 +520,14 @@ impl<'gpu> GpuCompiler<'gpu> {
             timer.stamp(encoder, "semantic_interface.done");
         }
         downstream_host_timer.stamp("semantic_interface");
+        if semantic_interface.is_some() {
+            crate::gpu::passes_core::submit_recorded_prefix(
+                device,
+                queue,
+                encoder,
+                "compile.source-pack.semantic_interface",
+            );
+        }
         if lowering_target.is_some() && object_request.is_some() {
             return Err(CompileError::GpuCodegen(
                 "one lowering job cannot request both an executable and an object".into(),
@@ -3134,6 +3151,8 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     6 => "a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required",
                     7 => "a retained native width witness conflicts with the GPU-derived replay layout",
                     8 => "a replay seed has malformed graph roots or exceeds the supported native width",
+                    16 => "checked call inference did not converge: its passes changed more than 32 facts per HIR node and token",
+                    17 => "call inference needed more than 1024 dependent rounds; add a type annotation to break the chain",
                     _ => "a nested type application could not be instantiated from its checked environment",
                 }),
         ),
@@ -3201,6 +3220,13 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     "floating constant arithmetic and constant references require the portable IEEE evaluator",
                 ))
                 .with_note("floating literals and unary negation are supported; perform computed arithmetic inside a function"),
+        ),
+        GpuTypeCheckCode::InvalidCast => CompileError::Diagnostic(
+            Diagnostic::error("LNC0072", "invalid cast")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, invalid_cast_label(detail),
+                ))
+                .with_note("`as` converts between integer and floating-point types, from bool or char to an integer type, and from u8 to char"),
         ),
         GpuTypeCheckCode::InvalidArrayLength => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")

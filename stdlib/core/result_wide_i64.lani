@@ -19,7 +19,7 @@ pub fn ok(value: core::wide_i64::WideI64) -> ResultWideI64 {
 }
 
 pub fn err(error: i32) -> ResultWideI64 {
-    let bits: u32 = error;
+    let bits: u32 = error as u32;
     return ResultWideI64 { success: false, high: 0, low: bits };
 }
 
@@ -37,7 +37,7 @@ pub fn contains(value: ResultWideI64, expected: core::wide_i64::WideI64) -> bool
 }
 
 pub fn contains_err(value: ResultWideI64, expected: i32) -> bool {
-    let stored: i32 = value.low;
+    let stored: i32 = value.low as i32;
     return !value.success && stored == expected;
 }
 
@@ -50,7 +50,7 @@ pub fn unwrap_or(
 
 pub fn unwrap_err_or(value: ResultWideI64, fallback: i32) -> i32 {
     if (!value.success) {
-        let stored: i32 = value.low;
+        let stored: i32 = value.low as i32;
         return stored;
     }
     return fallback;
