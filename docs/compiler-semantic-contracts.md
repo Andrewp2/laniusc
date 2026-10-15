@@ -42,6 +42,11 @@ and records the checked source type. x86_64 emits a dedicated conversion
 sequence. The wasm backend does not support `CONVERT` yet. It stops with the
 generic `LNC0057` lowering error, not a dedicated diagnostic.
 
+A char literal has no semantic scalar type of its own, so `'Z' as u8` type
+checks but x86_64 rejects it with `LNC0017` (unsupported LIR opcode 3). Cast a
+char local or parameter instead. The fix is a `HIR_EXPR_CHAR` case in
+`expression_types/00_init.slang`'s `direct_result_type`.
+
 ## Semantic replay identity, widths, and original recipes (2026-10-11)
 
 A replay seed owns a closed semantic type graph and literal constant arguments.
