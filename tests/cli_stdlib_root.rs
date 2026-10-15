@@ -76,6 +76,33 @@ fn cli_stdlib_root_x86_sample_build_command_runs_stdio_print_i32() {
     assert_eq!(stdout, expected_stdout);
 }
 
+/// `check` must see the units a build compiles. A headerless entry is its
+/// own library unit and so gets the implicit module; checked as one more file
+/// of a flat pack with the stdlib, its declarations had no module.
+#[test]
+fn cli_check_stdlib_root_accepts_headerless_entry_with_imports() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        repo_root.join("tests/fixtures/stdlib_foundation/repro_record_context_compositions.lani");
+    let mut command = Command::new(laniusc_bin());
+    command.arg("check").arg("--stdlib-root").arg(repo_root.join("stdlib")).arg(&entry);
+    let output = common::command_output_with_timeout(
+        "laniusc check --stdlib-root headerless entry",
+        &mut command,
+    );
+    common::assert_command_success("laniusc check --stdlib-root headerless entry", &output);
+}
+
+#[test]
+fn cli_check_without_stdlib_root_accepts_headerless_entry() {
+    let entry = common::TempArtifact::new("laniusc_cli_check", "headerless", Some("lani"));
+    entry.write_str("fn main() -> i32 { let value: i32 = 42; return value - 42; }\n");
+    let mut command = Command::new(laniusc_bin());
+    command.arg("check").arg(entry.path());
+    let output = common::command_output_with_timeout("laniusc check headerless file", &mut command);
+    common::assert_command_success("laniusc check headerless file", &output);
+}
+
 #[cfg(all(unix, target_arch = "x86_64"))]
 #[test]
 fn cli_stdlib_root_x86_build_command_runs_host_runtime_samples() {
