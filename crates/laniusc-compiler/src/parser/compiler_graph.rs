@@ -1022,6 +1022,9 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_semantic_prefix_before_node"
             | "hir_semantic_count"
             | "hir_semantic_subtree_end"
+            | "hir_semantic_end_local_max"
+            | "hir_semantic_end_blocks"
+            | "hir_semantic_end_top"
             | "hir_semantic_parent"
             | "hir_semantic_first_child"
             | "hir_semantic_next_sibling"
@@ -1391,6 +1394,16 @@ fn build_graph(
     let prefix_blocks = u64::from(capacity.tree_prefix_blocks.max(1));
     let bracket_leaf_base = capacity.bracket_blocks.max(1).next_power_of_two();
     let prefix_leaf_base = capacity.tree_prefix_blocks.max(1).next_power_of_two();
+    let semantic_end_leaf_base = u64::from(
+        crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+            capacity.tree_node_blocks,
+        ),
+    );
+    let semantic_end_groups = u64::from(
+        crate::parser::passes::hir::semantic::parent::end_tree::group_count(
+            capacity.tree_node_blocks,
+        ),
+    );
 
     for (name, domain, bytes) in [
         ("token_kinds", ResourceDomain::Tokens, token_rows * 4),
@@ -1612,6 +1625,21 @@ fn build_graph(
             "hir_semantic_subtree_end",
             ResourceDomain::HirNodes,
             tree_rows * 4,
+        ),
+        (
+            "hir_semantic_end_local_max",
+            ResourceDomain::HirNodes,
+            tree_blocks * 256 * 4,
+        ),
+        (
+            "hir_semantic_end_blocks",
+            ResourceDomain::HirNodes,
+            semantic_end_leaf_base * 4,
+        ),
+        (
+            "hir_semantic_end_top",
+            ResourceDomain::HirNodes,
+            semantic_end_groups * 4,
         ),
         (
             "hir_semantic_parent",
@@ -2838,6 +2866,48 @@ fn build_graph(
     )?;
     static_pass(
         &mut graph,
+        &passes.hir_semantic_end_rows,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_end_local_max",
+                "hir_semantic_end_local_max",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    indirect(
+        &mut graph,
+        "hir_semantic_end_rows",
+        "hir_semantic_dispatch_args",
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_end_blocks,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_end_blocks",
+                "hir_semantic_end_blocks",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_end_top,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    // Each level of the top heap reads the level below it.
+    graph.mark_pass_bindings_initialize("hir_semantic_end_top", &["hir_semantic_end_top"])?;
+    static_pass(
+        &mut graph,
         &passes.hir_semantic_parent_traverse,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
@@ -3663,6 +3733,9 @@ mod tests {
             "hir_type_arg_rank_step.b_to_a",
             "hir_type_arg_scatter",
             "hir_type_root_owner_init",
+            "hir_type_root_rank_prefix_00_local",
+            "hir_type_root_rank_prefix_01_blocks.up",
+            "hir_type_root_rank_compact_scatter",
             crate::parser::passes::hir::types::root::step::A_TO_B,
             crate::parser::passes::hir::types::root::step::B_TO_A,
             "hir_enum_variant_links",
@@ -3672,8 +3745,11 @@ mod tests {
             "hir_item_fields",
             "hir_path_segment_root",
             "hir_path_segment_links",
-            crate::parser::passes::hir::path::segment::step::A_TO_B,
-            crate::parser::passes::hir::path::segment::step::B_TO_A,
+            "hir_path_segment_rank_prefix_00_local",
+            "hir_path_segment_rank_prefix_01_blocks.up",
+            "hir_path_segment_rank_compact_scatter",
+            "hir_path_segment_step.a_to_b",
+            "hir_path_segment_step.b_to_a",
             "hir_path_segment_scatter",
             "hir_type_alias_owner_init",
             crate::parser::passes::hir::types::alias::owner::step::A_TO_B,
@@ -3691,6 +3767,9 @@ mod tests {
             crate::parser::passes::hir::expr::result_root_step::A_TO_B,
             crate::parser::passes::hir::expr::result_root_step::B_TO_A,
             "hir_binary_spans",
+            "hir_binary_span_rank_prefix_00_local",
+            "hir_binary_span_rank_prefix_01_blocks.up",
+            "hir_binary_span_rank_compact_scatter",
             crate::parser::passes::hir::binary::span::step::A_TO_B,
             crate::parser::passes::hir::binary::span::step::B_TO_A,
             "hir_binary_span_apply",
@@ -3715,6 +3794,9 @@ mod tests {
             "hir_canonical_variant_prefix_01_blocks.up",
             "hir_canonical_variant_scatter",
             "hir_canonical_variant_payload_owner_init",
+            "hir_variant_payload_owner_rank_prefix_00_local",
+            "hir_variant_payload_owner_rank_prefix_01_blocks.up",
+            "hir_variant_payload_owner_rank_compact_scatter",
             crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .a_to_b,
             crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER

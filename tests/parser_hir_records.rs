@@ -1141,10 +1141,12 @@ fn parser_semantic_tokens_keep_structural_impl_receiver_arrays_as_types() {
             "the impl body must retain its array expression: {source}",
         );
         if header.contains("; N") {
+            // A length name has its own count-path role (a value, never a
+            // type application), as 7ae8a250 introduced.
             assert!(
                 kinds.windows(2).any(|pair| pair == [
                     TokenKind::TypeSemicolon as u32,
-                    TokenKind::Ident as u32,
+                    TokenKind::ArrayLengthIdent as u32,
                 ]),
                 "array lengths must retain their value role: {source}: {:?}",
                 token_kind_names(&kinds),
@@ -1939,6 +1941,118 @@ fn parser_semantic_commas_follow_innermost_array_inside_match_arm() {
     assert_eq!(
         match_arm_commas, 1,
         "the comma after the array closes should separate match arms"
+    );
+}
+
+fn count_kind(kinds: &[u32], kind: TokenKind) -> usize {
+    kinds.iter().filter(|&&k| k == kind as u32).count()
+}
+
+// The node of `kind` whose semantic-parent chain reaches `ancestor`. Semantic
+// parents are dense rows; `hir_semantic_dense_node` maps a row to its node.
+fn hir_descendant_of_kind(
+    parsed: &ResidentParseResult,
+    ancestor: usize,
+    kind: u32,
+) -> Option<usize> {
+    let rows = &parsed.hir_semantic_dense_node;
+    (0..parsed.hir_kind.len()).find(|&node| {
+        if parsed.hir_kind[node] != kind {
+            return false;
+        }
+        let Some(mut row) = rows.iter().position(|&at| at as usize == node) else {
+            return false;
+        };
+        for _ in 0..16 {
+            if rows[row] as usize == ancestor {
+                return true;
+            }
+            let parent = parsed.hir_semantic_parent[row];
+            if parent as usize >= rows.len() {
+                return false;
+            }
+            row = parent as usize;
+        }
+        false
+    })
+}
+
+#[test]
+fn parser_match_arm_results_may_start_with_a_parenthesis() {
+    for arrow in ["->", "=>"] {
+        // Arm results that open with `(`, and one whose call arguments do.
+        let source = format!(
+            "fn add(a: i32, b: i32) -> i32 {{ return a + b; }}\n\
+             fn pick(flag: bool, v: i32) -> i32 {{\n\
+                 return match (flag) {{ true {arrow} (v + 2), false {arrow} add((v * 3), 1), }};\n\
+             }}\n\
+             fn main() -> i32 {{ return pick(true, 40); }}\n"
+        );
+        let kinds = parser_semantic_token_kinds_for_source(&source);
+        assert_eq!(
+            count_kind(&kinds, TokenKind::PatternLParen),
+            0,
+            "no arm here has a payload pattern ({arrow})"
+        );
+        assert_eq!(
+            count_kind(&kinds, TokenKind::GroupLParen),
+            3,
+            "scrutinee and two grouped arm operands ({arrow})"
+        );
+        assert_eq!(count_kind(&kinds, TokenKind::GroupRParen), 3, "{arrow}");
+        assert_eq!(
+            count_kind(&kinds, TokenKind::CallLParen),
+            2,
+            "add(...) in an arm and pick(...) ({arrow})"
+        );
+        assert_eq!(count_kind(&kinds, TokenKind::ArgComma), 2, "{arrow}");
+        assert_eq!(count_kind(&kinds, TokenKind::MatchArmComma), 2, "{arrow}");
+
+        let parsed = parse_resident_source(&source);
+        assert!(
+            parsed.ll1.accepted,
+            "parenthesized arm results with {arrow} must parse: pos={} code={} detail={}",
+            parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+        );
+        let match_node = parsed
+            .hir_kind
+            .iter()
+            .position(|&kind| kind == HIR_NODE_MATCH_EXPR)
+            .expect("fixture has one match expression");
+        let first_arm = parsed.hir_match_arm_start[match_node] as usize;
+        let second_arm = parsed.hir_match_arm_next[first_arm] as usize;
+        assert_eq!(parsed.hir_match_arm_next[second_arm], INVALID, "{arrow}");
+        let first_result = parsed.hir_match_arm_result_node[first_arm] as usize;
+        let second_result = parsed.hir_match_arm_result_node[second_arm] as usize;
+        assert_eq!(parsed.hir_kind[first_result], HIR_NODE_EXPR, "{arrow}");
+        assert_eq!(parsed.hir_kind[second_result], HIR_NODE_EXPR, "{arrow}");
+        assert!(
+            hir_descendant_of_kind(&parsed, first_result, HIR_NODE_BINARY_EXPR).is_some(),
+            "the first arm result is the grouped sum ({arrow})"
+        );
+        let call = hir_descendant_of_kind(&parsed, second_result, HIR_NODE_CALL_EXPR)
+            .expect("the second arm result is a call");
+        assert_eq!(
+            parsed.hir_call_arg_count[call], 2,
+            "add((v * 3), 1) has two arguments ({arrow})"
+        );
+        assert!(
+            hir_descendant_of_kind(&parsed, call, HIR_NODE_BINARY_EXPR).is_some(),
+            "the grouped first argument is a product ({arrow})"
+        );
+    }
+
+    // A payload pattern keeps its pattern parentheses; the result after it does not.
+    let source = "enum Maybe<T> { Nothing, Just(T) }\n\
+                  fn main() -> i32 { let m0: Maybe<i32> = Just(40); \
+                  return match (m0) { Nothing => 5, Just(v0) => (v0 + 2) }; }\n";
+    let kinds = parser_semantic_token_kinds_for_source(source);
+    assert_eq!(count_kind(&kinds, TokenKind::PatternLParen), 1);
+    assert_eq!(count_kind(&kinds, TokenKind::PatternRParen), 1);
+    assert_eq!(count_kind(&kinds, TokenKind::GroupLParen), 2);
+    assert!(
+        parse_resident_source(source).ll1.accepted,
+        "payload arm with a grouped result must parse"
     );
 }
 

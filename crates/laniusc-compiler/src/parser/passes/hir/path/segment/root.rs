@@ -52,14 +52,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirPathSegmentRo
                 "hir_path_root_owner".into(),
                 b.hir_path_root_owner.as_entire_binding(),
             ),
-            (
-                "hir_path_segment_owner_a".into(),
-                b.hir_path_segment_owner_a.as_entire_binding(),
-            ),
-            (
-                "hir_path_segment_rank_a".into(),
-                b.hir_path_segment_rank_a.as_entire_binding(),
-            ),
         ])
     }
 }

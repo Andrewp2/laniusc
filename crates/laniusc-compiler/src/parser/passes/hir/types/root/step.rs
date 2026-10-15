@@ -4,18 +4,17 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{BindGroupCache, PassData},
-    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
+    parser::{buffers::ParserBuffers, passes::hir::list::rank::step::list_rank_step_capacity},
 };
 
-/// Bounded-walks direct type-parent links into topmost root ownership.
+/// Bounded-walks direct type-parent links into topmost root ownership over
+/// the compacted type rows.
 pub struct HirTypeRootOwnerStepPass {
     data: PassData,
 }
 
 pub(in crate::parser) const A_TO_B: &str = "hir_type_root_owner_step.a_to_b";
 pub(in crate::parser) const B_TO_A: &str = "hir_type_root_owner_step.b_to_a";
-pub(in crate::parser) const A_TO_B_FINAL: &str = "hir_type_root_owner_step.a_to_b_final";
-pub(in crate::parser) const FINALIZE: &str = "hir_type_root_owner_step.finalize";
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirTypeRootOwnerStepPass,
@@ -24,6 +23,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl HirTypeRootOwnerStepPass {
+    /// Records an even number of steps, so the result ends in the A buffers.
     pub fn record_steps_indirect(
         &self,
         device: &wgpu::Device,
@@ -32,21 +32,9 @@ impl HirTypeRootOwnerStepPass {
         dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        let steps = bounded_walk_step_capacity(b.tree_capacity);
+        let steps = list_rank_step_capacity(b.tree_capacity);
         for step in 0..steps {
-            self.record_step(
-                device,
-                encoder,
-                b,
-                step,
-                step % 2 == 0,
-                step + 1 == steps && steps % 2 == 1,
-                dispatch_args,
-                cache,
-            )?;
-        }
-        if steps % 2 == 1 {
-            b.record_finalizer(FINALIZE, encoder)?;
+            self.record_step(device, encoder, b, step, dispatch_args, cache)?;
         }
         Ok(())
     }
@@ -57,11 +45,10 @@ impl HirTypeRootOwnerStepPass {
         encoder: &mut wgpu::CommandEncoder,
         b: &ParserBuffers,
         step: u32,
-        read_a: bool,
-        final_unpaired_step: bool,
         dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
+        let read_a = step % 2 == 0;
         let (link_in, owner_in, link_out, owner_out) = if read_a {
             (
                 &b.hir_type_arg_link_a,
@@ -90,6 +77,14 @@ impl HirTypeRootOwnerStepPass {
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            (
+                "hir_list_rank_node".into(),
+                b.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_count".into(),
+                b.hir_list_rank_count.as_entire_binding(),
+            ),
             ("hir_type_root_link_in".into(), link_in.as_entire_binding()),
             (
                 "hir_type_root_owner_in".into(),
@@ -104,13 +99,7 @@ impl HirTypeRootOwnerStepPass {
                 owner_out.as_entire_binding(),
             ),
         ]);
-        let label = if final_unpaired_step {
-            A_TO_B_FINAL
-        } else if read_a {
-            A_TO_B
-        } else {
-            B_TO_A
-        };
+        let label = if read_a { A_TO_B } else { B_TO_A };
         let invocation = format!("{label}.{step}");
         let group = cache
             .reflected_for_graph_invocation(
