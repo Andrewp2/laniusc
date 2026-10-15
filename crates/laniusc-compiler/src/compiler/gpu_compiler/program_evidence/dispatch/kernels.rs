@@ -197,8 +197,11 @@ fn record_phase_with_resources(
             input.logical_words,
             output.logical_words,
             phase,
-            0,
-            0,
+            // The sidecar arenas bind their whole retained allocation (stable
+            // bind-group identity across programs); kernels take each logical
+            // extent from these words instead of the binding size.
+            recipes.map_or(0, |recipes| recipes.logical_words),
+            layout_work.map_or(0, |work| work.logical_words),
         ];
         let uniform = catalog.workspace().initialized(
             "program_evidence.params",
@@ -253,11 +256,11 @@ fn record_phase_with_resources(
         if let Some(recipes) = recipes {
             resources.push((
                 "program_evidence_native_recipes",
-                recipes.logical_binding(),
+                recipes.buffer.as_entire_binding(),
             ));
         }
         if let Some(work) = layout_work {
-            resources.push(("program_evidence_native_layout_work", work.logical_binding()));
+            resources.push(("program_evidence_native_layout_work", work.buffer.as_entire_binding()));
         }
         let bindings = passes_core::bind_group::create_bind_group_from_bindings(
             device,

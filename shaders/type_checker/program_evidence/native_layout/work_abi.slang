@@ -11,6 +11,16 @@ public static const uint PLM_TABLES = 7u;
 public static const uint PLM_FIXED_WORDS = PLM_DIRECTORY + PLM_TABLES * 3u;
 public RWStructuredBuffer<uint> program_evidence_native_layout_work;
 
+// The binding covers the retained allocation; the dispatch parameters carry
+// the logical extent. A logical extent beyond the allocation reads as empty.
+public uint plm_logical_words()
+{
+    uint physical; uint stride;
+    program_evidence_native_layout_work.GetDimensions(physical, stride);
+    uint logical = program_evidence_params.work_word_count;
+    return select(logical <= physical, logical, 0u);
+}
+
 // Row widths, one nibble per table (low nibble first): 8,2,2,2,4,8,4; else 0.
 // Readers are straight-line selects with one guarded early return.
 [ForceInline]
@@ -20,8 +30,7 @@ public uint plm_width(uint table)
 }
 public bool plm_table(uint table, out uint offset, out uint capacity)
 {
-    offset = PEV_INVALID; capacity = 0u; uint actual; uint stride;
-    program_evidence_native_layout_work.GetDimensions(actual, stride);
+    offset = PEV_INVALID; capacity = 0u; uint actual = plm_logical_words();
     if (!((table < PLM_TABLES) & (actual >= PLM_FIXED_WORDS))) return false;
     uint logical = program_evidence_native_layout_work[12u];
     uint base = PLM_DIRECTORY + table * 3u;
@@ -93,8 +102,7 @@ public bool plm_write4(uint table, uint row, uint field, uint4 value)
 }
 public bool plm_header_is_valid()
 {
-    uint actual; uint stride;
-    program_evidence_native_layout_work.GetDimensions(actual, stride);
+    uint actual = plm_logical_words();
     if (actual < PLM_FIXED_WORDS || !plr_is_valid() || !pps_identity_is_valid() ||
         program_evidence_proof_store[7u] != proof_store_params.serial ||
         program_evidence_proof_store[10u] != PEV_VALID) return false;

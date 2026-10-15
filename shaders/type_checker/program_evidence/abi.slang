@@ -45,7 +45,10 @@ public EvidenceStatus pev_limit(uint detail, uint subject, uint required, uint a
 public struct ProgramEvidenceParams
 {
     public uint dispatch_first; public uint dispatch_count; public uint catalog_word_count; public uint batch_word_count;
-    public uint output_word_count; public uint phase; public uint reserved0; public uint reserved1;
+    public uint output_word_count; public uint phase;
+    // Logical extents of the native-layout sidecars (0 when not bound). Those
+    // arenas bind their whole retained allocation; see plr/plm_logical_words.
+    public uint recipe_word_count; public uint work_word_count;
 }
 public ConstantBuffer<ProgramEvidenceParams> program_evidence_params;
 // One resource binding avoids overlapping RO/RW aliases during catalog build.
@@ -90,8 +93,7 @@ public bool pev_header_is_valid()
     program_evidence_batch.GetDimensions(batch_words, batch_stride);
     uint c = program_evidence_params.catalog_word_count;
     uint b = program_evidence_params.batch_word_count;
-    if (c < 4u || b < PEV_BATCH_FIXED_WORDS || c > catalog_words || b > batch_words ||
-        program_evidence_params.reserved0 != 0u || program_evidence_params.reserved1 != 0u)
+    if (c < 4u || b < PEV_BATCH_FIXED_WORDS || c > catalog_words || b > batch_words)
         return false;
     if (program_evidence_catalog[0u] != PEV_MAGIC ||
         program_evidence_catalog[1u] != PEV_VERSION ||
