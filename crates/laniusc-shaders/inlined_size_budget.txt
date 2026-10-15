@@ -67,4 +67,3 @@
 45216 tests/typed_constant_identity_claim_priority
 43376 type_checker/program_evidence/entries/32_17_admit_evidence
 41299 type_checker/modules/10e0l_normalize_type_aliases
-40606 type_checker/calls/03a8_validate_explicit_applications

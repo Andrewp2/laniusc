@@ -42,7 +42,6 @@
 4096 type_checker/calls/03a0_bind_explicit_applications
 3840 type_checker/semantic/artifact/01c_generic_native_words
 3328 tests/canonical_type_identity_boundary
-3328 type_checker/calls/03a8_validate_explicit_applications
 3328 type_checker/dependencies/08_validate_call_args
 3328 type_checker/predicates/01f2_validate_imported_methods
 3328 type_checker/type/instances/02e_project_imported_fields
