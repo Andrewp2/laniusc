@@ -296,7 +296,8 @@ public uint ct_named_constant_mask(uint ref)
 // Checked operands. Maps a checked (tag, payload) operand to its canonical
 // reference: 1 scalar (and legacy scalar-coded nominal rows 4096..8191),
 // 2 type parameter token, 3 instance row (or a bridged CT ID at CT_ROW_BASE),
-// and the constant argument tags (atom, constant parameter, projection).
+// and the constant argument tags (atom, constant parameter, projection; atom
+// and projection payloads at CT_ROW_BASE are bridged constant IDs).
 // Parameter validity is the producer's concern; this is a pure mapping.
 public static const uint CT_CONSTANT_TAG_BIT = 0x80000000u;
 
@@ -312,6 +313,8 @@ public uint ct_row_ref(uint row)
 
 public uint ct_constant_ref(uint kind, uint payload)
 {
+    // A bridged value, count class or cast (canonical_bridge.slang).
+    if ((kind == 1u || kind == 3u) && payload >= CT_ROW_BASE) return payload - CT_ROW_BASE;
     if (kind == 1u) return payload < ct_atom_capacity() ? canonical_atom[payload] : CT_UNKNOWN;
     if (kind == 2u) return ct_const_param(payload);
     if (kind == 3u) return payload < ct_projection_capacity() ? canonical_projection[payload] : CT_UNKNOWN;

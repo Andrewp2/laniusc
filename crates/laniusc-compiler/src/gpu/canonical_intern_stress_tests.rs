@@ -1,5 +1,6 @@
-//! Week-1 gate for single-dispatch lock-free interning on the physical GPU
-//! (docs/canonical-type-ids.md, "Interning protocol"). One dispatch interns a
+//! Canonical-ID gates on the physical GPU (docs/canonical-type-ids.md): the
+//! bridge decode gate ("Bridge") and the week-1 gate for single-dispatch
+//! lock-free interning ("Interning protocol"). For the latter, one dispatch interns a
 //! nested chain per lane with heavily shared keys; a second dispatch rehashes
 //! every published record and checks uniqueness, structure and facts. Rust
 //! only counts the distinct keys the chains contain.
@@ -257,4 +258,74 @@ fn physical_gpu_incoherent_interning_control_reports_duplicates() {
         eprintln!("[canonical_control] run={run} distinct={distinct} live={} dup={} broken={}", errors[5], errors[0], errors[1]);
     }
     eprintln!("[canonical_control] {failing_runs}/{runs} incoherent runs produced duplicates or broken chains");
+}
+
+const BRIDGE: &str = "tests/canonical_bridge_decode";
+const BRIDGE_CHECKS: usize = 63;
+
+/// Decode gate for the canonical bridge graph (canonical_bridge.slang): one
+/// lane interns a few records and reads each back through
+/// `CanonicalBridgeTypeGraph`, checking every field against its record.
+#[test]
+fn physical_gpu_canonical_bridge_decodes_interned_records() {
+    let gpu = device::global();
+    let (device, queue) = (&gpu.device, &gpu.queue);
+    let pass = make_pass_data_from_shader_key(device, BRIDGE, "main", BRIDGE).unwrap();
+    let mut resources = Resources::new();
+    for (name, words) in [
+        ("ct_head", 1024 * 4),
+        ("ct_meta", 1024 * 4),
+        ("ct_extra", 1024 * 2),
+        ("ct_args", 4096),
+        ("ct_slot", 4096),
+        ("ct_counts", 16),
+        ("bridge_errors", 4 + BRIDGE_CHECKS),
+    ] {
+        resources.insert(name, storage_rw_for_array::<u32>(device, name, words));
+    }
+    // The candidate tables and the checked graph are empty here.
+    for name in [
+        "canonical_row",
+        "canonical_atom",
+        "canonical_projection",
+        "canonical_dependency_type",
+        "type_instance_kind",
+        "type_instance_decl_token",
+        "type_instance_arg_count",
+        "type_instance_arg_start",
+        "type_instance_arg_ref_tag",
+        "type_instance_arg_ref_payload",
+        "type_instance_arg_row_start",
+        "type_instance_arg_row_count_out",
+        "type_instance_arg_row_ref_tag",
+        "type_instance_arg_row_ref_payload",
+        "type_instance_elem_ref_tag",
+        "type_instance_elem_ref_payload",
+        "type_instance_len_kind",
+        "type_instance_len_payload",
+        "external_type_library_id",
+        "external_type_unit_id",
+        "external_type_local_index",
+        "type_generic_param_slot_by_token",
+        "checked_constant_atoms",
+        "checked_constant_projections",
+        "type_const_param_slot_by_token",
+        "type_const_param_scalar_by_token",
+    ] {
+        resources.insert(name, storage_rw_for_array::<u32>(device, name, 16));
+    }
+    let params = uniform_from_val(device, "canonical_bridge.params", &Params { lanes: 1, distinct: 0, seed: 0, mode: 0 });
+    let group = bind(device, &pass, &resources, &params);
+    queue.write_buffer(&resources["ct_counts"], 0, &words_bytes(&[FIRST_RECORD, 0, 0, 0, 0, 0, 0, 0]));
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(BRIDGE) });
+    encoder.clear_buffer(&resources["ct_slot"], 0, None);
+    encoder.clear_buffer(&resources["bridge_errors"], 0, None);
+    dispatch(&mut encoder, &pass, &group, 1);
+    queue.submit(Some(encoder.finish()));
+    let errors = read_words(device, queue, &resources["bridge_errors"], 4 + BRIDGE_CHECKS);
+    let failed: Vec<_> = (0..BRIDGE_CHECKS)
+        .filter(|check| errors[check / 32] & (1 << (check % 32)) != 0)
+        .map(|check| format!("check {check}: {:#x}", errors[4 + check]))
+        .collect();
+    assert!(failed.is_empty(), "bridge decode failed: {}", failed.join(", "));
 }

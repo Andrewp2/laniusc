@@ -425,8 +425,13 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
   `resolved_dependency`, after the witness pairs).
 - **`89_crosscheck_buckets` and `90_validate`** compare against the previous
   graph equality. Only `90_validate` imports `scoped_type_equality`, and it
-  calls `scoped_type_refs_equal` at one site (13.8k instructions fully
-  inlined; `01_intern` is 5.3k).
+  calls the walker at one site, with the checked graph on the left and the
+  bridge graph on the right (21.4k instructions fully inlined, 13.8k
+  before the bridge check; `01_intern` is 5.3k).
+  - **Bridge mismatch:** the old walker rejects a row against its own ID
+    read through the bridge (`bridge_mismatches`, after the dependency
+    counters). Each row's whole bridged tree is compared, since a bridged
+    record's operands are bridged too.
   - **False merge:** a row whose ID is another row's record while
     `scoped_type_refs_equal` says the rows differ. A top-level difference
     between a declaration token and an imported triple is the intended
@@ -438,6 +443,43 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
   - A row whose ID is a dependency node's record (no row owns it) is
     confirmed against the next row of its bucket chain with the same ID,
     which chains every such row of the bucket.
+
+### Bridge
+
+`canonical_bridge.slang` is a read path from IDs to the checked graph's row
+interface, not a second producer. `CanonicalBridgeTypeGraph` implements
+`IScopedTypeGraph`:
+
+- A tag-3 payload at or above `CT_ROW_BASE` (`0x40000000`) is the ID
+  `payload - CT_ROW_BASE`. So is a constant reference of kind 1 (a value or
+  a count class) or kind 3 (a cast), and `ct_ref` / `ct_constant_ref` map
+  these back to the ID.
+- Rows below the base go to `ScopedCheckedTypeGraph` unchanged. The bridge
+  bounds them itself, so a bridged comparison passes
+  `CT_BRIDGE_TYPE_CAPACITY` as the type capacity.
+- Fields follow the checked rows: kind 1–4 for NAMED, ARRAY, SLICE and REF;
+  field 1 is the local declaration token. Fields 7–9 hold the (library,
+  unit, local) triple when there is no token. Field 2 is the operand count,
+  fields 3/4 the element operand, and fields 5/6 either the named domains
+  (type count, interleave flag, constant mask) or the array length.
+- An imported reference to the job's own declaration reads as the local
+  spelling, since both share one ID.
+- An array length is its count class. A count reads as its u32 value, and
+  the walkers compare lengths by count identity.
+- Dependency slot parameters have no checked spelling and fail closed.
+- `ct_bridge_operand(ref)` gives the checked (tag, payload) of any
+  reference, with payload `INVALID` when there is none.
+
+Consumers opt in by naming `CanonicalBridgeTypeGraph` where they name
+`ScopedCheckedTypeGraph`. Kernels that do not import the module are
+unchanged: no production kernel imports it yet.
+
+The plan put the read inside `ScopedCheckedTypeGraph` itself. That would
+add the `ct_*` bindings and the decode to all 37 of its importers, including
+calls/ and codegen/, which are out of scope here. Every bridged read is
+straight-line selects (about 230 instructions per call site), because the
+old walkers expand a graph read at each site: 20 reads cost 90_validate
+7.6k.
 
 ### API (frozen for P3–P5)
 
@@ -453,6 +495,7 @@ not generic, and it imports `primitive_types` only.
 | build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record` |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
 | dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`, `ct_dependency_record(index)`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
+| bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |
 | constant keys | `canonical_constants.slang`: `ct_build_value(value, record, key)`, `ct_build_projection(target, child, param_scalar, record, fold, value, key)` |
 
 Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key

@@ -97,7 +97,7 @@ pub(super) const CANONICAL_DEBUG_KERNELS: [&str; 3] = [
 ];
 /// Words of `ct_counts` and of `canonical_validation`.
 pub(super) const CANONICAL_COUNT_WORDS: usize = 16;
-pub(super) const CANONICAL_VALIDATION_WORDS: usize = 38;
+pub(super) const CANONICAL_VALIDATION_WORDS: usize = 39;
 /// `ct_counts` words the host reads after each batch.
 pub(super) const CANONICAL_COUNT_PENDING: usize = 2;
 pub(super) const CANONICAL_COUNT_OVERFLOW: usize = 3;
@@ -133,9 +133,10 @@ pub(super) const CANONICAL_VALIDATION_COUNTERS: [&str; 16] = [
     "normalized_merges",
 ];
 
-/// Dependency-node counters (88_validate_table), after the witness pairs.
-pub(super) const CANONICAL_DEPENDENCY_COUNTERS: [(&str, usize); 2] =
-    [("unknown_dependency", 36), ("resolved_dependency", 37)];
+/// Counters after the witness pairs: dependency nodes (88_validate_table)
+/// and rows the old walker rejects against their bridged ID (90_validate).
+pub(super) const CANONICAL_LATE_COUNTERS: [(&str, usize); 3] =
+    [("unknown_dependency", 36), ("resolved_dependency", 37), ("bridge_mismatches", 38)];
 
 /// One `[canonical_validate]` line: every counter, then up to ten
 /// (row, other) witness pairs of false and missed merges.
@@ -144,7 +145,7 @@ pub(super) fn canonical_validation_report(words: &[u32]) -> String {
     for (name, value) in CANONICAL_VALIDATION_COUNTERS.iter().zip(words) {
         line.push_str(&format!(" {name}={value}"));
     }
-    for (name, index) in CANONICAL_DEPENDENCY_COUNTERS {
+    for (name, index) in CANONICAL_LATE_COUNTERS {
         if let Some(value) = words.get(index) {
             line.push_str(&format!(" {name}={value}"));
         }
