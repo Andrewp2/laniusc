@@ -51,6 +51,20 @@ public struct InputProofNormalizationGraph : IProofNormalizationGraph
     public static bool constant_value(uint row, out uint3 value)
     { return pev_constant_atom_value(row, value); }
 }
+// The capabilities of a walk with no environment (PEV_INVALID) that does not
+// emit: it substitutes no reference, so it never asks for a replacement, and
+// it writes no row. Neither is ever called; a misuse fails closed.
+public struct NoProofNormalizationBindings : IProofNormalizationBindings
+{
+    public static bool replacement(uint environment, uint parameter, bool constant,
+        out uint2 reference)
+    { reference = uint2(0u, PEV_INVALID); return false; }
+}
+public struct NoProofNormalizationSink : IProofNormalizationSink
+{
+    public static bool begin_node(uint mode, uint row, uint4 low, uint4 high) { return false; }
+    public static bool set_child(uint mode, uint row, uint ordinal, uint2 reference) { return false; }
+}
 public struct InputProofNormalizationBindings : IProofNormalizationBindings
 {
     public static bool replacement(uint environment, uint parameter, bool constant,
@@ -113,12 +127,27 @@ public struct SplitProofNormalizationGraphs<SourceGraph : IProofNormalizationGra
 // projection is finalized in its own iteration before its parent link, so an
 // iteration performs at most one begin_node and one set_child, in the same
 // order as before.
+[ForceInline]
 public EvidenceStatus pev_normalize_proof_root<
     Graphs : IProofNormalizationPair,
     Bindings : IProofNormalizationBindings,
     Sink : IProofNormalizationSink>(
     uint2 input, uint environment, uint visible_owner, uint domain,
     bool emit, ProofNormalizationReservation reservation,
+    out uint2 normalized, out bool closed, out ProofNormalizationCounts measured)
+{
+    return pev_normalize_proof_root_on_side<Graphs, Bindings, Sink>(input, environment,
+        visible_owner, domain, emit, reservation, 0u, normalized, closed, measured);
+}
+// The root is read on graph side `side`. A walk without an environment never
+// substitutes, so every reference keeps that side: a pair can then select
+// one of several source graphs by side (PpsAdmissionGraphs).
+public EvidenceStatus pev_normalize_proof_root_on_side<
+    Graphs : IProofNormalizationPair,
+    Bindings : IProofNormalizationBindings,
+    Sink : IProofNormalizationSink>(
+    uint2 input, uint environment, uint visible_owner, uint domain,
+    bool emit, ProofNormalizationReservation reservation, uint side,
     out uint2 normalized, out bool closed, out ProofNormalizationCounts measured)
 {
     normalized = uint2(0u, PEV_INVALID); closed = false;
@@ -137,7 +166,7 @@ public EvidenceStatus pev_normalize_proof_root<
     // supplies its value here at child completion) with its concrete flag.
     bool is_closed = true;
     uint depth = 0u;
-    scratch_set_cell(SCRATCH_PEV_NORMALIZE, uint4(input.x, input.y, environment, 0u));
+    scratch_set_cell(SCRATCH_PEV_NORMALIZE, uint4(input.x, input.y, environment, side));
     scratch_set_cell(SCRATCH_PEV_NORMALIZE + 3u, uint4(PEV_INVALID, 0u, domain, 0u));
     [loop]
     for (;;)

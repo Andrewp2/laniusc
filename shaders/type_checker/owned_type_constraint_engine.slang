@@ -588,22 +588,49 @@ public OwnedConstraintStatus owned_constraints_begin<PatternGraph : IOwnedConstr
         identity_capacity, false, limits, frame, state);
 }
 
+// A head match (fixed = false: before finish, with inference) or a fixed
+// prerequisite recheck (fixed = true, see owned_constraints_match_fixed),
+// through one unification call site: a caller that runs both, such as
+// implementation proof admission, expands the traversal once.
+public OwnedConstraintStatus owned_constraints_match_or_fixed<
+    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
+    uint2 pattern, uint2 goal, bool fixed, inout OwnedConstraintState state)
+{
+    if (state.status.state != OWNED_CONSTRAINT_MATCHED) return state.status;
+    if ((state.finished != 0u) != fixed || state.overlap != 0u ||
+        state.owners.y != OWNED_CONSTRAINT_INVALID || any(state.counts.zw != uint2(0u, 0u)))
+        state.status = owned_constraint_invalid(3u);
+    else
+    {
+        if (fixed) for (uint domain = 0u; domain < 2u; domain++)
+        {
+            uint expected = owned_constraint_mask(state.counts[domain]);
+            if (state.seen[domain] != expected || state.bound[domain] != expected)
+            { state.status = owned_constraint_invalid(4u); break; }
+        }
+        if (state.status.state == OWNED_CONSTRAINT_MATCHED)
+            state.status = owned_constraint_unify_root<
+                OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>,
+                OwnedOneWayBindingOperation>(pattern, goal, !fixed, state);
+    }
+    return state.status;
+}
+
 public OwnedConstraintStatus owned_constraints_match<
     PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
     uint2 pattern, uint2 goal, inout OwnedConstraintState state)
 {
-    if (state.status.state != OWNED_CONSTRAINT_MATCHED) return state.status;
-    if (state.finished != 0u || state.overlap != 0u || state.owners.y != OWNED_CONSTRAINT_INVALID || any(state.counts.zw != uint2(0u, 0u)))
-        state.status = owned_constraint_invalid(3u);
-    else state.status = owned_constraint_unify_root<
-        OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>,
-        OwnedOneWayBindingOperation>(pattern, goal, true, state);
-    return state.status;
+    return owned_constraints_match_or_fixed<PatternGraph, GoalGraph>(pattern, goal, false, state);
 }
 
-public OwnedConstraintStatus owned_constraints_finish<
-    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
-    inout OwnedConstraintState state)
+// owned_constraints_finish and owned_constraint_binding in steps, for a caller
+// that makes every constant resolution through its own single call site
+// (substitution admission): owned_constraints_finish_checks runs the
+// binding checks; while the state is MATCHED, each constant cell 0..63 that
+// owned_constraints_recheck names is resolved by owned_constraints_resolve
+// into OWNED_TARGETS_DISCARD, its status stored in state.status; a MATCHED
+// state is then marked finished.
+public OwnedConstraintStatus owned_constraints_finish_checks(inout OwnedConstraintState state)
 {
     if (state.status.state != OWNED_CONSTRAINT_MATCHED) return state.status;
     if (state.overlap != 0u) state.status = owned_constraint_invalid(3u);
@@ -613,7 +640,24 @@ public OwnedConstraintStatus owned_constraints_finish<
         if (state.seen[domain] != expected || state.bound[domain] != expected)
         { state.status = owned_constraint_invalid(4u); break; }
     }
-    if (state.status.state == OWNED_CONSTRAINT_MATCHED)
+    return state.status;
+}
+public bool owned_constraints_recheck(OwnedConstraintState state, uint cell, out uint3 term)
+{ return owned_constant_recheck_term(state.counts, state.seen, state.frame, cell, term); }
+public OwnedConstraintStatus owned_constraints_resolve<
+    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
+    uint3 term, uint targets, inout OwnedConstraintState state, out OwnedConstantResolution value)
+{
+    return owned_constant_resolve<
+        OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>>(
+        term, targets, state, value);
+}
+
+public OwnedConstraintStatus owned_constraints_finish<
+    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
+    inout OwnedConstraintState state)
+{
+    if (owned_constraints_finish_checks(state).state == OWNED_CONSTRAINT_MATCHED)
         state.status = owned_constant_recheck_fits<
             OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>>(state);
     if (state.status.state == OWNED_CONSTRAINT_MATCHED) state.finished = 1u;
@@ -629,33 +673,19 @@ public OwnedConstraintStatus owned_constraints_match_fixed<
     PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
     uint2 pattern, uint2 goal, inout OwnedConstraintState state)
 {
-    if (state.status.state != OWNED_CONSTRAINT_MATCHED) return state.status;
-    if (state.finished == 0u || state.overlap != 0u ||
-        state.owners.y != OWNED_CONSTRAINT_INVALID || any(state.counts.zw != uint2(0u, 0u)))
-        state.status = owned_constraint_invalid(3u);
-    else
-    {
-        for (uint domain = 0u; domain < 2u; domain++)
-        {
-            uint expected = owned_constraint_mask(state.counts[domain]);
-            if (state.seen[domain] != expected || state.bound[domain] != expected)
-            { state.status = owned_constraint_invalid(4u); break; }
-        }
-        if (state.status.state == OWNED_CONSTRAINT_MATCHED)
-            state.status = owned_constraint_unify_root<
-                OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>,
-                OwnedOneWayBindingOperation>(pattern, goal, false, state);
-    }
-    return state.status;
+    return owned_constraints_match_or_fixed<PatternGraph, GoalGraph>(pattern, goal, true, state);
 }
 
-public bool owned_constraint_binding<
-    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
-    inout OwnedConstraintState state, bool constant, uint index,
-    out OwnedConstraintBindingRequest request)
+// The request of a finished state's bound variable. A type binding is
+// complete here; a constant one returns its cell's term, which the caller
+// resolves into OWNED_TARGETS_REQUEST and hands to
+// owned_constraint_binding_resolved.
+public bool owned_constraint_binding_begin(inout OwnedConstraintState state, bool constant,
+    uint index, out OwnedConstraintBindingRequest request, out uint3 term)
 {
     request = (OwnedConstraintBindingRequest)0;
     request.reference = uint3(0u, 0u, OWNED_CONSTRAINT_INVALID);
+    term = uint3(0u, 0u, 0u);
     uint domain = constant ? 1u : 0u;
     if (state.status.state != OWNED_CONSTRAINT_MATCHED || state.finished == 0u || state.overlap != 0u ||
         index >= state.counts[domain] || index >= 32u ||
@@ -663,24 +693,39 @@ public bool owned_constraint_binding<
     request.targets = OWNED_TARGETS_REQUEST;
     if (constant)
     {
-        OwnedConstantResolution value;
-        state.status = owned_constant_resolve<
-            OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>>(
-            owned_constraint_constant_cell(state.frame, index).xyz, OWNED_TARGETS_REQUEST, state, value);
-        if (state.status.state != OWNED_CONSTRAINT_MATCHED) return false;
-        if (value.terminal.x != 1u || value.variable != OWNED_CONSTRAINT_INVALID)
-        { state.status = owned_constraint_invalid(3u); return false; }
-        // The resolution wrote its target list at OWNED_TARGETS_REQUEST.
-        request.reference = value.terminal; request.target_count = value.target_count;
+        term = owned_constraint_constant_cell(state.frame, index).xyz;
+        return true;
     }
-    else
-    {
-        uint4 binding = owned_constraint_binding_cell(state.frame, index);
-        if (binding.x != 1u || owned_constraint_constant(binding.y) || binding.w != 0u)
-        { state.status = owned_constraint_invalid(2u); return false; }
-        request.reference = binding.xyz;
-    }
+    uint4 binding = owned_constraint_binding_cell(state.frame, index);
+    if (binding.x != 1u || owned_constraint_constant(binding.y) || binding.w != 0u)
+    { state.status = owned_constraint_invalid(2u); return false; }
+    request.reference = binding.xyz;
     return true;
+}
+public bool owned_constraint_binding_resolved(inout OwnedConstraintState state,
+    OwnedConstraintStatus status, OwnedConstantResolution value,
+    inout OwnedConstraintBindingRequest request)
+{
+    state.status = status;
+    if (state.status.state != OWNED_CONSTRAINT_MATCHED) return false;
+    if (value.terminal.x != 1u || value.variable != OWNED_CONSTRAINT_INVALID)
+    { state.status = owned_constraint_invalid(3u); return false; }
+    // The resolution wrote its target list at OWNED_TARGETS_REQUEST.
+    request.reference = value.terminal; request.target_count = value.target_count;
+    return true;
+}
+public bool owned_constraint_binding<
+    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
+    inout OwnedConstraintState state, bool constant, uint index,
+    out OwnedConstraintBindingRequest request)
+{
+    uint3 term;
+    if (!owned_constraint_binding_begin(state, constant, index, request, term)) return false;
+    if (!constant) return true;
+    OwnedConstantResolution value;
+    OwnedConstraintStatus status = owned_constraints_resolve<PatternGraph, GoalGraph>(
+        term, OWNED_TARGETS_REQUEST, state, value);
+    return owned_constraint_binding_resolved(state, status, value, request);
 }
 
 // Two-sided overlap over an explicit graph pair. Callers comparing two heads of

@@ -214,23 +214,33 @@ OwnedConstraintStatus owned_constant_require_operand_fits(OwnedConstantResolutio
     return owned_constraint_ok();
 }
 
+// Whether a finish rechecks constant cell `cell` (side * 32 + index, side 0
+// then 1): a seen constant variable whose cell carries a fit mask. `term` is
+// its parameter term.
+bool owned_constant_recheck_term(uint4 counts, uint4 seen, uint frame, uint cell, out uint3 term)
+{
+    uint side = cell / 32u; uint index = cell % 32u; uint domain = side * 2u + 1u;
+    term = uint3(0u, 0u, 0u);
+    if (index >= counts[domain] || (seen[domain] & (1u << index)) == 0u) return false;
+    uint4 constant_cell = owned_constraint_constant_cell(frame, cell);
+    term = constant_cell.xyz;
+    return constant_cell.w != 0u;
+}
+
 OwnedConstraintStatus owned_constant_recheck_fits<Pair : IOwnedConstraintPair>(
     inout OwnedConstraintState state)
 {
-    for (uint side = 0u; side < 2u; side++)
+    // A resolution may mark further variables seen; each cell is tested
+    // against the state as it stands when the walk reaches it.
+    [loop]
+    for (uint cell = 0u; cell < 64u; cell++)
     {
-        uint domain = side * 2u + 1u;
-        for (uint index = 0u; index < state.counts[domain]; index++)
-        {
-            uint fit_index = side * 32u + index;
-            if ((state.seen[domain] & (1u << index)) == 0u) continue;
-            uint4 constant_cell = owned_constraint_constant_cell(state.frame, fit_index);
-            if (constant_cell.w == 0u) continue;
-            OwnedConstantResolution value;
-            OwnedConstraintStatus status = owned_constant_resolve<Pair>(
-                constant_cell.xyz, OWNED_TARGETS_DISCARD, state, value);
-            if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
-        }
+        uint3 term;
+        if (!owned_constant_recheck_term(state.counts, state.seen, state.frame, cell, term)) continue;
+        OwnedConstantResolution value;
+        OwnedConstraintStatus status = owned_constant_resolve<Pair>(
+            term, OWNED_TARGETS_DISCARD, state, value);
+        if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
     }
     return owned_constraint_ok();
 }

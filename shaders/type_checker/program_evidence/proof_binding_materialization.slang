@@ -56,20 +56,38 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
     bool require_closed, uint4 allocation, out uint2 normalized, out bool closed)
 {
     normalized = uint2(0u, PEV_INVALID); closed = false;
+    uint2 leaf; bool constant;
+    EvidenceStatus status = pps_binding_request_leaf(request, parameter, allocation, leaf, constant);
+    if (status.state != PEV_VALID) return status;
+    status = pps_admit_term(leaf, visible_owner,
+        constant ? PEV_ADMITTED_DOMAIN_CONSTANT : PEV_ADMITTED_DOMAIN_TYPE, require_closed, closed);
+    if (status.state != PEV_VALID) return status;
+    return pps_binding_request_targets<Sink>(request, parameter, allocation, leaf, constant,
+        normalized);
+}
+// The request's leaf, admitted in the constant domain for a constant parameter.
+public EvidenceStatus pps_binding_request_leaf(OwnedConstraintBindingRequest request,
+    uint parameter, uint4 allocation, out uint2 leaf, out bool constant)
+{
+    leaf = request.reference.yz; constant = false;
     uint4 parameter_atom;
     if (request.reference.x != 1u || request.target_count >= PEV_DEPTH_LIMIT ||
         request.target_count != allocation.y || any(allocation.zw != uint2(0u, 0u)) ||
         (allocation.y == 0u && allocation.x != 0u) ||
         !pev_read_admitted_parameter(parameter, parameter_atom) || parameter_atom.z > 1u)
         return pev_invalid(68u, parameter, request.reference.z);
-    bool constant = parameter_atom.z == 1u;
-    uint2 leaf = request.reference.yz;
+    constant = parameter_atom.z == 1u;
     if ((!constant && request.target_count != 0u) ||
         (constant && leaf.x != 0x80000001u && leaf.x != 0x80000002u))
         return pev_invalid(68u, parameter, leaf.y);
-    EvidenceStatus status = pps_admit_term(leaf, visible_owner,
-        constant ? PEV_ADMITTED_DOMAIN_CONSTANT : PEV_ADMITTED_DOMAIN_TYPE, require_closed, closed);
-    if (status.state != PEV_VALID) return status;
+    return pev_ok();
+}
+// After the leaf's admission: its scalar, then each owned target row.
+public EvidenceStatus pps_binding_request_targets<Sink : IProofNormalizationSink>(
+    OwnedConstraintBindingRequest request, uint parameter, uint4 allocation, uint2 leaf,
+    bool constant, out uint2 normalized)
+{
+    normalized = uint2(0u, PEV_INVALID);
     uint3 value = uint3(0u, 0u, 0u);
     bool concrete = constant && leaf.x == 0x80000001u;
     uint scalar = 0u;

@@ -222,7 +222,7 @@ EvidenceStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uin
         uint2 unused; bool candidate_closed; ProofNormalizationCounts candidate;
         ProofNormalizationReservation empty = (ProofNormalizationReservation)0;
         status = pev_normalize_proof_root<SameProofNormalizationGraph<CandidateProofTermGraph>,
-            SolverProofBindings, SolverProofTermSink>(normalized, PEV_INVALID, owner,
+            NoProofNormalizationBindings, NoProofNormalizationSink>(normalized, PEV_INVALID, owner,
                 pps_normalization_domain(ordinal), false, empty, unused, candidate_closed, candidate);
         if (status.state != PEV_VALID) return status;
         // Exact source replay above checks every allocated row. Folding a
