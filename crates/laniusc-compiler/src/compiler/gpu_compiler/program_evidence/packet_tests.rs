@@ -1006,6 +1006,60 @@ fn replay_emission_cannot_normalize_a_changed_ordinary_helper() {
     );
 }
 
+fn add_generic_call(unit: &mut CompiledSourcePackUnit, call_hir: u32, function_hir: u32) {
+    let mut calls = unit.generic_calls.to_vec();
+    let mut call = calls[0].clone();
+    call.call_hir = call_hir;
+    calls.push(call);
+    unit.generic_calls = calls.into();
+    let mut owners = unit.checked_call_owners.to_vec();
+    owners.push(CheckedCallOwner { call_hir, function_hir });
+    unit.checked_call_owners = owners.into();
+}
+
+#[test]
+fn replay_keeps_generic_calls_its_template_lacks_only_in_the_selected_body() {
+    // A bound-member call that a replay routes to a generic impl method
+    // (methods/09) is a generic call its template does not have.
+    let original = replay_emission_unit();
+    let catalog = freeze(&[&original]);
+    let mut packet = new_gpu_packet(catalog.clone(), &[&original]);
+    let evidence = admitted(&mut packet);
+    let context = replay(&mut packet, &evidence[..1]);
+    let mut unit = original.clone();
+    add_generic_call(&mut unit, 601, CALLEE);
+    add_generic_call(&mut unit, 602, REPLAY_SIBLING);
+    replay_emission_object(&mut unit, &[CALLEE, UNUSED_BODY], &[(501, CALLEE), (601, CALLEE)]);
+    let mut helper = unit.clone();
+    add_generic_call(&mut helper, 603, UNUSED_BODY);
+    rejected(
+        normalize_emission(&catalog, &mut helper),
+        "added a generic call outside the selected body",
+    );
+    normalize_emission(&catalog, &mut unit).unwrap();
+    let hirs = unit.generic_calls.iter().map(|call| call.call_hir).collect::<Vec<_>>();
+    assert_eq!(hirs, [500, 501, 502, 503, 601], "the omitted sibling's added call is dropped");
+    assert!(unit.checked_call_owners.iter().all(|owner| owner.call_hir != 602));
+    assert_eq!(
+        packet.append_replay_unit_calls(&unit, CALLEE, context).unwrap().count,
+        2,
+        "the selected body's fresh occurrence and its added call"
+    );
+    admitted(&mut packet);
+    let snapshot = packet.catalog.snapshot_by_unit[&UNIT];
+    let calls = packet.admitted_context_calls(snapshot, context).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        (calls[0].source().call_hir, calls[0].source().actual_function_hir),
+        (601, CALLEE)
+    );
+    assert!(calls[0].is_concrete());
+    rejected(
+        packet.append_context_calls(snapshot, context, CALLEE, unit.generic_calls.clone(), &[1]),
+        "already a retained occurrence",
+    );
+}
+
 #[test]
 fn replay_emission_rejects_missing_or_conflicting_native_ownership() {
     let original = replay_emission_unit();

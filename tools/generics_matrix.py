@@ -4,7 +4,11 @@
 usage: tools/generics_matrix.py [--laniusc PATH] [--stdlib DIR] [--probes DIR]
                                 [--memory-max SIZE] [PATTERN]
 
-Each probe's expected exit code is 42 unless its first line is `// expect: N`.
+A probe is a `.lani` file, or a directory holding a multi-module project: the
+entry `main.lani` plus a source root `src/` (`gen::lib` is `src/gen/lib.lani`).
+Its expected exit code is 42 unless the first line of the file (of `main.lani`
+for a directory) is `// expect: N`; `// expect: error LNC0021` expects the
+compile to fail with that diagnostic code instead.
 The daemon runs under a systemd memory cap so a runaway driver shader compile
 kills only the daemon, not the desktop session.
 """
@@ -39,8 +43,9 @@ parser.add_argument("--skip", action="append", default=[], help="skip probes who
 parser.add_argument("pattern", nargs="?", default="")
 args = parser.parse_args()
 
-probes = sorted(p for p in pathlib.Path(args.probes).glob("*.lani")
-                if args.pattern in p.name and not any(skip in p.name for skip in args.skip))
+probes = sorted(p for p in pathlib.Path(args.probes).iterdir()
+                if (p.suffix == ".lani" or (p.is_dir() and (p / "main.lani").is_file()))
+                and args.pattern in p.name and not any(skip in p.name for skip in args.skip))
 out_dir = pathlib.Path(args.out)
 out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,21 +124,35 @@ signal.signal(signal.SIGHUP, lambda *_: sys.exit(129))
 def diagnostic(msg):
     text = json.dumps(msg)
     match = re.search(r'"message":\s*"((?:[^"\\]|\\.)*)"', text)
-    return (match.group(1) if match else text)[:400]
+    detail = match.group(1) if match else text
+    label = (msg.get("diagnostic") or {}).get("primary_label") or {}
+    if isinstance(label, dict) and label.get("message"):
+        detail += f" ({label['message']})"
+    return detail[:400]
+
+
+def diagnostic_code(msg):
+    code = (msg.get("diagnostic") or {}).get("code")
+    return code if isinstance(code, str) else None
 
 
 results = []
 daemon = Daemon()
 for probe in probes:
-    expect_match = re.match(r"//\s*expect:\s*(-?\d+)", probe.read_text())
-    expect = int(expect_match.group(1)) if expect_match else 42
+    entry = probe / "main.lani" if probe.is_dir() else probe
+    expect_match = re.match(r"//\s*expect:\s*(?:(-?\d+)|error\s+(LNC\d+))", entry.read_text())
+    expect = int(expect_match.group(1)) if expect_match and expect_match.group(1) else 42
+    expect_error = expect_match.group(2) if expect_match else None
     elf = out_dir / (probe.stem + ".elf")
     elf.unlink(missing_ok=True)
+    request = {"id": probe.stem, "command": "compile", "emit": "x86_64",
+               "input": str(entry.resolve()), "output": str(elf.resolve()),
+               "stdlib_root": str(pathlib.Path(args.stdlib).resolve())}
+    if probe.is_dir():
+        request["source_root"] = str((probe / "src").resolve())
     started = time.time()
     try:
-        msg = daemon.request({"id": probe.stem, "command": "compile", "emit": "x86_64",
-                              "input": str(probe.resolve()), "output": str(elf.resolve()),
-                              "stdlib_root": str(pathlib.Path(args.stdlib).resolve())}, args.timeout)
+        msg = daemon.request(request, args.timeout)
     except (TimeoutError, RuntimeError) as err:
         daemon.kill()
         daemon = Daemon()
@@ -141,7 +160,11 @@ for probe in probes:
                         time.time() - started, ""))
     else:
         elapsed = time.time() - started
-        if not elf.exists():
+        if expect_error:
+            code = None if elf.exists() else diagnostic_code(msg)
+            status = "PASS" if code == expect_error else f"WRONG({code or 'compiled'}, want {expect_error})"
+            results.append((probe.stem, status, elapsed, "" if status == "PASS" else diagnostic(msg)))
+        elif not elf.exists():
             results.append((probe.stem, "COMPILE-FAIL", elapsed, diagnostic(msg)))
             # A failure after a readback timeout means the GPU hung; the next
             # job would only queue behind it, so start a fresh daemon.

@@ -1,0 +1,39 @@
+module gen::lib;
+
+pub trait Score {
+    pub fn score(self) -> i32;
+}
+
+pub fn score_of<T>(value: T) -> i32 where T: Score {
+    return value.score();
+}
+
+pub struct Box<T> {
+    value: T,
+}
+
+pub fn boxed<T>(value: T) -> Box<T> {
+    return Box { value: value };
+}
+
+pub fn unbox<T>(b: Box<T>) -> T {
+    return b.value;
+}
+
+pub enum Maybe<T> {
+    Nothing,
+    Just(T),
+}
+
+pub impl<T> Maybe<T> {
+    pub fn or_value(self, fallback: T) -> T {
+        return match (self) {
+            Nothing => fallback,
+            Just(v) => v,
+        };
+    }
+}
+
+pub fn just<T>(value: T) -> Maybe<T> {
+    return Just(value);
+}

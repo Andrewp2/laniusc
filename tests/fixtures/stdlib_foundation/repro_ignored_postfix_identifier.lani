@@ -1,6 +1,7 @@
+// expect: LNC0016
 // Compiler dependency: the two unknown identifiers after `x` are ignored.
-// `laniusc check` accepts this file, and its native executable exits zero.
-// Correct behavior is a diagnostic at `not_a_cast`.
+// `laniusc check` reports only LNC0006 at `x` (u32 where i32 is expected).
+// Correct behavior is a syntax error (LNC0016) at `not_a_cast`.
 module app::main;
 fn main() -> i32 {
     let x: u32 = 4294967295;

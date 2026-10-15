@@ -14,6 +14,7 @@ pub mod matches;
 pub mod methods;
 pub mod nav;
 pub mod params;
+pub mod parent;
 pub mod paths;
 pub mod predicates;
 pub mod scatter;

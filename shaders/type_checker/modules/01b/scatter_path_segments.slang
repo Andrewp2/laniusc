@@ -4,6 +4,10 @@ import hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> compact_path_segment_count;
@@ -20,6 +24,15 @@ static const uint PATH_KIND_BOUND_TYPE = 5u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
+
+// Whether `node` is the trait type of a trait implementation's header.
+bool impl_trait_type(uint node)
+{
+    uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint owner = node < count ? compact_hir_core[node].parent : INVALID;
+    return owner < count && compact_hir_semantic_facts[owner].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT &&
+        compact_hir_payload[owner].b == node;
+}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -42,9 +55,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     path_segment_token[row] = token;
     path_prefix_base[row] = path.segment_start;
     path_prefix_id_a[row] = name_id_by_token[token];
-    // Every segment of a bound path belongs to the compact predicate family.
-    // Marking by compact segment row keeps this parallel and removes the old
-    // first/second-argument width limit from diagnostic ownership.
-    if (path.kind == PATH_KIND_BOUND_TYPE)
+    // Every segment of a bound path, and of the trait path of an impl header
+    // (`impl gen::lib::Score for Rec`), belongs to the compact predicate
+    // family. Marking by compact segment row keeps this parallel and removes
+    // the old first/second-argument width limit from diagnostic ownership.
+    if (path.kind == PATH_KIND_BOUND_TYPE || impl_trait_type(path.owner))
         predicate_syntax_token[token] = 1u;
 }

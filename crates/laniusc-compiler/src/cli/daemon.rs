@@ -768,6 +768,7 @@ async fn run_session(
         let compute_dispatches_before = recorded_compute_dispatch_count();
         let operation_capture_scopes_before = crate::gpu::timer::operation_capture_scope_count();
         let operation_timestamps_before = crate::gpu::timer::operation_timestamp_count();
+        let operation_timestamps_dropped_before = crate::gpu::timer::operation_timestamps_dropped();
         let readbacks_before = crate::gpu::passes_core::readback_round_trips();
         let readback_breakdown_before = crate::gpu::passes_core::readback_breakdown_enabled()
             .then(crate::gpu::passes_core::readback_round_trips_by_label);
@@ -816,6 +817,9 @@ async fn run_session(
                 .saturating_sub(operation_capture_scopes_before);
         let operation_timestamps_during_job = crate::gpu::timer::operation_timestamp_count()
             .saturating_sub(operation_timestamps_before);
+        let operation_timestamps_dropped_during_job =
+            crate::gpu::timer::operation_timestamps_dropped()
+                .saturating_sub(operation_timestamps_dropped_before);
         let compute_submission_schedule = finish_compute_schedule_job(compute_schedule_job);
         let compute_pass_breakdown_after = compute_pass_breakdown_before
             .as_ref()
@@ -828,11 +832,19 @@ async fn run_session(
             if operation_timestamps_during_job != recorded_compute_dispatches_during_job {
                 successful = false;
                 let response_id = response.get("id").cloned().unwrap_or(Value::Null);
+                let dropped = if operation_timestamps_dropped_during_job == 0 {
+                    String::new()
+                } else {
+                    format!(
+                        "; the job timing session dropped {operation_timestamps_dropped_during_job} timestamps after holding its limit of {}",
+                        crate::gpu::timer::JOB_SESSION_QUERY_CAPACITY
+                    )
+                };
                 response = json!({
                     "id": response_id,
                     "ok": false,
                     "error": format!(
-                        "profiled compiler jobs require exactly one timestamp per GPU kernel dispatch; recorded {recorded_compute_dispatches_during_job} dispatches but {operation_timestamps_during_job} operation timestamps"
+                        "profiled compiler jobs require exactly one timestamp per GPU kernel dispatch; recorded {recorded_compute_dispatches_during_job} dispatches but {operation_timestamps_during_job} operation timestamps{dropped}"
                     ),
                 });
             }
@@ -862,6 +874,12 @@ async fn run_session(
                 "recorded_compute_dispatches_during_job".into(),
                 json!(recorded_compute_dispatches_during_job),
             );
+            if operation_capture_scopes_during_job != 0 {
+                response.insert(
+                    "operation_timestamps_during_job".into(),
+                    json!(operation_timestamps_during_job),
+                );
+            }
             let readbacks_after = crate::gpu::passes_core::readback_round_trips();
             response.insert(
                 "readback_round_trips_during_job".into(),
