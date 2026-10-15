@@ -21,6 +21,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
 import type_checker.substitution.call_env;
+import type_checker.calls.intrinsic_result;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -30,6 +31,7 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
@@ -130,6 +132,14 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
         if (declaration >= dependency_declaration_count()) return CT_NONE;
         uint signature = declaration_signature(declaration);
         return signature != INVALID ? ct_dependency_state(signature) : CT_NONE;
+    }
+    // A language intrinsic has no declaration. Its scalar result (the data
+    // pointers) is complete, so a call passed directly as an argument has an
+    // accepted value like any other call.
+    if (!record && !unit && call_intrinsic_tag[token] != INTRINSIC_NONE)
+    {
+        uint scalar = intrinsic_scalar_result(call_intrinsic_tag[token]);
+        return scalar != 0u ? ct_ref(1u, scalar) : CT_NONE;
     }
     if (imported)
     {
