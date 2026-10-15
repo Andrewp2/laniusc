@@ -679,10 +679,11 @@ claim (`identity_mode` 1, from an array length matched against `[T; N]`).
 - Merging discharges nothing. Every array actual keeps its own pending fit in
   its source graph, checked when the instance is normalized.
 
-`tests/typed_constant_identity_requests` case 34 checks this: two array
-claims of one symbolic count (`N as u8` retargeted to `u64`, then `N: u64`)
-are admitted, then the exact claim `N: u64` is accepted and holds the slot. It used to expect
-the exact claim to be rejected, which disagreed with the code.
+`ordinary_constant_identity_wins_over_count_claim_in_both_orders` in
+tests/compiler_generic_types_execution.rs checks this in source, and the
+claim publication probe (`constant_claim_publication_tests.rs`) on the claim
+kernels. The old engine's synthetic case for it (`typed_constant_identity_requests`
+case 34) was deleted with the engine (2026-10-15).
 
 ### Matching (P4, 2026-10-14)
 

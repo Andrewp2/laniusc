@@ -11,15 +11,10 @@
 2048 type_checker/calls/03g_project_expression_types
 2048 type_checker/calls/03h_project_array_literal_elements
 2048 type_checker/canonical/90_validate
-1536 type_checker/calls/03a4_validate_generic_claims
 1280 type_checker/type/instances/02c_index_closed_applications
 1024 type_checker/dependencies/14_project_type_instances
 768 type_checker/interface/type_topology/12_type_records
-576 tests/typed_constant_identity_requests
-524 tests/typed_constant_identity_claim_priority
-524 tests/typed_constant_identity_inference
 512 codegen/lir/semantic/function_layout_words
-512 tests/typed_constant_identity_array_constraints
 512 type_checker/interface/type_topology/05_mark_reverse
 464 type_checker/program_evidence/entries/55_commit_substitutions
 396 type_checker/program_evidence/entries/41_normalize_original
@@ -40,4 +35,3 @@
 44 type_checker/predicates/02b_validate_obligations
 44 type_checker/predicates/03_validate_body_obligations
 32 type_checker/semantic/artifact/00c_generic_call_results
-8 tests/typed_constant_identity_claim_merge

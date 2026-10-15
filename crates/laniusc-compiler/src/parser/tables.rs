@@ -325,6 +325,24 @@ impl PrecomputedParseTables {
         self.sc_superseq.extend_from_slice(seq);
     }
 
+    /// Give every pair that `rejected` selects the one-code stack change
+    /// `code`, stored once and shared. The code pops a symbol that no pair
+    /// pushes, so a rejected pair fails the typed stack-effect check rather
+    /// than contributing nothing to the stream.
+    pub fn set_rejected_pairs(&mut self, rejected: impl Fn(u32, u32) -> bool, code: u32) {
+        let off = self.sc_superseq.len() as u32;
+        self.sc_superseq.push(code);
+        for prev in 0..self.n_kinds {
+            for this in 0..self.n_kinds {
+                if rejected(prev, this) {
+                    let idx = self.cell_index(prev, this);
+                    self.sc_off[idx] = off;
+                    self.sc_len[idx] = 1;
+                }
+            }
+        }
+    }
+
     /// Append a partial-parse sequence (production IDs) for a given (prev,this).
     pub fn set_pp_for_pair(&mut self, prev: u32, this: u32, seq: &[u32]) {
         let idx = self.cell_index(prev, this);

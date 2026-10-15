@@ -786,10 +786,16 @@ pub(super) fn build_llp_precomputed_tables(
         tables.set_pp_for_pair(prev, this, &pp);
     }
 
-    let max_symbol_id = N_KINDS
-        .saturating_add(nt_symbol_ids.len() as u32)
-        .saturating_sub(1);
-    tables.finalize_bit_widths(max_symbol_id);
+    // A pair outside the LLP table is a syntax error. Its stack change pops
+    // a symbol that no pair pushes, so the typed stack-effect check rejects
+    // the input and the host LL(1) replay locates the error. An empty change
+    // would skip the pair instead: `x not_a_cast NotAType;` parsed as `x;`.
+    let rejected_symbol = N_KINDS.saturating_add(nt_symbol_ids.len() as u32);
+    tables.set_rejected_pairs(
+        |prev, this| !entries.contains_key(&(prev, this)),
+        encode_pop(rejected_symbol),
+    );
+    tables.finalize_bit_widths(rejected_symbol);
 
     Ok((tables, pair_tables, 0))
 }
