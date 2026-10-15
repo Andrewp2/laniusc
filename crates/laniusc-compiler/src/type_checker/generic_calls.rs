@@ -1997,6 +1997,17 @@ pub(super) fn read_unit_facts(
             )?);
         }
     }
+    // Trait requirements are not declarations. Their compact payload carries
+    // the declaration-name token that a local call record's callee names.
+    let requirement_metadata_start = metadata_regions.len();
+    for &hir in &requirement_hirs {
+        metadata_regions.push(ReadbackRegion::from_buffer(
+            inputs.buffer("compact_hir_payload"),
+            u64::from(hir) * 16,
+            16,
+            "trait requirement name",
+        )?);
+    }
     let contract_source = checked_contracts::ContractSourceRows {
         predicates: &columns[16],
         type_arguments: &columns[17],
@@ -2359,9 +2370,11 @@ pub(super) fn read_unit_facts(
     // A trait requirement owns a contract but no native target, so its calls
     // are not retained. Their claims bind the trait's parameters, which the
     // GPU checked against the bound's trait arguments (methods/07a).
-    let requirement_names = (0..declaration_count)
-        .filter(|&declaration| requirement_hirs.contains(&columns[15][declaration]))
-        .map(|declaration| columns[14][declaration])
+    let requirement_names = metadata
+        [requirement_metadata_start..requirement_metadata_start + requirement_hirs.len()]
+        .iter()
+        .map(|payload| payload[1])
+        .filter(|&name| name != INVALID)
         .collect::<BTreeSet<_>>();
     let requirement_tokens = local_tokens
         .iter()
