@@ -15,8 +15,8 @@ public EvidenceStatus pps_admit_term(uint2 reference, uint owner, uint domain,
 {
     closed = false; uint2 unpublished; ProofNormalizationCounts counts;
     ProofNormalizationReservation reservation = (ProofNormalizationReservation)0;
-    EvidenceStatus status = pev_normalize_proof_root<SolverProofTermGraph,
-        SolverProofTermGraph, SolverProofBindings, SolverProofTermSink>(
+    EvidenceStatus status = pev_normalize_proof_root<SameProofNormalizationGraph<SolverProofTermGraph>,
+        SolverProofBindings, SolverProofTermSink>(
         reference, PEV_INVALID, owner, domain, false, reservation, unpublished, closed, counts);
     if (status.state != PEV_VALID) return status;
     if (require_closed && !closed) return pev_invalid(10u, reference.y, owner);

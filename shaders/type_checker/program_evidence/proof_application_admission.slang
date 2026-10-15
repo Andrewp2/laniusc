@@ -125,26 +125,34 @@ public EvidenceStatus pps_admit_assumption_proof(uint proof)
         return pev_invalid(68u, proof, low.w);
     // The preceding complete row/context stages established the exact ordered
     // applicable-predicate identity. Frozen input rows cannot change here.
+    // One comparison call site serves this proof's goal and then, for a
+    // replay hypothesis, the retained prior proof's conclusion.
     bool equal;
-    status = pps_predicate_equals_goal(offered.y, offered.z, context.y, low.y, extra.y == 1u, equal);
-    if (status.state != PEV_VALID) return status;
-    if (!equal) return pev_invalid(68u, proof, low.w);
-    if (extra.y == 0u)
+    uint compared_goal = low.y; bool compared_closed = extra.y == 1u;
+    [loop]
+    for (uint comparison = 0u; comparison < 2u; comparison++)
     {
-        if (offered.w != PEV_INVALID || high.w != 2u)
-            return pev_invalid(68u, proof, low.w);
-        return pev_ok();
+        status = pps_predicate_equals_goal(offered.y, offered.z, context.y, compared_goal,
+            compared_closed, equal);
+        if (status.state != PEV_VALID) return status;
+        if (comparison == 1u) return equal ? pev_ok() : pev_invalid(68u, proof, offered.w);
+        if (!equal) return pev_invalid(68u, proof, low.w);
+        if (extra.y == 0u)
+        {
+            if (offered.w != PEV_INVALID || high.w != 2u)
+                return pev_invalid(68u, proof, low.w);
+            return pev_ok();
+        }
+        if (high.w != 1u || !conclusion_closed) return pev_invalid(10u, proof, low.w);
+        status = pev_validate_retained_evidence(offered.w);
+        if (status.state != PEV_VALID) return status;
+        uint4 supplied; uint4 origin;
+        if (!pev_read8(17u, offered.w, supplied, origin) || supplied.x != 1u)
+            return pev_invalid(10u, proof, offered.w);
+        // Exact retained provenance above proves an accepted prior proof. Compare
+        // its conclusion independently; equal IDs are neither needed nor enough.
+        compared_goal = origin.x; compared_closed = true;
     }
-    if (high.w != 1u || !conclusion_closed) return pev_invalid(10u, proof, low.w);
-    status = pev_validate_retained_evidence(offered.w);
-    if (status.state != PEV_VALID) return status;
-    uint4 supplied; uint4 origin;
-    if (!pev_read8(17u, offered.w, supplied, origin) || supplied.x != 1u)
-        return pev_invalid(10u, proof, offered.w);
-    // Exact retained provenance above proves an accepted prior proof. Compare
-    // its conclusion independently; equal IDs are neither needed nor enough.
-    status = pps_predicate_equals_goal(offered.y, offered.z, context.y, origin.x, true, equal);
-    if (status.state != PEV_VALID) return status;
-    return equal ? pev_ok() : pev_invalid(68u, proof, offered.w);
+    return pev_ok();
 }
 

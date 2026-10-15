@@ -183,14 +183,14 @@ public struct NativeLayoutRecipeBindings : IProofNormalizationBindings
 // Count, emit, and exact-check share the existing one-shot transform. All three
 // operate on immutable source/replacement graphs. The exclusive job publishes
 // new row counts only after the check; unrelated invocations cannot read it.
-public EvidenceStatus plm_copy_closed_root<Source : IProofNormalizationGraph,
-    Replacement : IProofNormalizationGraph, Bindings : IProofNormalizationBindings>(
+public EvidenceStatus plm_copy_closed_root<Graphs : IProofNormalizationPair,
+    Bindings : IProofNormalizationBindings>(
     uint2 source, uint environment, uint owner, out uint2 result)
 {
     result = uint2(0u, PEV_INVALID);
     ProofNormalizationReservation reservation = (ProofNormalizationReservation)0;
     ProofNormalizationCounts counted; uint2 unused; bool closed;
-    EvidenceStatus status = pev_normalize_proof_root<Source, Replacement, Bindings, NativeLayoutSink>(
+    EvidenceStatus status = pev_normalize_proof_root<Graphs, Bindings, NativeLayoutSink>(
         source, environment, owner, PEV_ADMITTED_DOMAIN_TYPE, false, reservation, unused, closed, counted);
     if (status.state != PEV_VALID) return status;
     if (!closed) return pev_invalid(173u, source.y, PEV_INVALID);
@@ -199,11 +199,11 @@ public EvidenceStatus plm_copy_closed_root<Source : IProofNormalizationGraph,
     status = plm_reserve(1u, counted.edges, reservation.first_edge); if (status.state != PEV_VALID) return status;
     reservation.node_count = counted.nodes; reservation.edge_count = counted.edges;
     ProofNormalizationCounts emitted;
-    status = pev_normalize_proof_root<Source, Replacement, Bindings, NativeLayoutSink>(
+    status = pev_normalize_proof_root<Graphs, Bindings, NativeLayoutSink>(
         source, environment, owner, PEV_ADMITTED_DOMAIN_TYPE, true, reservation, result, closed, emitted);
     if (status.state != PEV_VALID) return status;
     uint2 checked; ProofNormalizationCounts verified;
-    status = pev_normalize_proof_root<Source, Replacement, Bindings, NativeLayoutCheckSink>(
+    status = pev_normalize_proof_root<Graphs, Bindings, NativeLayoutCheckSink>(
         source, environment, owner, PEV_ADMITTED_DOMAIN_TYPE, true, reservation, checked, closed, verified);
     if (status.state != PEV_VALID) return status;
     if (!closed || any(checked != result)) return pev_invalid(174u, source.y, result.y);

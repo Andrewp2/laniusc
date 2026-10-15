@@ -76,8 +76,8 @@ public EvidenceStatus plm_expand_nominal(uint node, out uint first_root, out uin
         {
             uint2 original; uint2 normalized;
             if (!pev_read_root(source.y + ordinal, original)) return pev_invalid(178u, node, source.y + ordinal);
-            status = plm_copy_closed_root<InputProofNormalizationGraph,
-                NativeLayoutTypeGraph, NativeLayoutRecipeBindings>(
+            status = plm_copy_closed_root<SplitProofNormalizationGraphs<InputProofNormalizationGraph,
+                NativeLayoutTypeGraph>, NativeLayoutRecipeBindings>(
                     original, node, row.y, normalized);
             if (status.state != PEV_VALID) return status;
             if (!plm_write2(3u, root_next++, 0u, normalized)) return pev_invalid(171u, 3u, root_next - 1u);
@@ -239,8 +239,8 @@ public struct MaterializedNativeValueLayout : IConcreteValueLayout
 public EvidenceStatus plm_materialize(uint2 source)
 {
     uint2 root;
-    EvidenceStatus status = plm_copy_closed_root<SolverProofTermGraph,
-        SolverProofTermGraph, SolverProofBindings>(source, PEV_INVALID, PEV_INVALID, root);
+    EvidenceStatus status = plm_copy_closed_root<SameProofNormalizationGraph<SolverProofTermGraph>,
+        SolverProofBindings>(source, PEV_INVALID, PEV_INVALID, root);
     if (status.state != PEV_VALID) return status;
     // Only this prefix is the requested semantic type. Later recipe payload
     // expansions are private layout work and are not added to the returned type.

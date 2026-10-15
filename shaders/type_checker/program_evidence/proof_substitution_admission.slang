@@ -106,7 +106,7 @@ public EvidenceStatus pps_admit_substitution(uint substitution, uint context,
         {
             uint2 unused; bool candidate_closed; ProofNormalizationCounts measured;
             ProofNormalizationReservation empty = (ProofNormalizationReservation)0;
-            status = pev_normalize_proof_root<CandidateProofTermGraph, CandidateProofTermGraph,
+            status = pev_normalize_proof_root<SameProofNormalizationGraph<CandidateProofTermGraph>,
                 SolverProofBindings, SolverProofTermSink>(binding.zw, PEV_INVALID, owner,
                     PEV_ADMITTED_DOMAIN_CONSTANT, false, empty, unused, candidate_closed, measured);
             if (status.state != PEV_VALID) return status;

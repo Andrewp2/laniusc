@@ -220,7 +220,7 @@ EvidenceStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uin
         // equality/hash/matching capability, even after this check succeeds.
         uint2 unused; bool candidate_closed; ProofNormalizationCounts candidate;
         ProofNormalizationReservation empty = (ProofNormalizationReservation)0;
-        status = pev_normalize_proof_root<CandidateProofTermGraph, CandidateProofTermGraph,
+        status = pev_normalize_proof_root<SameProofNormalizationGraph<CandidateProofTermGraph>,
             SolverProofBindings, SolverProofTermSink>(normalized, PEV_INVALID, owner,
                 pps_normalization_domain(ordinal), false, empty, unused, candidate_closed, candidate);
         if (status.state != PEV_VALID) return status;

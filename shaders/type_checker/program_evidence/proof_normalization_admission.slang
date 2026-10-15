@@ -53,8 +53,8 @@ public EvidenceStatus pps_validate_original_normalization(
 {
     closed = false; uint2 source; uint2 normalized; ProofNormalizationCounts counts;
     if (!pev_read_root(input_root, source)) return pev_invalid(1u, input_root, PEV_INVALID);
-    EvidenceStatus status = pev_normalize_proof_root<InputProofNormalizationGraph,
-        InputProofNormalizationGraph, InputProofNormalizationBindings,
+    EvidenceStatus status = pev_normalize_proof_root<
+        SameProofNormalizationGraph<InputProofNormalizationGraph>, InputProofNormalizationBindings,
         SolverProofNormalizationCheckSink>(source, environment, owner, domain,
             true, reservation, normalized, closed, counts);
     if (status.state != PEV_VALID) return status;
@@ -69,8 +69,9 @@ public EvidenceStatus pps_validate_prerequisite_normalization(
 {
     closed = false; uint2 source; uint2 normalized; ProofNormalizationCounts counts;
     if (!pev_read_root(input_root, source)) return pev_invalid(1u, input_root, PEV_INVALID);
-    EvidenceStatus status = pev_normalize_proof_root<InputProofNormalizationGraph,
-        SolverProofTermGraph, SolverProofBindings, SolverProofNormalizationCheckSink>(
+    EvidenceStatus status = pev_normalize_proof_root<
+        SplitProofNormalizationGraphs<InputProofNormalizationGraph, SolverProofTermGraph>,
+        SolverProofBindings, SolverProofNormalizationCheckSink>(
             source, substitution, caller_owner, domain, true, reservation,
             normalized, closed, counts);
     if (status.state != PEV_VALID) return status;
