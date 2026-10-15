@@ -23,10 +23,8 @@
 5072 tests/owned_type_constraints_coverage
 4864 tests/owned_typed_constants_coverage
 4772 type_checker/program_evidence/entries/02_09_admit_implementations
-3840 type_checker/semantic/artifact/01c_generic_native_words
 3328 tests/canonical_type_identity_boundary
 3328 type_checker/predicates/01f2_validate_imported_methods
-2816 type_checker/modules/10e0l_normalize_type_aliases
 2076 tests/typed_constant_identity_graph
 2048 codegen/lir/semantic/aggregate_elements
 2048 tests/parameter_scoped_type_graph
@@ -34,9 +32,6 @@
 2048 type_checker/calls/03h_project_array_literal_elements
 2048 type_checker/canonical/90_validate
 2048 type_checker/methods/09_route_bound_members
-2048 type_checker/modules/10j_consume_value_enum_units
-2048 type_checker/modules/10m2_type_match_payloads
-2048 type_checker/modules/10n_type_match_exprs
 2048 type_checker/predicates/01f1_emit_method_param_validation_rows
 2048 type_checker/predicates/01f_emit_method_validation_rows
 2048 type_checker/predicates/02a_count_obligations
@@ -45,8 +40,6 @@
 2048 type_checker/program_evidence/entries/14_validate_contexts
 2048 type_checker/program_evidence/entries/52_resolve_work
 2048 type_checker/program_evidence/entries/64_publish_roots
-2048 type_checker/semantic/artifact/01b_array_index_refs
-2048 type_checker/semantic/artifact/01d_member_layout
 1792 type_checker/program_evidence/entries/02_08_admit_predicates
 1792 type_checker/program_evidence/entries/15_build_assumption_index
 1792 type_checker/program_evidence/entries/18_reduce_calls
@@ -70,6 +63,7 @@
 464 type_checker/program_evidence/entries/55_commit_substitutions
 356 type_checker/program_evidence/entries/45_commit_normalized_terms
 256 tests/proof_span_coverage_probe
+256 type_checker/modules/10e0l_normalize_type_aliases
 256 type_checker/program_evidence/entries/02_02_admit_owners
 256 type_checker/program_evidence/entries/32_14_admit_assumptions
 256 type_checker/program_evidence/entries/32_16_admit_obligations

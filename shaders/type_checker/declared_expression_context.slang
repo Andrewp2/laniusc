@@ -91,12 +91,18 @@ bool declared_expression_context<TGraph : IScopedTypeGraph>(uint node,
                     uint scope = struct_init_field_expected_context_instance[field.name_token];
                     uint tokens; uint stride;
                     struct_init_field_expected_context_instance.GetDimensions(tokens, stride);
-#ifdef CANONICAL_FIELD_EXPECTATION
+#if defined(CANONICAL_FIELD_EXPECTATION)
                     // The including kernel reads a scoped field's substituted
                     // ID (match/field_expected.slang) instead of the hash walk.
                     if (reference.x != 0u && reference.y != INVALID &&
                         canonical_field_reference<TGraph>(field.name_token, scope, type_capacity,
                             tokens, reference)) return true;
+#elif defined(DECLARED_CONTEXT_CANONICAL)
+                    // The includer reads the checked graph through canonical
+                    // IDs (checked_canonical.slang).
+                    if (reference.x != 0u && reference.y != INVALID &&
+                        canonical_scoped_reference<DECLARED_CONTEXT_CANONICAL>(reference.x, reference.y, scope, tokens,
+                            reference.x, reference.y)) return true;
 #else
                     if (reference.x != 0u && reference.y != INVALID &&
                         instance_scoped_reference<TGraph>(reference.x, reference.y, scope,

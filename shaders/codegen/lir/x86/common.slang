@@ -337,8 +337,9 @@ uint x86_binary_payload(OptIrNodeCore core)
 
 uint x86_lir_opcode(OptIrNodeCore core)
 {
-    // Floating arithmetic has no integer fallback. Remainder, bitwise and
-    // implicit conversions require their own checked semantics and lowering.
+    // Floating arithmetic has no integer fallback. Remainder and bitwise
+    // operations require their own checked semantics and lowering. An
+    // explicit conversion (`as`) lowers through plan_convert.
     uint semantic_op = opt_ir_op(core);
     // Literal payload format is owned by its semantic opcode. A type change
     // cannot reinterpret integer bits or a rounded f32 payload as f64.
@@ -349,7 +350,6 @@ uint x86_lir_opcode(OptIrNodeCore core)
     if (scalar_is_float(core.type_id) &&
         (semantic_op == SEMANTIC_LIR_OP_REM ||
          (semantic_op >= SEMANTIC_LIR_OP_BIT_AND && semantic_op <= SEMANTIC_LIR_OP_SHIFT_RIGHT) ||
-         semantic_op == SEMANTIC_LIR_OP_CONVERT ||
          semantic_op == SEMANTIC_LIR_OP_LOGICAL_NOT ||
          semantic_op == SEMANTIC_LIR_OP_LOGICAL_AND || semantic_op == SEMANTIC_LIR_OP_LOGICAL_OR))
         return 0u;
@@ -375,7 +375,8 @@ uint x86_lir_opcode(OptIrNodeCore core)
         opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_AND || opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_OR)
         return X86_LIR_OP_BINARY;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_COMPARE) return X86_LIR_OP_COMPARE;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE || opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_NOT)
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE || opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_NOT ||
+        opt_ir_op(core) == SEMANTIC_LIR_OP_CONVERT)
         return X86_LIR_OP_UNARY;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_HOST) return X86_LIR_OP_CALL_HOST;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL) return X86_LIR_OP_CALL_SYMBOL;
@@ -403,6 +404,14 @@ uint x86_lir_opcode(OptIrNodeCore core)
     return 0u;
 }
 
+// `as` converts a numeric or bool source to a numeric target.
+bool x86_convert_supported(uint source, uint target)
+{
+    uint numeric = SCALAR_INTEGER_SET | SCALAR_FLOAT_SET;
+    return scalar_in_set(source, numeric | (1u << SCALAR_BOOL)) &&
+        scalar_in_set(target, numeric);
+}
+
 bool x86_lir_supported(OptIrNodeCore core)
 {
     // Semantic branch targets are stable LIR control-row identities. They
@@ -418,6 +427,8 @@ bool x86_lir_supported(OptIrNodeCore core)
 // ordered count pass combines body bytes with independently emitted guards.
 bool x86_is_specialized_integer_instruction(X86LirCore core, X86LirOperands operands)
 {
+    // Conversions have one body for every scalar pair; see plan_convert.
+    if (core.op == X86_LIR_OP_UNARY && operands.a == X86_LIR_UNARY_CONVERT) return true;
     uint type = operands.metadata & 0xffu;
     if ((operands.metadata & (X86_LIR_METADATA_AGGREGATE |
         X86_LIR_METADATA_STRING_PAIR | X86_LIR_METADATA_ARRAY_PAIR |

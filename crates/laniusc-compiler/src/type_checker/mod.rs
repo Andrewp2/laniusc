@@ -134,6 +134,7 @@ pub enum GpuTypeCheckCode {
     IntegerLiteralRange,
     FloatLiteral,
     ComputedFloatConstant,
+    InvalidCast,
     MissingConstantBinding,
     GenericInstantiationBoundary,
     Unknown(u32),
@@ -167,6 +168,7 @@ impl GpuTypeCheckCode {
             24 => Self::IntegerLiteralRange,
             25 => Self::FloatLiteral,
             26 => Self::ComputedFloatConstant,
+            27 => Self::InvalidCast,
             other => Self::Unknown(other),
         }
     }
@@ -197,6 +199,7 @@ impl GpuTypeCheckCode {
             Self::IntegerLiteralRange => "integer literal is outside its checked type range".to_string(),
             Self::FloatLiteral => "floating literal cannot be represented by its checked type".to_string(),
             Self::ComputedFloatConstant => "computed floating constant is not supported".to_string(),
+            Self::InvalidCast => "invalid cast".to_string(),
             Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
             Self::GenericInstantiationBoundary => {
                 "generic type instantiation reached a compiler boundary".to_string()

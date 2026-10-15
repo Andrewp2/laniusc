@@ -112,6 +112,9 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
+    /// The rows of the IDs the late canonical stage added.
+    pub(in crate::type_checker) late_row_seed: ComputeOperation,
+    pub(in crate::type_checker) native_word_memo_clear: crate::gpu::operations::ClearBuffersOperation,
     pub(in crate::type_checker) generic_native_words: ComputeOperation,
     pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
@@ -262,6 +265,10 @@ impl SemanticProjectionOperations {
                     "type_checker/type/instances/05b_array_literal_return_refs",
                 ),
                 (
+                    compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
+                    canonical_passes::CANONICAL_REARM_KERNEL,
+                ),
+                (
                     "type_check.body_specialization.payloads",
                     "type_checker/modules/10m2_type_match_payloads",
                 ),
@@ -321,6 +328,13 @@ impl SemanticProjectionOperations {
                     let tags: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, tag_column)?;
                     u32::try_from(tags.byte_size / 4)?
+                } else if name == compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
+                    let words = |name| -> Result<u32> {
+                        Ok(u32::try_from(
+                            typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
+                        )?)
+                    };
+                    words("canonical_row")? + words("canonical_atom")? + words("canonical_projection")?
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
@@ -375,6 +389,32 @@ impl SemanticProjectionOperations {
                 "type_checker/semantic/artifact/00c_generic_call_results",
             )?,
             canonical_types: CanonicalTypeOperations::new(device, graph, resources, passes)?,
+            late_row_seed: {
+                let words = |name| -> Result<u32> {
+                    Ok(u32::try_from(
+                        typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
+                    )?)
+                };
+                ComputeOperation::direct(
+                    device,
+                    graph,
+                    resources,
+                    compiler_graph::SUBSTITUTION_LATE_SEED_PASS,
+                    &passes.kernel(substitution_passes::SUBSTITUTION_SEED_KERNEL),
+                    words("canonical_row")?
+                        + words("canonical_atom")?
+                        + words("canonical_projection")?,
+                )?
+            },
+            native_word_memo_clear: {
+                let memo: LaniusBuffer<u32> =
+                    typed_buffer_from_resources(resources, "type_native_word_memo")?;
+                crate::gpu::operations::ClearBuffersOperation::new(
+                    graph,
+                    compiler_graph::SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS,
+                    &[("type_native_word_memo", (&memo).into())],
+                )?
+            },
             generic_native_words: ComputeOperation::direct(
                 device,
                 graph,

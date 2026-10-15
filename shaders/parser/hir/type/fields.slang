@@ -155,7 +155,8 @@ bool is_path_container(uint prod)
     return prod == PROD_PATH || prod == PROD_PATH_MORE ||
            prod == PROD_TYPE_PATH || prod == PROD_TYPE_PATH_MORE ||
            prod == PROD_BOUND_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH_MORE ||
-           prod == PROD_ARRAY_LENGTH_PATH || prod == PROD_ARRAY_LENGTH_PATH_MORE;
+           prod == PROD_ARRAY_LENGTH_PATH || prod == PROD_ARRAY_LENGTH_PATH_MORE ||
+           prod == PROD_CAST_TYPE_PATH || prod == PROD_CAST_TYPE_PATH_MORE;
 }
 
 bool is_type_path_segment(uint prod)
@@ -163,14 +164,16 @@ bool is_type_path_segment(uint prod)
     return prod == PROD_TYPE_PATH_IDENT ||
            prod == PROD_PATH_IDENT ||
            prod == PROD_PATH_IDENT_ARGS ||
-           prod == PROD_BOUND_TYPE_PATH_IDENT || prod == PROD_ARRAY_LENGTH_PATH_IDENT;
+           prod == PROD_BOUND_TYPE_PATH_IDENT || prod == PROD_ARRAY_LENGTH_PATH_IDENT ||
+           prod == PROD_CAST_TYPE_PATH_IDENT;
 }
 
 bool is_type_path_tail(uint prod)
 {
     return prod == PROD_TYPE_PATH_MORE ||
            prod == PROD_PATH_MORE ||
-           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE;
+           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE ||
+           prod == PROD_CAST_TYPE_PATH_MORE;
 }
 
 void seed_type_path_leaf(uint node)
@@ -207,7 +210,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint prod = node_kind[i];
     if (prod == PROD_TYPE_IDENT || prod == PROD_BOUND_TYPE_IDENT ||
-        prod == PROD_TYPE_ARRAY_LEN_NAME)
+        prod == PROD_TYPE_ARRAY_LEN_NAME || prod == PROD_CAST_TYPE_NAME)
         publish_path_type(i);
     else if (prod == PROD_TYPE_ARRAY)
         publish_array_or_slice_type(i);

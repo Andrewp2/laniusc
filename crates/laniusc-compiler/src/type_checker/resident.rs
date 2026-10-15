@@ -193,8 +193,10 @@ fn record_canonical_types(
     let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
     let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
     for batch in 0..batches {
+        let batch_started = std::time::Instant::now();
         let counts =
             submit_and_read_u32s(device, queue, encoder, counts_readback, "type_check.canonical")?;
+        let wait_ms = batch_started.elapsed().as_secs_f64() * 1000.0;
         let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
         let [record_capacity, argument_capacity, frontier_rows] = canonical.capacity();
@@ -202,7 +204,7 @@ fn record_canonical_types(
             // Records from 32 on are allocated; the frontier lengths are the
             // last round's (the next round's input and its output so far).
             eprintln!(
-                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} args={}/{argument_capacity} frontier={}/{frontier_rows} overflow={overflow:#x} scale={canonical_scale}",
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} args={}/{argument_capacity} frontier={}/{frontier_rows} overflow={overflow:#x} scale={canonical_scale} wait_ms={wait_ms:.3}",
                 stage.label(),
                 counts[canonical_passes::CANONICAL_COUNT_ROUND],
                 counts[0].saturating_sub(32),
@@ -1769,6 +1771,9 @@ impl GpuTypeChecker {
                 let trace_inference =
                     crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CALL_INFERENCE", false);
                 for round in 0..round_limit {
+                    let round_started = std::time::Instant::now();
+                    let dispatches_before =
+                        crate::gpu::passes_core::recorded_compute_dispatch_count();
                     self.call_inference_state
                         .write(queue, 0, &[1, 0, 0, 0, 0, 0, 0, 0]);
                     record_returns(encoder)?;
@@ -1782,12 +1787,14 @@ impl GpuTypeChecker {
                         "type-check call inference",
                         recorded.finish(),
                     );
+                    let submitted = std::time::Instant::now();
                     let slice = self.call_inference_readback.slice(..);
                     crate::gpu::passes_core::map_readback_blocking(
                         device,
                         &slice,
                         "type_check.call_inference",
                     )?;
+                    let mapped_at = std::time::Instant::now();
                     let mapped = slice.get_mapped_range();
                     let changed = u32::from_le_bytes(
                         mapped[4..8]
@@ -1797,7 +1804,16 @@ impl GpuTypeChecker {
                     drop(mapped);
                     self.call_inference_readback.unmap();
                     if trace_inference {
-                        eprintln!("[typecheck.call_inference] round={round} changed={changed}");
+                        // record = host recording and submit (the GPU idles
+                        // unless earlier work is queued); wait = the round's
+                        // GPU time plus the map round trip.
+                        eprintln!(
+                            "[typecheck.call_inference] round={round} changed={changed} dispatches={} record_ms={:.3} wait_ms={:.3}",
+                            crate::gpu::passes_core::recorded_compute_dispatch_count()
+                                - dispatches_before,
+                            (submitted - round_started).as_secs_f64() * 1000.0,
+                            (mapped_at - submitted).as_secs_f64() * 1000.0,
+                        );
                     }
                     if changed == 0 {
                         if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
@@ -2074,6 +2090,8 @@ impl GpuTypeChecker {
                 &self.canonical_validation_readback,
                 canonical_scale,
             )?;
+            bind_groups.semantic_projection.late_row_seed.record(encoder)?;
+            bind_groups.semantic_projection.native_word_memo_clear.record(encoder);
             bind_groups
                 .semantic_projection
                 .generic_native_words

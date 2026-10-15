@@ -5,9 +5,10 @@ import hir_records;
 import hir_expr_semantics;
 import status;
 import type_checker.checked_index_reference;
-import type_checker.checked_scoped_types;
+import type_checker.checked_canonical;
+import type_checker.canonical.canonical_candidates;
+import type_checker.canonical.canonical_api;
 import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -33,7 +34,6 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_kind;
-StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> call_return_type;
@@ -51,6 +51,10 @@ uint active_arm_count() { return min(compact_match_arm_count[0u], gParams.n_hir_
 bool valid_hir(uint node) { return node < active_hir_count(); }
 [ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
+// The row whose closure the last inference_value_reference left to the
+// caller, or INVALID.
+static uint inference_deferred_closure = 0xffffffffu;
+#define INFERENCE_DEFERRED_CLOSURE 1
 #include "../inference_expression_reference.slang"
 uint enum_variant_type_for_node(uint node)
 {
@@ -72,9 +76,29 @@ uint enum_variant_type_for_node(uint node)
 }
 
 
-bool complete_arm_reference(uint node, out uint tag, out uint payload)
+// The checked result of an inferred arm, and its ID (CT_UNKNOWN unless a
+// row); the deferred closure and the ID are read at this kernel's one ID
+// site.
+bool inferred_arm_reference(uint node, out uint tag, out uint payload, out uint id)
 {
-    if (inference_value_reference(node, tag, payload, false)) return true;
+    inference_deferred_closure = INVALID;
+    bool known = inference_value_reference(node, tag, payload, false);
+    uint closure = CT_UNKNOWN; id = CT_UNKNOWN;
+    [loop]
+    for (uint step = 0u; step < 2u; step++)
+    {
+        uint row = step == 0u ? inference_deferred_closure : tag == 3u ? payload : INVALID;
+        uint row_id = known && row < checked_type_capacity() ? OnDemandIds.id(3u, row) : CT_UNKNOWN;
+        if (step == 0u) closure = row_id;
+        else id = row_id;
+    }
+    return known && (inference_deferred_closure == INVALID || ct_closed(closure));
+}
+
+bool complete_arm_reference(uint node, out uint tag, out uint payload, out uint id)
+{
+    if (inferred_arm_reference(node, tag, payload, id)) return true;
+    id = CT_UNKNOWN;
     if (!valid_hir(node)) return false;
     HirCore core = compact_hir_core[node];
     HirPayload value = compact_hir_payload[node];
@@ -137,24 +161,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(match_token) || match_value.c == 0u ||
         match_value.c > active_arm_count() - first)
     { record_min_token_error(status, valid_token(match_token) ? match_token : 0u, 6u, 34u); return; }
-    uint tag = 0u; uint payload = INVALID;
+    uint tag = 0u; uint payload = INVALID; uint id = CT_UNKNOWN;
     for (uint ordinal = 0u; ordinal < match_value.c; ordinal++)
     {
         HirMatchArm arm = compact_match_arms[first + ordinal];
-        uint next_tag; uint next_payload;
+        uint next_tag; uint next_payload; uint next_id;
         if (arm.owner != initial.owner || !valid_hir(arm.result))
         { record_min_token_error(status, match_token, 6u, 34u); return; }
         uint result_token = compact_hir_core[arm.result].token_start;
-        if (!complete_arm_reference(arm.result, next_tag, next_payload))
+        if (!complete_arm_reference(arm.result, next_tag, next_payload, next_id))
         {
             if (call_inference_state[0u] == 0u)
                 record_min_token_error(status, valid_token(result_token) ? result_token : match_token, 6u, 0x474e0003u);
             return;
         }
-        if (ordinal == 0u) { tag = next_tag; payload = next_payload; }
-        else if (!scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-            tag, payload, INVALID, next_tag, next_payload, INVALID,
-            checked_type_capacity(), gParams.n_tokens))
+        if (ordinal == 0u) { tag = next_tag; payload = next_payload; id = next_id; }
+        else if (!checked_refs_equal_ids(tag, payload, id, next_tag, next_payload, next_id, gParams.n_tokens))
         {
             if (call_inference_state[0u] == 0u) record_min_token_error(status, result_token, 3u, 0u);
             return;

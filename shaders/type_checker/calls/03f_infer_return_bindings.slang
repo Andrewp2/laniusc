@@ -277,18 +277,16 @@ BindingPlan plan_let_binding(uint node, uint kind, HirPayload statement, uint co
     if (initializer >= count) return plan;
     uint initializer_kind = compact_hir_core[initializer].kind;
     // Only these forms publish into the accepted expression relation used
-    // below. Other initializer producers retain ownership of their facts.
-    bool inference_owned = initializer_kind == 14u || initializer_kind == 16u ||
-        initializer_kind == 17u || initializer_kind == 19u || initializer_kind == 20u ||
-        initializer_kind == 21u || initializer_kind == 22u || initializer_kind == 23u ||
-        initializer_kind == 24u || initializer_kind == 28u || initializer_kind == 33u ||
-        initializer_kind == 34u;
-    if (!inference_owned) return plan;
-    if (initializer_kind == 14u || initializer_kind == 16u || initializer_kind == 17u)
+    // below. Other initializer producers retain ownership of their facts:
+    // kinds 14, 16, 17, 19-24, 28, 33 and 34, as bits of (kind - 14).
+    uint owned_kind = initializer_kind - 14u;
+    if (owned_kind > 20u || ((0x1847edu >> owned_kind) & 1u) == 0u) return plan;
+    if (owned_kind == 0u || owned_kind - 2u <= 1u)
     {
         uint operation = compact_hir_payload[initializer].a;
         // Range and other non-scalar forms have separate type producers.
-        if (operation < 4u || operation > 25u) return plan;
+        // Scalar operators are forms 4-25; a cast (36) has its target type.
+        if (operation - 4u > 21u && operation != 36u) return plan;
     }
     uint tag = call_inference_result_tag[initializer];
     uint payload = call_inference_result_payload[initializer];

@@ -546,7 +546,8 @@ pub(super) fn valid_package_module_ident_segment(segment: &str) -> bool {
 pub(super) fn is_package_module_reserved_segment(segment: &str) -> bool {
     matches!(
         segment,
-        "break"
+        "as"
+            | "break"
             | "const"
             | "continue"
             | "else"

@@ -68,6 +68,8 @@ static const uint TK_RANGE_END_IDENT = 183u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
 static const uint TK_PATH_GENERIC_IDENT = 187u;
+static const uint TK_AS = 195u;
+static const uint TK_CAST_TYPE_IDENT = 196u;
 static const uint IMPL_HEADER_CONTEXT = 1u;
 
 uint raw_kind_at(uint parser_i, uint count)
@@ -110,6 +112,9 @@ uint type_context_identifier_kind(uint prev, bool impl_context)
 {
     if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS)
         return TK_BOUND_TYPE_IDENT;
+    // Cast targets have their own kind; see the cast grammar.
+    if (prev == TK_AS)
+        return TK_CAST_TYPE_IDENT;
     if (prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA ||
         prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
         prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
