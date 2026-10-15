@@ -4,6 +4,7 @@
 import type_checker.constant_storage_plan;
 import constant_value;
 import gpu_index;
+#include "body_graph_layout.slang"
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; uint parser_feature_flags; };
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> type_const_param_scalar_by_token_out;
@@ -27,7 +28,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 plan = uint4(gConstantStoragePlan.imported_base, gConstantStoragePlan.dynamic_base,
         gConstantStoragePlan.dynamic_limit, gConstantStoragePlan.total_rows);
     bool valid = plan.x <= plan.y && plan.y <= plan.z &&
-        plan.z <= plan.w && plan.w - plan.z == 96u &&
+        plan.z <= plan.w && plan.w - plan.z == BODY_ATOM_RESERVE_ROWS &&
         plan.w <= atoms && plan.w <= projections;
     if (thread == 0u)
         checked_constant_storage_state[0u] = valid ? uint4(plan.y, plan.z, 0u, 0u) :

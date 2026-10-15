@@ -5,6 +5,7 @@ import type_checker.constant_storage_plan;
 
 import dependency_interface;
 import gpu_index;
+#include "../type/instances/body_graph_layout.slang"
 
 struct Params
 {
@@ -112,11 +113,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         total > gConstantStoragePlan.dynamic_base - gConstantStoragePlan.imported_base ||
         gConstantStoragePlan.dynamic_base > gConstantStoragePlan.dynamic_limit ||
         gConstantStoragePlan.dynamic_limit > gConstantStoragePlan.total_rows ||
-        gConstantStoragePlan.total_rows - gConstantStoragePlan.dynamic_limit != 96u) return;
+        gConstantStoragePlan.total_rows - gConstantStoragePlan.dynamic_limit != BODY_ATOM_RESERVE_ROWS) return;
     uint atom = gConstantStoragePlan.imported_base + page_base + type_i;
     uint atom_capacity; uint atom_stride;
     checked_constant_atoms.GetDimensions(atom_capacity, atom_stride);
-    // The final 96 rows belong exclusively to selected-body replay.
+    // The final BODY_ATOM_RESERVE_ROWS rows belong exclusively to selected-body replay.
     if (gConstantStoragePlan.total_rows > atom_capacity || atom >= gConstantStoragePlan.dynamic_base) return;
     checked_constant_atoms[atom] = uint4(value, 0u);
     dependency_constant_ref_by_type_out[type_i] = uint2(1u, atom);

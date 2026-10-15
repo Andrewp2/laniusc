@@ -18,11 +18,26 @@ stores again, so a receiver in a loop sees the current value.
   `ADDRESS` of it. The call argument reads the last row.
 
 The predicate is in `codegen/lir/semantic/receiver_temporary.slang`. Names,
-fields, indexes and paths still borrow their own storage. Some receivers are
-still rejected as before:
+fields, indexes and paths still borrow their own storage.
 
-- a parenthesized receiver;
-- a field or index of a temporary (`make().inner.get()`);
+Parentheses own no rows. Lowering adjusts, borrows or stores the expression
+inside them, so `(w).get()`, `(w.inner).get()` and `(make()).get()` work like
+the same calls without parentheses (`receiver_source.slang`).
+
+A field of a temporary, such as `make().inner.get()` or
+`o.shifted().mid.inner.get()`, stores the struct, enum or array under the
+fields. That value is the holder. Its `semantic_receiver_call_by_hir` entry is
+the call plus one, with `RECEIVER_TEMPORARY_HOLDER` (the high bit) set. The
+holder gets two rows: `PLACE_STORE` into the home, then a `PLACE_LOAD` view of
+it, which becomes its value row. The fields then take their addresses from the
+view, as they would from a `let` local. A holder that is a reference is not
+stored, since the projection dereferences it.
+
+These receivers are still rejected:
+
+- an index of a temporary (`make_array()[0].get()`);
+- a parenthesized base of a field (`(make()).inner.get()`), since the field
+  reads its base row through the parentheses;
 - a receiver that the method dereferences first.
 
 Wasm has no place operations, so it still rejects every borrowed receiver. The
@@ -71,10 +86,17 @@ and records the checked source type. x86_64 emits a dedicated conversion
 sequence. The wasm backend does not support `CONVERT` yet. It stops with the
 generic `LNC0057` lowering error, not a dedicated diagnostic.
 
-A char literal has no semantic scalar type of its own, so `'Z' as u8` type
-checks but x86_64 rejects it with `LNC0017` (unsupported LIR opcode 3). Cast a
-char local or parameter instead. The fix is a `HIR_EXPR_CHAR` case in
-`expression_types/00_init.slang`'s `direct_result_type`.
+A char literal is always a `char`: `expression_types/00_init.slang` types it
+directly, so `'Z' as u8` lowers with a known source type. Integer and float
+literals still take their type from context.
+
+A const generic parameter used as a value, such as `N as i32` in
+`fn length<const N: usize>`, reads its scalar type from the checked constant.
+The type checker writes it to `semantic_expr_scalar_type_by_hir` in the packed
+form every other row uses: the scalar id in the high bits (`SCALAR_TYPE_SHIFT`)
+and all link bits set. Lowering decodes the high bits. Before 2026-10-15 the id
+was written unpacked, so it decoded as unknown and x86_64 rejected the cast
+with `LNC0017`.
 
 ## Call inference termination (2026-10-15)
 

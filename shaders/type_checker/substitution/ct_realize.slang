@@ -36,9 +36,10 @@ static const uint INVALID = 0xffffffffu;
 // (application_argument_reference.slang).
 static const uint INTERLEAVED_DOMAINS = 0x80000000u;
 // Private rows own 32 argument words each, after the source rows' four and
-// the 64 body rows' 32 (allocate_application.slang).
+// the body graph rows' 32 (allocate_application.slang).
+#include "../type/instances/body_graph_layout.slang"
 static const uint PRIVATE_ROW_ARGS = 32u;
-static const uint BODY_ROWS = 64u;
+static const uint BODY_ROWS = BODY_GRAPH_NODES;
 static const uint DEPTH_LIMIT = 64u;
 static const uint WORK_LIMIT = 1024u;
 

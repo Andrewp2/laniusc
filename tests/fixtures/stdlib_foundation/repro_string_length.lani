@@ -1,3 +1,4 @@
+// expect: 0
 module app::main;
 fn main() -> i32 {
     let text: str = "Az";

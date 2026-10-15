@@ -15,9 +15,17 @@ public static const uint EXPLICIT_CONSTANT_SLOT = 0x80000000u;
 public bool bind_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
     TypeRefs type_refs, uint argument_row, uint expected_scalar)
 {
+    return bind_scoped_explicit_constant_operand(type_refs, ModuleScopeOperandNames(),
+        argument_row, expected_scalar);
+}
+
+public bool bind_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
+    BodyNames : IExplicitOperandBodyNames>(
+    TypeRefs type_refs, BodyNames body_names, uint argument_row, uint expected_scalar)
+{
     uint kind; uint payload;
-    if (!checked_explicit_constant_operand(type_refs, explicit_mapping_arguments[argument_row].value,
-        expected_scalar, kind, payload)) return false;
+    if (!checked_scoped_explicit_constant_operand(type_refs, body_names,
+        explicit_mapping_arguments[argument_row].value, expected_scalar, kind, payload)) return false;
     uint operand = explicit_mapping_arguments[argument_row].value;
     call_explicit_arg_constant_kind[operand] = kind;
     call_explicit_arg_constant_payload[operand] = payload;

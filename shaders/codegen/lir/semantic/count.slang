@@ -67,7 +67,6 @@ uint active_match_payload_count()
 
 #include "match_reference.slang"
 #include "receiver_layout.slang"
-#include "receiver_temporary.slang"
 
 uint match_payload_for_pattern(uint node)
 {
@@ -126,7 +125,9 @@ bool match_pattern_syntax(uint node, uint hir_count)
 // This remains valid after a generic/imported callee's frontend page expires.
 uint2 argument_value_layout(uint node, uint hir_count)
 {
-    uint receiver_call = semantic_receiver_call_by_hir[node];
+    // A projected holder (receiver_words.slang) is stored before its fields
+    // are borrowed, like a receiver.
+    uint receiver_call = semantic_receiver_call_by_hir[node] & RECEIVER_CALL_MASK;
     if (receiver_call != 0u && (semantic_calls_by_hir[receiver_call - 1u].receiver_deref_count != 0u ||
         semantic_calls_by_hir[receiver_call - 1u].receiver_adjustment_kind == 2u))
         return uint2(0u, 0u); // capture after the checked receiver adjustment
@@ -292,15 +293,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint extra = projection;
     uint words = 0u;
     uint encoded = semantic_receiver_call_by_hir[node];
-    if (encoded != 0u)
+    if ((encoded & RECEIVER_TEMPORARY_PROJECTED) != 0u)
     {
-        CheckedCallArtifact call = semantic_calls_by_hir[encoded - 1u];
+        // The aggregate under a borrowed field projection is stored in the
+        // call's local, then viewed in place: the projection reads its base
+        // from the view row.
+        extra = extra == 0u ? 2u : LIR_INVALID;
+        if (extra == 2u) semantic_lir_value_row_by_hir[node] = original + 1u;
+    }
+    else if (encoded != 0u)
+    {
+        CheckedCallArtifact call = semantic_calls_by_hir[(encoded & RECEIVER_CALL_MASK) - 1u];
         if (extra != 0u) extra = LIR_INVALID; // one source expression has one value consumer
         else extra = receiver_adjustment_rows(call);
         // A receiver that is not a place is stored in the call's local,
         // then borrowed: one store and one address row.
-        if (extra == 0u && receiver_temporary_token(encoded - 1u, call, count) != LIR_INVALID)
-            extra = 2u;
+        if (extra == 0u && (encoded & RECEIVER_TEMPORARY_HOLDER) != 0u) extra = 2u;
         words = receiver_native_words(call.receiver_matched_ref_tag, call.receiver_matched_ref_payload, count);
     }
     if (extra == 0u && encoded == 0u) return;

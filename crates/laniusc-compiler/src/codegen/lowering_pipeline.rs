@@ -583,7 +583,7 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
-        selected_replay_hirs: &[u32],
+        selection: super::lowering::ReplaySelection<'_>,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
         let split = lowering_split(device, queue);
@@ -604,7 +604,7 @@ impl GpuLoweringPipeline {
         // compiler job's commands and are not cached by workspace identity.
         // A queue write reaches only the submissions after it, so both
         // precede the first split below.
-        self.semantic.set_replay_functions(queue, selected_replay_hirs)?;
+        self.semantic.set_replay_functions(queue, selection)?;
         self.target
             .set_object_identity(queue, library_id, unit_id)?;
         self.workspace.record_phase_reset(encoder);

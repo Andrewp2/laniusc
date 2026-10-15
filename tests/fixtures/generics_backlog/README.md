@@ -9,6 +9,14 @@ Probes:
 - b02: a bound proved through two levels of a generic impl
   (`total(Twice { inner: Twice { inner: Rect {..} } })`, `impl<T> Area for Twice<T>
   where T: Area`). The call fails LNC0008 (no matching impl); one level is p30.
+- b03: a generic trait's method called through a bound (`fn fetch<S, T>(s: S,
+  fallback: T) -> T where S: Get<T> { return s.get(); }` on `Slot<i32>` and
+  `Slot<Rec>`). The original compile rejects `s.get()` (LNC0027, no method
+  signature matches the receiver), with and without instance copies.
+- b04: a const-generic impl's method called through a bound (`measure<S>`
+  with `S: Size` on `Buf<i32, 3>`). The replayed bound call fails LNC0027
+  ("the receiver's implementation must be a non-generic local impl"), with and
+  without instance copies. A direct call on the concrete receiver is p42.
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls

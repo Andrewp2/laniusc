@@ -1,0 +1,11 @@
+trait Get<T> { fn get(self) -> T; }
+struct Rec { a: i32, b: i32 }
+struct Slot<T> { value: T }
+impl<T> Get<T> for Slot<T> { fn get(self) -> T { return self.value; } }
+fn fetch<S, T>(s: S, fallback: T) -> T where S: Get<T> { return s.get(); }
+fn main() -> i32 {
+    let a: Slot<i32> = Slot { value: 30 };
+    let b: Slot<Rec> = Slot { value: Rec { a: 9, b: 3 } };
+    let r: Rec = fetch(b, Rec { a: 0, b: 0 });
+    return fetch(a, 0) + r.a + r.b;
+}

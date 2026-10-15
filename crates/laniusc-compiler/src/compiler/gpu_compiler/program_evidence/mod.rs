@@ -16,6 +16,7 @@ pub(super) use dispatch::EvidenceWorkspacePool;
 pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
 pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};
 pub(super) use native_session::{
+    CheckedReplayCalls,
     NativeProgramSession,
     ReplayScope,
     ValidatedOriginalUnit,

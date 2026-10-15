@@ -6,7 +6,9 @@
 //! are witnesses, not prerequisites for semantic seeding; GPU layout admission
 //! must complete before a replayed native body can be published.
 
-use anyhow::{Result, ensure};
+use std::collections::{BTreeMap, HashMap};
+
+use anyhow::{Result, anyhow, ensure};
 
 use super::{
     CheckedGenericApplicationArgument,
@@ -24,15 +26,34 @@ pub(super) const BODY_CONSTANT_START: usize = BODY_TYPE_EDGE_START * 4 + MAX_BOD
 pub(super) const BODY_SPECIALIZATION_WORDS: usize =
     BODY_CONSTANT_START + 4 + MAX_BODY_TYPE_ARGUMENTS * 4;
 /// Bodies one replay can specialize together (see CheckedBodySpecializationBatch).
-pub(crate) const MAX_BODY_ENTRIES: usize = 64;
+/// Must equal BODY_MAX_ENTRIES in shaders/type_checker/type/instances/body_graph_layout.slang.
+pub(crate) const MAX_BODY_ENTRIES: usize = 4096;
+/// Bodies of one original-scope replay (the GPU searches their scopes linearly).
+pub(crate) const MAX_ORIGINAL_REPLAY_ENTRIES: usize = 64;
+/// The shared seed graph of a batch (body_graph_layout.slang: BODY_GRAPH_NODES,
+/// BODY_GRAPH_EDGES). Each node owns a reserved type-instance row and atom row.
+pub(super) const MAX_BODY_GRAPH_NODES: usize = 1024;
+pub(super) const MAX_BODY_GRAPH_EDGES: usize = 16384;
+/// Rows after the single-entry packet that hold nodes 64.. and edge words
+/// 2048.. of a graph larger than the single-entry capacity (body_graph_rows.slang).
+pub(super) const BODY_GRAPH_EXT_ROWS: usize =
+    (MAX_BODY_GRAPH_NODES - MAX_BODY_TYPE_NODES) * 2 + (MAX_BODY_GRAPH_EDGES - MAX_BODY_TYPE_EDGES) / 4;
+/// The checked constant atom table's reserved tail: one row per graph node,
+/// then one per direct constant slot of entry 0.
+pub(super) const BODY_ATOM_RESERVE_ROWS: usize = MAX_BODY_GRAPH_NODES + MAX_BODY_TYPE_ARGUMENTS;
 pub(super) const BODY_ENTRY_TABLE_START: usize = BODY_SPECIALIZATION_WORDS / 4;
 pub(super) const BODY_ENTRY_ROWS: usize = 1 + 2 * MAX_BODY_TYPE_ARGUMENTS;
 pub(super) const BODY_BATCH_WORDS: usize =
-    BODY_SPECIALIZATION_WORDS + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS * 4;
+    BODY_SPECIALIZATION_WORDS + BODY_GRAPH_EXT_ROWS * 4 + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS * 4;
+
+/// Selects an instance copy's declaration by the source byte of its `fn`
+/// keyword (`COPY_TARGET | byte`); 00d2 resolves it to the copy's HIR row.
+pub(crate) const BODY_COPY_TARGET: u32 = 0xc000_0000;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecialization {
-    /// Public declaration index or the existing high-bit associated-method symbol.
+    /// Public declaration index, the existing high-bit associated-method
+    /// symbol, or an instance copy (BODY_COPY_TARGET).
     pub target_symbol: u32,
     /// Unit whose immutable declarations are available during this replay.
     pub source_unit: [u32; 2],
@@ -205,11 +226,29 @@ fn write_legacy_entry(words: &mut [u32], entry: &CheckedBodySpecialization, root
     }
 }
 
+/// The first word of graph node `index` (body_graph_rows.slang).
+fn graph_node_word(index: usize) -> usize {
+    if index < MAX_BODY_TYPE_NODES {
+        (BODY_TYPE_GRAPH_START + index * 2) * 4
+    } else {
+        (BODY_ENTRY_TABLE_START + (index - MAX_BODY_TYPE_NODES) * 2) * 4
+    }
+}
+
+/// The word of graph edge `edge` (body_graph_rows.slang).
+fn graph_edge_word(edge: usize) -> usize {
+    if edge < MAX_BODY_TYPE_EDGES {
+        BODY_TYPE_EDGE_START * 4 + edge
+    } else {
+        (BODY_ENTRY_TABLE_START + (MAX_BODY_GRAPH_NODES - MAX_BODY_TYPE_NODES) * 2) * 4 + edge - MAX_BODY_TYPE_EDGES
+    }
+}
+
 fn write_graph(words: &mut [u32], source_unit: [u32; 2], nodes: &[[u32; 8]], edges: &[u32]) {
     words[2] = nodes.len() as u32;
     words[3] = edges.len() as u32;
     for (index, node) in nodes.iter().enumerate() {
-        let start = (BODY_TYPE_GRAPH_START + index * 2) * 4;
+        let start = graph_node_word(index);
         words[start..start + 8].copy_from_slice(node);
         // A declaration identity is stable within this exact source unit.
         // An instance row is not: replay may have rebound its arguments.
@@ -220,8 +259,35 @@ fn write_graph(words: &mut [u32], source_unit: [u32; 2], nodes: &[[u32; 8]], edg
             words[start + 7] = u32::MAX;
         }
     }
-    let edge_start = BODY_TYPE_EDGE_START * 4;
-    words[edge_start..edge_start + edges.len()].copy_from_slice(edges);
+    for (edge, &child) in edges.iter().enumerate() {
+        words[graph_edge_word(edge)] = child;
+    }
+}
+
+/// The identity of a shared graph node: every word but the edge start of an
+/// application (whose children stand in for it) and the optional width
+/// witness, as `intern_checked_node` compares them.
+fn shared_node_key(node: &[u32; 8], children: &[u32]) -> Vec<u32> {
+    let mut key = Vec::with_capacity(8 + children.len());
+    key.push(node[0]);
+    if node[0] != 9 {
+        key.push(node[1]);
+    }
+    key.push(node[2]);
+    key.extend_from_slice(&node[4..]);
+    if node[0] == 9 {
+        key.extend_from_slice(children);
+    }
+    key
+}
+
+fn node_key(node: &[u32; 8], edges: &[u32]) -> Vec<u32> {
+    let children = if node[0] == 9 {
+        &edges[node[1] as usize..(node[1] + node[2]) as usize]
+    } else {
+        &[][..]
+    };
+    shared_node_key(node, children)
 }
 
 /// Up to 64 bodies of one source unit replayed by one frontend run. Every
@@ -236,11 +302,22 @@ fn write_graph(words: &mut [u32], source_unit: [u32; 2], nodes: &[[u32; 8]], edg
 /// 0, constant count), one row per type slot (slot, 10, root, 0) and one row
 /// per constant slot (slot, 10, constant node, 0). An extra entry's constant
 /// value is a kind-10 node of the shared graph.
+///
+/// Instance copies: an entry whose target is `BODY_COPY_TARGET | byte` stores
+/// `byte + 1` as its copy word (705.z for entry 0, header .z otherwise), and
+/// 705.w holds the first copy row (`set_instance_copies`).
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecializationBatch {
     entries: Vec<CheckedBodySpecialization>,
+    /// The first HIR row of the instance copies, 0 without copies.
+    copy_first_row: u32,
+    /// Per instance-copy entry: the template's function HIR and, for a
+    /// method, the template's impl HIR.
+    copy_owners: Vec<(u32, Option<u32>)>,
     nodes: Vec<[u32; 8]>,
     edges: Vec<u32>,
+    /// Shared node identity (see `node_key`) -> ordinal.
+    node_index: HashMap<Vec<u32>, u32>,
     /// Per entry: the shared root of each type slot.
     roots: Vec<Vec<u32>>,
     /// Per entry: the shared kind-10 node of each constant slot (empty for
@@ -254,8 +331,11 @@ impl CheckedBodySpecializationBatch {
     pub(crate) fn single(entry: CheckedBodySpecialization) -> Result<Self> {
         let mut batch = Self {
             entries: Vec::new(),
+            copy_first_row: 0,
+            copy_owners: Vec::new(),
             nodes: Vec::new(),
             edges: Vec::new(),
+            node_index: HashMap::new(),
             roots: Vec::new(),
             constant_nodes: Vec::new(),
             shared_by_local: Vec::new(),
@@ -266,6 +346,72 @@ impl CheckedBodySpecializationBatch {
 
     pub(crate) fn entries(&self) -> &[CheckedBodySpecialization] {
         &self.entries
+    }
+
+    /// An instance-copy batch: every entry selects a copy, by increasing
+    /// copy byte, and every copy row is at or past `row`. `owners` holds,
+    /// per entry, the template function HIR and the template impl HIR of a
+    /// method copy.
+    pub(crate) fn set_instance_copies(&mut self, row: u32, owners: Vec<(u32, Option<u32>)>) -> Result<()> {
+        let bytes = self.entries.iter().map(|entry| {
+            ensure!(entry.target_symbol & BODY_COPY_TARGET == BODY_COPY_TARGET,
+                "an instance-copy batch entry selects an original declaration");
+            Ok(entry.target_symbol & !BODY_COPY_TARGET)
+        }).collect::<Result<Vec<_>>>()?;
+        ensure!(bytes.windows(2).all(|pair| pair[0] < pair[1]),
+            "instance copies are not in increasing source order");
+        ensure!(row != 0, "an instance copy cannot be the first HIR row");
+        ensure!(owners.len() == self.entries.len()
+            && owners.iter().all(|&(function, implementation)| function < row
+                && implementation.is_none_or(|implementation| implementation < row)),
+            "instance copies need one template owner each");
+        self.copy_first_row = row;
+        self.copy_owners = owners;
+        Ok(())
+    }
+
+    /// The template owner of each owner row of the instance copies, for a
+    /// replay that checks this batch's copies.
+    ///
+    /// `callables` are the replay unit's function rows (free functions and
+    /// methods, sorted and unique), `method_impls` its (method, impl) rows. A copy is exactly
+    /// one function (and one impl for a method), appended after the
+    /// template in entry order, so the k-th callable row at or past the
+    /// first copy row is entry k's copy. Template rows keep their own
+    /// identity.
+    pub(crate) fn instance_owner_aliases(
+        &self,
+        callables: &[u32],
+        method_impls: &[(u32, u32)],
+    ) -> Result<BTreeMap<u32, u32>> {
+        let mut aliases = BTreeMap::new();
+        if self.copy_first_row == 0 {
+            return Ok(aliases);
+        }
+        ensure!(callables.windows(2).all(|pair| pair[0] < pair[1]), "replay callable rows are not sorted");
+        let copies = &callables[callables.partition_point(|&row| row < self.copy_first_row)..];
+        ensure!(copies.len() == self.copy_owners.len(),
+            "replay checked {} instance-copy callables for {} copies", copies.len(), self.copy_owners.len());
+        let impls = method_impls.iter().copied().collect::<BTreeMap<_, _>>();
+        for (&copy, &(function, implementation)) in copies.iter().zip(&self.copy_owners) {
+            aliases.insert(copy, function);
+            match (impls.get(&copy), implementation) {
+                (None, None) => {}
+                (Some(&copy_impl), Some(implementation)) => {
+                    ensure!(copy_impl >= self.copy_first_row && copy_impl < copy,
+                        "instance-copy method {copy} is not inside its own copied impl");
+                    ensure!(aliases.insert(copy_impl, implementation).is_none(),
+                        "instance-copy impl {copy_impl} owns more than one copy");
+                }
+                _ => return Err(anyhow!("instance copy {copy} changed between a function and a method")),
+            }
+        }
+        Ok(aliases)
+    }
+
+    /// The first HIR row of the instance copies, for an instance-copy batch.
+    pub(crate) fn copy_first_row(&self) -> Option<u32> {
+        (self.copy_first_row != 0).then_some(self.copy_first_row)
     }
 
     /// Whether entries `a` and `b` bind one parameter slot to the same
@@ -297,57 +443,111 @@ impl CheckedBodySpecializationBatch {
         if self.entries.len() >= MAX_BODY_ENTRIES {
             return Ok(false);
         }
-        let mut nodes = self.nodes.clone();
-        let mut edges = self.edges.clone();
+        // Intern in place and undo on failure: nodes and edges only grow, and
+        // a refined witness is logged with its previous value.
+        let mark = (self.nodes.len(), self.edges.len());
+        let mut witnesses = Vec::new();
         let mut shared = Vec::with_capacity(local_nodes.len());
-        let rebased = local_nodes.iter().try_for_each(|node| {
-            let mut copy = *node;
-            let mut children = Vec::new();
-            match node[0] {
-                2 | 3 | 4 => copy[1] = shared[node[1] as usize],
-                9 => children.extend(local_edges[node[1] as usize..(node[1] + node[2]) as usize]
-                    .iter().map(|&child| shared[child as usize])),
-                _ => {}
-            }
-            shared.push(intern_checked_node(copy, &children, &mut nodes, &mut edges)?);
-            Ok::<(), anyhow::Error>(())
-        });
         let mut constants = Vec::new();
-        let rebased = rebased.and_then(|()| {
-            if self.entries.is_empty() { return Ok(()); }
-            for argument in &entry.constants {
-                let [scalar, lo, hi] = argument.value.literal()
-                    .expect("validated literal constant").words();
-                constants.push(intern_checked_node(
-                    [10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut nodes, &mut edges)?);
+        let interned = (|| {
+            for node in &local_nodes {
+                let mut copy = *node;
+                let mut children = Vec::new();
+                match node[0] {
+                    2 | 3 | 4 => copy[1] = shared[node[1] as usize],
+                    9 => children.extend(local_edges[node[1] as usize..(node[1] + node[2]) as usize]
+                        .iter().map(|&child| shared[child as usize])),
+                    _ => {}
+                }
+                shared.push(self.intern_shared(copy, &children, &mut witnesses)?);
             }
-            Ok(())
-        });
-        if rebased.is_err() {
+            if !self.entries.is_empty() {
+                for argument in &entry.constants {
+                    let [scalar, lo, hi] = argument.value.literal()
+                        .expect("validated literal constant").words();
+                    constants.push(self.intern_shared([10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut witnesses)?);
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        })();
+        if interned.is_err() {
+            for node in &self.nodes[mark.0..] {
+                self.node_index.remove(&node_key(node, &self.edges));
+            }
+            self.nodes.truncate(mark.0);
+            self.edges.truncate(mark.1);
+            // Refinements of nodes this push added left with them.
+            for (index, witness) in witnesses.into_iter().rev().filter(|&(index, _)| index < mark.0) {
+                self.nodes[index][3] = witness;
+            }
             return Ok(false);
         }
         self.roots.push(local_roots.iter().map(|&root| shared[root as usize]).collect());
-        self.nodes = nodes;
-        self.edges = edges;
         self.constant_nodes.push(constants);
         self.shared_by_local.push(shared);
         self.entries.push(entry);
         Ok(true)
     }
 
-    /// The uploaded words: exactly the single-entry packet for one entry.
+    /// Intern one node of the shared graph (whose children are already
+    /// shared ordinals). An equal node keeps its ordinal and refines its
+    /// optional width witness; `witnesses` logs the value it replaced.
+    fn intern_shared(&mut self, mut node: [u32; 8], children: &[u32],
+        witnesses: &mut Vec<(usize, u32)>) -> Result<u32> {
+        let key = shared_node_key(&node, children);
+        if let Some(&index) = self.node_index.get(&key) {
+            let previous = self.nodes[index as usize][3];
+            CheckedBodySpecialization::merge_layout_witnesses(&mut self.nodes[index as usize][3..4], &node[3..4])?;
+            if self.nodes[index as usize][3] != previous {
+                witnesses.push((index as usize, previous));
+            }
+            return Ok(index);
+        }
+        ensure!(self.nodes.len() < MAX_BODY_GRAPH_NODES,
+            "body specialization batch exceeds {MAX_BODY_GRAPH_NODES} checked type nodes");
+        if node[0] == 9 {
+            ensure!(children.len() <= MAX_BODY_GRAPH_EDGES - self.edges.len(),
+                "body specialization batch exceeds {MAX_BODY_GRAPH_EDGES} checked type edges");
+            node[1] = self.edges.len() as u32;
+            self.edges.extend_from_slice(children);
+        }
+        let index = self.nodes.len() as u32;
+        self.nodes.push(node);
+        self.node_index.insert(key, index);
+        Ok(index)
+    }
+
+    /// The uploaded words: exactly the single-entry packet for one entry. A
+    /// graph beyond the single-entry capacity continues in BODY_GRAPH_EXT_ROWS
+    /// rows after it, before the extra entries.
     pub(crate) fn packet(&self) -> Result<Vec<u32>> {
         ensure!(!self.entries.is_empty(), "empty body specialization batch");
         let extra = self.entries.len() - 1;
-        let mut words = vec![0; BODY_SPECIALIZATION_WORDS + extra * BODY_ENTRY_ROWS * 4];
+        let extension = if self.nodes.len() > MAX_BODY_TYPE_NODES || self.edges.len() > MAX_BODY_TYPE_EDGES {
+            BODY_GRAPH_EXT_ROWS
+        } else {
+            0
+        };
+        let table = BODY_ENTRY_TABLE_START + extension;
+        let mut words = vec![0; (table + extra * BODY_ENTRY_ROWS) * 4];
         write_legacy_entry(&mut words, &self.entries[0], &self.roots[0]);
         write_graph(&mut words, self.entries[0].source_unit, &self.nodes, &self.edges);
         words[BODY_CONSTANT_START + 1] = extra as u32;
+        let copy_word = |entry: &CheckedBodySpecialization| {
+            if entry.target_symbol & BODY_COPY_TARGET == BODY_COPY_TARGET {
+                (entry.target_symbol & !BODY_COPY_TARGET) + 1
+            } else {
+                0
+            }
+        };
+        words[BODY_CONSTANT_START + 2] = copy_word(&self.entries[0]);
+        words[BODY_CONSTANT_START + 3] = self.copy_first_row;
         for index in 1..self.entries.len() {
             let entry = &self.entries[index];
-            let base = (BODY_ENTRY_TABLE_START + (index - 1) * BODY_ENTRY_ROWS) * 4;
+            let base = (table + (index - 1) * BODY_ENTRY_ROWS) * 4;
             words[base] = entry.arguments.len() as u32;
             words[base + 1] = entry.target_symbol;
+            words[base + 2] = copy_word(entry);
             words[base + 3] = entry.constants.len() as u32;
             for (slot, &root) in self.roots[index].iter().enumerate() {
                 let row = base + (1 + slot) * 4;
@@ -1322,24 +1522,154 @@ mod tests {
     fn a_full_batch_rejects_an_entry_without_changing() {
         let arrays = |lengths: std::ops::Range<u32>| lengths
             .map(|length| array_of(CheckedGenericType::Scalar(3), length, None)).collect::<Vec<_>>();
+        // 34 entries of 30 distinct arrays share one scalar: 1021 nodes.
         let mut batch = CheckedBodySpecializationBatch::single(entry(1, arrays(1..31), vec![])).unwrap();
-        assert!(batch.try_push(entry(2, arrays(31..61), vec![])).unwrap());
-        assert_eq!(batch.nodes.len(), 61);
+        for index in 1..34 {
+            let start = 1 + index * 30;
+            assert!(batch.try_push(entry(1 + index, arrays(start..start + 30), vec![])).unwrap());
+        }
+        assert_eq!(batch.nodes.len(), MAX_BODY_GRAPH_NODES - 3);
         let before = batch.packet().unwrap();
-        assert!(!batch.try_push(entry(3, arrays(61..91), vec![])).unwrap(), "64 shared nodes");
-        assert!(!batch.try_push(entry(3, vec![], vec![1, 2, 3, 4])).unwrap(), "constants are nodes too");
+        let (nodes, edges, keys) = (batch.nodes.clone(), batch.edges.clone(), batch.node_index.clone());
+        assert!(!batch.try_push(entry(90, arrays(2000..2030), vec![])).unwrap(), "shared node capacity");
+        assert!(!batch.try_push(entry(90, vec![], vec![1, 2, 3, 4])).unwrap(), "constants are nodes too");
+        // A rejected entry that refined a shared witness before failing leaves it unrefined.
+        let mut refining = arrays(1..3);
+        refining[0] = array_of(CheckedGenericType::Scalar(3), 1, Some(1));
+        refining.extend(arrays(3000..3010));
+        assert!(!batch.try_push(entry(91, refining, vec![])).unwrap());
         assert_eq!(batch.packet().unwrap(), before);
-        assert_eq!(batch.entries().len(), 2);
-        assert!(batch.try_push(entry(3, arrays(1..3), vec![7, 8])).unwrap(), "reused nodes need no room");
+        assert_eq!((&batch.nodes, &batch.edges, &batch.node_index), (&nodes, &edges, &keys));
+        assert_eq!(batch.entries().len(), 34);
+        assert!(batch.try_push(entry(92, arrays(1..3), vec![7, 8])).unwrap(), "reused nodes need no room");
 
         let mut many = CheckedBodySpecializationBatch::single(entry(0, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap();
         for target in 1..MAX_BODY_ENTRIES as u32 {
             assert!(many.try_push(entry(target, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap());
         }
         assert!(!many.try_push(entry(99, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap());
-        assert_eq!(many.packet().unwrap().len(), BODY_BATCH_WORDS);
+        // A small graph needs no extension rows.
+        assert_eq!(many.packet().unwrap().len(), BODY_BATCH_WORDS - BODY_GRAPH_EXT_ROWS * 4);
         let mut foreign = entry(5, vec![CheckedGenericType::Scalar(3)], vec![]);
         foreign.source_unit = [7, 4];
         assert!(batch.try_push(foreign).is_err(), "one batch replays one source unit");
+    }
+    #[test]
+    fn instance_copy_entries_store_their_copy_bytes_and_first_row() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.try_push(entry(BODY_COPY_TARGET | 520, vec![nominal(vec![scalar.clone()])], vec![])).unwrap());
+        assert_eq!(batch.copy_first_row(), None);
+        assert!(batch.set_instance_copies(77, vec![(3, None)]).is_err(), "one template owner per copy");
+        batch.set_instance_copies(77, vec![(3, None), (9, Some(8))]).unwrap();
+        assert_eq!(batch.copy_first_row(), Some(77));
+        let words = batch.packet().unwrap();
+        assert_eq!(words[1], BODY_COPY_TARGET | 400, "the target keeps the unresolved selector");
+        assert_eq!(&words[BODY_CONSTANT_START + 1..BODY_CONSTANT_START + 4], &[1, 401, 77]);
+        let base = BODY_ENTRY_TABLE_START * 4;
+        assert_eq!(&words[base..base + 4], &[1, BODY_COPY_TARGET | 520, 521, 0]);
+
+        // Ordinary entries have no copy word and no first copy row.
+        let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        assert_eq!(&plain.packet().unwrap()[BODY_CONSTANT_START + 2..BODY_CONSTANT_START + 4], &[0, 0]);
+        let mut mixed = plain.clone();
+        assert!(mixed.try_push(entry(BODY_COPY_TARGET | 9, vec![scalar.clone()], vec![])).unwrap());
+        assert!(mixed.set_instance_copies(4, vec![(1, None), (2, None)]).is_err(),
+            "every entry of a copy batch is a copy");
+        let mut unordered = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 600, vec![scalar.clone()], vec![])).unwrap();
+        assert!(unordered.try_push(entry(BODY_COPY_TARGET | 500, vec![scalar], vec![])).unwrap());
+        assert!(unordered.set_instance_copies(4, vec![(1, None), (2, None)]).is_err(),
+            "copies follow source order");
+    }
+    #[test]
+    fn a_large_graph_continues_in_extension_rows_before_the_extra_entries() {
+        let arrays = |lengths: std::ops::Range<u32>| lengths
+            .map(|length| array_of(CheckedGenericType::Scalar(3), length, None)).collect::<Vec<_>>();
+        let tuple = |lengths: std::ops::Range<u32>| CheckedGenericType::Nominal {
+            identity: CheckedNominalIdentity::SourceLocal { unit: [7, 3], declaration_token: 12 },
+            local_replay: Some(0x2000_000c),
+            arguments: arrays(lengths).into_iter().map(CheckedGenericApplicationArgument::Type).collect(),
+            words: None,
+        };
+        let mut batch = CheckedBodySpecializationBatch::single(entry(1, arrays(1..31), vec![])).unwrap();
+        assert!(batch.try_push(entry(2, arrays(31..61), vec![])).unwrap());
+        // Node 64 onward and edges of later applications live in the extension.
+        assert!(batch.try_push(entry(3, vec![tuple(61..91)], vec![6])).unwrap());
+        assert!(batch.nodes.len() > MAX_BODY_TYPE_NODES);
+        let words = batch.packet().unwrap();
+        let table = BODY_ENTRY_TABLE_START + BODY_GRAPH_EXT_ROWS;
+        assert_eq!(words.len(), (table + 2 * BODY_ENTRY_ROWS) * 4);
+        assert_eq!(words[2] as usize, batch.nodes.len());
+        assert_eq!(words[3] as usize, batch.edges.len());
+        for (index, node) in batch.nodes.iter().enumerate() {
+            let start = graph_node_word(index);
+            assert_eq!(words[start..start + 3], node[..3], "node {index}");
+        }
+        for (edge, &child) in batch.edges.iter().enumerate() {
+            assert_eq!(words[graph_edge_word(edge)], child);
+        }
+        assert_eq!(graph_node_word(MAX_BODY_TYPE_NODES), BODY_ENTRY_TABLE_START * 4);
+        assert_eq!(graph_edge_word(MAX_BODY_TYPE_EDGES),
+            (BODY_ENTRY_TABLE_START + (MAX_BODY_GRAPH_NODES - MAX_BODY_TYPE_NODES) * 2) * 4);
+        assert_eq!(graph_edge_word(MAX_BODY_GRAPH_EDGES - 1) / 4, table - 1);
+        // Extra entries follow the extension.
+        assert_eq!(words[table * 4 + 1], 2);
+        assert_eq!(words[(table + BODY_ENTRY_ROWS) * 4 + 1], 3);
+        let root = batch.roots[2][0] as usize;
+        assert_eq!(words[(table + BODY_ENTRY_ROWS + 1) * 4 + 2] as usize, root);
+        assert!(root >= MAX_BODY_TYPE_NODES);
+        let constant = words[(table + BODY_ENTRY_ROWS + 1 + MAX_BODY_TYPE_ARGUMENTS) * 4 + 2] as usize;
+        // A kind-10 node (kind, scalar, lo, ...) holding the value 6.
+        assert!(constant >= MAX_BODY_TYPE_NODES);
+        assert_eq!(words[graph_node_word(constant)], 10);
+        assert_eq!(words[graph_node_word(constant) + 2], 6);
+    }
+
+    #[test]
+    fn packet_capacities_match_the_shader_layout() {
+        let layout = include_str!("../../../../shaders/type_checker/type/instances/body_graph_layout.slang");
+        let value = |name: &str| -> usize {
+            let line = layout.lines()
+                .find(|line| line.starts_with(&format!("static const uint {name} = ")))
+                .unwrap_or_else(|| panic!("{name} is not a literal in body_graph_layout.slang"));
+            line.split('=').nth(1).unwrap().trim().trim_end_matches(';').trim_end_matches('u').parse().unwrap()
+        };
+        assert_eq!(value("BODY_GRAPH_NODES"), MAX_BODY_GRAPH_NODES);
+        assert_eq!(value("BODY_GRAPH_EDGES"), MAX_BODY_GRAPH_EDGES);
+        assert_eq!(value("BODY_NODE_ARGUMENTS"), MAX_BODY_TYPE_ARGUMENTS);
+        assert_eq!(value("BODY_TYPE_SLOTS"), MAX_BODY_TYPE_ARGUMENTS);
+        assert_eq!(value("BODY_CONSTANT_SLOTS"), MAX_BODY_TYPE_ARGUMENTS);
+        assert_eq!(value("BODY_GRAPH_V2_NODES"), MAX_BODY_TYPE_NODES);
+        assert_eq!(value("BODY_GRAPH_V2_EDGES"), MAX_BODY_TYPE_EDGES);
+        assert_eq!(value("BODY_GRAPH_EXT_START"), BODY_ENTRY_TABLE_START);
+        assert_eq!(value("BODY_MAX_ENTRIES"), MAX_BODY_ENTRIES);
+        assert_eq!(BODY_TYPE_GRAPH_START, 65);
+        assert_eq!(BODY_TYPE_EDGE_START, 193);
+        assert_eq!(BODY_ENTRY_ROWS, 65);
+        assert_eq!(BODY_ATOM_RESERVE_ROWS, MAX_BODY_GRAPH_NODES + MAX_BODY_TYPE_ARGUMENTS);
+    }
+
+    #[test]
+    fn instance_copy_owners_map_to_their_templates_in_entry_order() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.try_push(entry(BODY_COPY_TARGET | 520, vec![scalar.clone()], vec![])).unwrap());
+        // Template: free function 3, method 9 of impl 8. Copies start at row 40:
+        // free copy at 41, then impl copy 50 holding method copy 52.
+        batch.set_instance_copies(40, vec![(3, None), (9, Some(8))]).unwrap();
+        let callables = [3, 9, 12, 41, 52];
+        let methods = [(9, 8), (52, 50)];
+        let aliases = batch.instance_owner_aliases(&callables, &methods).unwrap();
+        assert_eq!(aliases, BTreeMap::from([(41, 3), (50, 8), (52, 9)]));
+        // A missing copy, or a method copy checked as a free function, fails.
+        assert!(batch.instance_owner_aliases(&[3, 41], &methods).is_err());
+        assert!(batch.instance_owner_aliases(&[3, 41, 9, 52], &methods).is_err(), "unsorted rows");
+        assert!(batch.instance_owner_aliases(&callables, &[(9, 8)]).is_err());
+        // Batches without copies alias nothing.
+        let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar], vec![])).unwrap();
+        assert!(plain.instance_owner_aliases(&callables, &methods).unwrap().is_empty());
     }
 }

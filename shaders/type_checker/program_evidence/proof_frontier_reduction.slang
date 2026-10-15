@@ -76,14 +76,6 @@ public EvidenceStatus pps_read_ready_proof(uint event, out uint proof, out uint 
     return pev_ok();
 }
 
-public EvidenceStatus pps_admit_ready_implementation_proof(uint event)
-{
-    uint proof; uint kind;
-    EvidenceStatus status = pps_read_ready_proof(event, proof, kind);
-    if (status.state != PEV_VALID || kind != 1u) return status;
-    return pps_admit_implementation_proof(proof, pps_matching_limits());
-}
-
 public EvidenceStatus pps_admit_ready_assumption_proof(uint event)
 {
     uint proof; uint kind;

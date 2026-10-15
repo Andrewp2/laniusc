@@ -396,6 +396,18 @@ Definitions and call occurrences have different lifetimes:
   retained implementation witnesses. Transient context, atom, and batch indices
   must not prevent equivalent or recursive calls from reusing a body.
 
+Retained batch input rows are immutable for the life of a GPU packet. The GPU
+binds the input arena read-only. `ensure_retained_inputs_unchanged` in
+`program_evidence/dispatch/mod.rs` refuses, before any upload, a submission that
+rewrites a retained row, moves a table without copying its rows, or overlaps two
+tables. A refused submission poisons the packet, so it is never checked again.
+Indexes built from retained rows therefore stay valid without being cleared.
+In particular, an assumption row indexed by kernel 15 (output tables 8 and 9)
+keeps its admission and hash for the rest of the batch lifecycle. Proof work
+selection and assumption-proof admission compare against that index hash
+instead of admitting the predicate again (`pps_assumption_equals_goal`).
+`gpu_batch_refuses_rewritten_retained_assumption_row` covers the refusal.
+
 Implementation hashing and owner/assumption indexes narrow candidates. Full GPU
 structural comparison determines equality. Collision chains need an explicit
 work bound and an explicit exhaustion failure, with no unbounded scan fallback.

@@ -77,27 +77,41 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_function_id[row] == LIR_INVALID) return;
     CheckedCallArtifact call = semantic_calls_by_hir[row];
     if (call.receiver_hir == LIR_INVALID) return;
-    uint source = call.receiver_hir;
-    if (source >= count || call.receiver_adjustment_kind < 1u ||
+    uint source = receiver_source_hir(call.receiver_hir, count);
+    if (source >= count || row >= RECEIVER_CALL_MASK || call.receiver_adjustment_kind < 1u ||
         call.receiver_adjustment_kind > 2u || call.receiver_deref_count > 64u ||
         call.receiver_matched_ref_tag == 0u || call.receiver_parameter_ref_tag == 0u)
     { reject_place(row); return; }
     uint previous;
     InterlockedCompareExchange(semantic_receiver_call_by_hir[source], 0u, row + 1u, previous);
-    if (previous != 0u && previous != row + 1u)
+    if (previous != 0u && (previous & RECEIVER_CALL_MASK) != row + 1u)
     { reject_place(row); return; }
     if (call.receiver_adjustment_kind != 2u || call.receiver_deref_count != 0u) return;
 
     // A receiver that is not a place gets the call's own local, sized by
-    // the matched receiver type (receiver_temporary.slang).
-    uint temporary = receiver_temporary_token(row, call, count);
+    // the matched receiver type (receiver_temporary.slang). A field of one
+    // stores the aggregate under it, its holder, sized by the holder's type.
+    uint holder;
+    uint temporary = receiver_temporary_token(row, call, count, holder);
     if (temporary != LIR_INVALID)
     {
-        uint tag = call.receiver_matched_ref_tag;
-        uint type = call.receiver_matched_ref_payload;
+        bool projected = holder != source;
+        uint tag = projected ? semantic_expr_ref_tag[holder] : call.receiver_matched_ref_tag;
+        uint type = projected ? semantic_expr_ref_payload[holder] : call.receiver_matched_ref_payload;
         uint4 storage = storage_for_type(tag, type, receiver_native_words(tag, type, count));
-        if (temporary >= gParams.n_tokens || storage.x == 0u || storage.y > 0xffffu)
+        if (temporary >= gParams.n_tokens || storage.x == 0u || storage.y > 0xffffu ||
+            (projected && storage.x != 3u))
         { reject_place(source); return; }
+        // Record the holder for count and materialize.
+        uint mark = (row + 1u) | RECEIVER_TEMPORARY_HOLDER;
+        if (projected)
+        {
+            mark |= RECEIVER_TEMPORARY_PROJECTED;
+            InterlockedCompareExchange(semantic_receiver_call_by_hir[holder], 0u, mark, previous);
+            if (previous != 0u && previous != mark)
+            { reject_place(source); return; }
+        }
+        else InterlockedOr(semantic_receiver_call_by_hir[source], mark);
         semantic_place_storage_by_token[temporary] = storage;
         uint owner = semantic_function_id[row];
         InterlockedOr(semantic_place_function_flags[semantic_lir_functions[owner].hir_function], 1u);
