@@ -70,6 +70,8 @@ public struct OwnedConstraintBindingRequest
 public struct OwnedConstantResolution
 {
     public uint3 terminal;
+    // Declared scalar of the terminal reference itself (literal or parameter).
+    public uint terminal_scalar;
     public uint variable;
     public uint result_scalar;
     public uint concrete;

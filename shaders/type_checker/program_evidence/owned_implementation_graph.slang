@@ -118,8 +118,9 @@ public EvidenceStatus pev_implementation_heads_overlap(uint left, uint right,
         return pev_invalid(1u, left, right);
     if (a.z != b.z || aa.y != ba.y) return pev_ok();
     OwnedConstraintState state;
-    OwnedConstraintStatus status = owned_overlap_begin<
-        CatalogImplementationPatternGraph, CatalogImplementationPatternGraph>(
+    // Both heads live in the one catalog graph: share its code for both sides.
+    OwnedConstraintStatus status = owned_overlap_begin_pair<
+        OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(
         a.y, b.y, nodes, nodes, atoms, limits, state);
     [loop]
     for (uint i = 0u; status.state == OWNED_CONSTRAINT_MATCHED && i <= aa.y; i++)
@@ -127,10 +128,11 @@ public EvidenceStatus pev_implementation_heads_overlap(uint left, uint right,
         uint2 ar; uint2 br;
         if (!pev_implementation_root(left, i, ar) || !pev_implementation_root(right, i, br))
             return pev_invalid(1u, left, right);
-        status = owned_overlap_match<CatalogImplementationPatternGraph, CatalogImplementationPatternGraph>(ar, br, state);
+        status = owned_overlap_match_pair<OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(ar, br, state);
     }
     if (status.state == OWNED_CONSTRAINT_NO_MATCH) return pev_ok();
-    if (status.state == OWNED_CONSTRAINT_MATCHED) status = owned_overlap_finish<CatalogImplementationPatternGraph, CatalogImplementationPatternGraph>(state);
+    if (status.state == OWNED_CONSTRAINT_MATCHED)
+        status = owned_overlap_finish_pair<OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(state);
     if (status.state != OWNED_CONSTRAINT_MATCHED) return pev_owned_constraint_status(status, left);
     overlap = true; return pev_ok();
 }
