@@ -328,7 +328,7 @@ impl GpuTypeChecker {
         let body_specialization_inputs = storage_ro_from_u32s(
             device,
             "type_check.body_specialization_inputs",
-            &vec![0; generic_body::BODY_BATCH_WORDS],
+            &vec![0; generic_body::BODY_INPUT_WORDS],
         );
         // An absent interface still has a valid, immutable zero-count page.
         // It must never alias workspace columns written by the same shader.
@@ -782,6 +782,18 @@ impl GpuTypeChecker {
             .collect();
         self.body_specialization_inputs
             .write(queue, 0, &specialization_bytes);
+        // The impl-binding header is rewritten on every job, so a previous
+        // replay's bindings are unreachable from this one.
+        let bindings = hir_items
+            .body_specialization
+            .map(CheckedBodySpecializationBatch::impl_binding_words)
+            .unwrap_or_else(|| generic_body::impl_binding_words(&[]));
+        let binding_bytes: Vec<u8> = bindings.into_iter().flat_map(u32::to_le_bytes).collect();
+        self.body_specialization_inputs.write(
+            queue,
+            (generic_body::BODY_IMPL_BINDING_ROW * 16) as u64,
+            &binding_bytes,
+        );
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
         let parser_feature_flags = hir_items.parser_feature_flags;

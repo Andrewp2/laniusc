@@ -2966,7 +2966,7 @@ fn build_graph(
         "body_specialization_inputs",
         ResourceDomain::Types,
         ResourceClass::External,
-        (generic_body::BODY_BATCH_WORDS * 4) as u64,
+        (generic_body::BODY_INPUT_WORDS * 4) as u64,
     )?;
     let module_rows = u64::from(source_file_capacity.max(1));
     let record_rows = u64::from(module_record_capacity.max(1));
