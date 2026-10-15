@@ -1,6 +1,10 @@
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 from fixture_sweep import failure_group, render_diff, render_stdlib_diff
+from x86_jump_check import jumps_leaving_function
 
 
 def result(name: str, status: str, **fields) -> dict:
@@ -68,6 +72,26 @@ class DiffTests(unittest.TestCase):
         self.assertIn("Newly compiling: `core::c`.", lines)
         self.assertIn("No longer compiling: `core::b`.", lines)
         self.assertEqual(render_stdlib_diff(None, summary([], [])), [])
+
+
+@unittest.skipIf(shutil.which("objdump") is None, "needs objdump")
+class JumpCheckTests(unittest.TestCase):
+    def test_reports_a_jump_into_the_next_function_only(self):
+        code = bytes.fromhex(
+            "554889e5"  # 0x400078 function A: push rbp; mov rbp, rsp
+            "7402"      # 0x40007c je 0x400080, inside A
+            "9090"
+            "740a"      # 0x400080 je 0x40008c, inside B
+            "c9c3"
+            "554889e5"  # 0x400084 function B
+            "90909090"
+            "c9c3")     # 0x40008c
+        with tempfile.TemporaryDirectory() as directory:
+            elf = Path(directory) / "program.elf"
+            elf.write_bytes(bytes(0x78) + code)
+            jumps = jumps_leaving_function(str(elf))
+
+        self.assertEqual(jumps, [{"at": 0x400080, "op": "je", "target": 0x40008C, "function": 0x400078}])
 
 
 if __name__ == "__main__":

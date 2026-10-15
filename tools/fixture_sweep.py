@@ -311,7 +311,7 @@ def sweep(args) -> int:
           f"{json.dumps(daemon.ready)[:300]}", flush=True)
     for position, (number, expectation) in enumerate(todo):
         name = relative(expectation.path)
-        elf = elf_dir / (re.sub(r"[^\w.-]", "_", name) + ".elf")
+        elf = elf_path(elf_dir, name)
         elf.unlink(missing_ok=True)
         stdlib_root = expectation.stdlib_root or STDLIB
         started = time.time()
@@ -497,6 +497,7 @@ def report(args) -> int:
     out = pathlib.Path(args.out)
     results, documents = load_results(out)
     lines = render_report(results, documents)
+    lines += render_jump_check(results, out / "elf")
     stdlib_summary = out / "stdlib" / "stdlib_check.json"
     if stdlib_summary.exists():
         lines += render_stdlib_check(json.loads(stdlib_summary.read_text()))
@@ -597,6 +598,42 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
             if others:
                 lines.append(f"  - also: {others}{' ...' if len(same) > 8 else ''}")
         lines.append("")
+    return lines
+
+
+def elf_path(elf_dir: pathlib.Path, name: str) -> pathlib.Path:
+    return elf_dir / (re.sub(r"[^\w.-]", "_", name) + ".elf")
+
+
+def render_jump_check(results: dict[str, dict], elf_dir: pathlib.Path) -> list[str]:
+    """Static check of every kept ELF (tools/x86_jump_check.py): jumps into other functions."""
+    from x86_jump_check import describe, jumps_leaving_function
+
+    if shutil.which("objdump") is None:
+        return []
+    flagged = []
+    checked = 0
+    for name, result in sorted(results.items()):
+        elf = elf_path(elf_dir, name)
+        if not elf.exists():
+            continue
+        checked += 1
+        jumps = jumps_leaving_function(str(elf))
+        if jumps:
+            flagged.append((name, result, jumps))
+    if not checked:
+        return []
+    lines = ["## Jumps that leave their function", ""]
+    lines.append(f"tools/x86_jump_check.py over the {checked} compiled programs kept in `{relative(elf_dir)}`: "
+                 f"{len(flagged)} contain a jmp/jcc into another function, a miscompile whether or not "
+                 "the run passed.")
+    if flagged:
+        lines.append("")
+        lines.append("| fixture | status | jumps | first |")
+        lines.append("| --- | --- | ---: | --- |")
+        for name, result, jumps in sorted(flagged, key=lambda item: (item[1]["status"] == "PASS", item[0])):
+            lines.append(f"| `{name}` | {result['status']} | {len(jumps)} | {describe(jumps[0])} |")
+    lines.append("")
     return lines
 
 
