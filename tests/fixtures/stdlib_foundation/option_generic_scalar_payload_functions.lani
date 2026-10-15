@@ -80,6 +80,12 @@ fn main() -> i32 {
     let from_or: str = core::option::unwrap_or(text_or, "missing");
     let from_and: str = core::option::unwrap_or(text_and, "missing");
     let from_xor: str = core::option::unwrap_or(text_xor, "missing");
+    let nested: core::option::Option<core::option::Option<i32>> = core::option::Some(present);
+    let hollow: core::option::Option<core::option::Option<i32>> = core::option::Some(absent);
+    let no_nest: core::option::Option<core::option::Option<i32>> = core::option::None();
+    if (core::option::unwrap_or(core::option::flatten(nested), 99) != -2147483648 ||
+        core::option::is_some(core::option::flatten(hollow)) ||
+        core::option::is_some(core::option::flatten(no_nest))) { return 24; }
     if (std::io::println(value) != 8 || std::io::println(fallback_text) != 9) { return 21; }
     if (std::io::println(empty_text) != 1 || !empty.is_some()) { return 22; }
     if (std::io::println(from_or) != 8 || std::io::println(from_and) != 8 || std::io::println(from_xor) != 8) { return 23; }

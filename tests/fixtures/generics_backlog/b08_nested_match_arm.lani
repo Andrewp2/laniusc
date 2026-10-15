@@ -1,0 +1,5 @@
+enum Opt<T> { Some(T), None }
+fn both(a: Opt<i32>, b: Opt<i32>) -> i32 {
+    return match (a) { Some(x) -> match (b) { Some(y) -> x + y, None -> x }, None -> 0 };
+}
+fn main() -> i32 { let a: Opt<i32> = Some(40); let b: Opt<i32> = Some(2); return both(a, b); }

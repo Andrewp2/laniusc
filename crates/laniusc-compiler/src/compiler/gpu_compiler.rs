@@ -8,6 +8,7 @@ mod backends;
 pub use backends::GpuCompilerBackends;
 mod benchmarks;
 mod body_specialization;
+mod instance_copies;
 mod program_evidence;
 mod bounded_path_codegen;
 mod buffers;

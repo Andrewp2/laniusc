@@ -26,18 +26,16 @@ impl MethodBindGroups {
     where
         F: FnMut(&mut wgpu::CommandEncoder, bool) -> Result<()>,
     {
+        if matches!(stage, MethodSelectionStage::Lookup) {
+            return self.lookup.record_sweep(encoder, &mut dependency_phase);
+        }
         let (direct, returns, reset, local, bound, finalize) = match stage {
             MethodSelectionStage::Direct => (
                 METHODS_MARK_CALL_KEYS, METHODS_MARK_CALL_RETURN_KEYS_DIRECT,
                 METHODS_RESET_CANDIDATES_DIRECT, METHODS_RESOLVE_TABLE_DIRECT,
                 METHODS_OFFER_BOUND_MEMBERS_DIRECT, METHODS_FINALIZE_CANDIDATES_DIRECT,
             ),
-            MethodSelectionStage::Lookup => (
-                METHODS_MARK_CALL_KEYS_LOOKUP, METHODS_MARK_CALL_RETURN_KEYS,
-                METHODS_RESET_CANDIDATES, METHODS_RESOLVE_TABLE,
-                METHODS_OFFER_BOUND_MEMBERS, METHODS_FINALIZE_CANDIDATES,
-            ),
-            MethodSelectionStage::Inference => (
+            MethodSelectionStage::Inference | MethodSelectionStage::Lookup => (
                 METHODS_MARK_CALL_KEYS_INFERENCE, METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
                 METHODS_RESET_CANDIDATES_INFERENCE, METHODS_RESOLVE_TABLE_INFERENCE,
                 METHODS_OFFER_BOUND_MEMBERS_INFERENCE, METHODS_FINALIZE_CANDIDATES_INFERENCE,
@@ -61,11 +59,37 @@ impl MethodBindGroups {
     where
         F: FnMut(&mut wgpu::CommandEncoder, bool) -> Result<()>,
     {
+        // Each sweep can resolve one more link of a call-result receiver
+        // chain. The gate stops the sweeps on the GPU after one that changes
+        // no target, since every later sweep would repeat it.
+        self.lookup.arm.record(encoder)?;
         for _ in 0..METHOD_CALL_RESULT_RECEIVER_PASSES {
             self.record_call_selection(
                 encoder, MethodSelectionStage::Lookup, &mut dependency_phase,
             )?;
         }
         Ok(())
+    }
+}
+
+impl MethodLookupSweeps {
+    /// One lookup sweep: the selection transaction, then its gate.
+    fn record_sweep<F>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        dependency_phase: &mut F,
+    ) -> Result<()>
+    where
+        F: FnMut(&mut wgpu::CommandEncoder, bool) -> Result<()>,
+    {
+        self.mark_call_keys.record(encoder)?;
+        self.mark_call_return_keys.record(encoder)?;
+        self.reset_candidates.record(encoder)?;
+        self.resolve_table.record(encoder)?;
+        self.offer_bound_members.record(encoder)?;
+        dependency_phase(encoder, true)?;
+        self.finalize_candidates.record(encoder)?;
+        dependency_phase(encoder, false)?;
+        self.gate.record(encoder)
     }
 }

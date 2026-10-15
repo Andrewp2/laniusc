@@ -114,7 +114,7 @@ fn main() -> i32 {
     if (std::deque_i8::capacity(sweep) != 3) { return 20; }
     let raw: i32 = -128;
     while (raw <= 127) {
-        let byte_value: i8 = raw;
+        let byte_value: i8 = raw as i8;
         sweep = std::deque_i8::try_push_back(sweep, byte_value);
         if (std::deque_i8::len(sweep) != 1 ||
             std::deque_i8::front_or(sweep, 0) != byte_value ||

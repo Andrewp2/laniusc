@@ -2,16 +2,16 @@ module app::main;
 import std::set_char;
 
 fn main() -> i32 {
-    let left: std::set_char::SetChar = std::set_char::try_insert(std::set_char::new(), 4294967289);
-    let right: std::set_char::SetChar = std::set_char::try_insert(std::set_char::new(), 42);
+    let left: std::set_char::SetChar = std::set_char::try_insert(std::set_char::new(), '􏿹');
+    let right: std::set_char::SetChar = std::set_char::try_insert(std::set_char::new(), '*');
     if (std::set_char::len(left) != 1 || std::set_char::len(right) != 1) { return 2; }
     let result: std::set_char::SetChar = std::set_char::try_union(left, right);
     let failed: bool = std::set_char::len(result) == 0 &&
         std::set_char::capacity(result) == 0 &&
-        std::set_char::contains(left, 4294967289) && std::set_char::contains(right, 42);
+        std::set_char::contains(left, '􏿹') && std::set_char::contains(right, '*');
     let succeeded: bool = std::set_char::len(result) == 2 &&
-        std::set_char::at_or(result, 0, 0) == 4294967289 &&
-        std::set_char::at_or(result, 1, 0) == 42;
+        std::set_char::at_or(result, 0, '\0') == '􏿹' &&
+        std::set_char::at_or(result, 1, '\0') == '*';
     std::set_char::destroy(result);
     std::set_char::destroy(right);
     std::set_char::destroy(left);

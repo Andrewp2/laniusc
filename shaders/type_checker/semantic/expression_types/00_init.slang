@@ -71,12 +71,14 @@ static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_STRING = 28u;
+static const uint HIR_EXPR_CHAR = 29u;
 static const uint HIR_EXPR_CAST = 36u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -210,6 +212,10 @@ uint direct_result_type(uint node)
     if (form == HIR_EXPR_INT) return TY_INT;
     if (form == HIR_EXPR_FLOAT) return TY_FLOAT;
     if (form == HIR_EXPR_STRING) return TY_STRING;
+    // A char literal is always a char; only integer and float literals take
+    // their type from context.
+    if (form == HIR_EXPR_CHAR && (core.kind == HIR_EXPR || core.kind == HIR_LITERAL_EXPR))
+        return TY_CHAR;
     if (form == HIR_EXPR_NAME)
         return visible_type_for_token(payload.d);
     // A cast's result is its target type. The type collector publishes the

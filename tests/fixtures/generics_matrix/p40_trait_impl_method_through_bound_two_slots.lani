@@ -1,0 +1,14 @@
+trait Score { fn score(self) -> i32; }
+struct Rec { a: i32, b: i32 }
+struct Slot<T> { value: T, k: i32 }
+impl Score for Rec { fn score(self) -> i32 { return self.a + self.b; } }
+impl Score for i32 { fn score(self) -> i32 { return self; } }
+impl<T> Score for Slot<T> where T: Score { fn score(self) -> i32 { return self.value.score() + self.k; } }
+fn total<S>(s: S) -> i32 where S: Score { return s.score(); }
+fn twice<S>(s: S) -> i32 where S: Score { return total(s) * 2; }
+fn main() -> i32 {
+    let a: Slot<i32> = Slot { value: 4, k: 1 };
+    let b: Slot<Rec> = Slot { value: Rec { a: 7, b: 3 }, k: 2 };
+    let c: Slot<Slot<i32>> = Slot { value: Slot { value: 5, k: 0 }, k: 1 };
+    return total(a) + twice(b) + total(c) + 7;
+}

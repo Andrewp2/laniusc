@@ -46,8 +46,9 @@ public uint checked_constant_parameter_scalar(uint parameter)
     return select(constant_scalar_is_supported(scalar), scalar, 0u);
 }
 
-// The replay producer reserves 64 graph-node atoms followed by 32 standalone
-// constant arguments at the physical buffer tail. Source/import producers use
+#include "type/instances/body_graph_layout.slang"
+// The replay producer reserves BODY_GRAPH_NODES graph-node atoms followed by
+// BODY_CONSTANT_SLOTS standalone constant arguments at the physical buffer tail. Source/import producers use
 // only their separately bounded front regions; reused workspace slack cannot
 // collide with replay rows. This function authorizes addressing, not a value.
 public bool checked_constant_replay_atom(uint ordinal, out uint row)
@@ -55,7 +56,7 @@ public bool checked_constant_replay_atom(uint ordinal, out uint row)
     row = 0xffffffffu;
     uint count; uint stride;
     checked_constant_atoms.GetDimensions(count, stride);
-    if (count < 96u || ordinal >= 96u) return false;
-    row = count - 96u + ordinal;
+    if (count < BODY_ATOM_RESERVE_ROWS || ordinal >= BODY_ATOM_RESERVE_ROWS) return false;
+    row = count - BODY_ATOM_RESERVE_ROWS + ordinal;
     return true;
 }

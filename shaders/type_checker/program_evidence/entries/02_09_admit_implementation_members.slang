@@ -13,7 +13,8 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint row;
     if (!pev_catalog_admission_row(9u, local, row)) return;
     EvidenceStatus status;
-    if (pev_bind_scratch(local, row, status)) status = pev_admit_catalog_implementation(row);
+    // Every head passed: a failed head stops the catalog building.
+    if (pev_bind_scratch(local, row, status)) status = pev_admit_catalog_implementation_members(row);
     pev_write_status(1u, row, status);
     pev_catalog_failure(status);
 }

@@ -1,7 +1,7 @@
 // Owned ring-buffer deque for char values. Both ends push and pop in O(1)
 // except when growth copies existing elements into a larger allocation.
-// Each 32-bit character code is held in one i32 backing cell, including
-// non-scalar patterns. The caller must ensure UTF-8 output uses scalars.
+// Each char occupies one native eight-byte slot (slot i at storage + 8 * i),
+// read and written as char, so no integer conversion is involved.
 // Ownership is linear by convention: keep only the newest returned DequeChar
 // and destroy each independent deque exactly once.
 module std::deque_char;
@@ -15,8 +15,27 @@ pub struct DequeChar {
     head: i32,
 }
 
-// Four bytes per item; byte counts and doubled capacities fit signed i32.
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
 pub const MAX_CAPACITY: i32 = 536870911;
+
+fn slot(storage: ptr, index: i32) -> [char] {
+    let offset: usize = (index as usize) * 8;
+    return core::mem::typed_slice_from_raw_parts(storage + offset, 1);
+}
+
+fn load(storage: ptr, index: i32) -> char {
+    let view: [char] = slot(storage, index);
+    return view[0];
+}
+
+fn store(storage: ptr, index: i32, item: char) {
+    let view: [char] = slot(storage, index);
+    view[0] = item;
+}
+
+fn byte_size(count: i32) -> usize {
+    return (count as usize) * 8;
+}
 
 fn physical_index(value: DequeChar, ordinal: i32) -> i32 {
     let slot: i32 = value.head + ordinal;
@@ -47,23 +66,15 @@ pub fn is_empty(value: DequeChar) -> bool {
 pub fn try_reserve(value: DequeChar, minimum_capacity: i32) -> DequeChar {
     if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
         minimum_capacity <= value.reserved) { return value; }
-    let byte_count: i32 = minimum_capacity * 4;
-    let bytes: usize = byte_count as usize;
-    let next: ptr = alloc::allocator::alloc(bytes, 4);
+    let next: ptr = alloc::allocator::alloc(byte_size(minimum_capacity), 8);
     if (next == 0) { return value; }
-    if (value.length > 0) {
-        let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-        let destination: [i32] = core::mem::i32_slice_from_raw_parts(next, minimum_capacity);
-        let index: i32 = 0;
-        while (index < value.length) {
-            destination[index] = source[physical_index(value, index)];
-            index += 1;
-        }
+    let index: i32 = 0;
+    while (index < value.length) {
+        store(next, index, load(value.storage, physical_index(value, index)));
+        index += 1;
     }
     if (value.storage != 0) {
-        let old_byte_count: i32 = value.reserved * 4;
-        let old_bytes: usize = old_byte_count as usize;
-        alloc::allocator::dealloc(value.storage, old_bytes, 4);
+        alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
     }
     return DequeChar {
         storage: next, length: value.length, reserved: minimum_capacity, head: 0,
@@ -82,11 +93,9 @@ pub fn try_clone(value: DequeChar) -> DequeChar {
     if (value.length == 0) { return new(); }
     let copy: DequeChar = try_with_capacity(value.length);
     if (copy.reserved < value.length) { return new(); }
-    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let destination: [i32] = core::mem::i32_slice_from_raw_parts(copy.storage, copy.reserved);
     let index: i32 = 0;
     while (index < value.length) {
-        destination[index] = source[physical_index(value, index)];
+        store(copy.storage, index, load(value.storage, physical_index(value, index)));
         index += 1;
     }
     return DequeChar {
@@ -108,9 +117,7 @@ pub fn try_push_back(value: DequeChar, item: char) -> DequeChar {
         grown = try_reserve(grown, target);
         if (grown.length == grown.reserved) { return value; }
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item as i32;
-    cells[physical_index(grown, grown.length)] = raw_item;
+    store(grown.storage, physical_index(grown, grown.length), item);
     return DequeChar {
         storage: grown.storage, length: grown.length + 1,
         reserved: grown.reserved, head: grown.head,
@@ -131,9 +138,7 @@ pub fn try_push_front(value: DequeChar, item: char) -> DequeChar {
     }
     let next_head: i32 = grown.head - 1;
     if (grown.head == 0) { next_head = grown.reserved - 1; }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item as i32;
-    cells[next_head] = raw_item;
+    store(grown.storage, next_head, item);
     return DequeChar {
         storage: grown.storage, length: grown.length + 1,
         reserved: grown.reserved, head: next_head,
@@ -144,9 +149,7 @@ pub fn try_push_front(value: DequeChar, item: char) -> DequeChar {
 // equal the fallback; use len to distinguish empty or invalid ordinals.
 pub fn at_or(value: DequeChar, ordinal: i32, fallback: char) -> char {
     if (ordinal < 0 || ordinal >= value.length) { return fallback; }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = cells[physical_index(value, ordinal)];
-    return raw_item;
+    return load(value.storage, physical_index(value, ordinal));
 }
 
 pub fn front_or(value: DequeChar, fallback: char) -> char {
@@ -169,9 +172,7 @@ pub fn contains(value: DequeChar, item: char) -> bool {
 // In-place mutation is limited to valid logical ordinals.
 pub fn try_set(value: DequeChar, ordinal: i32, item: char) -> bool {
     if (ordinal < 0 || ordinal >= value.length) { return false; }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = item as i32;
-    cells[physical_index(value, ordinal)] = raw_item;
+    store(value.storage, physical_index(value, ordinal), item);
     return true;
 }
 
@@ -179,12 +180,11 @@ pub fn try_swap(value: DequeChar, left: i32, right: i32) -> bool {
     if (left < 0 || right < 0 || left >= value.length || right >= value.length) {
         return false;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let left_slot: i32 = physical_index(value, left);
     let right_slot: i32 = physical_index(value, right);
-    let saved: i32 = cells[left_slot];
-    cells[left_slot] = cells[right_slot];
-    cells[right_slot] = saved;
+    let saved: char = load(value.storage, left_slot);
+    store(value.storage, left_slot, load(value.storage, right_slot));
+    store(value.storage, right_slot, saved);
     return true;
 }
 
@@ -222,20 +222,14 @@ pub fn try_shrink_to_fit(value: DequeChar) -> DequeChar {
         destroy(value);
         return new();
     }
-    let byte_count: i32 = value.length * 4;
-    let bytes: usize = byte_count as usize;
-    let next: ptr = alloc::allocator::alloc(bytes, 4);
+    let next: ptr = alloc::allocator::alloc(byte_size(value.length), 8);
     if (next == 0) { return value; }
-    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let destination: [i32] = core::mem::i32_slice_from_raw_parts(next, value.length);
     let index: i32 = 0;
     while (index < value.length) {
-        destination[index] = source[physical_index(value, index)];
+        store(next, index, load(value.storage, physical_index(value, index)));
         index += 1;
     }
-    let old_byte_count: i32 = value.reserved * 4;
-    let old_bytes: usize = old_byte_count as usize;
-    alloc::allocator::dealloc(value.storage, old_bytes, 4);
+    alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
     return DequeChar {
         storage: next, length: value.length, reserved: value.length, head: 0,
     };
@@ -243,8 +237,6 @@ pub fn try_shrink_to_fit(value: DequeChar) -> DequeChar {
 
 pub fn destroy(value: DequeChar) {
     if (value.storage != 0) {
-        let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count as usize;
-        alloc::allocator::dealloc(value.storage, bytes, 4);
+        alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
     }
 }

@@ -2607,6 +2607,30 @@ fn main() -> bool {
 }
 
 #[test]
+fn x86_executes_char_ordering() {
+    // Chars order by unsigned code point, with literals on either side.
+    assert_source_exit(
+        "char_ordering",
+        r#"
+fn is_digit(value: char) -> bool { return value >= '0' && value <= '9'; }
+fn below(left: char, right: char) -> bool { return left < right; }
+fn main() -> i32 {
+    let c: char = 'm';
+    if (!is_digit('7') || is_digit('a') || is_digit('/') || is_digit(':')) { return 1; }
+    if (!below('a', c) || below(c, 'a') || below(c, c)) { return 2; }
+    if (!(c > 'Z') || !(c <= 'm') || c >= 'n') { return 3; }
+    let high: char = 'é';
+    let emoji: char = '😀';
+    if (!(high > 'z') || high < 'A' || !(emoji > high) || emoji <= 'é') { return 4; }
+    if (!('a' < 'b') || 'b' <= 'a') { return 5; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
 fn x86_executes_conditional_rhs_calls() {
     for (name, expression, expected) in [
         ("skip_and", "false && trap()", 0),
@@ -11728,6 +11752,112 @@ fn main() -> i32 {
         "x86 imported option receiver temporary",
         "receiver_temporary_imported_option",
         &bytes,
+        42,
+    );
+}
+
+#[test]
+fn x86_const_generic_parameter_casts_in_a_free_function() {
+    assert_source_exit(
+        "const_generic_parameter_cast_free_fn",
+        r#"
+fn length<const N: usize>(values: [i32; N]) -> i32 {
+    return N as i32;
+}
+fn main() -> i32 {
+    let values: [i32; 4] = [7, -2, 9, 4];
+    return length(values) * 10 + 2;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_const_generic_parameter_casts_in_a_method() {
+    assert_source_exit(
+        "const_generic_parameter_cast_method",
+        r#"
+struct Buf<T, const N: usize> { items: [T; N] }
+impl<T, const N: usize> Buf<T, N> {
+    fn cap(&self) -> i32 { return N as i32; }
+}
+fn main() -> i32 {
+    let b: Buf<i32, 3> = Buf { items: [1, 2, 3] };
+    return b.cap() + 39;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_char_literals_cast_to_integers() {
+    assert_source_exit(
+        "char_literal_casts",
+        r#"
+fn main() -> i32 {
+    if (('Z' as u8) != 90) { return 1; }
+    if (('A' as i32) + 1 != 66) { return 2; }
+    let letter: char = 'B';
+    if (letter != 'B') { return 3; }
+    if (('Ω' as u32) != 937) { return 4; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_parenthesized_receivers_borrow_or_copy_the_wrapped_expression() {
+    assert_source_exit(
+        "parenthesized_receivers",
+        r#"
+struct Inner { v: i32 }
+impl Inner { fn get(&self) -> i32 { return self.v; } }
+struct W { v: i32, inner: Inner }
+impl W {
+    fn get(&self) -> i32 { return self.v; }
+    fn take(self) -> i32 { return self.v + 1; }
+}
+fn make() -> W { return W { v: 5, inner: Inner { v: 6 } }; }
+fn main() -> i32 {
+    let w: W = W { v: 7, inner: Inner { v: 8 } };
+    if ((w).get() != 7) { return 1; }
+    if (((w)).get() != 7) { return 2; }
+    if ((w.inner).get() != 8) { return 3; }
+    if ((make()).get() != 5) { return 4; }
+    if ((w).take() != 8) { return 5; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_borrowed_field_of_a_temporary_is_stored_then_borrowed() {
+    assert_source_exit(
+        "receiver_temporary_field",
+        r#"
+struct Inner { v: i32 }
+impl Inner { fn get(&self) -> i32 { return self.v; } }
+struct Mid { pad: i32, inner: Inner }
+struct Outer { pad: i32, mid: Mid, inner: Inner }
+impl Outer { fn shifted(&self) -> Outer { return make(self.inner.v + 1); } }
+fn make(v: i32) -> Outer {
+    return Outer { pad: 1, mid: Mid { pad: 2, inner: Inner { v: v * 2 } }, inner: Inner { v: v } };
+}
+fn main() -> i32 {
+    if (make(7).inner.get() != 7) { return 1; }
+    if (make(7).mid.inner.get() != 14) { return 2; }
+    let o: Outer = make(3);
+    if (o.shifted().inner.get() != 4) { return 3; }
+    if (o.shifted().mid.inner.get() != 8) { return 4; }
+    return 42;
+}
+"#,
         42,
     );
 }

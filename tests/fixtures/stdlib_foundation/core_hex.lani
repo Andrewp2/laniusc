@@ -17,10 +17,10 @@ fn main() -> i32 {
     let mixed_upper: [i32; 8] = [49, 65, 50, 66, 51, 67, 52, 68];
     let index: u32 = 0;
     while (index < 8) {
-        let slot: i32 = index;
-        let lower: i32 = core::hex::byte_at_lower_or_u32(439041101, index, 0);
-        let upper: i32 = core::hex::byte_at_upper_or_u32(439041101, index, 0);
-        let maximum: i32 = core::hex::byte_at_lower_or_u32(4294967295, index, 0);
+        let slot: i32 = index as i32;
+        let lower: i32 = core::hex::byte_at_lower_or_u32(439041101, index, 0) as i32;
+        let upper: i32 = core::hex::byte_at_upper_or_u32(439041101, index, 0) as i32;
+        let maximum: i32 = core::hex::byte_at_lower_or_u32(4294967295, index, 0) as i32;
         if (lower != mixed_lower[slot] || upper != mixed_upper[slot] || maximum != 102) {
             return 3;
         }

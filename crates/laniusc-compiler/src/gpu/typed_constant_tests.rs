@@ -10,7 +10,7 @@ use super::{
 /// u32 words of a thread-scratch table holding `slots` slots: whole groups of
 /// THREAD_SCRATCH_GROUP slots of THREAD_SCRATCH_CELLS uint4 cells.
 pub(super) fn thread_scratch_words(slots: usize) -> usize {
-    slots.div_ceil(32) * 32 * 1792 * 4
+    slots.div_ceil(32) * 32 * 1808 * 4
 }
 
 fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]> {
@@ -24,9 +24,28 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     // One thread-scratch slot per row (shaders/thread_scratch.slang).
     let scratch = storage_rw_for_array::<u32>(&gpu.device, "typed_constants.thread_scratch",
         thread_scratch_words(rows));
+    // A probe that reaches the program-evidence abi (through a module it
+    // tests) declares the abi's parameter block and tables. The probes never
+    // read them; zeroed placeholders satisfy the exact binding contract.
+    let evidence_params = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("typed_constants.evidence_params"),
+        size: 32,
+        usage: wgpu::BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let evidence_tables = ["program_evidence_catalog", "program_evidence_batch", "program_evidence_output"]
+        .map(|name| (name, storage_rw_for_array::<u32>(&gpu.device, name, 4)));
     let mut entries = vec![(binding, results.as_entire_binding())];
     if passes_core::bind_group::declares_binding(&pass, 0, "thread_scratch") {
         entries.push(("thread_scratch", scratch.as_entire_binding()));
+    }
+    if passes_core::bind_group::declares_binding(&pass, 0, "program_evidence_params") {
+        entries.push(("program_evidence_params", evidence_params.as_entire_binding()));
+    }
+    for (name, table) in &evidence_tables {
+        if passes_core::bind_group::declares_binding(&pass, 0, name) {
+            entries.push((*name, table.as_entire_binding()));
+        }
     }
     passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
     let group = passes_core::bind_group::create_bind_group_from_bindings(
@@ -58,6 +77,11 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     words.chunks_exact(4).map(|row| row.try_into().unwrap()).collect()
 }
 
+/// The scoped and concrete walkers and constant-reference identity on the
+/// synthetic graphs of typed_constant_identity_fixture.slang. Cases 22-41 and
+/// 44-63 tested the deleted inference engine (constant_constraints.slang);
+/// call claims now go through ct_match and the checked claim kernels
+/// (constant_claim_publication_tests.rs, ct_match_tests.rs).
 fn assert_typed_constant_identity_family(key: &str, cases: &[usize]) {
     // Hash inequality is not required: different typed values may collide.
     // Hash validity and equal-value hash agreement are required independently.
@@ -67,8 +91,6 @@ fn assert_typed_constant_identity_family(key: &str, cases: &[usize]) {
     expected[9] = ([0, 0, 1], None);
     expected[20] = ([1, 2, 1], Some(1)); // symbolic, pending fit
     expected[21] = ([1, 1, 0], Some(1)); // concrete, discharged fit
-    expected[23] = ([0, 0, 1], Some(1)); // mismatch leaves slot unbound
-    expected[25] = ([1, 0, 1], Some(1)); // different high limb conflicts
     let actual = run_rows(key, "results", 64, 64);
     for &id in cases {
         let row = actual[id];
@@ -91,33 +113,8 @@ fn physical_gpu_typed_constant_identity_and_claim_provenance_scoped() {
 }
 
 #[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_inference() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_inference", &[22, 23, 24, 25, 26, 27, 28, 29, 30]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_requests() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_requests", &[31, 32, 33, 34, 35, 36, 37, 38, 39, 40]);
-}
-
-#[test]
 fn physical_gpu_typed_constant_identity_and_claim_provenance_depth() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_depth", &[41, 42, 43]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_array_constraints() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_array_constraints", &[44, 45, 46, 47, 48, 49, 50, 51]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_merge() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_claim_merge", &[52, 53, 54, 55, 56, 57, 58, 59, 62]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_priority() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_claim_priority", &[60, 61, 63]);
+    assert_typed_constant_identity_family("tests/typed_constant_identity_depth", &[42, 43]);
 }
 
 const CHECKED_IDENTITY: &str = "tests/checked_type_identity";

@@ -85,45 +85,74 @@ pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS: ReflectedComputeSpec =
 .with_name("type_check.methods.mark_call_keys.direct")
 .with_indirect_dispatch("method_token_hir_dispatch_args");
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS_LOOKUP: ReflectedComputeSpec =
-    METHODS_MARK_CALL_KEYS.with_name("type_check.methods.mark_call_keys.lookup");
+    METHODS_MARK_CALL_KEYS
+        .with_name("type_check.methods.mark_call_keys.lookup")
+        .with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS_AGGREGATE_VALIDATION:
     ReflectedComputeSpec =
     METHODS_MARK_CALL_KEYS.with_name("type_check.methods.mark_call_keys.aggregate_validation");
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS_CONDITION_FINALIZATION:
     ReflectedComputeSpec =
     METHODS_MARK_CALL_KEYS.with_name("type_check.methods.mark_call_keys.condition_finalization");
-pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS: ReflectedComputeSpec =
-    method_pass!(
-        "mark_call_return_keys",
-        HirNodes,
-        "type_checker/methods/06b_mark_call_return_keys"
-    )
-    .with_indirect_dispatch("method_hir_dispatch_args");
+const MARK_CALL_RETURN_KEYS: ReflectedComputeSpec = method_pass!(
+    "mark_call_return_keys",
+    HirNodes,
+    "type_checker/methods/06b_mark_call_return_keys"
+)
+.with_indirect_dispatch("method_hir_dispatch_args");
 // Reset is per transaction, after source producers; it preserves the accepted
 // result and selection ownership. Only the per-job clear initializes ownership.
-pub(in crate::type_checker) const METHODS_RESET_CANDIDATES: ReflectedComputeSpec =
+const RESET_CANDIDATES: ReflectedComputeSpec =
     method_pass!("reset_candidates", Calls, "type_checker/methods/06c_reset_candidates")
         .with_indirect_dispatch("method_token_dispatch_args");
-pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES: ReflectedComputeSpec =
+const FINALIZE_CANDIDATES: ReflectedComputeSpec =
     method_pass!("finalize_candidates", Calls, "type_checker/methods/08_finalize_candidates")
         .with_indirect_dispatch("method_token_dispatch_args");
 // This operation only contributes local candidates; finalization publishes.
-pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec = method_pass!(
-    "resolve_table",
-    Calls,
-    "type_checker/methods/07_resolve_table"
-)
-.with_indirect_dispatch("method_token_dispatch_args");
+const RESOLVE_TABLE: ReflectedComputeSpec =
+    method_pass!("resolve_table", Calls, "type_checker/methods/07_resolve_table")
+        .with_indirect_dispatch("method_token_dispatch_args");
 // Required members reached through a lexical `P: Trait` bound compete in the
 // same transaction, after local table candidates and before dependency pages.
 // One lane per call expression: the call owns the trait arguments' context.
+const OFFER_BOUND_MEMBERS: ReflectedComputeSpec = method_pass!(
+    "offer_bound_members",
+    HirNodes,
+    "type_checker/methods/07a_offer_bound_members"
+)
+.with_indirect_dispatch("method_hir_dispatch_args");
+
+// The eight preliminary lookup sweeps dispatch from one gated copy of the
+// method grids (see methods/08b_arm_lookup_sweeps): the method-token grid, the
+// method-HIR grid, the token-or-HIR grid and the active-HIR grid, in that
+// order, then the change count of the last sweep that changed a target.
+pub(in crate::type_checker) const METHOD_LOOKUP_DISPATCH_ARGS: &str = "method_lookup_dispatch_args";
+pub(in crate::type_checker) const METHOD_LOOKUP_TOKEN_ARGS_OFFSET: u64 = 0;
+pub(in crate::type_checker) const METHOD_LOOKUP_HIR_ARGS_OFFSET: u64 = 12;
+pub(in crate::type_checker) const METHOD_LOOKUP_TOKEN_HIR_ARGS_OFFSET: u64 = 24;
+pub(in crate::type_checker) const METHOD_LOOKUP_ACTIVE_HIR_ARGS_OFFSET: u64 = 36;
+pub(in crate::type_checker) const METHOD_LOOKUP_DISPATCH_ARGS_BYTES: u64 = 52;
+pub(in crate::type_checker) const METHODS_ARM_LOOKUP_SWEEPS: ReflectedComputeSpec = method_pass!(
+    "lookup_sweeps.arm",
+    DispatchArguments,
+    "type_checker/methods/08b_arm_lookup_sweeps"
+)
+.initializer();
+pub(in crate::type_checker) const METHODS_GATE_LOOKUP_SWEEP: ReflectedComputeSpec = method_pass!(
+    "lookup_sweeps.gate",
+    DispatchArguments,
+    "type_checker/methods/08c_gate_lookup_sweep"
+);
+pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS: ReflectedComputeSpec =
+    MARK_CALL_RETURN_KEYS.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
+pub(in crate::type_checker) const METHODS_RESET_CANDIDATES: ReflectedComputeSpec =
+    RESET_CANDIDATES.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
+pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES: ReflectedComputeSpec =
+    FINALIZE_CANDIDATES.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
+pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec =
+    RESOLVE_TABLE.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS: ReflectedComputeSpec =
-    method_pass!(
-        "offer_bound_members",
-        HirNodes,
-        "type_checker/methods/07a_offer_bound_members"
-    )
-    .with_indirect_dispatch("method_hir_dispatch_args");
+    OFFER_BOUND_MEMBERS.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
     method_pass!("resolve", HirNodes, "type_checker/methods/03/resolve")
         .with_indirect_dispatch("method_token_hir_dispatch_args");
@@ -133,27 +162,27 @@ pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS_INFERENCE: ReflectedComputeSpec =
     METHODS_MARK_CALL_KEYS.with_name("type_check.methods.mark_call_keys.inference");
 pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS_INFERENCE: ReflectedComputeSpec =
-    METHODS_MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.inference");
+    MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.inference");
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE_INFERENCE: ReflectedComputeSpec =
-    METHODS_RESOLVE_TABLE.with_name("type_check.methods.resolve_table.inference");
+    RESOLVE_TABLE.with_name("type_check.methods.resolve_table.inference");
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_INFERENCE: ReflectedComputeSpec =
-    METHODS_OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.inference");
+    OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.inference");
 pub(in crate::type_checker) const METHODS_RESOLVE_INFERENCE: ReflectedComputeSpec =
     METHODS_RESOLVE.with_name("type_check.methods.resolve.inference");
 
 // Initial selection and inference are distinct graph invocations of the same
 // transaction. The unqualified operations own the eight preliminary sweeps.
 pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS_DIRECT: ReflectedComputeSpec =
-    METHODS_MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.direct");
+    MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.direct");
 pub(in crate::type_checker) const METHODS_RESET_CANDIDATES_DIRECT: ReflectedComputeSpec =
-    METHODS_RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.direct");
+    RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.direct");
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE_DIRECT: ReflectedComputeSpec =
-    METHODS_RESOLVE_TABLE.with_name("type_check.methods.resolve_table.direct");
+    RESOLVE_TABLE.with_name("type_check.methods.resolve_table.direct");
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_DIRECT: ReflectedComputeSpec =
-    METHODS_OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.direct");
+    OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.direct");
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_DIRECT: ReflectedComputeSpec =
-    METHODS_FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.direct");
+    FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.direct");
 pub(in crate::type_checker) const METHODS_RESET_CANDIDATES_INFERENCE: ReflectedComputeSpec =
-    METHODS_RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.inference");
+    RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.inference");
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_INFERENCE: ReflectedComputeSpec =
-    METHODS_FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.inference");
+    FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.inference");

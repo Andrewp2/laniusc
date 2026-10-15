@@ -96,10 +96,13 @@ public EvidenceStatus pev_admit_predicate(uint predicate)
     return pev_admit_goal_roots(low.w, high.x, high.y, low.y, false);
 }
 
-// The caller runs this only in the owned-solver pipeline, paired with the
+// The caller runs these only in the owned-solver pipeline, paired with the
 // complete coarse index, two-sided coherence and retained proof admission.
-public EvidenceStatus pev_admit_implementation_with_owned_solver(
-    uint implementation, OwnedConstraintLimits limits)
+// Implementation admission is two dispatches split at head coverage: the
+// head (row shape, owner, prerequisites, ancestors, goal roots), then its
+// members (coverage, required methods). The members dispatch runs only while
+// the catalog is still building, so every implementation has passed its head.
+public EvidenceStatus pev_admit_implementation_head(uint implementation)
 {
     uint4 low; uint4 middle; uint4 high;
     if (!pev_read8(9u, implementation, low, middle) ||
@@ -155,13 +158,19 @@ public EvidenceStatus pev_admit_implementation_with_owned_solver(
         ancestor = ancestor_owner.w;
     }
 
-    result = pev_admit_goal_roots(low.w, middle.x, middle.y, low.y,
+    return pev_admit_goal_roots(low.w, middle.x, middle.y, low.y,
         types == 0u && constants == 0u);
-    if (result.state != PEV_VALID) return result;
+}
+
+public EvidenceStatus pev_admit_implementation_members(uint implementation, OwnedConstraintLimits limits)
+{
+    // The head passed, so this row reads exactly as it did there.
+    uint4 low; uint4 middle;
+    if (!pev_read8(9u, implementation, low, middle)) return pev_invalid(2u, implementation, PEV_INVALID);
     // Every admitted definition, including an unused/disjoint implementation,
     // must cover every own type and constant parameter in its complete head.
     // Candidate matching/coherence may return early only after this pass.
-    result = pev_admit_implementation_coverage(implementation, limits);
+    EvidenceStatus result = pev_admit_implementation_coverage(implementation, limits);
     if (result.state != PEV_VALID) return result;
     // Host sorts exact required symbols (no semantic matching). The accepted
     // source/export producer owns completeness; strict order preserves uniqueness
