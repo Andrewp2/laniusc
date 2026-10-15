@@ -61,7 +61,6 @@
 2048 type_checker/semantic/artifact/01b_array_index_refs
 2048 type_checker/semantic/artifact/01d_member_layout
 2048 type_checker/type/instances/03_member_results
-2048 type_checker/type/instances/03b_member_substitute
 2048 type_checker/type/instances/04b_struct_init_substitute
 2048 type_checker/type/instances/05b_array_literal_return_refs
 1792 type_checker/program_evidence/entries/02_08_admit_predicates
