@@ -1,5 +1,5 @@
 {
-  "grammar": "/home/andrew-peterson/.codex/scratch/lanius-native-integration/structural-root/typed-grammar-candidate-1/lanius.bnf",
+  "grammar": "grammar/lanius.bnf",
   "start": "file",
   "lookback": 1,
   "lookahead": 1,
@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2351,
+    "cells": 2415,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2351,
+    "cells": 2415,
     "conflicts": []
   },
   "ll1_runtime": {
-    "nonterminals": 143,
+    "nonterminals": 149,
     "start_nonterminal": "file",
-    "predict_cells": 27885,
-    "rhs_symbols": 564
+    "predict_cells": 29353,
+    "rhs_symbols": 577
   },
   "ll1_predictions": [
     {
@@ -2355,6 +2355,648 @@
       "production": 246
     },
     {
+      "nonterminal": "cast",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "Match",
+      "lookahead_id": 95,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "SelfValue",
+      "lookahead_id": 105,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "PathGenericIdent",
+      "lookahead_id": 187,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Star",
+      "lookahead_id": 7,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Slash",
+      "lookahead_id": 9,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Percent",
+      "lookahead_id": 41,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "InfixPlus",
+      "lookahead_id": 59,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "InfixMinus",
+      "lookahead_id": 61,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ArgComma",
+      "lookahead_id": 82,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ArrayComma",
+      "lookahead_id": 83,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "MatchRBrace",
+      "lookahead_id": 120,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "StructLitRBrace",
+      "lookahead_id": 126,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "MatchArmComma",
+      "lookahead_id": 138,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "StructLitComma",
+      "lookahead_id": 160,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ConstSemicolon",
+      "lookahead_id": 166,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "LetSemicolon",
+      "lookahead_id": 167,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ReturnSemicolon",
+      "lookahead_id": 168,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "ExprSemicolon",
+      "lookahead_id": 169,
+      "production": 309
+    },
+    {
+      "nonterminal": "cast_tail",
+      "lookahead": "As",
+      "lookahead_id": 195,
+      "production": 308
+    },
+    {
+      "nonterminal": "cast_type",
+      "lookahead": "CastTypeIdent",
+      "lookahead_id": 196,
+      "production": 310
+    },
+    {
+      "nonterminal": "cast_type_path",
+      "lookahead": "CastTypeIdent",
+      "lookahead_id": 196,
+      "production": 311
+    },
+    {
+      "nonterminal": "cast_type_path_segment",
+      "lookahead": "CastTypeIdent",
+      "lookahead_id": 196,
+      "production": 312
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Star",
+      "lookahead_id": 7,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Slash",
+      "lookahead_id": 9,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Percent",
+      "lookahead_id": 41,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "InfixPlus",
+      "lookahead_id": 59,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "InfixMinus",
+      "lookahead_id": 61,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ArgComma",
+      "lookahead_id": 82,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ArrayComma",
+      "lookahead_id": 83,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "PathColon",
+      "lookahead_id": 114,
+      "production": 313
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "MatchRBrace",
+      "lookahead_id": 120,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "StructLitRBrace",
+      "lookahead_id": 126,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "MatchArmComma",
+      "lookahead_id": 138,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "StructLitComma",
+      "lookahead_id": 160,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ConstSemicolon",
+      "lookahead_id": 166,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "LetSemicolon",
+      "lookahead_id": 167,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ReturnSemicolon",
+      "lookahead_id": 168,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ExprSemicolon",
+      "lookahead_id": 169,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "As",
+      "lookahead_id": 195,
+      "production": 314
+    },
+    {
       "nonterminal": "compare",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -4329,6 +4971,12 @@
       "production": 298
     },
     {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "As",
+      "lookahead_id": 195,
+      "production": 297
+    },
+    {
       "nonterminal": "module_item",
       "lookahead": "Module",
       "lookahead_id": 97,
@@ -5361,6 +6009,12 @@
       "production": 51
     },
     {
+      "nonterminal": "path_tail",
+      "lookahead": "As",
+      "lookahead_id": 195,
+      "production": 51
+    },
+    {
       "nonterminal": "path_type_arg_tail",
       "lookahead": "PathTypeArgGt",
       "lookahead_id": 185,
@@ -5943,6 +6597,12 @@
       "production": 164
     },
     {
+      "nonterminal": "postfix_tail",
+      "lookahead": "As",
+      "lookahead_id": 195,
+      "production": 164
+    },
+    {
       "nonterminal": "primary",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -6294,6 +6954,12 @@
       "nonterminal": "primary_ident_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 274
+    },
+    {
+      "nonterminal": "primary_ident_tail",
+      "lookahead": "As",
+      "lookahead_id": 195,
       "production": 274
     },
     {
@@ -9928,7 +10594,7 @@
       "tag": "mul",
       "arity": 2,
       "rhs": [
-        "unary",
+        "cast",
         "mul_tail"
       ]
     },
@@ -9940,7 +10606,7 @@
       "arity": 2,
       "rhs": [
         "'Star'",
-        "unary",
+        "cast",
         "mul_tail"
       ]
     },
@@ -9952,7 +10618,7 @@
       "arity": 2,
       "rhs": [
         "'Slash'",
-        "unary",
+        "cast",
         "mul_tail"
       ]
     },
@@ -9964,7 +10630,7 @@
       "arity": 2,
       "rhs": [
         "'Percent'",
-        "unary",
+        "cast",
         "mul_tail"
       ]
     },
@@ -11521,6 +12187,89 @@
       "rhs": [
         "'Float'"
       ]
+    },
+    {
+      "id": 307,
+      "line": 377,
+      "lhs": "cast",
+      "tag": "cast",
+      "arity": 2,
+      "rhs": [
+        "unary",
+        "cast_tail"
+      ]
+    },
+    {
+      "id": 308,
+      "line": 378,
+      "lhs": "cast_tail",
+      "tag": "cast_tail",
+      "arity": 2,
+      "rhs": [
+        "'As'",
+        "cast_type",
+        "cast_tail"
+      ]
+    },
+    {
+      "id": 309,
+      "line": 379,
+      "lhs": "cast_tail",
+      "tag": "cast_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 310,
+      "line": 380,
+      "lhs": "cast_type",
+      "tag": "cast_type_name",
+      "arity": 1,
+      "rhs": [
+        "cast_type_path"
+      ]
+    },
+    {
+      "id": 311,
+      "line": 381,
+      "lhs": "cast_type_path",
+      "tag": "cast_type_path",
+      "arity": 2,
+      "rhs": [
+        "cast_type_path_segment",
+        "cast_type_path_tail"
+      ]
+    },
+    {
+      "id": 312,
+      "line": 382,
+      "lhs": "cast_type_path_segment",
+      "tag": "cast_type_path_ident",
+      "arity": 0,
+      "rhs": [
+        "'CastTypeIdent'"
+      ]
+    },
+    {
+      "id": 313,
+      "line": 383,
+      "lhs": "cast_type_path_tail",
+      "tag": "cast_type_path_more",
+      "arity": 2,
+      "rhs": [
+        "'PathColon'",
+        "'PathColon'",
+        "cast_type_path_segment",
+        "cast_type_path_tail"
+      ]
+    },
+    {
+      "id": 314,
+      "line": 384,
+      "lhs": "cast_type_path_tail",
+      "tag": "cast_type_path_end",
+      "arity": 0,
+      "rhs": []
     }
   ]
 }

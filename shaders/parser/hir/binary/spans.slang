@@ -32,6 +32,7 @@ static const uint HIR_BINARY_EXPR = 16u;
 static const uint HIR_EXPR_NONE = 0u;
 static const uint HIR_EXPR_EQ = 7u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_CAST = 36u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -73,7 +74,8 @@ uint expr_record(uint node, uint field)
 
 bool binary_form(uint form)
 {
-    return form >= HIR_EXPR_EQ && form <= HIR_EXPR_SHR;
+    // A cast spans its operand through its target type, like `left op right`.
+    return (form >= HIR_EXPR_EQ && form <= HIR_EXPR_SHR) || form == HIR_EXPR_CAST;
 }
 
 [shader("compute")]

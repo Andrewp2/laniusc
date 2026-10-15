@@ -744,6 +744,127 @@ void plan_integer_width_normalize(uint type)
         ? (bits == 8u ? 0xbeu : 0xbfu) : (bits == 8u ? 0xb6u : 0xb7u)) << 8u) | 0xc00000u);
 }
 
+// `value as T` with Rust semantics. Integers are extended to 64 bits in RAX by
+// their source signedness (narrow values are canonical in 32 bits), then
+// truncated by the target's width. Floats round through XMM15, with XMM14 for
+// constants. Float-to-integer conversion truncates toward zero, maps NaN to
+// zero and saturates at the target's bounds.
+void plan_convert(X86PlanInput input)
+{
+    X86LirLocations locations = input.locations;
+    uint source = input.operands.c;
+    uint target = input.operands.metadata & 0xffu;
+    bool source_f64 = source == SCALAR_F64;
+    bool target_f64 = target == SCALAR_F64;
+    bool target_float = scalar_is_float(target);
+    bool target_wide = scalar_uses_64bit_gpr(target);
+    // cvtsi2ss/cvtsi2sd xmm15, r64 with this ModRM; addss/addsd xmm15, xmm15.
+    uint to_float_prefix = select(target_f64, 0xf2u, 0xf3u);
+    if (scalar_is_float(source))
+    {
+        plan_xmm(source_f64, true, 15u, locations.b);
+        if (target_float)
+        {
+            // cvtss2sd / cvtsd2ss xmm15, xmm15
+            if (source_f64 != target_f64)
+                plan_bytes_word(1u, select(source_f64, 0xf2u, 0xf3u), 0xff5a0f45u);
+            plan_xmm(target_f64, false, 15u, locations.result);
+            return;
+        }
+        if (!source_f64) plan_bytes_word(1u, 0xf3u, 0xff5a0f45u); // cvtss2sd xmm15, xmm15
+        // NaN becomes +0.0: movapd xmm14, xmm15; cmpordsd xmm14, xmm15;
+        // andpd xmm15, xmm14.
+        plan_bytes_word(1u, 0x66u, 0xf7280f45u);
+        plan_bytes_word(2u, 0x45f2u, 0x07f7c20fu);
+        plan_bytes_word(1u, 0x66u, 0xfe540f45u);
+        uint bits = scalar_integer_bits(target);
+        bool is_signed = scalar_is_signed_integer(target);
+        if (bits <= 32u)
+        {
+            // Clamp to [lo, hi], both exact in f64, then truncate. hi is
+            // 2^k - 1: exponent 1022 + k and the top k - 1 fraction bits.
+            uint k = is_signed ? bits - 1u : bits;
+            uint hi_high = ((1022u + k) << 20u) |
+                (k > 21u ? 0xfffffu : 0xfffffu & ~((1u << (21u - k)) - 1u));
+            uint hi_low = k > 21u ? ~((1u << (53u - k)) - 1u) : 0u;
+            uint lo_high = is_signed ? 0x80000000u | ((1023u + k) << 20u) : 0u;
+            // movabs rax, lo; movq xmm14, rax; maxsd xmm15, xmm14
+            plan_bytes_words(2u, 0xb848u, 0u, lo_high);
+            plan_bytes_word(1u, 0x66u, 0xf06e0f4cu);
+            plan_bytes_word(1u, 0xf2u, 0xfe5f0f45u);
+            // movabs rax, hi; movq xmm14, rax; minsd xmm15, xmm14
+            plan_bytes_words(2u, 0xb848u, hi_low, hi_high);
+            plan_bytes_word(1u, 0x66u, 0xf06e0f4cu);
+            plan_bytes_word(1u, 0xf2u, 0xfe5d0f45u);
+            plan_bytes_word(1u, 0xf2u, 0xc72c0f49u); // cvttsd2si rax, xmm15
+        }
+        else
+        {
+            // xmm14 = 2^63. Unsigned sources below zero clamp to zero first:
+            // xorpd xmm14, xmm14; maxsd xmm15, xmm14.
+            if (!is_signed)
+            {
+                plan_bytes_word(1u, 0x66u, 0xf6570f45u);
+                plan_bytes_word(1u, 0xf2u, 0xfe5f0f45u);
+            }
+            plan_bytes_words(2u, 0xb948u, 0u, 0x43e00000u); // movabs rcx, 2^63
+            plan_bytes_word(1u, 0x66u, 0xf16e0f4cu); // movq xmm14, rcx
+            plan_bytes_word(1u, 0xf2u, 0xc72c0f49u); // cvttsd2si rax, xmm15
+            if (is_signed)
+            {
+                // Values >= 2^63 produced the indefinite integer; saturate.
+                plan_bytes_word(1u, 0x66u, 0xfe2e0f45u); // ucomisd xmm15, xmm14
+                plan_bytes_words(2u, 0xb948u, 0xffffffffu, 0x7fffffffu); // movabs rcx, i64::MAX
+            }
+            else
+            {
+                // Values >= 2^63 convert x - 2^63 and restore the top bit,
+                // which the first conversion's indefinite result supplies.
+                plan_bytes_word(1u, 0xf2u, 0xfe5c0f45u); // subsd xmm15, xmm14
+                plan_bytes_word(1u, 0xf2u, 0xcf2c0f49u); // cvttsd2si rcx, xmm15
+                plan_bytes_word(3u, 0xc28948u, 0x3ffac148u); // mov rdx, rax; sar rdx, 63
+                plan_bytes(3u, 0xd12148u); // and rcx, rdx
+                plan_bytes(3u, 0xc80948u); // or rax, rcx
+                // x >= 2^64 saturates.
+                plan_bytes_word(1u, 0x66u, 0xfe2e0f45u); // ucomisd xmm15, xmm14
+                plan_bytes_word(3u, 0xc1c748u, 0xffffffffu); // mov rcx, -1
+            }
+            plan_bytes(4u, 0xc1430f48u); // cmovae rax, rcx
+        }
+        plan_move(target_wide, X86_REG, locations.result);
+        return;
+    }
+    // Integer and bool sources: extend to 64 bits by source signedness. A
+    // 32-bit move zero-extends; movsxd rax, eax sign-extends.
+    bool source_wide = scalar_uses_64bit_gpr(source);
+    plan_move(source_wide, locations.b, X86_REG);
+    if (!source_wide && scalar_is_signed_integer(source)) plan_bytes(3u, 0xc06348u);
+    if (target_float)
+    {
+        if (scalar_is_unsigned_integer(source) && source_wide)
+        {
+            // u64 values >= 2^63 halve with a sticky low bit, convert and
+            // double: test rax, rax; js +7; cvtsi2s? xmm15, rax; jmp +22;
+            // mov rcx, rax; shr rcx, 1; and eax, 1; or rcx, rax;
+            // cvtsi2s? xmm15, rcx; adds? xmm15, xmm15
+            plan_bytes_word(1u, 0x48u, 0x0778c085u);
+            plan_bytes_word(1u, to_float_prefix, 0xf82a0f4cu);
+            plan_bytes(2u, 0x16ebu);
+            plan_bytes(3u, 0xc18948u);
+            plan_bytes(3u, 0xe9d148u);
+            plan_bytes(3u, 0x01e083u);
+            plan_bytes(3u, 0xc10948u);
+            plan_bytes_word(1u, to_float_prefix, 0xf92a0f4cu);
+            plan_bytes_word(1u, to_float_prefix, 0xff580f45u);
+        }
+        else plan_bytes_word(1u, to_float_prefix, 0xf82a0f4cu);
+        plan_xmm(target_f64, false, 15u, locations.result);
+        return;
+    }
+    plan_integer_width_normalize(target);
+    plan_move(target_wide, X86_REG, locations.result);
+}
+
 void plan_float(X86PlanInput input)
 {
     X86LirCore core = input.core;
@@ -818,6 +939,11 @@ uint plan_specialized(X86PlanInput input)
     X86LirLocations locations = input.locations;
     uint metadata = operands.metadata;
     uint op = core.op;
+    if (op == X86_LIR_OP_UNARY && operands.a == X86_LIR_UNARY_CONVERT)
+    {
+        plan_convert(input);
+        return 0u;
+    }
     uint integer_type = metadata & 0xffu;
     bool is_float = x86_scalar_float(metadata);
     bool f64 = x86_scalar_f64(metadata);

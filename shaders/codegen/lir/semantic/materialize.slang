@@ -1797,7 +1797,11 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         // payloads above may still refer to forwarding wrappers and therefore
         // deliberately resolve their complete expression result.
         operands.a = lir_for_hir(payload.b, hir_count);
-        operands.b = lir_for_hir(payload.c, hir_count);
+        // A conversion's payload.c is its target type row, which has no
+        // value. Its metadata operand is the source's checked scalar type.
+        operands.b = op == SEMANTIC_LIR_OP_CONVERT
+            ? semantic_type_for_hir(payload.b, hir_count)
+            : lir_for_hir(payload.c, hir_count);
     }
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC && intrinsic_slice_from_raw_parts(operands.a))
     {
