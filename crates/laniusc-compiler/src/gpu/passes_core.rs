@@ -1292,6 +1292,34 @@ pub(crate) fn submit_recorded_prefix(
     );
 }
 
+/// The device and queue a long recording splits its submission with (see
+/// `submit_recorded_prefix`).
+#[derive(Clone, Copy)]
+pub(crate) struct SubmissionSplit<'a> {
+    pub(crate) device: &'a wgpu::Device,
+    pub(crate) queue: &'a wgpu::Queue,
+}
+
+impl SubmissionSplit<'_> {
+    /// Submits everything recorded into `encoder` so far and continues in a
+    /// fresh encoder. With a timer, the fresh encoder starts with the
+    /// `begin` stamp, which must end in `.submission.begin`: the GPU's wait
+    /// for the rest of the recording then gets its own interval.
+    pub(crate) fn submit_prefix(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        label: &'static str,
+        begin: &'static str,
+        timer: Option<&mut crate::gpu::timer::GpuTimer>,
+    ) {
+        debug_assert!(begin.ends_with(".submission.begin"));
+        submit_recorded_prefix(self.device, self.queue, encoder, label);
+        if let Some(timer) = timer {
+            timer.stamp(encoder, begin);
+        }
+    }
+}
+
 /// Reflected compute-pipeline data shared by pass wrappers.
 #[derive(Clone)]
 pub struct PassData {

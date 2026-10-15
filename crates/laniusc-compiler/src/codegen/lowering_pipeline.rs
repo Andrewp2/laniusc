@@ -25,7 +25,7 @@ use crate::{
     gpu::{
         buffers::{LaniusBuffer, TrackedBufferView, readback_bytes, with_uniform_buffer_arena},
         compiler_graph::CompilerGraphWorkspace,
-        passes_core::map_readback_blocking,
+        passes_core::{SubmissionSplit, map_readback_blocking},
         timer::GpuTimer,
     },
     type_checker::GpuSemanticArtifactView,
@@ -496,14 +496,23 @@ impl GpuLoweringPipeline {
         Ok(())
     }
 
+    /// Records the lowering into `encoder`, which the caller submits. The
+    /// semantic stage and the optimizer are submitted as they are recorded
+    /// (`SubmissionSplit`), so the GPU starts on them while the host records
+    /// and finishes the rest; finishing costs several microseconds per
+    /// dispatch, and a lowering records several hundred.
     pub(crate) fn record(
         &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        let split = SubmissionSplit { device, queue };
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
+            timer.stamp(encoder, "lowering.submission.begin");
         }
         let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
@@ -513,8 +522,21 @@ impl GpuLoweringPipeline {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
-        self.semantic.record_timed(encoder, timer.as_deref_mut())?;
+        self.semantic
+            .record_timed(encoder, timer.as_deref_mut(), Some(split))?;
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.semantic",
+            "lowering.optimizer.submission.begin",
+            timer.as_deref_mut(),
+        );
         self.optimizer.record(encoder, timer.as_deref_mut())?;
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.optimizer",
+            "lowering.target.submission.begin",
+            timer.as_deref_mut(),
+        );
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.optimization.identity.done");
             timer.set_phase(self.target.compiler_phase());
@@ -535,8 +557,13 @@ impl GpuLoweringPipeline {
         Ok(())
     }
 
+    /// Records an object lowering into `encoder`, which the caller submits.
+    /// Like `record`, it submits the semantic stage and the optimizer as they
+    /// are recorded.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_object(
         &self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
@@ -544,27 +571,46 @@ impl GpuLoweringPipeline {
         selected_replay_hirs: &[u32],
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        let split = SubmissionSplit { device, queue };
         // Like `record`, time every lowering operation; without this scope
         // the semantic, optimizer and count-page kernels have no timestamps
         // and their time shows up under the first stamped target pass.
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
+            timer.stamp(encoder, "lowering.submission.begin");
         }
         let _compute_batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some()),
             "lowering.object.batch",
         );
-        // Each object job overwrites its scope, including ordinary/strict jobs.
-        // Like the object identity below, this upload belongs to this compiler
-        // job's command submission and is not cached by workspace identity.
+        // Each object job overwrites its scope and its object identity,
+        // including ordinary/strict jobs. These uploads belong to this
+        // compiler job's commands and are not cached by workspace identity.
+        // A queue write reaches only the submissions after it, so both
+        // precede the first split below.
         self.semantic.set_replay_functions(queue, selected_replay_hirs)?;
+        self.target
+            .set_object_identity(queue, library_id, unit_id)?;
         self.workspace.record_phase_reset(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
-        self.semantic.record_timed(encoder, timer.as_deref_mut())?;
+        self.semantic
+            .record_timed(encoder, timer.as_deref_mut(), Some(split))?;
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.semantic",
+            "lowering.optimizer.submission.begin",
+            timer.as_deref_mut(),
+        );
         self.optimizer.record(encoder, timer.as_deref_mut())?;
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.optimizer",
+            "lowering.target.submission.begin",
+            timer.as_deref_mut(),
+        );
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.optimization.identity.done");
             timer.set_phase(self.target.compiler_phase());
@@ -576,8 +622,6 @@ impl GpuLoweringPipeline {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
-        self.target
-            .set_object_identity(queue, library_id, unit_id)?;
         self.record_target_pages(encoder, true, &mut timer)?;
         self.status_readback_copy.record(encoder);
         if let Some(timer) = timer.as_deref_mut() {

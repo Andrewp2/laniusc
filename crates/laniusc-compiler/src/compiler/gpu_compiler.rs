@@ -797,9 +797,11 @@ mod tests {
                     })
                     .expect("type-check workspace should remain available")
                     .expect("lowering workspace");
-                pipeline.record(&mut encoder, None).unwrap_or_else(|error| {
-                    panic!("record {target:?} lowering for {case}: {error}")
-                });
+                pipeline
+                    .record(&gpu.device, &gpu.queue, &mut encoder, None)
+                    .unwrap_or_else(|error| {
+                        panic!("record {target:?} lowering for {case}: {error}")
+                    });
                 crate::gpu::passes_core::submit_with_progress(
                     &gpu.queue,
                     "checked-hir lowering integration",
