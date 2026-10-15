@@ -1,0 +1,14 @@
+module gen::area;
+
+import gen::lib;
+
+pub struct Rec {
+    f0: i32,
+}
+
+pub fn evaluate() -> i32 {
+    let r: Rec = Rec { f0: 38 };
+    let b: gen::lib::Box<Rec> = gen::lib::boxed(r);
+    let m: gen::lib::Maybe<i32> = gen::lib::just(gen::lib::unbox(b).f0);
+    return m.or_value(0) + 4;
+}
