@@ -38,7 +38,6 @@
 4352 type_checker/calls/03a1_emit_generic_claims
 4352 type_checker/calls/03a_collect_row_args
 4352 type_checker/methods/05_validate_keys
-4096 tests/canonical_type_constraint_boundary
 4096 type_checker/calls/03a0_bind_explicit_applications
 3840 type_checker/semantic/artifact/01c_generic_native_words
 3328 tests/canonical_type_identity_boundary

@@ -668,8 +668,9 @@ the exact claim to be rejected, which disagreed with the code.
 `shaders/type_checker/match/ct_match.slang` matches a declared pattern
 against an actual type, both as canonical IDs, and binds the pattern's
 parameters so that the pattern under the bindings is the actual. It
-replaces `scoped_type_and_constant_constraints`,
-`canonical_type_and_constant_constraints` and the receiver pattern helpers.
+replaced `scoped_type_and_constant_constraints`,
+`canonical_type_and_constant_constraints`, the parameter pattern walk and
+the receiver pattern helpers, which are deleted.
 
 ```
 uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
