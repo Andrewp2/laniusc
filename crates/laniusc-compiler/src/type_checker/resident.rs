@@ -727,8 +727,12 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.workspace_ready");
             }
-            queue.write_buffer(
-                &bind_groups.if_depth_params,
+            // Both parameter blocks are logical ranges of the uniform arena:
+            // write through the view's offset, never at the arena's start
+            // (that clobbered gConstantStoragePlan and disabled constant
+            // publication).
+            bind_groups.if_depth_params.write(
+                queue,
                 0,
                 &uniform_bytes(&IfDepthParams {
                     n_tokens: token_capacity,
@@ -737,8 +741,8 @@ impl GpuTypeChecker {
                     scan_step: 0,
                 }),
             );
-            queue.write_buffer(
-                &bind_groups.fn_params,
+            bind_groups.fn_params.write(
+                queue,
                 0,
                 &uniform_bytes(&FnContextParams {
                     n_tokens: token_capacity,
