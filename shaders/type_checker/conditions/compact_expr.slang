@@ -252,11 +252,11 @@ void validate_index(uint node, HirPayload payload)
 
 bool cast_numeric(uint ty) { return scalar_is_integer(ty) || scalar_is_float(ty); }
 
-// `value as T` converts between integer and floating scalars and from bool to
-// an integer. payload.b is the operand and payload.d the target type's first
-// token, where the type collector publishes its checked reference; the `as`
-// token is just before it. The detail packs (source << 16) | target, with 0
-// for a type that is not a primitive scalar.
+// `value as T` converts between integer and floating scalars, from bool or
+// char to an integer, and from u8 to char. payload.b is the operand and
+// payload.d the target type's first token, where the type collector publishes
+// its checked reference; the `as` token is just before it. The detail packs
+// (source << 16) | target, with 0 for a type that is not a primitive scalar.
 void validate_cast(uint node, HirPayload payload)
 {
     uint target_token = payload.d;
@@ -274,8 +274,11 @@ void validate_cast(uint node, HirPayload payload)
         if (source_tag == 0u) return;
         source = source_tag == TYPE_REF_SCALAR ? semantic_expr_ref_payload_by_hir[payload.b] : TY_UNKNOWN;
     }
+    // bool and char convert to any integer; only u8 converts to char.
+    bool integer_source = source == TY_BOOL || source == TY_CHAR;
     if (cast_numeric(target) &&
-        (cast_numeric(source) || (source == TY_BOOL && scalar_is_integer(target)))) return;
+        (cast_numeric(source) || (integer_source && scalar_is_integer(target)))) return;
+    if (target == TY_CHAR && source == SCALAR_U8) return;
     uint source_code = scalar_is_known(source) ? source : 0u;
     uint target_code = scalar_is_known(target) ? target : 0u;
     record_min_token_error(status, target_token - 1u, ERR_INVALID_CAST,

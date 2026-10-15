@@ -3144,7 +3144,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 .with_primary_label(diagnostic_label_from_source_span(
                     path, source, start, len, invalid_cast_label(detail),
                 ))
-                .with_note("`as` converts between integer and floating-point scalar types, and from bool to an integer type"),
+                .with_note("`as` converts between integer and floating-point types, from bool or char to an integer type, and from u8 to char"),
         ),
         GpuTypeCheckCode::InvalidArrayLength => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
