@@ -7,8 +7,10 @@
 //! copies that image with a few coalesced copies.
 //!
 //! A dispatch's bind group names only whole buffers (a source, or a fixed
-//! window of one too large to bind) and the retained pairs, output and params
-//! buffers; its pair range comes through a dynamic uniform offset. Readbacks
+//! window of one too large to bind) and the retained region records, output
+//! and params buffers; its record range comes through a dynamic uniform
+//! offset. A record names a whole region (output word, source word, word
+//! count), so a 32-word row uploads 12 bytes instead of 32 word pairs. Readbacks
 //! of other regions therefore reuse the cached bind groups, and new ones are
 //! created only for a new source buffer or when a retained buffer grows.
 
@@ -35,20 +37,23 @@ use crate::gpu::{
 const GATHER_SHADER: &str = "readback/gather_words";
 const GATHER_LABEL: &str = "readback.gather";
 const GATHER_PARAMS: &str = "gather_params";
-/// One `GatherParams` record: first pair, pair count, padding.
+/// One `GatherParams` record: first region record, record count, padding.
 const PARAMS_BYTES: usize = 16;
+/// Words of one region record: output word, source word, word count.
+const RECORD_WORDS: usize = 3;
 /// Below this many small regions, direct copies cost about as much as the
 /// gather's upload and dispatch.
 const MIN_GATHER_REGIONS: usize = 64;
 /// Larger regions already copy efficiently.
 const MAX_GATHER_REGION_BYTES: usize = 256;
-/// Bounds the retained gather buffers (16 MiB of output, 32 MiB of pairs).
+/// Bounds the retained gather buffers (16 MiB of output, at most 48 MiB of
+/// records when every region is one word).
 const MAX_GATHER_WORDS: usize = 1 << 22;
 
 struct GatherKernel {
     device: wgpu::Device,
     pass: PassData,
-    pairs: Option<LaniusBuffer<u32>>,
+    records: Option<LaniusBuffer<u32>>,
     output: Option<LaniusBuffer<u32>>,
     /// One params record per dispatch, at uniform-offset-aligned strides.
     params: Option<LaniusBuffer<u32>>,
@@ -89,7 +94,7 @@ pub(super) fn lease(device: &wgpu::Device, region_count: usize) -> Option<Gather
                 *guard = Some(GatherKernel {
                     device: device.clone(),
                     pass,
-                    pairs: None,
+                    records: None,
                     output: None,
                     params: None,
                 });
@@ -168,6 +173,8 @@ impl GatherLease {
 
         let mut groups = Vec::<SourceGroup<'a>>::new();
         let mut group_by_window = HashMap::<(&wgpu::Buffer, u64), usize>::new();
+        // Readers list a buffer's rows together; skip the map for runs.
+        let mut last_group = None::<(&wgpu::Buffer, u64, usize)>;
         for (index, region) in regions.iter().enumerate() {
             if region.byte_len == 0
                 || region.byte_len > MAX_GATHER_REGION_BYTES
@@ -180,16 +187,22 @@ impl GatherLease {
             let Some(window) = source_window(region.source, start, end, align, max_window) else {
                 continue;
             };
-            let group = *group_by_window
-                .entry((region.source, window.0))
-                .or_insert_with(|| {
-                    groups.push(SourceGroup {
-                        source: region.source,
-                        window,
-                        regions: Vec::new(),
-                    });
-                    groups.len() - 1
-                });
+            let group = match last_group {
+                Some((source, offset, group)) if source == region.source && offset == window.0 => {
+                    group
+                }
+                _ => *group_by_window
+                    .entry((region.source, window.0))
+                    .or_insert_with(|| {
+                        groups.push(SourceGroup {
+                            source: region.source,
+                            window,
+                            regions: Vec::new(),
+                        });
+                        groups.len() - 1
+                    }),
+            };
+            last_group = Some((region.source, window.0, group));
             groups[group].regions.push(index);
         }
         let gathered_regions = groups.iter().map(|group| group.regions.len()).sum::<usize>();
@@ -216,42 +229,40 @@ impl GatherLease {
             return Ok(None);
         }
 
-        // One run of pairs per group, named by the group's params record.
+        // One run of region records per group, named by the group's params
+        // record.
         let params_stride = PARAMS_BYTES
             .next_multiple_of(limits.min_uniform_buffer_offset_alignment.max(1) as usize);
-        let mut pairs = Vec::<u32>::with_capacity(image_words * 2);
+        let mut records = Vec::<u8>::with_capacity(gathered_regions * RECORD_WORDS * 4);
         let mut params = vec![0u8; groups.len() * params_stride];
-        let mut pair_counts = Vec::with_capacity(groups.len());
+        let mut record_counts = Vec::with_capacity(groups.len());
+        let mut first = 0u32;
         for (slot, group) in groups.iter().enumerate() {
-            let first = pairs.len() / 2;
             for &index in &group.regions {
                 let region = &regions[index];
                 let image = image_word[index].expect("gathered region has an image word");
                 let source_word = ((region.source_offset - group.window.0) / 4) as u32;
-                for word in 0..region.byte_len.div_ceil(4) as u32 {
-                    pairs.push(image + word);
-                    pairs.push(source_word + word);
+                let words = region.byte_len.div_ceil(4) as u32;
+                for word in [image, source_word, words] {
+                    records.extend_from_slice(&word.to_le_bytes());
                 }
             }
-            let pair_count = (pairs.len() / 2 - first) as u32;
-            let record = &mut params[slot * params_stride..][..8];
-            record[..4].copy_from_slice(&(first as u32).to_le_bytes());
-            record[4..].copy_from_slice(&pair_count.to_le_bytes());
-            pair_counts.push(pair_count);
+            let count = group.regions.len() as u32;
+            let slot_params = &mut params[slot * params_stride..][..8];
+            slot_params[..4].copy_from_slice(&first.to_le_bytes());
+            slot_params[4..].copy_from_slice(&count.to_le_bytes());
+            record_counts.push(count);
+            first += count;
         }
 
-        let pairs_buffer = retained_buffer(
+        retained_buffer(
             device,
-            &mut self.kernel().pairs,
-            "readback.gather.pairs",
-            pairs.len(),
+            &mut self.kernel().records,
+            "readback.gather.records",
+            records.len() / 4,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        );
-        let mut bytes = Vec::with_capacity(pairs.len() * 4);
-        for word in &pairs {
-            bytes.extend_from_slice(&word.to_le_bytes());
-        }
-        pairs_buffer.write(queue, 0, &bytes);
+        )
+        .write(queue, 0, &records);
         retained_buffer(
             device,
             &mut self.kernel().output,
@@ -269,13 +280,13 @@ impl GatherLease {
         .write(queue, 0, &params);
 
         let kernel = self.0.as_ref().expect("leased gather kernel");
-        let pairs_buffer = kernel.pairs.as_ref().expect("gather pairs buffer");
+        let records_buffer = kernel.records.as_ref().expect("gather records buffer");
         let output = kernel.output.as_ref().expect("gather output buffer");
         let params_buffer = kernel.params.as_ref().expect("gather params buffer");
         // Create every bind group before recording, so an error leaves no
         // stamped dispatch in an encoder that is never submitted.
         let mut dispatches = Vec::with_capacity(groups.len());
-        for (slot, (group, &pair_count)) in groups.iter().zip(&pair_counts).enumerate() {
+        for (slot, (group, &record_count)) in groups.iter().zip(&record_counts).enumerate() {
             let params = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                 buffer: &params_buffer.buffer,
                 offset: 0,
@@ -294,13 +305,13 @@ impl GatherLease {
                 &[
                     (GATHER_PARAMS, params),
                     ("gather_source", source),
-                    ("gather_pairs", pairs_buffer.as_entire_binding()),
+                    ("gather_regions", records_buffer.as_entire_binding()),
                     ("gather_output", output.as_entire_binding()),
                 ],
             )?;
             let workgroups = passes_core::plan_workgroups(
                 DispatchDim::D1,
-                InputElements::Elements1D(pair_count),
+                InputElements::Elements1D(record_count),
                 kernel.pass.thread_group_size,
             )?;
             dispatches.push((bindings, (slot * params_stride) as u32, workgroups));
