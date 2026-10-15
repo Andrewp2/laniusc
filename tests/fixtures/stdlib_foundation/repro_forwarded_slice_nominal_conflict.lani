@@ -1,3 +1,4 @@
+// expect: LNC0006
 module app::main;
 import core::mem;
 struct Pair { left: i32, right: i32 }
