@@ -8874,8 +8874,8 @@ fn main() -> i32 {
         alloc::allocator::dealloc(out_ptr, capacity, align);
         return 3;
     }
-    let out_len: usize = out_len_i32;
-    let err_len: usize = err_len_i32;
+    let out_len: usize = out_len_i32 as usize;
+    let err_len: usize = err_len_i32 as usize;
     let out_written: i32 = std::io::write_stdout(out_ptr, out_len);
     let err_written: i32 = std::io::write_stderr(err_ptr, err_len);
     alloc::allocator::dealloc(err_ptr, capacity, align);
@@ -9424,7 +9424,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(ptr, capacity, align);
         return 2;
     }
-    let count_len: usize = count;
+    let count_len: usize = count as usize;
     let written: i32 = std::io::write_stdout(ptr, count_len);
     alloc::allocator::dealloc(ptr, capacity, align);
     if (written != count) {
@@ -9586,7 +9586,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(ptr, capacity, align);
         return 4;
     }
-    let count_len: usize = count;
+    let count_len: usize = count as usize;
     let written: i32 = std::fs::write(output, ptr, count_len);
     let output_close: i32 = std::fs::close(output);
     alloc::allocator::dealloc(ptr, capacity, align);
@@ -9686,7 +9686,7 @@ fn main() -> i32 {
         return 4;
     }
 
-    let input_len: usize = input_len_i32;
+    let input_len: usize = input_len_i32 as usize;
     let input: std::fs::FileHandle = std::fs::open_read(input_path, input_len);
     if (input < 0) {
         alloc::allocator::dealloc(data, data_capacity, align);
@@ -9703,7 +9703,7 @@ fn main() -> i32 {
         return 6;
     }
 
-    let output_len: usize = output_len_i32;
+    let output_len: usize = output_len_i32 as usize;
     let output: std::fs::FileHandle = std::fs::open_write(output_path, output_len);
     if (output < 0) {
         alloc::allocator::dealloc(data, data_capacity, align);
@@ -10410,7 +10410,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(key_ptr, capacity, align);
         return 13;
     }
-    let key_len: usize = key_len_i32;
+    let key_len: usize = key_len_i32 as usize;
     let value_len: i32 = value_len_for_key(key_ptr, key_len);
     if (value_len < 0) {
         alloc::allocator::dealloc(value_ptr, capacity, align);
