@@ -107,9 +107,10 @@ bool fold_occurrence<S : ICtSlots>(S slots, uint leaf, uint position, uint actua
         if (slot >= SLOTS || constant != (position != POSITION_TYPE)) return false;
         if (constant && (!constant_scalar_is_supported(scalar) ||
             (position == POSITION_COUNT && !scalar_is_integer(scalar)))) return false;
+        // Type and constant parameters have slots of their own.
         if (constant) const_mask |= 1u << slot;
         else type_mask |= 1u << slot;
-        return (type_mask & const_mask) == 0u;
+        return true;
     }
     if (item != (constant ? SLOTS + 1u : 1u) + slot) return true;
     if (!ct_is_resolved(actual) || ct_kind(actual) == CT_KIND_ENV) return false;

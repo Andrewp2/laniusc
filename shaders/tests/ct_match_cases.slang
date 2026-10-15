@@ -21,8 +21,9 @@ static const uint INPUT_SPECS = 35u;
 static const uint EXPECTED_SPECS = 2u;
 static const uint REF = 0x10000000u;
 
-// Callee parameters: T 0, U 1 (types), N 2 (usize), M 3 (u8). Caller
-// parameters in the actuals: X (a type), K (u32), J (usize), L (u16).
+// Callee parameters: T 0, U 1 (type slots), N 0 (usize), M 1 (u8)
+// (constant slots). Caller parameters in the actuals: X (a type), K (u32),
+// J (usize), L (u16).
 static const uint TOKEN_T = 100u;
 static const uint TOKEN_U = 101u;
 static const uint TOKEN_N = 102u;
@@ -38,7 +39,7 @@ struct CaseSlots : ICtSlots
     { return token == TOKEN_T ? 0u : token == TOKEN_U ? 1u : token == TOKEN_X ? 9u : CT_SLOT_NONE; }
     uint const_slot(uint token)
     {
-        return token == TOKEN_N ? 2u : token == TOKEN_M ? 3u : token == TOKEN_K ? 10u
+        return token == TOKEN_N ? 0u : token == TOKEN_M ? 1u : token == TOKEN_K ? 10u
             : token == TOKEN_J ? 11u : token == TOKEN_L ? 12u : CT_SLOT_NONE;
     }
     uint const_scalar(uint token)
@@ -106,7 +107,7 @@ uint4 spec(uint j)
     case 25u: return uint4(4u, T, M, 0u);
     case 26u: return uint4(4u, I, REF | 2u, 0u);
     case 27u: return uint4(4u, I, REF | 3u, 0u);
-    case 28u: return uint4(4u, ct_dep_type_param(0u), ct_dep_const_param(2u, SCALAR_USIZE), 0u);
+    case 28u: return uint4(4u, ct_dep_type_param(0u), ct_dep_const_param(0u, SCALAR_USIZE), 0u);
     case 29u: return uint4(6u, 1u, X, 0u);
     case 30u: return uint4(6u, 3u, I, J);
     case 31u: return uint4(3u, SCALAR_USIZE, K, 0u);
@@ -162,7 +163,7 @@ struct Case
     bool matches;
     uint2 masks;     // expected type and constant masks
     uint count_mask;
-    uint2 bindings;  // expected type slot (0 or 1) and constant slot (2 or 3) bindings
+    uint2 bindings;  // expected type slot (0 or 1) and constant slot (0 or 1) bindings
 };
 
 Case make_case(uint4 roots, uint prior, uint flags, bool matches, uint2 masks, uint count_mask, uint2 bindings)
@@ -176,16 +177,16 @@ Case make_case(uint4 roots, uint prior, uint flags, bool matches, uint2 masks, u
 Case case_input(uint i)
 {
     uint one = CT_NONE;
-    uint2 tn = uint2(1u, 4u);
+    uint2 tn = uint2(1u, 1u);
     uint2 none = uint2(0u, 0u);
     uint2 none_bound = uint2(CT_NONE, CT_NONE);
     uint v3 = REF | 4u;
     switch (i)
     {
-    case 0u: return make_case(uint4(REF | 7u, REF | 9u, one, 0u), CT_NONE, 0u, true, tn, 4u, uint2(I, v3));
+    case 0u: return make_case(uint4(REF | 7u, REF | 9u, one, 0u), CT_NONE, 0u, true, tn, 1u, uint2(I, v3));
     // A count claim of a parameter of another scalar is a symbolic cast.
-    case 1u: return make_case(uint4(REF | 7u, REF | 11u, one, 0u), CT_NONE, 0u, true, tn, 4u, uint2(I, REF | 35u));
-    case 2u: return make_case(uint4(REF | 7u, REF | 13u, one, 0u), CT_NONE, 0u, true, tn, 4u, uint2(I, J));
+    case 1u: return make_case(uint4(REF | 7u, REF | 11u, one, 0u), CT_NONE, 0u, true, tn, 1u, uint2(I, REF | 35u));
+    case 2u: return make_case(uint4(REF | 7u, REF | 13u, one, 0u), CT_NONE, 0u, true, tn, 1u, uint2(I, J));
     case 3u: return make_case(uint4(REF | 14u, REF | 15u, one, 0u), CT_NONE, 0u, true, uint2(1u, 0u), 0u, uint2(I, CT_NONE));
     case 4u: return make_case(uint4(REF | 14u, REF | 16u, one, 0u), CT_NONE, 0u, false, none, 0u, none_bound);
     case 5u: return make_case(uint4(REF | 17u, REF | 18u, one, 0u), CT_NONE, 0u, true, tn, 0u, uint2(I, v3));
@@ -206,18 +207,18 @@ Case case_input(uint i)
     case 15u: return make_case(uint4(T, REF | 8u, one, 0u), CT_NONE, 0u, true, uint2(1u, 0u), 0u, uint2(REF | 8u, CT_NONE));
     // A count must fit the declared scalar (M: u8).
     case 16u: return make_case(uint4(REF | 25u, REF | 26u, one, 0u), CT_NONE, 0u, false, none, 0u, none_bound);
-    case 17u: return make_case(uint4(REF | 25u, REF | 27u, one, 0u), CT_NONE, 0u, true, uint2(1u, 8u), 8u,
+    case 17u: return make_case(uint4(REF | 25u, REF | 27u, one, 0u), CT_NONE, 0u, true, uint2(1u, 2u), 2u,
         uint2(I, REF | 36u));
     // Dependency signature parameters carry their slot and scalar.
-    case 18u: return make_case(uint4(REF | 28u, REF | 8u, one, 0u), CT_NONE, 0u, true, tn, 4u, uint2(I, v3));
-    case 19u: return make_case(uint4(REF | 7u, REF | 9u, one, 0u), CT_NONE, 0x80000000u, true, tn, 4u, none_bound);
+    case 18u: return make_case(uint4(REF | 28u, REF | 8u, one, 0u), CT_NONE, 0u, true, tn, 1u, uint2(I, v3));
+    case 19u: return make_case(uint4(REF | 7u, REF | 9u, one, 0u), CT_NONE, 0x80000000u, true, tn, 1u, none_bound);
     case 20u: return make_case(uint4(REF | 7u, REF | 29u, one, 0u), CT_NONE, 0u, false, none, 0u, none_bound);
     case 21u: return make_case(uint4(REF | 17u, REF | 30u, one, 0u), CT_NONE, 0u, true, tn, 0u, uint2(I, J));
     case 22u: return make_case(uint4(REF | 6u, REF | 34u, REF | 17u, REF | 32u), CT_NONE, 0u, true, tn, 0u,
         uint2(I, REF | 31u));
     // A type parameter in a constant position never matches.
     case 23u: return make_case(uint4(REF | 33u, REF | 18u, one, 0u), CT_NONE, 0u, false, none, 0u, none_bound);
-    default: return make_case(uint4(REF | 7u, REF | 9u, one, 0u), CT_NONE, 0u, true, tn, 4u, uint2(I, v3));
+    default: return make_case(uint4(REF | 7u, REF | 9u, one, 0u), CT_NONE, 0u, true, tn, 1u, uint2(I, v3));
     }
 }
 
@@ -263,7 +264,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         check(base, ct_kind(result) == CT_KIND_ENV && words.x == 0u ? words.y | (words.z << 16u) : INVALID,
             c.masks.x | (c.masks.y << 16u));
         uint type_slot = (c.masks.x & 2u) != 0u && (c.masks.x & 1u) == 0u ? 1u : 0u;
-        uint const_slot = (c.masks.y & 8u) != 0u ? 3u : 2u;
+        uint const_slot = (c.masks.y & 2u) != 0u ? 1u : 0u;
         if (c.bindings.x != CT_NONE) check(base + 1u, ct_env_binding(result, type_slot, false), resolve(c.bindings.x));
         if (c.bindings.y != CT_NONE) check(base + 2u, ct_env_binding(result, const_slot, true), resolve(c.bindings.y));
         // The last case repeats case 0: the same bindings are the same environment.

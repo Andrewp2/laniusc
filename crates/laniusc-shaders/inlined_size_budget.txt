@@ -24,7 +24,6 @@
 131997 type_checker/dependencies/15a_collect_methods
 129433 type_checker/calls/03k2_materialize_match_payloads
 126881 tests/owned_type_constraints_match
-122247 type_checker/methods/05_validate_keys
 120498 type_checker/program_evidence/entries/32_11_admit_environments
 110056 type_checker/program_evidence/entries/14_validate_contexts
 109374 type_checker/program_evidence/entries/64_publish_roots
