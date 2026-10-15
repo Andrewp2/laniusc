@@ -764,11 +764,16 @@ impl GpuTypeChecker {
             );
         }
         let artifact_word_capacity = artifact_capacity.div_ceil(4);
-        let artifact_words = self.semantic_interface_buffers.storage_u32(
+        // Bind the retained allocation: the kernel bounds its writes by
+        // `artifact_word_capacity` in its parameters, and a program-sized view
+        // would key a new bind group on every warm job.
+        let artifact_words = self.semantic_interface_buffers.binding_capacity(
             device,
             "type_check.interface.artifact.words",
-            artifact_word_capacity,
-            wgpu::BufferUsages::COPY_SRC,
+            artifact_word_capacity.max(1) * std::mem::size_of::<u32>(),
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         );
         let artifact_length = self.semantic_interface_buffers.storage_u32(
             device,
