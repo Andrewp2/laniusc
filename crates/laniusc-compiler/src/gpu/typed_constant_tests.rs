@@ -24,9 +24,28 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     // One thread-scratch slot per row (shaders/thread_scratch.slang).
     let scratch = storage_rw_for_array::<u32>(&gpu.device, "typed_constants.thread_scratch",
         thread_scratch_words(rows));
+    // A probe that reaches the program-evidence abi (through a module it
+    // tests) declares the abi's parameter block and tables. The probes never
+    // read them; zeroed placeholders satisfy the exact binding contract.
+    let evidence_params = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("typed_constants.evidence_params"),
+        size: 32,
+        usage: wgpu::BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let evidence_tables = ["program_evidence_catalog", "program_evidence_batch", "program_evidence_output"]
+        .map(|name| (name, storage_rw_for_array::<u32>(&gpu.device, name, 4)));
     let mut entries = vec![(binding, results.as_entire_binding())];
     if passes_core::bind_group::declares_binding(&pass, 0, "thread_scratch") {
         entries.push(("thread_scratch", scratch.as_entire_binding()));
+    }
+    if passes_core::bind_group::declares_binding(&pass, 0, "program_evidence_params") {
+        entries.push(("program_evidence_params", evidence_params.as_entire_binding()));
+    }
+    for (name, table) in &evidence_tables {
+        if passes_core::bind_group::declares_binding(&pass, 0, name) {
+            entries.push((*name, table.as_entire_binding()));
+        }
     }
     passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
     let group = passes_core::bind_group::create_bind_group_from_bindings(
