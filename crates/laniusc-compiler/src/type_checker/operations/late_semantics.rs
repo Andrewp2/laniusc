@@ -348,6 +348,9 @@ impl SemanticProjectionOperations {
                         )?)
                     };
                     words("canonical_row")? + words("canonical_atom")? + words("canonical_projection")?
+                } else if name == "type_check.body_specialization.graph" {
+                    // One lane per reserved graph node and constant atom row.
+                    generic_body::BODY_ATOM_RESERVE_ROWS as u32
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
@@ -445,7 +448,9 @@ impl SemanticProjectionOperations {
                 resources,
                 "type_check.body_specialization.native_layout_admission",
                 &passes.kernel("type_checker/semantic/artifact/01c2_validate_body_native_layout"),
-                generic_body::MAX_BODY_TYPE_NODES as u32,
+                // One lane per graph node and per entry argument slot.
+                (generic_body::MAX_BODY_ENTRIES * generic_body::MAX_BODY_TYPE_ARGUMENTS)
+                    .max(generic_body::MAX_BODY_GRAPH_NODES) as u32,
             )?,
             expression_types_init: direct(
                 compiler_graph::INIT_PASS,

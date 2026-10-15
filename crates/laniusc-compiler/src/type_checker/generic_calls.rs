@@ -1874,6 +1874,12 @@ pub(super) fn read_unit_facts(
         ensure!(call_spans.insert(record[0], [record[1], record[2]]).is_none(),
             "retained call {} has duplicate source records", record[0]);
     }
+    // An instance-copy replay publishes only its copies' calls (rows at or
+    // past the first copy row); the template's own calls were admitted with
+    // the template, so their facts are not read again.
+    if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row()) {
+        call_spans.retain(|&call, _| call >= first);
+    }
     let call_ids = call_spans.keys().copied().collect::<Vec<_>>();
     let calls_with_claims = (0..claim_count)
         .filter(|&claim| columns[0][claim] != INVALID && columns[1][claim] != INVALID)

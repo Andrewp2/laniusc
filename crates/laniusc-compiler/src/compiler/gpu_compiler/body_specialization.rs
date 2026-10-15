@@ -254,7 +254,13 @@ impl GpuCompiler<'_> {
                     let copies = instance_copies && !body.recursive && program
                         .instance_copy_available(&body.admitted).map_err(native_program_error)?;
                     let placed = !body.recursive && runs.iter_mut().try_fold(false, |placed, run| {
-                        if placed || run.solo || run.copies != copies || run.keys.len() >= batch_limit {
+                        // Original-scope runs stay small: their scopes are found by a linear search.
+                        let limit = if run.copies {
+                            batch_limit
+                        } else {
+                            batch_limit.min(gpu_type_checker::MAX_ORIGINAL_REPLAY_ENTRIES)
+                        };
+                        if placed || run.solo || run.copies != copies || run.keys.len() >= limit {
                             return Ok(placed);
                         }
                         run.try_add(&key, &scope, entry.clone())
@@ -269,13 +275,13 @@ impl GpuCompiler<'_> {
                         });
                     }
                 }
+                host_span("plan", plan_started);
                 for run in runs {
                     let started = std::time::Instant::now();
                     let origins = run.keys.iter().map(|key| &pending[key].admitted).collect::<Vec<_>>();
                     // A recursively growing environment fails wherever it first
                     // outgrows a limit; report it as the recursion it is.
                     let recursion = |error: CompileError| {
-                host_span("plan", plan_started);
                         let body = &pending[&run.keys[0]];
                         if !run.solo || !is_capacity_failure(&error) { return error; }
                         let owner = body.origin.parent.map(|(context, _)|
@@ -299,15 +305,15 @@ impl GpuCompiler<'_> {
                         request.finish(pending_unit).map_err(|error| recursion(native_program_error(error)))?;
                     let replay_calls = checked.calls;
                     let finished = std::time::Instant::now();
+                    crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
+                    crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
+                    crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
                     let entry_layouts = replay.body_native_layouts.as_ref()
                         .filter(|layouts| layouts.len() == run.keys.len())
                         .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?
                         .clone();
                     let CompiledSourcePackObject::X86_64(mut concrete) = replay.object else {
                         unreachable!("body replay target is x86_64")
-                    crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
-                    crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
-                    crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
                     };
                     let (library_id, unit_id, _) = pending[&run.keys[0]].target;
                     let candidate = next_unit_by_library.entry(library_id).or_default();
@@ -383,13 +389,13 @@ impl GpuCompiler<'_> {
                     concrete
                         .validate()
                         .map_err(|error| CompileError::GpuCodegen(error))?;
+                    host_span("publish", finished);
                     trace.replay(
                         &run.keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
                         specializations.len(), [started, prepared, compiled, finished],
                         concrete.text.len(), replay_calls.len());
                     contexts.push(ReplayContext {
                         library_id,
-                    host_span("publish", finished);
                         unit_id,
                         calls: replay_calls,
                         call_hirs: replay.x86_call_hirs,
@@ -399,21 +405,21 @@ impl GpuCompiler<'_> {
                     objects.push(Cow::Owned(concrete));
                 }
             }
+            let patch_started = std::time::Instant::now();
             for (context_index, symbol_index, key) in patches {
                 replace_symbol_identity(
                     objects[context_index].to_mut(),
                     symbol_index,
                     &specializations[&key].0,
                 )?;
-            let patch_started = std::time::Instant::now();
             }
+            host_span("patch", patch_started);
             round_start = round_end;
         }
         trace.finish(specializations.len(), specialized_text_bytes);
         Ok(objects)
     }
 }
-            host_span("patch", patch_started);
 
 /// One object in the specialization worklist: an original unit's object or
 /// a replay's. `entries` maps each body a replay published (its selected
@@ -520,16 +526,16 @@ fn replay_entry(call: &CheckedGenericCall, target: (u32, u32, u32)) -> CheckedBo
     }
 }
 
-/// `LANIUS_REPLAY_COPIES=0` replays every body in its original scope instead
-/// of as an instance copy.
-fn instance_copies_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_COPIES", true)
-}
-
 /// A host span on the specialization lane of LANIUS_PERFETTO_TRACE, from
 /// `start` to now.
 fn host_span(name: &str, start: std::time::Instant) {
     crate::gpu::trace::record_host_span("specialization", name, start, std::time::Instant::now());
+}
+
+/// `LANIUS_REPLAY_COPIES=0` replays every body in its original scope instead
+/// of as an instance copy.
+fn instance_copies_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_COPIES", true)
 }
 
 /// `LANIUS_REPLAY_BATCH=N` caps the bodies per frontend run (1 replays each

@@ -2910,7 +2910,7 @@ fn build_graph(
         } else {
             0
         };
-    let type_rows = token_rows + generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows;
+    let type_rows = token_rows + generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows;
     let type_lookup_rows = if application_types_required {
         type_rows
     } else {
@@ -3390,8 +3390,8 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _type_instance_arg_row_ref_tag as "type_instance_arg_row_ref_tag" in Types => hir_rows * 4;
         _type_instance_arg_row_ref_payload as "type_instance_arg_row_ref_payload" in Types => hir_rows * 4;
-        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
-        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows) * 128;
     });
     graph_resources!(graph, Output {
         struct_init_field_ordinal_by_row in Declarations => hir_rows * 4;
@@ -4579,7 +4579,7 @@ fn build_graph(
             hir_rows,
             type_rows,
             constant_rows,
-            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
+            extra_argument_rows: generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows,
             dependency_rows: u64::from(dependency_capacity.constant_type_rows),
             dependency_page_rows: dependency_type_rows,
             scale: canonical_scale,

@@ -156,11 +156,11 @@ void publish_type_parameter_reference(uint row, uint slot, uint use_token)
     uint owner = compact_generic_params[row].owner;
     uint entry = owner < active_hir_node_count()
         ? body_specialization_entry_for_owner(owner) : INVALID;
-    if (entry != INVALID && slot < min(body_entry_header(entry).x, 32u))
+    if (entry != INVALID && slot < min(body_entry_header(entry).x, BODY_TYPE_SLOTS))
     {
         uint4 argument = body_entry_argument(entry, slot);
         if (argument.x == slot && argument.y == 10u &&
-            argument.z < min(body_specialization_inputs[0u].z, 64u))
+            argument.z < body_graph_node_count())
         {
             uint source_capacity; uint stride;
             type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
