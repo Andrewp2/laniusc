@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fixture_sweep import failure_group, render_diff, render_stdlib_diff
+from fixture_sweep import failure_group, render_diff, render_stdlib_diff, run_elf
 from x86_jump_check import jumps_leaving_function
 
 
@@ -72,6 +72,18 @@ class DiffTests(unittest.TestCase):
         self.assertIn("Newly compiling: `core::c`.", lines)
         self.assertIn("No longer compiling: `core::b`.", lines)
         self.assertEqual(render_stdlib_diff(None, summary([], [])), [])
+
+
+class RunElfTests(unittest.TestCase):
+    def test_each_program_runs_in_a_fresh_empty_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            program = Path(directory) / "program"
+            # Fails with exit 3 if it sees anything in its working directory.
+            program.write_text("#!/bin/sh\n[ -z \"$(ls -A)\" ] || exit 3\nmkdir made\n")
+            first, second = run_elf(program), run_elf(program)
+
+            self.assertEqual((first["exit_code"], second["exit_code"]), (0, 0))
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ["program"])
 
 
 @unittest.skipIf(shutil.which("objdump") is None, "needs objdump")

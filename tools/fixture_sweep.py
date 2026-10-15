@@ -42,6 +42,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -224,10 +225,14 @@ def stderr_size(path: pathlib.Path) -> int:
 
 def run_elf(elf: pathlib.Path) -> dict:
     elf.chmod(0o755)
-    try:
-        completed = subprocess.run([str(elf)], capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        return {"timeout": True}
+    # Each program runs in its own empty directory, as the fs tests do: a fixture that creates
+    # files must neither litter the checkout nor see what an earlier sweep left behind.
+    with tempfile.TemporaryDirectory(prefix="fixture-sweep-run-") as directory:
+        try:
+            completed = subprocess.run([str(elf.resolve())], capture_output=True, timeout=10,
+                                       stdin=subprocess.DEVNULL, cwd=directory)
+        except subprocess.TimeoutExpired:
+            return {"timeout": True}
     code = completed.returncode
     return {
         "exit_code": code if code >= 0 else None,
