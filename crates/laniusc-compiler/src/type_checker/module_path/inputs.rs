@@ -13,6 +13,8 @@ pub(in crate::type_checker) struct CreateInputs<'a> {
     pub(in crate::type_checker) hir_node_capacity: u32,
     pub(in crate::type_checker) hir_active_count_buf: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) hir_active_dispatch_args: &'a LaniusBuffer<u32>,
+    /// The gated grids of the preliminary method-lookup sweeps.
+    pub(in crate::type_checker) method_lookup_dispatch_args: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) hir_items: GpuTypeCheckHirItemBuffers<'a>,
     pub(in crate::type_checker) decl_name_token: &'a LaniusBuffer<u32>,
     pub(in crate::type_checker) decl_id_by_name_token: &'a LaniusBuffer<u32>,
