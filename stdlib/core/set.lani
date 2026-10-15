@@ -8,8 +8,8 @@
 //
 // Key stands in for core::cmp::Eq. A bound dispatches only to a trait
 // declared in the same module, without type arguments, through a self method
-// (tests/fixtures/generics_backlog/b02 to b05). Implementations for user types
-// in other modules are not routed yet either.
+// (see tests/fixtures/generics_backlog/README.md). Implementations for user
+// types in other modules are not routed yet either.
 module core::set;
 import core::option;
 

@@ -7,10 +7,10 @@
 // at and beyond len hold unspecified earlier values and are never read.
 // Searching and sorting need T: core::cmp::Eq or Ord. Their members are
 // static and their traits are imported, and neither dispatches through a bound
-// yet (tests/fixtures/generics_backlog/b02, b05), so this module has no
-// contains or sort; core::set searches through its own Key trait. A const
-// parameter cannot be a cast operand on x86 yet (b06), so N is bound to a
-// local before its cast.
+// yet, so this module has no contains or sort; core::set searches through its
+// own Key trait. A const parameter cannot be a cast operand on x86 yet, so N
+// is bound to a local before its cast. tests/fixtures/generics_backlog/README.md
+// lists these gaps.
 module core::vec;
 import core::option;
 
