@@ -205,10 +205,6 @@ impl SemanticProjectionOperations {
                     "type_checker/type/instances/00g_apply_body_constants",
                 ),
                 (
-                    compiler_graph::BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS,
-                    compiler_graph::BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL,
-                ),
-                (
                     "type_check.body_specialization.arguments",
                     "type_checker/type/instances/01e_collect_named_arg_refs",
                 ),
@@ -339,14 +335,6 @@ impl SemanticProjectionOperations {
                         )?)
                     };
                     words("canonical_row")? + words("canonical_atom")? + words("canonical_projection")?
-                } else if name == compiler_graph::BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS {
-                    // A lane per constant claim, then one per contextual slot.
-                    let words = |name| -> Result<u32> {
-                        Ok(u32::try_from(
-                            typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
-                        )?)
-                    };
-                    words("call_const_claim_ref_kind")? + words("call_context_constant_kind")?
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
