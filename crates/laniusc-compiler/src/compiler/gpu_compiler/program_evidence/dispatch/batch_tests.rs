@@ -597,6 +597,76 @@ fn gpu_batch_rejects_authentic_evidence_for_a_different_replay_goal() {
     }
 }
 
+/// GpuPacket::retained_input_rewrite: the submission also uploads one retained
+/// input row as the host tables now hold it, as a serializer that rewrote old
+/// rows would. `row` is the host row of `table`.
+pub(super) fn rewrite_retained_input(
+    packet: &GpuPacket,
+    layout: &OutputLayout,
+    mut submission: Submission,
+) -> Result<Submission> {
+    if let Some((table, row)) = packet.retained_input_rewrite.take() {
+        ensure!(row < packet.completed_suffix_counts[table], "rewrite needs a retained row");
+        let words = packet.packet.tables.row(table, row)?.to_vec();
+        let first_word = add(layout.input_offsets[table], mul(row, WIDTHS[table], "row")?, "row word")?;
+        submission.plan.writes.push(ArenaWrite { first_word, words });
+    }
+    Ok(submission)
+}
+
+// Proof work selection and assumption-proof admission trust the assumption
+// index that kernel 15 built when an assumption row was new. That is sound
+// only while a retained row cannot change, so the lifecycle must refuse any
+// submission that rewrites one, before a kernel reads the stale index.
+#[test]
+fn gpu_batch_refuses_rewritten_retained_assumption_row() {
+    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+    let unit = compile_unit(&compiler, [90, 0], TWO_GOAL_FORWARDING, vec![]);
+    let (_, relay_hir, _) = forwarding_calls(&unit);
+    let (mut gpu, mut packet) = batch_job(&compiler, &[&unit]);
+    let original = gpu
+        .check(&mut packet)
+        .expect("valid initial concrete selections");
+    let snapshot = packet.packet.catalog.snapshot_by_unit[&[90, 0]];
+    let (origin, proof, _) = scalar_origin_evidence(&unit, &packet.packet, snapshot, &original, 3);
+    let (_, _, other) = scalar_origin_evidence(&unit, &packet.packet, snapshot, &original, 2);
+    let context = packet
+        .packet_mut()
+        .unwrap()
+        .replay_context(ReplayContextInput {
+            snapshot,
+            selected_owner_hir: relay_hir,
+            evidence: std::slice::from_ref(&proof),
+            origin_call: origin,
+        })
+        .expect("construct a valid replay with the matching i32 proof");
+    let assumption = packet.packet.tables.row(13, context).unwrap()[3];
+    assert!(
+        gpu.check(&mut packet)
+            .expect("matching proof validates the replay context")
+            .is_empty()
+    );
+    // The replay's caller assumption is now retained and indexed.
+    assert!(assumption < packet.completed_suffix_counts[14]);
+    let previous_serial = packet.completed_serial;
+    // The authentic proof of another goal, as in the wrong-goal test above, but
+    // as a rewrite of the retained row.
+    packet.packet.tables.row_mut(14, assumption).unwrap()[3] = other;
+    packet.retained_input_rewrite.set(Some((14, assumption)));
+    let error = gpu
+        .check(&mut packet)
+        .expect_err("a rewritten retained row must be refused");
+    assert!(
+        format!("{error:#}").contains("rewrites retained input rows"),
+        "unexpected refusal: {error:#}"
+    );
+    assert_eq!(packet.completed_serial, previous_serial);
+    assert!(
+        packet.packet_mut().is_err(),
+        "a refused submission cannot authorize another batch"
+    );
+}
+
 // Fault injection owns no semantic decision: it changes one already-emitted
 // pending row and then resumes the exact production admission/commit schedule.
 #[derive(Clone, Copy, Debug)]

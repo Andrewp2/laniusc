@@ -152,7 +152,7 @@ public EvidenceStatus pps_admit_assumption_proof(uint proof)
     [loop]
     for (uint comparison = 0u; comparison < 2u; comparison++)
     {
-        status = pps_predicate_equals_goal(offered.y, offered.z, context.y, compared_goal,
+        status = pps_assumption_equals_goal(low.w, offered.y, offered.z, context.y, compared_goal,
             compared_closed, equal);
         if (status.state != PEV_VALID) return status;
         if (comparison == 1u) return equal ? pev_ok() : pev_invalid(68u, proof, offered.w);

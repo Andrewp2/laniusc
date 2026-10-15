@@ -25,7 +25,6 @@
 57083 tests/owned_type_constraints_fixed
 56881 tests/typed_constant_identity_requests
 56004 type_checker/type/instances/02e_project_imported_fields
-55035 type_checker/program_evidence/entries/59_admit_assumption_proofs
 51283 type_checker/program_evidence/native_layout/entries/05_materialize_proof_value
 51215 tests/owned_type_constraints_overlap
 46696 type_checker/program_evidence/entries/02_09_admit_implementations

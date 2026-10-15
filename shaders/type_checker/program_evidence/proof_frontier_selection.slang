@@ -103,7 +103,8 @@ public EvidenceStatus pps_find_assumption(uint context, uint goal, out uint sele
         if (index.x == high.y && row.x == context)
         {
             bool equal;
-            EvidenceStatus status = pps_predicate_equals_goal(row.y, row.z, owner, goal, closed, equal);
+            EvidenceStatus status = pps_assumption_equals_goal(candidate, row.y, row.z, owner, goal,
+                closed, equal);
             if (status.state != PEV_VALID) return status;
             if (equal)
             {

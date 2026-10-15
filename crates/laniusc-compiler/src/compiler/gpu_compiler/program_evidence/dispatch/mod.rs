@@ -138,7 +138,13 @@ pub(super) struct GpuPacket {
     arena_id: Option<u64>,
     completed_serial: u32,
     completed_suffix_counts: [u32; TABLE_COUNT],
+    /// Batch-arena word offset of each input table after the last accepted
+    /// submission; see ensure_retained_inputs_unchanged.
+    completed_input_offsets: [u32; TABLE_COUNT],
     poisoned: bool,
+    /// Test-only: the next submission also re-uploads this retained input row.
+    #[cfg(test)]
+    retained_input_rewrite: std::cell::Cell<Option<(usize, u32)>>,
     #[cfg(test)]
     proof_admission_fault: std::cell::RefCell<Option<batch_tests::ProofAdmissionFault>>,
     #[cfg(test)]
@@ -278,7 +284,10 @@ impl GpuProgramEvidence {
             arena_id: None,
             completed_serial: 0,
             completed_suffix_counts: [0; TABLE_COUNT],
+            completed_input_offsets: [0; TABLE_COUNT],
             poisoned: false,
+            #[cfg(test)]
+            retained_input_rewrite: std::cell::Cell::new(None),
             #[cfg(test)]
             proof_admission_fault: std::cell::RefCell::new(None),
             #[cfg(test)]
@@ -662,6 +671,14 @@ impl GpuProgramEvidence {
             packet.completed_suffix_counts,
             &submission,
         )?;
+        #[cfg(test)]
+        let submission = batch_tests::rewrite_retained_input(packet, &layout, submission)?;
+        ensure_retained_inputs_unchanged(
+            &layout,
+            packet.completed_suffix_counts,
+            packet.completed_input_offsets,
+            &submission.plan,
+        )?;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -764,6 +781,7 @@ impl GpuProgramEvidence {
         // accept_submission appends returned Evidence17 to the host packet.
         // Those rows were NOT inputs to this dispatch; admit them next time.
         packet.completed_suffix_counts = layout.input_suffix_counts;
+        packet.completed_input_offsets = layout.input_offsets;
         packet.poisoned = false;
         Ok(accepted)
     }
@@ -774,6 +792,8 @@ impl GpuProgramEvidence {
 pub(super) struct OutputLayout {
     slices: [Slice; OUTPUT_COUNT],
     input_suffix_counts: [u32; TABLE_COUNT],
+    input_offsets: [u32; TABLE_COUNT],
+    input_capacities: [u32; TABLE_COUNT],
 }
 impl OutputLayout {
     fn from_submission(catalog: &FrozenCatalog, submission: &Submission) -> Result<Self> {
@@ -802,6 +822,8 @@ impl OutputLayout {
         );
         let catalog_words = u32_len(catalog.words.len(), "catalog words")?;
         let mut counts = [0; TABLE_COUNT];
+        let mut offsets = [0; TABLE_COUNT];
+        let mut capacities = [0; TABLE_COUNT];
         for table in 0..TABLE_COUNT {
             let first = DIRECTORY_WORD as usize + table * 6;
             let row = &header[first..first + 6];
@@ -818,6 +840,8 @@ impl OutputLayout {
                 "batch table exceeds arena allocation"
             );
             counts[table] = row[3];
+            offsets[table] = row[2];
+            capacities[table] = row[4];
         }
         let index_rows = catalog.slices[1].count.max(catalog.slices[9].count);
         let expected = [
@@ -876,6 +900,8 @@ impl OutputLayout {
         Ok(Self {
             slices,
             input_suffix_counts: counts,
+            input_offsets: offsets,
+            input_capacities: capacities,
         })
     }
 
@@ -1190,6 +1216,65 @@ impl BatchPlan {
             assumption_index,
         })
     }
+}
+/// Retained input rows never change for the life of a packet. Later stages
+/// trust what earlier submissions admitted and indexed: the caller-assumption
+/// index (output tables 8 and 9) is rebuilt only when its bucket count changes,
+/// and proof work selection and assumption-proof admission compare against its
+/// hashes without admitting the predicate again. So a submission may only move
+/// a table's retained rows unchanged (one relocation copy from the accepted
+/// offset) and append rows after them, into input table regions that overlap
+/// neither each other nor the fixed header.
+fn ensure_retained_inputs_unchanged(
+    layout: &OutputLayout,
+    prior_counts: [u32; TABLE_COUNT],
+    prior_offsets: [u32; TABLE_COUNT],
+    plan: &UploadPlan,
+) -> Result<()> {
+    let mut regions = Vec::new();
+    for table in BATCH_INPUT_TABLES {
+        let capacity = mul(layout.input_capacities[table], WIDTHS[table], "input table capacity")?;
+        if capacity != 0 {
+            let offset = layout.input_offsets[table];
+            regions.push((offset, add(offset, capacity, "input table end")?));
+        }
+    }
+    regions.sort_unstable();
+    ensure!(
+        regions.first().is_none_or(|first| first.0 >= BATCH_FIXED_WORDS)
+            && regions.windows(2).all(|pair| pair[0].1 <= pair[1].0),
+        "batch input tables overlap each other or the header"
+    );
+    let mut moved = 0;
+    for table in BATCH_INPUT_TABLES {
+        let retained = mul(prior_counts[table], WIDTHS[table], "retained input words")?;
+        if retained == 0 || layout.input_offsets[table] == prior_offsets[table] {
+            continue;
+        }
+        ensure!(
+            plan.copies.iter().any(|copy| copy.from_word == prior_offsets[table]
+                && copy.to_word == layout.input_offsets[table]
+                && copy.word_count == retained),
+            "retained input table {table} moved without its rows"
+        );
+        moved += 1;
+    }
+    ensure!(
+        plan.copies.iter().filter(|copy| copy.word_count != 0).count() == moved,
+        "an input copy is not the relocation of a retained table"
+    );
+    for write in plan.writes.iter().filter(|write| write.first_word != 0) {
+        let end = add(write.first_word, u32::try_from(write.words.len())?, "input write end")?;
+        let mut appends = false;
+        for table in BATCH_INPUT_TABLES {
+            let offset = layout.input_offsets[table];
+            let first = add(offset, mul(prior_counts[table], WIDTHS[table], "retained rows")?, "suffix")?;
+            let last = add(offset, mul(layout.input_suffix_counts[table], WIDTHS[table], "rows")?, "end")?;
+            appends |= write.first_word >= first && end <= last;
+        }
+        ensure!(appends, "submission rewrites retained input rows or writes outside a new suffix");
+    }
+    Ok(())
 }
 fn ensure_same_span(actual: Span, expected: Span, what: &str) -> Result<()> {
     ensure!(
