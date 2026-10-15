@@ -17,8 +17,11 @@ use super::{
 };
 use crate::type_checker::{CheckedBodySpecialization, CheckedGenericCall, CheckedGenericTarget};
 
-const MAX_RESIDENT_SPECIALIZATIONS: usize = 256;
-const MAX_SPECIALIZED_TEXT_BYTES: usize = 64 << 20;
+/// A concrete body instantiated from another concrete body is one level
+/// deeper. Finite programs stay far below this; reaching it means an
+/// instantiation chain that keeps growing its type arguments (polymorphic
+/// recursion), which has no finite monomorphization.
+const MAX_INSTANTIATION_DEPTH: u32 = 64;
 
 impl GpuCompiler<'_> {
     pub(super) async fn specialize_x86_source_pack_objects<'a>(
@@ -98,6 +101,11 @@ impl GpuCompiler<'_> {
         let mut contexts = units.iter().zip(initial_calls).map(|(unit, calls)| (
             unit.interface.library_id, unit.interface.unit_id, calls, unit.x86_call_hirs.clone(),
         )).collect::<Vec<_>>();
+        let mut trace = SpecializationTrace::new();
+        // Each replay context records its depth and the context and
+        // declaration it was instantiated from.
+        let mut depths = vec![0u32; contexts.len()];
+        let mut origins = vec![None::<(usize, (u32, u32, u32))>; contexts.len()];
         let mut unit_index = 0usize;
         while unit_index < contexts.len() {
             let (owner_library, owner_unit, generic_calls, call_hirs) =
@@ -139,9 +147,20 @@ impl GpuCompiler<'_> {
                     // Tag-only generic functions already have a valid body.
                     continue;
                 }
-                let Some((concrete_identity, concrete_layouts)) =
-                    checked_replay_environment(call, owner_library, owner_unit)?
-                else {
+                let target = (library_id, unit_id, declaration_index);
+                let environment = checked_replay_environment(call, owner_library, owner_unit)
+                    .map_err(|error| {
+                        // An environment that outgrows the checked type graph
+                        // while a body instantiates its own declaration again is
+                        // polymorphic recursion, not a capacity problem.
+                        if instantiates_ancestor(&origins, unit_index, target) {
+                            instantiation_depth_error(
+                                call, templates.get(&(owner_library, owner_unit)).copied(), Some(error))
+                        } else {
+                            error
+                        }
+                    })?;
+                let Some((concrete_identity, concrete_layouts)) = environment else {
                     // A symbolic call belongs to an uninstantiated template.
                     // Its concrete replay will supply a new call environment.
                     continue;
@@ -149,6 +168,7 @@ impl GpuCompiler<'_> {
                 if let Some((_, layouts)) = specializations.get_mut(&concrete_identity) {
                     CheckedBodySpecialization::merge_layout_witnesses(layouts, &concrete_layouts)
                         .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
+                    trace.reused += 1;
                 }
                 let symbol = objects[unit_index]
                     .symbols
@@ -165,17 +185,22 @@ impl GpuCompiler<'_> {
                     ));
                 }
                 if !specializations.contains_key(&concrete_identity) {
-                    if specializations.len() == MAX_RESIDENT_SPECIALIZATIONS {
-                        return Err(specialization_limit_error("more than 256 concrete bodies"));
+                    if depths[unit_index] >= MAX_INSTANTIATION_DEPTH {
+                        return Err(instantiation_depth_error(
+                            call, templates.get(&(owner_library, owner_unit)).copied(), None));
                     }
+                    let started = std::time::Instant::now();
                     let request = program
                         .prepare_replay(admitted)
                         .map_err(native_program_error)?;
+                    let prepared = std::time::Instant::now();
                     let pending = self
                         .compile_authorized_body_specialization(&request)
                         .await?;
+                    let compiled = std::time::Instant::now();
                     let (replay, replay_calls) =
                         request.finish(pending).map_err(native_program_error)?;
+                    let finished = std::time::Instant::now();
                     let mut admitted_layouts = replay.body_native_layouts.as_ref()
                         .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?
                         .to_vec();
@@ -184,7 +209,13 @@ impl GpuCompiler<'_> {
                     let CompiledSourcePackObject::X86_64(mut concrete) = replay.object else {
                         unreachable!("body replay target is x86_64")
                     };
+                    trace.replay(
+                        specializations.len(), depths[unit_index] + 1, (library_id, unit_id, declaration_index),
+                        &concrete_identity, call, [started, prepared, compiled, finished],
+                        concrete.text.len(), replay_calls.len());
                     contexts.push((library_id, unit_id, replay_calls, replay.x86_call_hirs));
+                    depths.push(depths[unit_index] + 1);
+                    origins.push(Some((unit_index, target)));
                     let candidate = next_unit_by_library.entry(library_id).or_default();
                     while used_units.contains(&(library_id, *candidate)) {
                         *candidate = candidate.checked_add(1).ok_or_else(|| {
@@ -198,11 +229,6 @@ impl GpuCompiler<'_> {
                     specialized_text_bytes = specialized_text_bytes
                         .checked_add(concrete.text.len())
                         .ok_or_else(|| specialization_limit_error("native text length overflow"))?;
-                    if specialized_text_bytes > MAX_SPECIALIZED_TEXT_BYTES {
-                        return Err(specialization_limit_error(
-                            "more than 64 MiB of native text",
-                        ));
-                    }
                     // Undefined symbols precede definitions, so dropping other
                     // definitions preserves every relocation target index.
                     let keep: Vec<bool> = concrete
@@ -252,7 +278,61 @@ impl GpuCompiler<'_> {
             }
             unit_index += 1;
         }
+        trace.finish(specializations.len(), specialized_text_bytes);
         Ok(objects)
+    }
+}
+
+/// `LANIUS_DEBUG_SPECIALIZATION=1` prints one line per concrete body replay
+/// (scheduling key hash, depth, phase times) and a summary per program.
+struct SpecializationTrace {
+    enabled: bool,
+    start: std::time::Instant,
+    reused: usize,
+    phases_ms: [f64; 3],
+}
+
+impl SpecializationTrace {
+    fn new() -> Self {
+        Self {
+            enabled: crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SPECIALIZATION", false),
+            start: std::time::Instant::now(),
+            reused: 0,
+            phases_ms: [0.0; 3],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn replay(
+        &mut self,
+        index: usize,
+        depth: u32,
+        target: (u32, u32, u32),
+        identity: &[u8],
+        call: &CheckedGenericCall,
+        times: [std::time::Instant; 4],
+        text_bytes: usize,
+        replay_calls: usize,
+    ) {
+        if !self.enabled { return; }
+        let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
+        let phases = [ms(times[0], times[1]), ms(times[1], times[2]), ms(times[2], times[3])];
+        for (total, phase) in self.phases_ms.iter_mut().zip(phases) { *total += phase; }
+        let key = blake3::hash(identity);
+        eprintln!(
+            "[specialization] #{index} depth={depth} target={}:{}:{} key={} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls} args={:?} consts={:?}",
+            target.0, target.1, target.2, &key.to_hex()[..12], phases[0], phases[1], phases[2],
+            call.arguments, call.constants,
+        );
+    }
+
+    fn finish(&self, bodies: usize, text_bytes: usize) {
+        if !self.enabled { return; }
+        eprintln!(
+            "[specialization] summary bodies={bodies} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
+            self.reused, self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
+            self.start.elapsed().as_secs_f64() * 1000.0,
+        );
     }
 }
 
@@ -375,6 +455,66 @@ fn replace_symbol_identity(
     symbol.identity_byte_len = len;
     object.identity_bytes.extend_from_slice(identity);
     Ok(())
+}
+
+/// Whether `context` or a context it was instantiated from is a body of
+/// `target`.
+fn instantiates_ancestor(
+    origins: &[Option<(usize, (u32, u32, u32))>],
+    mut context: usize,
+    target: (u32, u32, u32),
+) -> bool {
+    while let Some((parent, declaration)) = origins[context] {
+        if declaration == target {
+            return true;
+        }
+        context = parent;
+    }
+    false
+}
+
+/// Reported at the call that would instantiate one level past the limit, or
+/// whose recursively grown environment no longer fits a checked type graph
+/// (`capacity` holds that error).
+fn instantiation_depth_error(
+    call: &CheckedGenericCall,
+    owner: Option<&CompiledSourcePackUnit>,
+    capacity: Option<CompileError>,
+) -> CompileError {
+    let note = match &capacity {
+        None => format!(
+            "concrete generic bodies instantiate each other more than {MAX_INSTANTIATION_DEPTH} levels deep"
+        ),
+        Some(_) => "a generic body instantiates its own declaration with type arguments that keep growing".to_owned(),
+    };
+    let mut diagnostic = Diagnostic::error("LNC0073", "generic instantiation depth exceeded")
+        .with_note(note);
+    if let Some(CompileError::Diagnostic(inner)) = &capacity {
+        for note in &inner.notes {
+            diagnostic = diagnostic.with_note(note.clone());
+        }
+    }
+    diagnostic = diagnostic
+        .with_help(
+            "a generic function that calls itself with a larger type argument (polymorphic recursion) has no finite set of concrete bodies",
+        );
+    if let Some(unit) = owner {
+        let [start, len] = call.source_span;
+        let files = crate::compiler::source_pack_diagnostic_files(
+            unit.template_sources.as_ref(), Some(unit.template_source_paths.as_ref()));
+        if let Some(file) = crate::compiler::source_pack_file_for_global_span(&files, start as usize) {
+            if (start as usize).checked_add(len as usize).is_some_and(|end| end <= file.global_end) {
+                diagnostic = diagnostic.with_primary_label(crate::compiler::diagnostic_label_from_source_span(
+                    &file.path,
+                    &file.source,
+                    start as usize - file.global_start,
+                    len as usize,
+                    "this call needs another level of concrete bodies",
+                ));
+            }
+        }
+    }
+    CompileError::Diagnostic(diagnostic)
 }
 
 fn specialization_limit_error(detail: &str) -> CompileError {

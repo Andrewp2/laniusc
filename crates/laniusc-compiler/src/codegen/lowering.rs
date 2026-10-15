@@ -115,7 +115,8 @@ struct SemanticTemplateParams {
     n_hir_nodes: u32,
     param_capacity: u32,
     n_tokens: u32,
-    /// Zero for an ordinary job; selected lexical callable HIR plus one for replay.
+    /// Zero for an ordinary job; selected lexical callable HIR plus one for
+    /// replay, with bit 31 set to also emit ordinary local helpers.
     replay_function: u32,
 }
 
@@ -1732,9 +1733,22 @@ impl GpuSemanticLoweringStage {
         queue: &wgpu::Queue,
         selected_hir: Option<u32>,
     ) -> Result<()> {
+        // A replay object holds only the selected body; calls to ordinary
+        // local helpers link against the original object's definitions.
+        // LANIUS_REPLAY_KEEP_LOCAL_HELPERS=1 emits them again (old behavior).
+        const KEEP_LOCAL_HELPERS: u32 = 0x8000_0000;
         let encoded = selected_hir.map_or(Ok(0), |hir| {
-            hir.checked_add(1).context("replay callable HIR cannot be encoded")
+            hir.checked_add(1)
+                .filter(|&value| value < KEEP_LOCAL_HELPERS)
+                .context("replay callable HIR cannot be encoded")
         })?;
+        let encoded = if encoded != 0
+            && crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_KEEP_LOCAL_HELPERS", false)
+        {
+            encoded | KEEP_LOCAL_HELPERS
+        } else {
+            encoded
+        };
         self.template_params.write(queue, 12, &encoded.to_le_bytes());
         Ok(())
     }
