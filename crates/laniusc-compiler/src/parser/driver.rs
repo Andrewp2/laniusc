@@ -650,9 +650,15 @@ impl GpuParser {
     }
 
     /// Borrows current resident buffers with feature-aware optional-family capacities.
+    ///
+    /// `source_capacity` must be the source byte capacity the parser records
+    /// with. A smaller value lets this call allocate buffers that the record
+    /// step then replaces, which also invalidates every workspace prepared
+    /// against them.
     pub fn with_current_resident_buffers_with_tree_capacity_and_features<R>(
         &self,
         token_capacity: u32,
+        source_capacity: u32,
         tables: &PrecomputedParseTables,
         tree_capacity: u32,
         parser_feature_flags: u32,
@@ -662,11 +668,13 @@ impl GpuParser {
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for_with_tree_capacity_and_features(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_debug(
             &mut resident_guard,
             token_capacity,
+            source_capacity,
             tables,
             Some(tree_capacity),
+            false,
             parser_feature_flags,
         );
         consume(bufs)
