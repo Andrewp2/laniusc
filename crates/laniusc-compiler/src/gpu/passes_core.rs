@@ -1705,13 +1705,10 @@ pub fn pipeline_from_spirv_and_bgls(
         cache: crate::gpu::device::pipeline_cache_for(device).as_deref(),
     });
     let compute_pipeline_end = Instant::now();
+    let creation = compute_pipeline_end.duration_since(compute_pipeline_start);
     PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
-    PIPELINE_CREATION_NANOS.fetch_add(
-        compute_pipeline_end.duration_since(compute_pipeline_start).as_nanos() as u64,
-        Ordering::Relaxed,
-    );
-    crate::gpu::device::mark_pipeline_cache_dirty(device);
-    crate::gpu::device::note_pipeline_created(device);
+    PIPELINE_CREATION_NANOS.fetch_add(creation.as_nanos() as u64, Ordering::Relaxed);
+    crate::gpu::device::note_pipeline_creation(device, creation);
     trace_pipeline(label, "compute_pipeline.done");
     trace_pipeline_timing(
         label,

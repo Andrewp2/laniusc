@@ -36,8 +36,12 @@ static PIPELINES_CREATED_SINCE_PERSIST: AtomicU64 = AtomicU64::new(0);
 const PIPELINE_CACHE_SEED_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// When the cache was last persisted; None before the first persist.
 static LAST_PIPELINE_CACHE_PERSIST: Mutex<Option<Instant>> = Mutex::new(None);
-/// Serializes persists: concurrent writers would share one tmp file.
+/// Serializes this process's persists, which share one tmp file. Each
+/// process has its own (`pipeline_cache_tmp_path`), and the rename replaces
+/// the file atomically, so concurrent processes never write into one file.
 static PIPELINE_CACHE_PERSIST_LOCK: Mutex<()> = Mutex::new(());
+/// A tmp file older than this was left by a process that stopped mid-write.
+const PIPELINE_CACHE_STALE_TMP: Duration = Duration::from_secs(10 * 60);
 static GLOBAL_DEVICE: OnceLock<Result<GpuDevice, GpuDeviceInitializationError>> = OnceLock::new();
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
@@ -667,11 +671,28 @@ fn wait_for_background_persist() {
     }
 }
 
+/// A pipeline created faster than this came from a cache (the pipeline cache
+/// file, or a driver's own disk cache) or is trivial to compile: a hit took
+/// ~0.3 ms and a compile ~235 ms (hold39 g2/g1, 854 pipelines with the driver
+/// cache off). Adding it to the file would not make a later start faster.
+const PIPELINE_CACHE_HIT_MAX: Duration = Duration::from_millis(10);
+
+/// Records that creating one compute pipeline took `took`. Only a slow
+/// creation marks the cache file for a check, so a warm start skips reading
+/// the cache back (~90 ms for the full kernel set).
+pub(crate) fn note_pipeline_creation(device: &wgpu::Device, took: Duration) {
+    if took < PIPELINE_CACHE_HIT_MAX
+        && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
+    {
+        return;
+    }
+    mark_pipeline_cache_dirty(device);
+    note_pipeline_created(device);
+}
+
 /// Records one compute pipeline creation, and checks the cache in the
 /// background when the last check was more than `LAZY_PERSIST_INTERVAL` ago.
-/// Every creation counts: the driver's disk cache serves compiles in a few
-/// milliseconds, so creation time cannot tell a cache hit from a miss.
-pub(crate) fn note_pipeline_created(device: &wgpu::Device) {
+fn note_pipeline_created(device: &wgpu::Device) {
     PIPELINES_CREATED_SINCE_PERSIST.fetch_add(1, Ordering::AcqRel);
     let due = LAST_PIPELINE_CACHE_PERSIST
         .lock()
@@ -831,9 +852,10 @@ static CONFIGURE_DRIVER_SHADER_CACHE_BEFORE_MAIN: extern "C" fn() = {
 ///   next to the pipeline cache files. The driver's default, ~/.cache/nvidia,
 ///   is shared by every application and capped at 1 GiB; once full it evicts,
 ///   and a 1.6 s start took 236 s.
-/// - on a driver that ignored the shard name before, turns the driver cache
-///   off instead, so the pipeline cache files (keyed by kernel set, not by
-///   executable) serve pipelines.
+/// - on a driver that ignored the shard name before, or with
+///   `LANIUS_DRIVER_SHADER_CACHE=0`, turns the driver cache off instead, so
+///   the pipeline cache files (keyed by kernel set, not by executable) serve
+///   pipelines.
 ///
 /// wgpu loads the Vulkan loader, and the loader the driver, only when the
 /// instance is created, so these variables reach the driver.
@@ -866,8 +888,9 @@ unsafe fn configure_driver_shader_cache() {
         }
         let path = dir.into_os_string();
         let ignored = names_shard && driver_ignores_app_name(&marker);
+        let off = ignored || !driver_shader_cache_requested();
         let values: [&std::ffi::OsStr; 4] = [
-            if ignored { "0" } else { "1" }.as_ref(),
+            if off { "0" } else { "1" }.as_ref(),
             &path,
             NVIDIA_SHADER_CACHE_BYTES.as_ref(),
             "1".as_ref(),
@@ -888,6 +911,13 @@ unsafe fn configure_driver_shader_cache() {
             NAMED_DRIVER_SHARD_UNDECIDED.store(true, Ordering::Release);
         }
     }
+}
+
+/// `LANIUS_DRIVER_SHADER_CACHE=0` turns NVIDIA's own cache off (when the user
+/// did not configure it), so the pipeline cache files serve pipelines.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn driver_shader_cache_requested() -> bool {
+    std::env::var_os("LANIUS_DRIVER_SHADER_CACHE").is_none_or(|value| value != "0")
 }
 
 /// The driver's cache directory: `__GL_SHADER_DISK_CACHE_PATH`, else
@@ -1405,12 +1435,16 @@ fn sanitize_cache_key_component(value: &str) -> String {
         .collect()
 }
 
+/// `<file>.<pid>.tmp`: a process writes the whole file there before renaming
+/// it over `path`. With one shared name, two processes persisting at once
+/// would truncate and write the same file, the renamed result would fail its
+/// hash check, and the next start would compile every pipeline again.
 fn pipeline_cache_tmp_path(path: &std::path::Path) -> PathBuf {
     let filename = path
         .file_name()
         .map(|name| name.to_string_lossy())
         .unwrap_or_else(|| "pipeline_cache".into());
-    path.with_file_name(format!("{filename}.tmp"))
+    path.with_file_name(format!("{filename}.{}.tmp", std::process::id()))
 }
 
 fn pipeline_cache_file_header(
@@ -1566,6 +1600,19 @@ fn prune_pipeline_cache_dir(
             continue;
         };
         if !metadata.is_file() {
+            continue;
+        }
+        if name.ends_with(".tmp") {
+            // Another process may be writing it; one that stopped mid-write
+            // leaves it behind. Neither is a kernel set's file.
+            let stale = metadata
+                .modified()
+                .ok()
+                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+                .is_some_and(|age| age > PIPELINE_CACHE_STALE_TMP);
+            if stale {
+                remove_pipeline_cache_file(&path, "stale tmp");
+            }
             continue;
         }
         entries.push(PipelineCacheDirEntry {
@@ -1881,6 +1928,34 @@ mod tests {
         assert!(!a.can_seed_from(&format!("{}.tmp", b.filename)));
         assert!(!a.can_seed_from(&format!("{}.tmp", a.prefix)));
         assert!(!a.can_seed_from(&other_wgpu.filename));
+    }
+
+    #[test]
+    fn pipeline_cache_tmp_files_are_per_process_and_pruned_when_stale() {
+        let key = PipelineCacheKey::new("nv_1234", "29.0.1", "aaaaaaaaaaaaaaaa");
+        let other = PipelineCacheKey::new("nv_1234", "29.0.1", "bbbbbbbbbbbbbbbb");
+        let root = std::env::temp_dir().join(format!("laniusc-cache-tmp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let tmp = pipeline_cache_tmp_path(&root.join(&other.filename));
+        let tmp_name = tmp.file_name().unwrap().to_str().unwrap().to_string();
+        assert_eq!(tmp_name, format!("{}.{}.tmp", other.filename, std::process::id()));
+        assert!(!key.can_seed_from(&tmp_name));
+
+        let now = SystemTime::now();
+        let stale = root.join(format!("{}.1.tmp", other.filename));
+        for (path, age_secs) in [(&tmp, 1), (&stale, 3600), (&root.join(&other.filename), 1)] {
+            File::create(path).unwrap().set_modified(now - Duration::from_secs(age_secs)).unwrap();
+        }
+        let kept = prune_pipeline_cache_dir(&root, &root.join(&key.filename), "nv_1234");
+        assert_eq!(
+            kept.iter().map(|entry| entry.name.as_str()).collect::<Vec<_>>(),
+            [other.filename.as_str()],
+            "tmp files are not kernel sets' files"
+        );
+        assert!(tmp.exists(), "a tmp file another process may be writing stays");
+        assert!(!stale.exists(), "a stale tmp file is removed");
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
