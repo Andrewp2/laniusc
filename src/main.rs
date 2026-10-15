@@ -1,5 +1,5 @@
 fn main() -> std::process::ExitCode {
-    // SAFETY: the first statement of main, before any other thread exists.
-    unsafe { laniusc_compiler::gpu::device::configure_driver_shader_cache() };
+    // The compiler library configures NVIDIA's shader disk cache before main
+    // (see `gpu::device`), so this binary and its test binaries share it.
     laniusc_compiler::cli::run_from_env()
 }
