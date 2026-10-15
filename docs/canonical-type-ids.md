@@ -178,7 +178,10 @@ Allocation stays bounded:
 
 - **Candidates use fixed records.** Candidate `c` owns record `32 + c`, and
   dependency node `i` (job-wide) owns record `32 + candidates + i`, so rows,
-  atoms, projections and dependency nodes never allocate.
+  atoms, projections and dependency nodes never allocate. The one exception
+  is a re-interned candidate after a body replay (see Stages): its fixed
+  record may already hold its earlier key, so a new key takes a dynamic
+  record.
 - **Dynamic records come from small keys.** Count classes (`cc_intern_count`)
   and other small keys use `ct_intern_small`. It looks the key up first and
   stores a record only on a miss.
@@ -379,8 +382,20 @@ Each job interns into one table, so an ID stays valid for the whole job.
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
-- Interned rows must not be rewritten afterwards. The cross-check at the end
-  of the late stage would report a rewritten row as a false or missed merge.
+- **Body replay re-interns.** A replay job (`body_specialization_inputs`
+  has a type or constant argument) rewrites rows and constants after the
+  early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
+  `[i32; 2]` in place. Its late `03_rearm` therefore re-arms every
+  candidate and sets `CT_COUNT_REINTERN`. With the flag set, a candidate
+  looks its key up first and adopts an equal record; on a miss it stores
+  into its fixed record only if that record is not published
+  (`ct_is_published`), and otherwise into a dynamic one. Unchanged rows
+  keep their IDs, and the early records stay valid for the references
+  that still name them. A consumer recorded between the replay and the
+  late stage would read early IDs of rewritten rows; none exists yet.
+- Outside a replay, interned rows must not be rewritten afterwards. The
+  cross-check at the end of the late stage reports a rewritten row as a
+  false or missed merge (and the bridge self-check as a mismatch).
 - Graph registration follows recording order. The clear is registered after
   `type_instances.project` and the dependency passes after
   `dependencies.type_instances.project`. The early passes are registered
@@ -396,13 +411,15 @@ Each job interns into one table, so an ID stays valid for the whole job.
 
 Each table has a fixed size:
 
-- **Records:** 32 + candidates + 2 × constant rows + 2 × dependency nodes.
-  That covers one fixed record per candidate and per dependency node, plus at
-  most one count class per constant candidate or constant node.
+- **Records:** 32 + 2 × (candidates + 2 × constant rows) + 2 × dependency
+  nodes. That covers one fixed record per candidate and per dependency
+  node, plus at most one count class per constant candidate or constant
+  node, and the same again for a body replay's re-interning.
 - **Slots:** the next power of two at or above 2 × records.
-- **Arguments:** the checked argument storage, plus 2 words per row, 1
-  word per projection and 2 words per dependency node (a signature tree has
-  fewer edges than nodes).
+- **Arguments:** the checked argument storage, plus 2 words per row and 1
+  word per projection, twice (a replay builds every candidate's key again),
+  plus 2 words per dependency node (a signature tree has fewer edges than
+  nodes).
 - **Frontier:** two lists of max(candidates, largest page's nodes).
 
 So overflow means a broken invariant rather than a large input. It still sets

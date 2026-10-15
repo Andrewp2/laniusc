@@ -6,8 +6,9 @@ import type_checker.canonical.canonical_api;
 import constant_value;
 import primitive_types;
 
-// Key builders store a complete record and return CT_KEY_BUILT, or return
-// the final reference (a sentinel) without a key.
+// Key builders build a complete key, with its ct_extra facts, and return
+// CT_KEY_BUILT, or return the final reference (a sentinel) without a key.
+// The caller stores the key in a record and publishes it.
 public static const uint CT_KEY_BUILT = 0u;
 
 public CtKey ct_empty_key()
@@ -17,7 +18,7 @@ public CtKey ct_empty_key()
 
 // The typed value key. The count class is a small dynamic record interned
 // first, so a value's stored facts do not depend on which lane publishes it.
-public uint ct_build_value(uint3 value, uint record, out CtKey key)
+public uint ct_build_value(uint3 value, out CtKey key)
 {
     key = ct_empty_key();
     uint count;
@@ -30,7 +31,7 @@ public uint ct_build_value(uint3 value, uint record, out CtKey key)
         if (!ct_is_resolved(klass)) return CT_UNKNOWN;
     }
     key = ct_key_begin(CC_KIND_VALUE, 0u, 0u, value);
-    ct_key_store(key, record, uint2(countable ? count : 0xffffffffu, klass));
+    key.extra = uint2(countable ? count : 0xffffffffu, klass);
     return CT_KEY_BUILT;
 }
 
@@ -40,7 +41,7 @@ public uint ct_build_value(uint3 value, uint record, out CtKey key)
 // its one ct_build_value site). A symbolic child is CC_CAST(target; child),
 // counted like its child. `param_scalar` is the declared scalar of `child`
 // when it is a constant parameter.
-public uint ct_build_projection(uint target, uint child, uint param_scalar, uint record,
+public uint ct_build_projection(uint target, uint child, uint param_scalar,
     out bool fold, out uint3 value, out CtKey key)
 {
     key = ct_empty_key();
@@ -64,6 +65,6 @@ public uint ct_build_projection(uint target, uint child, uint param_scalar, uint
     if (!ct_key_reserve_args(key)) return CT_UNKNOWN;
     ct_key_arg(key, 0u, child);
     if (!key.ok) return CT_UNKNOWN;
-    ct_key_store(key, record, uint2(0xffffffffu, cc_count_class(child)));
+    key.extra = uint2(0xffffffffu, cc_count_class(child));
     return CT_KEY_BUILT;
 }

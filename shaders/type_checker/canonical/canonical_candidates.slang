@@ -2,6 +2,8 @@
 // atoms and constant projections, each with a fixed record slot. A candidate
 // is interned once all of its children have canonical references; one
 // candidate is a few dozen loads and one ct_intern, with no local arrays.
+// A re-interned job (CT_COUNT_REINTERN) looks each key up first and moves a
+// rewritten candidate whose fixed record is published to a dynamic record.
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_constants;
 import type_checker.checked_type_graph;
@@ -103,10 +105,10 @@ uint row_child(uint row, uint kind, uint index, out bool constant)
     return operand(tag, payload, length);
 }
 
-// A builder stores a candidate's complete record and returns CT_KEY_BUILT,
-// or returns the candidate's final reference (a sentinel) without a key. One
+// A builder builds a candidate's complete key and returns CT_KEY_BUILT, or
+// returns the candidate's final reference (a sentinel) without a key. One
 // ct_intern call then publishes whichever key was built.
-uint build_row(uint row, uint record, bool final, out CtKey key)
+uint build_row(uint row, bool final, out CtKey key)
 {
     key = ct_empty_key();
     uint kind = type_instance_kind[row];
@@ -147,14 +149,13 @@ uint build_row(uint row, uint record, bool final, out CtKey key)
             ct_key_arg(key, index, child);
         }
     }
-    if (!key.ok) return CT_UNKNOWN;
-    ct_key_store(key, record, uint2(token, mask));
-    return CT_KEY_BUILT;
+    key.extra = uint2(token, mask);
+    return key.ok ? CT_KEY_BUILT : CT_UNKNOWN;
 }
 
 // Atoms intern their typed value; projections fold or cast
 // (canonical_constants.slang). Both end at the one value-key site.
-uint build_constant(uint candidate, uint record, bool final, out CtKey key)
+uint build_constant(uint candidate, bool final, out CtKey key)
 {
     key = ct_empty_key();
     uint atom = candidate - ct_row_capacity();
@@ -173,19 +174,30 @@ uint build_constant(uint candidate, uint record, bool final, out CtKey key)
         uint param_scalar = ct_is_const_param(child)
             ? checked_constant_parameter_scalar(ct_param_token(child)) : 0u;
         bool fold;
-        uint status = ct_build_projection(target, child, param_scalar, record, fold, value, key);
+        uint status = ct_build_projection(target, child, param_scalar, fold, value, key);
         if (!fold) return status;
     }
-    return ct_build_value(value, record, key);
+    return ct_build_value(value, key);
 }
 
 // Intern one candidate; CT_PENDING means a child is not interned yet.
 public uint canonical_intern_candidate(uint candidate, bool final)
 {
-    uint record = ct_candidate_record(candidate);
     CtKey key;
     uint status;
-    if (candidate < ct_row_capacity()) status = build_row(candidate, record, final, key);
-    else status = build_constant(candidate, record, final, key);
-    return status == CT_KEY_BUILT ? ct_intern(record, key) : status;
+    if (candidate < ct_row_capacity()) status = build_row(candidate, final, key);
+    else status = build_constant(candidate, final, key);
+    if (status != CT_KEY_BUILT) return status;
+    uint record = ct_candidate_record(candidate);
+    if (ct_counts[CT_COUNT_REINTERN] != 0u)
+    {
+        // The fixed record may hold this candidate's earlier key, which
+        // other references still name.
+        uint found = ct_lookup(key);
+        if (found != CT_NONE) return found;
+        if (ct_is_published(record)) record = ct_alloc_record();
+        if (record == CT_UNKNOWN) return CT_UNKNOWN;
+    }
+    ct_key_store(key, record, key.extra);
+    return ct_intern(record, key);
 }

@@ -74,20 +74,6 @@ void validate_slot(uint slot)
     }
 }
 
-bool is_published(uint record)
-{
-    uint slots = ct_slot_capacity();
-    uint probe = ct_probe_start(ct_meta[record].zw);
-    for (uint step = 0u; step < slots; step++)
-    {
-        uint other = ct_slot[probe];
-        if (other == record) return true;
-        if (other == 0u) return false;
-        probe = (probe + 1u) & (slots - 1u);
-    }
-    return false;
-}
-
 void validate_candidate(uint candidate)
 {
     uint state = ct_candidate_state(candidate);
@@ -100,7 +86,7 @@ void validate_candidate(uint candidate)
         return;
     }
     count(row ? V_RESOLVED_ROWS : V_RESOLVED_CONSTANTS);
-    if (ct_is_stored(state) && !is_published(state)) count(V_UNPUBLISHED);
+    if (ct_is_stored(state) && !ct_is_published(state)) count(V_UNPUBLISHED);
 }
 
 // Entries no page reached stay pending (the buffer may exceed the job's span).
@@ -114,7 +100,7 @@ void validate_dependency(uint index)
         return;
     }
     count(V_RESOLVED_DEPENDENCY);
-    if (ct_is_stored(state) && !is_published(state)) count(V_UNPUBLISHED);
+    if (ct_is_stored(state) && !ct_is_published(state)) count(V_UNPUBLISHED);
 }
 
 [shader("compute")]

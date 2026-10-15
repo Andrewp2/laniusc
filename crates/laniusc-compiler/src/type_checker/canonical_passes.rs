@@ -199,7 +199,9 @@ fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<Resource
 /// checked argument storage plus an element/length pair per row, one child
 /// per projection and two per dependency node (signature trees have fewer
 /// edges than nodes), so an overflow means a broken invariant rather than a
-/// large input.
+/// large input. A body replay interns every candidate a second time (one
+/// more key, and a dynamic record when it was rewritten), which doubles the
+/// candidates' records and arguments.
 pub(super) fn register_canonical_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
@@ -215,13 +217,13 @@ pub(super) fn register_canonical_passes(
         dependency_page_rows,
     } = capacity;
     let candidates = type_rows + 2 * constant_rows;
-    let records = 32 + candidates + 2 * constant_rows + 2 * dependency_rows;
-    let argument_bytes = token_rows * 16
+    let records = 32 + 2 * (candidates + 2 * constant_rows) + 2 * dependency_rows;
+    let candidate_argument_bytes = token_rows * 16
         + extra_argument_rows * 128
         + hir_rows * 4
         + type_rows * 8
-        + constant_rows * 8
-        + dependency_rows * 8;
+        + constant_rows * 8;
+    let argument_bytes = 2 * candidate_argument_bytes + dependency_rows * 8;
     let workspace = ResourceClass::Workspace;
     storage(graph, "ct_head", workspace, records * 16)?;
     storage(graph, "ct_meta", workspace, records * 16)?;
@@ -358,8 +360,9 @@ fn register_rounds(
     )
 }
 
-/// Registers the late stage: re-arm the empty and unknown candidates, intern
-/// them into the same table, then (when enabled) validate the final table.
+/// Registers the late stage: re-arm the empty and unknown candidates (every
+/// candidate after a body replay), intern them into the same table, then
+/// (when enabled) validate the final table.
 pub(super) fn register_canonical_late_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,

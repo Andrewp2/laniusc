@@ -88,6 +88,7 @@ public static const uint CT_COUNT_FRONTIER = 5u;  // [5], [6]: ping-pong frontie
 public static const uint CT_COUNT_FINAL = 7u;     // nonzero: pending candidates become UNKNOWN
 public static const uint CT_COUNT_LIBRARY = 8u;   // job identity of local declarations
 public static const uint CT_COUNT_UNIT = 9u;
+public static const uint CT_COUNT_REINTERN = 10u; // nonzero: interned candidates were re-armed (03_rearm)
 public static const uint CT_COUNT_WORDS = 16u;
 
 // Interning rounds per job: a candidate still pending at the limit becomes
@@ -397,6 +398,8 @@ public struct CtKey
     public uint height;
     public uint flags;
     public uint2 shash;
+    // The record's ct_extra facts, stored with the key (ct_key_store).
+    public uint2 extra;
     public bool ok;
 }
 
@@ -407,6 +410,7 @@ public CtKey ct_key_begin(uint kind, uint arity, uint type_slots, uint3 words)
     key.arg_base = 0u;
     key.height = 0u;
     key.flags = 0u;
+    key.extra = uint2(0xffffffffu, 0u);
     key.ok = arity <= CT_MAX_ARITY;
     uint2 hash = ct_hash_word(CT_HASH_SEED, key.head.x);
     hash = ct_hash_word(hash, words.x);
@@ -531,6 +535,22 @@ public uint ct_lookup(CtKey key)
         slot = (slot + 1u) & (slots - 1u);
     }
     return CT_NONE;
+}
+
+// Whether `record` is in the table. A published record is never rewritten,
+// so its stored hash leads to its slot.
+public bool ct_is_published(uint record)
+{
+    uint slots = ct_slot_capacity();
+    uint probe = ct_probe_start(ct_meta[record].zw);
+    for (uint step = 0u; step < slots; step++)
+    {
+        uint other = ct_slot[probe];
+        if (other == record) return true;
+        if (other == 0u) return false;
+        probe = (probe + 1u) & (slots - 1u);
+    }
+    return false;
 }
 
 public uint ct_alloc_record()

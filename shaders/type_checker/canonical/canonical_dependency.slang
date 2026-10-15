@@ -50,7 +50,7 @@ uint node_ref(uint t)
 
 // Named, array, slice and reference nodes. Pass 0 checks readiness, pass 1
 // writes the key, both reading the children at one call site.
-uint build_composite(uint t, uint kind, uint record, bool final, out CtKey key)
+uint build_composite(uint t, uint kind, bool final, out CtKey key)
 {
     key = ct_empty_key();
     // Function types (7) have no checked row form, hence no identity.
@@ -107,11 +107,11 @@ uint build_composite(uint t, uint kind, uint record, bool final, out CtKey key)
         }
     }
     if (!key.ok) return CT_UNKNOWN;
-    ct_key_store(key, record, uint2(INVALID, mask));
+    key.extra = uint2(INVALID, mask);
     return CT_KEY_BUILT;
 }
 
-uint build_dependency(uint t, uint record, bool final, out CtKey key)
+uint build_dependency(uint t, bool final, out CtKey key)
 {
     key = ct_empty_key();
     uint root = alias_root(t);
@@ -146,11 +146,11 @@ uint build_dependency(uint t, uint record, bool final, out CtKey key)
         if (child == CT_PENDING) return final ? CT_UNKNOWN : CT_PENDING;
         if (!ct_is_resolved(child)) return CT_UNKNOWN;
         uint status = ct_build_projection(target, child, dependency_constant_scalar(child_node),
-            record, fold, value, key);
+            fold, value, key);
         if (!fold) return status;
     }
-    if (fold) return ct_build_value(value, record, key);
-    return build_composite(t, kind, record, final, key);
+    if (fold) return ct_build_value(value, key);
+    return build_composite(t, kind, final, key);
 }
 
 // Intern node `t` of the resident page; CT_PENDING means a child is not
@@ -159,8 +159,10 @@ public uint canonical_intern_dependency(uint t, bool final)
 {
     uint index = ct_dependency_index(t);
     if (index == INVALID) return CT_UNKNOWN;
-    uint record = ct_dependency_record(index);
     CtKey key;
-    uint status = build_dependency(t, record, final, key);
-    return status == CT_KEY_BUILT ? ct_intern(record, key) : status;
+    uint status = build_dependency(t, final, key);
+    if (status != CT_KEY_BUILT) return status;
+    uint record = ct_dependency_record(index);
+    ct_key_store(key, record, key.extra);
+    return ct_intern(record, key);
 }
