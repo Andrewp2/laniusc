@@ -202,7 +202,10 @@ impl NativeProgramSession {
                 .ok_or_else(|| anyhow!("selected body has no retained owner span")))
                 .collect::<Result<Vec<_>>>()?;
             let sources = InstanceSources::build(template.template_sources(), &selected)?;
-            Some(InstanceRequest { sources: Arc::new(sources), first_copy_row: spans.hir_count })
+            let owners = selected.iter()
+                .map(|span| (span.function_hir, span.inherent_impl.map(|(row, _, _)| row)))
+                .collect();
+            Some(InstanceRequest { sources: Arc::new(sources), first_copy_row: spans.hir_count, owners })
         } else {
             None
         };
@@ -265,7 +268,7 @@ impl NativeProgramSession {
         }
         let mut specialization = batch.expect("nonempty batch");
         if let Some(instance) = &instance {
-            specialization.set_copy_first_row(instance.first_copy_row)?;
+            specialization.set_instance_copies(instance.first_copy_row, instance.owners.clone())?;
         }
         // GPU checks each new context against the exact origin environment and
         // retained evidence before the frontend can defer a local-only lookup.
@@ -327,6 +330,8 @@ struct InstanceRequest {
     sources: Arc<InstanceSources>,
     /// The template's HIR row count: every copy row is at or past it.
     first_copy_row: u32,
+    /// Per copy: the template function HIR and a method's template impl HIR.
+    owners: Vec<(u32, Option<u32>)>,
 }
 
 /// The calls a replay admitted and where its published bodies are.

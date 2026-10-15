@@ -6,7 +6,9 @@
 //! are witnesses, not prerequisites for semantic seeding; GPU layout admission
 //! must complete before a replayed native body can be published.
 
-use anyhow::{Result, ensure};
+use std::collections::{BTreeMap, BTreeSet};
+
+use anyhow::{Result, anyhow, ensure};
 
 use super::{
     CheckedGenericApplicationArgument,
@@ -244,7 +246,7 @@ fn write_graph(words: &mut [u32], source_unit: [u32; 2], nodes: &[[u32; 8]], edg
 ///
 /// Instance copies: an entry whose target is `BODY_COPY_TARGET | byte` stores
 /// `byte + 1` as its copy word (705.z for entry 0, header .z otherwise), and
-/// 705.w holds the first copy row (`set_copy_first_row`).
+/// 705.w holds the first copy row (`set_instance_copies`).
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecializationBatch {
     entries: Vec<CheckedBodySpecialization>,
@@ -281,8 +283,10 @@ impl CheckedBodySpecializationBatch {
     }
 
     /// An instance-copy batch: every entry selects a copy, by increasing
-    /// copy byte, and every copy row is at or past `row`.
-    pub(crate) fn set_copy_first_row(&mut self, row: u32) -> Result<()> {
+    /// copy byte, and every copy row is at or past `row`. `owners` holds,
+    /// per entry, the template function HIR and the template impl HIR of a
+    /// method copy.
+    pub(crate) fn set_instance_copies(&mut self, row: u32, owners: Vec<(u32, Option<u32>)>) -> Result<()> {
         let bytes = self.entries.iter().map(|entry| {
             ensure!(entry.target_symbol & BODY_COPY_TARGET == BODY_COPY_TARGET,
                 "an instance-copy batch entry selects an original declaration");
@@ -309,6 +313,9 @@ impl CheckedBodySpecializationBatch {
             0 => matches!((self.roots[a].get(slot), self.roots[b].get(slot)),
                 (Some(left), Some(right)) if left == right),
             1 => match (self.entries[a].constants.get(slot), self.entries[b].constants.get(slot)) {
+    /// Per instance-copy entry: the template's function HIR and, for a
+    /// method, the template's impl HIR.
+    copy_owners: Vec<(u32, Option<u32>)>,
                 (Some(left), Some(right)) => left.value.literal().map(|value| value.words())
                     == right.value.literal().map(|value| value.words()),
                 _ => false,
@@ -327,6 +334,7 @@ impl CheckedBodySpecializationBatch {
                 "batched body specializations belong to different source units");
         }
         if self.entries.len() >= MAX_BODY_ENTRIES {
+            copy_owners: Vec::new(),
             return Ok(false);
         }
         let mut nodes = self.nodes.clone();
@@ -353,10 +361,53 @@ impl CheckedBodySpecializationBatch {
                 constants.push(intern_checked_node(
                     [10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut nodes, &mut edges)?);
             }
+        ensure!(owners.len() == self.entries.len()
+            && owners.iter().all(|&(function, implementation)| function < row
+                && implementation.is_none_or(|implementation| implementation < row)),
+            "instance copies need one template owner each");
             Ok(())
+        self.copy_owners = owners;
         });
         if rebased.is_err() {
             return Ok(false);
+    /// The template owner of each owner row of the instance copies, for a
+    /// replay that checks this batch's copies.
+    ///
+    /// `callables` are the replay unit's function rows (free functions and
+    /// methods), `method_impls` its (method, impl) rows. A copy is exactly
+    /// one function (and one impl for a method), appended after the
+    /// template in entry order, so the k-th callable row at or past the
+    /// first copy row is entry k's copy. Template rows keep their own
+    /// identity.
+    pub(crate) fn instance_owner_aliases(
+        &self,
+        callables: &BTreeSet<u32>,
+        method_impls: &[(u32, u32)],
+    ) -> Result<BTreeMap<u32, u32>> {
+        let mut aliases = BTreeMap::new();
+        if self.copy_first_row == 0 {
+            return Ok(aliases);
+        }
+        let copies = callables.range(self.copy_first_row..).copied().collect::<Vec<_>>();
+        ensure!(copies.len() == self.copy_owners.len(),
+            "replay checked {} instance-copy callables for {} copies", copies.len(), self.copy_owners.len());
+        let impls = method_impls.iter().copied().collect::<BTreeMap<_, _>>();
+        for (&copy, &(function, implementation)) in copies.iter().zip(&self.copy_owners) {
+            aliases.insert(copy, function);
+            match (impls.get(&copy), implementation) {
+                (None, None) => {}
+                (Some(&copy_impl), Some(implementation)) => {
+                    ensure!(copy_impl >= self.copy_first_row && copy_impl < copy,
+                        "instance-copy method {copy} is not inside its own copied impl");
+                    ensure!(aliases.insert(copy_impl, implementation).is_none(),
+                        "instance-copy impl {copy_impl} owns more than one copy");
+                }
+                _ => return Err(anyhow!("instance copy {copy} changed between a function and a method")),
+            }
+        }
+        Ok(aliases)
+    }
+
         }
         self.roots.push(local_roots.iter().map(|&root| shared[root as usize]).collect());
         self.nodes = nodes;
@@ -1391,7 +1442,8 @@ mod tests {
             entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
         assert!(batch.try_push(entry(BODY_COPY_TARGET | 520, vec![nominal(vec![scalar.clone()])], vec![])).unwrap());
         assert_eq!(batch.copy_first_row(), None);
-        batch.set_copy_first_row(77).unwrap();
+        assert!(batch.set_instance_copies(77, vec![(3, None)]).is_err(), "one template owner per copy");
+        batch.set_instance_copies(77, vec![(3, None), (9, Some(8))]).unwrap();
         assert_eq!(batch.copy_first_row(), Some(77));
         let words = batch.packet().unwrap();
         assert_eq!(words[1], BODY_COPY_TARGET | 400, "the target keeps the unresolved selector");
@@ -1404,10 +1456,32 @@ mod tests {
         assert_eq!(&plain.packet().unwrap()[BODY_CONSTANT_START + 2..BODY_CONSTANT_START + 4], &[0, 0]);
         let mut mixed = plain.clone();
         assert!(mixed.try_push(entry(BODY_COPY_TARGET | 9, vec![scalar.clone()], vec![])).unwrap());
-        assert!(mixed.set_copy_first_row(4).is_err(), "every entry of a copy batch is a copy");
+        assert!(mixed.set_instance_copies(4, vec![(1, None), (2, None)]).is_err(),
+            "every entry of a copy batch is a copy");
         let mut unordered = CheckedBodySpecializationBatch::single(
             entry(BODY_COPY_TARGET | 600, vec![scalar.clone()], vec![])).unwrap();
         assert!(unordered.try_push(entry(BODY_COPY_TARGET | 500, vec![scalar], vec![])).unwrap());
-        assert!(unordered.set_copy_first_row(4).is_err(), "copies follow source order");
+        assert!(unordered.set_instance_copies(4, vec![(1, None), (2, None)]).is_err(),
+            "copies follow source order");
+    }
+    #[test]
+    fn instance_copy_owners_map_to_their_templates_in_entry_order() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.try_push(entry(BODY_COPY_TARGET | 520, vec![scalar.clone()], vec![])).unwrap());
+        // Template: free function 3, method 9 of impl 8. Copies start at row 40:
+        // free copy at 41, then impl copy 50 holding method copy 52.
+        batch.set_instance_copies(40, vec![(3, None), (9, Some(8))]).unwrap();
+        let callables = BTreeSet::from([3, 9, 12, 41, 52]);
+        let methods = [(9, 8), (52, 50)];
+        let aliases = batch.instance_owner_aliases(&callables, &methods).unwrap();
+        assert_eq!(aliases, BTreeMap::from([(41, 3), (50, 8), (52, 9)]));
+        // A missing copy, or a method copy checked as a free function, fails.
+        assert!(batch.instance_owner_aliases(&BTreeSet::from([3, 41]), &methods).is_err());
+        assert!(batch.instance_owner_aliases(&callables, &[(9, 8)]).is_err());
+        // Batches without copies alias nothing.
+        let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar], vec![])).unwrap();
+        assert!(plain.instance_owner_aliases(&callables, &methods).unwrap().is_empty());
     }
 }

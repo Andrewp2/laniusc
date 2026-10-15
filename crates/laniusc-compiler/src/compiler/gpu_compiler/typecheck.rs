@@ -931,6 +931,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     queue,
                     semantic_interface.is_some(),
                     object_request.and_then(LoweringObjectRequest::template_contracts),
+                    object_request.and_then(LoweringObjectRequest::body_specialization),
                 )
                 .map_err(|error| {
                     CompileError::GpuFrontend(format!(

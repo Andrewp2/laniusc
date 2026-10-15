@@ -1405,7 +1405,9 @@ impl CheckedTypeReadback {
         metadata: &[Vec<u32>],
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
+        owner_aliases: &BTreeMap<u32, u32>,
     ) -> Result<Self> {
+        let template_hir = |hir: u32| owner_aliases.get(&hir).copied().unwrap_or(hir);
         let owner_width = if interface_exported { 4 } else { 3 };
         ensure!(
             parameters.len() % 4 == 0
@@ -1425,7 +1427,7 @@ impl CheckedTypeReadback {
                 contracts
                     .binders
                     .iter()
-                    .find(|owner| owner.source_hir == hir)
+                    .find(|owner| owner.source_hir == template_hir(hir))
             });
             ensure!(
                 interface_exported || template_owner.is_some(),
@@ -1514,7 +1516,7 @@ impl CheckedTypeReadback {
                         contracts
                             .binders
                             .iter()
-                            .find(|owner| owner.source_hir == row[0])
+                            .find(|owner| owner.source_hir == template_hir(row[0]))
                     })
                     .and_then(|owner| {
                         owner.parameters.iter().find(|parameter| {
@@ -1620,6 +1622,7 @@ pub(super) fn read_unit_facts(
     semantic: &OwnedGpuSemanticArtifact,
     interface_exported: bool,
     template_contracts: Option<&CheckedUnitContracts>,
+    instance_copies: Option<&super::CheckedBodySpecializationBatch>,
 ) -> Result<CheckedUnitFacts> {
     // Ordinary object-only jobs do not publish a definition contract snapshot.
     // Body replay is explicit and supplies the immutable template instead.
@@ -1904,6 +1907,12 @@ pub(super) fn read_unit_facts(
         !callable_hirs.contains(&INVALID),
         "retained callable declaration has no HIR"
     );
+    // The owners of an instance-copy replay's copies take their template's
+    // immutable identity.
+    let owner_aliases = instance_copies
+        .map(|batch| batch.instance_owner_aliases(&callable_hirs, &method_impls))
+        .transpose()?
+        .unwrap_or_default();
     let parameter_owners = parameters
         .chunks_exact(4)
         .map(|row| row[0])
@@ -2031,6 +2040,7 @@ pub(super) fn read_unit_facts(
         &metadata[call_ids.len()..nominal_metadata_start],
         interface_exported,
         template_contracts,
+        &owner_aliases,
     )?;
     types.read_nominal_metadata(
         &nominal_headers,
@@ -2106,10 +2116,11 @@ pub(super) fn read_unit_facts(
     if !interface_exported {
         if let Some(template) = template_contracts {
             for owner in types.owners.values_mut() {
+                let source_hir = owner_aliases.get(&owner.source_hir).copied().unwrap_or(owner.source_hir);
                 let original = template
                     .binders
                     .iter()
-                    .find(|row| row.source_hir == owner.source_hir)
+                    .find(|row| row.source_hir == source_hir)
                     .ok_or_else(|| anyhow!("replayed owner has no immutable template scope"))?;
                 // Indices belong to the immutable definition table. The replay
                 // publishes that original table, not its sparse decoder cache.
@@ -2711,6 +2722,7 @@ impl super::GpuTypeChecker {
         queue: &wgpu::Queue,
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
+        instance_copies: Option<&super::CheckedBodySpecializationBatch>,
     ) -> Result<CheckedUnitFacts> {
         let semantic = self
             .semantic_artifact()
@@ -2722,6 +2734,7 @@ impl super::GpuTypeChecker {
             &semantic,
             interface_exported,
             template_contracts,
+            instance_copies,
         )
     }
 }
@@ -3367,8 +3380,9 @@ mod tests {
             vec![0], vec![INVALID], vec![INVALID], vec![0], vec![2], vec![10],
             vec![INVALID], vec![0], vec![INVALID], vec![SCALAR_U64], vec![0], vec![INVALID],
         ];
+        let none = BTreeMap::new();
         let original = CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, true, None).unwrap();
+            &parameters, &[7], &metadata, true, None, &none).unwrap();
         assert_eq!(original.parameters[&10].constant_scalar, None);
         assert_eq!(original.parameters[&11].constant_scalar, Some(SCALAR_U64));
         let contracts = CheckedUnitContracts {
@@ -3376,14 +3390,24 @@ mod tests {
         };
         metadata.remove(3); // Replay inherits the immutable template's public scope.
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts)).is_ok());
+            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_ok());
+        // An instance copy at row 20 of template owner 7 takes 7's binder.
+        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
+        assert!(CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[20], &metadata, false, Some(&contracts), &none).is_err(),
+            "a copied owner without its template has no immutable identity");
+        let aliases = BTreeMap::from([(20, 7)]);
+        let copy = CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[20], &metadata, false, Some(&contracts), &aliases).unwrap();
+        assert_eq!(copy.owners[&20].binder, original.owners[&7].binder);
+        assert_eq!(copy.parameters[&31], original.parameters[&11]);
         metadata[12][0] = SCALAR_I64;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts)).is_err(),
+            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_err(),
             "same binder and slot cannot silently change scalar");
         metadata[12][0] = SCALAR_UNIT;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts)).is_err());
+            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_err());
     }
 
 }

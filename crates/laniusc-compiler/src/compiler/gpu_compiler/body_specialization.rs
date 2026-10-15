@@ -115,6 +115,7 @@ impl GpuCompiler<'_> {
         let mut round_start = 0usize;
         while round_start < contexts.len() {
             let round_end = contexts.len();
+            let scan_started = std::time::Instant::now();
             let mut pending = BTreeMap::<Vec<u8>, PendingBody>::new();
             let mut patches = Vec::<(usize, usize, Vec<u8>)>::new();
             for context_index in round_start..round_end {
@@ -233,6 +234,7 @@ impl GpuCompiler<'_> {
                     patches.push((context_index, symbol_index, concrete_identity));
                 }
             }
+            host_span("scan", scan_started);
             // Group by template unit, then pack compatible scopes greedily in
             // key order (deterministic: keys are canonical environments).
             let mut by_unit = BTreeMap::<(u32, u32), Vec<Vec<u8>>>::new();
@@ -240,6 +242,7 @@ impl GpuCompiler<'_> {
                 by_unit.entry((body.target.0, body.target.1)).or_default().push(key.clone());
             }
             for keys in by_unit.into_values() {
+                let plan_started = std::time::Instant::now();
                 let mut runs = Vec::<ReplayRun>::new();
                 for key in keys {
                     let body = &pending[&key];
@@ -272,6 +275,7 @@ impl GpuCompiler<'_> {
                     // A recursively growing environment fails wherever it first
                     // outgrows a limit; report it as the recursion it is.
                     let recursion = |error: CompileError| {
+                host_span("plan", plan_started);
                         let body = &pending[&run.keys[0]];
                         if !run.solo || !is_capacity_failure(&error) { return error; }
                         let owner = body.origin.parent.map(|(context, _)|
@@ -301,6 +305,9 @@ impl GpuCompiler<'_> {
                         .clone();
                     let CompiledSourcePackObject::X86_64(mut concrete) = replay.object else {
                         unreachable!("body replay target is x86_64")
+                    crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
+                    crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
+                    crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
                     };
                     let (library_id, unit_id, _) = pending[&run.keys[0]].target;
                     let candidate = next_unit_by_library.entry(library_id).or_default();
@@ -382,6 +389,7 @@ impl GpuCompiler<'_> {
                         concrete.text.len(), replay_calls.len());
                     contexts.push(ReplayContext {
                         library_id,
+                    host_span("publish", finished);
                         unit_id,
                         calls: replay_calls,
                         call_hirs: replay.x86_call_hirs,
@@ -397,6 +405,7 @@ impl GpuCompiler<'_> {
                     symbol_index,
                     &specializations[&key].0,
                 )?;
+            let patch_started = std::time::Instant::now();
             }
             round_start = round_end;
         }
@@ -404,6 +413,7 @@ impl GpuCompiler<'_> {
         Ok(objects)
     }
 }
+            host_span("patch", patch_started);
 
 /// One object in the specialization worklist: an original unit's object or
 /// a replay's. `entries` maps each body a replay published (its selected
@@ -514,6 +524,12 @@ fn replay_entry(call: &CheckedGenericCall, target: (u32, u32, u32)) -> CheckedBo
 /// of as an instance copy.
 fn instance_copies_enabled() -> bool {
     crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_COPIES", true)
+}
+
+/// A host span on the specialization lane of LANIUS_PERFETTO_TRACE, from
+/// `start` to now.
+fn host_span(name: &str, start: std::time::Instant) {
+    crate::gpu::trace::record_host_span("specialization", name, start, std::time::Instant::now());
 }
 
 /// `LANIUS_REPLAY_BATCH=N` caps the bodies per frontend run (1 replays each
