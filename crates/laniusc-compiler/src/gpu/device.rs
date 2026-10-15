@@ -135,6 +135,10 @@ impl GpuDevice {
 
     /// Persists the current wgpu pipeline cache to disk when supported.
     pub fn persist_pipeline_cache(&self) {
+        // No file to keep: another driver cache serves the pipelines.
+        if self.pipeline_cache_path.is_none() {
+            return;
+        }
         let _persist = PIPELINE_CACHE_PERSIST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -413,7 +417,8 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
             required_features |= wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
         }
     }
-    let pipeline_cache_supported = adapter_features.contains(wgpu::Features::PIPELINE_CACHE);
+    let pipeline_cache_supported = adapter_features.contains(wgpu::Features::PIPELINE_CACHE)
+        && !driver_shader_cache_serves_pipelines(adapter_info.vendor);
     if pipeline_cache_supported {
         required_features |= wgpu::Features::PIPELINE_CACHE;
     }
@@ -620,6 +625,9 @@ pub fn persist_created_pipelines_for_device(device: &wgpu::Device) {
 static BACKGROUND_PERSIST_RUNNING: AtomicBool = AtomicBool::new(false);
 
 fn spawn_background_persist(global: &'static GpuDevice) {
+    if global.pipeline_cache_path.is_none() {
+        return;
+    }
     if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) == 0
         && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
     {
@@ -744,6 +752,81 @@ fn pipeline_cache_registry() -> &'static Mutex<HashMap<usize, RegisteredPipeline
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Where the pipeline cache files live: `LANIUS_PIPELINE_CACHE_DIR`, else
+/// `target/wgpu-pipeline-cache`.
+fn pipeline_cache_dir() -> PathBuf {
+    crate::gpu::env::env_path(
+        "LANIUS_PIPELINE_CACHE_DIR",
+        PathBuf::from("target").join("wgpu-pipeline-cache"),
+    )
+}
+
+const NVIDIA_VENDOR_ID: u32 = 0x10de;
+/// The variables of NVIDIA's own shader disk cache (Linux driver).
+const NVIDIA_SHADER_CACHE_VARS: [&str; 4] = [
+    "__GL_SHADER_DISK_CACHE",
+    "__GL_SHADER_DISK_CACHE_PATH",
+    "__GL_SHADER_DISK_CACHE_SIZE",
+    "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP",
+];
+/// Large enough for many kernel sets; with cleanup skipped it is never pruned.
+const NVIDIA_SHADER_CACHE_BYTES: &str = "12884901888";
+
+/// Gives this process its own NVIDIA shader disk cache, next to the pipeline
+/// cache files, unless the user configured that cache themselves (any of its
+/// variables is set).
+///
+/// The driver's default cache, ~/.cache/nvidia/GLCache, is shared by every
+/// application and capped at 1 GiB. Once full it evicts and recompiles, and a
+/// laniusc start that took 1.6 s on warm pipelines took 236 s. wgpu loads the
+/// Vulkan loader, and the loader the driver, only when the instance is
+/// created, so variables set before the first wgpu call reach the driver
+/// whether it reads them when loaded or when the instance is created.
+///
+/// # Safety
+///
+/// It sets process environment variables, so no other thread may run (or read
+/// the environment) concurrently: call it first thing in `main`.
+pub unsafe fn configure_driver_shader_cache() {
+    if !cfg!(target_os = "linux")
+        || NVIDIA_SHADER_CACHE_VARS
+            .iter()
+            .any(|name| std::env::var_os(name).is_some())
+    {
+        return;
+    }
+    let dir = pipeline_cache_dir();
+    let dir = std::path::absolute(&dir).unwrap_or(dir).join("nvidia");
+    // The driver disables its cache rather than create a missing directory.
+    if let Err(err) = fs::create_dir_all(&dir) {
+        warn!("keeping the default NVIDIA shader cache: cannot create {}: {err}", dir.display());
+        return;
+    }
+    let path = dir.into_os_string();
+    let values: [&std::ffi::OsStr; 4] = [
+        "1".as_ref(),
+        &path,
+        NVIDIA_SHADER_CACHE_BYTES.as_ref(),
+        "1".as_ref(),
+    ];
+    for (name, value) in NVIDIA_SHADER_CACHE_VARS.iter().zip(values) {
+        // SAFETY: the caller guarantees no other thread runs yet.
+        unsafe { std::env::set_var(name, value) };
+    }
+}
+
+/// Whether NVIDIA's own shader disk cache serves pipelines (on unless
+/// `__GL_SHADER_DISK_CACHE=0`). With it on, the driver neither used a loaded
+/// pipeline cache nor added new pipelines to it: a 57 MB file gave a 236 s
+/// start on a cold driver cache, yet the same file started in 3.9 s with the
+/// driver cache off. Loading and checking the file then only costs ~85 ms a
+/// start, so the pipeline cache file is kept for other drivers and for a
+/// disabled driver cache.
+fn driver_shader_cache_serves_pipelines(vendor: u32) -> bool {
+    vendor == NVIDIA_VENDOR_ID
+        && std::env::var_os(NVIDIA_SHADER_CACHE_VARS[0]).is_none_or(|value| value != "0")
+}
+
 /// The pipeline cache loaded at device creation, with what persisting it needs.
 #[derive(Default)]
 struct LoadedPipelineCache {
@@ -765,10 +848,7 @@ fn create_pipeline_cache(
         return LoadedPipelineCache::default();
     };
     let start = Instant::now();
-    let cache_dir = crate::gpu::env::env_path(
-        "LANIUS_PIPELINE_CACHE_DIR",
-        PathBuf::from("target").join("wgpu-pipeline-cache"),
-    );
+    let cache_dir = pipeline_cache_dir();
     let key = PipelineCacheKey::new(
         &adapter_key,
         option_env!("LANIUS_WGPU_VERSION").unwrap_or("unknown"),
