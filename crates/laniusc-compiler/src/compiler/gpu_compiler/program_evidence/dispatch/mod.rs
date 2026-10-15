@@ -978,7 +978,7 @@ impl GpuProgramEvidence {
             else {
                 break;
             };
-            let Some(grown) = stopped.capacity_retry(packet.packet.proof_store.layout())? else {
+            let Some(grown) = stopped.capacity_retry(&packet.packet.proof_store)? else {
                 break;
             };
             if debug {
