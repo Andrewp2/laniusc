@@ -71,6 +71,8 @@ static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_CAST = 36u;
+static const uint HIR_EXPR_CHAR = 29u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
@@ -266,6 +268,11 @@ void validate_cast(uint node, HirPayload payload)
     if (target_tag == 0u) return;
     uint target = target_tag == TYPE_REF_SCALAR ? type_expr_ref_payload[target_token] : TY_UNKNOWN;
     uint source = scalar_type(payload.b);
+    // A char literal has no compact scalar type, but it is a char.
+    if (source == TY_UNKNOWN && valid_hir(payload.b) &&
+        compact_hir_payload[payload.b].a == HIR_EXPR_CHAR &&
+        (compact_hir_core[payload.b].kind == HIR_EXPR || compact_hir_core[payload.b].kind == HIR_LITERAL_EXPR))
+        source = TY_CHAR;
     if (source == TY_UNKNOWN)
     {
         if (!valid_hir(payload.b)) return;
@@ -274,11 +281,13 @@ void validate_cast(uint node, HirPayload payload)
         if (source_tag == 0u) return;
         source = source_tag == TYPE_REF_SCALAR ? semantic_expr_ref_payload_by_hir[payload.b] : TY_UNKNOWN;
     }
-    // bool and char convert to any integer; only u8 converts to char.
+    // bool and char convert to any integer and to themselves; only u8
+    // converts to char.
     bool integer_source = source == TY_BOOL || source == TY_CHAR;
     if (cast_numeric(target) &&
         (cast_numeric(source) || (integer_source && scalar_is_integer(target)))) return;
     if (target == TY_CHAR && source == SCALAR_U8) return;
+    if (integer_source && source == target) return;
     uint source_code = scalar_is_known(source) ? source : 0u;
     uint target_code = scalar_is_known(target) ? target : 0u;
     record_min_token_error(status, target_token - 1u, ERR_INVALID_CAST,

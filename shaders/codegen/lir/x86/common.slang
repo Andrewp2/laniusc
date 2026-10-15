@@ -404,13 +404,16 @@ uint x86_lir_opcode(OptIrNodeCore core)
     return 0u;
 }
 
-// `as` converts a numeric, bool or char source to a numeric target, and u8
-// to char. A char is its 32-bit code point, so both need no extra code.
+// `as` converts a numeric, bool or char source to a numeric target, u8 to
+// char, and bool or char to itself. A char is its 32-bit code point, so none
+// of these needs extra code.
 bool x86_convert_supported(uint source, uint target)
 {
     uint numeric = SCALAR_INTEGER_SET | SCALAR_FLOAT_SET;
-    return (scalar_in_set(source, numeric | (1u << SCALAR_BOOL) | (1u << SCALAR_CHAR)) &&
-        scalar_in_set(target, numeric)) || (source == SCALAR_U8 && target == SCALAR_CHAR);
+    uint bool_char = (1u << SCALAR_BOOL) | (1u << SCALAR_CHAR);
+    return (scalar_in_set(source, numeric | bool_char) && scalar_in_set(target, numeric)) ||
+        (source == SCALAR_U8 && target == SCALAR_CHAR) ||
+        (source == target && scalar_in_set(source, bool_char));
 }
 
 bool x86_lir_supported(OptIrNodeCore core)

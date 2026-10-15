@@ -13,7 +13,7 @@
   convert to each other.
 - `bool` to an integer gives 0 or 1. `char` to an integer gives its code point,
   truncated to the target width, and `u8` to `char` gives the character with
-  that code point.
+  that code point. `bool` and `char` also cast to themselves.
 - Anything else is `LNC0072` "invalid cast". That includes casts to `bool`,
   `bool` or `char` to a float, any integer type other than `u8` to `char`,
   and casts from or to a non-scalar type.

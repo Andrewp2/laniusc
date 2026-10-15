@@ -92,8 +92,10 @@ fn main() -> i32 {
     let byte: u8 = 66;
     let from_byte: char = byte as char;
     let round_trip: u32 = byte as char as u32;
+    let same: char = letter as char;
+    let flag: bool = true as bool;
     return (code as i32) + (low as i32) + (wide as i32) + (round_trip as i32) +
-        (from_byte as i32);
+        (from_byte as i32) + (same as i32) + (flag as i32);
 }
 "#,
     );
@@ -209,6 +211,16 @@ fn main() -> i32 {
         r#"
 fn main() -> i32 {
     let value: f32 = 'A' as f32;
+    return 0;
+}
+"#,
+    );
+    expect_invalid_cast(
+        "char local to float",
+        r#"
+fn main() -> i32 {
+    let letter: char = 'A';
+    let value: f64 = letter as f64;
     return 0;
 }
 "#,
@@ -482,6 +494,12 @@ fn main() -> i32 {
     if (from_byte != 'B') { return 7; }
     let top: u8 = 255;
     if ((top as char as u32) != 255) { return 8; }
+    let same: char = omega as char;
+    if (same != 'Ω') { return 9; }
+    let yes: bool = true;
+    let still: bool = yes as bool;
+    if (!still) { return 10; }
+    if (('Z' as u8) != 90) { return 11; }
     return 0;
 }
 "#,
