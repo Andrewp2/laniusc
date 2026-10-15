@@ -425,6 +425,31 @@ pub(crate) fn stamp_job_session_pass_begin(encoder: &mut wgpu::CommandEncoder, l
     });
 }
 
+/// Marks the start of an encoder that continues a recording split by a partial
+/// submit (a readback, an inference round, a dependency page, or a prefix
+/// submitted early). The commands before the split ran in an earlier
+/// submission, so without this boundary the next operation's span would also
+/// cover the GPU idle time between the two submissions. The boundary is a
+/// submission gap, not an operation stamp.
+pub(crate) fn stamp_active_submission_begin(encoder: &mut wgpu::CommandEncoder, label: &str) {
+    ACTIVE_OPERATION_TIMER.with(|active| {
+        let recording = active.borrow().last().cloned();
+        if let Some(recording) = recording {
+            let room = {
+                let recording = recording
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                // Boundaries only refine attribution: keep the last quarter
+                // of the query set for operation stamps.
+                recording.next + recording.capacity / 4 < recording.capacity
+            };
+            if room {
+                stamp_recording(&recording, encoder, format!("{label}.submission.begin"));
+            }
+        }
+    });
+}
+
 /// One GPU timestamp observed at a known host instant: the trace places every
 /// timer's spans of the current job through it.
 #[derive(Clone, Copy, Debug)]

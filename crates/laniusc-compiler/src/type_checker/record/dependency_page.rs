@@ -78,6 +78,7 @@ fn submit_dependency_page_boundary(
         label: Some("type-check-dependency-page-encoder"),
     });
     let recorded = std::mem::replace(encoder, next);
+    crate::gpu::timer::stamp_active_submission_begin(encoder, "type_check.dependency_page");
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "type-check dependency page boundary",

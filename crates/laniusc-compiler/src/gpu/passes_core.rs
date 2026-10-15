@@ -1274,6 +1274,7 @@ pub(crate) fn submit_recorded_prefix(
     }
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
     let recorded = std::mem::replace(encoder, next);
+    crate::gpu::timer::stamp_active_submission_begin(encoder, label);
     let start = Instant::now();
     let commands = recorded.finish();
     crate::gpu::trace::record_host_span(
