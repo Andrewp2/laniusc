@@ -177,6 +177,52 @@ struct RecordedSemanticInterfaceTypeTopology {
     _params: LaniusBuffer<SemanticInterfaceTypeTopologyParams>,
 }
 
+/// One recorded step of the type topology, in recording order.
+enum TopologyStep {
+    Clear(crate::gpu::operations::ClearBufferOperation),
+    Compute(crate::gpu::operations::ComputeOperation),
+    Scan(PrefixScanOperation),
+    /// A timer stamp, recorded only when the job is timed.
+    Stamp(&'static str),
+}
+
+impl TopologyStep {
+    fn record(&self, encoder: &mut wgpu::CommandEncoder, timer: &mut Option<&mut GpuTimer>) -> Result<()> {
+        match self {
+            Self::Clear(clear) => clear.record(encoder),
+            Self::Compute(operation) => operation.record(encoder)?,
+            Self::Scan(scan) => scan.record(encoder)?,
+            Self::Stamp(label) => {
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, *label);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What the type topology's operations depend on: the capacities that size
+/// their direct dispatches and scans, and every buffer range they bind.
+#[derive(PartialEq)]
+struct SemanticInterfaceTopologyKey {
+    capacities: [u32; 6],
+    resources: crate::gpu::resource_registry::BufferBindingSignature,
+    scan_inputs: crate::gpu::resource_registry::BufferBindingSignature,
+}
+
+/// The type topology's operations, kept across jobs in the resident
+/// workspace. Building them resolves ~45 graph-validated operations, 10
+/// prefix scans and 17 clears: 2.29 ms of host time on every warm 1 MB job.
+/// A job whose capacities and bound buffer ranges equal the cached key
+/// records the cached operations instead. The per-job uniform and dispatch
+/// argument writes still happen every job. Without a key (a resource that is
+/// not a buffer) the operations are rebuilt every job.
+#[derive(Default)]
+pub(super) struct CachedSemanticInterfaceTopology {
+    cached: Option<(Option<SemanticInterfaceTopologyKey>, Vec<TopologyStep>)>,
+}
+
 /// GPU outputs and host-visible copies recorded for one bounded unit's public
 /// semantic identities. The input semantic tables remain owned by the resident
 /// type checker until the enclosing compilation submission completes.
@@ -395,6 +441,7 @@ impl GpuTypeChecker {
             inputs,
             active_hir,
             &state.typecheck_graph,
+            &state.semantic_interface_topology,
             timer,
         )
     }
@@ -414,6 +461,7 @@ impl GpuTypeChecker {
         inputs: GpuSemanticInterfaceIdentityBuffers<'_>,
         active_hir: ActiveHirDomain<'_>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
+        topology_cache: &Mutex<CachedSemanticInterfaceTopology>,
         timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterface> {
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
@@ -582,6 +630,7 @@ impl GpuTypeChecker {
             scan_scratch,
             active_hir,
             typecheck_graph,
+            topology_cache,
             timer,
         )?;
         if let Some(timer) = timer.as_deref_mut() {
@@ -979,6 +1028,7 @@ impl GpuTypeChecker {
         scan_scratch: PrefixScanWorkspace<&LaniusBuffer<u32>>,
         active_hir: ActiveHirDomain<'_>,
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
+        topology_cache: &Mutex<CachedSemanticInterfaceTopology>,
         timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
         let mut host_phase = HostPhaseSpans::start();
@@ -1144,148 +1194,8 @@ impl GpuTypeChecker {
             ],
             wgpu::BufferUsages::INDIRECT,
         );
-        let signature_type_scan = graph_prefix_scan(
-            device,
-            queue,
-            &self.semantic_interface_buffers,
-            &self.passes,
-            "type_check.interface.signature.type_scan",
-            signature_scan_params,
-            typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::SignatureTypes,
-            (&signature_scan_count).into(),
-            &signature_dispatch_args,
-            (&signature_type_flag).into(),
-            &signature_type_prefix,
-            &signature_type_total,
-            scan_scratch,
-        )?;
-        let signature_edge_scan = graph_prefix_scan(
-            device,
-            queue,
-            &self.semantic_interface_buffers,
-            &self.passes,
-            "type_check.interface.signature.edge_scan",
-            signature_scan_params,
-            typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::SignatureEdges,
-            (&signature_scan_count).into(),
-            &signature_dispatch_args,
-            (&signature_edge_count).into(),
-            &signature_edge_prefix,
-            &signature_edge_total,
-            scan_scratch,
-        )?;
-        let member_scan = graph_prefix_scan(
-            device,
-            queue,
-            &self.semantic_interface_buffers,
-            &self.passes,
-            "type_check.interface.members.scan",
-            signature_scan_params,
-            typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::Members,
-            (&signature_scan_count).into(),
-            &signature_dispatch_args,
-            (&member_count).into(),
-            &member_prefix,
-            &declaration_member_total,
-            scan_scratch,
-        )?;
         let dispatch_args = active_hir.dispatch_args.clone();
-        let scan_params = PrefixScanParams {
-            n_items: capacity,
-            n_blocks,
-            min_items: 0,
-        };
-        let scan = graph_prefix_scan(
-            device,
-            queue,
-            &self.semantic_interface_buffers,
-            &self.passes,
-            "type_check.interface.type_topology.scan",
-            scan_params,
-            typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::TypeOrder,
-            (&scan_count).into(),
-            &dispatch_args,
-            (&reverse_flag).into(),
-            &reverse_prefix,
-            &count,
-            scan_scratch,
-        )?;
-        let edge_scan = graph_prefix_scan(
-            device,
-            queue,
-            &self.semantic_interface_buffers,
-            &self.passes,
-            "type_check.interface.type_topology.edge_scan",
-            scan_params,
-            typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::TypeEdges,
-            (&scan_count).into(),
-            &dispatch_args,
-            (&edge_count).into(),
-            &edge_prefix,
-            &edge_total,
-            scan_scratch,
-        )?;
-
         let predicate_dispatch_args = typecheck_graph.u32_buffer("predicate_compact_dispatch_args")?;
-        let predicate_scan_params = PrefixScanParams {
-            n_items: predicate_capacity,
-            n_blocks: predicate_capacity.div_ceil(256).max(1),
-            min_items: 0,
-        };
-        let predicate_scan = graph_prefix_scan(
-            device, queue, &self.semantic_interface_buffers, &self.passes,
-            "type_check.interface.predicates.scan", predicate_scan_params, typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::Predicates,
-            hir.compact_predicate_count.into(), &predicate_dispatch_args, (&predicate_flag).into(),
-            &predicate_prefix, &predicate_total, scan_scratch,
-        )?;
-        let predicate_argument_scan = graph_prefix_scan(
-            device, queue, &self.semantic_interface_buffers, &self.passes,
-            "type_check.interface.predicate_arguments.scan", predicate_scan_params, typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::PredicateArguments,
-            hir.compact_predicate_count.into(), &predicate_dispatch_args, (&predicate_argument_count).into(),
-            &predicate_argument_prefix, &predicate_argument_total, scan_scratch,
-        )?;
-
-        let implementation_scan_params = PrefixScanParams {
-            n_items: implementation_capacity,
-            n_blocks: implementation_capacity.div_ceil(256).max(1),
-            min_items: 0,
-        };
-        let implementation_scan = graph_prefix_scan(
-            device, queue, &self.semantic_interface_buffers, &self.passes,
-            "type_check.interface.implementations.scan", implementation_scan_params, typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::Implementations,
-            hir.compact_hir_count.into(), &dispatch_args, (&implementation_flag).into(),
-            &implementation_prefix, &implementation_total, scan_scratch,
-        )?;
-        let implementation_argument_scan = graph_prefix_scan(
-            device, queue, &self.semantic_interface_buffers, &self.passes,
-            "type_check.interface.implementation_arguments.scan", implementation_scan_params, typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::ImplementationArguments,
-            hir.compact_hir_count.into(), &dispatch_args, (&implementation_argument_count).into(),
-            &implementation_argument_prefix, &implementation_argument_total, scan_scratch,
-        )?;
-        let implementation_member_scan = graph_prefix_scan(
-            device, queue, &self.semantic_interface_buffers, &self.passes,
-            "type_check.interface.implementation_members.scan", implementation_scan_params, typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::ImplementationMembers,
-            (&implementation_total).into(), &dispatch_args, (&implementation_member_count).into(),
-            &implementation_member_prefix, &implementation_member_total, scan_scratch,
-        )?;
-        let implementation_method_scan = graph_prefix_scan(
-            device, queue, &self.semantic_interface_buffers, &self.passes,
-            "type_check.interface.implementation_methods.scan", implementation_scan_params, typecheck_graph,
-            compiler_graph::SemanticInterfaceScan::ImplementationMethods,
-            (&implementation_total).into(), &dispatch_args, (&implementation_method_count).into(),
-            &implementation_method_prefix, &implementation_method_total, scan_scratch,
-        )?;
-
         let mut topology_resources = ResourceMap::new();
         typecheck_graph.register_semantic_interface_bindings(&mut topology_resources)?;
         // Retain the complete checked graph at the interface boundary. The
@@ -1467,344 +1377,508 @@ impl GpuTypeChecker {
             "interface_predicate_argument_written" => predicate_argument_written,
             "interface_variant_count_by_hir" => variant_count_by_hir,
         );
-        let interface_graph = typecheck_graph.semantic_interface_graph()?;
-        macro_rules! bind_topology {
-            ($label:literal, $kernel:literal) => {
-                crate::gpu::operations::ComputeOperation::indirect(
-                    device,
-                    interface_graph,
-                    &topology_resources,
-                    $label,
-                    &self.passes.kernel($kernel),
-                    &dispatch_args,
-                )
+        // The scans also bind these, which the topology map does not hold.
+        let mut scan_inputs = ResourceMap::new();
+        scan_inputs.buffers([
+            ("scan_count", &scan_count),
+            ("signature_scan_count", &signature_scan_count),
+            ("signature_dispatch_args", &signature_dispatch_args),
+            ("scan_local_prefix", scan_scratch.local_prefix),
+            ("scan_block_sum", scan_scratch.block_sum),
+            ("scan_block_prefix", scan_scratch.block_prefix),
+        ]);
+        let key = topology_resources
+            .buffer_binding_signature()
+            .zip(scan_inputs.buffer_binding_signature())
+            .map(|(resources, scan_inputs)| SemanticInterfaceTopologyKey {
+                capacities: [
+                    capacity,
+                    decl_capacity,
+                    token_capacity,
+                    signature_capacity,
+                    predicate_capacity,
+                    implementation_capacity,
+                ],
+                resources,
+                scan_inputs,
+            });
+        let mut topology_cache = topology_cache
+            .lock()
+            .expect("semantic-interface topology cache poisoned");
+        let reuse = matches!(
+            (&key, &topology_cache.cached),
+            (Some(key), Some((Some(cached), _))) if key == cached
+        );
+        if !reuse {
+            // Release the old operations, and the buffers they bind, before
+            // building their replacement.
+            topology_cache.cached = None;
+            let signature_type_scan = graph_prefix_scan(
+                device,
+                queue,
+                &self.semantic_interface_buffers,
+                &self.passes,
+                "type_check.interface.signature.type_scan",
+                signature_scan_params,
+                typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::SignatureTypes,
+                (&signature_scan_count).into(),
+                &signature_dispatch_args,
+                (&signature_type_flag).into(),
+                &signature_type_prefix,
+                &signature_type_total,
+                scan_scratch,
+            )?;
+            let signature_edge_scan = graph_prefix_scan(
+                device,
+                queue,
+                &self.semantic_interface_buffers,
+                &self.passes,
+                "type_check.interface.signature.edge_scan",
+                signature_scan_params,
+                typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::SignatureEdges,
+                (&signature_scan_count).into(),
+                &signature_dispatch_args,
+                (&signature_edge_count).into(),
+                &signature_edge_prefix,
+                &signature_edge_total,
+                scan_scratch,
+            )?;
+            let member_scan = graph_prefix_scan(
+                device,
+                queue,
+                &self.semantic_interface_buffers,
+                &self.passes,
+                "type_check.interface.members.scan",
+                signature_scan_params,
+                typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::Members,
+                (&signature_scan_count).into(),
+                &signature_dispatch_args,
+                (&member_count).into(),
+                &member_prefix,
+                &declaration_member_total,
+                scan_scratch,
+            )?;
+            let scan_params = PrefixScanParams {
+                n_items: capacity,
+                n_blocks,
+                min_items: 0,
             };
-            ($label:literal, $kernel:literal, $work:expr) => {
-                crate::gpu::operations::ComputeOperation::direct(
-                    device,
-                    interface_graph,
-                    &topology_resources,
-                    $label,
-                    &self.passes.kernel($kernel),
-                    $work,
-                )
+            let scan = graph_prefix_scan(
+                device,
+                queue,
+                &self.semantic_interface_buffers,
+                &self.passes,
+                "type_check.interface.type_topology.scan",
+                scan_params,
+                typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::TypeOrder,
+                (&scan_count).into(),
+                &dispatch_args,
+                (&reverse_flag).into(),
+                &reverse_prefix,
+                &count,
+                scan_scratch,
+            )?;
+            let edge_scan = graph_prefix_scan(
+                device,
+                queue,
+                &self.semantic_interface_buffers,
+                &self.passes,
+                "type_check.interface.type_topology.edge_scan",
+                scan_params,
+                typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::TypeEdges,
+                (&scan_count).into(),
+                &dispatch_args,
+                (&edge_count).into(),
+                &edge_prefix,
+                &edge_total,
+                scan_scratch,
+            )?;
+
+            let predicate_scan_params = PrefixScanParams {
+                n_items: predicate_capacity,
+                n_blocks: predicate_capacity.div_ceil(256).max(1),
+                min_items: 0,
             };
-        }
+            let predicate_scan = graph_prefix_scan(
+                device, queue, &self.semantic_interface_buffers, &self.passes,
+                "type_check.interface.predicates.scan", predicate_scan_params, typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::Predicates,
+                hir.compact_predicate_count.into(), &predicate_dispatch_args, (&predicate_flag).into(),
+                &predicate_prefix, &predicate_total, scan_scratch,
+            )?;
+            let predicate_argument_scan = graph_prefix_scan(
+                device, queue, &self.semantic_interface_buffers, &self.passes,
+                "type_check.interface.predicate_arguments.scan", predicate_scan_params, typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::PredicateArguments,
+                hir.compact_predicate_count.into(), &predicate_dispatch_args, (&predicate_argument_count).into(),
+                &predicate_argument_prefix, &predicate_argument_total, scan_scratch,
+            )?;
 
-        let init = bind_topology!(
-            "type_check.interface.type_topology.init",
-            "type_checker/interface/type_topology/00_init"
-        )?;
-        let initialize_implementations = bind_topology!(
-            "type_check.interface.implementations.init", "type_checker/interface/implementations/00_init"
-        )?;
-        let attach_unary = bind_topology!(
-            "type_check.interface.type_topology.attach_unary",
-            "type_checker/interface/type_topology/01_attach_unary"
-        )?;
-        let mark_implementation_methods = bind_topology!(
-            "type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/00a_mark_methods"
-        )?;
-        let classify_implementations = bind_topology!(
-            "type_check.interface.implementations.classify", "type_checker/interface/implementations/00_classify"
-        )?;
-        let map_seed_implementations = bind_topology!(
-            "type_check.interface.implementations.map_seed", "type_checker/interface/implementations/02_map_seed"
-        )?;
-        let scatter_implementation_methods = bind_topology!(
-            "type_check.interface.implementations.methods", "type_checker/interface/implementations/03_methods"
-        )?;
-        let scatter_implementations = bind_topology!(
-            "type_check.interface.implementations.scatter", "type_checker/interface/implementations/05_scatter"
-        )?;
-        let finish_implementations = bind_topology!(
-            "type_check.interface.implementations.finish", "type_checker/interface/implementations/06_finish"
-        )?;
-        let count_implementation_methods = bind_topology!(
-            "type_check.interface.implementations.method_counts", "type_checker/interface/implementations/01_method_counts"
-        )?;
-        let implementation_totals = bind_topology!(
-            "type_check.interface.implementations.totals", "type_checker/interface/implementations/04_totals", 1u32
-        )?;
-        let seed_declarations = bind_topology!(
-            "type_check.interface.type_topology.seed_declarations",
-            "type_checker/interface/type_topology/02_seed_declarations"
-        )?;
-        let seed_params = bind_topology!(
-            "type_check.interface.type_topology.seed_params",
-            "type_checker/interface/type_topology/02b_seed_params"
-        )?;
-        let seed_fields = bind_topology!(
-            "type_check.interface.type_topology.seed_fields",
-            "type_checker/interface/type_topology/02c_seed_fields"
-        )?;
-        let seed_variants = bind_topology!(
-            "type_check.interface.type_topology.seed_variants",
-            "type_checker/interface/type_topology/02d_seed_variants"
-        )?;
-        let classify_predicates = crate::gpu::operations::ComputeOperation::indirect(
-            device, interface_graph, &topology_resources,
-            "type_check.interface.predicates.classify",
-            &self.passes.kernel("type_checker/interface/predicates/00_classify"),
-            &predicate_dispatch_args,
-        )?;
-        let seed_predicates = crate::gpu::operations::ComputeOperation::indirect(
-            device, interface_graph, &topology_resources,
-            "type_check.interface.type_topology.seed_predicates",
-            &self.passes.kernel("type_checker/interface/type_topology/02e_seed_predicates"),
-            &predicate_dispatch_args,
-        )?;
-        let scatter_predicates = crate::gpu::operations::ComputeOperation::indirect(
-            device, interface_graph, &topology_resources,
-            "type_check.interface.predicates.scatter",
-            &self.passes.kernel("type_checker/interface/predicates/01_scatter"),
-            &predicate_dispatch_args,
-        )?;
-        let mark_reverse = bind_topology!(
-            "type_check.interface.type_topology.mark_reverse",
-            "type_checker/interface/type_topology/05_mark_reverse"
-        )?;
-        let scatter = bind_topology!(
-            "type_check.interface.type_topology.scatter",
-            "type_checker/interface/type_topology/06_scatter"
-        )?;
-        let edge_counts = bind_topology!(
-            "type_check.interface.type_topology.edge_counts",
-            "type_checker/interface/type_topology/08_edge_counts"
-        )?;
-        let resolve_local_decl = bind_topology!(
-            "type_check.interface.type_topology.resolve_local_decl",
-            "type_checker/interface/type_topology/10_resolve_local_decl"
-        )?;
-        let type_records = bind_topology!(
-            "type_check.interface.type_topology.type_records",
-            "type_checker/interface/type_topology/12_type_records"
-        )?;
-        let signature_flags = bind_topology!(
-            "type_check.interface.signature.flags",
-            "type_checker/interface/signature/00_flags",
-            signature_capacity
-        )?;
-        let signature_totals = bind_topology!(
-            "type_check.interface.signature.totals",
-            "type_checker/interface/signature/01_totals",
-            1
-        )?;
-        let signature_direct_types = bind_topology!(
-            "type_check.interface.signature.direct_types",
-            "type_checker/interface/signature/01b_direct_types",
-            signature_capacity
-        )?;
-        let signature_synthetic_types = bind_topology!(
-            "type_check.interface.signature.synthetic_types",
-            "type_checker/interface/signature/01c_synthetic_types",
-            signature_capacity
-        )?;
-        let signature_param_edges = bind_topology!(
-            "type_check.interface.signature.param_edges",
-            "type_checker/interface/signature/02_param_edges"
-        )?;
-        let signature_return_edges = bind_topology!(
-            "type_check.interface.signature.return_edges",
-            "type_checker/interface/signature/03_return_edges",
-            signature_capacity
-        )?;
-        let signature_variant_payload_edges = bind_topology!(
-            "type_check.interface.signature.variant_payload_edges",
-            "type_checker/interface/signature/02b_variant_payload_edges"
-        )?;
-        let members_variant_counts = bind_topology!(
-            "type_check.interface.members.variant_counts",
-            "type_checker/interface/members/00_variant_counts"
-        )?;
-        let members_generic_counts = bind_topology!(
-            "type_check.interface.members.generic_counts",
-            "type_checker/interface/members/00b_generic_counts",
-            token_capacity.max(1)
-        )?;
-        let members_counts = bind_topology!(
-            "type_check.interface.members.counts",
-            "type_checker/interface/members/01_counts",
-            signature_capacity
-        )?;
-        let members_method_counts = bind_topology!(
-            "type_check.interface.members.method_counts",
-            "type_checker/interface/members/00c_method_counts"
-        )?;
-        let members_scatter_hir = bind_topology!(
-            "type_check.interface.members.scatter_hir",
-            "type_checker/interface/members/02_scatter_hir"
-        )?;
-        let members_scatter_generic = bind_topology!(
-            "type_check.interface.members.scatter_generic",
-            "type_checker/interface/members/03_scatter_generic",
-            token_capacity.max(1)
-        )?;
+            let implementation_scan_params = PrefixScanParams {
+                n_items: implementation_capacity,
+                n_blocks: implementation_capacity.div_ceil(256).max(1),
+                min_items: 0,
+            };
+            let implementation_scan = graph_prefix_scan(
+                device, queue, &self.semantic_interface_buffers, &self.passes,
+                "type_check.interface.implementations.scan", implementation_scan_params, typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::Implementations,
+                hir.compact_hir_count.into(), &dispatch_args, (&implementation_flag).into(),
+                &implementation_prefix, &implementation_total, scan_scratch,
+            )?;
+            let implementation_argument_scan = graph_prefix_scan(
+                device, queue, &self.semantic_interface_buffers, &self.passes,
+                "type_check.interface.implementation_arguments.scan", implementation_scan_params, typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::ImplementationArguments,
+                hir.compact_hir_count.into(), &dispatch_args, (&implementation_argument_count).into(),
+                &implementation_argument_prefix, &implementation_argument_total, scan_scratch,
+            )?;
+            let implementation_member_scan = graph_prefix_scan(
+                device, queue, &self.semantic_interface_buffers, &self.passes,
+                "type_check.interface.implementation_members.scan", implementation_scan_params, typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::ImplementationMembers,
+                (&implementation_total).into(), &dispatch_args, (&implementation_member_count).into(),
+                &implementation_member_prefix, &implementation_member_total, scan_scratch,
+            )?;
+            let implementation_method_scan = graph_prefix_scan(
+                device, queue, &self.semantic_interface_buffers, &self.passes,
+                "type_check.interface.implementation_methods.scan", implementation_scan_params, typecheck_graph,
+                compiler_graph::SemanticInterfaceScan::ImplementationMethods,
+                (&implementation_total).into(), &dispatch_args, (&implementation_method_count).into(),
+                &implementation_method_prefix, &implementation_method_total, scan_scratch,
+            )?;
 
-        let clears = [
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementations.total.clear", "interface_implementation_total", &implementation_total,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementation_arguments.total.clear", "interface_implementation_argument_total", &implementation_argument_total,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementation_members.total.clear", "interface_implementation_member_total", &implementation_member_total,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementation_methods.total.clear", "interface_implementation_method_total", &implementation_method_total,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementations.written.clear", "interface_implementation_written", &implementation_written,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementations.argument_written.clear", "interface_implementation_argument_written", &implementation_argument_written,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph, "type_check.interface.implementations.method_binding_written.clear", "interface_implementation_method_binding_written", &implementation_method_binding_written,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_PREDICATE_TOTAL_CLEAR_PASS,
-                "interface_predicate_total", &predicate_total,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_TOTAL_CLEAR_PASS,
-                "interface_predicate_argument_total", &predicate_argument_total,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_PREDICATE_WRITTEN_CLEAR_PASS,
-                "interface_predicate_written", &predicate_written,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_WRITTEN_CLEAR_PASS,
-                "interface_predicate_argument_written", &predicate_argument_written,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_EDGE_WRITTEN_CLEAR_PASS,
-                "interface_type_edge_written",
-                &edge_written,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_FIELD_COUNT_CLEAR_PASS,
-                "interface_field_count_by_hir",
-                &field_count_by_hir,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_VARIANT_COUNT_CLEAR_PASS,
-                "interface_variant_count_by_hir",
-                &variant_count_by_hir,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_GENERIC_TYPE_COUNT_CLEAR_PASS,
-                "interface_generic_type_count_by_decl",
-                &generic_type_count_by_decl,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_GENERIC_CONST_COUNT_CLEAR_PASS,
-                "interface_generic_const_count_by_decl",
-                &generic_const_count_by_decl,
-            )?,
-            crate::gpu::operations::ClearBufferOperation::entire(
-                interface_graph,
-                compiler_graph::SEMANTIC_INTERFACE_MEMBER_WRITTEN_CLEAR_PASS,
-                "interface_member_written",
-                &member_written,
-            )?,
-        ];
-        host_phase.end("semantic_interface.host.topology_build");
-        for clear in &clears {
-            clear.record(encoder);
+            let interface_graph = typecheck_graph.semantic_interface_graph()?;
+            macro_rules! bind_topology {
+                ($label:literal, $kernel:literal) => {
+                    crate::gpu::operations::ComputeOperation::indirect(
+                        device,
+                        interface_graph,
+                        &topology_resources,
+                        $label,
+                        &self.passes.kernel($kernel),
+                        &dispatch_args,
+                    )
+                };
+                ($label:literal, $kernel:literal, $work:expr) => {
+                    crate::gpu::operations::ComputeOperation::direct(
+                        device,
+                        interface_graph,
+                        &topology_resources,
+                        $label,
+                        &self.passes.kernel($kernel),
+                        $work,
+                    )
+                };
+            }
+
+            let init = bind_topology!(
+                "type_check.interface.type_topology.init",
+                "type_checker/interface/type_topology/00_init"
+            )?;
+            let initialize_implementations = bind_topology!(
+                "type_check.interface.implementations.init", "type_checker/interface/implementations/00_init"
+            )?;
+            let attach_unary = bind_topology!(
+                "type_check.interface.type_topology.attach_unary",
+                "type_checker/interface/type_topology/01_attach_unary"
+            )?;
+            let mark_implementation_methods = bind_topology!(
+                "type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/00a_mark_methods"
+            )?;
+            let classify_implementations = bind_topology!(
+                "type_check.interface.implementations.classify", "type_checker/interface/implementations/00_classify"
+            )?;
+            let map_seed_implementations = bind_topology!(
+                "type_check.interface.implementations.map_seed", "type_checker/interface/implementations/02_map_seed"
+            )?;
+            let scatter_implementation_methods = bind_topology!(
+                "type_check.interface.implementations.methods", "type_checker/interface/implementations/03_methods"
+            )?;
+            let scatter_implementations = bind_topology!(
+                "type_check.interface.implementations.scatter", "type_checker/interface/implementations/05_scatter"
+            )?;
+            let finish_implementations = bind_topology!(
+                "type_check.interface.implementations.finish", "type_checker/interface/implementations/06_finish"
+            )?;
+            let count_implementation_methods = bind_topology!(
+                "type_check.interface.implementations.method_counts", "type_checker/interface/implementations/01_method_counts"
+            )?;
+            let implementation_totals = bind_topology!(
+                "type_check.interface.implementations.totals", "type_checker/interface/implementations/04_totals", 1u32
+            )?;
+            let seed_declarations = bind_topology!(
+                "type_check.interface.type_topology.seed_declarations",
+                "type_checker/interface/type_topology/02_seed_declarations"
+            )?;
+            let seed_params = bind_topology!(
+                "type_check.interface.type_topology.seed_params",
+                "type_checker/interface/type_topology/02b_seed_params"
+            )?;
+            let seed_fields = bind_topology!(
+                "type_check.interface.type_topology.seed_fields",
+                "type_checker/interface/type_topology/02c_seed_fields"
+            )?;
+            let seed_variants = bind_topology!(
+                "type_check.interface.type_topology.seed_variants",
+                "type_checker/interface/type_topology/02d_seed_variants"
+            )?;
+            let classify_predicates = crate::gpu::operations::ComputeOperation::indirect(
+                device, interface_graph, &topology_resources,
+                "type_check.interface.predicates.classify",
+                &self.passes.kernel("type_checker/interface/predicates/00_classify"),
+                &predicate_dispatch_args,
+            )?;
+            let seed_predicates = crate::gpu::operations::ComputeOperation::indirect(
+                device, interface_graph, &topology_resources,
+                "type_check.interface.type_topology.seed_predicates",
+                &self.passes.kernel("type_checker/interface/type_topology/02e_seed_predicates"),
+                &predicate_dispatch_args,
+            )?;
+            let scatter_predicates = crate::gpu::operations::ComputeOperation::indirect(
+                device, interface_graph, &topology_resources,
+                "type_check.interface.predicates.scatter",
+                &self.passes.kernel("type_checker/interface/predicates/01_scatter"),
+                &predicate_dispatch_args,
+            )?;
+            let mark_reverse = bind_topology!(
+                "type_check.interface.type_topology.mark_reverse",
+                "type_checker/interface/type_topology/05_mark_reverse"
+            )?;
+            let scatter = bind_topology!(
+                "type_check.interface.type_topology.scatter",
+                "type_checker/interface/type_topology/06_scatter"
+            )?;
+            let edge_counts = bind_topology!(
+                "type_check.interface.type_topology.edge_counts",
+                "type_checker/interface/type_topology/08_edge_counts"
+            )?;
+            let resolve_local_decl = bind_topology!(
+                "type_check.interface.type_topology.resolve_local_decl",
+                "type_checker/interface/type_topology/10_resolve_local_decl"
+            )?;
+            let type_records = bind_topology!(
+                "type_check.interface.type_topology.type_records",
+                "type_checker/interface/type_topology/12_type_records"
+            )?;
+            let signature_flags = bind_topology!(
+                "type_check.interface.signature.flags",
+                "type_checker/interface/signature/00_flags",
+                signature_capacity
+            )?;
+            let signature_totals = bind_topology!(
+                "type_check.interface.signature.totals",
+                "type_checker/interface/signature/01_totals",
+                1
+            )?;
+            let signature_direct_types = bind_topology!(
+                "type_check.interface.signature.direct_types",
+                "type_checker/interface/signature/01b_direct_types",
+                signature_capacity
+            )?;
+            let signature_synthetic_types = bind_topology!(
+                "type_check.interface.signature.synthetic_types",
+                "type_checker/interface/signature/01c_synthetic_types",
+                signature_capacity
+            )?;
+            let signature_param_edges = bind_topology!(
+                "type_check.interface.signature.param_edges",
+                "type_checker/interface/signature/02_param_edges"
+            )?;
+            let signature_return_edges = bind_topology!(
+                "type_check.interface.signature.return_edges",
+                "type_checker/interface/signature/03_return_edges",
+                signature_capacity
+            )?;
+            let signature_variant_payload_edges = bind_topology!(
+                "type_check.interface.signature.variant_payload_edges",
+                "type_checker/interface/signature/02b_variant_payload_edges"
+            )?;
+            let members_variant_counts = bind_topology!(
+                "type_check.interface.members.variant_counts",
+                "type_checker/interface/members/00_variant_counts"
+            )?;
+            let members_generic_counts = bind_topology!(
+                "type_check.interface.members.generic_counts",
+                "type_checker/interface/members/00b_generic_counts",
+                token_capacity.max(1)
+            )?;
+            let members_counts = bind_topology!(
+                "type_check.interface.members.counts",
+                "type_checker/interface/members/01_counts",
+                signature_capacity
+            )?;
+            let members_method_counts = bind_topology!(
+                "type_check.interface.members.method_counts",
+                "type_checker/interface/members/00c_method_counts"
+            )?;
+            let members_scatter_hir = bind_topology!(
+                "type_check.interface.members.scatter_hir",
+                "type_checker/interface/members/02_scatter_hir"
+            )?;
+            let members_scatter_generic = bind_topology!(
+                "type_check.interface.members.scatter_generic",
+                "type_checker/interface/members/03_scatter_generic",
+                token_capacity.max(1)
+            )?;
+
+            let clears = [
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementations.total.clear", "interface_implementation_total", &implementation_total,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementation_arguments.total.clear", "interface_implementation_argument_total", &implementation_argument_total,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementation_members.total.clear", "interface_implementation_member_total", &implementation_member_total,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementation_methods.total.clear", "interface_implementation_method_total", &implementation_method_total,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementations.written.clear", "interface_implementation_written", &implementation_written,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementations.argument_written.clear", "interface_implementation_argument_written", &implementation_argument_written,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph, "type_check.interface.implementations.method_binding_written.clear", "interface_implementation_method_binding_written", &implementation_method_binding_written,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_PREDICATE_TOTAL_CLEAR_PASS,
+                    "interface_predicate_total", &predicate_total,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_TOTAL_CLEAR_PASS,
+                    "interface_predicate_argument_total", &predicate_argument_total,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_PREDICATE_WRITTEN_CLEAR_PASS,
+                    "interface_predicate_written", &predicate_written,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_PREDICATE_ARGUMENT_WRITTEN_CLEAR_PASS,
+                    "interface_predicate_argument_written", &predicate_argument_written,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_EDGE_WRITTEN_CLEAR_PASS,
+                    "interface_type_edge_written",
+                    &edge_written,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_FIELD_COUNT_CLEAR_PASS,
+                    "interface_field_count_by_hir",
+                    &field_count_by_hir,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_VARIANT_COUNT_CLEAR_PASS,
+                    "interface_variant_count_by_hir",
+                    &variant_count_by_hir,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_GENERIC_TYPE_COUNT_CLEAR_PASS,
+                    "interface_generic_type_count_by_decl",
+                    &generic_type_count_by_decl,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_GENERIC_CONST_COUNT_CLEAR_PASS,
+                    "interface_generic_const_count_by_decl",
+                    &generic_const_count_by_decl,
+                )?,
+                crate::gpu::operations::ClearBufferOperation::entire(
+                    interface_graph,
+                    compiler_graph::SEMANTIC_INTERFACE_MEMBER_WRITTEN_CLEAR_PASS,
+                    "interface_member_written",
+                    &member_written,
+                )?,
+            ];
+
+            use TopologyStep::{Compute, Scan, Stamp};
+            let mut steps: Vec<TopologyStep> = clears.into_iter().map(TopologyStep::Clear).collect();
+            steps.extend([
+                Compute(init),
+                Compute(attach_unary),
+                Compute(initialize_implementations),
+                Compute(mark_implementation_methods),
+                Compute(classify_implementations),
+                Scan(implementation_scan),
+                Scan(implementation_argument_scan),
+                Compute(map_seed_implementations),
+                Compute(seed_declarations),
+                Compute(seed_params),
+                Compute(seed_fields),
+                Compute(seed_variants),
+                Compute(classify_predicates),
+                Compute(seed_predicates),
+                Stamp("semantic_interface.topology.seed"),
+                Scan(predicate_scan),
+                Scan(predicate_argument_scan),
+                Compute(mark_reverse),
+                Scan(scan),
+                Compute(scatter),
+                Stamp("semantic_interface.topology.type_order"),
+                Compute(edge_counts),
+                Scan(edge_scan),
+                Stamp("semantic_interface.topology.type_edges"),
+                Compute(resolve_local_decl),
+                Stamp("semantic_interface.topology.type_records"),
+                Compute(signature_flags),
+                Scan(signature_type_scan),
+                Scan(signature_edge_scan),
+                Compute(signature_totals),
+                Compute(signature_direct_types),
+                Compute(signature_synthetic_types),
+                Compute(signature_param_edges),
+                Compute(signature_variant_payload_edges),
+                Compute(signature_return_edges),
+                Stamp("semantic_interface.topology.signatures"),
+                Compute(members_variant_counts),
+                Compute(members_generic_counts),
+                Compute(members_counts),
+                Compute(members_method_counts),
+                Compute(count_implementation_methods),
+                Scan(member_scan),
+                Scan(implementation_member_scan),
+                Scan(implementation_method_scan),
+                Compute(implementation_totals),
+                Compute(members_scatter_hir),
+                Compute(members_scatter_generic),
+                Compute(scatter_implementation_methods),
+                Compute(type_records),
+                Compute(scatter_implementations),
+                Compute(scatter_predicates),
+                Compute(finish_implementations),
+                Stamp("semantic_interface.topology.members"),
+            ]);
+            topology_cache.cached = Some((key, steps));
         }
-        init.record(encoder)?;
-        attach_unary.record(encoder)?;
-        initialize_implementations.record(encoder)?;
-        mark_implementation_methods.record(encoder)?;
-        classify_implementations.record(encoder)?;
-        implementation_scan.record(encoder)?;
-        implementation_argument_scan.record(encoder)?;
-        map_seed_implementations.record(encoder)?;
-        for operation in [
-            &seed_declarations,
-            &seed_params,
-            &seed_fields,
-            &seed_variants,
-            &classify_predicates,
-            &seed_predicates,
-        ] {
-            operation.record(encoder)?;
+        host_phase.end(if reuse {
+            "semantic_interface.host.topology_reuse"
+        } else {
+            "semantic_interface.host.topology_build"
+        });
+        let (_, steps) = topology_cache
+            .cached
+            .as_ref()
+            .expect("the topology operations were stored above");
+        for step in steps {
+            step.record(encoder, timer)?;
         }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "semantic_interface.topology.seed");
-        }
-        predicate_scan.record(encoder)?;
-        predicate_argument_scan.record(encoder)?;
-        mark_reverse.record(encoder)?;
-        scan.record(encoder)?;
-        scatter.record(encoder)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "semantic_interface.topology.type_order");
-        }
-        edge_counts.record(encoder)?;
-        edge_scan.record(encoder)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "semantic_interface.topology.type_edges");
-        }
-        resolve_local_decl.record(encoder)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "semantic_interface.topology.type_records");
-        }
-        signature_flags.record(encoder)?;
-        signature_type_scan.record(encoder)?;
-        signature_edge_scan.record(encoder)?;
-        for operation in [
-            &signature_totals,
-            &signature_direct_types,
-            &signature_synthetic_types,
-            &signature_param_edges,
-            &signature_variant_payload_edges,
-            &signature_return_edges,
-        ] {
-            operation.record(encoder)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "semantic_interface.topology.signatures");
-        }
-        for operation in [
-            &members_variant_counts,
-            &members_generic_counts,
-            &members_counts,
-            &members_method_counts,
-        ] {
-            operation.record(encoder)?;
-        }
-        count_implementation_methods.record(encoder)?;
-        member_scan.record(encoder)?;
-        implementation_member_scan.record(encoder)?;
-        implementation_method_scan.record(encoder)?;
-        implementation_totals.record(encoder)?;
-        for operation in [
-            &members_scatter_hir,
-            &members_scatter_generic,
-            &scatter_implementation_methods,
-            &type_records,
-            &scatter_implementations,
-            &scatter_predicates,
-            &finish_implementations,
-        ] {
-            operation.record(encoder)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "semantic_interface.topology.members");
-        }
+        drop(topology_cache);
         host_phase.end("semantic_interface.host.topology_record");
 
         Ok(RecordedSemanticInterfaceTypeTopology {
