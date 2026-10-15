@@ -6,8 +6,10 @@ import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_candidates;
 import type_checker.canonical.canonical_checked_rows;
 
-// Two frontier lists of ct_candidate_count() entries each; round r reads list
-// r & 1 and appends to list (r + 1) & 1.
+// Two frontier lists of half the buffer each; round r reads list r & 1 and
+// appends to list (r + 1) & 1. The lists are sized from a fraction of the
+// candidates (canonical_passes.rs): an append past the end sets
+// CT_OVERFLOW_FRONTIER, and the host records the job again with larger lists.
 RWStructuredBuffer<uint> canonical_frontier;
 
 [shader("compute")]
@@ -17,6 +19,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = dtid.x + dtid.y * 16776960u;
     uint round = ct_counts[CT_COUNT_ROUND];
     uint count = ct_candidate_count();
+    uint words; uint stride;
+    canonical_frontier.GetDimensions(words, stride);
+    uint list = words / 2u;
     uint candidate;
     if (round == 0u)
     {
@@ -30,8 +35,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else
     {
-        if (i >= ct_counts[CT_COUNT_PENDING]) return;
-        candidate = canonical_frontier[(round & 1u) * count + i];
+        // An overflowed round's count exceeds its list; the job is recorded
+        // again, so its remaining rounds only stay in bounds.
+        if (i >= min(ct_counts[CT_COUNT_PENDING], list)) return;
+        candidate = canonical_frontier[(round & 1u) * list + i];
     }
     uint id = canonical_intern_candidate<CtCheckedRows>(candidate, ct_counts[CT_COUNT_FINAL] != 0u);
     if (id != CT_PENDING)
@@ -42,5 +49,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint next = (round + 1u) & 1u;
     uint slot;
     InterlockedAdd(ct_counts[CT_COUNT_FRONTIER + next], 1u, slot);
-    canonical_frontier[next * count + slot] = candidate;
+    if (slot < list) canonical_frontier[next * list + slot] = candidate;
+    else InterlockedOr(ct_counts[CT_COUNT_OVERFLOW], CT_OVERFLOW_FRONTIER);
 }
