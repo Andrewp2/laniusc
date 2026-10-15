@@ -2691,6 +2691,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_value_id", checked_value_decls),
             PassAccess::read("semantic_enclosing_fn_by_hir", checked_enclosing_functions),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
+            PassAccess::read("semantic_calls_by_hir", checked_calls),
             PassAccess::write("semantic_local_flag", semantic_local_flags),
         ],
     })?;
