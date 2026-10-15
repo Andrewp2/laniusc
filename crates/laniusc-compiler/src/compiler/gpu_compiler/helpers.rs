@@ -52,6 +52,23 @@ pub(super) fn type_mismatch_label(detail: u32) -> String {
     )
 }
 
+/// Converts a packed invalid-cast detail, `(source << 16) | target`, into
+/// primary-label text. A zero code is a type that is not a primitive scalar.
+pub(super) fn invalid_cast_label(detail: u32) -> String {
+    let side = |code: u32| {
+        if code == 0 {
+            "a non-primitive type".to_string()
+        } else {
+            format!("`{}`", type_code_note(code))
+        }
+    };
+    format!(
+        "cannot cast {} as {}",
+        side(detail >> 16),
+        side(detail & 0xffff)
+    )
+}
+
 fn type_code_note(code: u32) -> String {
     const TY_UNKNOWN: u32 = 0;
     const TY_ARRAY_BASE: u32 = 128;
