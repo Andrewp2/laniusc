@@ -11,38 +11,43 @@ public static const uint PLM_TABLES = 7u;
 public static const uint PLM_FIXED_WORDS = PLM_DIRECTORY + PLM_TABLES * 3u;
 public RWStructuredBuffer<uint> program_evidence_native_layout_work;
 
+// Row widths, one nibble per table (low nibble first): 8,2,2,2,4,8,4; else 0.
+// Readers are straight-line selects with one guarded early return.
+[ForceInline]
 public uint plm_width(uint table)
 {
-    if (table == 0u || table == 5u) return 8u;
-    if (table == 4u || table == 6u) return 4u;
-    return table < PLM_TABLES ? 2u : 0u;
+    return (0x04842228u >> (select(table < PLM_TABLES, table, 7u) * 4u)) & 15u;
 }
 public bool plm_table(uint table, out uint offset, out uint capacity)
 {
     offset = PEV_INVALID; capacity = 0u; uint actual; uint stride;
     program_evidence_native_layout_work.GetDimensions(actual, stride);
-    if (table >= PLM_TABLES || actual < PLM_FIXED_WORDS) return false;
+    if (!((table < PLM_TABLES) & (actual >= PLM_FIXED_WORDS))) return false;
     uint logical = program_evidence_native_layout_work[12u];
     uint base = PLM_DIRECTORY + table * 3u;
-    offset = program_evidence_native_layout_work[base];
-    capacity = program_evidence_native_layout_work[base + 1u];
-    return logical == actual && program_evidence_native_layout_work[base + 2u] == plm_width(table) &&
-        capacity != PEV_INVALID && (capacity != 0u || offset == 0u) &&
-        pev_word_span(offset, capacity, plm_width(table), logical);
+    uint read_offset = program_evidence_native_layout_work[base];
+    uint read_capacity = program_evidence_native_layout_work[base + 1u];
+    offset = read_offset; capacity = read_capacity;
+    uint width = plm_width(table);
+    return (logical == actual) & (program_evidence_native_layout_work[base + 2u] == width) &
+        (read_capacity != PEV_INVALID) & ((read_capacity != 0u) | (read_offset == 0u)) &
+        pev_word_span(read_offset, read_capacity, width, logical);
 }
 public uint plm_used(uint table)
 {
-    if (table < 4u) return program_evidence_native_layout_work[13u + table];
-    if (table == 4u) return program_evidence_native_layout_work[13u];
-    return table < PLM_TABLES ? 1u : 0u;
+    if (table > 4u) return select(table < PLM_TABLES, 1u, 0u);
+    return program_evidence_native_layout_work[13u + select(table < 4u, table, 0u)];
 }
 public bool plm_address(uint table, uint row, uint field, uint fields, bool pending, out uint address)
 {
     address = PEV_INVALID; uint offset; uint capacity;
-    if (!plm_table(table, offset, capacity) || fields == 0u || field >= plm_width(table) ||
-        fields > plm_width(table) - field || row >= capacity ||
-        (!pending && row >= plm_used(table))) return false;
-    address = offset + row * plm_width(table) + field; return true;
+    bool known = plm_table(table, offset, capacity);
+    uint width = plm_width(table);
+    if (!(known & (fields != 0u) & (field < width) & (fields <= width - field) & (row < capacity)))
+        return false;
+    // A successful table read proves the fixed used-count words exist.
+    if (!pending && row >= plm_used(table)) return false;
+    address = offset + row * width + field; return true;
 }
 public bool plm_read2(uint table, uint row, uint field, bool pending, out uint2 value)
 {

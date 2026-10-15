@@ -23,21 +23,25 @@ public struct EvidenceStatus
     public uint state; public uint detail; public uint subject_row; public uint related_row;
     public uint required; public uint available;
 }
+// One non-inlined constructor: the status helpers below are inlined at
+// thousands of return sites, each becoming a single call.
+public EvidenceStatus pev_status(uint state, uint detail, uint subject, uint related,
+    uint required, uint available)
+{
+    EvidenceStatus r;
+    r.state = state; r.detail = detail; r.subject_row = subject; r.related_row = related;
+    r.required = required; r.available = available;
+    return r;
+}
+[ForceInline]
 public EvidenceStatus pev_ok()
-{
-    EvidenceStatus r = { PEV_VALID, 0u, PEV_INVALID, PEV_INVALID, 0u, 0u };
-    return r;
-}
+{ return pev_status(PEV_VALID, 0u, PEV_INVALID, PEV_INVALID, 0u, 0u); }
+[ForceInline]
 public EvidenceStatus pev_invalid(uint detail, uint subject, uint related)
-{
-    EvidenceStatus r = { PEV_INVALID_INPUT, detail, subject, related, 0u, 0u };
-    return r;
-}
+{ return pev_status(PEV_INVALID_INPUT, detail, subject, related, 0u, 0u); }
+[ForceInline]
 public EvidenceStatus pev_limit(uint detail, uint subject, uint required, uint available)
-{
-    EvidenceStatus r = { PEV_RESOURCE_LIMIT, detail, subject, PEV_INVALID, required, available };
-    return r;
-}
+{ return pev_status(PEV_RESOURCE_LIMIT, detail, subject, PEV_INVALID, required, available); }
 public struct ProgramEvidenceParams
 {
     public uint dispatch_first; public uint dispatch_count; public uint catalog_word_count; public uint batch_word_count;

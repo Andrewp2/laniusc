@@ -309,28 +309,15 @@ public EvidenceStatus pev_admit_environment_header(uint environment, uint expect
 public uint pev_graph_metadata(uint instance, uint field)
 {
     uint4 low; uint4 high;
-    if (!pev_read_admitted_node(instance, low, high)) return PEV_INVALID;
-    if (field == 0u) return low.x;
-    // Existing walker calls this declaration identity. Here it is an exact
-    // interned nominal atom; its identity capacity is the atom table count.
-    // It is neither a HIR/token row nor a forged public nominal triple.
-    if (field == 1u) return low.x == 1u ? low.y : PEV_INVALID;
-    if (field == 2u) return low.x == 1u ? low.w : 0u;
-    if (field == 3u) return high.x;
-    if (field == 4u) return high.y;
-    // Packed graphs implement ITypeIdentityGraph through IParameterScoped.
-    // Their environments use exact owned atoms; nominal domain-slot summaries
-    // are outside that capability. Ordered tagged arguments remain complete.
-    if (field == 5u) return low.x == 2u ? high.z & 0x7fffffffu : PEV_INVALID;
-    if (field == 6u) return low.x == 2u ? high.w : PEV_INVALID;
-    return PEV_INVALID;
+    bool admitted = pev_read_admitted_node(instance, low, high);
+    return select(admitted, pev_node_row_field(low, high, field), PEV_INVALID);
 }
 public bool pev_graph_argument(uint instance, uint slot, out uint tag, out uint payload)
 {
     tag = 0u; payload = PEV_INVALID; uint4 low; uint2 ref;
-    if (!pev_read4(5u, instance, 0u, low) || low.x != 1u || low.w > 32u ||
-        slot >= low.w || !pev_row_span(6u, low.z, low.w) ||
-        !pev_read2(6u, low.z + slot, 0u, ref)) return false;
+    bool read = pev_read4(5u, instance, 0u, low);
+    if (!(read & (low.x == 1u) & (low.w <= 32u) & (slot < low.w))) return false;
+    if (!pev_row_span(6u, low.z, low.w) || !pev_read2(6u, low.z + slot, 0u, ref)) return false;
     tag = ref.x; payload = ref.y; return true;
 }
 
