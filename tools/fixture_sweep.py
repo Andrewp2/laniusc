@@ -430,6 +430,9 @@ def report(args) -> int:
         for result in document["results"]:
             results[result["name"]] = result
     lines = render_report(results, documents)
+    stdlib_summary = out / "stdlib" / "stdlib_check.json"
+    if stdlib_summary.exists():
+        lines += render_stdlib_check(json.loads(stdlib_summary.read_text()))
     text = "\n".join(lines) + "\n"
     print(text)
     if args.write:
@@ -501,6 +504,51 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
     return lines
 
 
+def render_stdlib_check(summary: dict) -> list[str]:
+    lines = ["## Stdlib check", ""]
+    lines.append(f"`laniusc check` on one entry importing all {summary['modules']} stdlib modules: "
+                 f"**{summary['check_status']}**.")
+    if summary.get("legacy_files"):
+        lines.append(f"Files without a module header (not imported): {', '.join(summary['legacy_files'])}.")
+    first = summary.get("check_output", "").strip()
+    if first and summary["check_status"] != "PASS":
+        try:
+            diagnostic = json.loads(first.splitlines()[0])
+            label = diagnostic.get("primary_label") or diagnostic.get("diagnostic", {}).get("primary_label") or {}
+            code = diagnostic.get("code") or diagnostic.get("diagnostic", {}).get("code")
+            lines.append(f"First error: {code} at {relative(pathlib.Path(label.get('path', '?')))}:"
+                         f"{label.get('line')}:{label.get('column')}: `{(label.get('source_line') or '').strip()}`")
+        except (json.JSONDecodeError, AttributeError, IndexError):
+            lines.append("First error:")
+            lines.append("```")
+            lines.append(first[:1200])
+            lines.append("```")
+    checked = summary.get("modules_checked")
+    if checked is not None:
+        failed = [record for record in checked if not record["ok"]]
+        lines.append("")
+        lines.append(f"Compiling one importing entry per module: {len(checked) - len(failed)}/{len(checked)} "
+                     f"modules compile (of {summary['modules']}).")
+        groups = collections.defaultdict(list)
+        for record in failed:
+            conversion = scalar_conversion(record)
+            key = (f"{record.get('code')}" + (f", {conversion}" if conversion else ""), record.get("location") or "")
+            groups[key].append(record)
+        if failed:
+            lines.append("")
+            lines.append("| error | location | modules | example module | source |")
+            lines.append("| --- | --- | ---: | --- | --- |")
+            for (error, location), members in sorted(groups.items(), key=lambda item: -len(item[1])):
+                example = members[0]
+                lines.append(f"| {error} | {location} | {len(members)} | `{example['module']}` | "
+                             f"`{(example.get('source_line') or '').replace('|', '/')}` |")
+            lines.append("")
+            lines.append("Failing modules: " + ", ".join(
+                f"`{record['module']}` ({record.get('code')} {record.get('location') or ''})" for record in failed))
+    lines.append("")
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Stdlib check
 
@@ -546,9 +594,14 @@ def stdlib_check(args) -> int:
 
 
 def check_each_module(args, modules, out: pathlib.Path) -> list[dict]:
+    started_all = time.time()
     daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, out / "daemon.stderr")
     results = []
     for number, (name, path) in enumerate(modules):
+        if args.budget_seconds and time.time() - started_all > args.budget_seconds:
+            print(f"fixture_sweep: stopping after {args.budget_seconds} s budget; "
+                  f"{len(modules) - number} modules not checked", flush=True)
+            break
         entry = out / f"import_{name.replace('::', '_')}.lani"
         entry.write_text(f"import {name};\n\nfn main() -> i32 {{\n    return 0;\n}}\n")
         elf = out / f"import_{name.replace('::', '_')}.elf"
@@ -604,6 +657,8 @@ def main() -> int:
     rep.add_argument("--write", help="also write the summary to this markdown file")
     std = sub.add_parser("stdlib", parents=[common], help="laniusc check over the whole stdlib")
     std.add_argument("--each", action="store_true", help="also compile one importing entry per module")
+    std.add_argument("--budget-seconds", type=float, default=480.0,
+                     help="stop --each after this long (keeps a GPU hold under 10 minutes); 0 = no limit")
     lst = sub.add_parser("list", help="print the fixtures and expectations without running anything")
     lst.add_argument("--suite", action="append", choices=SUITES)
     lst.add_argument("--pattern", default="")
