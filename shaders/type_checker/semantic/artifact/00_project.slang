@@ -393,6 +393,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_type_external_unit_id_by_hir[row] = external_unit;
         semantic_type_external_local_index_by_hir[row] = external_local;
     }
+    else if (checked_source_constant_operand(row, operand_kind, operand_payload))
+    {
+        // A constant argument written as an expression (`3` in
+        // `Buffer<i32, 3>`) is not a HIR type node. Its checked constant
+        // reference (atom, parameter or projection) is its type-argument
+        // identity, in the checked graph's tags 0x80000001..3: the interface
+        // topology (01_attach_unary) and implementation seeds (02_map_seed)
+        // accept exactly these, and the exported record is the checked
+        // graph's constant child (checked_types.slang).
+        semantic_type_ref_tag_by_hir[row] = 0x80000000u | operand_kind;
+        semantic_type_ref_payload_by_hir[row] = operand_payload;
+        semantic_type_generic_param_slot_by_hir[row] = INVALID;
+        semantic_type_external_library_id_by_hir[row] = INVALID;
+        semantic_type_external_unit_id_by_hir[row] = INVALID;
+        semantic_type_external_local_index_by_hir[row] = INVALID;
+    }
 
     uint param_count = min(compact_param_count[0u], gParams.n_hir_nodes);
     if (row < param_count)
