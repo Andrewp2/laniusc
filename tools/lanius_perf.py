@@ -14,7 +14,7 @@ import socketserver
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from generate_typical_project import generate as generate_typical_project
@@ -312,7 +312,21 @@ def resolve_workload_spec(args: argparse.Namespace) -> WorkloadSpec:
             raise ValueError(
                 f"--preset {args.preset} fixes its workload; remove {', '.join(conflicting)}"
             )
-        return CANONICAL_WORKLOAD_PRESETS[args.preset]
+        spec = CANONICAL_WORKLOAD_PRESETS[args.preset]
+        first = getattr(args, "first_seeds", None)
+        if first is not None:
+            if not 1 <= first < len(spec.seeds):
+                raise ValueError(f"--first-seeds must be between 1 and {len(spec.seeds) - 1}")
+            # A partial run gets its own preset label, so it never passes for the full preset.
+            spec = replace(
+                spec,
+                seeds=spec.seeds[:first],
+                sample_count=first,
+                preset=f"{spec.preset}-first-{first}-seeds",
+            )
+        return spec
+    if getattr(args, "first_seeds", None) is not None:
+        raise ValueError("--first-seeds applies only to --preset")
 
     seed = args.seed if args.seed is not None else DEFAULT_BENCHMARK_SEED
     sample_count = args.samples if args.samples is not None else DEFAULT_SAMPLE_COUNT
@@ -406,6 +420,12 @@ def parse_args() -> argparse.Namespace:
         "--samples",
         type=int,
         help=f"custom workload sample count (default: {DEFAULT_SAMPLE_COUNT})",
+    )
+    run.add_argument(
+        "--first-seeds",
+        type=int,
+        help="time only the preset's first N seeds (plus its primer seed), to fit a GPU hold; "
+        "the result is labeled PRESET-first-N-seeds and is not comparable to full runs",
     )
     run.add_argument("--target", choices=("x86_64", "wasm"), default="x86_64")
     run.add_argument("--modes", default=",".join(LANIUS_MODES))

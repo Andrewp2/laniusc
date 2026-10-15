@@ -430,6 +430,24 @@ class ComparisonGroupTests(unittest.TestCase):
         self.assertEqual(spec.primer_seed, 19)
         self.assertEqual(spec.sample_count, 20)
 
+    def test_first_seeds_runs_a_relabeled_prefix_of_the_preset(self):
+        spec = resolve_workload_spec(
+            Namespace(
+                preset=CANONICAL_SINGLE_FILE_PRESET,
+                workload=None,
+                custom_size=None,
+                files=None,
+                seed=None,
+                samples=None,
+                first_seeds=2,
+            )
+        )
+
+        self.assertEqual(spec.seeds, (20, 21))
+        self.assertEqual(spec.sample_count, 2)
+        self.assertEqual(spec.primer_seed, 19)
+        self.assertEqual(spec.preset, f"{CANONICAL_SINGLE_FILE_PRESET}-first-2-seeds")
+
     def test_preset_rejects_workload_overrides(self):
         with self.assertRaisesRegex(ValueError, "fixes its workload"):
             resolve_workload_spec(
