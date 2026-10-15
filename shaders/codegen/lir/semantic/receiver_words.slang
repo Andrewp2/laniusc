@@ -1,6 +1,14 @@
 // Included by receiver_layout.slang and place_mark after type_instance_kind,
 // type_instance_native_words, semantic_aggregate_hir_by_name_token,
 // semantic_struct_word_count_by_hir and compact_hir_core.
+// semantic_receiver_call_by_hir holds the call plus one in its low bits.
+// place_mark sets HOLDER on the node that holds a stored receiver copy
+// (receiver_temporary.slang), and PROJECTED too when that node is the
+// aggregate under a borrowed field projection rather than the receiver.
+static const uint RECEIVER_CALL_MASK = 0x3fffffffu;
+static const uint RECEIVER_TEMPORARY_HOLDER = 0x80000000u;
+static const uint RECEIVER_TEMPORARY_PROJECTED = 0x40000000u;
+
 uint receiver_kind(uint tag, uint payload)
 {
     uint capacity; uint stride;

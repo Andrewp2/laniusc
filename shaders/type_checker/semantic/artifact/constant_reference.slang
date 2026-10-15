@@ -1,3 +1,4 @@
+import primitive_types;
 import type_checker.concrete_type_equality;
 // Project a checked scalar constant reference after body substitution. Source
 // references remain immutable; the selected body supplies parameter atoms.
@@ -22,4 +23,13 @@ public uint4 project_checked_constant_value(uint kind, uint payload, uint token_
         return uint4(scalar, descriptor.terminal.y, 0u, 0x20000000u);
     }
     return uint4(0u, 0u, 0u, 0u);
+}
+
+// The expression scalar column uses the compact packed form (scalar in the
+// high bits, no link), which lowering decodes with semantic_lir_type. A bare
+// scalar id would decode as unknown, and a cast of a constant parameter
+// (`N as i32`) would lose its source type.
+public uint packed_checked_constant_scalar(uint scalar)
+{
+    return scalar_is_known(scalar) ? (scalar << SCALAR_TYPE_SHIFT) | SCALAR_TYPE_LINK_MASK : 0u;
 }

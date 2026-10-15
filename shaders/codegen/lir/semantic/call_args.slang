@@ -44,6 +44,8 @@ static const uint INVALID = 0xffffffffu;
 static const uint SEMANTIC_CALL_FUNCTION = 1u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+#include "receiver_source.slang"
+
 void invalid_array_contract(uint node)
 {
     InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_SEMANTIC);
@@ -234,7 +236,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint destination = semantic_call_arg_prefix_by_hir[row];
         SemanticLirCallArg receiver;
         receiver.call_instruction = semantic_lir_offset[row];
-        uint source = semantic_call_receiver[row];
+        uint source = receiver_source_hir(semantic_call_receiver[row], gParams.n_hir_nodes);
         if (source >= gParams.n_hir_nodes)
         {
             invalid_array_contract(row);
@@ -247,7 +249,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             : lir_for_hir(source);
         receiver.ordinal = 0u;
         receiver.value_metadata = value_metadata_for_parameter(
-            row, 0u, value_metadata_for_hir(semantic_call_receiver[row]));
+            row, 0u, value_metadata_for_hir(source));
         receiver.array_length = array_length_for_hir(source);
         if (checked.receiver_adjustment_kind == 2u)
         {
