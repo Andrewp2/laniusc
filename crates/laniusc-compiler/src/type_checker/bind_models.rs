@@ -179,6 +179,8 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) validate_array_literals: Option<ComputeOperation>,
     pub(in crate::type_checker) infer_return_bindings: Option<ComputeOperation>,
     pub(in crate::type_checker) inference_readback: crate::gpu::operations::CopyBufferOperation,
+    pub(in crate::type_checker) inference_status_readback:
+        crate::gpu::operations::CopyBufferOperation,
     pub(in crate::type_checker) infer_array_generics: ComputeOperation,
     pub(in crate::type_checker) validate_array_results: ComputeOperation,
     pub(in crate::type_checker) mark_array_args: ComputeOperation,

@@ -1,5 +1,41 @@
 # Compiler semantic contracts
 
+## Call inference termination (2026-10-15)
+
+Call inference repeats its passes until a round changes nothing. The host reads
+two things after each round: the round's change count and the status words. It
+stops in four ways:
+
+- **Converged.** The round changed nothing. The final passes then run with
+  inference closed.
+- **Error recorded.** The check fails whatever later rounds would infer, and an
+  unresolved callee or type can keep producers changing forever. The loop stops
+  at the first round with an error and the remaining passes run as usual. The
+  check then reports the status words from the moment inference stopped,
+  because the later passes ran on facts inference never finished, and their
+  errors can be consequences of the stop. So a program with several errors
+  reports the smallest-token error recorded by the round in which the first
+  error appeared.
+- **Depth limit.** This is a language limit, like Rust's `recursion_limit`.
+  - Inference may take at most `CALL_INFERENCE_DEPTH_LIMIT` (1024) rounds. A
+    chain of dependent calls usually resolves one link per round, so a longer
+    chain needs a type annotation to break it.
+  - Reaching the limit is LNC0047 GenericInstantiationBoundary detail 17.
+  - Programs under the limit always pass, and the worst case is about 15 s
+    (1024 rounds of ~15 ms on 740 KB).
+- **Change bound.** Inference is monotone, so each fact changes a bounded
+  number of times. The changes of all rounds together are therefore at most
+  `CALL_INFERENCE_CHANGES_PER_SLOT` (32) per HIR node and token slot, per
+  dependency page. A larger total means some producer rewrites facts without
+  progress, which is a compiler bug (detail 16).
+
+A producer counts a change only when the fact's value changes. Rows with one
+canonical ID are one value. Two producers can publish the same application as
+different checked rows: the nested-literal pass its indexed field row, and the
+canonical context path the realized row of the ID. Comparing rows there instead
+of IDs counted a change every round (`calls/03k3_project_record_contexts`, the
+same rule as `calls/03e_materialize_return_types`).
+
 ## Semantic replay identity, widths, and original recipes (2026-10-11)
 
 A replay seed owns a closed semantic type graph and literal constant arguments.
