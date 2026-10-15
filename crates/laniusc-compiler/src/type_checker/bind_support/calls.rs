@@ -266,7 +266,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         return_imported_fields: optional_generic(
             compiler_graph::CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            "type_checker/type/instances/02e_project_imported_fields",
+            compiler_graph::IMPORTED_FIELDS_KERNEL,
             &token_dispatch_args,
         )?,
         project_expression_types: inference(

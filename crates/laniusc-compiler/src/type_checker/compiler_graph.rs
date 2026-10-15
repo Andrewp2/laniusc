@@ -327,6 +327,10 @@ pub(super) const TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS: &str =
     "type_check.type_instances.index_closed_applications";
 pub(super) const TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS: &str =
     "type_check.type_instances.index_generated_applications";
+/// Imported field projection over canonical IDs, outside body specialization
+/// (whose rewritten rows keep stale IDs until the late canonical stage).
+pub(super) const IMPORTED_FIELDS_KERNEL: &str =
+    "type_checker/substitution/07_project_imported_fields";
 pub(super) const TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS: &str =
     "type_check.type_instances.project_imported_fields";
 pub(super) const CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS: &str =
@@ -4592,6 +4596,16 @@ fn build_graph(
         "type_native_word_count" => _type_native_word_count: Write,
         "type_native_scalar_identity" => _type_native_scalar_identity: Write,
     ];
+    // The canonical-ID imported field projection also realizes field rows.
+    let imported_field_ct_overrides = reflected_bindings![
+        "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        "imported_field_ref_tag" => _imported_field_ref_tag: Write,
+        "imported_field_ref_payload" => _imported_field_ref_payload: Write,
+        "imported_field_name_hash" => _imported_field_name_hash: Write,
+        "imported_layout_groups" => _imported_layout_groups: Write,
+        "type_native_word_count" => _type_native_word_count: Write,
+        "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+    ];
     let final_scalar = scalar_a;
     let add_expression_type_passes =
         |graph: &mut CompilerGraphBuilder| -> std::result::Result<(), String> {
@@ -5190,8 +5204,8 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Tokens,
             kernels,
-            "type_checker/type/instances/02e_project_imported_fields",
-            imported_field_overrides,
+            IMPORTED_FIELDS_KERNEL,
+            imported_field_ct_overrides,
         )?;
         graph.add_indirect_dispatch(
             TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
@@ -5658,9 +5672,9 @@ fn build_graph(
         ),
         (
             CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            "type_checker/type/instances/02e_project_imported_fields",
+            IMPORTED_FIELDS_KERNEL,
             ResourceDomain::Tokens,
-            imported_field_overrides,
+            imported_field_ct_overrides,
         ),
         (
             TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,

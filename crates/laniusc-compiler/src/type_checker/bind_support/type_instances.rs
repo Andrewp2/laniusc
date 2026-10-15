@@ -261,7 +261,7 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         project_imported_fields: if generic_param_record_passes_required(parser_feature_flags) {
             Some(indirect_token(
                 compiler_graph::TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
-                "type_checker/type/instances/02e_project_imported_fields",
+                compiler_graph::IMPORTED_FIELDS_KERNEL,
             )?)
         } else {
             None
