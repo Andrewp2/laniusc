@@ -88,7 +88,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         method = dependency_find_method(call_dependency_library_id[token],
             call_dependency_unit_id[token], call_dependency_local_index[token]);
-        if (method >= dependency_member_count()) return;
+        // A trait's required member has no receiver pattern: the bound's
+        // arguments bind its trait's parameters as call context
+        // (dependencies/15b), as for a local trait's member.
+        if (method >= dependency_member_count() || dependency_trait_requirement(method)) return;
     }
     SourceSlots slots;
     CtSpare spare = ct_spare_none();

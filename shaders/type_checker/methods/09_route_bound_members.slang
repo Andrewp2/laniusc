@@ -27,6 +27,13 @@
 // Outside replay every accepted receiver of these calls is still a parameter,
 // so nothing is routed and the enclosing body stays a template.
 //
+// A bound on an imported trait selects that trait's required member by its
+// portable identity (dependencies/15b: a dependency candidate of module
+// preference 0, which no implementation candidate has). An implementation of
+// that trait in this unit implements it by the trait's library and unit and
+// the required member's symbol (predicates/01f2), and the routed call becomes
+// a local one.
+//
 // One thread per call expression (HIR domain): the call owns the context rows,
 // and its callee member, or the leaf of its callee path `P::member` for a
 // static member, names the method token.
@@ -40,6 +47,7 @@ import type_checker.checked_type_graph;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
+import type_checker.predicates.trait_reference;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -64,7 +72,11 @@ StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_name_id;
 StructuredBuffer<uint> fn_hir_by_decl_token;
 StructuredBuffer<uint> fn_start_token_by_decl_token;
-StructuredBuffer<uint> call_dependency_library_id;
+RWStructuredBuffer<uint> call_dependency_library_id;
+RWStructuredBuffer<uint> call_dependency_unit_id;
+RWStructuredBuffer<uint> call_dependency_local_index;
+RWStructuredBuffer<uint> call_dependency_host_service;
+StructuredBuffer<uint> predicate_method_validation_required_symbol;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_bound_reference;
 StructuredBuffer<uint> decl_count_out;
@@ -89,7 +101,8 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TRAIT_REFERENCE_DEPENDENCY = 0x80000000u;
+static const uint REQUIRED_LOCAL = 1u;
+static const uint REQUIRED_IMPORTED = 2u;
 static const uint HIR_ITEM = 2u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
 static const uint HIR_CALL_EXPR = 19u;
@@ -116,13 +129,49 @@ uint required_member_trait(uint target)
         compact_hir_payload[trait].a == HIR_ITEM_KIND_TRAIT ? trait : INVALID;
 }
 
-bool implements_trait(uint impl, uint trait)
+// The required member of call token `token`: (REQUIRED_LOCAL, its trait's
+// HIR item), or (REQUIRED_IMPORTED, the trait's library and unit, the
+// member's symbol) for an imported trait's member (dependencies/15b), or
+// (0, ..) for any other callee.
+uint4 required_member(uint token)
+{
+    uint library = call_dependency_library_id[token];
+    if (library == INVALID)
+    {
+        uint trait = required_member_trait(call_fn_index[token]);
+        return trait == INVALID ? uint4(0u, INVALID, INVALID, INVALID)
+            : uint4(REQUIRED_LOCAL, trait, INVALID, INVALID);
+    }
+    MethodCandidate candidate = method_candidate[token];
+    uint unit = call_dependency_unit_id[token];
+    uint symbol = call_dependency_local_index[token];
+    bool bound = candidate.state == METHOD_CANDIDATE_UNIQUE &&
+        candidate.callable_kind == METHOD_CALLABLE_DEPENDENCY &&
+        candidate.module_preference == 0u &&
+        candidate.matched_ref_tag == TYPE_REF_GENERIC_PARAM &&
+        candidate.library_id == library && candidate.unit_id == unit &&
+        candidate.local_index == symbol;
+    return bound ? uint4(REQUIRED_IMPORTED, library, unit, symbol)
+        : uint4(0u, INVALID, INVALID, INVALID);
+}
+
+// Whether implementation `impl`, with method HIR `member`, implements the
+// trait of `required`.
+bool implements(uint impl, uint member, uint4 required)
 {
     if (!valid_hir(impl)) return false;
     uint reference = predicate_bound_reference[impl];
-    return (reference & TRAIT_REFERENCE_DEPENDENCY) == 0u &&
-        reference < min(decl_count_out[0u], gParams.n_tokens) &&
-        decl_hir_node[reference] == trait;
+    if (required.x == REQUIRED_LOCAL)
+        return !trait_reference_is_dependency(reference) &&
+            reference < min(decl_count_out[0u], gParams.n_tokens) &&
+            decl_hir_node[reference] == required.y;
+    if (!trait_reference_is_dependency(reference) || !valid_hir(member)) return false;
+    uint paths; uint stride;
+    resolved_dependency_library_id.GetDimensions(paths, stride);
+    if (trait_reference_path(reference) >= paths) return false;
+    uint4 identity = trait_reference_identity(reference);
+    return identity.y == required.y && identity.z == required.z &&
+        predicate_method_validation_required_symbol[member] == required.w;
 }
 
 // The method token of call expression `call`, or INVALID: its callee member's
@@ -182,6 +231,11 @@ void publish_callee(uint token, MethodCandidate candidate, uint selected, uint b
     method_candidate[token] = candidate;
     call_fn_index[token] = selected;
     backend_call_fn_index[token] = backend;
+    // An imported trait's required member was a dependency callee.
+    call_dependency_library_id[token] = INVALID;
+    call_dependency_unit_id[token] = INVALID;
+    call_dependency_local_index[token] = INVALID;
+    call_dependency_host_service[token] = INVALID;
 }
 
 // Whether call `call` has context rows (contextual_call_environment.slang).
@@ -322,10 +376,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // A dotted call has a receiver value; a path call has none (methods/06).
     if (token >= min(token_count[0u], gParams.n_tokens) ||
         (method_call_receiver_hir[token] == INVALID) != (aliases.x != INVALID) ||
-        method_call_name_id[token] == INVALID ||
-        call_dependency_library_id[token] != INVALID) return;
-    uint trait = required_member_trait(call_fn_index[token]);
-    if (trait == INVALID) return;
+        method_call_name_id[token] == INVALID) return;
+    uint4 required = required_member(token);
+    if (required.x == 0u) return;
     uint tag = method_call_receiver_ref_tag[token];
     uint payload = method_call_receiver_ref_payload[token];
     if (tag == TYPE_REF_GENERIC_PARAM || tag == 0u || payload == INVALID) return;
@@ -372,7 +425,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 candidate = core.name_token;
                 impl = core.impl_node;
                 if (candidate >= gParams.n_tokens || method_decl_name_id[candidate] != name_id ||
-                    !implements_trait(impl, trait)) continue;
+                    !implements(impl, core.node, required)) continue;
                 operand = uint2(method_decl_receiver_ref_tag[candidate],
                     method_decl_receiver_ref_payload[candidate]);
             }
@@ -402,11 +455,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
     }
     // The accepted selection and its callee are one fact for call artifacts.
+    // An imported trait's member was verified as the candidate above.
     MethodCandidate candidate = method_candidate[token];
     bool routed = matches == 1u && (!selected_generic || published != 0u) &&
         candidate.state == METHOD_CANDIDATE_UNIQUE &&
-        candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
-        candidate.local_index == call_fn_index[token];
+        (required.x == REQUIRED_IMPORTED || (candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
+         candidate.local_index == call_fn_index[token]));
     // The routed callee owns the call's context: a generic one its bindings,
     // a nongeneric one none (the trait's arguments bound the required
     // member's parameters, methods/07a). Rows written for other candidates
@@ -429,6 +483,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (!routed) return;
     retire_claims(node);
+    // The routed member is local to this unit.
+    candidate.callable_kind = METHOD_CALLABLE_LOCAL;
+    candidate.library_id = INVALID;
+    candidate.unit_id = INVALID;
     candidate.local_index = selected;
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;

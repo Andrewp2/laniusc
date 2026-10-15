@@ -472,9 +472,27 @@ bool dependency_public_implementation_method(uint member)
         member >= start && member - start < count;
 }
 
+// A required member of a trait declaration. It has no native target: it is
+// the symbolic callee of a call through a bound on that trait
+// (dependencies/15b), which body specialization routes to an implementation
+// (methods/09).
+bool dependency_trait_requirement(uint member)
+{
+    if (member >= dependency_member_count()) return false;
+    uint base = member * SEMANTIC_INTERFACE_MEMBER_WORDS;
+    uint owner = dependency_member_word(base);
+    if (dependency_member_word(base + 1u) != 7u || owner >= dependency_declaration_count() ||
+        dependency_declaration_word(owner * 14u + 6u) != 10u) return false;
+    uint start; uint count;
+    return dependency_contract_owner_members(owner, start, count) &&
+        member >= start && member - start < count;
+}
+
 // Only public implementation methods use their lexical interface symbol as
 // their native target. Private trait methods require their explicit binding;
 // this direct-call lookup must not create a public alias for that symbol.
+// A trait's required member is found by the same identity; its signature
+// serves calls through a bound, never a native call.
 uint dependency_find_method(uint library_id, uint unit_id, uint method_symbol)
 {
     if (method_symbol == 0xffffffffu || (method_symbol & 0xc0000000u) != 0x80000000u)
@@ -483,8 +501,9 @@ uint dependency_find_method(uint library_id, uint unit_id, uint method_symbol)
     for (uint row = 0u; row < dependency_member_count(); row += 1u)
     {
         uint base = row * SEMANTIC_INTERFACE_MEMBER_WORDS;
-        if (!dependency_public_implementation_method(row) ||
-            dependency_member_word(base + 9u) != method_symbol) continue;
+        if (dependency_member_word(base + 9u) != method_symbol ||
+            (!dependency_public_implementation_method(row) &&
+             !dependency_trait_requirement(row))) continue;
         uint library; uint unit; uint local;
         if (!dependency_contract_owner_identity(dependency_member_word(base), library, unit, local) ||
             library != library_id || unit != unit_id) continue;
@@ -494,13 +513,15 @@ uint dependency_find_method(uint library_id, uint unit_id, uint method_symbol)
     return found;
 }
 
-// Parameters belong to the exact implementation owner and callable symbol.
-// Syntactic self / &self is omitted; typed first parameters retain ordinal zero.
+// Parameters belong to the exact implementation (or trait) owner and callable
+// symbol. Syntactic self / &self is omitted; typed first parameters retain
+// ordinal zero.
 uint dependency_method_parameter_type(uint method_row, uint ordinal)
 {
     if (method_row >= dependency_member_count()) return 0xffffffffu;
     uint method_base = method_row * SEMANTIC_INTERFACE_MEMBER_WORDS;
-    if (dependency_member_word(method_base + 1u) != 8u) return 0xffffffffu;
+    uint kind = dependency_member_word(method_base + 1u);
+    if (kind != 8u && kind != 7u) return 0xffffffffu;
     uint owner = dependency_member_word(method_base);
     uint start; uint count;
     if (!dependency_contract_owner_members(owner, start, count) ||

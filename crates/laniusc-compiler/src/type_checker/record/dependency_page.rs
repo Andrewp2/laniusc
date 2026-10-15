@@ -252,22 +252,24 @@ pub(in crate::type_checker) fn record_dependency_methods(
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
     };
-    let (collector, projection, scatter) = match stage {
+    let (collector, bound, projection, scatter) = match stage {
         MethodSelectionStage::Direct => (
-            DEPENDENCY_METHODS_COLLECT, DEPENDENCY_METHODS_PROJECT,
-            DEPENDENCY_METHOD_PARAMS_SCATTER,
+            DEPENDENCY_METHODS_COLLECT, DEPENDENCY_BOUND_MEMBERS_OFFER,
+            DEPENDENCY_METHODS_PROJECT, DEPENDENCY_METHOD_PARAMS_SCATTER,
         ),
         MethodSelectionStage::Lookup => (
-            DEPENDENCY_METHODS_COLLECT_LOOKUP, DEPENDENCY_METHODS_PROJECT_LOOKUP,
-            DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP,
+            DEPENDENCY_METHODS_COLLECT_LOOKUP, DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP,
+            DEPENDENCY_METHODS_PROJECT_LOOKUP, DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP,
         ),
         MethodSelectionStage::Inference => (
-            DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_METHODS_PROJECT_INFERENCE,
-            DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
+            DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE,
+            DEPENDENCY_METHODS_PROJECT_INFERENCE, DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
         ),
     };
     if collect {
-        visibility.collect_methods_group.record_as(encoder, collector.name)
+        visibility.collect_methods_group.record_as(encoder, collector.name)?;
+        // Imported traits' required members, through bounds on parameters.
+        visibility.offer_bound_members_group.record_as(encoder, bound.name)
     } else {
         visibility.project_methods_group.record_as(encoder, projection.name)?;
         // Publish exact parameter patterns while the winner's page is active.

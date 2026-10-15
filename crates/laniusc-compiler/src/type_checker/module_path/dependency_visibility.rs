@@ -141,6 +141,7 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) project_type_instances_group: ComputeOperation,
     pub(in crate::type_checker) materialize_alias_targets_group: ComputeOperation,
     pub(in crate::type_checker) collect_methods_group: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members_group: ComputeOperation,
     pub(in crate::type_checker) project_methods_group: ComputeOperation,
     pub(in crate::type_checker) project_struct_literals_group: ComputeOperation,
     pub(in crate::type_checker) _params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
@@ -431,6 +432,14 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_METHODS_COLLECT,
         inputs.hir_active_dispatch_args,
     )?;
+    let offer_bound_members_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_BOUND_MEMBERS_OFFER,
+        inputs.hir_active_dispatch_args,
+    )?;
     let project_methods_group = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -641,6 +650,7 @@ pub(in crate::type_checker) fn create(
         project_type_instances_group,
         materialize_alias_targets_group,
         collect_methods_group,
+        offer_bound_members_group,
         project_methods_group,
         project_struct_literals_group,
         _params: params,
