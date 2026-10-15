@@ -64,10 +64,10 @@ bool variant_payloads(uint member, out uint start, out uint count)
     return true;
 }
 
-// Publish field `target` of application `id`: dependency node `type`
+// Publish field `target` of application `id` (row `instance`): dependency node `type`
 // substituted under the application. False when it has no checked row yet;
 // `busy` when another lane is writing a row it needs.
-bool publish_field(uint id, uint target, uint type, inout CtSpare spare, inout bool busy)
+bool publish_field(uint id, uint instance, uint target, uint type, inout CtSpare spare, inout bool busy)
 {
     uint pattern = dependency_type(type);
     uint field = ct_is_resolved(pattern) ? ct_subst(SourceSlots(), id, pattern, true, spare) : CT_UNKNOWN;
@@ -75,6 +75,9 @@ bool publish_field(uint id, uint target, uint type, inout CtSpare spare, inout b
     uint2 reference = uint2(0u, INVALID);
     if (ct_is_resolved(field)) reference = ct_realize(field, failure);
     if (failure == CT_REALIZE_BUSY) busy = true;
+    // The private row arena or the constant rows are full: fail closed.
+    if (failure == CT_REALIZE_CAPACITY)
+        record_min_token_error(status, min(instance, gParams.n_tokens - 1u), 6u, 0x474e0001u);
     bool resolved = failure == 0u && (reference.x == 1u || reference.x == 2u || reference.x == 3u) &&
         reference.y != INVALID;
     if (!resolved) reference = uint2(0u, INVALID);
@@ -171,7 +174,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                             dependency_member_word(member * SEMANTIC_INTERFACE_MEMBER_WORDS + 4u))
                     : uint2(0u, 0u);
                 bool resolved = false;
-                if (named) resolved = publish_field(id, target + ordinal, child, spare, busy);
+                if (named) resolved = publish_field(id, instance, target + ordinal, child, spare, busy);
                 else
                 {
                     imported_field_ref_tag[target + ordinal] = 0u;
