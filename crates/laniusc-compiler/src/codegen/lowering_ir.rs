@@ -2691,6 +2691,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_value_id", checked_value_decls),
             PassAccess::read("semantic_enclosing_fn_by_hir", checked_enclosing_functions),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
+            PassAccess::read("semantic_calls_by_hir", checked_calls),
             PassAccess::write("semantic_local_flag", semantic_local_flags),
         ],
     })?;
@@ -9136,6 +9137,18 @@ fn build_lowering_compiler_graph(
                         "target_semantic_origin",
                         target_semantic_origins.expect("x86 semantic origin resource"),
                     ),
+                    // Branch destinations are schedule positions: a control row
+                    // that emits nothing still has an offset.
+                    PassAccess::read(
+                        "target_lir_flags",
+                        x86_target_flags.expect("x86 target flag resource"),
+                    ),
+                    PassAccess::read("opt_ir_total", opt_total),
+                    PassAccess::read(
+                        "x86_position_by_semantic",
+                        x86_position_by_semantic.expect("x86 schedule position resource"),
+                    ),
+                    PassAccess::read("target_lir_offset", target_offsets),
                 ],
             })?;
         }
@@ -9467,6 +9480,18 @@ fn build_lowering_compiler_graph(
                     "target_semantic_origin",
                     target_semantic_origins.expect("x86 semantic origin resource"),
                 ),
+                // Branch destinations are schedule positions: a control row
+                // that emits nothing still has an offset.
+                PassAccess::read(
+                    "target_lir_flags",
+                    x86_target_flags.expect("x86 target flag resource"),
+                ),
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read(
+                    "x86_position_by_semantic",
+                    x86_position_by_semantic.expect("x86 schedule position resource"),
+                ),
+                PassAccess::read("target_lir_offset", target_offsets),
             ],
         })?;
         graph.add_pass(PassDesc {
