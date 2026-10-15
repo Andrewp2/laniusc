@@ -535,6 +535,28 @@ visited rows as root candidates, so a field equal to a visited row resolves
 to that row and the visited check is an ID comparison. 03e1 went from 474k
 to 90k inlined instructions this way.
 
+### Constant claims: typed and count identity
+
+Call inference collects claims for each constant parameter slot
+(`merge_inferred_constant_claim` in `type_checker/constant_constraints.slang`).
+A claim is exact (`identity_mode` 0, from a constant argument) or a count
+claim (`identity_mode` 1, from an array length matched against `[T; N]`).
+
+- Two claims are compatible iff they have the same result scalar and equal
+  identity: typed identity when both are exact, count identity when either
+  is a count claim. In canonical IDs that is ID equality, or
+  `cc_count_class` equality (a `CC_CAST` is transparent).
+- The exact claim wins. A compatible exact claim replaces a retained count
+  claim; between claims of the same mode the first one stays. The selected
+  slot does not depend on the order of the claims.
+- Merging discharges nothing. Every array actual keeps its own pending fit in
+  its source graph, checked when the instance is normalized.
+
+`tests/typed_constant_identity_requests` case 34 checks this: two array
+claims of one symbolic count (`N as u8` retargeted to `u64`, then `N: u64`)
+are admitted, then the exact claim `N: u64` is accepted and holds the slot. It used to expect
+the exact claim to be rejected, which disagreed with the code.
+
 ### API (frozen for P3–P5)
 
 The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
