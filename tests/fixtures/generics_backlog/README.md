@@ -13,3 +13,10 @@ Known gaps that need multi-file probes (not runnable by the single-file matrix y
   `pub impl gen::lib::Score for Rec` fails with LNC0007 (unknown type at the
   trait path), and `import gen::lib; pub impl Score for Rec` fails with
   LNC0021. Repros by P10 in its scratchpad (p10/xmod/x1..x5).
+
+Open stdlib needs (owner TBD):
+- String equality on `str` elements. `words[0] != "after"` with
+  `words: [str; 2]` fails with LNC0006, and docs/compiler-generic-types.md
+  calls the operator unsupported. Keyed string containers and parsers need
+  it. Repro: tests/fixtures/stdlib_foundation/repro_ordinary_string_comparison.lani
+  (expects exit 42; listed in tests/fixtures/known_gaps.txt).
