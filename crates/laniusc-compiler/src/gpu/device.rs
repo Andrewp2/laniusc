@@ -26,12 +26,9 @@ const LAZY_PERSIST_INTERVAL: Duration = Duration::from_secs(10);
 /// compiles in a few milliseconds), so a check compares the cache content
 /// with what is on disk instead.
 static PIPELINES_CREATED_SINCE_PERSIST: AtomicU64 = AtomicU64::new(0);
-/// Pipelines created since the cache was loaded. A cache seeded from another
-/// kernel set must grow once this set creates its pipelines; if its content
-/// still equals the seed, the driver stopped adding pipelines to it.
-static PIPELINES_CREATED_SINCE_LOAD: AtomicU64 = AtomicU64::new(0);
-/// A seed file larger than this starts the kernel set's cache fresh: the
-/// driver stops adding pipelines to a cache near ~130 MiB.
+/// A seed file larger than this is not copied and the kernel set starts
+/// fresh: every seeded set's file carries its seed's pipelines forward, so a
+/// chain of shader edits would otherwise grow the files without bound.
 const PIPELINE_CACHE_SEED_MAX_BYTES: u64 = 100 * 1024 * 1024;
 /// When the cache was last persisted; None before the first persist.
 static LAST_PIPELINE_CACHE_PERSIST: Mutex<Option<Instant>> = Mutex::new(None);
@@ -53,9 +50,6 @@ pub struct GpuDevice {
     pipeline_cache_identity_hash: Option<u64>,
     pipeline_cache_dirty: Arc<AtomicBool>,
     pipeline_cache_persisted_hash: Mutex<Option<u64>>,
-    /// Hash of the blob seeded from another kernel set's file, when this
-    /// kernel set had no file of its own.
-    pipeline_cache_seed_hash: Option<u64>,
 }
 
 /// Failure to select and initialize a GPU-backed wgpu device.
@@ -186,26 +180,8 @@ impl GpuDevice {
         timer.span("get_data", start, end);
         timer.bytes("pipeline_cache.persist.bytes", end, data.len());
         let start = Instant::now();
-        let mut data_hash = stable_hash_u64(&data);
+        let data_hash = stable_hash_u64(&data);
         timer.span("hash", start, Instant::now());
-        let capped = self.pipeline_cache_seed_hash == Some(data_hash)
-            && PIPELINES_CREATED_SINCE_LOAD.load(Ordering::Acquire) != 0;
-        let data: &[u8] = if capped {
-            // Seeded from another kernel set, this set created its pipelines
-            // and none was added. Saving the seed again would block this set
-            // for good, so save an empty cache: the next start begins fresh.
-            let now = Instant::now();
-            timer.span("capped", now, now);
-            warn!(
-                "pipeline cache seeded for {} did not grow after {} pipeline creations; its next start begins fresh",
-                path.display(),
-                PIPELINES_CREATED_SINCE_LOAD.load(Ordering::Acquire)
-            );
-            data_hash = stable_hash_u64(&[]);
-            &[]
-        } else {
-            &data
-        };
         let already_persisted = self
             .pipeline_cache_persisted_hash
             .lock()
@@ -233,7 +209,7 @@ impl GpuDevice {
         }
         let tmp = pipeline_cache_tmp_path(path);
         let start = Instant::now();
-        if let Err(err) = write_pipeline_cache_tmp(&tmp, data, identity_hash, data_hash, &timer) {
+        if let Err(err) = write_pipeline_cache_tmp(&tmp, &data, identity_hash, data_hash, &timer) {
             let end = Instant::now();
             timer.span("write_tmp.failed", start, end);
             timer.span("total.failed", total_start, end);
@@ -467,7 +443,6 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
     } else {
         LoadedPipelineCache::default()
     };
-    PIPELINES_CREATED_SINCE_LOAD.store(0, Ordering::Release);
     let device = Arc::new(device);
     let pipeline_cache = loaded.cache.map(Arc::new);
     let pipeline_cache_dirty = Arc::new(AtomicBool::new(loaded.should_persist));
@@ -492,7 +467,6 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
         pipeline_cache_identity_hash: loaded.identity_hash,
         pipeline_cache_dirty,
         pipeline_cache_persisted_hash: Mutex::new(loaded.persisted_hash),
-        pipeline_cache_seed_hash: loaded.seed_hash,
     })
 }
 
@@ -681,7 +655,6 @@ fn wait_for_background_persist() {
 /// milliseconds, so creation time cannot tell a cache hit from a miss.
 pub(crate) fn note_pipeline_created(device: &wgpu::Device) {
     PIPELINES_CREATED_SINCE_PERSIST.fetch_add(1, Ordering::AcqRel);
-    PIPELINES_CREATED_SINCE_LOAD.fetch_add(1, Ordering::AcqRel);
     let due = LAST_PIPELINE_CACHE_PERSIST
         .lock()
         .map(|last| last.is_none_or(|last| last.elapsed() >= LAZY_PERSIST_INTERVAL))
@@ -779,7 +752,6 @@ struct LoadedPipelineCache {
     identity_hash: Option<u64>,
     should_persist: bool,
     persisted_hash: Option<u64>,
-    seed_hash: Option<u64>,
 }
 
 fn create_pipeline_cache(
@@ -809,7 +781,6 @@ fn create_pipeline_cache(
     timer.span_prefixed("create", "prune", start, Instant::now());
     let mut should_persist = false;
     let mut persisted_hash = None;
-    let mut seed_hash = None;
     let mut file = match read_pipeline_cache_file(&cache_path, key.identity_hash, "", &timer) {
         Ok(Some(file)) => {
             persisted_hash = Some(pipeline_cache_file_data_hash(&file));
@@ -842,17 +813,14 @@ fn create_pipeline_cache(
             }
             PipelineCacheSeed::Use(seed) => {
                 match read_pipeline_cache_file(&seed.path, key.identity_hash, "seed.", &timer) {
-                    Ok(Some(seed_file)) => {
-                        seed_hash = Some(pipeline_cache_file_data_hash(&seed_file));
-                        file = Some(seed_file);
-                    }
+                    Ok(Some(seed_file)) => file = Some(seed_file),
                     Ok(None) => {}
                     Err(_) => remove_pipeline_cache_file(&seed.path, "invalid"),
                 }
             }
         }
     }
-    // An empty blob is a fresh start, saved after a seed stopped growing.
+    // An empty blob holds no pipelines; give the driver no data at all.
     let cache_data = file
         .as_deref()
         .map(|file| &file[PIPELINE_CACHE_HEADER_LEN..])
@@ -877,7 +845,6 @@ fn create_pipeline_cache(
         identity_hash: Some(key.identity_hash),
         should_persist,
         persisted_hash,
-        seed_hash,
     }
 }
 
@@ -938,9 +905,9 @@ fn pipeline_cache_file_data_hash(file: &[u8]) -> u64 {
 ///
 /// A wgpu pipeline cache is a keyed collection, not one precompiled bundle:
 /// a seeded cache keeps every unchanged pipeline a hit after a shader edit.
-/// One file per kernel set keeps each file to about one set's pipelines; a
-/// single shared file grew past the size where the driver stops adding
-/// pipelines, and from then on every new pipeline compiled on every start.
+/// One file per kernel set keeps each file to about one set's pipelines, and
+/// pruning bounds the directory, where a single shared file collected every
+/// set any agent ever built.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PipelineCacheKey {
     prefix: String,
@@ -987,8 +954,8 @@ enum PipelineCacheSeed<'a> {
 }
 
 /// The most recently written file this kernel set can seed from. One over
-/// `max_bytes` is near the size where the driver stops adding pipelines, so
-/// the set starts fresh instead.
+/// `max_bytes` starts the set fresh instead (see
+/// `PIPELINE_CACHE_SEED_MAX_BYTES`).
 fn choose_pipeline_cache_seed<'a>(
     entries: &'a [PipelineCacheDirEntry],
     key: &PipelineCacheKey,
