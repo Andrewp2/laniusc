@@ -1025,6 +1025,9 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_semantic_end_local_max"
             | "hir_semantic_end_blocks"
             | "hir_semantic_end_top"
+            | "hir_canonical_end_local_max"
+            | "hir_canonical_end_blocks"
+            | "hir_canonical_end_top"
             | "hir_semantic_child_local"
             | "hir_semantic_child_blocks"
             | "hir_semantic_child_top"
@@ -1407,6 +1410,16 @@ fn build_graph(
             capacity.tree_node_blocks,
         ),
     );
+    // The canonical tables have one row per input token.
+    let canonical_end_blocks = u64::from(
+        crate::parser::passes::hir::canonical::parent::block_count(capacity.token_capacity),
+    );
+    let canonical_end_leaf_base = u64::from(
+        crate::parser::passes::hir::canonical::parent::leaf_base(capacity.token_capacity),
+    );
+    let canonical_end_groups = u64::from(
+        crate::parser::passes::hir::canonical::parent::group_count(capacity.token_capacity),
+    );
 
     for (name, domain, bytes) in [
         ("token_kinds", ResourceDomain::Tokens, token_rows * 4),
@@ -1643,6 +1656,21 @@ fn build_graph(
             "hir_semantic_end_top",
             ResourceDomain::HirNodes,
             semantic_end_groups * 4,
+        ),
+        (
+            "hir_canonical_end_local_max",
+            ResourceDomain::HirNodes,
+            canonical_end_blocks * 256 * 4,
+        ),
+        (
+            "hir_canonical_end_blocks",
+            ResourceDomain::HirNodes,
+            canonical_end_leaf_base * 4,
+        ),
+        (
+            "hir_canonical_end_top",
+            ResourceDomain::HirNodes,
+            canonical_end_groups * 4,
         ),
         (
             "hir_semantic_child_local",
@@ -3617,16 +3645,28 @@ mod tests {
                 "{name} must survive through parser.tokens.bracket_match.pair_pse",
             );
         }
-        for consumer in [
-            "parser.tokens.delimiters.owner_apply",
-            token_frontend::ENCLOSING_OPENS,
+        // Owner application searches the angle tree by block minimum; the
+        // enclosing-opens search climbs the per-block heaps instead.
+        for (consumer, names) in [
+            (
+                "parser.tokens.delimiters.owner_apply",
+                &[
+                    "angle_match_depth",
+                    "angle_match_block_min",
+                    "angle_match_min_tree",
+                ][..],
+            ),
+            (
+                token_frontend::ENCLOSING_OPENS,
+                &[
+                    "angle_match_depth",
+                    "angle_match_min_tree",
+                    "delimiter_match_local_min",
+                ][..],
+            ),
         ] {
             let pass = graph.pass_id(consumer).unwrap();
-            for name in [
-                "angle_match_depth",
-                "angle_match_block_min",
-                "angle_match_min_tree",
-            ] {
+            for &name in names {
                 let resource = graph.resource_id(name).unwrap();
                 assert!(
                     graph.pass(pass).unwrap().accesses.iter().any(|access| {
@@ -3936,6 +3976,9 @@ mod tests {
             "hir_canonical_type_arg_local",
             "hir_canonical_type_arg_prefix_01_blocks.up",
             "hir_canonical_type_arg_scatter",
+            "hir_canonical_end_rows",
+            "hir_canonical_end_blocks",
+            "hir_canonical_end_top",
             "hir_canonical_core",
             "hir_canonical_nav",
             "hir_canonical_expr_forest_edges",

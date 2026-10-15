@@ -1587,6 +1587,9 @@ impl ParserBuffers {
         // outputs; production capacities reuse the earlier graph resources.
         let hir_canonical_prefix_before_raw = graph_buffer!(u32, "hir_canonical_prefix_before_raw");
         let hir_canonical_dense_to_raw = graph_buffer!(u32, "hir_canonical_dense_to_raw");
+        let hir_canonical_end_local_max = graph_buffer!(u32, "hir_canonical_end_local_max");
+        let hir_canonical_end_blocks = graph_buffer!(u32, "hir_canonical_end_blocks");
+        let hir_canonical_end_top = graph_buffer!(u32, "hir_canonical_end_top");
         let hir_canonical_alias_to_dense = graph_buffer!(u32, "hir_canonical_alias_to_dense");
         let hir_canonical_raw_to_dense = graph_buffer!(u32, "hir_canonical_raw_to_dense");
         // Canonical statement and expression records are both read by the
@@ -2168,6 +2171,9 @@ impl ParserBuffers {
             hir_canonical_anchor_owner,
             hir_canonical_prefix_before_raw,
             hir_canonical_dense_to_raw,
+            hir_canonical_end_local_max,
+            hir_canonical_end_blocks,
+            hir_canonical_end_top,
             hir_canonical_alias_to_dense,
             hir_canonical_raw_to_dense,
             hir_canonical_stmt_record,

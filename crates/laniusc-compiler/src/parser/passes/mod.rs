@@ -313,6 +313,9 @@ pub struct ParserPasses {
     pub hir_canonical_stmt_compact: hir::canonical::stmt_compact::HirCanonicalStmtCompactPass,
     pub hir_canonical_identity_aliases:
         hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass,
+    pub hir_canonical_end_rows: hir::canonical::parent::HirCanonicalEndRowsPass,
+    pub hir_canonical_end_blocks: hir::canonical::parent::HirCanonicalEndBlocksPass,
+    pub hir_canonical_end_top: hir::canonical::parent::HirCanonicalEndTopPass,
     pub hir_canonical_core: hir::canonical::core::HirCanonicalCorePass,
     pub hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass,
     pub hir_canonical_expr_forest_edges:
@@ -572,6 +575,10 @@ impl ParserPasses {
                 hir::canonical::stmt_compact::HirCanonicalStmtCompactPass::new(device)?,
             hir_canonical_identity_aliases:
                 hir::canonical::identity_aliases::HirCanonicalIdentityAliasesPass::new(device)?,
+            hir_canonical_end_rows: hir::canonical::parent::HirCanonicalEndRowsPass::new(device)?,
+            hir_canonical_end_blocks:
+                hir::canonical::parent::HirCanonicalEndBlocksPass::new(device)?,
+            hir_canonical_end_top: hir::canonical::parent::HirCanonicalEndTopPass::new(device)?,
             hir_canonical_core: hir::canonical::core::HirCanonicalCorePass::new(device)?,
             hir_canonical_nav: hir::canonical::nav::HirCanonicalNavPass::new(device)?,
             hir_canonical_expr_forest_edges:
@@ -1040,6 +1047,15 @@ pub fn record_canonical_hir_materialization(
         "parser.hir_canonical.params_and_type_args",
     );
 
+    p.hir_canonical_end_rows
+        .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
+    p.hir_canonical_end_blocks.record_pass(
+        ctx,
+        E1D(hir::canonical::parent::leaf_base(
+            ctx.buffers.hir_canonical_capacity,
+        )),
+    )?;
+    p.hir_canonical_end_top.record_pass(ctx, E1D(256))?;
     p.hir_canonical_core
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);

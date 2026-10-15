@@ -1,5 +1,7 @@
 import hir_records;
 import generated_parse_production_ids;
+import blocked_search_tree;
+import parser.hir.semantic.parent.end_tree;
 
 struct Params {
     uint raw_capacity;
@@ -15,7 +17,9 @@ StructuredBuffer<uint> canonical_prefix_before_raw;
 StructuredBuffer<uint> canonical_dense_to_raw;
 StructuredBuffer<uint> canonical_raw_to_dense;
 StructuredBuffer<uint> canonical_alias_to_dense;
-StructuredBuffer<uint> parent;
+StructuredBuffer<uint> hir_canonical_end_local_max;
+StructuredBuffer<uint> hir_canonical_end_blocks;
+StructuredBuffer<uint> hir_canonical_end_top;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
@@ -134,22 +138,75 @@ uint semantic_id(uint raw)
     return valid_raw(raw) ? canonical_alias_to_dense[raw] : INVALID;
 }
 
-// Canonical rows are sparse in the raw grammar tree.  Resolve the nearest
-// durable ancestor only for rows that survive compaction instead of running a
-// whole-tree pointer walk over forwarding/list productions.
-uint canonical_parent(uint raw)
+uint dense_boundary(uint raw)
 {
-    uint ancestor = valid_raw(raw) ? parent[raw] : INVALID;
-    for (uint hop = 0u; hop < gCanonical.raw_capacity; ++hop)
+    return raw >= gCanonical.raw_capacity ? canonical_count[0u] : canonical_prefix_before_raw[raw];
+}
+
+uint active_canonical_count()
+{
+    return min(canonical_count[0u], gCanonical.canonical_capacity);
+}
+
+// Canonical rows are sparse in the raw grammar tree, and the raw parent chain
+// from a canonical row to the nearest canonical ancestor runs through long
+// forwarding and list spines. Rows are in preorder, so the canonical rows
+// whose canonical subtrees contain row r are its canonical ancestors, and the
+// nearest is the last row s < r whose canonical subtree end lies past r.
+// canonical/parent/end_{rows,blocks,top} build maximum heaps over those ends
+// in the semantic-end layout (semantic/parent/end_tree.slang).
+public struct CanonicalEndTree : IBlockedSearchTree<uint>
+{
+    public static uint row_count()
     {
-        if (!valid_raw(ancestor) || ancestor == raw) return INVALID;
-        uint dense = dense_id(ancestor);
-        if (dense != INVALID) return dense;
-        uint next = parent[ancestor];
-        if (next == ancestor) return INVALID;
-        ancestor = next;
+        return active_canonical_count();
     }
-    return INVALID;
+
+    // The end core publishes in HirLinks.subtree_end.
+    public static uint row_value(uint row)
+    {
+        uint raw = canonical_dense_to_raw[row];
+        return dense_boundary(valid_raw(raw) ? subtree_end[raw] : gCanonical.raw_capacity);
+    }
+
+    public static uint local_node(uint block, uint node)
+    {
+        return hir_canonical_end_local_max[block * SEMANTIC_END_FANOUT + node];
+    }
+
+    public static uint block_leaf_base()
+    {
+        return semantic_end_leaf_base(gCanonical.canonical_capacity);
+    }
+
+    // Node `node` of the heap over the blocks: a block's maximum from the
+    // leaf base on, a node of a group's heap down to the group roots, and a
+    // top heap node above them.
+    public static uint block_node(uint node)
+    {
+        uint leaf_base = block_leaf_base();
+        if (node >= leaf_base)
+        {
+            uint block = node - leaf_base;
+            uint active_blocks =
+                (row_count() + SEMANTIC_END_FANOUT - 1u) / SEMANTIC_END_FANOUT;
+            return block < active_blocks
+                ? hir_canonical_end_local_max[block * SEMANTIC_END_FANOUT]
+                : 0u;
+        }
+        uint groups = leaf_base / SEMANTIC_END_FANOUT;
+        if (node < groups)
+            return hir_canonical_end_top[node];
+        uint depth = uint(firstbithigh(node)) - uint(firstbithigh(groups));
+        uint group = (node >> depth) - groups;
+        uint local = (1u << depth) | (node & ((1u << depth) - 1u));
+        return hir_canonical_end_blocks[group * SEMANTIC_END_FANOUT + local];
+    }
+}
+
+uint canonical_parent(uint row)
+{
+    return blocked_search_last_before<uint, uint, CanonicalEndTree, SemanticEndPast>(row, row);
 }
 uint expression_id(uint raw)
 {
@@ -161,11 +218,6 @@ uint expression_id(uint raw)
     if (mapped == INVALID)
         mapped = dense_id(raw);
     return mapped != INVALID ? mapped : semantic_id(raw);
-}
-
-uint dense_boundary(uint raw)
-{
-    return raw >= gCanonical.raw_capacity ? canonical_count[0u] : canonical_prefix_before_raw[raw];
 }
 
 uint context_id(uint encoded)
@@ -208,7 +260,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.kind = 29u;
     else if (item_kind == 9u || item_kind == 10u)
         core.kind = 2u;
-    core.parent = canonical_parent(raw);
+    core.parent = canonical_parent(row);
     core.token_start = hir_token_pos[raw];
     core.token_end = hir_token_end[raw];
 

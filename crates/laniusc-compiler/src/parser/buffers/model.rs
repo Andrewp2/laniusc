@@ -782,6 +782,10 @@ pub struct ParserBuffers {
     /// Prefix-before value for every raw parse node.
     pub hir_canonical_prefix_before_raw: LaniusBuffer<u32>,
     pub hir_canonical_dense_to_raw: LaniusBuffer<u32>,
+    /// Canonical-end search heaps (`passes::hir::canonical::parent`).
+    pub hir_canonical_end_local_max: LaniusBuffer<u32>,
+    pub hir_canonical_end_blocks: LaniusBuffer<u32>,
+    pub hir_canonical_end_top: LaniusBuffer<u32>,
     /// Final semantic projection from every raw wrapper to a dense HIR id.
     pub hir_canonical_alias_to_dense: LaniusBuffer<u32>,
     /// Dense ids only for rows that won canonical identity arbitration.
