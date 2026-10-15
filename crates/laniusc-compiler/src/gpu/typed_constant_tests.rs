@@ -58,6 +58,11 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     words.chunks_exact(4).map(|row| row.try_into().unwrap()).collect()
 }
 
+/// The scoped and concrete walkers and constant-reference identity on the
+/// synthetic graphs of typed_constant_identity_fixture.slang. Cases 22-41 and
+/// 44-63 tested the deleted inference engine (constant_constraints.slang);
+/// call claims now go through ct_match and the checked claim kernels
+/// (constant_claim_publication_tests.rs, ct_match_tests.rs).
 fn assert_typed_constant_identity_family(key: &str, cases: &[usize]) {
     // Hash inequality is not required: different typed values may collide.
     // Hash validity and equal-value hash agreement are required independently.
@@ -67,8 +72,6 @@ fn assert_typed_constant_identity_family(key: &str, cases: &[usize]) {
     expected[9] = ([0, 0, 1], None);
     expected[20] = ([1, 2, 1], Some(1)); // symbolic, pending fit
     expected[21] = ([1, 1, 0], Some(1)); // concrete, discharged fit
-    expected[23] = ([0, 0, 1], Some(1)); // mismatch leaves slot unbound
-    expected[25] = ([1, 0, 1], Some(1)); // different high limb conflicts
     let actual = run_rows(key, "results", 64, 64);
     for &id in cases {
         let row = actual[id];
@@ -91,33 +94,8 @@ fn physical_gpu_typed_constant_identity_and_claim_provenance_scoped() {
 }
 
 #[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_inference() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_inference", &[22, 23, 24, 25, 26, 27, 28, 29, 30]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_requests() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_requests", &[31, 32, 33, 34, 35, 36, 37, 38, 39, 40]);
-}
-
-#[test]
 fn physical_gpu_typed_constant_identity_and_claim_provenance_depth() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_depth", &[41, 42, 43]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_array_constraints() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_array_constraints", &[44, 45, 46, 47, 48, 49, 50, 51]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_merge() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_claim_merge", &[52, 53, 54, 55, 56, 57, 58, 59, 62]);
-}
-
-#[test]
-fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_priority() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_claim_priority", &[60, 61, 63]);
+    assert_typed_constant_identity_family("tests/typed_constant_identity_depth", &[42, 43]);
 }
 
 const CHECKED_IDENTITY: &str = "tests/checked_type_identity";

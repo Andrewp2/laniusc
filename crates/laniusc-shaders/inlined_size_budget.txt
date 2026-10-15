@@ -3,13 +3,10 @@
 # down: when a kernel shrinks, run tools/ratchet_inlined_budget.py after the
 # build (it also lowers local_array_budget.txt). Never add a kernel.
 # Recorded 2026-10-14 from the 7ae8a250 shaders.
-176066 tests/typed_constant_identity_array_constraints
 96192 type_checker/program_evidence/entries/53_select_work
 66830 type_checker/program_evidence/entries/59_admit_implementation_proofs
 63720 type_checker/program_evidence/entries/54_admit_substitutions
-58882 tests/typed_constant_identity_inference
 57083 tests/owned_type_constraints_fixed
-56881 tests/typed_constant_identity_requests
 55035 type_checker/program_evidence/entries/59_admit_assumption_proofs
 51283 type_checker/program_evidence/native_layout/entries/05_materialize_proof_value
 51215 tests/owned_type_constraints_overlap
