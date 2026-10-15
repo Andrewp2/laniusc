@@ -12,6 +12,7 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
     pub required_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub validate_required: ComputeOperation,
     pub const_index: CallClaimIndexOperation,
+    pub publish_const_environment: ComputeOperation,
     pub validate_const: ComputeOperation,
 }
 
@@ -33,6 +34,7 @@ pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
     _required_dispatch_params: LaniusBuffer<CountDispatchParams>,
     validate_required: ComputeOperation,
     const_index: CallClaimIndexOperation,
+    publish_const_environment: ComputeOperation,
     validate_const: ComputeOperation,
 }
 
@@ -50,6 +52,7 @@ impl CallGenericClaimValidationOperation {
             _required_dispatch_params: build.required_dispatch_params,
             validate_required: build.validate_required,
             const_index: build.const_index,
+            publish_const_environment: build.publish_const_environment,
             validate_const: build.validate_const,
         }
     }
@@ -66,7 +69,9 @@ impl CallGenericClaimValidationOperation {
         self.mark_required.record(encoder)?;
         self.required_scan.record(encoder)?;
         self.required_dispatch.record(encoder)?;
-        self.const_index.record(encoder)
+        self.const_index.record(encoder)?;
+        // Every reader of argument constant bindings loads this selection.
+        self.publish_const_environment.record(encoder)
     }
 
     pub(in crate::type_checker) fn record_required(

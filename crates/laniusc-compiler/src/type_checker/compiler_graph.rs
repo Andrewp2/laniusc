@@ -3754,6 +3754,7 @@ fn build_graph(
         // written headers contribute their own source tokens. Eight rows per
         // token bound storage without a dense 64-slot table on every token.
         _call_explicit_environment as "call_explicit_environment" in Tokens => token_rows * 16;
+        _call_explicit_constant_valid_mask as "call_explicit_constant_valid_mask" in Tokens => token_rows * 4;
         _call_explicit_binding_tag as "call_explicit_binding_tag" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_payload as "call_explicit_binding_payload" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 4;
@@ -3998,6 +3999,7 @@ fn build_graph(
         _call_context_constant_kind as "call_context_constant_kind" in Calls => context_call_rows * 32 * 4;
         _call_context_constant_payload as "call_context_constant_payload" in Calls => context_call_rows * 32 * 4;
         _call_context_constant_identity_mode as "call_context_constant_identity_mode" in Calls => context_call_rows * 32 * 4;
+        _call_context_constant_valid_mask as "call_context_constant_valid_mask" in Calls => context_call_rows * 4;
         _argument_expected_ref_tag as "argument_expected_ref_tag" in Calls => hir_rows * 4;
         _argument_expected_ref_payload as "argument_expected_ref_payload" in Calls => hir_rows * 4;
         _literal_context_type_by_hir as "literal_context_type_by_hir" in Calls => hir_rows * 4;
@@ -4017,6 +4019,7 @@ fn build_graph(
         _call_const_claim_arg_row as "call_const_claim_arg_row" in CallArguments => claim_rows * 4;
         _call_const_claim_lookup_head as "call_const_claim_lookup_head" in CallArguments => claim_rows * 4;
         _call_const_claim_lookup_next as "call_const_claim_lookup_next" in CallArguments => claim_rows * 4;
+        _call_const_env_binding as "call_const_env_binding" in CallArguments => claim_rows * 16;
         const_claim_index_dispatch_args as "call_const_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
@@ -5451,6 +5454,7 @@ fn build_graph(
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name, "hir_active_dispatch_args")?;
     CALLS_EXPLICIT_APPLICATIONS_BIND.register_kernel(&mut graph, kernels)?;
+    CALLS_EXPLICIT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_CONSUME.register_kernel(&mut graph, kernels)?;
     // The recorder collects and indexes provisional claims before publishing
@@ -5501,7 +5505,9 @@ fn build_graph(
     )?;
     CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
+    CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
     CALLS_CONTEXTUAL_RESULT_REQUESTS.register_kernel(&mut graph, kernels)?;
+    CALLS_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS,
         CompilerPhase::TypeCheck,
@@ -5685,6 +5691,7 @@ fn build_graph(
                 reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
             )?;
             graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "hir_active_dispatch_args")?;
+            CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
         }
         if name == CALLS_PROJECT_LITERAL_CONTEXTS_PASS
             && struct_init_passes_required(parser_feature_flags)
@@ -5753,13 +5760,14 @@ fn build_graph(
     // Ordinary and generic calls both use convergence. Keep every relation
     // live across the repeated region, including late method lookup facts.
     CALLS_CONTEXTUAL_RESULTS_FINAL.register_kernel(&mut graph, kernels)?;
+    CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.repeat_pass_range(
         hir_capacity
             .max(1)
             .saturating_mul(CALL_INFERENCE_ROUND_FACTOR)
             .saturating_add(1),
         METHODS_MARK_CALL_KEYS_INFERENCE.name,
-        CALLS_CONTEXTUAL_RESULTS_FINAL.name,
+        CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT.name,
     )?;
     VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -6466,6 +6474,7 @@ fn build_graph(
         ],
     )?;
     CALLS_EXPLICIT_APPLICATIONS_VALIDATE.register_kernel(&mut graph, kernels)?;
+    CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.add_buffer_copy_pass(
         STATUS_READBACK_PASS,
         CompilerPhase::TypeCheck,
@@ -8265,6 +8274,21 @@ mod tests {
             slot(resource("call_const_claim_lookup_next")),
             "simultaneously bound const-claim index rows must not alias",
         );
+        for (producer, admission) in [
+            (CALLS_EXPLICIT_APPLICATIONS_BIND, CALLS_EXPLICIT_CONSTANTS_ADMIT),
+            (CALLS_CONST_CLAIM_INDEX_BUILD, CALLS_CONST_ENVIRONMENT_PUBLISH),
+            (CALLS_CONTEXTUAL_RESULT_REQUESTS, CALLS_CONTEXT_CONSTANTS_ADMIT),
+            (CALLS_CONTEXTUAL_RESULTS_FINAL, CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT),
+            (CALLS_EXPLICIT_APPLICATIONS_VALIDATE, CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT),
+        ] {
+            assert_eq!(
+                graph.pass_id(producer.name).unwrap().index() + 1,
+                graph.pass_id(admission.name).unwrap().index(),
+                "binding readers load {} directly after {}",
+                admission.name,
+                producer.name,
+            );
+        }
         assert_ne!(
             slot(resource("call_arg_row_scan_block_sum")),
             slot(resource("call_arg_row_scan_prefix_a")),

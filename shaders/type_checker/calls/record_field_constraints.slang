@@ -147,7 +147,7 @@ void infer_record_field_constraints(uint node, uint declaration)
         }
     }
     call_context_arg_mask[node] = type_mask;
-    if (!publish_context_constants<ScopedCheckedTypeGraph>(node, constants, constant_mask, gParams.n_tokens))
+    if (!publish_context_constants<ScopedCheckedTypeGraph, DeferredContextConstantAdmission>(node, constants, constant_mask, gParams.n_tokens))
     { record_min_token_error(status, token, 6u, 0x474e0001u); return; }
     call_context_constant_mask[node] = constant_mask;
     call_context_owner_by_token[token] = node;

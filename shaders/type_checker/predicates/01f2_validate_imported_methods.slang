@@ -125,22 +125,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
     { publish(method, owner, ARITY_MISMATCH); return; }
     if (method_receiver_mode(method) != receiver)
     { publish(method, owner, SIGNATURE_MISMATCH); return; }
-    if (!signature_matches(dependency_member_word(method_base + 7u),
-        method_return_type(method), owner, true))
-    { publish(method, owner, SIGNATURE_MISMATCH); return; }
-
+    // Step 0 checks the return type; step k checks member k - 1 when it is a
+    // parameter of this method. One inlined signature matcher serves both.
     uint checked = 0u;
-    for (uint ordinal = 0u; ordinal < count; ordinal++)
+    [loop]
+    for (uint step = 0u; step <= count; step++)
     {
-        uint member = (start + ordinal) * SEMANTIC_INTERFACE_MEMBER_WORDS;
-        if (dependency_member_word(member + 1u) != 1u ||
-            dependency_member_word(member + 9u) != symbol) continue;
-        uint parameter = method_param_for_ordinal(method, dependency_member_word(member + 8u));
-        if (!method_param_lookup_row_valid(parameter) ||
-            !signature_matches(dependency_member_word(member + 7u),
-                method_param_type(parameter), owner, false))
+        uint expected = dependency_member_word(method_base + 7u);
+        uint actual = method_return_type(method);
+        if (step != 0u)
+        {
+            uint member = (start + step - 1u) * SEMANTIC_INTERFACE_MEMBER_WORDS;
+            if (dependency_member_word(member + 1u) != 1u ||
+                dependency_member_word(member + 9u) != symbol) continue;
+            uint parameter = method_param_for_ordinal(method, dependency_member_word(member + 8u));
+            if (!method_param_lookup_row_valid(parameter))
+            { publish(method, owner, SIGNATURE_MISMATCH); return; }
+            expected = dependency_member_word(member + 7u);
+            actual = method_param_type(parameter);
+        }
+        if (!signature_matches(expected, actual, owner, step == 0u))
         { publish(method, owner, SIGNATURE_MISMATCH); return; }
-        checked++;
+        if (step != 0u) checked++;
     }
     if (checked != parameter_count)
     { publish(method, owner, ARITY_MISMATCH); return; }
