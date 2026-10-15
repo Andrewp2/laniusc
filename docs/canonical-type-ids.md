@@ -499,15 +499,17 @@ The `ct_*` tables of the generated project at scale 1:
 
 The per-row outputs, at about 8.5 MB, are now most of what remains.
 
-With the validator on, the generated project shows:
+With the validator on, the generated project, the stdlib and the
+option-results probe match a pinned generics-gpu build from before
+compaction (`tools/pin_laniusc.py`):
 
-- 201 live records;
-- no duplicates, broken chains, inconsistent facts, unpublished or pending
-  states, or missed merges.
+- the same live records and resolved rows (201 and 295 on the generated
+  project);
+- no false or missed merges, bridge mismatches, duplicates, broken chains,
+  inconsistent facts, or unpublished or pending states.
 
-The validator's `false_merges` counts (133 on the generated project, 14 on
-the option-results probe and 1,516 on the stdlib) still need a comparison
-against a pinned build from before compaction (`tools/pin_laniusc.py`).
+Every generics matrix probe also shows no false or missed merges and no
+bridge mismatches.
 
 Record IDs depend on atomic order, so the old and new kernels cannot be
 compared buffer for buffer. The CPU replay compare of captured `01_intern`
