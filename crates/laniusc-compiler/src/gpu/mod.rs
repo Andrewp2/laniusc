@@ -8,6 +8,8 @@ pub mod compiler_graph;
 pub mod debug;
 /// Global device, queue, and pipeline-cache management.
 pub mod device;
+/// Debug capture of one dispatch's inputs and outputs for offline replay.
+pub(crate) mod dispatch_capture;
 /// Environment flag parsing helpers for GPU infrastructure.
 pub mod env;
 /// Compiler-wide registry of reflected pipelines prepared before job timing.
