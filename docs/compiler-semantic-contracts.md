@@ -1242,9 +1242,10 @@ the other argument claims. The provider does not add HIR buffers to other graph
 consumers or weaken complete type equality.
 
 Array dimensions are parser-owned facts even when a literal's element type is
-pending. `array_shape_context.slang` walks matching literal/pattern array levels,
-materializes the complete leaf once under the accepted environment, and wraps
-that leaf in the actual dimensions. The resulting relation is optional literal
+pending. `calls/03k_project_argument_contexts.slang` walks matching
+literal/pattern array levels by canonical ID, substitutes the element pattern
+once under the accepted environment, and wraps the result in the actual
+dimensions. The resulting relation is optional literal
 context. It does not replace the declaration pattern or publish accepted claims.
 Complete matching still rejects inconsistent dimensions, element types, and
 repeated parameters. An empty outer array cannot infer an unknown inner

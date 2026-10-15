@@ -89,6 +89,10 @@ public static const uint CT_COUNT_FRONTIER = 5u;  // [5], [6]: ping-pong frontie
 public static const uint CT_COUNT_FINAL = 7u;     // nonzero: pending candidates become UNKNOWN
 public static const uint CT_COUNT_LIBRARY = 8u;   // job identity of local declarations
 public static const uint CT_COUNT_UNIT = 9u;
+// Nonzero: candidates were interned ahead of the early stage
+// (dependencies/14a), so its 03_rearm re-arms every interned candidate;
+// round 0 of 01_intern clears it.
+public static const uint CT_COUNT_EARLY_REARM = 10u;
 public static const uint CT_COUNT_WORDS = 16u;
 
 // Interning rounds per job: a candidate still pending at the limit becomes

@@ -1010,6 +1010,11 @@ impl GpuTypeChecker {
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                // Imported alias targets substitute before the early stage.
+                bind_groups.calls.substitution.record_clear(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.clear_ahead_of_pages.done");
+                }
                 // Each page interns its signature types while it is resident.
                 let intern_page = |encoder: &mut wgpu::CommandEncoder| {
                     record_canonical_types(
@@ -1100,6 +1105,11 @@ impl GpuTypeChecker {
                     record_each_dependency_page(device, queue, encoder, pages, materialize_alias_targets)?;
                 } else {
                     materialize_alias_targets(encoder)?;
+                }
+                // Every page has contributed its targets: realize them.
+                bind_groups.calls.substitution.record_alias_targets(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.alias_targets.done");
                 }
             }
             if aliases_required {
@@ -1228,8 +1238,8 @@ impl GpuTypeChecker {
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }
-            if let Some(producer) = &bind_groups.type_instances.materialize_applications {
-                producer.record(encoder)?;
+            if let Some(closure) = &bind_groups.type_instances.source_field_closure {
+                closure.record(encoder)?;
             }
             if let Some(index) = &bind_groups.type_instances.index_generated_applications {
                 index.record(encoder)?;
@@ -1673,9 +1683,11 @@ impl GpuTypeChecker {
                         ContextConstantProducer::RecordContexts,
                     )?;
                 }
+                if let Some(operation) = &bind_groups.calls.materialize_return_types {
+                    operation.record(encoder)?;
+                }
+                bind_groups.calls.call_field_closure.record(encoder)?;
                 for operation in [
-                    &bind_groups.calls.materialize_return_types,
-                    &bind_groups.calls.expand_application_fields,
                     &bind_groups.calls.materialize_match_payloads,
                     &bind_groups.calls.return_type_index,
                     &bind_groups.calls.return_imported_fields,
@@ -2135,9 +2147,37 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
             if hir_items.body_specialization.is_some() {
-                for (required_feature, operation) in
-                    &bind_groups.semantic_projection.body_specialization
+                let projection = &bind_groups.semantic_projection;
+                for (index, (required_feature, operation)) in
+                    projection.body_specialization.iter().enumerate()
                 {
+                    if index == projection.body_canonical_split {
+                        // The body passes from here on read the IDs of the
+                        // specialized rows.
+                        record_canonical_types(
+                            device,
+                            queue,
+                            encoder,
+                            &projection.canonical_types,
+                            CanonicalStage::Body,
+                            &self.canonical_counts_readback,
+                            &self.canonical_validation_readback,
+                            canonical_scale,
+                        )?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.canonical.body.done");
+                        }
+                        bind_groups.calls.substitution.record_body_start(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_start.done");
+                        }
+                    }
+                    if index == projection.body_field_closure_at {
+                        projection.body_field_closure.record(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_field_closure.done");
+                        }
+                    }
                     if *required_feature != 0 && parser_feature_flags & required_feature == 0 {
                         continue;
                     }

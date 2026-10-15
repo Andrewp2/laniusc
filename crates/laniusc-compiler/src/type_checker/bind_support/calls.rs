@@ -221,9 +221,13 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
             "type_checker/calls/03e_materialize_return_types",
         )?,
-        expand_application_fields: inference(
-            compiler_graph::CALLS_EXPAND_APPLICATION_FIELDS_PASS,
-            "type_checker/calls/03e1_expand_application_fields",
+        call_field_closure: substitution_passes::FieldClosureOperations::new(
+            device,
+            graph,
+            resources,
+            passes,
+            &substitution_passes::CALL_FIELD_CLOSURE,
+            hir_dispatch_args,
         )?,
         project_argument_contexts: Some(substitution_passes::ArgumentContextOperations {
             call_envs: ComputeOperation::indirect(
@@ -263,7 +267,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         return_imported_fields: optional_generic(
             compiler_graph::CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            "type_checker/type/instances/02e_project_imported_fields",
+            compiler_graph::IMPORTED_FIELDS_KERNEL,
             &token_dispatch_args,
         )?,
         project_expression_types: inference(

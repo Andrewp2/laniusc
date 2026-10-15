@@ -334,18 +334,18 @@ pub(super) const TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS: &str =
     "type_check.type_instances.validate_aggregate_access";
 pub(super) const TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS: &str =
     "type_check.type_instances.index_closed_applications";
-pub(super) const TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS: &str =
-    "type_check.type_instances.materialize_applications";
 pub(super) const TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS: &str =
     "type_check.type_instances.index_generated_applications";
+/// Imported field projection over canonical IDs, outside body specialization
+/// (whose rewritten rows keep stale IDs until the late canonical stage).
+pub(super) const IMPORTED_FIELDS_KERNEL: &str =
+    "type_checker/substitution/07_project_imported_fields";
 pub(super) const TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS: &str =
     "type_check.type_instances.project_imported_fields";
 pub(super) const CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS: &str =
     "type_check.calls.bind_method_receiver_environment";
 pub(super) const CALLS_MATERIALIZE_RETURN_TYPES_PASS: &str =
     "type_check.calls.materialize_return_types";
-pub(super) const CALLS_EXPAND_APPLICATION_FIELDS_PASS: &str =
-    "type_check.calls.expand_application_fields";
 pub(super) const CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS: &str = "type_check.calls.argument_contexts";
 pub(super) const CALLS_PROJECT_LITERAL_CONTEXTS_PASS: &str = "type_check.calls.literal_contexts";
 pub(super) const CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS: &str =
@@ -504,6 +504,14 @@ pub(super) const CALL_INFERENCE_REPEAT_WARNING_ROUNDS: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
     "type_checker/type/instances/00g_specialize_checked_references";
+/// The body canonical stage and the substitution restart follow this body
+/// specialization pass: the body passes after it read the specialized
+/// rows' IDs.
+pub(super) const BODY_CANONICAL_AFTER_PASS: &str = "type_check.body_specialization.bindings";
+/// The body field closure (`substitution_passes::BODY_FIELD_CLOSURE`)
+/// follows this body specialization pass.
+pub(super) const BODY_FIELD_CLOSURE_AFTER_PASS: &str =
+    "type_check.body_specialization.index_applications";
 // Accepted value facts and application edges share one lexical substitution.
 // Keep function/parameter signature columns symbolic: sibling calls have their
 // own accepted environments, even when they target the body being replayed.
@@ -4548,7 +4556,7 @@ fn build_graph(
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
     let (substitution_records, substitution_argument_words) =
-        super::substitution_passes::substitution_canonical_extra(hir_rows);
+        super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
     let canonical_records = super::canonical_passes::register_canonical_passes(
         &mut graph,
         kernels,
@@ -4564,6 +4572,16 @@ fn build_graph(
             extra_records: substitution_records,
             extra_argument_words: substitution_argument_words,
         },
+    )?;
+    // Substitution state, cleared ahead of the dependency pages: imported
+    // alias targets substitute before the early stage.
+    super::substitution_passes::register_substitution_state(
+        &mut graph,
+        kernels,
+        token_rows,
+        hir_rows,
+        canonical_records,
+        canonical_scale,
     )?;
     add_dependency_type_index_passes(
         &mut graph,
@@ -4613,18 +4631,18 @@ fn build_graph(
         "member_result_field_ordinal" => member_result_field_ordinal: Write,
         "member_result_field_node" => member_result_field_node: Write,
     ];
-    let member_result_overrides = reflected_bindings![
+    let application_bindings = reflected_bindings![
         "canonical_type_roots" => dependency_canonical_type_roots: Read,
+        "type_native_word_count" => _type_native_word_count: Write,
+        "type_native_scalar_identity" => _type_native_scalar_identity: Write,
     ];
-    let imported_field_overrides = reflected_bindings![
+    // The canonical-ID imported field projection also realizes field rows.
+    let imported_field_ct_overrides = reflected_bindings![
         "canonical_type_roots" => dependency_canonical_type_roots: Read,
         "imported_field_ref_tag" => _imported_field_ref_tag: Write,
         "imported_field_ref_payload" => _imported_field_ref_payload: Write,
         "imported_field_name_hash" => _imported_field_name_hash: Write,
         "imported_layout_groups" => _imported_layout_groups: Write,
-    ];
-    let application_bindings = reflected_bindings![
-        "canonical_type_roots" => dependency_canonical_type_roots: Read,
         "type_native_word_count" => _type_native_word_count: Write,
         "type_native_scalar_identity" => _type_native_scalar_identity: Write,
     ];
@@ -4757,12 +4775,19 @@ fn build_graph(
         ResourceDomain::Tokens, kernels, DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.kernel,
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "imported_type_alias_target" => imported_type_alias_target: ReadWrite,
+        ],
+    )?;
+    graph.add_indirect_dispatch(DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, "path_dispatch_args")?;
+    super::substitution_passes::register_alias_target_passes(
+        &mut graph,
+        kernels,
+        reflected_bindings![
             "type_native_word_count" => _type_native_word_count: Write,
             "type_native_scalar_identity" => _type_native_scalar_identity: Write,
             "imported_type_alias_target" => imported_type_alias_target: ReadWrite,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, "path_dispatch_args")?;
     if let Some(type_alias_normalized_ref) = type_alias_normalized_ref {
         graph.add_kernel_pass_by_name(
             TYPE_ALIASES_NORMALIZE.name, CompilerPhase::TypeCheck, ResourceDomain::Tokens,
@@ -4967,9 +4992,7 @@ fn build_graph(
                 ResourceDomain::HirNodes,
                 kernels,
                 "type_checker/type/instances/03_member_results",
-                reflected_bindings![
-                    "canonical_type_roots" => dependency_canonical_type_roots: Read,
-                ],
+                application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
                 TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS,
@@ -5010,7 +5033,7 @@ fn build_graph(
                 ResourceDomain::HirNodes,
                 kernels,
                 "type_checker/type/instances/04a3_nested_struct_contexts",
-                member_result_overrides,
+                application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
                 DEPENDENCY_STRUCT_LITERALS_PROJECT.name,
@@ -5180,13 +5203,7 @@ fn build_graph(
     // the decl refs and ahead of the closed application index.
     super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
-    super::substitution_passes::register_substitution_passes(
-        &mut graph,
-        kernels,
-        token_rows,
-        hir_rows,
-        canonical_records,
-    )?;
+    super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
     super::match_passes::register_match_storage(&mut graph, token_rows)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
@@ -5202,21 +5219,17 @@ fn build_graph(
             TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
             "token_active_dispatch_args",
         )?;
-        graph.add_kernel_pass_by_name(
-            TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::Tokens,
+        super::substitution_passes::register_field_closure_passes(
+            &mut graph,
             kernels,
-            "type_checker/type/instances/02d_materialize_applications",
+            &super::substitution_passes::SOURCE_FIELD_CLOSURE,
+            ResourceDomain::Tokens,
+            "token_active_dispatch_args",
             reflected_bindings![
                 "canonical_type_roots" => dependency_canonical_type_roots: Read,
                 "type_native_word_count" => _type_native_word_count: Write,
                 "type_native_scalar_identity" => _type_native_scalar_identity: Write,
             ],
-        )?;
-        graph.add_indirect_dispatch(
-            TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
-            "token_active_dispatch_args",
         )?;
         graph.add_kernel_pass_by_name(
             TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS,
@@ -5235,8 +5248,8 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Tokens,
             kernels,
-            "type_checker/type/instances/02e_project_imported_fields",
-            imported_field_overrides,
+            IMPORTED_FIELDS_KERNEL,
+            imported_field_ct_overrides,
         )?;
         graph.add_indirect_dispatch(
             TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
@@ -5260,9 +5273,7 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/03_member_results",
-        reflected_bindings![
-            "canonical_type_roots" => dependency_canonical_type_roots: Read,
-        ],
+        application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
@@ -5690,12 +5701,6 @@ fn build_graph(
             &application_bindings[..],
         ),
         (
-            CALLS_EXPAND_APPLICATION_FIELDS_PASS,
-            "type_checker/calls/03e1_expand_application_fields",
-            ResourceDomain::HirNodes,
-            &application_bindings[..],
-        ),
-        (
             CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
             "type_checker/calls/03k2_materialize_match_payloads",
             ResourceDomain::HirNodes,
@@ -5709,9 +5714,9 @@ fn build_graph(
         ),
         (
             CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            "type_checker/type/instances/02e_project_imported_fields",
+            IMPORTED_FIELDS_KERNEL,
             ResourceDomain::Tokens,
-            imported_field_overrides,
+            imported_field_ct_overrides,
         ),
         (
             TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
@@ -5723,7 +5728,7 @@ fn build_graph(
             TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
             "type_checker/type/instances/03_member_results",
             ResourceDomain::HirNodes,
-            member_result_overrides,
+            application_bindings,
         ),
         (
             TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
@@ -5786,6 +5791,17 @@ fn build_graph(
         if name == CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS {
             super::substitution_passes::register_call_env_pass(&mut graph, kernels)?;
         }
+        if name == CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS {
+            // The field closure of the return types and argument contexts.
+            super::substitution_passes::register_field_closure_passes(
+                &mut graph,
+                kernels,
+                &super::substitution_passes::CALL_FIELD_CLOSURE,
+                ResourceDomain::HirNodes,
+                "hir_active_dispatch_args",
+                &application_bindings[..],
+            )?;
+        }
         if name == CALLS_MATERIALIZE_RETURN_TYPES_PASS && struct_init_passes_required(parser_feature_flags) {
             graph.add_kernel_pass_by_name(
                 CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS,
@@ -5814,7 +5830,7 @@ fn build_graph(
                 (
                     CALLS_RECORD_NESTED_CONTEXTS_PASS,
                     "type_checker/type/instances/04a3_nested_struct_contexts",
-                    &member_result_overrides[..],
+                    &application_bindings[..],
                 ),
                 (
                     CALLS_RECORD_IMPORTED_FIELDS_PASS,
@@ -5919,9 +5935,7 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/03_member_results",
-        reflected_bindings![
-            "canonical_type_roots" => dependency_canonical_type_roots: Read,
-        ],
+        application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
@@ -5940,7 +5954,7 @@ fn build_graph(
         ResourceDomain::Tokens,
         kernels,
         "type_checker/type/instances/04b_struct_init_substitute",
-        &[],
+        application_bindings,
     )?;
     TYPE_INSTANCES_ARRAY_RETURN_REFS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_ARRAY_LITERAL_RETURN_REFS.register_kernel(&mut graph, kernels)?;
@@ -6177,6 +6191,8 @@ fn build_graph(
     )?;
     // Call checking retains the symbolic signature. Only the native body
     // environment is rebound here, after all call and return validation.
+    // The body canonical stage and substitution restart follow the bindings
+    // (BODY_CANONICAL_AFTER_PASS).
     graph.add_kernel_pass_by_name(
         "type_check.body_specialization.graph",
         CompilerPhase::TypeCheck,
@@ -6252,18 +6268,13 @@ fn build_graph(
             ResourceDomain::Tokens,
         ),
         (
-            "type_check.body_specialization.materialize_applications",
-            "type_checker/type/instances/02d_materialize_applications",
-            ResourceDomain::Tokens,
-        ),
-        (
             "type_check.body_specialization.index_generated_applications",
             "type_checker/type/instances/02c_index_closed_applications",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.imported_fields",
-            "type_checker/type/instances/02e_project_imported_fields",
+            IMPORTED_FIELDS_KERNEL,
             ResourceDomain::Tokens,
         ),
         (
@@ -6340,20 +6351,34 @@ fn build_graph(
             domain,
             kernels,
             kernel,
-            if kernel == "type_checker/type/instances/02d_materialize_applications" {
-                application_bindings
-            } else if kernel == "type_checker/type/instances/02e_project_imported_fields" {
-                imported_field_overrides
+            if kernel == IMPORTED_FIELDS_KERNEL {
+                imported_field_ct_overrides
             } else if kernel == "type_checker/type/instances/03a_member_receivers" {
                 member_receiver_overrides
             } else if kernel == "type_checker/type/instances/03_member_results"
                 || kernel == "type_checker/type/instances/04a3_nested_struct_contexts"
+                || kernel == "type_checker/type/instances/04b_struct_init_substitute"
             {
-                member_result_overrides
+                // Field types under a receiver application are realized.
+                application_bindings
             } else {
                 &[]
             },
         )?;
+        if name == BODY_CANONICAL_AFTER_PASS {
+            super::canonical_passes::register_canonical_body_passes(&mut graph, kernels)?;
+            super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
+        }
+        if name == BODY_FIELD_CLOSURE_AFTER_PASS {
+            super::substitution_passes::register_field_closure_passes(
+                &mut graph,
+                kernels,
+                &super::substitution_passes::BODY_FIELD_CLOSURE,
+                ResourceDomain::Tokens,
+                "token_active_dispatch_args",
+                &application_bindings[..],
+            )?;
+        }
     }
     graph.add_kernel_pass_by_name(
         SEMANTIC_CALLS_PROJECT_PASS,

@@ -352,7 +352,7 @@ result.
     one readback per stage).
   - Empty indirect rounds dispatch zero workgroups.
 
-### Stages: dependency pages, early and late
+### Stages: dependency pages, early, body and late
 
 Each job interns into one table, so an ID stays valid for the whole job.
 
@@ -373,6 +373,17 @@ Each job interns into one table, so an ID stays valid for the whole job.
   signature node (`canonical_type_roots`); function types (7) are
   `CT_UNKNOWN`, as rows have no function kind. An imported row and the
   signature node it came from therefore share one ID.
+- **Imported alias targets** (dependencies/14a, substitution/08). A job
+  with dependency pages clears the substitution state right after the
+  canonical clear. On each page, 14a interns every imported alias use's leaf
+  row on demand and substitutes the alias signature under it (`ct_subst`),
+  publishing a pending target ID. After the last page, 08 realizes the
+  targets as rows (twice with retry, then 08a reports a busy row). Alias
+  normalization then rewrites rows 14a interned, so 14a sets
+  `CT_COUNT_EARLY_REARM` and the early `03_rearm` re-arms every interned
+  candidate, as a body replay's late one does; round 0 of `01_intern` clears
+  the flag. An unchanged key adopts its existing record. The post-early
+  substitution clear drops the rows 08 recorded.
 - **Early** (`03_rearm`, then rounds). It is recorded unconditionally after
   the declaration refs (`type_instances.decl_refs_for_bindings`) and before
   `type_instances.index_closed_applications`. It interns the source rows and
@@ -384,14 +395,21 @@ Each job interns into one table, so an ID stays valid for the whole job.
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
+- **Body** (`03_rearm`, then rounds). A job with body specialization
+  records it right after `body_specialization.bindings`, then restarts the
+  substitution state (`substitution.body.clear`, `substitution.body.seed`),
+  so the body passes after it read the IDs of the specialized rows. It
+  costs those jobs one readback when its rounds fit one batch; other jobs
+  record nothing new.
 - **Body replay re-interns.** A replay job (`body_specialization_inputs`
   has a type or constant argument) rewrites rows and constants after the
   early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
-  `[i32; 2]` in place. Its late `03_rearm` therefore re-arms every
+  `[i32; 2]` in place. Its body and late `03_rearm` therefore re-arm every
   candidate. A candidate adopts an equal published record or takes a new
   one, so unchanged rows keep their IDs, and the early records stay valid
-  for the references that still name them. A consumer recorded between the replay and the
-  late stage would read early IDs of rewritten rows; none exists yet.
+  for the references that still name them. The substitution restart drops
+  the rows the job-start seed recorded for rewritten candidates
+  (`ct_row_of`); generated rows are stable, so the seed finds them again.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a
   false or missed merge (and the bridge self-check as a mismatch).
@@ -416,11 +434,11 @@ IDs 1..17, and empty rows are `CT_NONE`, so neither takes a record.
 
 Worst-case bounds:
 
-- **Records:** 32 + 2 × (candidates + dependency nodes) + 4 × constant rows
-  + the substitution producers' records (`substitution_canonical_extra`).
+- **Records:** 32 + 3 × candidates + 2 × dependency nodes + 6 × constant
+  rows + the substitution producers' records (`substitution_canonical_extra`).
   - A candidate or node allocates at most once per stage it is re-armed in:
-    the early stage, and the late stage again after a body replay.
-  - Count classes add at most 4 records per constant row.
+    the early stage, and the body and late stages again after a body replay.
+  - Count classes add at most 6 records per constant row.
   - A lost race wastes its record. When the lanes of one wave intern the
     same new key, all of them miss and all of them allocate. The losers'
     records stay stored, but no slot or row references them, as with an
@@ -428,7 +446,8 @@ Worst-case bounds:
     key, which the per-attempt bound already counts.
 - **Slots:** the next power of two at or above 2 × records.
 - **Arguments:** the checked argument storage, plus 2 words per row and 1
-  word per projection, twice (a replay builds every candidate's key again),
+  word per projection, three times (a replay builds every candidate's key
+  in its body and late stages),
   plus 2 words per dependency node (a signature tree has fewer edges than
   nodes), plus the substitution producers' words.
 - **Frontier:** two lists of max(candidates, largest page's nodes).
@@ -619,10 +638,26 @@ identity walker once. Source constants and canonical constants share one
 `materialize_checked_constant` site (through the canonical view's graph),
 array lengths of new rows use the same site, and every lookup (the caller's
 root rows, the checked index, then the lane's new rows) shares one equality
-site per domain. Expansion (`expand_materialized_instance.slang`) passes its
-visited rows as root candidates, so a field equal to a visited row resolves
-to that row and the visited check is an ID comparison. 03e1 went from 474k
-to 90k inlined instructions this way.
+site per domain. 03e1 went from 474k to 90k inlined instructions this way.
+The per-root expansion that used it (type/instances/02d and
+`expand_materialized_instance.slang`) is gone: the field closure over
+canonical IDs (`ct_expand.slang`) replaced it on the source and body paths.
+
+Field types under a receiver are substituted by canonical ID as well.
+`ct_scoped_reference` (`substitution/ct_scoped.slang`) takes the field's
+declared ID, substitutes it under the receiver application's ID, and
+realizes the result as a checked row (`ct_realize`). It replaces the scoped
+hash, equality and index walkers of `checked_scoped_reference` in
+type/instances/03, 04a3 and 04b. Readers that need only a type's shape do
+not realize anything:
+- 03k1 substitutes a struct-literal field context with `ct_subst` and reads
+  the array element by ID;
+- 05b compares element types with `checked_types_equal_ids`.
+
+Each reader calls `ct_intern_checked` from one site, in a loop over its
+operands, because every call site inlines the whole interner. The scoped
+hash index (type/instances/02b, 02c) stays for the walkers' remaining
+consumers.
 
 ### Constant claims: typed and count identity
 

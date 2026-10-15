@@ -5,17 +5,12 @@
 # Recorded 2026-10-14 from the 7ae8a250 shaders.
 176066 tests/typed_constant_identity_array_constraints
 96192 type_checker/program_evidence/entries/53_select_work
-74920 type_checker/type/instances/02d_materialize_applications
-71627 type_checker/calls/03e1_expand_application_fields
-69762 type_checker/dependencies/14a_materialize_alias_targets
 66830 type_checker/program_evidence/entries/59_admit_implementation_proofs
 63720 type_checker/program_evidence/entries/54_admit_substitutions
 58882 tests/typed_constant_identity_inference
 57083 tests/owned_type_constraints_fixed
 56881 tests/typed_constant_identity_requests
-56004 type_checker/type/instances/02e_project_imported_fields
 55035 type_checker/program_evidence/entries/59_admit_assumption_proofs
 51283 type_checker/program_evidence/native_layout/entries/05_materialize_proof_value
 51215 tests/owned_type_constraints_overlap
 46696 type_checker/program_evidence/entries/02_09_admit_implementations
-41797 type_checker/type/instances/05b_array_literal_return_refs
