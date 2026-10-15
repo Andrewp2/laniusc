@@ -1829,7 +1829,15 @@ pub(crate) fn finish_readback_map(
             ));
             next_progress += Duration::from_millis(500);
         }
-        std::thread::sleep(Duration::from_millis(1));
+        // Most readbacks complete within a few hundred microseconds of the
+        // first poll. A 1 ms sleep made every one of them cost at least
+        // 1.1 ms, which added up to tens of milliseconds per warm job. Long
+        // waits back off to 1 ms.
+        std::thread::sleep(if elapsed < Duration::from_millis(20) {
+            Duration::from_micros(50)
+        } else {
+            Duration::from_millis(1)
+        });
     }
 }
 
