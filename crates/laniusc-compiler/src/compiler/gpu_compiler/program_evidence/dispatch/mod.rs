@@ -645,12 +645,12 @@ impl GpuProgramEvidence {
         Ok(None)
     }
 
-    /// The GPU-planned rounds replace the stepped loop unless
-    /// LANIUS_PEV_STEPPED_SOLVER=1, a dispatch capture is selected (the CPU
-    /// replay tool reads ordinary parameter blocks), or a test fault hook
-    /// needs a host boundary between steps.
+    /// LANIUS_PEV_SOLVER_WAVES=1 replaces the stepped loop with GPU-planned
+    /// rounds, unless a dispatch capture is selected (the CPU replay tool
+    /// reads ordinary parameter blocks) or a test fault hook needs a host
+    /// boundary between steps.
     fn solver_waves(&self, packet: &GpuPacket) -> Result<bool> {
-        if crate::gpu::env::env_bool_truthy("LANIUS_PEV_STEPPED_SOLVER", false)
+        if !crate::gpu::env::env_bool_truthy("LANIUS_PEV_SOLVER_WAVES", false)
             || std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_some()
         {
             return Ok(false);
@@ -965,12 +965,14 @@ impl GpuProgramEvidence {
         )?;
         let mut retry = false;
         // LANIUS_DEBUG_SOLVER_WAVES=1 prints each solve's wall time and
-        // counter readbacks.
+        // counter readbacks, and each capacity retry.
+        let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false);
         let solve_started = std::time::Instant::now();
         SOLVER_READBACKS.with(|count| count.set(0));
         let mut attempts = 0u32;
         loop {
             attempts += 1;
+            let attempt_started = std::time::Instant::now();
             let Some(stopped) =
                 self.run_solver_attempt(packet, &layout, &plan, &submission, capacities, retry)?
             else {
@@ -979,10 +981,24 @@ impl GpuProgramEvidence {
             let Some(grown) = stopped.capacity_retry(packet.packet.proof_store.layout())? else {
                 break;
             };
+            if debug {
+                let table = stopped.receipt[2] as usize;
+                eprintln!(
+                    "[lanius-pev] capacity retry {attempts}: table={table} capacity={} required={} \
+                     grown={} obligations={} reserved={:?} admitted={:?} attempt={:.3}ms",
+                    packet.packet.proof_store.layout().slices[table].capacity,
+                    stopped.receipt[4],
+                    grown[table],
+                    submission.obligation_span.count,
+                    stopped.reserved,
+                    stopped.admitted,
+                    attempt_started.elapsed().as_secs_f64() * 1000.0,
+                );
+            }
             capacities = grown;
             retry = true;
         }
-        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false) {
+        if debug {
             eprintln!(
                 "[lanius-pev] solve: {} attempts={attempts} readbacks={} wall={:.3}ms",
                 if self.solver_waves(packet)? { "waves" } else { "stepped" },
