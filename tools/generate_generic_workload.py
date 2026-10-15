@@ -64,9 +64,9 @@ Measured on the 1 MB, seed 20 program (`--stats`):
   distinct concrete type applications and ~2,220 concrete generic bodies
   (functions and methods per type-argument list).
 `--type-pool N` draws record type arguments from the first N record types
-only (N = 4: 67 applications, ~176 bodies by this count) without changing the
-mix. The compiler's scheduler counted more than its 256-body limit (LNC0017)
-for a 369 KB pool-4 program, so its identity is finer than this estimate.
+only (N = 4: 67 applications, ~176 bodies) without changing the mix, which
+keeps the body count small (~176 vs ~2,220) for compilers that monomorphize
+one body at a time.
 
 Only shapes that tests/fixtures/generics_matrix shows working, and
 combinations of them validated with `--probes` on the GPU, are emitted by

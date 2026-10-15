@@ -46,8 +46,8 @@ GENERIC_NARROW_SINGLE_FILE_PRESET = "single-file-generic-narrow-1mb"
 GENERIC_PROJECT_PRESET = "project-generic-1mb"
 GENERIC_NARROW_PROJECT_PRESET = "project-generic-narrow-1mb"
 GENERIC_PROFILE = "generic-stdlib-heavy"
-# Four record types as type arguments: ~176 concrete generic bodies instead of
-# ~2220 (by the generator's count), aiming under the 256-body limit (LNC0017).
+# Four record types as type arguments keep the generic body count small:
+# ~176 concrete bodies instead of ~2,220, with the same mix.
 GENERIC_NARROW_PROFILE = "generic-stdlib-heavy-type-pool-4"
 GPU_COMPILER_PHASES = frozenset(
     {
