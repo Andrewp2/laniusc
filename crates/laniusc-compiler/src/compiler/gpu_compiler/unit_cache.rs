@@ -335,6 +335,11 @@ impl CompiledSourcePackUnit {
                     .len()
                     .saturating_mul(std::mem::size_of::<crate::type_checker::CheckedCallOwner>()),
             );
+        if let Some(spans) = &self.owner_spans {
+            bytes = bytes
+                .saturating_add(std::mem::size_of::<crate::type_checker::CheckedOwnerSpans>())
+                .saturating_add(spans.resident_bytes());
+        }
         bytes = bytes.saturating_add(
             self.x86_call_hirs
                 .len()
@@ -712,6 +717,7 @@ mod tests {
     fn unit(library_id: u32) -> CompiledSourcePackUnit {
         CompiledSourcePackUnit {
             body_native_layouts: None,
+            owner_spans: None,
             interface: GpuSemanticInterfaceArtifact {
                 version: crate::compiler::GPU_SEMANTIC_INTERFACE_VERSION,
                 library_id,

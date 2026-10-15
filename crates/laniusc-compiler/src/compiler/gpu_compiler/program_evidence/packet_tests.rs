@@ -25,6 +25,7 @@ const UNUSED_BODY: u32 = 300;
 fn empty_unit(key: [u32; 2]) -> CompiledSourcePackUnit {
     CompiledSourcePackUnit {
         body_native_layouts: None,
+        owner_spans: None,
         interface: GpuSemanticInterfaceArtifact {
             version: GPU_SEMANTIC_INTERFACE_VERSION,
             library_id: key[0],
