@@ -11,7 +11,6 @@
 131184 type_checker/calls/03a_collect_row_args
 109925 type_checker/dependencies/15a_collect_methods
 97883 type_checker/methods/05_validate_keys
-96192 type_checker/program_evidence/entries/53_select_work
 83411 codegen/lir/semantic/scatter
 79610 type_checker/calls/03a4b_contextual_result_requests
 74920 type_checker/type/instances/02d_materialize_applications

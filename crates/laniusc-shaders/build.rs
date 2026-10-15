@@ -357,6 +357,8 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/program_evidence/entries/44_validate_prerequisite_normalization"
             | "type_checker/program_evidence/entries/46_hash_normalized_goals"
             | "type_checker/program_evidence/entries/52_resolve_work"
+            | "type_checker/program_evidence/entries/53_select_implementations"
+            | "type_checker/program_evidence/entries/53_select_assumptions"
             | "type_checker/program_evidence/entries/53_select_work"
             | "type_checker/program_evidence/entries/54_admit_substitutions"
             | "type_checker/program_evidence/entries/59_admit_implementation_proofs"

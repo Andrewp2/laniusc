@@ -498,7 +498,15 @@ impl GpuProgramEvidence {
                 // Only requirements whose children just normalized may link.
                 // A prior already-notified representative is handled on GPU.
                 record(&mut commands, 57, requirements)?;
-                record(&mut commands, 53, work)?;
+                solver.record_selection(
+                    &self.device,
+                    &mut commands,
+                    work,
+                    &self.storage,
+                    &packet.input,
+                    &packet.output,
+                    resources,
+                )?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {
                     return Ok(Some(progress));

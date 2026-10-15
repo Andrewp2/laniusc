@@ -165,11 +165,26 @@ public void pps_stage_resolve_work(uint local)
     if (pev_bind_scratch(local, row, status)) status = pps_resolve_work(row);
     pev_batch_failure(status);
 }
+// Work selection phases; see pps_select_implementation.
+public void pps_stage_select_implementations(uint local, bool coarse)
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_select_implementation(row, coarse);
+    pev_batch_failure(status);
+}
+public void pps_stage_select_assumptions(uint local)
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_select_assumption(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_select_work(uint local)
 {
     uint row; EvidenceStatus status;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
-    if (pev_bind_scratch(local, row, status)) status = pps_select_work(row);
+    if (pev_bind_scratch(local, row, status)) status = pps_select_finish(row);
     pev_batch_failure(status);
 }
 public void pps_stage_admit_substitutions(uint local)

@@ -12,6 +12,7 @@ import type_checker.program_evidence.proof_term_graph;
 import type_checker.owned_type_constraint_contract;
 import type_checker.owned_type_constraint_engine;
 import type_checker.scoped_type_hash;
+import thread_scratch;
 
 public static const uint PPS_WORK_SELECTED = 10u;
 public static const uint PPS_WORK_FAILED = 11u;
@@ -188,44 +189,143 @@ public EvidenceStatus pps_write_substitution(uint implementation, uint goal, uin
         uint4(implementation, bindings, span.y, goal)) ? pev_ok() : pev_invalid(1u, substitution, implementation);
 }
 
-public EvidenceStatus pps_select_work(uint work)
+// INTERIM (P7): selection takes the exact implementation, then a caller
+// assumption, then the generic implementation. It runs as four dispatches per
+// chunk of at most THREAD_SCRATCH_SLOTS work rows (ProofKernels::
+// record_selection), so no kernel inlines more than one search: the exact
+// match (phase 53), the assumption search, the generic match (phase 65, the
+// same kernel), then the finish. A work's slot carries the outcome between
+// them in SCRATCH_PPS_SELECTION: (outcome, selected row, work, serial), the
+// work key, and the matched constraint state, whose frame also stays put
+// because later phases skip a work that is already selected. Each later
+// phase checks the tag and fails the batch with detail 191 on a slot this
+// chunk's exact match did not write; the finish consumes the slot.
+public static const uint PPS_SELECT_PHASE_EXACT = 53u;
+public static const uint PPS_SELECT_PHASE_GENERIC = 65u;
+static const uint PPS_SELECT_CONSUMED = 0u;
+static const uint PPS_SELECT_SKIP = 1u;
+static const uint PPS_SELECT_EXACT_NONE = 2u;
+static const uint PPS_SELECT_ASSUMPTION_NONE = 3u;
+static const uint PPS_SELECT_IMPLEMENTATION = 4u;
+static const uint PPS_SELECT_READY = 5u;
+static const uint PPS_SELECT_MISSING = 6u;
+
+void pps_selection_save(uint work, uint outcome, uint selected)
+{ scratch_set_cell(SCRATCH_PPS_SELECTION, uint4(outcome, selected, work, proof_store_params.serial)); }
+// The outcome a previous phase of this chunk recorded for `work`, or a lost
+// handoff (chunk-order coupling broke) as a loud batch failure.
+EvidenceStatus pps_selection_load(uint work, out uint outcome, out uint selected)
 {
+    uint4 cell = scratch_cell(SCRATCH_PPS_SELECTION);
+    outcome = cell.x; selected = cell.y;
+    return cell.z == work && cell.w == proof_store_params.serial && outcome != PPS_SELECT_CONSUMED ?
+        pev_ok() : pev_invalid(191u, work, outcome);
+}
+void pps_selection_save_state(OwnedConstraintState state)
+{
+    uint cell = SCRATCH_PPS_SELECTION + 2u;
+    scratch_set_cell(cell, uint4(state.status.state, state.status.detail,
+        state.status.required, state.status.available));
+    scratch_set_cell(cell + 1u, uint4(state.limits.depth, state.limits.pair_visits,
+        state.limits.occurs_visits, state.limits.substitution_steps));
+    scratch_set_cell(cell + 2u, uint4(state.work.pair_visits, state.work.occurs_visits,
+        state.work.substitution_steps, state.identity_capacity));
+    scratch_set_cell(cell + 3u, state.counts);
+    scratch_set_cell(cell + 4u, state.bound);
+    scratch_set_cell(cell + 5u, state.seen);
+    scratch_set_cell(cell + 6u, uint4(state.owners, state.node_capacities));
+    scratch_set_cell(cell + 7u, uint4(state.overlap, state.finished, state.frame, 0u));
+}
+OwnedConstraintState pps_selection_load_state()
+{
+    uint cell = SCRATCH_PPS_SELECTION + 2u;
+    OwnedConstraintState state;
+    uint4 value = scratch_cell(cell);
+    state.status.state = value.x; state.status.detail = value.y;
+    state.status.required = value.z; state.status.available = value.w;
+    value = scratch_cell(cell + 1u);
+    state.limits.depth = value.x; state.limits.pair_visits = value.y;
+    state.limits.occurs_visits = value.z; state.limits.substitution_steps = value.w;
+    value = scratch_cell(cell + 2u);
+    state.work.pair_visits = value.x; state.work.occurs_visits = value.y;
+    state.work.substitution_steps = value.z; state.identity_capacity = value.w;
+    state.counts = scratch_cell(cell + 3u);
+    state.bound = scratch_cell(cell + 4u);
+    state.seen = scratch_cell(cell + 5u);
+    value = scratch_cell(cell + 6u);
+    state.owners = value.xy; state.node_capacities = value.zw;
+    value = scratch_cell(cell + 7u);
+    state.overlap = value.x; state.finished = value.y; state.frame = value.z;
+    return state;
+}
+
+// Exact (coarse false) or generic implementation match. The exact phase
+// admits the work row; the generic phase runs only for works that neither an
+// exact implementation nor an assumption selected.
+public EvidenceStatus pps_select_implementation(uint work, bool coarse)
+{
+    uint4 key; uint outcome; uint selected;
+    if (coarse)
+    {
+        EvidenceStatus handoff = pps_selection_load(work, outcome, selected);
+        if (handoff.state != PEV_VALID) return handoff;
+        if (outcome != PPS_SELECT_ASSUMPTION_NONE) return pev_ok();
+        key = scratch_cell(SCRATCH_PPS_SELECTION + 1u);
+    }
+    else
+    {
+        uint4 selection; uint4 completion; uint4 source;
+        if (!pps_work_read(work, key, selection, completion, source)) return pev_invalid(1u, work, PPS_WORK);
+        if (key.z == PPS_WORK_ALIAS)
+        { pps_selection_save(work, PPS_SELECT_SKIP, PEV_INVALID); return pev_ok(); }
+        if (key.z != PPS_WORK_NEW || key.w != work) return pev_invalid(70u, work, key.z);
+        scratch_set_cell(SCRATCH_PPS_SELECTION + 1u, key);
+    }
+    uint implementation; OwnedConstraintState state;
+    EvidenceStatus status = pps_find_implementation(key.y, coarse, implementation, state);
+    if (status.state != PEV_VALID) return status;
+    if (implementation != PEV_INVALID) pps_selection_save_state(state);
+    pps_selection_save(work, implementation != PEV_INVALID ? PPS_SELECT_IMPLEMENTATION :
+        coarse ? PPS_SELECT_MISSING : PPS_SELECT_EXACT_NONE, implementation);
+    return pev_ok();
+}
+public EvidenceStatus pps_select_assumption(uint work)
+{
+    uint outcome; uint selected;
+    EvidenceStatus status = pps_selection_load(work, outcome, selected);
+    if (status.state != PEV_VALID || outcome != PPS_SELECT_EXACT_NONE) return status;
+    uint4 key = scratch_cell(SCRATCH_PPS_SELECTION + 1u);
+    uint assumption;
+    status = pps_find_assumption(key.x, key.y, assumption);
+    if (status.state != PEV_VALID) return status;
+    pps_selection_save(work, assumption != PEV_INVALID ? PPS_SELECT_READY : PPS_SELECT_ASSUMPTION_NONE,
+        assumption);
+    return pev_ok();
+}
+public EvidenceStatus pps_select_finish(uint work)
+{
+    uint outcome; uint found;
+    EvidenceStatus status = pps_selection_load(work, outcome, found);
+    if (status.state != PEV_VALID) return status;
+    scratch_set_word(SCRATCH_PPS_SELECTION, 0u, PPS_SELECT_CONSUMED);
+    if (outcome == PPS_SELECT_SKIP) return pev_ok();
+    if (outcome < PPS_SELECT_IMPLEMENTATION || outcome > PPS_SELECT_MISSING)
+        return pev_invalid(191u, work, outcome);
     uint4 key; uint4 selected; uint4 completion; uint4 source;
     if (!pps_work_read(work, key, selected, completion, source)) return pev_invalid(1u, work, PPS_WORK);
-    if (key.z == PPS_WORK_ALIAS) return pev_ok();
-    if (key.z != PPS_WORK_NEW || key.w != work) return pev_invalid(70u, work, key.z);
-    uint implementation = PEV_INVALID; OwnedConstraintState state;
-    EvidenceStatus status = pev_ok();
     uint event = 0u;
-    // Keep one matcher call site while preserving exact implementation,
-    // caller assumption, then generic implementation selection priority.
-    [loop]
-    for (uint phase = 0u; phase < 2u; phase++)
+    if (outcome == PPS_SELECT_READY)
     {
-        status = pps_find_implementation(key.y, phase != 0u, implementation, state);
-        if (status.state != PEV_VALID) return status;
-        if (implementation != PEV_INVALID || phase != 0u) break;
-        uint assumption;
-        status = pps_find_assumption(key.x, key.y, assumption);
-        if (status.state != PEV_VALID) return status;
-        if (assumption != PEV_INVALID)
-        {
-            key.z = PPS_WORK_READY;
-            selected = uint4(PEV_INVALID, assumption, 0u, 0u);
-            event = PPS_EVENT_READY;
-            break;
-        }
+        key.z = PPS_WORK_READY; selected = uint4(PEV_INVALID, found, 0u, 0u); event = PPS_EVENT_READY;
     }
-    if (event == 0u && implementation == PEV_INVALID)
-    {
-        key.z = PPS_WORK_MISSING; event = PPS_EVENT_FAILED;
-    }
+    if (outcome == PPS_SELECT_MISSING) { key.z = PPS_WORK_MISSING; event = PPS_EVENT_FAILED; }
     if (event == 0u)
     {
+        OwnedConstraintState state = pps_selection_load_state();
         uint substitution;
-        status = pps_write_substitution(implementation, key.y, key.x, state, substitution);
+        status = pps_write_substitution(found, key.y, key.x, state, substitution);
         if (status.state != PEV_VALID) return status;
-        key.z = PPS_WORK_SELECTED; selected = uint4(implementation, substitution, 0u, 0u);
+        key.z = PPS_WORK_SELECTED; selected = uint4(found, substitution, 0u, 0u);
     }
     // One work write and one enqueue site for the ready, missing and
     // selected outcomes (a missing work rewrites only its key).
