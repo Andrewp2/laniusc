@@ -45,8 +45,12 @@ impl NativeProgramSession {
         // Facts contain no object. Freeze the complete exact source inventory
         // before any pending unit can be released or native bodies reused.
         let inputs = units.iter().map(|facts| CatalogInput { facts }).collect::<Vec<_>>();
+        let start = std::time::Instant::now();
         let catalog = FrozenCatalog::freeze(&inputs)?;
+        let frozen = std::time::Instant::now();
+        crate::gpu::trace::record_host_span("host.compiler", "program_evidence.catalog_freeze", start, frozen);
         let gpu = GpuProgramEvidence::admit(workspace.checkout(), catalog.clone())?;
+        crate::gpu::trace::record_host_span("host.compiler", "program_evidence.admit", frozen, std::time::Instant::now());
         let mut packet = gpu.new_packet()?;
         for snapshot in &catalog.snapshots {
             packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;

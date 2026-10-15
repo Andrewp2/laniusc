@@ -922,11 +922,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         } else {
             Default::default()
         };
+        finish_timer.stamp("unit_facts");
         let body_native_layouts = object_request
             .and_then(LoweringObjectRequest::body_specialization)
             .map(|specialization| self.type_checker.retained_body_native_layouts(device, queue, specialization))
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
+        finish_timer.stamp("body_native_layouts");
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
             body_native_layouts,
             semantic_interface,
