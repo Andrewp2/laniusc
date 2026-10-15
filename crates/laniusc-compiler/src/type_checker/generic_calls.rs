@@ -858,6 +858,43 @@ pub(super) fn rows<T>(
         .collect())
 }
 
+/// `rows` for several independent tables in one readback round trip.
+pub(super) fn rows_batch<const N: usize>(
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    requests: [(&LaniusBuffer<u32>, &[u32], usize); N],
+) -> Result<[Vec<Vec<u32>>; N]> {
+    let mut regions = Vec::new();
+    for (buffer, indices, stride_words) in requests {
+        for &index in indices {
+            regions.push(ReadbackRegion::from_buffer(
+                buffer,
+                u64::from(index) * stride_words as u64 * 4,
+                stride_words * 4,
+                "generic call rows",
+            )?);
+        }
+    }
+    let mut bytes = readback
+        .read_regions(device, queue, &regions, "generic call rows")?
+        .into_iter();
+    Ok(requests.map(|(_, indices, _)| {
+        bytes.by_ref().take(indices.len()).map(|bytes| words(&bytes)).collect()
+    }))
+}
+
+/// The distinct valid rows of a one-word table among `values`: lookups a later
+/// filter may need, read early so they share an earlier round trip.
+fn in_table_rows(values: impl Iterator<Item = u32>, table: &LaniusBuffer<u32>) -> Vec<u32> {
+    let rows = table.byte_size / 4;
+    values
+        .filter(|&value| value != INVALID && (value as usize) < rows)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 /// Source metadata is read once while the immutable caller snapshot is resident.
 /// The GPU has already assigned declaration ownership, source ordinals, and
 /// composed substitution slots; this reader only copies that correspondence.
@@ -2169,22 +2206,33 @@ pub(super) fn read_unit_facts(
         local_names.iter().all(|&name| name != INVALID),
         "local generic call has no declaration-name token"
     );
-    let local_counts = rows(
+    // Each level of this lookup chain is one readback. Rows that only a later
+    // filter may need (the declaration of every local name, then its HIR and
+    // public index) ride along with the level that can address them, so the
+    // chain is five round trips at most instead of twelve.
+    let generic_counts_by_token = inputs.buffer("type_decl_generic_param_count_by_owner_token");
+    let constant_counts_by_token = inputs.buffer("type_decl_const_param_count_by_owner_token");
+    let decl_by_name_token = inputs.buffer("decl_id_by_name_token");
+    let decl_hir_node = inputs.buffer("decl_hir_node");
+    let public_decl_by_hir = inputs.buffer("interface_public_decl_index_by_hir");
+    let candidate_names = in_table_rows(local_names.iter().copied(), decl_by_name_token);
+    let [local_counts, local_constant_rows, method_rows, name_decls] = rows_batch(
         &readback,
         device,
         queue,
-        inputs.buffer("type_decl_generic_param_count_by_owner_token"),
-        &local_names,
-        1,
+        [
+            (generic_counts_by_token, &local_names[..], 1),
+            (constant_counts_by_token, &local_names[..], 1),
+            (inputs.buffer("method_decl_method_row"), &local_names[..], 1),
+            (decl_by_name_token, &candidate_names[..], 1),
+        ],
     )?;
-    let local_constant_rows = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("type_decl_const_param_count_by_owner_token"),
-        &local_names,
-        1,
-    )?;
+    let name_decls = candidate_names
+        .iter()
+        .copied()
+        .zip(name_decls.iter().map(|row| row[0]))
+        .collect::<BTreeMap<_, _>>();
+    let candidate_decls = in_table_rows(name_decls.values().copied(), decl_hir_node);
     let mut local_constant_counts = local_tokens
         .iter()
         .copied()
@@ -2198,47 +2246,42 @@ pub(super) fn read_unit_facts(
     // Methods inherit the impl's parameters even when their own signature
     // declares none. Read declaration-owned metadata; receiver constraints
     // have already been solved by the GPU into the call context relation.
-    let method_rows = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("method_decl_method_row"),
-        &local_names,
-        1,
-    )?;
     let method_ids: Vec<_> = method_rows
         .iter()
         .filter_map(|row| (row[0] != INVALID).then_some(row[0]))
         .collect();
-    let method_cores = rows(
+    let [method_cores, method_signatures, candidate_hirs] = rows_batch(
         &readback,
         device,
         queue,
-        inputs.buffer("compact_method_cores"),
-        &method_ids,
-        4,
+        [
+            (inputs.buffer("compact_method_cores"), &method_ids[..], 4),
+            (inputs.buffer("compact_method_signatures"), &method_ids[..], 4),
+            (decl_hir_node, &candidate_decls[..], 1),
+        ],
     )?;
-    let method_signatures = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("compact_method_signatures"),
-        &method_ids,
-        4,
-    )?;
+    let decl_hirs = candidate_decls
+        .iter()
+        .copied()
+        .zip(candidate_hirs.iter().map(|row| row[0]))
+        .collect::<BTreeMap<_, _>>();
+    let candidate_hirs = in_table_rows(decl_hirs.values().copied(), public_decl_by_hir);
     let impl_ids: Vec<_> = method_cores.iter().map(|row| row[2]).collect();
-    let impl_cores = rows(
+    let [impl_cores, candidate_symbols] = rows_batch(
         &readback,
         device,
         queue,
-        inputs.buffer("compact_hir_core"),
-        &impl_ids,
-        4,
+        [
+            (inputs.buffer("compact_hir_core"), &impl_ids[..], 4),
+            (public_decl_by_hir, &candidate_hirs[..], 1),
+        ],
     )?;
-    let token_capacity = inputs
-        .buffer("type_decl_generic_param_count_by_owner_token")
-        .byte_size
-        / 4;
+    let hir_symbols = candidate_hirs
+        .iter()
+        .copied()
+        .zip(candidate_symbols.iter().map(|row| row[0]))
+        .collect::<BTreeMap<_, _>>();
+    let token_capacity = generic_counts_by_token.byte_size / 4;
     // Implementation owners are unnamed. Their payload.b stores a dense
     // trait-bound HIR row, so only the core's source anchor keys owner counts.
     let impl_tokens = impl_cores
@@ -2249,21 +2292,14 @@ pub(super) fn read_unit_facts(
             Ok(core[2])
         })
         .collect::<Result<Vec<_>>>()?;
-    let impl_counts = rows(
+    let [impl_counts, impl_constant_counts] = rows_batch(
         &readback,
         device,
         queue,
-        inputs.buffer("type_decl_generic_param_count_by_owner_token"),
-        &impl_tokens,
-        1,
-    )?;
-    let impl_constant_counts = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("type_decl_const_param_count_by_owner_token"),
-        &impl_tokens,
-        1,
+        [
+            (generic_counts_by_token, &impl_tokens[..], 1),
+            (constant_counts_by_token, &impl_tokens[..], 1),
+        ],
     )?;
     let methods: BTreeMap<_, _> = method_ids
         .iter()
@@ -2310,59 +2346,49 @@ pub(super) fn read_unit_facts(
                 && !local_method_symbols.contains_key(token)
         })
         .unzip();
-    let local_decls = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("decl_id_by_name_token"),
-        &local_names,
-        1,
-    )?
-    .iter()
-    .map(|row| row[0])
-    .collect::<Vec<_>>();
+    let local_decls = local_names
+        .iter()
+        .map(|name| {
+            name_decls.get(name).copied().ok_or_else(|| {
+                anyhow!("local generic call name {name} exceeds its declaration table")
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     ensure!(
         local_decls.iter().all(|&decl| decl != INVALID),
         "local generic call has no declaration identity"
     );
-    let local_hirs = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("decl_hir_node"),
-        &local_decls,
-        1,
-    )?
-    .iter()
-    .map(|row| row[0])
-    .collect::<Vec<_>>();
+    let local_hirs = local_decls
+        .iter()
+        .map(|decl| {
+            decl_hirs
+                .get(decl)
+                .copied()
+                .ok_or_else(|| anyhow!("local generic call declaration {decl} exceeds its HIR table"))
+        })
+        .collect::<Result<Vec<_>>>()?;
     ensure!(
         local_hirs.iter().all(|&hir| hir != INVALID),
         "local generic call has no declaration HIR"
     );
-    let local_symbols = rows(
-        &readback,
-        device,
-        queue,
-        inputs.buffer("interface_public_decl_index_by_hir"),
-        &local_hirs,
-        1,
-    )?;
     let mut local_symbols = local_tokens
         .iter()
         .copied()
-        .zip(local_symbols.iter())
-        .map(|(token, row)| {
-            (
+        .zip(&local_hirs)
+        .map(|(token, hir)| {
+            let symbol = hir_symbols.get(hir).copied().ok_or_else(|| {
+                anyhow!("local generic call HIR {hir} exceeds its public declaration table")
+            })?;
+            Ok((
                 token,
-                if row[0] == INVALID {
+                if symbol == INVALID {
                     0x4000_0000 | token
                 } else {
-                    row[0]
+                    symbol
                 },
-            )
+            ))
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<Result<BTreeMap<_, _>>>()?;
     local_symbols.extend(local_method_symbols);
     for &token in &local_tokens {
         specialization_symbols.insert(token, 0x4000_0000 | token);
