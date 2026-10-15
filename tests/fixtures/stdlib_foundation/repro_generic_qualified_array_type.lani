@@ -1,3 +1,5 @@
+// stdlib-root: repro_nested_result_root
+// expect: 0
 import core::nested_result;
 fn main() -> i32 {
     let values: [core::nested_result::BoundLength<[str; 3]>; 1] = [core::nested_result::length()];

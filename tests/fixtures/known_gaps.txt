@@ -8,3 +8,7 @@
 # a FAIL-* status, or `any`), owner, reason.
 
 tests/fixtures/stdlib_foundation/repro_ordinary_string_comparison.lani  LNC0006  TBD  `!=` between a str array element and a string literal is unsupported; see tests/fixtures/generics_backlog/README.md
+tests/fixtures/stdlib_foundation/repro_string_length.lani  LNC0027  P2  `str.len()` has no length metadata to read yet; docs/stdlib-foundation.md dependency 15
+tests/fixtures/stdlib_foundation/typed_constant_transport/explicit-constant-source-v1/dependency_body_local_const.lani  LNC0016  P3  a body-local const as a generic argument needs lexical ordinary-value lookup before nominal binding; must fail explicitly until then (its README)
+tests/fixtures/stdlib_foundation/typed_constant_transport/explicit-constant-source-v1/dependency_computed_const.lani  LNC0027  P3  a computed const as a generic argument needs checked constexpr values before explicit binding; must fail explicitly until then (its README)
+tests/fixtures/stdlib_foundation/repro_imported_generic_payload_nested_match.lani  LNC0016  P4  a `match` directly as a match-arm result is not accepted syntax yet; docs/stdlib-foundation.md dependency 64

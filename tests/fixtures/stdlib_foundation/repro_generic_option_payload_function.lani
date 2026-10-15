@@ -1,3 +1,5 @@
+// stdlib-root: repro_generic_option_payload_function_root
+// expect: 0
 module app::main;
 import core::maybe_payload;
 fn main() -> i32 {

@@ -1,3 +1,5 @@
+// stdlib-root: repro_imported_nested_return_root
+// expect: 0
 module app::main;
 import core::nested;
 fn main() -> i32 {
