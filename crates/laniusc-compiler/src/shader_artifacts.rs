@@ -1,11 +1,36 @@
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 const UNKNOWN: &str = "unknown";
-const ARTIFACT_ROOT: &str = env!("LANIUS_SHADER_ARTIFACT_ROOT");
+/// Where this build wrote its kernels.
+const BUILD_ARTIFACT_ROOT: &str = env!("LANIUS_SHADER_ARTIFACT_ROOT");
+/// Names another directory of kernels for this binary to load at run time.
+///
+/// Kernels are read from disk, so a copied binary still runs whatever kernels the
+/// build directory holds now. Pointing this at a snapshot of the kernels the binary
+/// was built with (see tools/pin_laniusc.py) pins the pair.
+pub(crate) const ARTIFACT_ROOT_ENV: &str = "LANIUS_SHADER_ARTIFACT_ROOT";
 
-/// Resolves a generated shader artifact path under the build-time artifact root.
+/// The kernel directory: `LANIUS_SHADER_ARTIFACT_ROOT` when set and non-empty,
+/// read once per process, else the build's own directory.
+pub(crate) fn artifact_root() -> &'static Path {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    ROOT.get_or_init(|| resolve_artifact_root(std::env::var_os(ARTIFACT_ROOT_ENV)))
+}
+
+fn resolve_artifact_root(override_root: Option<OsString>) -> PathBuf {
+    override_root
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(BUILD_ARTIFACT_ROOT))
+}
+
+/// Resolves a generated shader artifact path under the kernel directory.
 pub(crate) fn artifact_path(file: &str) -> PathBuf {
-    PathBuf::from(ARTIFACT_ROOT).join(file)
+    artifact_root().join(file)
 }
 
 /// Returns the stable keys of every compiled shader below `prefix`.
@@ -31,10 +56,10 @@ pub(crate) fn shader_keys(prefix: &str) -> std::io::Result<Vec<String>> {
         Ok(())
     }
 
-    let root = PathBuf::from(ARTIFACT_ROOT);
+    let root = artifact_root();
     let directory = root.join(prefix);
     let mut keys = Vec::new();
-    visit(&root, &directory, &mut keys)?;
+    visit(root, &directory, &mut keys)?;
     keys.sort_unstable();
     Ok(keys)
 }
@@ -84,7 +109,7 @@ fn parse_u64(value: &str) -> Option<u64> {
 }
 
 fn value(key: &str) -> Option<String> {
-    let text = std::fs::read_to_string(PathBuf::from(ARTIFACT_ROOT).join("artifacts.env")).ok()?;
+    let text = std::fs::read_to_string(artifact_root().join("artifacts.env")).ok()?;
     text.lines().find_map(|line| {
         let (candidate, value) = line.split_once('=')?;
         (candidate == key).then(|| value.to_string())

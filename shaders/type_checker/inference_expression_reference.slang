@@ -6,6 +6,11 @@ import primitive_types;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> literal_context_type_by_hir;
+// An includer may check a call result's closure itself, for example by
+// canonical ID after interning it; the default walks the checked graph.
+#ifndef INFERENCE_CALL_RESULT_CLOSED
+#define INFERENCE_CALL_RESULT_CLOSED(instance) checked_instance_is_closed(instance)
+#endif
 bool inference_value_reference(uint node, out uint tag, out uint payload, bool current_match = true)
 {
     static const uint INVALID_REF = 0xffffffffu;
@@ -49,7 +54,7 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
             if (tag == 0u)
             {
                 uint instance = call_result_instance[root];
-                if (!checked_instance_is_closed(instance)) return false;
+                if (!INFERENCE_CALL_RESULT_CLOSED(instance)) return false;
                 tag = 3u; payload = instance;
             }
         }
