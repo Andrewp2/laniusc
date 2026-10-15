@@ -1,0 +1,4 @@
+trait Get<T> { fn get(self) -> T; }
+struct Cell<T> { value: T }
+impl<T> Get<T> for Cell<T> { fn get(self) -> T { return self.value; } }
+fn main() -> i32 { let c: Cell<i32> = Cell { value: 42 }; return c.get(); }
