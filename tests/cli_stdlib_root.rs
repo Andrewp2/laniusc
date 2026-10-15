@@ -61,6 +61,7 @@ fn cli_stdlib_root_x86_sample_build_command_runs_stdio_print_i32() {
         &output,
     );
 
+    common::x86_jumps::assert_x86_64_file_jumps_stay_in_functions(exe.path());
     let mut permissions = fs::metadata(exe.path())
         .unwrap_or_else(|err| panic!("stat emitted executable {}: {err}", exe.path().display()))
         .permissions();
@@ -116,6 +117,7 @@ fn compile_and_run_x86_sample_with_stdlib_root(sample_name: &str) -> String {
     let output = common::codegen_command_output_with_timeout(&context, &mut command);
     common::assert_command_success(&context, &output);
 
+    common::x86_jumps::assert_x86_64_file_jumps_stay_in_functions(&exe_path);
     let mut permissions = fs::metadata(&exe_path)
         .unwrap_or_else(|err| panic!("stat emitted executable {}: {err}", exe_path.display()))
         .permissions();

@@ -7,7 +7,7 @@ fn run_in_directory(bytes: &[u8], directory: &std::path::Path, name: &str) -> st
     use std::os::unix::fs::PermissionsExt;
 
     let exe_path = directory.join(name);
-    std::fs::write(&exe_path, bytes).expect("write native ELF");
+    common::x86_jumps::write_x86_64_executable(&exe_path, bytes).expect("write native ELF");
     let mut permissions = std::fs::metadata(&exe_path)
         .expect("stat native ELF")
         .permissions();
@@ -28,7 +28,7 @@ fn run_in_directory_with_stdin(
     use std::os::unix::fs::PermissionsExt;
 
     let exe_path = directory.join(name);
-    std::fs::write(&exe_path, bytes).expect("write native ELF");
+    common::x86_jumps::write_x86_64_executable(&exe_path, bytes).expect("write native ELF");
     let mut permissions = std::fs::metadata(&exe_path)
         .expect("stat native ELF")
         .permissions();
@@ -129,7 +129,7 @@ fn std_fs_raw_paths_accept_more_than_255_total_bytes_on_x86() {
             .expect("create long path parents");
 
         let exe_path = run_dir.path().join("std_fs_long_path");
-        std::fs::write(&exe_path, &bytes).expect("write native ELF");
+        common::x86_jumps::write_x86_64_executable(&exe_path, &bytes).expect("write native ELF");
         let mut permissions = std::fs::metadata(&exe_path).unwrap().permissions();
         permissions.set_mode(0o700);
         std::fs::set_permissions(&exe_path, permissions).unwrap();
@@ -253,7 +253,7 @@ fn std_file_write_all_bytes_to_path_reports_host_failures_on_x86() {
             common::TempArtifact::new("laniusc_std_file_write_all_fault", "run_dir", None);
         std::fs::create_dir(run_dir.path()).expect("create write fault directory");
         let executable = run_dir.path().join("std_file_write_all_path_failure");
-        std::fs::write(&executable, &bytes).expect("write fault ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write fault ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat fault ELF")
             .permissions();
@@ -430,7 +430,7 @@ fn std_file_read_to_end_into_buffer_handles_host_failures_on_x86() {
         std::fs::write(run_dir.path().join("input.bin"), [b'x'; 37])
             .expect("write read fault input");
         let executable = run_dir.path().join("std_file_read_to_end_failure");
-        std::fs::write(&executable, &bytes).expect("write read fault ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write read fault ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat read fault ELF")
             .permissions();
@@ -706,7 +706,7 @@ fn std_file_wide_decimal_reports_host_failures_on_x86() {
             std::fs::write(run_dir.path().join("valid.txt"), valid)
                 .expect("write valid wide decimal input");
             let executable = run_dir.path().join(name);
-            std::fs::write(&executable, &bytes).expect("write wide fault ELF");
+            common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write wide fault ELF");
             let mut permissions = std::fs::metadata(&executable)
                 .expect("stat wide fault ELF")
                 .permissions();
@@ -829,7 +829,7 @@ fn std_file_write_i32_decimal_reports_host_failures_on_x86() {
         let run_dir = common::TempArtifact::new("laniusc_std_file_write_fault", "run_dir", None);
         std::fs::create_dir(run_dir.path()).expect("create write fault directory");
         let executable = run_dir.path().join("std_file_write_decimal_failure");
-        std::fs::write(&executable, &bytes).expect("write decimal fault ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write decimal fault ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat decimal fault ELF")
             .permissions();
@@ -895,7 +895,7 @@ fn std_file_write_u32_decimal_reports_host_failures_on_x86() {
             common::TempArtifact::new("laniusc_std_file_write_u32_fault", "run_dir", None);
         std::fs::create_dir(run_dir.path()).expect("create unsigned write fault directory");
         let executable = run_dir.path().join("std_file_write_u32_decimal_failure");
-        std::fs::write(&executable, &bytes).expect("write unsigned fault ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write unsigned fault ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat unsigned fault ELF")
             .permissions();
@@ -960,7 +960,7 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
         std::fs::create_dir(run_dir.path()).expect("create fault run directory");
         std::fs::write(run_dir.path().join("valid.txt"), "42").expect("write valid decimal");
         let executable = run_dir.path().join("std_file_decimal_failure");
-        std::fs::write(&executable, &bytes).expect("write decimal fault ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write decimal fault ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat decimal fault ELF")
             .permissions();
@@ -1017,7 +1017,7 @@ fn std_file_read_u32_decimal_or_handles_host_failures_on_x86() {
         std::fs::write(run_dir.path().join("valid.txt"), "42")
             .expect("write valid unsigned decimal");
         let executable = run_dir.path().join("std_file_u32_decimal_failure");
-        std::fs::write(&executable, &bytes).expect("write unsigned read fault ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write unsigned read fault ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat unsigned read fault ELF")
             .permissions();

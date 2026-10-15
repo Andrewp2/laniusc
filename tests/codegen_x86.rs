@@ -408,6 +408,7 @@ fn main() -> i32 {
 }
 
 fn assert_x86_64_elf_header(bytes: &[u8]) {
+    common::x86_jumps::assert_x86_64_jumps_stay_in_functions("x86_64 ELF", bytes);
     const ELF64_HEADER_SIZE: usize = 64;
     const ELF64_PROGRAM_HEADER_SIZE: usize = 56;
     const PT_LOAD: u32 = 1;
@@ -531,6 +532,146 @@ fn compile_source(context: &str, source: &str) -> Vec<u8> {
     .unwrap_or_else(|err| panic!("{context} should compile to x86_64: {err:?}"))
 }
 
+#[test]
+fn x86_if_else_whose_arms_all_return_branches_into_its_else_arm() {
+    // Neither arm reaches the join, so the ELSE row's jump to the join is in
+    // an unreachable block and emits nothing. The false edge must still land
+    // on the else arm, not on the stale target row of that ELSE.
+    assert_source_exit(
+        "if_else_both_return",
+        r#"
+fn pick(v: i32) -> i32 {
+    if (v <= 1) {
+        return 1;
+    } else {
+        return 42;
+    }
+}
+fn main() -> i32 { return pick(5); }
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_nested_if_else_whose_arms_all_return_reaches_the_inner_else() {
+    assert_source_exit(
+        "nested_else_status",
+        r#"
+type Id = u32;
+fn known(id: Id) -> bool { return id == 7 || id == 3; }
+fn has(id: Id) -> bool { return id == 100; }
+fn status(id: Id) -> u32 {
+    if (has(id)) {
+        return 0;
+    } else {
+        if (known(id)) {
+            return 1;
+        } else {
+            return 2;
+        }
+    }
+}
+fn main() -> i32 { if (status(7) != 1) { return 1; } return 42; }
+"#,
+        42,
+    );
+}
+
+/// A minimal executable shaped like laniusc's: one RX load segment at
+/// 0x400000 with code right after the headers, at the entry point 0x400078.
+fn jump_check_elf(code: &[u8]) -> Vec<u8> {
+    const BASE: u64 = 0x400000;
+    const CODE: u64 = 0x78;
+    let size = CODE + code.len() as u64;
+    let mut elf = Vec::new();
+    elf.extend_from_slice(b"\x7fELF\x02\x01\x01\x00");
+    elf.extend_from_slice(&[0; 8]);
+    elf.extend_from_slice(&2u16.to_le_bytes()); // ET_EXEC
+    elf.extend_from_slice(&62u16.to_le_bytes()); // EM_X86_64
+    elf.extend_from_slice(&1u32.to_le_bytes());
+    elf.extend_from_slice(&(BASE + CODE).to_le_bytes()); // entry
+    elf.extend_from_slice(&64u64.to_le_bytes()); // program headers
+    elf.extend_from_slice(&0u64.to_le_bytes()); // no section headers
+    elf.extend_from_slice(&0u32.to_le_bytes());
+    for half in [64u16, 56, 1, 0, 0, 0] {
+        elf.extend_from_slice(&half.to_le_bytes());
+    }
+    elf.extend_from_slice(&1u32.to_le_bytes()); // PT_LOAD
+    elf.extend_from_slice(&5u32.to_le_bytes()); // R + X
+    for word in [0u64, BASE, BASE, size, size, 0x1000] {
+        elf.extend_from_slice(&word.to_le_bytes());
+    }
+    assert_eq!(elf.len() as u64, CODE);
+    elf.extend_from_slice(code);
+    elf
+}
+
+/// An entry stub that calls one function at 0x400087 whose `je` has the
+/// given rel32 displacement from 0x40008f.
+fn jump_check_program(je_displacement: i32) -> Vec<u8> {
+    let mut code = vec![
+        0xe8, 0x0a, 0x00, 0x00, 0x00, // 0x400078 call 0x400087
+        0x89, 0xc7, // 0x40007d mov %eax,%edi
+        0xb8, 0x3c, 0x00, 0x00, 0x00, // 0x40007f mov $60,%eax
+        0x0f, 0x05, // 0x400084 syscall
+        0xc3, // 0x400086 ret
+        0x85, 0xff, // 0x400087 test %edi,%edi
+        0x0f, 0x84, // 0x400089 je rel32
+    ];
+    code.extend_from_slice(&je_displacement.to_le_bytes());
+    code.extend_from_slice(&[
+        0xb8, 0x2a, 0x00, 0x00, 0x00, // 0x40008f mov $42,%eax
+        0xc3, // 0x400094 ret
+    ]);
+    jump_check_elf(&code)
+}
+
+#[test]
+fn x86_jump_check_accepts_a_jump_inside_its_function() {
+    let check = common::x86_jumps::check_x86_64_jumps(&jump_check_program(5))
+        .unwrap()
+        .expect("an x86-64 executable");
+    assert_eq!(check.jumps, 1);
+    assert_eq!(check.functions, 2);
+    assert!(check.problems.is_empty(), "{:?}", check.problems);
+}
+
+#[test]
+fn x86_jump_check_rejects_a_jump_into_another_function() {
+    // je 0x40007d lands in the entry stub, not in the function at 0x400087.
+    let check = common::x86_jumps::check_x86_64_jumps(&jump_check_program(-0x12))
+        .unwrap()
+        .expect("an x86-64 executable");
+    assert_eq!(check.problems.len(), 1, "{:?}", check.problems);
+    assert!(
+        check.problems[0].contains("at 0x400089 leaves its function [0x400087, 0x400095)"),
+        "{:?}",
+        check.problems
+    );
+    // je 0x400087 lands on the function's own entry: the program would loop.
+    let check = common::x86_jumps::check_x86_64_jumps(&jump_check_program(-8))
+        .unwrap()
+        .expect("an x86-64 executable");
+    assert_eq!(check.problems.len(), 1, "{:?}", check.problems);
+    assert!(
+        check.problems[0]
+            .contains("at 0x400089 jumps back to its function's entry [0x400087, 0x400095)"),
+        "{:?}",
+        check.problems
+    );
+    // je 0x400090 lands inside the mov at 0x40008f.
+    let check = common::x86_jumps::check_x86_64_jumps(&jump_check_program(1))
+        .unwrap()
+        .expect("an x86-64 executable");
+    assert_eq!(check.problems.len(), 1, "{:?}", check.problems);
+    assert!(
+        check.problems[0].contains("targets 0x400090, which is not an instruction start"),
+        "{:?}",
+        check.problems
+    );
+}
+
 fn assert_source_exit(name: &str, source: &str, expected: i32) {
     let bytes = compile_source(&format!("x86 source {name}"), source);
 
@@ -590,7 +731,7 @@ fn run_x86_64_elf_output_in_dir(
     use std::os::unix::fs::PermissionsExt;
 
     let exe_path = dir.join(artifact_stem);
-    std::fs::write(&exe_path, bytes)
+    common::x86_jumps::write_x86_64_executable(&exe_path, bytes)
         .unwrap_or_else(|err| panic!("{context}: write native ELF {}: {err}", exe_path.display()));
     let mut permissions = std::fs::metadata(&exe_path)
         .unwrap_or_else(|err| panic!("{context}: stat native ELF {}: {err}", exe_path.display()))
@@ -618,7 +759,7 @@ fn run_x86_64_elf_output_in_dir_with_args(
     use std::os::unix::fs::PermissionsExt;
 
     let exe_path = dir.join(artifact_stem);
-    std::fs::write(&exe_path, bytes)
+    common::x86_jumps::write_x86_64_executable(&exe_path, bytes)
         .unwrap_or_else(|err| panic!("{context}: write native ELF {}: {err}", exe_path.display()));
     let mut permissions = std::fs::metadata(&exe_path)
         .unwrap_or_else(|err| panic!("{context}: stat native ELF {}: {err}", exe_path.display()))
@@ -9202,7 +9343,7 @@ fn main() -> i32 {
             "host_write",
             Some("elf"),
         );
-        std::fs::write(executable.path(), &bytes).expect("write raw-view test executable");
+        common::x86_jumps::write_x86_64_executable(executable.path(), &bytes).expect("write raw-view test executable");
         let mut permissions = std::fs::metadata(executable.path())
             .expect("stat raw-view test executable")
             .permissions();
@@ -9309,7 +9450,7 @@ fn main() -> i32 {
             )
         });
         let exe_path = run_dir.path().join("x86_source_pack_std_io_read_stdin");
-        std::fs::write(&exe_path, &bytes)
+        common::x86_jumps::write_x86_64_executable(&exe_path, &bytes)
             .unwrap_or_else(|err| panic!("write std::io stdin ELF {}: {err}", exe_path.display()));
         {
             use std::os::unix::fs::PermissionsExt;

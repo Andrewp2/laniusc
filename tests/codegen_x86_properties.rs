@@ -196,6 +196,7 @@ struct GeneratedX86ParameterIndexedAssignmentNames {
 }
 
 fn assert_x86_64_elf_header(bytes: &[u8]) {
+    common::x86_jumps::assert_x86_64_jumps_stay_in_functions("x86_64 ELF", bytes);
     assert!(bytes.len() >= 20, "ELF output too small: {}", bytes.len());
     assert_eq!(&bytes[0..4], b"\x7fELF");
     assert_eq!(bytes[4], 2, "ELF64 class");
