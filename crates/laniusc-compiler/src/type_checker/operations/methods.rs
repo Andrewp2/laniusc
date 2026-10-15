@@ -116,13 +116,14 @@ pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec = 
 .with_indirect_dispatch("method_token_dispatch_args");
 // Required members reached through a lexical `P: Trait` bound compete in the
 // same transaction, after local table candidates and before dependency pages.
+// One lane per call expression: the call owns the trait arguments' context.
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS: ReflectedComputeSpec =
     method_pass!(
         "offer_bound_members",
-        Calls,
+        HirNodes,
         "type_checker/methods/07a_offer_bound_members"
     )
-    .with_indirect_dispatch("method_token_dispatch_args");
+    .with_indirect_dispatch("method_hir_dispatch_args");
 pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
     method_pass!("resolve", HirNodes, "type_checker/methods/03/resolve")
         .with_indirect_dispatch("method_token_hir_dispatch_args");

@@ -2356,6 +2356,19 @@ pub(super) fn read_unit_facts(
             }
         }
     }
+    // A trait requirement owns a contract but no native target, so its calls
+    // are not retained. Their claims bind the trait's parameters, which the
+    // GPU checked against the bound's trait arguments (methods/07a).
+    let requirement_names = (0..declaration_count)
+        .filter(|&declaration| requirement_hirs.contains(&columns[15][declaration]))
+        .map(|declaration| columns[14][declaration])
+        .collect::<BTreeSet<_>>();
+    let requirement_tokens = local_tokens
+        .iter()
+        .zip(&local_names)
+        .filter(|(_, name)| requirement_names.contains(name))
+        .map(|(&token, _)| token)
+        .collect::<BTreeSet<_>>();
     // Only free functions use the public declaration table. Private method
     // identities are still their existing function-start-token symbols.
     let (local_tokens, local_names): (Vec<_>, Vec<_>) = local_tokens
@@ -2427,7 +2440,8 @@ pub(super) fn read_unit_facts(
                 if generic_parameter_count == 0 && local_constant_counts[&function_start_token] == 0
                 {
                     ensure!(
-                        !calls_with_claims.contains(&call_hir),
+                        !calls_with_claims.contains(&call_hir)
+                            || requirement_tokens.contains(&function_start_token),
                         "local callable {function_start_token} at call {call_hir} has generic claims but no generic parameter metadata"
                     );
                     continue;

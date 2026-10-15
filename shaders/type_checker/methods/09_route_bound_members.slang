@@ -76,6 +76,15 @@ RWStructuredBuffer<uint> call_context_owner_by_token;
 RWStructuredBuffer<uint> call_context_arg_mask;
 RWStructuredBuffer<uint> call_context_ref_tag;
 RWStructuredBuffer<uint> call_context_ref_payload;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
+StructuredBuffer<uint> call_generic_claim_prefix;
+StructuredBuffer<uint> call_generic_claim_scan_input;
+StructuredBuffer<uint> call_const_claim_prefix;
+StructuredBuffer<uint> call_const_claim_scan_input;
+RWStructuredBuffer<uint> call_generic_claim_callee;
+RWStructuredBuffer<uint> call_const_claim_callee;
+RWStructuredBuffer<uint> call_const_claim_selected;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -135,6 +144,35 @@ uint method_call_token(uint call, out uint2 aliases)
     if (core.token_end <= core.token_start + 1u) return INVALID;
     aliases = uint2(core.token_start, compact_hir_payload[callee].d);
     return core.token_end - 1u;
+}
+
+// The argument claims of call `call` bind the required member's parameters,
+// which include the trait's (calls/03a1). A routed call has another callee,
+// whose bindings are the context published here, so its claims are retired.
+void retire_claims(uint call)
+{
+    uint start = call_arg_row_start[call];
+    uint count = call_arg_row_count[call];
+    if (start == INVALID) return;
+    uint rows; uint claims; uint constants; uint stride;
+    call_generic_claim_prefix.GetDimensions(rows, stride);
+    call_generic_claim_callee.GetDimensions(claims, stride);
+    call_const_claim_callee.GetDimensions(constants, stride);
+    if (start > rows || count > rows - start) return;
+    for (uint row = start; row < start + count; row++)
+    {
+        uint first = call_generic_claim_prefix[row];
+        uint span = call_generic_claim_scan_input[row];
+        for (uint claim = first; claim < min(first + span, claims); claim++)
+            call_generic_claim_callee[claim] = INVALID;
+        first = call_const_claim_prefix[row];
+        span = call_const_claim_scan_input[row];
+        for (uint claim = first; claim < min(first + span, constants); claim++)
+        {
+            call_const_claim_callee[claim] = INVALID;
+            call_const_claim_selected[claim] = 0u;
+        }
+    }
 }
 
 // Publish the routed callee at method token `token` or an alias of it.
@@ -369,13 +407,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         candidate.state == METHOD_CANDIDATE_UNIQUE &&
         candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
         candidate.local_index == call_fn_index[token];
-    // The routed generic callee owns the call's context; rows written for
-    // other candidates hold no binding.
-    if (call != INVALID && (written != 0u || (routed && selected_generic)))
+    // The routed callee owns the call's context: a generic one its bindings,
+    // a nongeneric one none (the trait's arguments bound the required
+    // member's parameters, methods/07a). Rows written for other candidates
+    // hold no binding.
+    if (call != INVALID && (written != 0u || routed))
     {
-        call_context_arg_mask[call] = routed && selected_generic
-            ? published : call_context_arg_mask[call] & ~written;
-        if (routed && selected_generic) call_context_owner_by_token[token] = call;
+        call_context_arg_mask[call] = routed
+            ? (selected_generic ? published : 0u) : call_context_arg_mask[call] & ~written;
+        if (routed && selected_generic)
+        {
+            call_context_owner_by_token[token] = call;
+            if (aliases.x < gParams.n_tokens) call_context_owner_by_token[aliases.x] = call;
+            if (aliases.y < gParams.n_tokens) call_context_owner_by_token[aliases.y] = call;
+        }
     }
     if (matches != 1u || (selected_generic && published == 0u))
     {
@@ -383,6 +428,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     if (!routed) return;
+    retire_claims(node);
     candidate.local_index = selected;
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;
