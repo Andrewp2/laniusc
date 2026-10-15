@@ -32,6 +32,19 @@ public bool bind_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTyp
     return true;
 }
 
+// An application whose binder already recorded one operand's own diagnostic
+// (an out-of-range literal). It is rejected; its validators add nothing.
+public static const uint EXPLICIT_APPLICATION_OPERAND_DIAGNOSED = 5u;
+
+// The literal token of an operand that failed to bind only because its
+// integer literal does not fit the declared integer scalar.
+public bool explicit_constant_operand_out_of_range(uint argument_row, uint expected_scalar,
+    out uint literal_token)
+{
+    return explicit_integer_literal_out_of_range(explicit_mapping_arguments[argument_row].value,
+        expected_scalar, literal_token);
+}
+
 public bool explicit_application_range(uint token, out HirRange arguments)
 {
     arguments.start = 0xffffffffu; arguments.count = 0u;

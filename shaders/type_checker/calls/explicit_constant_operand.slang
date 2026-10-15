@@ -151,6 +151,25 @@ public bool checked_source_literal_value(uint node, uint scalar, out uint3 value
     return constant_value_is_valid(value);
 }
 
+// An integer literal operand (through forwarding wrappers and one unary minus)
+// whose magnitude the expected integer scalar cannot represent. Its literal
+// token owns the range diagnostic, as in any other checked integer context.
+public bool explicit_integer_literal_out_of_range(uint node, uint scalar, out uint literal_token)
+{
+    literal_token = 0xffffffffu;
+    if (!scalar_is_integer(scalar)) return false;
+    uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
+    uint literal; bool negative;
+    if (!integer_literal_magnitude(node, count, explicit_operand_hir_core,
+        explicit_operand_hir_payload, literal, negative)) return false;
+    HirPayload magnitude = explicit_operand_hir_payload[literal];
+    uint3 value;
+    if (constant_value_from_integer_magnitude(scalar, uint2(magnitude.b, magnitude.c), negative, value))
+        return false;
+    literal_token = explicit_operand_hir_core[literal].token_start;
+    return literal_token < explicit_operand_token_capacity();
+}
+
 bool explicit_operand_inside_body(uint node)
 {
     uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());

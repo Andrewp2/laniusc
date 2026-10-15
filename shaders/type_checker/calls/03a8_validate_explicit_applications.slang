@@ -51,6 +51,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint anchor = compact_hir_core[call].token_start;
     if (repeated) { record_min_token_error(status, anchor, 10u, 0xffffff09u); return; }
     uint binding_status = call_explicit_application_status[token];
+    // The binder already recorded this application's operand diagnostic.
+    if (binding_status == EXPLICIT_APPLICATION_OPERAND_DIAGNOSED) return;
     if (binding_status != 1u || descriptor.x == 0u)
     {
         uint detail = binding_status == 2u ? 0xffffff09u
