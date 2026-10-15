@@ -11979,9 +11979,14 @@ fn main(seed: i32) -> i32 {
             && len_token < parsed.hir_token_end[declared_type],
         "array length token should stay inside the parser-owned array type span"
     );
+    let len_operand = parsed.hir_type_len_operand[declared_type];
+    assert_ne!(
+        len_operand, INVALID,
+        "array type should publish its length operand for type-check consumers"
+    );
     assert_eq!(
-        parsed.hir_type_len_value[declared_type], 3,
-        "array type should publish the parsed length value for type-check consumers"
+        parsed.hir_token_pos[len_operand as usize], len_token,
+        "array length operand should start at the published length token"
     );
     assert_source_pack_hir_child_span_inside_owner(
         &parsed,
