@@ -769,6 +769,9 @@ async fn run_session(
         let compute_dispatches_before = recorded_compute_dispatch_count();
         let operation_capture_scopes_before = crate::gpu::timer::operation_capture_scope_count();
         let operation_timestamps_before = crate::gpu::timer::operation_timestamp_count();
+        let readbacks_before = crate::gpu::passes_core::readback_round_trips();
+        let readback_breakdown_before = crate::gpu::passes_core::readback_breakdown_enabled()
+            .then(crate::gpu::passes_core::readback_round_trips_by_label);
         let compute_schedule_job = begin_compute_schedule_job();
         let compute_pass_breakdown_before =
             compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
@@ -860,6 +863,24 @@ async fn run_session(
                 "recorded_compute_dispatches_during_job".into(),
                 json!(recorded_compute_dispatches_during_job),
             );
+            let readbacks_after = crate::gpu::passes_core::readback_round_trips();
+            response.insert(
+                "readback_round_trips_during_job".into(),
+                json!(readbacks_after.0.saturating_sub(readbacks_before.0)),
+            );
+            response.insert(
+                "readback_wait_ms_during_job".into(),
+                json!(readbacks_after.1.saturating_sub(readbacks_before.1) as f64 / 1e6),
+            );
+            if let Some(before) = &readback_breakdown_before {
+                response.insert(
+                    "readback_breakdown".into(),
+                    readback_delta_rows(
+                        &crate::gpu::passes_core::readback_round_trips_by_label(),
+                        before,
+                    ),
+                );
+            }
             if let (Some(before), Some(after)) = (
                 &compute_pass_breakdown_before,
                 &compute_pass_breakdown_after,
@@ -957,6 +978,29 @@ fn job_resource_creation_counts() -> JobResourceCreationCounts {
         bind_groups: bind_group_creation_count(),
         compute_pipelines: pipeline_creation_count(),
     }
+}
+
+/// Readback round trips per label during a job, most waiting first.
+fn readback_delta_rows(
+    after: &HashMap<String, (u64, u64)>,
+    before: &HashMap<String, (u64, u64)>,
+) -> Value {
+    let mut rows = after
+        .iter()
+        .filter_map(|(label, &(count, wait_ns))| {
+            let (count_before, wait_before) = before.get(label).copied().unwrap_or((0, 0));
+            let count = count.saturating_sub(count_before);
+            (count > 0).then(|| (label, count, wait_ns.saturating_sub(wait_before)))
+        })
+        .collect::<Vec<_>>();
+    rows.sort_unstable_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(right.0)));
+    Value::Array(
+        rows.into_iter()
+            .map(|(label, count, wait_ns)| {
+                json!({"label": label, "round_trips": count, "wait_ms": wait_ns as f64 / 1e6})
+            })
+            .collect(),
+    )
 }
 
 fn compute_pass_delta_rows(after: &HashMap<String, u64>, before: &HashMap<String, u64>) -> Value {
