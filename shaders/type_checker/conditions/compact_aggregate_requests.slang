@@ -3,10 +3,9 @@
 // row; variable-length type arguments are expanded by the downstream scan and
 // aggregate_args pass, never walked serially here.
 
-import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
-import type_checker.concrete_type_equality;
-import type_checker.scoped_type_equality;
+import type_checker.checked_type_identity;
+import type_checker.checked_slots;
 import hir_records;
 import gpu_index;
 import status;
@@ -143,17 +142,10 @@ bool array_borrow_matches(uint expected, uint actual)
     if (expected >= checked_type_capacity() || actual >= checked_type_capacity() ||
         type_instance_kind[expected] != TYPE_INSTANCE_SLICE ||
         type_instance_kind[actual] != TYPE_INSTANCE_ARRAY) return false;
-    uint expected_tag = type_instance_elem_ref_tag[expected];
-    uint expected_payload = type_instance_elem_ref_payload[expected];
-    uint actual_tag = type_instance_elem_ref_tag[actual];
-    uint actual_payload = type_instance_elem_ref_payload[actual];
-    if (checked_instance_is_closed(expected) && checked_instance_is_closed(actual))
-        return concrete_type_refs_equal<ScopedCheckedTypeGraph>(
-            expected_tag, expected_payload, actual_tag, actual_payload, checked_type_capacity());
-    return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-        expected_tag, expected_payload, INVALID,
-        actual_tag, actual_payload, INVALID,
-        checked_type_capacity(), gParams.n_tokens);
+    return checked_types_equal(CheckedSlots(), 
+        type_instance_elem_ref_tag[expected], type_instance_elem_ref_payload[expected],
+        type_instance_elem_ref_tag[actual], type_instance_elem_ref_payload[actual],
+        !(checked_row_is_closed(expected) && checked_row_is_closed(actual)));
 }
 
 // Codegen passing mode per value node; 4 marks an array viewed as a slice.
@@ -163,12 +155,10 @@ bool prepare_instance_compare(uint node, uint expected, uint actual, uint error_
 {
     if (expected == actual || array_borrow_matches(expected, actual)) return true;
     // Concrete structural children can have different source rows, and body
-    // replay can introduce private graph IDs. Compare their full checked
-    // identities before the symbolic request path, including nested elements.
-    if (checked_instance_is_closed(expected) &&
-        checked_instance_is_closed(actual))
-        return concrete_type_refs_equal<ScopedCheckedTypeGraph>(
-            TYPE_REF_INSTANCE, expected, TYPE_REF_INSTANCE, actual, checked_type_capacity());
+    // replay can introduce private graph IDs. Their canonical IDs decide
+    // before the symbolic request path, including nested elements.
+    if (checked_row_is_closed(expected) && checked_row_is_closed(actual))
+        return checked_types_equal(CheckedSlots(), TYPE_REF_INSTANCE, expected, TYPE_REF_INSTANCE, actual, false);
     if (expected >= checked_type_capacity() || actual >= checked_type_capacity()) return false;
     uint kind = type_instance_kind[expected];
     if (kind == 0u || kind != type_instance_kind[actual]) return false;
@@ -176,10 +166,7 @@ bool prepare_instance_compare(uint node, uint expected, uint actual, uint error_
     {
         // Symbolic children are complete graphs too. Their source rows may
         // differ even when they name the same lexical parameter/application.
-        return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-            TYPE_REF_INSTANCE, expected, INVALID,
-            TYPE_REF_INSTANCE, actual, INVALID,
-            checked_type_capacity(), gParams.n_tokens);
+        return checked_types_equal(CheckedSlots(), TYPE_REF_INSTANCE, expected, TYPE_REF_INSTANCE, actual, true);
     }
     if (kind != TYPE_INSTANCE_NAMED || !same_named_identity(expected, actual))
         return false;
@@ -248,9 +235,8 @@ void validate_struct_literal_fields(uint node)
         uint actual_tag; uint actual_payload;
         expression_ref(field.value, actual_tag, actual_payload);
         if (expected_tag != TYPE_REF_INSTANCE || actual_tag == TYPE_REF_INVALID ||
-            !checked_instance_is_closed(expected_payload)) continue;
-        if (!concrete_type_refs_equal<ScopedCheckedTypeGraph>(expected_tag, expected_payload,
-            actual_tag, actual_payload, checked_type_capacity()) &&
+            !checked_row_is_closed(expected_payload)) continue;
+        if (!checked_types_equal(CheckedSlots(), expected_tag, expected_payload, actual_tag, actual_payload, false) &&
             !(actual_tag == TYPE_REF_INSTANCE && array_borrow_matches(expected_payload, actual_payload)))
             record_min_token_error(status, field.name_token, ERR_ASSIGN_MISMATCH, 0u);
     }

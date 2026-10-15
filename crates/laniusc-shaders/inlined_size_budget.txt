@@ -23,7 +23,6 @@
 137445 type_checker/program_evidence/entries/02_09_admit_implementations
 131997 type_checker/dependencies/15a_collect_methods
 129433 type_checker/calls/03k2_materialize_match_payloads
-128742 type_checker/conditions/compact_aggregate_requests
 126881 tests/owned_type_constraints_match
 122247 type_checker/methods/05_validate_keys
 120498 type_checker/program_evidence/entries/32_11_admit_environments
