@@ -15,8 +15,20 @@ use log::{info, warn};
 use serde::Serialize;
 use wgpu;
 
+pub(crate) use crate::gpu::dispatch_capture::debug_write_capture;
 use crate::{
-    gpu::buffers::LaniusBuffer,
+    gpu::{
+        buffers::LaniusBuffer,
+        dispatch_capture::{
+            CaptureLaunch,
+            debug_capture_after,
+            debug_capture_before,
+            debug_capture_begin,
+            debug_capture_end,
+            debug_capture_select,
+            debug_capture_snapshot,
+        },
+    },
     reflection::{
         EntryPointReflection,
         ParameterReflection,
@@ -356,7 +368,10 @@ fn debug_operation_boundary(label: &str) {
         config.limit.is_some_and(|limit| index >= limit) && !label.ends_with(".readback");
     DEBUG_OPERATION_SKIPPING.store(skipping, Ordering::Relaxed);
     if config.log {
-        eprintln!("[lanius-op] {index}{} {label}", if skipping { " (skipped)" } else { "" });
+        eprintln!(
+            "[lanius-op] {index}{} {label}",
+            if skipping { " (skipped)" } else { "" }
+        );
     }
 }
 
@@ -364,6 +379,11 @@ fn debug_operation_boundary(label: &str) {
 /// `LANIUS_DEBUG_OPERATION_LIMIT`.
 pub(crate) fn debug_operation_skipped() -> bool {
     DEBUG_OPERATION_SKIPPING.load(Ordering::Relaxed)
+}
+
+/// Whether `LANIUS_DEBUG_OPERATION_LIMIT` is set.
+pub(crate) fn debug_operation_limited() -> bool {
+    debug_operation_config().limit.is_some()
 }
 
 /// Starts a compute pass and accounts for it at the only boundary that creates
@@ -694,6 +714,8 @@ enum DeferredComputeCommand {
         bind_groups: Vec<wgpu::BindGroup>,
         groups: (u32, u32, u32),
         dynamic_offsets: Vec<u32>,
+        /// The `LANIUS_DEBUG_CAPTURE_PASS` dispatch: recorded in a pass of its own.
+        capture: bool,
     },
     Indirect {
         timing_label: Option<String>,
@@ -703,7 +725,16 @@ enum DeferredComputeCommand {
         dispatch_args: wgpu::Buffer,
         dispatch_offset: u64,
         dynamic_offsets: Vec<u32>,
+        capture: bool,
     },
+}
+
+impl DeferredComputeCommand {
+    fn capture(&self) -> bool {
+        match self {
+            Self::Direct { capture, .. } | Self::Indirect { capture, .. } => *capture,
+        }
+    }
 }
 
 fn deferred_compute_debug_labels_enabled() -> bool {
@@ -780,8 +811,9 @@ pub(crate) fn defer_compute_direct_with_offsets(
     dynamic_offsets: &[u32],
     operation_label: &str,
 ) -> bool {
-    debug_capture_dispatch(operation_label, bind_group, groups);
     if debug_operation_skipped() {
+        let launch = CaptureLaunch::Direct(groups);
+        debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
         return true;
     }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
@@ -792,6 +824,9 @@ pub(crate) fn defer_compute_direct_with_offsets(
         if !state.active {
             return false;
         }
+        let launch = CaptureLaunch::Direct(groups);
+        let capture =
+            debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
         state.commands.push(DeferredComputeCommand::Direct {
             timing_label: crate::gpu::timer::operation_capture_active()
                 .then(|| operation_label.to_owned()),
@@ -800,6 +835,7 @@ pub(crate) fn defer_compute_direct_with_offsets(
             bind_groups: vec![bind_group.clone()],
             groups,
             dynamic_offsets: dynamic_offsets.to_vec(),
+            capture,
         });
         true
     })
@@ -814,6 +850,8 @@ pub(crate) fn defer_compute_indirect(
     operation_label: &str,
 ) -> bool {
     if debug_operation_skipped() {
+        let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
+        debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
         return true;
     }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
@@ -824,6 +862,9 @@ pub(crate) fn defer_compute_indirect(
         if !state.active {
             return false;
         }
+        let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
+        let capture =
+            debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
         state.commands.push(DeferredComputeCommand::Indirect {
             timing_label: crate::gpu::timer::operation_capture_active()
                 .then(|| operation_label.to_owned()),
@@ -833,6 +874,7 @@ pub(crate) fn defer_compute_indirect(
             dispatch_args: dispatch_args.clone(),
             dispatch_offset,
             dynamic_offsets: dynamic_offsets.to_vec(),
+            capture,
         });
         true
     })
@@ -845,6 +887,8 @@ pub(crate) fn defer_compute_direct_bind_groups(
     operation_label: &str,
 ) -> bool {
     if debug_operation_skipped() {
+        let launch = CaptureLaunch::Direct(groups);
+        debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
         return true;
     }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
@@ -855,6 +899,8 @@ pub(crate) fn defer_compute_direct_bind_groups(
         if !state.active {
             return false;
         }
+        let launch = CaptureLaunch::Direct(groups);
+        let capture = debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
         state.commands.push(DeferredComputeCommand::Direct {
             timing_label: crate::gpu::timer::operation_capture_active()
                 .then(|| operation_label.to_owned()),
@@ -863,6 +909,7 @@ pub(crate) fn defer_compute_direct_bind_groups(
             bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
             groups,
             dynamic_offsets: Vec::new(),
+            capture,
         });
         true
     })
@@ -875,6 +922,11 @@ pub(crate) fn defer_compute_indirect_bind_groups(
     dispatch_offset: u64,
     operation_label: &str,
 ) -> bool {
+    if debug_operation_skipped() {
+        let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
+        debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
+        return true;
+    }
     if crate::gpu::timer::operation_capture_requires_split_passes() {
         return false;
     }
@@ -883,6 +935,8 @@ pub(crate) fn defer_compute_indirect_bind_groups(
         if !state.active {
             return false;
         }
+        let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
+        let capture = debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
         state.commands.push(DeferredComputeCommand::Indirect {
             timing_label: crate::gpu::timer::operation_capture_active()
                 .then(|| operation_label.to_owned()),
@@ -892,6 +946,7 @@ pub(crate) fn defer_compute_indirect_bind_groups(
             dispatch_args: dispatch_args.clone(),
             dispatch_offset,
             dynamic_offsets: Vec::new(),
+            capture,
         });
         true
     })
@@ -911,6 +966,8 @@ pub(crate) fn record_or_defer_compute_direct(
         return;
     }
     flush_deferred_compute(encoder);
+    let launch = CaptureLaunch::Direct(groups);
+    let captured = debug_capture_begin(encoder, label, pass, bind_group, &[], launch);
     let mut compute = begin_counted_compute_pass(
         encoder,
         &wgpu::ComputePassDescriptor {
@@ -925,6 +982,7 @@ pub(crate) fn record_or_defer_compute_direct(
         compute.dispatch_workgroups(groups.0, groups.1, groups.2);
     }
     drop(compute);
+    debug_capture_end(encoder, captured);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
 }
 
@@ -971,6 +1029,8 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
         return;
     }
     flush_deferred_compute(encoder);
+    let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, absolute_offset);
+    let captured = debug_capture_begin(encoder, label, pass, bind_group, &[], launch);
     let mut compute = begin_counted_compute_pass(
         encoder,
         &wgpu::ComputePassDescriptor {
@@ -985,10 +1045,13 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
         compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
     }
     drop(compute);
+    debug_capture_end(encoder, captured);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
 }
 
-/// Flushes all deferred dispatches as one ordered compute pass.
+/// Flushes all deferred dispatches as one ordered compute pass (two more
+/// when the `LANIUS_DEBUG_CAPTURE_PASS` dispatch is among them: it gets a pass
+/// of its own between its input and output copies).
 pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
     let (label, commands) = DEFERRED_COMPUTE.with(|state| {
         let mut state = state.borrow_mut();
@@ -1004,6 +1067,34 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
     let host_timing = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
     let started = host_timing.then(Instant::now);
     let command_count = commands.len();
+    match commands.iter().position(DeferredComputeCommand::capture) {
+        None => record_deferred_commands(encoder, label, &commands),
+        Some(at) => {
+            record_deferred_commands(encoder, label, &commands[..at]);
+            debug_capture_before(encoder);
+            record_deferred_commands(encoder, label, &commands[at..=at]);
+            debug_capture_after(encoder);
+            record_deferred_commands(encoder, label, &commands[at + 1..]);
+        }
+    }
+    if let Some(started) = started {
+        eprintln!(
+            "[gpu_compile_host_timer] compute_batch.flush: label={label} commands={command_count} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1000.0,
+        );
+    }
+    debug_capture_snapshot(encoder);
+}
+
+/// Records deferred dispatches in order into one compute pass.
+fn record_deferred_commands(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    commands: &[DeferredComputeCommand],
+) {
+    if commands.is_empty() {
+        return;
+    }
     let mut compute = begin_counted_compute_pass(
         encoder,
         &wgpu::ComputePassDescriptor {
@@ -1011,7 +1102,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
             timestamp_writes: None,
         },
     );
-    for command in &commands {
+    for command in commands {
         match command {
             DeferredComputeCommand::Direct {
                 timing_label,
@@ -1020,6 +1111,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
                 bind_groups,
                 groups,
                 dynamic_offsets,
+                capture: _,
             } => {
                 if let Some(label) = debug_label {
                     compute.push_debug_group(label);
@@ -1050,6 +1142,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
                 dispatch_args,
                 dispatch_offset,
                 dynamic_offsets,
+                capture: _,
             } => {
                 if let Some(label) = debug_label {
                     compute.push_debug_group(label);
@@ -1074,14 +1167,6 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
             }
         }
     }
-    drop(compute);
-    if let Some(started) = started {
-        eprintln!(
-            "[gpu_compile_host_timer] compute_batch.flush: label={label} commands={command_count} elapsed_ms={:.3}",
-            started.elapsed().as_secs_f64() * 1000.0,
-        );
-    }
-    debug_capture_snapshot(encoder);
 }
 
 /// Pushes a validation scope when `enabled` is true.
@@ -1905,6 +1990,7 @@ pub fn make_pass_data_from_shader_key_with_dynamic_uniforms(
             .expect("prepared kernel cache poisoned");
         cache.entry(key).or_insert_with(|| pass.clone()).clone()
     };
+    crate::gpu::dispatch_capture::record_kernel_shader(&retained, shader);
     Ok(relabel_pass_data(retained, label))
 }
 
@@ -1916,14 +2002,16 @@ pub fn make_pass_data_from_shader_artifacts(
     spv: &str,
     reflection: &str,
 ) -> Result<PassData> {
-    make_pass_data_from_shader_artifacts_with_dynamic_uniforms(
+    let pass = make_pass_data_from_shader_artifacts_with_dynamic_uniforms(
         device,
         label,
         entry,
         spv,
         reflection,
         &[],
-    )
+    )?;
+    crate::gpu::dispatch_capture::record_kernel_shader(&pass, spv.trim_end_matches(".spv"));
+    Ok(pass)
 }
 
 fn make_pass_data_from_shader_artifacts_with_dynamic_uniforms(
@@ -2125,169 +2213,6 @@ pub(crate) fn debug_register_dump_buffer(name: &str, buffer: &wgpu::Buffer, offs
         .insert(name.to_owned(), (buffer.clone(), offset, end));
 }
 
-/// Debug capture of one dispatch for offline replay
-/// (`src/bin/shader_dispatch_replay.rs`). `LANIUS_DEBUG_CAPTURE_PASS=name`
-/// records the first bind group created with that label and the workgroup
-/// count of its first recorded dispatch; `debug_write_capture` then saves
-/// every bound range to `LANIUS_DEBUG_CAPTURE_DIR`. Run with
-/// `LANIUS_DEBUG_OPERATION_LIMIT` at the captured operation so the saved
-/// buffers hold exactly the state that dispatch would read.
-type CapturedBindings = Vec<(u32, String, wgpu::Buffer, u64, u64)>;
-
-struct DebugCapture {
-    bindings: CapturedBindings,
-    groups: Option<(u32, u32, u32)>,
-    /// Set once `debug_capture_snapshot` copied the bindings in-timeline.
-    snapshotted: bool,
-}
-
-#[derive(Default)]
-struct DebugCaptureState {
-    /// Bindings validated for the bind group being created right now.
-    pending: Option<CapturedBindings>,
-    candidates: Vec<(wgpu::BindGroup, CapturedBindings)>,
-    selected: Option<DebugCapture>,
-}
-
-static DEBUG_CAPTURE: std::sync::LazyLock<std::sync::Mutex<DebugCaptureState>> =
-    std::sync::LazyLock::new(Default::default);
-
-fn debug_capture_pass() -> Option<&'static str> {
-    static PASS: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    PASS.get_or_init(|| std::env::var("LANIUS_DEBUG_CAPTURE_PASS").ok()).as_deref()
-}
-
-pub(crate) fn debug_capture_bind_group(label: &str, bindings: CapturedBindings) {
-    if debug_capture_pass() != Some(label) {
-        return;
-    }
-    DEBUG_CAPTURE.lock().expect("debug capture poisoned").pending = Some(bindings);
-}
-
-fn debug_capture_associate(label: &str, bind_group: &wgpu::BindGroup) {
-    if debug_capture_pass() != Some(label) {
-        return;
-    }
-    let mut state = DEBUG_CAPTURE.lock().expect("debug capture poisoned");
-    if let Some(bindings) = state.pending.take() {
-        state.candidates.push((bind_group.clone(), bindings));
-    }
-}
-
-/// Selects the bind group of the first dispatch of the captured pass that
-/// `LANIUS_DEBUG_OPERATION_LIMIT` drops (or of the first one, without a limit).
-pub(crate) fn debug_capture_dispatch(
-    label: &str,
-    bind_group: &wgpu::BindGroup,
-    groups: (u32, u32, u32),
-) {
-    if debug_capture_pass() != Some(label) {
-        return;
-    }
-    if debug_operation_config().limit.is_some() && !debug_operation_skipped() {
-        return;
-    }
-    let mut state = DEBUG_CAPTURE.lock().expect("debug capture poisoned");
-    if state.selected.is_some() {
-        return;
-    }
-    let bindings = state
-        .candidates
-        .iter()
-        .find(|(candidate, _)| candidate == bind_group)
-        .map(|(_, bindings)| bindings.clone());
-    match bindings {
-        Some(bindings) => {
-            state.selected = Some(DebugCapture { bindings, groups: Some(groups), snapshotted: false })
-        }
-        None => eprintln!("[lanius-capture] {label}: dispatch uses an unrecorded bind group"),
-    }
-}
-
-/// Copies the selected capture's bindings into private buffers at this point
-/// of the command stream, so later reuse of aliased memory cannot clobber them.
-pub(crate) fn debug_capture_snapshot(encoder: &mut wgpu::CommandEncoder) {
-    if debug_capture_pass().is_none() {
-        return;
-    }
-    let mut state = DEBUG_CAPTURE.lock().expect("debug capture poisoned");
-    let Some(capture) = state.selected.as_mut() else { return };
-    if capture.snapshotted {
-        return;
-    }
-    capture.snapshotted = true;
-    let device = &crate::gpu::device::global_result().expect("debug capture device").device;
-    for (_, _, buffer, offset, end) in capture.bindings.iter_mut() {
-        let bytes = end.saturating_sub(*offset) & !3;
-        let copy = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("lanius-debug-capture-snapshot"),
-            size: bytes.max(4),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        if bytes != 0 {
-            encoder.copy_buffer_to_buffer(buffer, *offset, &copy, 0, bytes);
-        }
-        *buffer = copy;
-        *end = bytes;
-        *offset = 0;
-    }
-}
-
-pub(crate) fn debug_write_capture(device: &wgpu::Device, queue: &wgpu::Queue) {
-    let Some(pass) = debug_capture_pass() else { return };
-    let Some(capture) = DEBUG_CAPTURE.lock().expect("debug capture poisoned").selected.take() else {
-        eprintln!("[lanius-capture] {pass}: no bind group recorded");
-        return;
-    };
-    let dir = std::path::PathBuf::from(
-        std::env::var("LANIUS_DEBUG_CAPTURE_DIR").unwrap_or_else(|_| "lanius-capture".into()),
-    );
-    if let Err(err) = std::fs::create_dir_all(&dir) {
-        eprintln!("[lanius-capture] create {}: {err}", dir.display());
-        return;
-    }
-    let mut manifest = Vec::new();
-    for (binding, name, buffer, offset, end) in &capture.bindings {
-        let bytes = end.saturating_sub(*offset) & !3;
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("lanius-debug-capture"),
-            size: bytes.max(4),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("lanius-debug-capture"),
-        });
-        if bytes != 0 {
-            encoder.copy_buffer_to_buffer(buffer, *offset, &staging, 0, bytes);
-        }
-        queue.submit(Some(encoder.finish()));
-        let slice = staging.slice(..);
-        if let Err(err) = map_readback_blocking(device, &slice, "lanius-debug-capture") {
-            eprintln!("[lanius-capture] {name}: {err:#}");
-            return;
-        }
-        let file = format!("{binding:03}_{name}.bin");
-        let data = slice.get_mapped_range();
-        if let Err(err) = std::fs::write(dir.join(&file), &data[..bytes as usize]) {
-            eprintln!("[lanius-capture] write {file}: {err}");
-            return;
-        }
-        manifest.push(serde_json::json!({ "binding": binding, "name": name, "file": file, "bytes": bytes }));
-    }
-    let groups = capture.groups.unwrap_or((0, 0, 0));
-    let manifest = serde_json::json!({
-        "pass": pass,
-        "groups": [groups.0, groups.1, groups.2],
-        "bindings": manifest,
-    });
-    match std::fs::write(dir.join("manifest.json"), manifest.to_string()) {
-        Ok(()) => eprintln!("[lanius-capture] {pass}: wrote {} bindings to {}", capture.bindings.len(), dir.display()),
-        Err(err) => eprintln!("[lanius-capture] write manifest: {err}"),
-    }
-}
-
 /// Debug aid: prints `LANIUS_DEBUG_DUMP_WORDS` (default 64) u32 words from
 /// word `LANIUS_DEBUG_DUMP_START` (default 0) of every buffer named in `LANIUS_DEBUG_DUMP_BUFFERS`, as last bound.
 /// The printed start is relative to the binding unless `LANIUS_DEBUG_DUMP_TAIL` is set.
@@ -2338,10 +2263,17 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
             .chunks_exact(4)
             .map(|chunk| {
                 let word = u32::from_le_bytes(chunk.try_into().expect("four-byte chunk"));
-                if word == u32::MAX { "-".to_owned() } else { word.to_string() }
+                if word == u32::MAX {
+                    "-".to_owned()
+                } else {
+                    word.to_string()
+                }
             })
             .collect::<Vec<_>>();
-        eprintln!("[lanius-dump] {stage} {wanted}@{start}: {}", values.join(" "));
+        eprintln!(
+            "[lanius-dump] {stage} {wanted}@{start}: {}",
+            values.join(" ")
+        );
     }
 }
 
@@ -2444,6 +2376,7 @@ pub mod bind_group {
             layout,
             entries,
         });
+        crate::gpu::dispatch_capture::record_bind_group(&bind_group, entries);
         add_timing(&BIND_GROUP_WGPU_CREATE_NS, create_started);
         let cache_insert_started = bind_group_timing_enabled().then(Instant::now);
         if let (Some(cache), Some(identity)) = (cache, identity) {
@@ -2503,7 +2436,6 @@ pub mod bind_group {
         }
 
         let mut buffers = Vec::<BoundBuffer<'_>>::new();
-        let mut captured = Vec::new();
         let trace_bindings = crate::gpu::env::env_bool_strict("LANIUS_GPU_BINDING_LIVENESS", false);
         for parameter in reflected_parameters_for_set(reflection, set_index) {
             let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
@@ -2579,9 +2511,6 @@ pub mod bind_group {
                 }
             }
             debug_register_dump_buffer(&parameter.name, binding.buffer, offset, end);
-            if let Some(index) = parameter.binding.index {
-                captured.push((index, parameter.name.clone(), binding.buffer.clone(), offset, end));
-            }
             buffers.push(BoundBuffer {
                 name: &parameter.name,
                 buffer: binding.buffer,
@@ -2590,7 +2519,6 @@ pub mod bind_group {
                 end,
             });
         }
-        debug_capture_bind_group(label, captured);
         Ok(())
     }
 
@@ -2626,9 +2554,9 @@ pub mod bind_group {
         }
         add_timing(&BIND_GROUP_RESOURCE_PLAN_NS, plan_started);
 
-        let bind_group = create_or_reuse_buffer_bind_group(device, label, bgl, set_index, &entries);
-        debug_capture_associate(resolved_label, &bind_group);
-        Ok(bind_group)
+        Ok(create_or_reuse_buffer_bind_group(
+            device, label, bgl, set_index, &entries,
+        ))
     }
 
     /// Creates a bind group from named resources, preferring reflected order.
@@ -3148,6 +3076,9 @@ pub(crate) fn record_reflected_compute(
     let groups = plan_workgroups(dim, input, [x, y, 1])?;
     let deferred = defer_compute_direct_bind_groups(kernel, &bind_groups, groups, invocation);
     if !deferred {
+        let launch = CaptureLaunch::Direct(groups);
+        let captured =
+            debug_capture_begin(encoder, invocation, kernel, &bind_groups[0], &[], launch);
         let mut compute = begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor {
@@ -3163,6 +3094,8 @@ pub(crate) fn record_reflected_compute(
         if !crate::gpu::passes_core::debug_operation_skipped() {
             compute.dispatch_workgroups(groups.0, groups.1, groups.2);
         }
+        drop(compute);
+        debug_capture_end(encoder, captured);
     }
     if !deferred {
         crate::gpu::timer::stamp_active_operation(encoder, invocation.to_owned());
@@ -3178,7 +3111,11 @@ pub(crate) fn record_reflected_compute(
 
 /// Records multiple compatible passes into one compute pass.
 pub struct ComputePassBatch<'encoder> {
-    pass: wgpu::ComputePass<'encoder>,
+    encoder: &'encoder mut wgpu::CommandEncoder,
+    label: &'static str,
+    /// The open pass. It does not borrow `encoder`, so the batch can end it
+    /// and copy around the `LANIUS_DEBUG_CAPTURE_PASS` dispatch.
+    pass: Option<wgpu::ComputePass<'static>>,
     retained_bind_groups: Vec<Vec<Arc<wgpu::BindGroup>>>,
     current_operation: Option<&'static str>,
 }
@@ -3189,17 +3126,55 @@ impl<'encoder> ComputePassBatch<'encoder> {
         // Explicit batches record immediately. Preserve command order when
         // they are reached from inside a broader deferred-compute scope.
         flush_deferred_compute(encoder);
-        let pass = begin_counted_compute_pass(
+        let pass = Self::open(encoder, label);
+        Self {
+            encoder,
+            label,
+            pass: Some(pass),
+            retained_bind_groups: Vec::new(),
+            current_operation: None,
+        }
+    }
+
+    fn open(encoder: &mut wgpu::CommandEncoder, label: &'static str) -> wgpu::ComputePass<'static> {
+        begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor {
                 label: Some(label),
                 timestamp_writes: None,
             },
-        );
-        Self {
-            pass,
-            retained_bind_groups: Vec::new(),
-            current_operation: None,
+        )
+        .forget_lifetime()
+    }
+
+    fn pass(&mut self) -> &mut wgpu::ComputePass<'static> {
+        self.pass.as_mut().expect("compute batch pass is open")
+    }
+
+    /// Gives the captured dispatch a compute pass of its own between its
+    /// input copies and `end_capture`'s output copies.
+    fn begin_capture(
+        &mut self,
+        label: &str,
+        pass: &PassData,
+        bind_group: &wgpu::BindGroup,
+        dynamic_offsets: &[u32],
+        launch: CaptureLaunch<'_>,
+    ) -> bool {
+        if !debug_capture_select(label, pass, bind_group, dynamic_offsets, launch) {
+            return false;
+        }
+        drop(self.pass.take());
+        debug_capture_before(self.encoder);
+        self.pass = Some(Self::open(self.encoder, self.label));
+        true
+    }
+
+    fn end_capture(&mut self, captured: bool) {
+        if captured {
+            drop(self.pass.take());
+            debug_capture_after(self.encoder);
+            self.pass = Some(Self::open(self.encoder, self.label));
         }
     }
 
@@ -3246,18 +3221,20 @@ impl<'encoder> ComputePassBatch<'encoder> {
             InputElements::Elements1D(n_elements),
             [tgsx, tgsy, 1],
         )?;
-        self.pass.set_pipeline(&pass.pipeline);
-        self.pass
+        let operation = self
+            .current_operation
+            .expect("raw compute batches require a graph-operation label");
+        let launch = CaptureLaunch::Direct((gx, gy, gz));
+        let captured = self.begin_capture(operation, pass, bind_group, dynamic_offsets, launch);
+        self.pass().set_pipeline(&pass.pipeline);
+        self.pass()
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
         record_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
-            self.pass.dispatch_workgroups(gx, gy, gz);
+            self.pass().dispatch_workgroups(gx, gy, gz);
         }
-        crate::gpu::timer::stamp_active_operation_in_pass(
-            &mut self.pass,
-            self.current_operation
-                .expect("raw compute batches require a graph-operation label"),
-        );
+        crate::gpu::timer::stamp_active_operation_in_pass(self.pass(), operation);
+        self.end_capture(captured);
         Ok(())
     }
 
@@ -3281,21 +3258,22 @@ impl<'encoder> ComputePassBatch<'encoder> {
         offset: u64,
         dynamic_offsets: &[u32],
     ) {
-        self.pass.set_pipeline(&pass.pipeline);
-        self.pass
+        let operation = self
+            .current_operation
+            .expect("raw compute batches require a graph-operation label");
+        let args_offset = dispatch_args.byte_offset.saturating_add(offset);
+        let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, args_offset);
+        let captured = self.begin_capture(operation, pass, bind_group, dynamic_offsets, launch);
+        self.pass().set_pipeline(&pass.pipeline);
+        self.pass()
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
         record_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
-            self.pass.dispatch_workgroups_indirect(
-            &dispatch_args.buffer,
-            dispatch_args.byte_offset.saturating_add(offset),
-        );
+            self.pass()
+                .dispatch_workgroups_indirect(&dispatch_args.buffer, args_offset);
         }
-        crate::gpu::timer::stamp_active_operation_in_pass(
-            &mut self.pass,
-            self.current_operation
-                .expect("raw compute batches require a graph-operation label"),
-        );
+        crate::gpu::timer::stamp_active_operation_in_pass(self.pass(), operation);
+        self.end_capture(captured);
     }
 
     /// Records one reflected pass using cached bind groups.
@@ -3329,16 +3307,19 @@ impl<'encoder> ComputePassBatch<'encoder> {
             gx >= 1 && gy >= 1 && gz >= 1,
             "dispatch must issue at least one group"
         );
-        self.pass.set_pipeline(&pd.pipeline);
+        let launch = CaptureLaunch::Direct((gx, gy, gz));
+        let captured = self.begin_capture(P::NAME, pd, &bind_groups[0], &[], launch);
+        self.pass().set_pipeline(&pd.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
-            self.pass
+            self.pass()
                 .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         record_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
-            self.pass.dispatch_workgroups(gx, gy, gz);
+            self.pass().dispatch_workgroups(gx, gy, gz);
         }
-        crate::gpu::timer::stamp_active_operation_in_pass(&mut self.pass, P::NAME);
+        crate::gpu::timer::stamp_active_operation_in_pass(self.pass(), P::NAME);
+        self.end_capture(captured);
         self.retained_bind_groups.push(bind_groups);
         Ok(())
     }
@@ -3366,17 +3347,20 @@ impl<'encoder> ComputePassBatch<'encoder> {
             P::NAME,
             Some(dispatch_args),
         )?;
-        self.pass.set_pipeline(&pd.pipeline);
+        let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+        let captured = self.begin_capture(P::NAME, pd, &bind_groups[0], &[], launch);
+        self.pass().set_pipeline(&pd.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
-            self.pass
+            self.pass()
                 .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         record_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
-            self.pass
+            self.pass()
                 .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
         }
-        crate::gpu::timer::stamp_active_operation_in_pass(&mut self.pass, P::NAME);
+        crate::gpu::timer::stamp_active_operation_in_pass(self.pass(), P::NAME);
+        self.end_capture(captured);
         self.retained_bind_groups.push(bind_groups);
         Ok(())
     }
@@ -3442,6 +3426,9 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
 
         let deferred = defer_compute_direct_bind_groups(pd, &bind_groups, (gx, gy, gz), Self::NAME);
         if !deferred {
+            let launch = CaptureLaunch::Direct((gx, gy, gz));
+            let captured =
+                debug_capture_begin(ctx.encoder, Self::NAME, pd, &bind_groups[0], &[], launch);
             let mut pass = begin_counted_compute_pass(
                 ctx.encoder,
                 &wgpu::ComputePassDescriptor {
@@ -3457,6 +3444,8 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
             if !crate::gpu::passes_core::debug_operation_skipped() {
                 pass.dispatch_workgroups(gx, gy, gz);
             }
+            drop(pass);
+            debug_capture_end(ctx.encoder, captured);
         }
 
         if !deferred {
@@ -3518,6 +3507,9 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
             operation,
         );
         if !deferred {
+            let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+            let captured =
+                debug_capture_begin(ctx.encoder, operation, pd, &bind_groups[0], &[], launch);
             let mut pass = begin_counted_compute_pass(
                 ctx.encoder,
                 &wgpu::ComputePassDescriptor {
@@ -3533,6 +3525,8 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
             if !crate::gpu::passes_core::debug_operation_skipped() {
                 pass.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
             }
+            drop(pass);
+            debug_capture_end(ctx.encoder, captured);
         }
 
         if !deferred {
