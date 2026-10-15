@@ -30,9 +30,14 @@ pub(super) const BODY_ENTRY_ROWS: usize = 1 + 2 * MAX_BODY_TYPE_ARGUMENTS;
 pub(super) const BODY_BATCH_WORDS: usize =
     BODY_SPECIALIZATION_WORDS + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS * 4;
 
+/// Selects an instance copy's declaration by the source byte of its `fn`
+/// keyword (`COPY_TARGET | byte`); 00d2 resolves it to the copy's HIR row.
+pub(crate) const BODY_COPY_TARGET: u32 = 0xc000_0000;
+
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecialization {
-    /// Public declaration index or the existing high-bit associated-method symbol.
+    /// Public declaration index, the existing high-bit associated-method
+    /// symbol, or an instance copy (BODY_COPY_TARGET).
     pub target_symbol: u32,
     /// Unit whose immutable declarations are available during this replay.
     pub source_unit: [u32; 2],
@@ -236,9 +241,15 @@ fn write_graph(words: &mut [u32], source_unit: [u32; 2], nodes: &[[u32; 8]], edg
 /// 0, constant count), one row per type slot (slot, 10, root, 0) and one row
 /// per constant slot (slot, 10, constant node, 0). An extra entry's constant
 /// value is a kind-10 node of the shared graph.
+///
+/// Instance copies: an entry whose target is `BODY_COPY_TARGET | byte` stores
+/// `byte + 1` as its copy word (705.z for entry 0, header .z otherwise), and
+/// 705.w holds the first copy row (`set_copy_first_row`).
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecializationBatch {
     entries: Vec<CheckedBodySpecialization>,
+    /// The first HIR row of the instance copies, 0 without copies.
+    copy_first_row: u32,
     nodes: Vec<[u32; 8]>,
     edges: Vec<u32>,
     /// Per entry: the shared root of each type slot.
@@ -254,6 +265,7 @@ impl CheckedBodySpecializationBatch {
     pub(crate) fn single(entry: CheckedBodySpecialization) -> Result<Self> {
         let mut batch = Self {
             entries: Vec::new(),
+            copy_first_row: 0,
             nodes: Vec::new(),
             edges: Vec::new(),
             roots: Vec::new(),
@@ -266,6 +278,26 @@ impl CheckedBodySpecializationBatch {
 
     pub(crate) fn entries(&self) -> &[CheckedBodySpecialization] {
         &self.entries
+    }
+
+    /// An instance-copy batch: every entry selects a copy, by increasing
+    /// copy byte, and every copy row is at or past `row`.
+    pub(crate) fn set_copy_first_row(&mut self, row: u32) -> Result<()> {
+        let bytes = self.entries.iter().map(|entry| {
+            ensure!(entry.target_symbol & BODY_COPY_TARGET == BODY_COPY_TARGET,
+                "an instance-copy batch entry selects an original declaration");
+            Ok(entry.target_symbol & !BODY_COPY_TARGET)
+        }).collect::<Result<Vec<_>>>()?;
+        ensure!(bytes.windows(2).all(|pair| pair[0] < pair[1]),
+            "instance copies are not in increasing source order");
+        ensure!(row != 0, "an instance copy cannot be the first HIR row");
+        self.copy_first_row = row;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn copy_first_row(&self) -> Option<u32> {
+        (self.copy_first_row != 0).then_some(self.copy_first_row)
     }
 
     /// Whether entries `a` and `b` bind one parameter slot to the same
@@ -343,11 +375,21 @@ impl CheckedBodySpecializationBatch {
         write_legacy_entry(&mut words, &self.entries[0], &self.roots[0]);
         write_graph(&mut words, self.entries[0].source_unit, &self.nodes, &self.edges);
         words[BODY_CONSTANT_START + 1] = extra as u32;
+        let copy_word = |entry: &CheckedBodySpecialization| {
+            if entry.target_symbol & BODY_COPY_TARGET == BODY_COPY_TARGET {
+                (entry.target_symbol & !BODY_COPY_TARGET) + 1
+            } else {
+                0
+            }
+        };
+        words[BODY_CONSTANT_START + 2] = copy_word(&self.entries[0]);
+        words[BODY_CONSTANT_START + 3] = self.copy_first_row;
         for index in 1..self.entries.len() {
             let entry = &self.entries[index];
             let base = (BODY_ENTRY_TABLE_START + (index - 1) * BODY_ENTRY_ROWS) * 4;
             words[base] = entry.arguments.len() as u32;
             words[base + 1] = entry.target_symbol;
+            words[base + 2] = copy_word(entry);
             words[base + 3] = entry.constants.len() as u32;
             for (slot, &root) in self.roots[index].iter().enumerate() {
                 let row = base + (1 + slot) * 4;
@@ -1341,5 +1383,31 @@ mod tests {
         let mut foreign = entry(5, vec![CheckedGenericType::Scalar(3)], vec![]);
         foreign.source_unit = [7, 4];
         assert!(batch.try_push(foreign).is_err(), "one batch replays one source unit");
+    }
+    #[test]
+    fn instance_copy_entries_store_their_copy_bytes_and_first_row() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.try_push(entry(BODY_COPY_TARGET | 520, vec![nominal(vec![scalar.clone()])], vec![])).unwrap());
+        assert_eq!(batch.copy_first_row(), None);
+        batch.set_copy_first_row(77).unwrap();
+        assert_eq!(batch.copy_first_row(), Some(77));
+        let words = batch.packet().unwrap();
+        assert_eq!(words[1], BODY_COPY_TARGET | 400, "the target keeps the unresolved selector");
+        assert_eq!(&words[BODY_CONSTANT_START + 1..BODY_CONSTANT_START + 4], &[1, 401, 77]);
+        let base = BODY_ENTRY_TABLE_START * 4;
+        assert_eq!(&words[base..base + 4], &[1, BODY_COPY_TARGET | 520, 521, 0]);
+
+        // Ordinary entries have no copy word and no first copy row.
+        let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        assert_eq!(&plain.packet().unwrap()[BODY_CONSTANT_START + 2..BODY_CONSTANT_START + 4], &[0, 0]);
+        let mut mixed = plain.clone();
+        assert!(mixed.try_push(entry(BODY_COPY_TARGET | 9, vec![scalar.clone()], vec![])).unwrap());
+        assert!(mixed.set_copy_first_row(4).is_err(), "every entry of a copy batch is a copy");
+        let mut unordered = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 600, vec![scalar.clone()], vec![])).unwrap();
+        assert!(unordered.try_push(entry(BODY_COPY_TARGET | 500, vec![scalar], vec![])).unwrap());
+        assert!(unordered.set_copy_first_row(4).is_err(), "copies follow source order");
     }
 }

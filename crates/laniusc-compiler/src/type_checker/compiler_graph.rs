@@ -261,6 +261,11 @@ pub(super) const GENERIC_PARAM_EMPTY_PASS: &str = "type_check.generic_params.emp
 pub(super) const CONDITIONS_AGGREGATE_ARGS_FINAL_PASS: &str =
     "type_check.conditions.aggregate_args.final";
 pub(super) const SEMANTIC_CALLS_PROJECT_PASS: &str = "type_check.semantic_artifact.calls";
+pub(super) const SEMANTIC_ARTIFACT_OWNER_SPANS_PASS: &str = "type_check.semantic_artifact.owner_spans";
+pub(super) const SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS: &str =
+    "type_check.semantic_artifact.owner_spans.clear";
+pub(super) const BODY_SPECIALIZATION_RESOLVE_COPIES_PASS: &str =
+    "type_check.body_specialization.resolve_copies";
 pub(super) const RETAINED_CALLABLE_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -2903,6 +2908,10 @@ fn build_graph(
         _retained_callable_local_prefix as "retained_callable_local_prefix" in HirNodes => hir_rows * 4;
         _retained_callable_block_sum as "retained_callable_block_sum" in HirNodes => hir_rows.div_ceil(256) * 4;
         _retained_callable_block_prefix as "retained_callable_block_prefix" in HirNodes => hir_rows.div_ceil(256) * 4;
+        // Instance-copy spans: one 32-byte record per 16 HIR rows is far more
+        // than the generic bodies of any unit; the host refuses an overflow.
+        _retained_owner_span_count as "retained_owner_span_count" in Calls => 4;
+        _retained_owner_spans as "retained_owner_spans" in Calls => (hir_rows * 2).max(64 * 32);
     });
     graph.add_storage(
         "body_specialization_inputs",
@@ -6123,6 +6132,20 @@ fn build_graph(
     )?;
     // Call checking retains the symbolic signature. Only the native body
     // environment is rebound here, after all call and return validation.
+    // An instance-copy replay first resolves each copy entry's target.
+    let body_specialization_inputs = graph
+        .resource_id("body_specialization_inputs")
+        .expect("body specialization packet");
+    graph.add_kernel_pass_by_name(
+        BODY_SPECIALIZATION_RESOLVE_COPIES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/00d2_resolve_body_copies",
+        reflected_bindings![
+            "body_specialization_inputs" => body_specialization_inputs: ReadWrite,
+        ],
+    )?;
     graph.add_kernel_pass_by_name(
         "type_check.body_specialization.graph",
         CompilerPhase::TypeCheck,
@@ -6411,6 +6434,24 @@ fn build_graph(
             "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Write,
             "semantic_type_external_unit_id_by_hir" => semantic_type_external_unit_id_by_hir: Write,
             "semantic_type_external_local_index_by_hir" => semantic_type_external_local_index_by_hir: Write,
+        ],
+    )?;
+    graph.add_pass(PassDesc {
+        name: SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Calls,
+        accesses: vec![PassAccess::write("retained_owner_span_count", _retained_owner_span_count)],
+    })?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_ARTIFACT_OWNER_SPANS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/04_owner_spans",
+        reflected_bindings![
+            "retained_owner_span_count" => _retained_owner_span_count: ReadWrite,
+            "retained_owner_spans" => _retained_owner_spans: Write,
+            "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Read,
         ],
     )?;
     graph.add_kernel_pass_by_name(

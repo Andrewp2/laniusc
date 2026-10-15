@@ -108,6 +108,7 @@ impl GpuCompiler<'_> {
         }).collect::<Vec<_>>();
         let mut trace = SpecializationTrace::new();
         let batch_limit = replay_batch_limit();
+        let instance_copies = instance_copies_enabled();
         // Breadth-first rounds: scan every context of the frontier, then
         // replay the round's new environments with compatible scopes of one
         // template unit sharing a frontend run, then patch the round's calls.
@@ -244,9 +245,15 @@ impl GpuCompiler<'_> {
                     let body = &pending[&key];
                     let scope = program.replay_scope(&body.admitted).map_err(native_program_error)?;
                     let entry = replay_entry(body.admitted.checked_call(), body.target);
+                    // A body with a retained declaration span replays as a
+                    // renamed copy, which shares a run with any other copy.
                     // Polymorphic recursion replays alone, so a failure is its own.
+                    let copies = instance_copies && !body.recursive && program
+                        .instance_copy_available(&body.admitted).map_err(native_program_error)?;
                     let placed = !body.recursive && runs.iter_mut().try_fold(false, |placed, run| {
-                        if placed || run.solo || run.keys.len() >= batch_limit { return Ok(placed); }
+                        if placed || run.solo || run.copies != copies || run.keys.len() >= batch_limit {
+                            return Ok(placed);
+                        }
                         run.try_add(&key, &scope, entry.clone())
                     }).map_err(|error: anyhow::Error| CompileError::GpuCodegen(error.to_string()))?;
                     if !placed {
@@ -254,7 +261,9 @@ impl GpuCompiler<'_> {
                             .map_err(|error| CompileError::Diagnostic(
                                 Diagnostic::error("LNC0017", "generic specialization cannot represent this environment")
                                     .with_note(error.to_string())))?;
-                        runs.push(ReplayRun { keys: vec![key], scopes: vec![scope], batch, solo: body.recursive });
+                        runs.push(ReplayRun {
+                            keys: vec![key], scopes: vec![scope], batch, solo: body.recursive, copies,
+                        });
                     }
                 }
                 for run in runs {
@@ -270,18 +279,21 @@ impl GpuCompiler<'_> {
                         instantiation_depth_error(body.admitted.checked_call(),
                             owner.and_then(|owner| templates.get(&owner).copied()), Some(error))
                     };
-                    let request = program
-                        .prepare_replay_batch(&origins)
-                        .map_err(|error| recursion(native_program_error(error)))?;
+                    let request = if run.copies {
+                        program.prepare_instance_batch(&origins)
+                    } else {
+                        program.prepare_replay_batch(&origins)
+                    }
+                    .map_err(|error| recursion(native_program_error(error)))?;
                     let prepared = std::time::Instant::now();
                     let pending_unit = self
                         .compile_authorized_body_specialization(&request)
                         .await
                         .map_err(&recursion)?;
                     let compiled = std::time::Instant::now();
-                    let selected = request.selected_function_hirs().to_vec();
-                    let (replay, replay_calls) =
+                    let (replay, checked) =
                         request.finish(pending_unit).map_err(|error| recursion(native_program_error(error)))?;
+                    let replay_calls = checked.calls;
                     let finished = std::time::Instant::now();
                     let entry_layouts = replay.body_native_layouts.as_ref()
                         .filter(|layouts| layouts.len() == run.keys.len())
@@ -299,10 +311,17 @@ impl GpuCompiler<'_> {
                     }
                     let specialized_unit = *candidate;
                     used_units.insert((library_id, specialized_unit));
-                    let identities = run.keys.iter().map(|key| {
-                        let (_, _, declaration_index) = pending[key].target;
-                        declaration_identity(library_id, unit_id, declaration_index)
-                    }).collect::<Vec<_>>();
+                    // A copy's definition is its own private callable; an
+                    // original replay defines the declaration itself. The
+                    // published identity keeps that symbol, so two copies of
+                    // one declaration in a run stay distinct.
+                    let definition_symbols = match &checked.copy_symbols {
+                        Some(symbols) => symbols.clone(),
+                        None => run.keys.iter().map(|key| pending[key].target.2).collect(),
+                    };
+                    let identities = definition_symbols.iter()
+                        .map(|&symbol| declaration_identity(library_id, unit_id, symbol))
+                        .collect::<Vec<_>>();
                     specialized_text_bytes = specialized_text_bytes
                         .checked_add(concrete.text.len())
                         .ok_or_else(|| specialization_limit_error("native text length overflow"))?;
@@ -340,7 +359,7 @@ impl GpuCompiler<'_> {
                                 ))
                             })?;
                         let native_identity =
-                            declaration_identity(library_id, specialized_unit, body.target.2);
+                            declaration_identity(library_id, specialized_unit, definition_symbols[position]);
                         replace_symbol_identity(&mut concrete, definition, &native_identity)?;
                         let mut admitted_layouts = entry_layouts[position].clone();
                         for witness in &body.witnesses {
@@ -348,7 +367,9 @@ impl GpuCompiler<'_> {
                                 .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
                         }
                         specializations.insert(key.clone(), (native_identity, admitted_layouts));
-                        entries.insert(selected[position], body.origin);
+                        if checked.entry_hirs[position] != u32::MAX {
+                            entries.insert(checked.entry_hirs[position], body.origin);
+                        }
                     }
                     concrete.unit_id = specialized_unit;
                     concrete.entry_offset = None;
@@ -431,6 +452,8 @@ struct ReplayRun {
     batch: gpu_type_checker::CheckedBodySpecializationBatch,
     /// A polymorphically recursive body, which never shares its run.
     solo: bool,
+    /// Every body replays as an instance copy, so scopes may repeat.
+    copies: bool,
 }
 
 impl ReplayRun {
@@ -444,7 +467,7 @@ impl ReplayRun {
         entry: CheckedBodySpecialization,
     ) -> anyhow::Result<bool> {
         if self.scopes.iter().any(|other| other.snapshot != scope.snapshot
-            || other.selected_owner_hir == scope.selected_owner_hir)
+            || (!self.copies && other.selected_owner_hir == scope.selected_owner_hir))
         {
             return Ok(false);
         }
@@ -453,7 +476,8 @@ impl ReplayRun {
             return Ok(false);
         }
         let added = batch.entries().len() - 1;
-        for (index, other) in self.scopes.iter().enumerate() {
+        // Copies own their enclosing impls too; nothing is shared.
+        for (index, other) in self.scopes.iter().enumerate().filter(|_| !self.copies) {
             for (owner, parameters) in &scope.owners {
                 if !other.owners.iter().any(|(shared, _)| shared == owner) { continue; }
                 if !parameters.iter().all(|&(slot, domain)|
@@ -484,6 +508,12 @@ fn replay_entry(call: &CheckedGenericCall, target: (u32, u32, u32)) -> CheckedBo
         arguments: call.arguments.clone(),
         constants: call.constants.clone(),
     }
+}
+
+/// `LANIUS_REPLAY_COPIES=0` replays every body in its original scope instead
+/// of as an instance copy.
+fn instance_copies_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_COPIES", true)
 }
 
 /// `LANIUS_REPLAY_BATCH=N` caps the bodies per frontend run (1 replays each

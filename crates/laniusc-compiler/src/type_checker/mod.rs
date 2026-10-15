@@ -17,6 +17,8 @@ mod canonical_passes;
 mod compiler_graph;
 mod generic_body;
 mod generic_calls;
+mod owner_spans;
+pub(crate) use owner_spans::{CheckedOwnerSpan, CheckedOwnerSpans};
 mod checked_contracts;
 #[cfg(test)]
 mod scoped_type_graph_tests;
@@ -28,7 +30,7 @@ pub(crate) use checked_contracts::{
     CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
     CheckedPredicateContract,
 };
-pub(crate) use generic_body::{CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES};
+pub(crate) use generic_body::{BODY_COPY_TARGET, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,

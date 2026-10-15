@@ -2097,6 +2097,12 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.expression_types.done");
             }
             bind_groups.semantic_projection.artifact.record(encoder)?;
+            if hir_items.semantic_interface_required {
+                // Byte spans of generic bodies for instance-copy replay; reads
+                // the native symbols the artifact projection just published.
+                bind_groups.semantic_projection.owner_spans_clear.record(encoder);
+                bind_groups.semantic_projection.owner_spans.record(encoder)?;
+            }
             bind_groups
                 .semantic_projection
                 .local_const_literals

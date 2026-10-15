@@ -176,6 +176,8 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "semantic_type_ref_payload_by_hir",
     "semantic_function_native_symbol_by_hir",
     "semantic_predicate_subject_parameter_token_by_hir",
+    "retained_owner_span_count",
+    "retained_owner_spans",
 ];
 
 /// These facts are produced by the separate interface-export graph. The

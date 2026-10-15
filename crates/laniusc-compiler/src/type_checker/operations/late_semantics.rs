@@ -107,6 +107,8 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
     pub(in crate::type_checker) retained_callables: CompactionOperation,
+    pub(in crate::type_checker) owner_spans_clear: crate::gpu::operations::ClearBuffersOperation,
+    pub(in crate::type_checker) owner_spans: ComputeOperation,
     pub(in crate::type_checker) expression_types_init: ComputeOperation,
     pub(in crate::type_checker) expression_refs: ComputeOperation,
     pub(in crate::type_checker) struct_literal_refs_early_clear:
@@ -172,8 +174,19 @@ impl SemanticProjectionOperations {
                 ),
             ],
         )?;
+        let owner_span_count: LaniusBuffer<u32> =
+            typed_buffer_from_resources(resources, "retained_owner_span_count")?;
+        let owner_spans_clear = crate::gpu::operations::ClearBuffersOperation::new(
+            graph,
+            compiler_graph::SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
+            &[("retained_owner_span_count", (&owner_span_count).into())],
+        )?;
         Ok(Self {
             body_specialization: [
+                (
+                    compiler_graph::BODY_SPECIALIZATION_RESOLVE_COPIES_PASS,
+                    "type_checker/type/instances/00d2_resolve_body_copies",
+                ),
                 (
                     "type_check.body_specialization.graph",
                     "type_checker/type/instances/00e_seed_body_type_graph",
@@ -403,6 +416,11 @@ impl SemanticProjectionOperations {
             artifact: direct(
                 compiler_graph::SEMANTIC_ARTIFACT_PROJECT_PASS,
                 "type_checker/semantic/artifact/00_project",
+            )?,
+            owner_spans_clear,
+            owner_spans: direct(
+                compiler_graph::SEMANTIC_ARTIFACT_OWNER_SPANS_PASS,
+                "type_checker/semantic/artifact/04_owner_spans",
             )?,
             local_const_literals: direct(
                 compiler_graph::SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,

@@ -2,8 +2,10 @@
 // Entry 0 uses the single-entry rows: header row 0 = (argument count, target,
 // node count, edge count), type slots at rows 1 + 2 * slot, constant rows at
 // 706 + slot = (slot, scalar, lo, hi) and row 705.x = constant count. Row
-// 705.y counts extra entries. Extra entry e (1-based) has 65 rows from
-// 738 + (e - 1) * 65: header (argument count, target, 0, constant count),
+// 705.y counts extra entries; 705.z is entry 0's copy word and 705.w the
+// first copy row (see body_entry_copy_byte). Extra entry e (1-based) has 65
+// rows from 738 + (e - 1) * 65: header (argument count, target, copy word,
+// constant count),
 // type slots (slot, 10, root, 0) and constant slots (slot, 10, node, 0) whose
 // value is a kind-10 node of the shared graph. Requires body_specialization_inputs.
 
@@ -24,12 +26,29 @@ uint body_entry_count()
     return present ? 1u + min(body_specialization_inputs[705u].y, BODY_MAX_ENTRIES - 1u) : 0u;
 }
 
-// (argument count, target symbol, 0, constant count)
+// (argument count, target symbol, copy word, constant count)
 uint4 body_entry_header(uint entry)
 {
     if (entry == 0u)
-        return uint4(body_specialization_inputs[0u].xy, 0u, body_specialization_inputs[705u].x);
+        return uint4(body_specialization_inputs[0u].xy, body_specialization_inputs[705u].z,
+            body_specialization_inputs[705u].x);
     return body_specialization_inputs[body_extra_entry_row(entry)];
+}
+
+// Instance-copy replay: the source byte of the entry's copied `fn` keyword,
+// stored plus one in the copy word (705.z for entry 0, header .z otherwise);
+// INVALID for an entry that replays its original declaration. Copy bytes
+// increase with the entry index. 00d2 resolves the target from it.
+uint body_entry_copy_byte(uint entry)
+{
+    uint word = body_entry_header(entry).z;
+    return word == 0u ? 0xffffffffu : word - 1u;
+}
+
+// The first HIR row after the template: every copy row is at or past it.
+uint body_copy_first_row()
+{
+    return body_specialization_inputs[705u].w;
 }
 
 // (slot, 10, shared root, 0)

@@ -165,6 +165,10 @@ pub(in crate::compiler::gpu_compiler) struct ProgramPacket {
     original_units: BTreeSet<u32>,
     call_occurrences: BTreeMap<(u32, u32), CallOccurrence>,
     admitted_calls: BTreeMap<u32, u32>,
+    /// (replay context, instance call HIR) -> the template owner HIR whose
+    /// copied body holds the call. Instance call HIRs lie past every template
+    /// row, so they never meet a frozen original call HIR.
+    instance_call_owners: BTreeMap<(u32, u32), u32>,
 }
 
 impl ProgramPacket {
@@ -199,6 +203,7 @@ impl ProgramPacket {
             original_contexts: BTreeMap::new(),
             original_units: BTreeSet::new(),
             call_occurrences: BTreeMap::new(),
+            instance_call_owners: BTreeMap::new(),
             admitted_calls: BTreeMap::new(),
         })
     }
@@ -429,6 +434,112 @@ impl ProgramPacket {
         })
     }
 
+    /// An instance-copy replay: every call of one copied body, checked under
+    /// the replay context of the template body it copies. Call HIRs belong to
+    /// the instance unit and are at or past `first_copy_row`; source spans
+    /// already name template bytes.
+    pub fn append_instance_calls(
+        &mut self,
+        snapshot: u32,
+        selected_hir: u32,
+        context: u32,
+        first_copy_row: u32,
+        facts: Arc<[CheckedGenericCall]>,
+    ) -> Result<()> {
+        self.append_guard(|this| {
+            let frozen = this.catalog.snapshots.get(snapshot as usize)
+                .ok_or_else(|| anyhow!("instance call snapshot absent"))?;
+            ensure!(
+                frozen.call_owner_by_hir.keys().next_back().is_none_or(|&last| last < first_copy_row),
+                "instance copy rows overlap the template's call rows"
+            );
+            let selected_owner = this.catalog.owner(snapshot, selected_hir)?;
+            ensure!(
+                this.catalog.callable_by_owner.contains_key(&selected_owner),
+                "copied body is not an accepted callable"
+            );
+            let row = this.tables.row(13, context)?;
+            ensure!(
+                row[0] == snapshot && row[1] == selected_owner && row[5] == 1,
+                "replay context does not own the copied lexical body"
+            );
+            for (fact_index, call) in facts.iter().enumerate() {
+                ensure!(call.call_hir >= first_copy_row, "instance call lies inside the template");
+                ensure!(
+                    this.instance_call_owners.insert((context, call.call_hir), selected_hir).is_none(),
+                    "duplicate instance call occurrence"
+                );
+                this.append_call(snapshot, context, selected_hir, facts.clone(), fact_index)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// The admitted calls of one copied body, in `call_hirs` order.
+    pub fn admitted_instance_calls(
+        &self,
+        snapshot: u32,
+        selected_hir: u32,
+        context: u32,
+        call_hirs: &[u32],
+    ) -> Result<Vec<AdmittedCall>> {
+        self.ready()?;
+        let frozen = self.catalog.snapshots.get(snapshot as usize)
+            .ok_or_else(|| anyhow!("call snapshot absent"))?;
+        let selected_owner = self.catalog.owner(snapshot, selected_hir)?;
+        let row = self.tables.row(13, context)?;
+        ensure!(
+            self.catalog.callable_by_owner.contains_key(&selected_owner)
+                && row[0] == snapshot && row[1] == selected_owner && row[5] == 1,
+            "replay context does not own the copied lexical body"
+        );
+        call_hirs.iter().map(|&call_hir| {
+            ensure!(self.instance_call_owners.get(&(context, call_hir)) == Some(&selected_hir),
+                "instance call was not appended for this copy");
+            self.admitted_occurrence(snapshot, frozen.id, selected_hir, context, call_hir)
+        }).collect()
+    }
+
+    /// One admitted occurrence of a call under its context.
+    fn admitted_occurrence(
+        &self,
+        snapshot: u32,
+        frozen_id: FrozenSnapshotId,
+        actual_hir: u32,
+        context: u32,
+        call_hir: u32,
+    ) -> Result<AdmittedCall> {
+        let occurrence = self
+            .call_occurrences
+            .get(&(context, call_hir))
+            .ok_or_else(|| anyhow!("call occurrence was not retained"))?;
+        let state = *self
+            .admitted_calls
+            .get(&occurrence.row)
+            .ok_or_else(|| anyhow!("call occurrence is not GPU-admitted"))?;
+        ensure!(matches!(state, 1 | 2), "call has no successful GPU state");
+        let site = self.retained_call_site(occurrence.row)?;
+        ensure!(
+            site.snapshot == snapshot
+                && site.source
+                    == SourceCallIdentity {
+                        snapshot: frozen_id,
+                        actual_function_hir: actual_hir,
+                        call_hir,
+                    },
+            "call context belongs to another source occurrence"
+        );
+        Ok(AdmittedCall {
+            catalog: self.catalog.clone(),
+            arena_id: self.arena_id,
+            row: occurrence.row,
+            source: site.source,
+            facts: site.facts,
+            fact_index: site.fact_index,
+            concrete: state == 1,
+        })
+    }
+
     fn append_call_inventory(
         &mut self,
         snapshot: u32,
@@ -585,35 +696,7 @@ impl ProgramPacket {
                         .get(&(snapshot, actual_hir))
                         .ok_or_else(|| anyhow!("original call context absent"))?,
                 };
-                let occurrence = self
-                    .call_occurrences
-                    .get(&(context, call.call_hir))
-                    .ok_or_else(|| anyhow!("call occurrence was not retained"))?;
-                let state = *self
-                    .admitted_calls
-                    .get(&occurrence.row)
-                    .ok_or_else(|| anyhow!("call occurrence is not GPU-admitted"))?;
-                ensure!(matches!(state, 1 | 2), "call has no successful GPU state");
-                let site = self.retained_call_site(occurrence.row)?;
-                ensure!(
-                    site.snapshot == snapshot
-                        && site.source
-                            == SourceCallIdentity {
-                                snapshot: frozen.id,
-                                actual_function_hir: actual_hir,
-                                call_hir: call.call_hir,
-                            },
-                    "call context belongs to another source occurrence"
-                );
-                Ok(AdmittedCall {
-                    catalog: self.catalog.clone(),
-                    arena_id: self.arena_id,
-                    row: occurrence.row,
-                    source: site.source,
-                    facts: site.facts,
-                    fact_index: site.fact_index,
-                    concrete: state == 1,
-                })
+                self.admitted_occurrence(snapshot, frozen.id, actual_hir, context, call.call_hir)
             })
             .collect()
     }
@@ -629,9 +712,10 @@ impl ProgramPacket {
             .snapshots
             .get(snapshot as usize)
             .ok_or_else(|| anyhow!("call context source snapshot absent"))?;
-        let actual_hir = *frozen
-            .call_owner_by_hir
-            .get(&call[1])
+        let actual_hir = *self
+            .instance_call_owners
+            .get(&(call[0], call[1]))
+            .or_else(|| frozen.call_owner_by_hir.get(&call[1]))
             .ok_or_else(|| anyhow!("retained call has no accepted source owner"))?;
         let actual_owner = if actual_hir == INVALID {
             INVALID
