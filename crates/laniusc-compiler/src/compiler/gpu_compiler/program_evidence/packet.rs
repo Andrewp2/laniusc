@@ -165,6 +165,10 @@ pub(in crate::compiler::gpu_compiler) struct ProgramPacket {
     original_units: BTreeSet<u32>,
     call_occurrences: BTreeMap<(u32, u32), CallOccurrence>,
     admitted_calls: BTreeMap<u32, u32>,
+    /// (replay context, call HIR) -> actual function HIR for the calls a
+    /// replay context owns outside its template's frozen call inventory
+    /// (`append_context_calls`).
+    context_call_owners: BTreeMap<(u32, u32), u32>,
 }
 
 impl ProgramPacket {
@@ -200,6 +204,7 @@ impl ProgramPacket {
             original_units: BTreeSet::new(),
             call_occurrences: BTreeMap::new(),
             admitted_calls: BTreeMap::new(),
+            context_call_owners: BTreeMap::new(),
         })
     }
     fn ready(&self) -> Result<()> {
@@ -374,7 +379,9 @@ impl ProgramPacket {
                 this.original_units.insert(snapshot),
                 "original unit inventory was already appended"
             );
-            this.append_call_inventory(snapshot, facts.generic_calls().clone(), owners, &BTreeMap::new())
+            this.append_call_inventory(
+                snapshot, facts.generic_calls().clone(), owners, &BTreeMap::new(), &BTreeSet::new(),
+            )
         })
     }
 
@@ -391,7 +398,10 @@ impl ProgramPacket {
     }
 
     /// A batched replay reparse: each selected owner HIR routes its calls to
-    /// its own replay context.
+    /// its own replay context. A selected body may hold generic calls its
+    /// template does not: a bound-member call whose concrete receiver selects
+    /// a generic impl method (methods/09). They join that body's context
+    /// (`append_context_calls`).
     pub fn append_replay_batch_calls(
         &mut self,
         unit: &CompiledSourcePackUnit,
@@ -416,17 +426,101 @@ impl ProgramPacket {
             // frozen catalog alone supplies callable aliases and requirements.
             let owner_by_call = accepted_call_owners(unit)?;
             ensure!(
-                owner_by_call == frozen.call_owner_by_hir,
+                frozen
+                    .call_owner_by_hir
+                    .iter()
+                    .all(|(call, owner)| owner_by_call.get(call) == Some(owner)),
                 "reparse changed the complete original call occurrence inventory"
             );
             ensure!(!selected.is_empty(), "replay reparse selects no body");
+            // Calls the template lacks, grouped by their selected owner.
+            let mut added = BTreeMap::<u32, Vec<usize>>::new();
+            let mut added_hirs = BTreeSet::new();
+            for (index, call) in unit.generic_calls.iter().enumerate() {
+                if frozen.call_owner_by_hir.contains_key(&call.call_hir) { continue; }
+                let owner = owner_by_call[&call.call_hir];
+                ensure!(selected.contains_key(&owner),
+                    "reparse added a generic call outside the selected body");
+                added.entry(owner).or_default().push(index);
+                added_hirs.insert(call.call_hir);
+            }
+            let first = this.tables.count(15)?;
             this.append_call_inventory(
                 snapshot,
                 unit.generic_calls.clone(),
                 owner_by_call,
                 selected,
-            )
+                &added_hirs,
+            )?;
+            for (owner, indices) in &added {
+                this.append_context_calls_inner(
+                    snapshot,
+                    selected[owner],
+                    *owner,
+                    unit.generic_calls.clone(),
+                    indices,
+                )?;
+            }
+            Span::new(first, this.tables.count(15)? - first)
         })
+    }
+
+    /// Append calls that replay context `context` owns outside its template's
+    /// frozen call inventory: each fact at `fact_indices` becomes a call row
+    /// of that context, owned by `owner_hir` (the context's selected body).
+    /// `admitted_context_calls` returns them once the GPU admits them.
+    /// Replay routes its added calls through `append_replay_batch_calls`;
+    /// this entry point is for the calls of copied instance bodies.
+    #[allow(dead_code)]
+    pub fn append_context_calls(
+        &mut self,
+        snapshot: u32,
+        context: u32,
+        owner_hir: u32,
+        facts: Arc<[CheckedGenericCall]>,
+        fact_indices: &[usize],
+    ) -> Result<Span> {
+        self.append_guard(|this| {
+            this.append_context_calls_inner(snapshot, context, owner_hir, facts, fact_indices)
+        })
+    }
+
+    fn append_context_calls_inner(
+        &mut self,
+        snapshot: u32,
+        context: u32,
+        owner_hir: u32,
+        facts: Arc<[CheckedGenericCall]>,
+        fact_indices: &[usize],
+    ) -> Result<Span> {
+        let catalog = self.catalog.clone();
+        let frozen = catalog
+            .snapshots
+            .get(snapshot as usize)
+            .ok_or_else(|| anyhow!("context call snapshot absent"))?;
+        let owner = catalog.owner(snapshot, owner_hir)?;
+        let row = self.tables.row(13, context)?;
+        ensure!(
+            catalog.callable_by_owner.contains_key(&owner)
+                && row[0] == snapshot
+                && row[1] == owner
+                && row[5] == 1,
+            "replay context does not own the selected lexical body"
+        );
+        let first = self.tables.count(15)?;
+        for &index in fact_indices {
+            let call_hir = facts
+                .get(index)
+                .ok_or_else(|| anyhow!("context call index absent"))?
+                .call_hir;
+            ensure!(
+                !frozen.call_owner_by_hir.contains_key(&call_hir)
+                    && self.context_call_owners.insert((context, call_hir), owner_hir).is_none(),
+                "context call is already a retained occurrence"
+            );
+            self.append_call(snapshot, context, owner_hir, facts.clone(), index)?;
+        }
+        Span::new(first, self.tables.count(15)? - first)
     }
 
     fn append_call_inventory(
@@ -435,6 +529,8 @@ impl ProgramPacket {
         facts: Arc<[CheckedGenericCall]>,
         owner_by_call: BTreeMap<u32, u32>,
         selected_replay: &BTreeMap<u32, u32>,
+        // Calls the caller appends as context calls instead.
+        context_owned: &BTreeSet<u32>,
     ) -> Result<Span> {
         // Validate the routing authority before examining calls. An empty
         // body or a wrong selected HIR must not bypass this check merely
@@ -453,6 +549,7 @@ impl ProgramPacket {
         }
         let first = self.tables.count(15)?;
         for (fact_index, call) in facts.iter().enumerate() {
+            if context_owned.contains(&call.call_hir) { continue; }
             let actual_hir = *owner_by_call
                 .get(&call.call_hir)
                 .ok_or_else(|| anyhow!("checked call missing actual owner"))?;
@@ -585,37 +682,64 @@ impl ProgramPacket {
                         .get(&(snapshot, actual_hir))
                         .ok_or_else(|| anyhow!("original call context absent"))?,
                 };
-                let occurrence = self
-                    .call_occurrences
-                    .get(&(context, call.call_hir))
-                    .ok_or_else(|| anyhow!("call occurrence was not retained"))?;
-                let state = *self
-                    .admitted_calls
-                    .get(&occurrence.row)
-                    .ok_or_else(|| anyhow!("call occurrence is not GPU-admitted"))?;
-                ensure!(matches!(state, 1 | 2), "call has no successful GPU state");
-                let site = self.retained_call_site(occurrence.row)?;
-                ensure!(
-                    site.snapshot == snapshot
-                        && site.source
-                            == SourceCallIdentity {
-                                snapshot: frozen.id,
-                                actual_function_hir: actual_hir,
-                                call_hir: call.call_hir,
-                            },
-                    "call context belongs to another source occurrence"
-                );
-                Ok(AdmittedCall {
-                    catalog: self.catalog.clone(),
-                    arena_id: self.arena_id,
-                    row: occurrence.row,
-                    source: site.source,
-                    facts: site.facts,
-                    fact_index: site.fact_index,
-                    concrete: state == 1,
-                })
+                self.admitted_occurrence(snapshot, context, call.call_hir, actual_hir)
             })
             .collect()
+    }
+
+    /// The admitted calls that replay context `context` owns outside its
+    /// template's inventory (`append_context_calls`), in call HIR order.
+    pub fn admitted_context_calls(&self, snapshot: u32, context: u32) -> Result<Vec<AdmittedCall>> {
+        self.ready()?;
+        self.context_call_owners
+            .range((context, 0)..=(context, u32::MAX))
+            .map(|(&(_, call_hir), &actual_hir)| {
+                self.admitted_occurrence(snapshot, context, call_hir, actual_hir)
+            })
+            .collect()
+    }
+
+    fn admitted_occurrence(
+        &self,
+        snapshot: u32,
+        context: u32,
+        call_hir: u32,
+        actual_hir: u32,
+    ) -> Result<AdmittedCall> {
+        let frozen = self
+            .catalog
+            .snapshots
+            .get(snapshot as usize)
+            .ok_or_else(|| anyhow!("call snapshot absent"))?;
+        let occurrence = self
+            .call_occurrences
+            .get(&(context, call_hir))
+            .ok_or_else(|| anyhow!("call occurrence was not retained"))?;
+        let state = *self
+            .admitted_calls
+            .get(&occurrence.row)
+            .ok_or_else(|| anyhow!("call occurrence is not GPU-admitted"))?;
+        ensure!(matches!(state, 1 | 2), "call has no successful GPU state");
+        let site = self.retained_call_site(occurrence.row)?;
+        ensure!(
+            site.snapshot == snapshot
+                && site.source
+                    == SourceCallIdentity {
+                        snapshot: frozen.id,
+                        actual_function_hir: actual_hir,
+                        call_hir,
+                    },
+            "call context belongs to another source occurrence"
+        );
+        Ok(AdmittedCall {
+            catalog: self.catalog.clone(),
+            arena_id: self.arena_id,
+            row: occurrence.row,
+            source: site.source,
+            facts: site.facts,
+            fact_index: site.fact_index,
+            concrete: state == 1,
+        })
     }
 
     /// Diagnostic lookup deliberately works after poisoning. Exact integer and
@@ -629,10 +753,13 @@ impl ProgramPacket {
             .snapshots
             .get(snapshot as usize)
             .ok_or_else(|| anyhow!("call context source snapshot absent"))?;
-        let actual_hir = *frozen
-            .call_owner_by_hir
-            .get(&call[1])
-            .ok_or_else(|| anyhow!("retained call has no accepted source owner"))?;
+        let actual_hir = match self.context_call_owners.get(&(call[0], call[1])) {
+            Some(&owner) => owner,
+            None => *frozen
+                .call_owner_by_hir
+                .get(&call[1])
+                .ok_or_else(|| anyhow!("retained call has no accepted source owner"))?,
+        };
         let actual_owner = if actual_hir == INVALID {
             INVALID
         } else {

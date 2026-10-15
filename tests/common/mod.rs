@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod sample_programs;
+pub mod x86_jumps;
 
 use std::{
     collections::HashMap,
@@ -69,7 +70,12 @@ impl TempArtifact {
         &self.path
     }
 
+    /// Writes the artifact. An x86-64 executable is first checked for jumps
+    /// that leave their function (`x86_jumps`), so every test executable
+    /// written through here gets that check.
     pub fn write_bytes(&self, contents: impl AsRef<[u8]>) {
+        let contents = contents.as_ref();
+        x86_jumps::assert_x86_64_jumps_stay_in_functions(self.path.display(), contents);
         fs::write(&self.path, contents).unwrap_or_else(|err| {
             panic!("write temporary artifact {}: {err}", self.path.display())
         });

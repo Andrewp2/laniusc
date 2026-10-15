@@ -6350,7 +6350,7 @@ fn build_graph(
         (
             "type_check.body_specialization.bound_members",
             "type_checker/methods/09_route_bound_members",
-            ResourceDomain::Tokens,
+            ResourceDomain::HirNodes,
         ),
     ] {
         graph.add_kernel_pass_by_name(

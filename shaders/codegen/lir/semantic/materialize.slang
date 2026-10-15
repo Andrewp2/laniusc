@@ -1859,7 +1859,8 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
 
 // Place lowering owns the distinction between a declaration's stable cell,
 // a projection of that cell, and a value captured from it. Receiver lookup
-// supplies only the checked type adjustment; it never invents a temporary cell.
+// supplies only the checked type adjustment. The one temporary cell is the
+// call-owned local of a borrowed receiver that is not a place.
 uint place_original_recipe_count(uint node)
 {
     return semantic_place_original_count[node] -
@@ -1931,6 +1932,18 @@ SemanticLirRow place_empty_row(uint node, uint local_row, uint hir_count)
     return result;
 }
 
+// place_mark gives the call's local storage only when the receiver is not a
+// place (receiver_temporary.slang); the method name token keys it.
+uint receiver_temporary_place(uint encoded_call, uint hir_count)
+{
+    uint call = encoded_call - 1u;
+    uint member = encoded_call != 0u && call < hir_count ? compact_hir_payload[call].a : LIR_INVALID;
+    uint token = member < hir_count && compact_hir_core[member].kind == HIR_MEMBER_EXPR
+        ? compact_hir_payload[member].c : LIR_INVALID;
+    return token < gParams.n_tokens && semantic_place_storage_by_token[token].x != 0u
+        ? token : LIR_INVALID;
+}
+
 SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_count)
 {
     HirCore hir = compact_hir_core[node];
@@ -1951,6 +1964,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
 
     uint original = semantic_place_original_count[node];
     uint encoded_call = semantic_receiver_call_by_hir[node];
+    uint temporary = receiver_temporary_place(encoded_call, hir_count);
     if (local_row >= original)
     {
         SemanticLirRow result = place_empty_row(node, local_row, hir_count);
@@ -1972,6 +1986,27 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
             return result;
         }
         CheckedCallArtifact call = semantic_calls_by_hir[encoded_call - 1u];
+        if (temporary != LIR_INVALID)
+        {
+            // Store the receiver value as a `let` initializer would, then
+            // borrow the stored copy.
+            bool store = local_row == original;
+            place_set_op(result.core, store ? SEMANTIC_LIR_OP_PLACE_STORE : SEMANTIC_LIR_OP_ADDRESS);
+            result.operands.a = store ? semantic_place_address_by_token[temporary] : temporary;
+            result.operands.b = store ? adjusted : LIR_INVALID;
+            place_set_type(result.core,
+                store ? call.receiver_matched_ref_tag : call.receiver_parameter_ref_tag,
+                store ? call.receiver_matched_ref_payload : call.receiver_parameter_ref_payload,
+                hir_count);
+            uint4 storage = semantic_place_storage_by_token[temporary];
+            if (store) result.core.flags |= SEMANTIC_LIR_FLAG_NATIVE_PLACE;
+            result.core.value_word_count = !store ? receiver_native_words(call.receiver_matched_ref_tag,
+                    call.receiver_matched_ref_payload, hir_count)
+                : storage.x != 1u ? storage.y : result.core.value_word_count;
+            if (result.operands.a == LIR_INVALID || local_row > original + 1u)
+                result.core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+            return result;
+        }
         uint adjustment_row = local_row - original;
         bool value = call.receiver_adjustment_kind == 1u;
         bool final_load = value && adjustment_row + 1u == call.receiver_deref_count;
@@ -1998,7 +2033,8 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (encoded_call != 0u)
     {
         CheckedCallArtifact call = semantic_calls_by_hir[encoded_call - 1u];
-        if (call.receiver_adjustment_kind == 2u && call.receiver_deref_count == 0u)
+        if (call.receiver_adjustment_kind == 2u && call.receiver_deref_count == 0u &&
+            temporary == LIR_INVALID)
         {
             // Count disables receiver copies for borrowing. These operations
             // publish the real declaration/field/index cell, never a spill of

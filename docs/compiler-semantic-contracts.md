@@ -1,5 +1,34 @@
 # Compiler semantic contracts
 
+## Borrowed receivers that are not places (2026-10-15)
+
+A `&self` method can be called on a value with no storage of its own, such as
+a call result: `make().get()`, `w.twice().get()`, `!make().ok()` or
+`absent.or(present).contains(7)`. Lowering treats the receiver as the
+initializer of a hidden `let`. Semantic LIR stores the value in a
+compiler-generated local, then passes that local's address. Each evaluation
+stores again, so a receiver in a loop sees the current value.
+
+- `local_mark` gives the call one local. `local_scatter` keys it by the call
+  site's method name token, which is unique to the call and never names a
+  declaration.
+- `place_mark` gives that token a stable home, sized from the matched receiver
+  type.
+- `count` appends two rows to the receiver: `PLACE_STORE` into the home, then
+  `ADDRESS` of it. The call argument reads the last row.
+
+The predicate is in `codegen/lir/semantic/receiver_temporary.slang`. Names,
+fields, indexes and paths still borrow their own storage. Some receivers are
+still rejected as before:
+
+- a parenthesized receiver;
+- a field or index of a temporary (`make().inner.get()`);
+- a receiver that the method dereferences first.
+
+Wasm has no place operations, so it still rejects every borrowed receiver. The
+stored copy lives in the function's frame, under the caller-managed lifetime
+contract described below. There is no escape check.
+
 ## Scalar casts (2026-10-15)
 
 `expr as T` converts one scalar value to another with Rust semantics:
@@ -270,7 +299,8 @@ References retain the existing caller-managed lifetime contract: referenced
 storage must remain alive while used. This work does not add or claim static
 escape checking. Direct borrows of temporary descriptors or owned temporary
 arrays, and variant-payload places without an accepted storage recipe, reject
-explicitly. The focused acceptance programs use valid
+explicitly. A `&self` receiver is the exception: its value is stored first, as
+described in "Borrowed receivers that are not places". The focused acceptance programs use valid
 storage lifetimes and exercise aliasing, mutation, receiver evaluation order,
 structural generic substitution, and imported/local method ranking.
 
