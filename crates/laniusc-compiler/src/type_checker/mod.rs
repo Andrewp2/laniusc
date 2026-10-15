@@ -28,7 +28,7 @@ pub(crate) use checked_contracts::{
     CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
     CheckedPredicateContract,
 };
-pub(crate) use generic_body::CheckedBodySpecialization;
+pub(crate) use generic_body::{CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
@@ -266,7 +266,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// workspace unmaterialized.
     pub semantic_interface_required: bool,
     /// One explicit body replay. Ordinary jobs upload an empty packet.
-    pub(crate) body_specialization: Option<&'a CheckedBodySpecialization>,
+    pub(crate) body_specialization: Option<&'a CheckedBodySpecializationBatch>,
     /// Derived from the same private frontend request as the body packet.
     pub(crate) frontend_trait_check: FrontendTraitCheck,
     /// The parser's compact semantic artifact. Keeping this as one typed view

@@ -274,7 +274,7 @@ impl GpuTypeChecker {
         let body_specialization_inputs = storage_ro_from_u32s(
             device,
             "type_check.body_specialization_inputs",
-            &[0; generic_body::BODY_SPECIALIZATION_WORDS],
+            &[0; generic_body::BODY_BATCH_WORDS],
         );
         // An absent interface still has a valid, immutable zero-count page.
         // It must never alias workspace columns written by the same shader.
@@ -712,12 +712,14 @@ impl GpuTypeChecker {
         let defer_inference = 1u8;
         self.call_inference_state
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
+        // Only the used prefix is written: an ordinary job's zero header and
+        // zero extra-entry count make every later packet row unreachable.
         let specialization = hir_items
             .body_specialization
-            .map(CheckedBodySpecialization::packet)
+            .map(CheckedBodySpecializationBatch::packet)
             .transpose()
             .map_err(GpuTypeCheckError::Gpu)?
-            .unwrap_or([0; generic_body::BODY_SPECIALIZATION_WORDS]);
+            .unwrap_or_else(|| vec![0; generic_body::BODY_SPECIALIZATION_WORDS]);
         let specialization_bytes: Vec<u8> = specialization
             .into_iter()
             .flat_map(u32::to_le_bytes)

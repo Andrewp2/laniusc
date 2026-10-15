@@ -12,7 +12,15 @@ bool valid_instance(uint instance)
     return instance < capacity;
 }
 
-struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint replay_function; };
+// replay_function: the first selected callable HIR plus one (0 outside
+// replay); a batched replay lists its other selected callables, each HIR
+// plus one, in replay_extra (replay_extra_count of them).
+struct Params
+{
+    uint n_hir_nodes; uint param_capacity; uint n_tokens; uint replay_function;
+    uint replay_extra_count; uint pad0; uint pad1; uint pad2;
+    uint4 replay_extra[16];
+};
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
@@ -63,6 +71,15 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
 #include "type_closure_graph.slang"
 #include "function_generic_environment.slang"
+
+bool replay_selects_function(uint row, uint replay)
+{
+    if (row == replay - 1u) return true;
+    uint extra = min(gParams.replay_extra_count, 64u);
+    for (uint index = 0u; index < extra; index++)
+        if (gParams.replay_extra[index >> 2u][index & 3u] == row + 1u) return true;
+    return false;
+}
 
 bool unclosed_type_reference(uint tag, uint payload)
 {
@@ -115,12 +132,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool keep_helpers = (gParams.replay_function & REPLAY_KEEP_LOCAL_HELPERS) != 0u;
     if (replay != 0u && row < count &&
         compact_hir_core[row].kind == 3u &&
-        row != replay - 1u &&
+        !replay_selects_function(row, replay) &&
         (function_has_generic_environment(row, count) ||
          (!keep_helpers && compact_hir_payload[row].a != HIR_ITEM_KIND_EXTERN_FN)))
     {
         // Scratch substitutions can close sibling impl methods. The replay
-        // request authorizes one concrete generic body, not those siblings.
+        // request authorizes its selected concrete bodies, not those siblings.
         // Ordinary local helpers already have definitions in the original
         // object: calls to them become symbol calls resolved by the linker,
         // so a replay object holds only the selected body. Extern functions
