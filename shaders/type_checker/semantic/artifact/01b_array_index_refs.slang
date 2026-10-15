@@ -18,6 +18,7 @@ import type_checker.native_nominal_identity;
 import gpu_index;
 import checked_semantic_artifact;
 import type_checker.argument_context;
+import constant_value;
 import hir_expr_semantics;
 
 bool valid_instance(uint instance)
@@ -144,6 +145,22 @@ bool native_array_count(uint instance, out uint count)
         count < NATIVE_RUNTIME_LENGTH;
 }
 
+// The token of an array type row's integer literal extent that u32 cannot
+// represent, or INVALID. That literal owns the range diagnostic (LNC0069), as
+// in any other u32 context; the unsupported array adds no second error.
+uint array_extent_range_literal(uint node)
+{
+    if (!valid_hir(node) || compact_hir_core[node].kind != 5u || compact_hir_payload[node].a != 2u)
+        return INVALID;
+    uint literal; bool negative;
+    if (!integer_literal_magnitude(compact_hir_payload[node].d, active_hir_count(),
+        compact_hir_core, compact_hir_payload, literal, negative)) return INVALID;
+    HirPayload magnitude = compact_hir_payload[literal];
+    uint3 value;
+    return constant_value_from_integer_magnitude(SCALAR_U32, uint2(magnitude.b, magnitude.c),
+        negative, value) ? INVALID : compact_hir_core[literal].token_start;
+}
+
 // Publishes the length of array or slice `instance` at `node`; true with the
 // fixed count when it is a native fixed-size array.
 bool publish_array_length(uint node, uint instance, out uint count)
@@ -172,7 +189,10 @@ bool publish_array_length(uint node, uint instance, out uint count)
         gParams.n_tokens, descriptor) &&
         descriptor.disposition == CONSTANT_REFERENCE_SYMBOLIC &&
         scalar_is_integer(descriptor.terminal_scalar);
-    if (!symbolic)
+    uint range_literal = symbolic ? INVALID : array_extent_range_literal(node);
+    if (valid_token(range_literal))
+        record_min_token_error(status, range_literal, 24u, SCALAR_U32);
+    else if (!symbolic)
         record_min_token_error(status, compact_hir_core[node].token_start, 6u, 0x474e0006u);
     return false;
 }
