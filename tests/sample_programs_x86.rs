@@ -50,7 +50,7 @@ fn run_sample_x86(
     let work_dir = TempDir::new("sample_program");
     sample.stage_input_files(work_dir.path());
     let exe_path = work_dir.path().join(artifact_stem);
-    fs::write(&exe_path, bytes)
+    common::x86_jumps::write_x86_64_executable(&exe_path, bytes)
         .unwrap_or_else(|err| panic!("{context}: write native ELF {}: {err}", exe_path.display()));
     let mut permissions = fs::metadata(&exe_path)
         .unwrap_or_else(|err| panic!("{context}: stat native ELF {}: {err}", exe_path.display()))
