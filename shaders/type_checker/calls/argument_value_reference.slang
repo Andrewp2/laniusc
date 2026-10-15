@@ -130,6 +130,16 @@ uint direct_node_type_no_nested_call(uint node)
     if (compact_hir_core[node].kind == HIR_INDEX_EXPR)
     {
         uint tag; uint payload;
+#ifdef ARGUMENT_TYPE_GRAPH
+        // The including kernel reads the type rows through its own graph.
+        if (checked_named_index_reference<ARGUMENT_TYPE_GRAPH>(node, active_hir_node_count(), gParams.n_tokens,
+            compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
+            decl_type_ref_payload, parameter_type_capacity(), tag, payload) ||
+            checked_member_index_reference<ARGUMENT_TYPE_GRAPH>(node, active_hir_node_count(), gParams.n_tokens,
+                compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
+                parameter_type_capacity(), tag, payload))
+            return leaf_type_code_for_ref(tag, payload);
+#else
         if (checked_named_index_reference(node, active_hir_node_count(), gParams.n_tokens,
             compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
             decl_type_ref_payload, type_instance_kind, type_instance_elem_ref_tag,
@@ -138,6 +148,7 @@ uint direct_node_type_no_nested_call(uint node)
                 compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
                 type_instance_kind, type_instance_elem_ref_tag, type_instance_elem_ref_payload, tag, payload))
             return leaf_type_code_for_ref(tag, payload);
+#endif
         return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
     }
     if (compact_hir_core[node].kind == HIR_MATCH_EXPR)
@@ -160,11 +171,30 @@ uint expr_type_no_nested_call(uint result_node)
     if (!valid_node(node))
         return TY_UNKNOWN;
 
-    uint direct_ty = direct_node_type_no_nested_call(node);
-    if (direct_ty != TY_UNKNOWN)
-        return direct_ty;
-
     uint form = expr_form(node);
+    bool arithmetic = form == HIR_EXPR_NEG ||
+        form == HIR_EXPR_ADD ||
+        form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL ||
+        form == HIR_EXPR_DIV;
+    // One direct-type site: the node itself, then an arithmetic node's
+    // left and right operands.
+    uint left_ty = TY_UNKNOWN;
+    uint right_ty = TY_UNKNOWN;
+    for (uint operand = 0u; operand < 3u; operand++)
+    {
+        uint current = operand == 0u ? node : resolve_expr(expr_record_slot(node,
+            operand == 1u ? HIR_EXPR_RECORD_LEFT : HIR_EXPR_RECORD_RIGHT));
+        uint ty = direct_node_type_no_nested_call(current);
+        if (operand == 0u)
+        {
+            if (ty != TY_UNKNOWN) return ty;
+            if (!arithmetic) break;
+        }
+        else if (operand == 1u) left_ty = ty;
+        else right_ty = ty;
+    }
+
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
@@ -190,17 +220,9 @@ uint expr_type_no_nested_call(uint result_node)
         form == HIR_EXPR_OR)
         return TY_BOOL;
 
-    if (form == HIR_EXPR_NEG ||
-        form == HIR_EXPR_ADD ||
-        form == HIR_EXPR_SUB ||
-        form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_DIV)
-    {
-        uint left_ty = direct_node_type_no_nested_call(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
-        uint right_ty = direct_node_type_no_nested_call(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
+    if (arithmetic)
         return scalar_is_float(left_ty) ? left_ty : scalar_is_float(right_ty) ? right_ty :
             scalar_is_integer(left_ty) ? left_ty : scalar_is_integer(right_ty) ? right_ty : TY_UNKNOWN;
-    }
 
     if (form == HIR_EXPR_MOD ||
         form == HIR_EXPR_BIT_OR ||
@@ -275,6 +297,14 @@ bool arg_decl_type_ref(uint arg_node, out uint tag, out uint payload)
             if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
         }
     }
+#ifdef ARGUMENT_TYPE_GRAPH
+    if (checked_named_index_reference<ARGUMENT_TYPE_GRAPH>(arg_node, active_hir_node_count(), gParams.n_tokens,
+        compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
+        decl_type_ref_payload, parameter_type_capacity(), tag, payload) ||
+        checked_member_index_reference<ARGUMENT_TYPE_GRAPH>(arg_node, active_hir_node_count(), gParams.n_tokens,
+            compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
+            parameter_type_capacity(), tag, payload)) return true;
+#else
     if (checked_named_index_reference(arg_node, active_hir_node_count(), gParams.n_tokens,
         compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
         decl_type_ref_payload, type_instance_kind, type_instance_elem_ref_tag,
@@ -282,6 +312,7 @@ bool arg_decl_type_ref(uint arg_node, out uint tag, out uint payload)
         checked_member_index_reference(arg_node, active_hir_node_count(), gParams.n_tokens,
             compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
             type_instance_kind, type_instance_elem_ref_tag, type_instance_elem_ref_payload, tag, payload)) return true;
+#endif
     uint token = direct_name_expr_token(arg_node);
     return read_decl_type_ref(token, tag, payload);
 }

@@ -1,16 +1,13 @@
-import type_checker.constant_constraints;
-import type_checker.constant_publication;
+// Emit complete generic bindings from compact per-argument claim spans over
+// canonical IDs. Collection records each parameter pattern's slot mask. One
+// lane per argument matches its complete pattern once (ct_match) and
+// publishes that span; other lanes leave it untouched. All call forms use
+// this same relation and conflict validator. Each claim is spelled by the
+// checked row of its binding's ID (ct_realize).
 import type_checker.argument_context;
-import type_checker.argument_borrow;
 import type_checker.calls.explicit_call_environment;
 import type_checker.constant_parameter_slots;
 import type_checker.calls.parameter_pattern_page;
-// Emit complete generic bindings from compact per-argument claim spans.
-// Collection records each parameter pattern's slot mask. One lane per argument
-// matches its complete pattern once and publishes that span; other lanes leave
-// it untouched. All call forms use this same relation and conflict validator.
-
-import external_type_identity;
 import dependency_interface;
 import hir_records;
 import atomics;
@@ -20,6 +17,16 @@ import type_checker.generic_result_type_origin;
 import type_checker.concrete_type_closure;
 import type_checker.instance_arguments;
 import status;
+import type_checker.mutable_checked_type_graph;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_mutable_rows;
+import type_checker.canonical.canonical_dependency;
+import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_checked;
+import type_checker.substitution.ct_rows;
+import type_checker.substitution.ct_realize;
+import type_checker.match.ct_match;
+import constant_value;
 
 struct Params
 {
@@ -68,21 +75,6 @@ StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_ref_tag;
 StructuredBuffer<uint> call_param_row_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
 
 RWStructuredBuffer<uint> call_generic_claim_callee;
 RWStructuredBuffer<uint> call_generic_claim_slot;
@@ -184,7 +176,8 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 
-#include "parameter_type_pattern.slang"
+uint parameter_type_capacity() { return mutable_type_capacity(); }
+#define ARGUMENT_TYPE_GRAPH MutableCheckedTypeGraph
 #include "argument_value_reference.slang"
 
 uint linear_thread_id(uint3 dtid)
@@ -269,6 +262,40 @@ void publish_generic_return_type(
         atomic_u32_compare_exchange(call_return_type, callee_i, prior, arg_ty);
 }
 
+// Parameter slots of the callee's patterns: a local parameter by its
+// declaration's slot, a dependency parameter by the slot it carries.
+struct ClaimSlots : ICtSlots
+{
+    uint type_slot(uint token)
+    {
+        uint slot = generic_slot_for_type_ref(TYPE_REF_GENERIC_PARAM, token);
+        return slot < CT_SLOT_NONE ? slot : CT_SLOT_NONE;
+    }
+    uint const_slot(uint token)
+    {
+        uint slot = valid_token(token) ? type_const_param_slot_by_token[token] : INVALID;
+        return slot < CT_SLOT_NONE ? slot : CT_SLOT_NONE;
+    }
+    uint const_scalar(uint token)
+    {
+        uint scalar = valid_token(token) ? type_const_param_scalar_by_token[token] : 0u;
+        return constant_scalar_is_supported(scalar) ? scalar : 0u;
+    }
+}
+
+// The canonical ID of a parameter pattern or argument operand: a dependency
+// node (its alias root's) or slot parameter, else the checked row interned.
+uint operand_id(uint2 operand, inout CtSpare spare)
+{
+    if (operand.x == TYPE_REF_EXTERNAL_GENERIC)
+        return operand.y < CT_DEP_PARAM_SLOTS ? ct_dep_type_param(operand.y) : CT_UNKNOWN;
+    if (operand.x != TYPE_REF_EXTERNAL_CANONICAL)
+        return ct_intern_checked<CtMutableRows>(operand.x, operand.y, spare.record);
+    uint roots; uint stride;
+    canonical_type_roots.GetDimensions(roots, stride);
+    return operand.y < roots ? ct_dependency_state(canonical_type_roots[operand.y]) : CT_UNKNOWN;
+}
+
 void emit_argument_claims(uint arg_row)
 {
     if (arg_row >= min(call_arg_row_count_out[0u], active_hir_node_count())) return;
@@ -316,37 +343,55 @@ void emit_argument_claims(uint arg_row)
         call_const_claim_selected[row] = 0u;
         call_const_claim_arg_row[row] = INVALID;
     }
-    uint2 inferred[32]; uint inferred_mask = 0u;
-    InferredConstant constants[32]; uint constant_mask = 0u;
-    for (uint slot = 0u; slot < 32u; slot++)
-    { inferred[slot] = uint2(0u, INVALID); constants[slot] = inferred_constant_reference(uint2(0u, INVALID)); }
+    ClaimSlots slots;
+    CtSpare spare = ct_spare_none();
+    uint environment = CT_UNKNOWN;
+    uint count_mask = 0u;
     uint tag; uint payload;
     if (argument_value_reference(node, tag, payload))
     {
         uint param = call_arg_param_row[arg_row];
-        // Explicit bindings are ready at claim publication, after the early
-        // parameter-pattern collector. A permitted outer borrow constrains
-        // T to its bound slice; the expression itself retains its array type.
-        uint root_slot = parameter_root_type_slot(
-            call_param_row_ref_tag[param], call_param_row_ref_payload[param]);
-        uint2 bound;
-        if (root_slot < 32u && checked_explicit_environment_argument(
-            0x80000000u | callee, root_slot, bound.x, bound.y))
+        // Interned at one site: the parameter pattern, the argument, and the
+        // explicit binding of a parameter root.
+        uint2 declared = uint2(call_param_row_ref_tag[param], call_param_row_ref_payload[param]);
+        uint pattern = CT_UNKNOWN;
+        uint actual = CT_UNKNOWN;
+        uint2 bound = uint2(0u, INVALID);
+        bool explicit_root = false;
+        for (uint step = 0u; step < 3u; step++)
         {
-            uint kind = bound.x == 3u && bound.y < parameter_type_capacity()
-                ? type_instance_kind[bound.y] : 0u;
-            semantic_argument_mode_by_hir[node] = kind == 4u ? 3u : kind == 3u ? 2u : 1u;
-            if (checked_array_borrow_matches<ParameterTypeGraph>(
-                bound.x, bound.y, tag, payload, parameter_type_capacity()))
+            if (step == 2u && !explicit_root) break;
+            uint2 operand = step == 0u ? declared : step == 1u ? uint2(tag, payload) : bound;
+            uint id = operand_id(operand, spare);
+            if (step == 0u)
             {
-                tag = bound.x;
-                payload = bound.y;
+                pattern = id;
+                // Explicit bindings are ready at claim publication, after the
+                // early parameter-pattern collector. A permitted outer borrow
+                // constrains T to its bound slice; the expression itself
+                // retains its array type.
+                uint root_slot = ct_is_type_param(pattern) ? ct_param_slot<ClaimSlots>(slots, pattern) : INVALID;
+                explicit_root = root_slot < 32u && checked_explicit_environment_argument(
+                    0x80000000u | callee, root_slot, bound.x, bound.y);
+                if (explicit_root)
+                {
+                    uint kind = bound.x == 3u && bound.y < parameter_type_capacity()
+                        ? type_instance_kind[bound.y] : 0u;
+                    semantic_argument_mode_by_hir[node] = kind == 4u ? 3u : kind == 3u ? 2u : 1u;
+                }
             }
+            else if (step == 1u) actual = id;
+            else if (ct_kind(id) == CT_KIND_SLICE && ct_kind(actual) == CT_KIND_ARRAY &&
+                ct_arg(id, 0u) == ct_arg(actual, 0u))
+                actual = id;
         }
-        bool matches = parameter_argument_constraints(call_param_row_ref_tag[param],
-            call_param_row_ref_payload[param], tag, payload, inferred, inferred_mask,
-            constants, constant_mask);
-        if (!matches)
+        environment = ct_is_resolved(pattern) && ct_is_resolved(actual)
+            ? ct_match<ClaimSlots>(slots, pattern, actual, CT_NONE, CT_NONE, CT_NONE,
+                CT_MATCH_SLICE_ROOT0, true, spare, count_mask)
+            : CT_MATCH_FAILED;
+        // An interning overflow retries the job with larger tables.
+        if (environment == CT_MATCH_OVERFLOW) return;
+        if (!ct_is_record(environment))
         {
             uint error_token = call_arg_error_token(node, callee);
             record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
@@ -371,12 +416,38 @@ void emit_argument_claims(uint arg_row)
         }
     }
     uint ordinal = 0u; uint constant_ordinal = 0u;
-    for (uint slot = 0u; slot < 32u; slot++)
+    // Type slots, then constant slots: one realization site.
+    for (uint item = 0u; item < 64u; item++)
     {
-        if ((pattern_mask & (1u << slot)) != 0u)
+        bool constant = item >= 32u;
+        uint slot = item & 31u;
+        uint bit = 1u << slot;
+        if (((constant ? constant_pattern_mask : pattern_mask) & bit) == 0u) continue;
+        uint binding = ct_is_record(environment) ? ct_env_binding(environment, slot, constant) : CT_UNKNOWN;
+        uint2 ref = uint2(0u, INVALID);
+        if (ct_is_resolved(binding))
+        {
+            uint failure;
+            uint2 operand = ct_realize(binding, failure);
+            if (failure == CT_REALIZE_CAPACITY)
+            {
+                record_error(call_arg_error_token(node, callee), 6u, 0x474e0001u);
+                if (constant)
+                {
+                    uint row = constant_start + constant_ordinal;
+                    call_const_claim_callee[row] = callee;
+                    call_const_claim_slot[row] = 32u;
+                    call_const_claim_ref_kind[row] = 0u;
+                    call_const_claim_ref_payload[row] = INVALID;
+                }
+                return;
+            }
+            // A row another lane is writing settles in a later round.
+            if (failure == 0u) ref = uint2(operand.x & ~CT_ROW_CONSTANT_TAG, operand.y);
+        }
+        if (!constant)
         {
             uint row = start + ordinal++;
-            uint2 ref = (inferred_mask & (1u << slot)) != 0u ? inferred[slot] : uint2(0u, INVALID);
             uint legacy = ref.x == 1u ? ref.y : ref.x == 3u ? 1u
                 : ref.x == 2u ? leaf_type_code_for_ref(ref.x, ref.y) : 0u;
             call_generic_claim_callee[row] = callee;
@@ -386,30 +457,15 @@ void emit_argument_claims(uint arg_row)
             call_generic_claim_ref_tag[row] = ref.x;
             call_generic_claim_ref_payload[row] = ref.y;
             if (ref.x == 1u) publish_generic_return_type(callee, call_fn_index[callee], slot, ref.y);
+            continue;
         }
-        if ((constant_pattern_mask & (1u << slot)) != 0u)
-        {
-            uint row = constant_start + constant_ordinal++;
-            uint2 ref = uint2(0u, INVALID);
-            if ((constant_mask & (1u << slot)) != 0u &&
-                !publish_inferred_constant<ParameterTypeGraph>(constants[slot], gParams.n_tokens,
-                    uint2(call_const_claim_ref_kind[row], call_const_claim_ref_payload[row]), ref))
-            {
-                record_error(call_arg_error_token(node, callee), 6u, 0x474e0001u);
-                call_const_claim_callee[row] = callee;
-                call_const_claim_slot[row] = 32u;
-                call_const_claim_ref_kind[row] = 0u;
-                call_const_claim_ref_payload[row] = INVALID;
-                return;
-            }
-            call_const_claim_callee[row] = callee;
-            call_const_claim_slot[row] = slot;
-            call_const_claim_arg_row[row] = arg_row;
-            call_const_claim_ref_kind[row] = ref.x;
-            call_const_claim_ref_payload[row] = ref.y;
-            call_const_claim_identity_mode[row] = (constant_mask & (1u << slot)) != 0u
-                ? constants[slot].identity_mode : 0u;
-        }
+        uint row = constant_start + constant_ordinal++;
+        call_const_claim_callee[row] = callee;
+        call_const_claim_slot[row] = slot;
+        call_const_claim_arg_row[row] = arg_row;
+        call_const_claim_ref_kind[row] = ref.x;
+        call_const_claim_ref_payload[row] = ref.y;
+        call_const_claim_identity_mode[row] = ref.x != 0u && (count_mask & bit) != 0u ? 1u : 0u;
     }
 }
 
