@@ -1,5 +1,6 @@
 // Offer required trait members to receivers whose type is a lexical type
-// parameter `P`. An accepted predicate `P: Trait` of the call's enclosing
+// parameter `P`: a self member to a dotted call `value.member(...)`, a static
+// one to a path call `P::member(...)`. An accepted predicate `P: Trait` of the call's enclosing
 // generic scopes proves the member for every instantiation of `P`, so the
 // trait member declaration is the symbolic callee. Concrete replay routes it
 // to the selected implementation (methods/09_route_bound_members).
@@ -151,8 +152,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint token = linear_thread_id_2d(dtid, 65535u, 256u);
     if (token >= min(token_count[0u], gParams.n_tokens) ||
         method_call_selection_owned[token] == 0u ||
-        method_call_receiver_hir[token] == INVALID ||
         method_call_name_id[token] == INVALID) return;
+    // A path call `P::member(...)` has no receiver value (methods/06).
+    bool dotted = method_call_receiver_hir[token] != INVALID;
     uint tag = method_call_source_ref_tag[token];
     uint payload = method_call_source_ref_payload[token];
     uint capacity; uint stride;
@@ -174,11 +176,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (member == INVALID) return;
     MethodCandidate summary = method_candidate[token];
     MethodCandidate candidate = method_candidate_empty();
-    uint mode = member == AMBIGUOUS ? 0u : method_decl_receiver_mode[member];
-    if (mode != 1u && mode != 2u)
+    uint mode = member == AMBIGUOUS ? INVALID : method_decl_receiver_mode[member];
+    // A path call passes every argument explicitly (methods/07 receiver
+    // mode 0), whatever the member's first parameter.
+    if (!dotted && (mode == 0u || mode == 3u)) mode = 0u;
+    else if (!dotted || (mode != 1u && mode != 2u)) mode = INVALID;
+    if (mode == INVALID)
     {
-        // A static member, an explicitly typed self parameter, or two traits
-        // supplying this name cannot be selected for this receiver.
+        // A dotted call of a member without a self parameter (or with an
+        // explicitly typed one), a path call of a self member, or two traits
+        // supplying this name cannot be selected.
         candidate.state = METHOD_CANDIDATE_INVALID;
     }
     else

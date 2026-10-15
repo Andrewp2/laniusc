@@ -1,8 +1,9 @@
 // Route bound-member calls of the selected replay body (07a) to the member of
 // the implementation that the now-concrete receiver selects.
 //
-// Body specialization has substituted the call's accepted receiver. The
-// required member names its trait; a candidate is an implementation method of
+// Body specialization has substituted the call's accepted receiver: the
+// receiver value of `value.member(...)`, or the parameter `P` of a static
+// `P::member(...)`. The required member names its trait; a candidate is an implementation method of
 // that trait with the same name whose receiver pattern matches the receiver.
 // Types compare by canonical ID (docs/canonical-type-ids.md). A replay
 // re-arms every row before the match passes (03_rearm), so the receiver and
@@ -27,7 +28,8 @@
 // so nothing is routed and the enclosing body stays a template.
 //
 // One thread per call expression (HIR domain): the call owns the context rows,
-// and its callee member names the method token.
+// and its callee member, or the leaf of its callee path `P::member` for a
+// static member, names the method token.
 
 import gpu_index;
 import hir_records;
@@ -46,6 +48,7 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<HirRange> compact_generic_param_ranges;
@@ -56,7 +59,6 @@ StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> method_lookup_head;
 StructuredBuffer<uint> method_lookup_next;
 StructuredBuffer<uint> method_decl_method_row;
-StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_name_id;
@@ -83,6 +85,8 @@ static const uint HIR_ITEM = 2u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_UNROUTED_BOUND_MEMBER = 0xffffff0eu;
 // A packed child path: five bits per level, six levels.
@@ -95,8 +99,7 @@ bool valid_hir(uint node) { return node < active_hir_count(); }
 // Required members publish signature metadata without a lookup row (02_collect).
 uint required_member_trait(uint target)
 {
-    if (target >= gParams.n_tokens || method_decl_method_row[target] != INVALID ||
-        method_decl_receiver_mode[target] == 0u) return INVALID;
+    if (target >= gParams.n_tokens || method_decl_method_row[target] != INVALID) return INVALID;
     uint member = fn_hir_by_decl_token[target];
     if (!valid_hir(member)) return INVALID;
     uint trait = predicate_method_contract_owner_hir[member];
@@ -113,14 +116,34 @@ bool implements_trait(uint impl, uint trait)
         decl_hir_node[reference] == trait;
 }
 
-// The method token of call expression `call` (its callee member's name), or
-// INVALID.
-uint method_call_token(uint call)
+// The method token of call expression `call`, or INVALID: its callee member's
+// name, or the leaf of its qualified callee path `P::member` (a path span ends
+// after its leaf), where methods/06 keys an associated call. A path callee is
+// also read at its first segment (methods/08 owner alias) and at the callee's
+// value token (semantic/artifact/00_calls); `aliases` are those tokens.
+uint method_call_token(uint call, out uint2 aliases)
 {
+    aliases = uint2(INVALID, INVALID);
     if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return INVALID;
-    uint member = compact_hir_payload[call].a;
-    return valid_hir(member) && compact_hir_core[member].kind == HIR_MEMBER_EXPR
-        ? compact_hir_payload[member].c : INVALID;
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee)) return INVALID;
+    if (compact_hir_core[callee].kind == HIR_MEMBER_EXPR) return compact_hir_payload[callee].c;
+    uint path = compact_hir_core[callee].kind == HIR_NAME_EXPR
+        ? compact_hir_links[callee].first_child : callee;
+    if (!valid_hir(path) || compact_hir_core[path].kind != HIR_PATH_EXPR) return INVALID;
+    HirCore core = compact_hir_core[path];
+    if (core.token_end <= core.token_start + 1u) return INVALID;
+    aliases = uint2(core.token_start, compact_hir_payload[callee].d);
+    return core.token_end - 1u;
+}
+
+// Publish the routed callee at method token `token` or an alias of it.
+void publish_callee(uint token, MethodCandidate candidate, uint selected, uint backend)
+{
+    if (token >= gParams.n_tokens) return;
+    method_candidate[token] = candidate;
+    call_fn_index[token] = selected;
+    backend_call_fn_index[token] = backend;
 }
 
 // Whether call `call` has context rows (contextual_call_environment.slang).
@@ -256,9 +279,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // One thread per call expression: calls own their context rows by HIR
     // node, and a receiver's HIR parent is not its member.
     uint node = linear_thread_id_2d(dtid, 65535u, 256u);
-    uint token = method_call_token(node);
+    uint2 aliases;
+    uint token = method_call_token(node, aliases);
+    // A dotted call has a receiver value; a path call has none (methods/06).
     if (token >= min(token_count[0u], gParams.n_tokens) ||
-        method_call_receiver_hir[token] == INVALID ||
+        (method_call_receiver_hir[token] == INVALID) != (aliases.x != INVALID) ||
+        method_call_name_id[token] == INVALID ||
         call_dependency_library_id[token] != INVALID) return;
     uint trait = required_member_trait(call_fn_index[token]);
     if (trait == INVALID) return;
@@ -360,8 +386,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     candidate.local_index = selected;
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;
-    method_candidate[token] = candidate;
-    call_fn_index[token] = selected;
     uint start = fn_start_token_by_decl_token[selected];
-    backend_call_fn_index[token] = start < gParams.n_tokens ? start : selected;
+    uint backend = start < gParams.n_tokens ? start : selected;
+    publish_callee(token, candidate, selected, backend);
+    if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend);
+    if (aliases.y != token && aliases.y != aliases.x)
+        publish_callee(aliases.y, candidate, selected, backend);
 }
