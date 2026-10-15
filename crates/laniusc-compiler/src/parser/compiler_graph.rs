@@ -1003,7 +1003,8 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "tree_depth_status"
             | "hir_literal_status"
             | "tree_depth_block_max"
-            | "tree_depth"
+            | "tree_depth_block_close"
+            | "tree_depth_close_count"
             | "prev_sibling"
             | "node_kind"
             | "parent"
@@ -1120,7 +1121,6 @@ fn retained_debug_parser_output(name: &str) -> bool {
             | "first_child"
             | "next_sibling"
             | "prev_sibling"
-            | "tree_depth"
             | "subtree_end"
             | "hir_kind"
             | "hir_semantic_dense_node"
@@ -1537,10 +1537,15 @@ fn build_graph(
         ("next_sibling", ResourceDomain::RawNodes, tree_rows * 4),
         ("prev_sibling", ResourceDomain::RawNodes, tree_rows * 4),
         ("subtree_end", ResourceDomain::RawNodes, tree_rows * 4),
-        ("tree_depth", ResourceDomain::RawNodes, tree_rows * 4),
+        ("tree_depth_close_count", ResourceDomain::RawNodes, tree_rows * 4),
         ("tree_depth_status", ResourceDomain::RawNodes, 4),
         (
             "tree_depth_block_max",
+            ResourceDomain::RawNodes,
+            tree_blocks * 4,
+        ),
+        (
+            "tree_depth_block_close",
             ResourceDomain::RawNodes,
             tree_blocks * 4,
         ),
@@ -2552,8 +2557,14 @@ fn build_graph(
             ("parent", "parent", Some(AccessMode::Write)),
             ("prefix_block_max_tree", "tree_prefix_block_max_tree", None),
             ("prefix_local_max", "tree_prefix_local_max", None),
+            (
+                "tree_depth_close_count",
+                "tree_depth_close_count",
+                Some(AccessMode::Write),
+            ),
         ],
     )?;
+    graph.mark_pass_bindings_initialize("tree_parent_parallel", &["tree_depth_close_count"])?;
     indirect(
         &mut graph,
         "tree_parent_parallel",
@@ -2571,6 +2582,7 @@ fn build_graph(
             ("subtree_end", "subtree_end", Some(AccessMode::Write)),
             ("prefix_block_max_tree", "tree_prefix_block_max_tree", None),
             ("prefix_local_max", "tree_prefix_local_max", None),
+            ("tree_depth_close_count", "tree_depth_close_count", None),
         ],
     )?;
     indirect(&mut graph, "tree_spans", "tree_active_dispatch_args")?;
@@ -2644,22 +2656,6 @@ fn build_graph(
     )?;
     static_pass(
         &mut graph,
-        &passes.tree_depth_traverse,
-        CompilerPhase::Parse,
-        ResourceDomain::RawNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
-            ("tree_depth_value_a", "tree_depth", None),
-        ],
-    )?;
-    graph.mark_pass_bindings_initialize("tree_depth_traverse", &["tree_depth_value_a"])?;
-    indirect(
-        &mut graph,
-        "tree_depth_traverse",
-        "tree_active_dispatch_args",
-    )?;
-    static_pass(
-        &mut graph,
         &passes.tree_depth_block_max,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
@@ -2668,6 +2664,11 @@ fn build_graph(
             (
                 "tree_depth_block_max",
                 "tree_depth_block_max",
+                Some(AccessMode::Write),
+            ),
+            (
+                "tree_depth_block_close",
+                "tree_depth_block_close",
                 Some(AccessMode::Write),
             ),
         ],

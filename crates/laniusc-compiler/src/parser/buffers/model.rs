@@ -684,8 +684,8 @@ pub struct ParserBuffers {
     pub tree_enum_dispatch_args: LaniusBuffer<u32>,
     pub tree_match_dispatch_args: LaniusBuffer<u32>,
     pub tree_struct_dispatch_args: LaniusBuffer<u32>,
-    /// Zero on success; otherwise one plus a raw node whose parent chain was
-    /// malformed or cyclic during local depth traversal.
+    /// Zero on success; otherwise one plus a raw node whose parent link does
+    /// not point to an earlier node.
     pub tree_depth_status: LaniusBuffer<u32>,
     /// Raw-depth-bounded schedule for relation walks seeded from direct parent links.
     pub hir_raw_relation_dispatch_args: LaniusBuffer<u32>,
@@ -695,7 +695,10 @@ pub struct ParserBuffers {
     pub hir_semantic_dispatch_args: LaniusBuffer<u32>,
     /// Raw-depth-bounded rounds projected onto the dense semantic-HIR dispatch domain.
     pub hir_semantic_relation_dispatch_args: LaniusBuffer<u32>,
+    /// Per node block: the maximum of `i - closes up to i within the block`.
     pub tree_depth_block_max: LaniusBuffer<u32>,
+    /// Per node block: the number of subtrees ending inside the block.
+    pub tree_depth_block_close: LaniusBuffer<u32>,
     pub tree_prefix_inblock: LaniusBuffer<i32>,
     pub tree_block_sum: LaniusBuffer<i32>,
     pub tree_block_prefix_a: LaniusBuffer<i32>,
@@ -754,7 +757,8 @@ pub struct ParserBuffers {
     pub hir_semantic_parent_link_b: LaniusBuffer<u32>,
     pub hir_semantic_parent_value_a: LaniusBuffer<u32>,
     pub hir_semantic_parent_value_b: LaniusBuffer<u32>,
-    pub tree_depth: LaniusBuffer<u32>,
+    /// Per raw node position: how many subtrees end exactly there.
+    pub tree_depth_close_count: LaniusBuffer<u32>,
     pub hir_semantic_count: LaniusBuffer<u32>,
     // -------- Canonical dense HIR phase boundary --------
     pub hir_canonical_params:

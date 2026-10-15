@@ -4515,7 +4515,9 @@ fn build_graph(
     TYPE_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
-    super::canonical_passes::register_canonical_passes(
+    let (substitution_records, substitution_argument_words) =
+        super::substitution_passes::substitution_canonical_extra(hir_rows);
+    let canonical_records = super::canonical_passes::register_canonical_passes(
         &mut graph,
         kernels,
         super::canonical_passes::CanonicalCapacity {
@@ -4527,6 +4529,8 @@ fn build_graph(
             dependency_rows: u64::from(dependency_capacity.constant_type_rows),
             dependency_page_rows: dependency_type_rows,
             scale: canonical_scale,
+            extra_records: substitution_records,
+            extra_argument_words: substitution_argument_words,
         },
     )?;
     add_dependency_type_index_passes(
@@ -5138,6 +5142,14 @@ fn build_graph(
     // Canonical identities of the declared rows, in recording order: after
     // the decl refs and ahead of the closed application index.
     super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
+    // Substitution starts from the interned source rows.
+    super::substitution_passes::register_substitution_passes(
+        &mut graph,
+        kernels,
+        token_rows,
+        hir_rows,
+        canonical_records,
+    )?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(
@@ -5733,6 +5745,9 @@ fn build_graph(
             &[][..],
         ),
     ] {
+        if name == CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS {
+            super::substitution_passes::register_call_env_pass(&mut graph, kernels)?;
+        }
         if name == CALLS_MATERIALIZE_RETURN_TYPES_PASS && struct_init_passes_required(parser_feature_flags) {
             graph.add_kernel_pass_by_name(
                 CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS,
