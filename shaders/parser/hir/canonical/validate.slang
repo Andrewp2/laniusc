@@ -65,6 +65,20 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_MEMBER_EXPR = 21u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 
+// A generic argument value: a type, a literal, or a signed literal (`-5`,
+// `+0.0`), which is a unary row whose only child is the literal.
+bool literal_row(uint node, uint count)
+{ return node < count && hir_core[node].kind == 23u && hir_payload[node].a == 3u; }
+bool type_arg_value_row(uint node, uint count)
+{
+    if (node >= count) return false;
+    uint kind = hir_core[node].kind;
+    if (kind == 5u || literal_row(node, count)) return true;
+    uint child = hir_links[node].first_child;
+    return kind == 17u && literal_row(child, count) && hir_core[child].parent == node &&
+        hir_links[child].next_sibling == INVALID;
+}
+
 uint compact_alias_for_raw(uint raw, uint canonical_count_value)
 {
     uint dense = raw < gCanonical.raw_capacity ? canonical_raw_to_dense[raw] : INVALID;
@@ -153,9 +167,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             (hir_core[type_arg.owner].kind != 5u && hir_core[type_arg.owner].kind != 21u &&
              hir_core[type_arg.owner].kind != 28u && hir_core[type_arg.owner].kind != 33u))
             type_arg_reason |= 8192u;
-        if (type_arg.value >= count ||
-            (hir_core[type_arg.value].kind != 5u &&
-             (hir_core[type_arg.value].kind != 23u || hir_payload[type_arg.value].a != 3u)))
+        if (!type_arg_value_row(type_arg.value, count))
             type_arg_reason |= 16384u;
         if (type_arg.application_token >= gCanonical.canonical_capacity)
             type_arg_reason |= 32768u;
