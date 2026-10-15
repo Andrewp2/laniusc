@@ -197,16 +197,17 @@ fn record_canonical_types(
             submit_and_read_u32s(device, queue, encoder, counts_readback, "type_check.canonical")?;
         let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
-        let [record_capacity, argument_capacity, dynamic_base] = canonical.capacity();
+        let [record_capacity, argument_capacity, frontier_rows] = canonical.capacity();
         if trace || overflow != 0 {
+            // Records from 32 on are allocated; the frontier lengths are the
+            // last round's (the next round's input and its output so far).
             eprintln!(
-                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} dynamic={}/{} args={}/{argument_capacity} overflow={overflow:#x} scale={canonical_scale}",
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} args={}/{argument_capacity} frontier={}/{frontier_rows} overflow={overflow:#x} scale={canonical_scale}",
                 stage.label(),
                 counts[canonical_passes::CANONICAL_COUNT_ROUND],
-                counts[0],
-                counts[0].saturating_sub(dynamic_base),
-                record_capacity.saturating_sub(dynamic_base),
+                counts[0].saturating_sub(32),
                 counts[1],
+                counts[5].max(counts[6]),
             );
         }
         // Overflow bits stay set until the next job's clear, so the first

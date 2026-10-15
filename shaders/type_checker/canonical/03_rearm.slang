@@ -5,11 +5,10 @@
 // rest). The table, records and overflow bits are kept.
 //
 // A body replay (body_specialization_inputs) rewrites rows and constants
-// that the early stage interned, so its late stage re-arms every candidate
-// and sets CT_COUNT_REINTERN: keys are looked up first, and a rewritten
-// candidate never overwrites the record of its earlier key
-// (canonical_candidates.slang). The early stage of a replay finds nothing
-// interned and leaves the flag clear.
+// that the early stage interned, so its late stage re-arms every candidate.
+// A candidate owns no record (ct_intern_key), so a rewritten candidate takes
+// a new record and the records of its earlier key stay valid for the
+// references that still name them.
 import type_checker.canonical.canonical_api;
 
 // Header (argument count, ...); [705].x is the constant binding count. A
@@ -34,8 +33,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (i < rows) canonical_row[i] = CT_PENDING;
             else if (i - rows < atoms) canonical_atom[i - rows] = CT_PENDING;
             else canonical_projection[i - rows - atoms] = CT_PENDING;
-            // Set only here; 00_clear clears it for the next job.
-            if (interned) ct_counts[CT_COUNT_REINTERN] = 1u;
         }
     }
     if (i == 0u)
