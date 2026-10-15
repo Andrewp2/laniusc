@@ -2466,6 +2466,30 @@ fn main() -> bool {
 }
 
 #[test]
+fn x86_executes_char_ordering() {
+    // Chars order by unsigned code point, with literals on either side.
+    assert_source_exit(
+        "char_ordering",
+        r#"
+fn is_digit(value: char) -> bool { return value >= '0' && value <= '9'; }
+fn below(left: char, right: char) -> bool { return left < right; }
+fn main() -> i32 {
+    let c: char = 'm';
+    if (!is_digit('7') || is_digit('a') || is_digit('/') || is_digit(':')) { return 1; }
+    if (!below('a', c) || below(c, 'a') || below(c, c)) { return 2; }
+    if (!(c > 'Z') || !(c <= 'm') || c >= 'n') { return 3; }
+    let high: char = 'é';
+    let emoji: char = '😀';
+    if (!(high > 'z') || high < 'A' || !(emoji > high) || emoji <= 'é') { return 4; }
+    if (!('a' < 'b') || 'b' <= 'a') { return 5; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
 fn x86_executes_conditional_rhs_calls() {
     for (name, expression, expected) in [
         ("skip_and", "false && trap()", 0),

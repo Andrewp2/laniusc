@@ -1,6 +1,6 @@
-// Owned insertion-ordered char set with linear lookup. Every 32-bit value is
-// preserved in one cell, including non-scalar codes above the signed boundary.
-// UTF-8 output still requires a Unicode scalar value.
+// Owned insertion-ordered char set with linear lookup. Each char occupies one
+// native eight-byte slot (slot i at storage + 8 * i), read and written as
+// char, so no integer conversion is involved.
 // Ownership is linear by convention: use only the newest returned set, and
 // destroy it exactly once.
 module std::set_char;
@@ -13,7 +13,27 @@ pub struct SetChar {
     reserved: i32,
 }
 
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
 pub const MAX_CAPACITY: i32 = 536870911;
+
+fn slot(storage: ptr, index: i32) -> [char] {
+    let offset: usize = (index as usize) * 8;
+    return core::mem::typed_slice_from_raw_parts(storage + offset, 1);
+}
+
+fn load(storage: ptr, index: i32) -> char {
+    let view: [char] = slot(storage, index);
+    return view[0];
+}
+
+fn store(storage: ptr, index: i32, item: char) {
+    let view: [char] = slot(storage, index);
+    view[0] = item;
+}
+
+fn byte_size(count: i32) -> usize {
+    return (count as usize) * 8;
+}
 
 pub fn new() -> SetChar {
     let empty: ptr = 0;
@@ -36,11 +56,9 @@ pub fn contains(value: SetChar, item: char) -> bool {
     if (value.length == 0) {
         return false;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let index: i32 = 0;
     while (index < value.length) {
-        let raw: i32 = cells[index];
-        let stored: char = raw;
+        let stored: char = load(value.storage, index);
         if (stored == item) {
             return true;
         }
@@ -55,9 +73,7 @@ pub fn at_or(value: SetChar, ordinal: i32, fallback: char) -> char {
     if (ordinal < 0 || ordinal >= value.length) {
         return fallback;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw: i32 = cells[ordinal];
-    return raw;
+    return load(value.storage, ordinal);
 }
 
 // A negative or oversized request, or allocation failure, leaves the set
@@ -67,15 +83,12 @@ pub fn try_reserve(value: SetChar, minimum_capacity: i32) -> SetChar {
         minimum_capacity <= value.reserved) {
         return value;
     }
-    let byte_count: i32 = minimum_capacity * 4;
-    let new_bytes: usize = byte_count as usize;
+    let new_bytes: usize = byte_size(minimum_capacity);
     let next: ptr = 0;
     if (value.storage == 0) {
-        next = alloc::allocator::alloc(new_bytes, 4);
+        next = alloc::allocator::alloc(new_bytes, 8);
     } else {
-        let old_byte_count: i32 = value.reserved * 4;
-        let old_bytes: usize = old_byte_count as usize;
-        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+        next = alloc::allocator::realloc(value.storage, byte_size(value.reserved), new_bytes, 8);
     }
     if (next == 0) {
         return value;
@@ -108,8 +121,7 @@ pub fn try_insert(value: SetChar, item: char) -> SetChar {
             return value;
         }
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    cells[grown.length] = item;
+    store(grown.storage, grown.length, item);
     return SetChar {
         storage: grown.storage,
         length: grown.length + 1,
@@ -123,15 +135,13 @@ pub fn try_remove(value: SetChar, item: char) -> SetChar {
     if (value.length == 0) {
         return value;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let index: i32 = 0;
     while (index < value.length) {
-        let raw: i32 = cells[index];
-        let stored: char = raw;
+        let stored: char = load(value.storage, index);
         if (stored == item) {
             let cursor: i32 = index;
             while (cursor + 1 < value.length) {
-                cells[cursor] = cells[cursor + 1];
+                store(value.storage, cursor, load(value.storage, cursor + 1));
                 cursor += 1;
             }
             return SetChar {
@@ -163,11 +173,8 @@ pub fn try_shrink_to_fit(value: SetChar) -> SetChar {
         destroy(value);
         return new();
     }
-    let old_byte_count: i32 = value.reserved * 4;
-    let new_byte_count: i32 = value.length * 4;
-    let old_bytes: usize = old_byte_count as usize;
-    let new_bytes: usize = new_byte_count as usize;
-    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    let next: ptr = alloc::allocator::realloc(
+        value.storage, byte_size(value.reserved), byte_size(value.length), 8);
     if (next == 0) {
         return value;
     }
@@ -189,11 +196,9 @@ pub fn try_clone(value: SetChar) -> SetChar {
     if (copy.reserved < value.length) {
         return new();
     }
-    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let destination: [i32] = core::mem::i32_slice_from_raw_parts(copy.storage, copy.reserved);
     let index: i32 = 0;
     while (index < value.length) {
-        destination[index] = source[index];
+        store(copy.storage, index, load(value.storage, index));
         index += 1;
     }
     return SetChar {
@@ -243,11 +248,10 @@ pub fn try_union(left: SetChar, right: SetChar) -> SetChar {
     if (count == 0) { return new(); }
     let output: SetChar = try_reserve(new(), count);
     if (output.reserved < count) { return new(); }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved);
     index = 0;
     while (index < left.length) {
         let item: char = at_or(left, index, '\0');
-        cells[index] = item;
+        store(output.storage, index, item);
         index += 1;
     }
     let written: i32 = left.length;
@@ -255,7 +259,7 @@ pub fn try_union(left: SetChar, right: SetChar) -> SetChar {
     while (index < right.length) {
         let item: char = at_or(right, index, '\0');
         if (!contains(left, item)) {
-            cells[written] = item;
+            store(output.storage, written, item);
             written += 1;
         }
         index += 1;
@@ -273,13 +277,12 @@ pub fn try_intersection(left: SetChar, right: SetChar) -> SetChar {
     if (count == 0) { return new(); }
     let output: SetChar = try_reserve(new(), count);
     if (output.reserved < count) { return new(); }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved);
     let written: i32 = 0;
     index = 0;
     while (index < left.length) {
         let item: char = at_or(left, index, '\0');
         if (contains(right, item)) {
-            cells[written] = item;
+            store(output.storage, written, item);
             written += 1;
         }
         index += 1;
@@ -297,13 +300,12 @@ pub fn try_difference(left: SetChar, right: SetChar) -> SetChar {
     if (count == 0) { return new(); }
     let output: SetChar = try_reserve(new(), count);
     if (output.reserved < count) { return new(); }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved);
     let written: i32 = 0;
     index = 0;
     while (index < left.length) {
         let item: char = at_or(left, index, '\0');
         if (!contains(right, item)) {
-            cells[written] = item;
+            store(output.storage, written, item);
             written += 1;
         }
         index += 1;
@@ -332,13 +334,12 @@ pub fn try_symmetric_difference(left: SetChar, right: SetChar) -> SetChar {
     if (count == 0) { return new(); }
     let output: SetChar = try_reserve(new(), count);
     if (output.reserved < count) { return new(); }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved);
     let written: i32 = 0;
     index = 0;
     while (index < left.length) {
         let item: char = at_or(left, index, '\0');
         if (!contains(right, item)) {
-            cells[written] = item;
+            store(output.storage, written, item);
             written += 1;
         }
         index += 1;
@@ -347,7 +348,7 @@ pub fn try_symmetric_difference(left: SetChar, right: SetChar) -> SetChar {
     while (index < right.length) {
         let item: char = at_or(right, index, '\0');
         if (!contains(left, item)) {
-            cells[written] = item;
+            store(output.storage, written, item);
             written += 1;
         }
         index += 1;
@@ -357,8 +358,6 @@ pub fn try_symmetric_difference(left: SetChar, right: SetChar) -> SetChar {
 
 pub fn destroy(value: SetChar) {
     if (value.storage != 0) {
-        let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count as usize;
-        alloc::allocator::dealloc(value.storage, bytes, 4);
+        alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
     }
 }
