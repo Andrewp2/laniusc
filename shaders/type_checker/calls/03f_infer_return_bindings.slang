@@ -14,6 +14,8 @@ import type_checker.checked_type_identity;
 import type_checker.checked_slots;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
+// Shares the candidate keys' decl_id_by_name_token binding.
+import type_checker.canonical.canonical_candidates;
 import type_checker.substitution.ct_checked;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -30,7 +32,6 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> visible_type;
 RWStructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> semantic_iterable_kind_by_hir;
-StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> module_key_segment_count;
