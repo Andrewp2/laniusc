@@ -532,8 +532,27 @@ fn parse_backend(value: String) -> Result<BackendSelection, CliError> {
     }
 }
 
+/// Whether a resident daemon for `backends` can load the kernel `key`.
+fn daemon_loads_kernel(backends: GpuCompilerBackends, key: &str) -> bool {
+    let wasm_only = key.starts_with("codegen/wasm/") || key.starts_with("codegen/lir/wasm/");
+    let x86_only = key.starts_with("codegen/x86/") || key.starts_with("codegen/lir/x86/");
+    !key.starts_with("tests/") && (backends.wasm || !wasm_only) && (backends.x86 || !x86_only)
+}
+
 async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     let startup = Instant::now();
+    let prepare_all_kernels =
+        crate::gpu::env::env_bool_strict("LANIUS_DAEMON_PREPARE_ALL_KERNELS", true);
+    let backends = options.backend.compiler_backends();
+    if prepare_all_kernels {
+        // Before any other pipeline: see `prepare_largest_local_memory_kernels`.
+        let gpu = device::global_result()
+            .map_err(|err| CliError::from(format!("initialize GPU device: {err}")))?;
+        crate::gpu::kernels::prepare_largest_local_memory_kernels(&gpu.device, |key| {
+            daemon_loads_kernel(backends, key)
+        })
+        .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
+    }
     let compiler: Arc<GpuCompiler<'static>> = Arc::new(
         GpuCompiler::new_with_backends(options.backend.compiler_backends())
             .await
@@ -542,14 +561,9 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     // Create every pipeline the selected backends can load before the first
     // job, so the driver's local-memory reservation is placed in device memory
     // ahead of any buffer (see `prepare_remaining_kernels`).
-    if crate::gpu::env::env_bool_strict("LANIUS_DAEMON_PREPARE_ALL_KERNELS", true) {
-        let backends = options.backend.compiler_backends();
-        let wasm_only = |key: &str| key.starts_with("codegen/wasm/") || key.starts_with("codegen/lir/wasm/");
-        let x86_only = |key: &str| key.starts_with("codegen/x86/") || key.starts_with("codegen/lir/x86/");
+    if prepare_all_kernels {
         crate::gpu::kernels::prepare_remaining_kernels(&compiler.gpu().device, |key| {
-            !key.starts_with("tests/")
-                && (backends.wasm || !wasm_only(key))
-                && (backends.x86 || !x86_only(key))
+            daemon_loads_kernel(backends, key)
         })
         .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
     }
