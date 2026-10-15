@@ -947,9 +947,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
         // An original x86 unit with an interface keeps the byte spans of its
-        // generic bodies, from which a concrete replay copies instances.
+        // generic bodies, from which a concrete replay copies instances. A
+        // unit without a generic owner has no such body, and skips the readback.
         let owner_spans = if semantic_interface.is_some()
             && object_request.is_some_and(|request| request.body_specialization().is_none())
+            && unit_facts.contracts.binders.iter().any(|owner| !owner.parameters.is_empty())
         {
             self.type_checker
                 .retained_owner_spans(device, queue)
