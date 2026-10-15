@@ -150,8 +150,26 @@ uint pending_child(uint env, uint node)
     return CT_NONE;
 }
 
+// A key's arguments: the first two in registers, the rest in the lane's
+// spare argument block (read back, never recomputed).
+struct SubstArgs : ICtKeyArgs
+{
+    uint first;
+    uint second;
+    uint spill;
+    uint arg(uint index)
+    {
+        if (index == 0u) return first;
+        if (index == 1u) return second;
+        return ct_args[spill + index];
+    }
+}
+
 // Build `node` under `env` from its children's results and intern it (or,
-// without `intern`, look it up). Every child must have a result.
+// without `intern`, look it up). Every child must have a result. A key of
+// at most two arguments is looked up before it takes argument words, so a
+// hit (and a lookup without `intern`) costs no ct_args words; a wider one
+// writes its arguments to the lane's reused spare block first.
 uint subst_build<S : ICtSlots>(S slots, uint env, uint node, bool intern, inout CtSpare spare)
 {
     // Acquire: the node's children were published before their references.
@@ -176,19 +194,32 @@ uint subst_build<S : ICtSlots>(S slots, uint env, uint node, bool intern, inout 
     // call site's environment composes with its caller's.
     if ((kind < CT_KIND_NAMED || kind > CT_KIND_REF) && kind != CT_KIND_ENV) return CT_UNKNOWN;
     key = ct_key_begin(kind, arity, ct_type_slots(node), ct_words(node));
-    if (!ct_spare_reserve(spare, key)) return CT_UNKNOWN;
+    bool wide = arity > 2u;
+    if (wide && !ct_spare_reserve(spare, key)) return CT_UNKNOWN;
+    SubstArgs args;
+    args.first = CT_NONE;
+    args.second = CT_NONE;
+    args.spill = key.arg_base;
     for (uint index = 0u; index < arity; index++)
     {
         uint child = subst_child(slots, env, ct_arg(node, index));
         // Array identity uses the length's count class, not its typed value.
         if (kind == CT_KIND_ARRAY && index == 1u && ct_is_resolved(child)) child = cc_count_class(child);
         if (!ct_is_resolved(child)) return CT_UNKNOWN;
-        ct_key_arg(key, index, child);
+        ct_key_fold(key, child);
+        if (index == 0u) args.first = child;
+        else if (index == 1u) args.second = child;
+        else ct_args[key.arg_base + index] = child;
     }
     if (!key.ok) return CT_UNKNOWN;
+    uint found = ct_lookup_with(key, args);
+    if (found != CT_NONE || !intern) return found;
+    if (!wide && !ct_spare_reserve(spare, key)) return CT_UNKNOWN;
+    if (arity > 0u) ct_args[key.arg_base] = args.first;
+    if (arity > 1u) ct_args[key.arg_base + 1u] = args.second;
     // A named record keeps its bridge token and constant-operand mask.
     uint2 extra = kind == CT_KIND_NAMED ? ct_extra[node] : uint2(0xffffffffu, 0u);
-    return ct_spare_publish(key, extra, intern, spare);
+    return ct_spare_intern(key, extra, spare);
 }
 
 // The ID of `term` under `env`; CT_UNKNOWN when a parameter is unbound or a
