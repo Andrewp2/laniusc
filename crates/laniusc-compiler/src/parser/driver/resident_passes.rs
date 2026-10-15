@@ -230,7 +230,14 @@ impl GpuParser {
                 crate::gpu::passes_core::InputElements::Elements1D(256),
             )?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_schedule");
-            crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+            // The tree is complete: run it while the host records and
+            // finishes the HIR passes.
+            crate::gpu::passes_core::submit_recorded_prefix(
+                &self.device,
+                &self.queue,
+                ctx.encoder,
+                "compile.parser.tree",
+            );
             self.passes.hir_semantic_prefix_local.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(

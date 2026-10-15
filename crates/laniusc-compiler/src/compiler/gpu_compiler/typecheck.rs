@@ -471,6 +471,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "typecheck.done");
         }
+        // Run the type check's tail while the host records the semantic
+        // interface and lowering. Their recording writes only their own
+        // buffers through the queue.
+        crate::gpu::passes_core::submit_recorded_prefix(
+            device,
+            queue,
+            encoder,
+            "compile.source-pack.typecheck",
+        );
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
         // Body replay keeps the template's public contract. Its checked graph
@@ -511,6 +520,14 @@ impl<'gpu> GpuCompiler<'gpu> {
             timer.stamp(encoder, "semantic_interface.done");
         }
         downstream_host_timer.stamp("semantic_interface");
+        if semantic_interface.is_some() {
+            crate::gpu::passes_core::submit_recorded_prefix(
+                device,
+                queue,
+                encoder,
+                "compile.source-pack.semantic_interface",
+            );
+        }
         if lowering_target.is_some() && object_request.is_some() {
             return Err(CompileError::GpuCodegen(
                 "one lowering job cannot request both an executable and an object".into(),

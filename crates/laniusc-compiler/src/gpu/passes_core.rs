@@ -1206,6 +1206,49 @@ pub(crate) fn submit_with_optional_validation(
     timing
 }
 
+/// Submits everything recorded into `encoder` so far and continues in a fresh
+/// encoder. A long recording split this way lets the GPU start on its prefix
+/// while the host records and finishes the rest: `CommandEncoder::finish`
+/// costs several microseconds per dispatch. Commands keep their queue order,
+/// and deferred dispatches are flushed into the prefix first. A
+/// `Queue::write_buffer` issued after the split reaches only commands
+/// recorded after it, so callers split where no earlier command reads a
+/// buffer the rest of the recording writes that way.
+/// `LANIUS_SPLIT_SUBMISSIONS=0` keeps every recording in one submission (for
+/// timing comparisons).
+pub(crate) fn submit_recorded_prefix(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+) {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    flush_deferred_compute(encoder);
+    if !*ENABLED
+        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_SPLIT_SUBMISSIONS", true))
+    {
+        return;
+    }
+    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+    let recorded = std::mem::replace(encoder, next);
+    let start = Instant::now();
+    let commands = recorded.finish();
+    crate::gpu::trace::record_host_span(
+        "host.submit",
+        &format!("{label}.encoder_finished"),
+        start,
+        Instant::now(),
+    );
+    submit_with_optional_validation(
+        device,
+        queue,
+        label,
+        commands,
+        validation_scopes_enabled(),
+        label,
+    );
+}
+
 /// Reflected compute-pipeline data shared by pass wrappers.
 #[derive(Clone)]
 pub struct PassData {
