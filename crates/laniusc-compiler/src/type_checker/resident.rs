@@ -1841,6 +1841,7 @@ impl GpuTypeChecker {
                     crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CALL_INFERENCE", false);
                 let mut repeats = CallInferenceRepeats::new();
                 let mut repeat_warned = false;
+                let mut first_error_round = None;
                 for round in 0..round_limit {
                     let round_started = std::time::Instant::now();
                     let dispatches_before =
@@ -1888,19 +1889,24 @@ impl GpuTypeChecker {
                         );
                     }
                     // A recorded error fails the check whatever later rounds
-                    // infer, and an unresolved callee can keep producers
-                    // changing forever. Stop at the first round with an error;
-                    // the remaining passes still run, and the check reports
-                    // this error.
+                    // infer, but the final passes report the root error only
+                    // once inference has finished (missing-fact errors wait
+                    // for it). So inference may continue for a few rounds
+                    // after the first error, and an error that keeps it from
+                    // converging ends it there: the remaining passes still
+                    // run, and the check reports the status of that round.
                     let status = [words[2], words[3], words[4], words[5]];
-                    if status_rejection(status).is_some() {
-                        if trace_inference {
-                            eprintln!(
-                                "[typecheck.call_inference] round={round} stopped on a recorded error"
-                            );
+                    if changed != 0 && status_rejection(status).is_some() {
+                        let first = *first_error_round.get_or_insert(round);
+                        if round - first >= compiler_graph::CALL_INFERENCE_ERROR_ROUNDS {
+                            if trace_inference {
+                                eprintln!(
+                                    "[typecheck.call_inference] round={round} stopped on an error recorded in round {first}"
+                                );
+                            }
+                            inference_error = Some(status);
+                            break;
                         }
-                        inference_error = Some(status);
-                        break;
                     }
                     if changed == 0 {
                         if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
@@ -2310,9 +2316,9 @@ impl GpuTypeChecker {
         let words = read_status_words(&mapped)?;
         drop(mapped);
         self.status_readback.unmap();
-        // When call inference stopped on an error, the passes after it ran on
-        // facts it did not finish, so their errors can follow from the stop.
-        // Report the error that stopped it.
+        // When an error ended call inference, the passes after it ran on facts
+        // it did not finish, so their errors can follow from the stop. Report
+        // the status that ended it.
         let words = match recorded.inference_error {
             Some(stopped) if words[0] == 0 => stopped,
             _ => words,

@@ -495,6 +495,11 @@ pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
 pub(super) const CALL_INFERENCE_DEPTH_LIMIT: u32 = 1024;
 /// GenericInstantiationBoundary detail when inference reaches the depth limit.
 pub(crate) const CALL_INFERENCE_DEPTH_DETAIL: u32 = 17;
+/// Rounds call inference may still take after a pass records an error: enough
+/// for the rest of the program to finish inferring, so the final passes report
+/// the root error, and few enough to end an inference that an error keeps
+/// from converging.
+pub(super) const CALL_INFERENCE_ERROR_ROUNDS: u32 = 16;
 /// Monotone inference changes each of its facts a bounded number of times, so
 /// the changes of all rounds together are at most this many per HIR node and
 /// token slot (per dependency page). A larger total means producers rewrite
