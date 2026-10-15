@@ -31,6 +31,7 @@ use super::{
     proof_store::{PROOF_STORE_FIXED_WORDS, PROOF_STORE_TABLES},
 };
 use crate::gpu::{
+    buffers::LaniusBuffer,
     passes_core,
     readback::{PagedReadback, ReadbackRegion},
 };
@@ -339,6 +340,7 @@ impl GpuProgramEvidence {
             )?,
             layout.region(&self.storage, &packet.output, 10, Span::new(0, 1)?)?,
         ];
+        SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
         let raw = self.readback.read_regions(
             &self.device,
             &self.queue,
@@ -439,6 +441,9 @@ impl GpuProgramEvidence {
             resources,
         )?;
         record(&mut commands, 48, plan.obligations)?;
+        if self.solver_waves(packet)? {
+            return self.run_solver_waves(packet, layout, plan, submission, resources, commands);
+        }
         let mut progress = self.submit_proof_progress(packet, layout, submission, commands)?;
         if !progress.is_building() {
             return Ok(Some(progress));
@@ -640,6 +645,216 @@ impl GpuProgramEvidence {
         Ok(None)
     }
 
+    /// The GPU-planned rounds replace the stepped loop unless
+    /// LANIUS_PEV_STEPPED_SOLVER=1, a dispatch capture is selected (the CPU
+    /// replay tool reads ordinary parameter blocks), or a test fault hook
+    /// needs a host boundary between steps.
+    fn solver_waves(&self, packet: &GpuPacket) -> Result<bool> {
+        if crate::gpu::env::env_bool_truthy("LANIUS_PEV_STEPPED_SOLVER", false)
+            || std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_some()
+        {
+            return Ok(false);
+        }
+        #[cfg(test)]
+        if packet.constant_admission_fault.borrow().is_some()
+            || packet.proof_admission_fault.borrow().is_some()
+        {
+            return Ok(false);
+        }
+        let _ = packet;
+        self.proof_kernels.as_ref().expect("loaded proof kernels").waves_supported()
+    }
+
+    /// The loop of run_solver_attempt with many rounds recorded per submit.
+    /// The GPU planner takes each decision the host took from a counter
+    /// readback (proof_solver_wave.slang), so the host reads back only when
+    /// the recorded rounds run out, a span outgrows its recorded chunk steps,
+    /// or the solver stops.
+    fn run_solver_waves(
+        &self,
+        packet: &GpuPacket,
+        layout: &OutputLayout,
+        plan: &BatchPlan,
+        submission: &Submission,
+        resources: kernels::ProofResources<'_>,
+        mut commands: wgpu::CommandEncoder,
+    ) -> Result<Option<proof::ProofProgress>> {
+        use kernels::{WavePoint, wave};
+        let batch = self.batch_kernels.as_ref().expect("loaded batch kernels");
+        let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
+        let encoder = || {
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("program_evidence.proof_wave"),
+                })
+        };
+        let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false);
+        let state = kernels::wave_state(&self.device, &self.storage)?;
+        let chunks = |rows: u32| {
+            rows.div_ceil(kernels::THREAD_SCRATCH_SLOTS)
+                .max(1)
+                .checked_next_power_of_two()
+                .unwrap_or(kernels::WAVE_MAX_CHUNKS)
+                .min(kernels::WAVE_MAX_CHUNKS)
+        };
+        let template = |points: &[WavePoint], chunks: u32| {
+            solver.wave_template(&self.device, points, chunks, &state, &self.storage,
+                &packet.input, &packet.output, resources)
+        };
+        // Later rounds record one chunk step per span. A longer span stops the
+        // rounds at its point, and the rest of that round is recorded again
+        // with enough chunk steps.
+        let regular = template(&WavePoint::ROUND, 1)?;
+        // The first work and the first round span every source obligation.
+        let opening_chunks = chunks(plan.obligations.count);
+        let first = template(&[WavePoint::FirstWork], opening_chunks)?;
+        let opening = if opening_chunks > 1 {
+            Some(template(&WavePoint::ROUND, opening_chunks)?)
+        } else {
+            None
+        };
+        solver.record_wave(&mut commands, &first);
+        let opening = opening.as_ref().unwrap_or(&regular);
+        solver.record_wave(&mut commands, opening);
+        let mut rounds = 15u32;
+        let mut dispatches = first.dispatches + opening.dispatches;
+        let mut submits = 0u32;
+        loop {
+            for _ in 0..rounds {
+                solver.record_wave(&mut commands, &regular);
+            }
+            dispatches += rounds as usize * regular.dispatches;
+            passes_core::flush_deferred_compute(&mut commands);
+            self.queue.submit(Some(commands.finish()));
+            submits += 1;
+            let (progress, words) = self.wave_progress(packet, layout, submission, &state)?;
+            if debug {
+                eprintln!(
+                    "[lanius-pev] solver wave submit {submits}: stop={} detail={} rounds={} \
+                     overflow_point={} overflow_rows={} recorded_dispatches={dispatches}",
+                    words[wave::STOP],
+                    words[wave::FAULT_DETAIL],
+                    words[wave::ROUNDS],
+                    words[wave::OVERFLOW_POINT],
+                    words[wave::OVERFLOW_ROWS],
+                );
+            }
+            if words[wave::STOP] == wave::FAULT {
+                return Err(anyhow!(match words[wave::FAULT_DETAIL] {
+                    wave::FAULT_IDENTITY => "solver progress belongs to another physical submission",
+                    wave::FAULT_LAYOUT => "solver progress exceeds reserved physical storage",
+                    wave::FAULT_RECEIPT => "solver progress has a stale or malformed batch receipt",
+                    wave::FAULT_CURSOR => "solver work cursor moved beyond admitted rows",
+                    wave::FAULT_REQUIREMENTS => {
+                        "solver reached quiescence with an unlinked requirement suffix"
+                    }
+                    _ => "solver wave planner reported an unknown fault",
+                }));
+            }
+            if !progress.is_building() {
+                return Ok(Some(progress));
+            }
+            commands = encoder();
+            dispatches = 0;
+            match words[wave::STOP] {
+                wave::DONE => {
+                    ensure!(
+                        words[wave::WORK_CURSOR] == progress.admitted[proof::WORK]
+                            && words[wave::QUEUE_CURSOR] == progress.admitted[proof::QUEUE]
+                            && words[wave::REQUIREMENT_CURSOR] == progress.admitted[9],
+                        "solver wave finished before quiescence"
+                    );
+                    // The GPU classifies unresolved finite cycles and missing
+                    // leaves and checks every source obligation before the
+                    // native publication gate.
+                    solver.record(
+                        &self.device,
+                        &mut commands,
+                        64,
+                        Span::new(0, progress.admitted[13])?,
+                        &self.storage,
+                        &packet.input,
+                        &packet.output,
+                        resources,
+                    )?;
+                    batch.record_after_solver(
+                        &self.device,
+                        &mut commands,
+                        plan,
+                        &self.storage,
+                        &packet.input,
+                        &packet.output,
+                        resources,
+                    )?;
+                    passes_core::flush_deferred_compute(&mut commands);
+                    self.queue.submit(Some(commands.finish()));
+                    return Ok(None);
+                }
+                wave::OVERFLOW => {
+                    let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
+                        .ok_or_else(|| anyhow!("solver wave overflowed at an unknown point"))?;
+                    let partial = template(point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    // The point plans again from the same counters.
+                    state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
+                    if debug {
+                        eprintln!(
+                            "[lanius-pev] solver wave resumes at {point:?} with {} chunk steps",
+                            partial.chunks
+                        );
+                    }
+                    solver.record_wave(&mut commands, &partial);
+                    dispatches += partial.dispatches;
+                }
+                wave::RUNNING => rounds = (rounds * 2).min(64),
+                wave::STOPPED => {
+                    return Err(anyhow!("solver wave stopped while the batch and store are building"));
+                }
+                stop => return Err(anyhow!("solver wave reported an unknown state {stop}")),
+            }
+        }
+    }
+
+    fn wave_progress(
+        &self,
+        packet: &GpuPacket,
+        layout: &OutputLayout,
+        submission: &Submission,
+        state: &LaniusBuffer<u32>,
+    ) -> Result<(proof::ProofProgress, Vec<u32>)> {
+        let regions = [
+            ReadbackRegion::from_buffer(
+                &packet.proof.buffer,
+                0,
+                arena::byte_len(PROOF_STORE_FIXED_WORDS)?,
+                "proof progress directory",
+            )?,
+            layout.region(&self.storage, &packet.output, 10, Span::new(0, 1)?)?,
+            ReadbackRegion::from_buffer(
+                state,
+                0,
+                arena::byte_len(kernels::wave::READ_WORDS)?,
+                "solver wave state",
+            )?,
+        ];
+        SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
+        let raw = self.readback.read_regions(
+            &self.device,
+            &self.queue,
+            &regions,
+            "program proof wave progress",
+        )?;
+        let header = words(&raw[0])?;
+        let receipt = one_status(&raw[1])?;
+        let state = words(&raw[2])?;
+        let progress = proof::ProofProgress::from_owned_readback(
+            packet.packet.proof_store.layout(),
+            submission,
+            header,
+            receipt,
+        )?;
+        Ok((progress, state))
+    }
+
     /// Gate before body reuse/specialization and after each replay's fresh calls.
     /// A valid catalog does not bypass batch checking, including an empty delta.
     pub fn check(&mut self, packet: &mut GpuPacket) -> Result<Vec<ValidatedEvidence>> {
@@ -724,7 +939,13 @@ impl GpuProgramEvidence {
             submission.obligation_span.count,
         )?;
         let mut retry = false;
+        // LANIUS_DEBUG_SOLVER_WAVES=1 prints each solve's wall time and
+        // counter readbacks.
+        let solve_started = std::time::Instant::now();
+        SOLVER_READBACKS.with(|count| count.set(0));
+        let mut attempts = 0u32;
         loop {
+            attempts += 1;
             let Some(stopped) =
                 self.run_solver_attempt(packet, &layout, &plan, &submission, capacities, retry)?
             else {
@@ -735,6 +956,14 @@ impl GpuProgramEvidence {
             };
             capacities = grown;
             retry = true;
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false) {
+            eprintln!(
+                "[lanius-pev] solve: {} attempts={attempts} readbacks={} wall={:.3}ms",
+                if self.solver_waves(packet)? { "waves" } else { "stepped" },
+                SOLVER_READBACKS.with(|count| count.get()),
+                solve_started.elapsed().as_secs_f64() * 1000.0,
+            );
         }
 
         // Exact arena association comes from these private owned buffers, not a
@@ -1076,6 +1305,11 @@ fn catalog_bootstrap(catalog: &FrozenCatalog) -> Result<(Vec<u32>, Vec<u32>)> {
     );
     Ok((header, vec![INVALID, 0, 0, INVALID, INVALID, 0, 0, 0, 0]))
 }
+thread_local! {
+    /// Solver counter readbacks of the current check (debug output only).
+    static SOLVER_READBACKS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 fn words(bytes: &[u8]) -> Result<Vec<u32>> {
     ensure!(bytes.len() % 4 == 0, "partial GPU proof directory word");
     Ok(bytes
