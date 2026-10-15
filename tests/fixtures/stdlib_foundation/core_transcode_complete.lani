@@ -167,7 +167,7 @@ fn main() -> i32 {
             core::transcode::utf16_to_utf8(ascii_units, 1, ascii_back, 1);
         if (!core::transcode::succeeded(forward) ||
             !core::transcode::succeeded(reverse) ||
-            ascii_units[0] != code || ascii_back[0] != byte) {
+            ascii_units[0] as i32 != code || ascii_back[0] != byte) {
             return 6;
         }
         code += 1;
