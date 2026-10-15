@@ -896,8 +896,11 @@ async fn run_session(
             // Keep stdio responses bounded: a cold/growth job can create hundreds
             // of distinct labels and fill the child's captured-output pipe before
             // the test harness starts reading it. The focused diagnostic is for
-            // small unexpected deltas on otherwise resident jobs.
-            if created.buffers.saturating_add(created.bind_groups) <= 32
+            // small unexpected deltas on otherwise resident jobs; a client that
+            // reads every response raises the limit with
+            // LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT.
+            if created.buffers.saturating_add(created.bind_groups)
+                <= crate::gpu::env::env_u64("LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT", 32)
                 && let (Some(before), Some(after)) = (&breakdown_before, &breakdown_after)
             {
                 response.insert(
