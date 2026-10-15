@@ -36,12 +36,13 @@ bool is_path_segment(uint prod)
 {
     return prod == PROD_PATH_IDENT || prod == PROD_PATH_IDENT_ARGS ||
            prod == PROD_TYPE_PATH_IDENT || prod == PROD_BOUND_TYPE_PATH_IDENT ||
-           prod == PROD_ARRAY_LENGTH_PATH_IDENT;
+           prod == PROD_ARRAY_LENGTH_PATH_IDENT || prod == PROD_CAST_TYPE_PATH_IDENT;
 }
 bool is_path_tail(uint prod)
 {
     return prod == PROD_PATH_MORE || prod == PROD_TYPE_PATH_MORE ||
-           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE;
+           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE ||
+           prod == PROD_CAST_TYPE_PATH_MORE;
 }
 
 [shader("compute")]

@@ -61,6 +61,7 @@ static const uint TK_WHERE = 104;
 static const uint TK_SELF_VALUE = 105;
 static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
+static const uint TK_AS = 195;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint PARSER_FEATURE_TYPE_ARGS = 0x00000001u;
@@ -194,6 +195,8 @@ uint retag_keyword(uint kind, uint start, uint len)
             return TK_IF;
         if (b0 == 105u && b1 == 110u)
             return TK_IN;
+        if (b0 == 97u && b1 == 115u)
+            return TK_AS;
     }
     else if (len == 3u)
     {

@@ -201,6 +201,33 @@ fn imported_generic_method_receiver_and_return_execute_on_x86() {
 }
 
 #[test]
+fn imported_method_called_only_through_a_qualified_path_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_explicit_method.lani");
+    let stdlib_root =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_explicit_method_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported explicit method", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile a qualified imported method call with explicit generic arguments");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported explicit method",
+            "repro_imported_explicit_method",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(42), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn imported_generic_method_does_not_substitute_an_unrelated_return() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =

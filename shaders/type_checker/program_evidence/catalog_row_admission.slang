@@ -209,8 +209,12 @@ public EvidenceStatus pev_admit_catalog_implementation(uint row)
     EvidenceStatus status = pev_admit_catalog_atom(low.x);
     if (status.state != PEV_VALID) return status;
     // Complete head coverage precedes both exact/coarse index publication and
-    // any early match. Up to33 admitted roots retain their prior visit budget.
-    OwnedConstraintLimits limits = { PEV_DEPTH_LIMIT, 0u, 33u * PEV_VISIT_LIMIT, 0u };
+    // any early match. Up to 33 admitted roots retain their prior visit budget.
+    // Resolving a constant operand charges one substitution step per count
+    // projection edge (an array length over a const parameter), so the walk
+    // needs the same bounded budget for those steps.
+    OwnedConstraintLimits limits = { PEV_DEPTH_LIMIT, 0u, 33u * PEV_VISIT_LIMIT,
+        33u * PEV_VISIT_LIMIT };
     return pev_admit_implementation_with_owned_solver(row, limits);
 }
 

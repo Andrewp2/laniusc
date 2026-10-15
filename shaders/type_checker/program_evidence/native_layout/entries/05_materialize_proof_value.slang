@@ -1,6 +1,7 @@
 import type_checker.program_evidence.abi;
 import type_checker.program_evidence.native_layout.work_abi;
 import type_checker.program_evidence.native_layout.materialize;
+import thread_scratch;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
@@ -19,5 +20,8 @@ void main(uint3 dtid : SV_DispatchThreadID)
     plm_write4(6u, 0u, 0u, uint4(0u, PEV_INVALID, PEV_INVALID, 0u));
     uint2 source = uint2(program_evidence_native_layout_work[8u], program_evidence_native_layout_work[9u]);
     if (source.x != 1u && source.x != 3u) { plm_status(pev_invalid(173u, source.y, source.x)); return; }
-    plm_status(plm_materialize(source));
+    // The single materialization thread owns scratch slot 0.
+    EvidenceStatus status = pev_limit(190u, source.y, 1u, 0u);
+    if (thread_scratch_begin(0u) != 0u) status = plm_materialize(source);
+    plm_status(status);
 }

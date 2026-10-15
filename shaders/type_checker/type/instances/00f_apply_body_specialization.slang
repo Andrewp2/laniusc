@@ -51,7 +51,8 @@ StructuredBuffer<uint> generic_const_param_prefix;
 StructuredBuffer<uint> interface_public_decl_index_by_hir;
 // Header: (argument_count, native target symbol, 0, 0). Associated methods
 // carry their existing high-bit HIR symbol; free functions use public indices.
-// Rows: (generic_slot, reference_tag, scalar_identity, 0).
+// Rows: (generic_slot, reference_tag, scalar_identity, 0). A batched packet
+// adds entries for other scopes (body_specialization_entries.slang).
 StructuredBuffer<uint4> body_specialization_inputs;
 StructuredBuffer<uint4> checked_constant_atoms;
 
@@ -152,16 +153,14 @@ void publish_type_parameter_reference(uint row, uint slot, uint use_token)
     type_generic_param_slot_by_token[use_token] = slot;
     uint tag = TYPE_REF_GENERIC_PARAM;
     uint payload = generic_param_token[row];
-    uint4 header = body_specialization_inputs[0u];
     uint owner = compact_generic_params[row].owner;
-    bool selected_owner = body_specialization_selects_owner(owner);
-    if (header.x != 0u && owner < active_hir_node_count() &&
-        selected_owner &&
-        slot < min(header.x, 32u))
+    uint entry = owner < active_hir_node_count()
+        ? body_specialization_entry_for_owner(owner) : INVALID;
+    if (entry != INVALID && slot < min(body_entry_header(entry).x, 32u))
     {
-        uint4 argument = body_specialization_inputs[slot * 2u + 1u];
+        uint4 argument = body_entry_argument(entry, slot);
         if (argument.x == slot && argument.y == 10u &&
-            argument.z < min(header.z, 64u))
+            argument.z < min(body_specialization_inputs[0u].z, 64u))
         {
             uint source_capacity; uint stride;
             type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
@@ -257,21 +256,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (valid_row(node) && generic_param_kind[node] == GENERIC_PARAM_KIND_CONST)
     {
         uint slot = lexical_parameter_slot(node);
-        uint count = min(body_specialization_inputs[705u].x, 32u);
         uint owner = compact_generic_params[node].owner;
         uint parameter = generic_param_token[node];
-        if (slot < count && valid_token(parameter) && body_specialization_selects_owner(owner))
+        uint entry = valid_token(parameter) && slot < 32u
+            ? body_specialization_entry_for_owner(owner) : INVALID;
+        if (entry != INVALID && slot < min(body_entry_header(entry).w, 32u))
         {
-            uint4 binding = body_specialization_inputs[706u + slot];
             uint type_node = compact_generic_param_types[node];
             uint type_token = valid_node(type_node) ? compact_hir_core[type_node].token_start : INVALID;
             uint scalar = valid_token(type_token) && type_expr_ref_tag[type_token] == TYPE_REF_SCALAR
                 ? type_expr_ref_payload[type_token] : 0u;
             uint atom_base = body_constant_atom_base();
-            if (binding.x != slot || scalar != binding.y || !constant_value_is_valid(binding.yzw) ||
-                atom_base == INVALID || any(checked_constant_atoms[atom_base + 64u + slot] != uint4(binding.yzw, 0u)))
+            uint3 value; uint atom;
+            if (atom_base == INVALID || !body_entry_constant(entry, slot, atom_base, value, atom) ||
+                scalar != value.x || !constant_value_is_valid(value) ||
+                any(checked_constant_atoms[atom] != uint4(value, 0u)))
             { record_min_token_error(status, parameter, ERR_BAD_HIR, 0x474e0008u); return; }
-            type_const_param_value_by_token[parameter] = atom_base + 64u + slot;
+            type_const_param_value_by_token[parameter] = atom;
         }
     }
     publish_compact_variant_payload_use_slot(node);

@@ -29,6 +29,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         typed_buffer_from_resources(resources, "call_inference_state")?;
     let inference_readback: LaniusBuffer<u32> =
         typed_buffer_from_resources(resources, "call_inference_readback")?;
+    let status: LaniusBuffer<u32> = typed_buffer_from_resources(resources, "status")?;
     let optional_generic = |name, kernel, dispatch| {
         if generic_param_record_passes_required(parser_feature_flags) || has_dependency_interfaces {
             ComputeOperation::indirect(
@@ -220,9 +221,13 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
             "type_checker/calls/03e_materialize_return_types",
         )?,
-        expand_application_fields: inference(
-            compiler_graph::CALLS_EXPAND_APPLICATION_FIELDS_PASS,
-            "type_checker/calls/03e1_expand_application_fields",
+        call_field_closure: substitution_passes::FieldClosureOperations::new(
+            device,
+            graph,
+            resources,
+            passes,
+            &substitution_passes::CALL_FIELD_CLOSURE,
+            hir_dispatch_args,
         )?,
         project_argument_contexts: Some(substitution_passes::ArgumentContextOperations {
             call_envs: ComputeOperation::indirect(
@@ -262,7 +267,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         return_imported_fields: optional_generic(
             compiler_graph::CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            "type_checker/type/instances/02e_project_imported_fields",
+            compiler_graph::IMPORTED_FIELDS_KERNEL,
             &token_dispatch_args,
         )?,
         project_expression_types: inference(
@@ -301,6 +306,20 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         } else {
             None
         },
+        field_expected_ids: super::super::match_passes::FieldExpectedIdOperations::new(
+            device,
+            graph,
+            resources,
+            passes,
+            struct_init_passes_required(parser_feature_flags),
+        )?,
+        validation_call_envs: super::super::match_passes::ValidationCallEnvOperation::new(
+            device,
+            graph,
+            resources,
+            passes,
+            hir_dispatch_args,
+        )?,
         project_literal_contexts: inference(
             compiler_graph::CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
             "type_checker/calls/03k1_project_literal_contexts",
@@ -353,6 +372,17 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             &inference_readback,
             0,
             8,
+        )?,
+        inference_status_readback: crate::gpu::operations::CopyBufferOperation::new(
+            graph,
+            compiler_graph::CALLS_INFERENCE_STATUS_READBACK_PASS,
+            "status",
+            &status,
+            0,
+            "call_inference_readback",
+            &inference_readback,
+            8,
+            16,
         )?,
         infer_array_generics: ComputeOperation::direct_spec(
             device,

@@ -16,8 +16,8 @@ pub fn try_secure_u64() -> core::option_wide_u64::OptionWideU64 {
     if (!std::random_checked::fill_secure_exact(data, 8)) {
         return core::option_wide_u64::none();
     }
-    let low: u32 = words[0];
-    let high: u32 = words[1];
+    let low: u32 = words[0] as u32;
+    let high: u32 = words[1] as u32;
     return core::option_wide_u64::some(core::wide_u64::from_words(high, low));
 }
 

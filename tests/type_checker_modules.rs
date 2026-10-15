@@ -2006,6 +2006,7 @@ fn main() -> i32 { return answer(); }
             .expect("emitted bytes should reference the persisted ELF"),
     );
     let linked_bytes = std::fs::read(&linked_path).expect("read linked x86 ELF");
+    common::x86_jumps::assert_x86_64_jumps_stay_in_functions("linked x86 ELF", &linked_bytes);
     assert_eq!(&linked_bytes[..4], b"\x7fELF");
     assert_eq!(emitted.element_count, Some(linked_bytes.len()));
     assert_eq!(emitted.byte_len, Some(linked_bytes.len()));

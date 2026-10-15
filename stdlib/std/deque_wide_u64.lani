@@ -26,16 +26,16 @@ fn physical_index(value: DequeWideU64, ordinal: i32) -> i32 {
 fn load_at(value: DequeWideU64, ordinal: i32) -> core::wide_u64::WideU64 {
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
     let offset: i32 = physical_index(value, ordinal);
-    let low: u32 = cells[offset];
-    let high: u32 = cells[offset + 1];
+    let low: u32 = cells[offset] as u32;
+    let high: u32 = cells[offset + 1] as u32;
     return core::wide_u64::from_words(high, low);
 }
 
 fn store_at(value: DequeWideU64, ordinal: i32, item: core::wide_u64::WideU64) {
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
     let offset: i32 = physical_index(value, ordinal);
-    let low: i32 = core::wide_u64::low_word(item);
-    let high: i32 = core::wide_u64::high_word(item);
+    let low: i32 = core::wide_u64::low_word(item) as i32;
+    let high: i32 = core::wide_u64::high_word(item) as i32;
     cells[offset] = low;
     cells[offset + 1] = high;
 }
@@ -55,7 +55,7 @@ pub fn try_reserve(value: DequeWideU64, minimum_capacity: i32) -> DequeWideU64 {
     if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
         minimum_capacity <= value.reserved) { return value; }
     let byte_count: i32 = minimum_capacity * 8;
-    let bytes: usize = byte_count;
+    let bytes: usize = byte_count as usize;
     let next: ptr = alloc::allocator::alloc(bytes, 4);
     if (next == 0) { return value; }
     if (value.length > 0) {
@@ -72,7 +72,7 @@ pub fn try_reserve(value: DequeWideU64, minimum_capacity: i32) -> DequeWideU64 {
     }
     if (value.storage != 0) {
         let old_byte_count: i32 = value.reserved * 8;
-        let old_bytes: usize = old_byte_count;
+        let old_bytes: usize = old_byte_count as usize;
         alloc::allocator::dealloc(value.storage, old_bytes, 4);
     }
     return DequeWideU64 {
@@ -235,7 +235,7 @@ pub fn try_shrink_to_fit(value: DequeWideU64) -> DequeWideU64 {
         return new();
     }
     let byte_count: i32 = value.length * 8;
-    let bytes: usize = byte_count;
+    let bytes: usize = byte_count as usize;
     let next: ptr = alloc::allocator::alloc(bytes, 4);
     if (next == 0) { return value; }
     let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
@@ -249,7 +249,7 @@ pub fn try_shrink_to_fit(value: DequeWideU64) -> DequeWideU64 {
         index += 1;
     }
     let old_byte_count: i32 = value.reserved * 8;
-    let old_bytes: usize = old_byte_count;
+    let old_bytes: usize = old_byte_count as usize;
     alloc::allocator::dealloc(value.storage, old_bytes, 4);
     return DequeWideU64 {
         storage: next, length: value.length, reserved: value.length, head: 0,
@@ -259,7 +259,7 @@ pub fn try_shrink_to_fit(value: DequeWideU64) -> DequeWideU64 {
 pub fn destroy(value: DequeWideU64) {
     if (value.storage != 0) {
         let byte_count: i32 = value.reserved * 8;
-        let bytes: usize = byte_count;
+        let bytes: usize = byte_count as usize;
         alloc::allocator::dealloc(value.storage, bytes, 4);
     }
 }

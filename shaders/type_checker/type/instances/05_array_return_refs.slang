@@ -13,7 +13,9 @@ import hir_records;
 import type_checker.checked_array_counts;
 import status;
 import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
 
 struct Params
 {
@@ -115,15 +117,6 @@ uint bounded_array_instance_from_ref(uint tag, uint payload)
         type_instance_len_payload[payload], gParams.n_tokens))
         return INVALID;
     return payload;
-}
-
-bool same_bounded_array_instance(uint lhs, uint rhs)
-{
-    uint capacity = checked_type_capacity();
-    if (lhs >= capacity || rhs >= capacity || type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
-        type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY) return false;
-    return scoped_type_refs_equal<ScopedCheckedTypeGraph>(3u, lhs, INVALID, 3u, rhs, INVALID,
-        capacity, gParams.n_tokens);
 }
 
 uint function_return_array_instance(uint return_node)
@@ -231,54 +224,40 @@ uint returned_call_arg_array_instance(uint return_node)
     return declaration_array_instance(arg_token);
 }
 
-void publish_identifier_array_return(uint return_node)
+// Publish the array-return sentinel of one return statement. A returned
+// declaration (`return values;`) or the declaration passed to a one-argument
+// array call (`return copy(values);`) must have the function's bounded array
+// type: the same canonical ID, interned at one call site for all three rows.
+void publish_array_return(uint return_node)
 {
     HirPayload stmt = stmt_payload(return_node);
     if (return_node >= active_compact_hir_count() ||
         compact_hir_core[return_node].kind != HIR_RETURN_STMT ||
         stmt.a != STMT_RECORD_KIND_RETURN)
         return;
-
     uint return_token = compact_hir_core[return_node].token_start;
     if (!valid_token(return_token))
         return;
-
-    uint value_token = stmt.d;
-    uint src_instance = declaration_array_instance(value_token);
-    if (src_instance == INVALID)
-        return;
-
     uint dst_instance = function_return_array_instance(return_node);
-    if (same_bounded_array_instance(dst_instance, src_instance))
-        call_return_type[return_token] = ARRAY_RETURN_OK;
-    else if (dst_instance != INVALID)
-        record_min_token_error(status, return_token, ERR_ASSIGN_MISMATCH, 0u);
-}
-
-void publish_call_array_return(uint return_node)
-{
-    if (return_node >= active_compact_hir_count() ||
-        compact_hir_core[return_node].kind != HIR_RETURN_STMT ||
-        stmt_payload(return_node).a != STMT_RECORD_KIND_RETURN)
-        return;
-
-    uint return_token = compact_hir_core[return_node].token_start;
-    if (!valid_token(return_token))
-        return;
-
-    uint dst_instance = function_return_array_instance(return_node);
-    if (dst_instance == INVALID)
-        return;
-
-    uint src_instance = returned_call_arg_array_instance(return_node);
-    if (same_bounded_array_instance(dst_instance, src_instance))
+    uint declared = declaration_array_instance(stmt.d);
+    uint argument = dst_instance != INVALID ? returned_call_arg_array_instance(return_node) : INVALID;
+    uint expected = CT_NONE;
+    uint spare = CT_NONE;
+    // Step 0 interns the return type; steps 1 and 2 check the returned
+    // declaration and the call argument, in that order.
+    for (uint step = 0u; step < 3u; step++)
     {
-        call_return_type[return_token] = ARRAY_RETURN_OK;
-        return;
+        uint source = step == 0u ? dst_instance : step == 1u ? declared : argument;
+        if (source == INVALID) continue;
+        uint id = ct_intern_checked<CtCheckedRows>(3u, source, spare);
+        if (step == 0u) { expected = id; continue; }
+        if (dst_instance != INVALID && ct_is_resolved(expected) && id == expected)
+            call_return_type[return_token] = ARRAY_RETURN_OK;
+        // A returned declaration mismatches a bounded array return; a call
+        // argument is only checked against one.
+        else if (dst_instance != INVALID)
+            record_min_token_error(status, return_token, ERR_ASSIGN_MISMATCH, 0u);
     }
-
-    if (src_instance != INVALID)
-        record_min_token_error(status, return_token, ERR_ASSIGN_MISMATCH, 0u);
 }
 
 [shader("compute")]
@@ -289,6 +268,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= active_compact_hir_count())
         return;
 
-    publish_identifier_array_return(node);
-    publish_call_array_return(node);
+    publish_array_return(node);
 }

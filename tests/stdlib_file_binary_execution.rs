@@ -16,7 +16,7 @@ fn compile_fixture(name: &str) -> Vec<u8> {
 fn executable(bytes: &[u8], path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
 
-    std::fs::write(path, bytes).expect("write native ELF");
+    common::x86_jumps::write_x86_64_executable(path, bytes).expect("write native ELF");
     let mut permissions = std::fs::metadata(path)
         .expect("stat native ELF")
         .permissions();

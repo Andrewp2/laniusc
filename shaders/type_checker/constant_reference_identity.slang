@@ -61,96 +61,182 @@ public uint constant_reference_scalar<Graph : IConstantIdentityGraph>(uint2 refe
 
 // 0 invalid; 1 concrete leaf; 2 symbolic leaf; 3 projection; 4 substitution.
 // Each successful edge advances in exactly one immutable graph namespace.
+// Read 0 classifies `reference`; after a substitution, read 1 takes only the
+// substituted reference's scalar (constant_reference_scalar of it) through
+// the same graph reads.
 public uint constant_reference_step<Graph : IConstantIdentityGraph, Environment : IConstantReferenceEnvironment>(
     uint3 reference, uint tokens, out uint3 next, out uint scalar, out uint3 value)
 {
     next = uint3(0u, 0xffffffffu, 0xffffffffu);
     scalar = 0u; value = uint3(0u, 0u, 0u);
-    if (reference.y == 0xffffffffu) return 0u;
-    if (reference.x == 1u)
+    uint2 subject = reference.xy;
+    [loop]
+    for (uint read = 0u; read < 2u; read++)
     {
-        if (!Graph.constant_value(reference.y, value) || !constant_value_is_valid(value)) return 0u;
-        scalar = value.x; return 1u;
+        // A substituted INVALID payload has scalar 0, never the parameter's.
+        if (subject.y == 0xffffffffu) return 0u;
+        uint3 read_value = uint3(0u, 0u, 0u); uint read_scalar = 0u;
+        uint2 child = uint2(0u, 0xffffffffu); bool known;
+        if (subject.x == 1u)
+        {
+            known = Graph.constant_value(subject.y, read_value) && constant_value_is_valid(read_value);
+            read_scalar = read_value.x;
+        }
+        else if (subject.x == 2u)
+        {
+            read_scalar = Graph.constant_parameter_scalar(subject.y);
+            known = constant_scalar_is_supported(read_scalar);
+        }
+        else
+            known = subject.x == 3u && Graph.constant_projection(subject.y, read_scalar, child) &&
+                scalar_is_integer(read_scalar);
+        if (read != 0u)
+        {
+            if (!known || read_scalar != scalar) return 0u;
+            next = uint3(subject, 0xffffffffu);
+            return 4u;
+        }
+        if (subject.x == 1u)
+        {
+            value = read_value;
+            if (!known) return 0u;
+            scalar = read_scalar; return 1u;
+        }
+        scalar = read_scalar;
+        if (subject.x == 2u)
+        {
+            if (reference.y >= tokens || !known || !Environment.parameter_is_valid(reference.y)) return 0u;
+            if (reference.z == 0xffffffffu) return 2u;
+            uint kind; uint payload;
+            if (!Environment.substitute(reference.z, reference.y, kind, payload)) return 0u;
+            subject = uint2(kind, payload);
+            continue;
+        }
+        if (!known || child.x < 1u || child.x > 3u || child.y == 0xffffffffu) return 0u;
+        next = uint3(child, reference.z);
+        return 3u;
     }
-    if (reference.x == 2u)
+    return 0u;
+}
+
+// Inspection as resumable state: constant_inspection_feed consumes the
+// result of constant_reference_step(inspection.reference). Validation (pass 0)
+// and concrete-fit replay (pass 1) are two ordered passes, each bounded by
+// CONSTANT_REFERENCE_WORK_LIMIT steps. inspect_constant_reference drives it
+// through one step call site; the scoped identity hash and equality
+// (scoped_type_equality.slang) drive it and their identity walks through the
+// same site, so a walker expands each graph's step reader once.
+public static const uint CONSTANT_INSPECTION_RUNNING = 0u;
+public static const uint CONSTANT_INSPECTION_ACCEPTED = 1u;
+public static const uint CONSTANT_INSPECTION_REJECTED = 2u;
+
+public struct ConstantInspection
+{
+    public ConstantReferenceDescriptor descriptor;
+    public uint3 reference;
+    public uint3 checkpoint;
+    public uint span;
+    public uint since;
+    public uint outer_scalar;
+    public uint count;
+    public uint pass;
+    public uint work;
+    public uint result;
+}
+
+public ConstantInspection constant_inspection_begin(uint3 reference)
+{
+    ConstantInspection inspection = (ConstantInspection)0;
+    inspection.descriptor.root = reference;
+    inspection.descriptor.terminal = uint2(0u, 0xffffffffu);
+    inspection.reference = reference;
+    inspection.checkpoint = reference;
+    inspection.span = 1u;
+    return inspection;
+}
+
+public void constant_inspection_feed(inout ConstantInspection inspection, uint step, uint3 next,
+    uint scalar, uint3 value)
+{
+    uint result = CONSTANT_INSPECTION_RUNNING;
+    if (inspection.pass != 0u)
     {
-        scalar = Graph.constant_parameter_scalar(reference.y);
-        if (reference.y >= tokens || !constant_scalar_is_supported(scalar) ||
-            !Environment.parameter_is_valid(reference.y)) return 0u;
-        if (reference.z == 0xffffffffu) return 2u;
-        uint2 bound;
-        if (!Environment.substitute(reference.z, reference.y, bound.x, bound.y) ||
-            constant_reference_scalar<Graph>(bound) != scalar) return 0u;
-        next = uint3(bound, 0xffffffffu);
-        return 4u;
+        uint3 fitted;
+        if (step == 0u || step == 2u) result = CONSTANT_INSPECTION_REJECTED;
+        else if (step == 1u)
+            result = constant_value_from_count(inspection.count, inspection.outer_scalar,
+                inspection.descriptor.value) ? CONSTANT_INSPECTION_ACCEPTED : CONSTANT_INSPECTION_REJECTED;
+        else if (step == 3u && !constant_value_from_count(inspection.count, scalar, fitted))
+            result = CONSTANT_INSPECTION_REJECTED;
+        else inspection.reference = next;
     }
-    uint2 child;
-    if (reference.x != 3u || !Graph.constant_projection(reference.y, scalar, child) ||
-        !scalar_is_integer(scalar) || child.x < 1u || child.x > 3u || child.y == 0xffffffffu) return 0u;
-    next = uint3(child, reference.z);
-    return 3u;
+    else if (step == 0u) result = CONSTANT_INSPECTION_REJECTED;
+    else if (step == 1u || step == 2u)
+    {
+        inspection.descriptor.disposition = step;
+        inspection.descriptor.steps = inspection.work + 1u;
+        inspection.descriptor.value = value;
+        inspection.descriptor.terminal = inspection.reference.xy;
+        inspection.descriptor.terminal_scalar = scalar;
+        if (inspection.outer_scalar != 0u && !scalar_is_integer(scalar))
+            result = CONSTANT_INSPECTION_REJECTED;
+        else
+        {
+            inspection.descriptor.pending_fit = step == 2u && inspection.outer_scalar != 0u ? 1u : 0u;
+            if (step == CONSTANT_REFERENCE_SYMBOLIC || inspection.outer_scalar == 0u)
+                result = CONSTANT_INSPECTION_ACCEPTED;
+            else if (!constant_value_to_count(inspection.descriptor.value, inspection.count))
+                result = CONSTANT_INSPECTION_REJECTED;
+            else
+            {
+                // Replay the admitted chain from the (rewritten) root.
+                inspection.reference = inspection.descriptor.root;
+                inspection.pass = 1u; inspection.work = 0u;
+                return;
+            }
+        }
+    }
+    else
+    {
+        if (step == 3u && inspection.outer_scalar == 0u) inspection.outer_scalar = scalar;
+        // Rewrite only a bare root substitution. A projection's environment
+        // is needed when its original child is reached by subsequent readers.
+        if (inspection.work == 0u && step == 4u) inspection.descriptor.root = next;
+        // Brent's cycle check uses constant storage. The independent work cap
+        // also bounds long acyclic chains and malformed substitution graphs.
+        if (all(next == inspection.checkpoint)) result = CONSTANT_INSPECTION_REJECTED;
+        else
+        {
+            inspection.since++;
+            if (inspection.since == inspection.span)
+            { inspection.checkpoint = next; inspection.span *= 2u; inspection.since = 0u; }
+            inspection.reference = next;
+        }
+    }
+    if (result == CONSTANT_INSPECTION_RUNNING)
+    {
+        inspection.work++;
+        if (inspection.work == CONSTANT_REFERENCE_WORK_LIMIT) result = CONSTANT_INSPECTION_REJECTED;
+    }
+    inspection.result = result;
 }
 
 public bool inspect_constant_reference<Graph : IConstantIdentityGraph,
     Environment : IConstantReferenceEnvironment>(uint3 reference, uint tokens,
     out ConstantReferenceDescriptor descriptor)
 {
-    descriptor = (ConstantReferenceDescriptor)0;
-    descriptor.root = reference;
-    descriptor.terminal = uint2(0u, 0xffffffffu);
-    uint3 checkpoint = reference;
-    uint span = 1u; uint since = 0u;
-    uint outer_scalar = 0u; bool leaf = false;
-    uint count = 0u;
-    // Keep validation and concrete-fit replay as two ordered bounded passes.
-    // Sharing the step call prevents the driver from expanding the same
-    // graph/environment reader once for each pass at every caller.
+    ConstantInspection inspection = constant_inspection_begin(reference);
+    // Each feed ends the inspection or advances a pass's work: two passes.
     [loop]
-    for (uint pass = 0u; pass < 2u; pass++)
+    for (uint guard = 0u; guard <= 2u * CONSTANT_REFERENCE_WORK_LIMIT &&
+        inspection.result == CONSTANT_INSPECTION_RUNNING; guard++)
     {
-        [loop]
-        for (uint work = 0u; work < CONSTANT_REFERENCE_WORK_LIMIT; work++)
-        {
-            uint3 next; uint scalar; uint3 value;
-            uint step = constant_reference_step<Graph, Environment>(reference, tokens, next, scalar, value);
-            if (pass != 0u)
-            {
-                if (step == 0u || step == 2u) return false;
-                if (step == 1u)
-                    return constant_value_from_count(count, outer_scalar, descriptor.value);
-                if (step == 3u && !constant_value_from_count(count, scalar, value)) return false;
-                reference = next;
-                continue;
-            }
-            if (step == 0u) return false;
-            if (step == 1u || step == 2u)
-            {
-                descriptor.disposition = step;
-                descriptor.steps = work + 1u;
-                descriptor.value = value;
-                descriptor.terminal = reference.xy;
-                descriptor.terminal_scalar = scalar;
-                if (outer_scalar != 0u && !scalar_is_integer(scalar)) return false;
-                descriptor.pending_fit = step == 2u && outer_scalar != 0u ? 1u : 0u;
-                leaf = true; break;
-            }
-            if (step == 3u && outer_scalar == 0u) outer_scalar = scalar;
-            // Rewrite only a bare root substitution. A projection's environment
-            // is needed when its original child is reached by subsequent readers.
-            if (work == 0u && step == 4u) descriptor.root = next;
-            // Brent's cycle check uses constant storage. The independent work cap
-            // also bounds long acyclic chains and malformed substitution graphs.
-            if (all(next == checkpoint)) return false;
-            since++;
-            if (since == span) { checkpoint = next; span *= 2u; since = 0u; }
-            reference = next;
-        }
-        if (pass != 0u || !leaf) return false;
-        if (descriptor.disposition == CONSTANT_REFERENCE_SYMBOLIC || outer_scalar == 0u) return true;
-        if (!constant_value_to_count(descriptor.value, count)) return false;
-        reference = descriptor.root;
+        uint3 next; uint scalar; uint3 value;
+        uint step = constant_reference_step<Graph, Environment>(inspection.reference, tokens, next, scalar, value);
+        constant_inspection_feed(inspection, step, next, scalar, value);
     }
-    return false;
+    descriptor = inspection.descriptor;
+    return inspection.result == CONSTANT_INSPECTION_ACCEPTED;
 }
 
 // Read the resulting typed scalar while retaining the descriptor's pending
@@ -195,27 +281,38 @@ public uint constant_identity_step<Graph : IConstantIdentityGraph, Environment :
     return step;
 }
 
+// The identity result decided by the descriptors alone (0 different, 1
+// equal) or 2: compare the identity walks from both roots.
+public static const uint CONSTANT_IDENTITY_WALK = 2u;
+public uint constant_descriptors_equal_prelude(ConstantReferenceDescriptor left,
+    ConstantReferenceDescriptor right, bool count_identity)
+{
+    if (left.disposition != right.disposition) return 0u;
+    if (left.disposition == CONSTANT_REFERENCE_CONCRETE)
+    {
+        if (!count_identity) return uint(constant_values_equal(left.value, right.value));
+        uint a; uint b;
+        return uint(constant_value_to_count(left.value, a) && constant_value_to_count(right.value, b) && a == b);
+    }
+    if (left.disposition != CONSTANT_REFERENCE_SYMBOLIC) return 0u;
+    if (count_identity)
+    {
+        // Every projection was admitted above and retains its own fit duty.
+        // Count identity is the underlying parameter, not its conversion path.
+        return uint(scalar_is_integer(left.terminal_scalar) &&
+            left.terminal_scalar == right.terminal_scalar &&
+            all(left.terminal == right.terminal));
+    }
+    return CONSTANT_IDENTITY_WALK;
+}
+
 public bool constant_reference_descriptors_equal<
     LeftGraph : IConstantIdentityGraph, LeftEnvironment : IConstantReferenceEnvironment,
     RightGraph : IConstantIdentityGraph, RightEnvironment : IConstantReferenceEnvironment>(
     ConstantReferenceDescriptor left, ConstantReferenceDescriptor right, uint tokens, bool count_identity)
 {
-    if (left.disposition != right.disposition) return false;
-    if (left.disposition == CONSTANT_REFERENCE_CONCRETE)
-    {
-        if (!count_identity) return constant_values_equal(left.value, right.value);
-        uint a; uint b;
-        return constant_value_to_count(left.value, a) && constant_value_to_count(right.value, b) && a == b;
-    }
-    if (left.disposition != CONSTANT_REFERENCE_SYMBOLIC) return false;
-    if (count_identity)
-    {
-        // Every projection was admitted above and retains its own fit duty.
-        // Count identity is the underlying parameter, not its conversion path.
-        return scalar_is_integer(left.terminal_scalar) &&
-            left.terminal_scalar == right.terminal_scalar &&
-            all(left.terminal == right.terminal);
-    }
+    uint prelude = constant_descriptors_equal_prelude(left, right, count_identity);
+    if (prelude != CONSTANT_IDENTITY_WALK) return prelude == 1u;
     uint3 a = left.root; uint3 b = right.root;
     for (uint work = 0u; work < CONSTANT_REFERENCE_WORK_LIMIT; work++)
     {
@@ -230,32 +327,47 @@ public bool constant_reference_descriptors_equal<
     return false;
 }
 
-public bool constant_reference_descriptor_hash<Graph : IConstantIdentityGraph,
-    Environment : IConstantReferenceEnvironment>(ConstantReferenceDescriptor descriptor,
-    uint tokens, bool count_identity, out uint result)
+// The hash decided by the descriptor alone (0 invalid, 1 final `hash`) or 2:
+// continue `hash` with the identity walk from descriptor.root.
+public uint constant_descriptor_hash_prelude(ConstantReferenceDescriptor descriptor,
+    bool count_identity, out uint hash)
 {
-    result = 0u;
-    uint hash = constant_identity_hash_mix(2166136261u, descriptor.disposition);
+    hash = constant_identity_hash_mix(2166136261u, descriptor.disposition);
     if (descriptor.disposition == CONSTANT_REFERENCE_CONCRETE)
     {
         if (count_identity)
         {
             uint count;
-            if (!constant_value_to_count(descriptor.value, count)) return false;
+            if (!constant_value_to_count(descriptor.value, count)) return 0u;
             hash = constant_identity_hash_mix(hash, count);
         }
         else
             for (uint field = 0u; field < 3u; field++) hash = constant_identity_hash_mix(hash, descriptor.value[field]);
-        result = hash; return true;
+        return 1u;
     }
-    if (descriptor.disposition != CONSTANT_REFERENCE_SYMBOLIC) return false;
+    if (descriptor.disposition != CONSTANT_REFERENCE_SYMBOLIC) return 0u;
     if (count_identity)
     {
-        if (!scalar_is_integer(descriptor.terminal_scalar) || descriptor.terminal.x != 2u) return false;
+        if (!scalar_is_integer(descriptor.terminal_scalar) || descriptor.terminal.x != 2u) return 0u;
         hash = constant_identity_hash_mix(hash, descriptor.terminal.x);
         hash = constant_identity_hash_mix(hash, descriptor.terminal_scalar);
-        result = constant_identity_hash_mix(hash, descriptor.terminal.y);
-        return true;
+        hash = constant_identity_hash_mix(hash, descriptor.terminal.y);
+        return 1u;
+    }
+    return CONSTANT_IDENTITY_WALK;
+}
+
+public bool constant_reference_descriptor_hash<Graph : IConstantIdentityGraph,
+    Environment : IConstantReferenceEnvironment>(ConstantReferenceDescriptor descriptor,
+    uint tokens, bool count_identity, out uint result)
+{
+    result = 0u;
+    uint hash;
+    uint prelude = constant_descriptor_hash_prelude(descriptor, count_identity, hash);
+    if (prelude != CONSTANT_IDENTITY_WALK)
+    {
+        if (prelude == 1u) result = hash;
+        return prelude == 1u;
     }
     uint3 reference = descriptor.root;
     for (uint work = 0u; work < CONSTANT_REFERENCE_WORK_LIMIT; work++)

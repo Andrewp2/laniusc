@@ -4,6 +4,7 @@ import type_checker.program_evidence.abi;
 import type_checker.program_evidence.packed_graph;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;
+import type_checker.scoped_type_scratch;
 
 public EvidenceStatus pev_admit_environment(
     uint environment, uint expected_owner, uint caller_owner, uint form)
@@ -39,7 +40,7 @@ public EvidenceStatus pev_hash_root(
     uint2 reference; uint nodes; uint atoms;
     if (!pev_read_root(root, reference) || !pev_table_count(5u, nodes) || !pev_table_count(1u, atoms))
         return pev_invalid(1u, root, PEV_INVALID);
-    if (!scoped_type_ref_hash<ProgramEvidenceTypeGraph>(
+    if (!scoped_type_ref_hash_scratch<ProgramEvidenceTypeGraph>(
         reference.x, reference.y, environment, nodes, atoms, hash))
         return pev_invalid(15u, root, PEV_INVALID);
     return pev_ok();
@@ -61,7 +62,7 @@ public EvidenceStatus pev_equal_roots(
     if (!pev_read_root(left_root, left) || !pev_read_root(right_root, right) ||
         !pev_table_count(5u, nodes) || !pev_table_count(1u, atoms))
         return pev_invalid(1u, left_root, right_root);
-    equal = scoped_type_refs_equal<ProgramEvidenceTypeGraph>(
+    equal = scoped_type_refs_equal_scratch<ProgramEvidenceTypeGraph>(
         left.x, left.y, left_environment, right.x, right.y, right_environment, nodes, atoms);
     // Preflight proved both complete input graphs well formed, bounded and
     // fully substitutable. A false shared comparison here means valid inequality.
