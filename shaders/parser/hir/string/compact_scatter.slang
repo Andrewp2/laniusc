@@ -27,7 +27,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         hir_string_count[0] = count;
         hir_list_rank_dispatch_args[0] = min(count, MAX_GROUPS_X);
-        hir_list_rank_dispatch_args[1] = count == 0u ? 0u : (count + MAX_GROUPS_X - 1u) / MAX_GROUPS_X;
+        // One workgroup per string: x is capped and the rest goes to y,
+        // which is clamped too, since nothing validates indirect arguments.
+        hir_list_rank_dispatch_args[1] = count == 0u ? 0u : min((count + MAX_GROUPS_X - 1u) / MAX_GROUPS_X, MAX_GROUPS_X);
         hir_list_rank_dispatch_args[2] = count == 0u ? 0u : 1u;
     }
     if (node >= active_node_count() || hir_list_rank_flag[node] == 0u)
