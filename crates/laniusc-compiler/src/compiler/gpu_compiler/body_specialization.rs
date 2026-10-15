@@ -125,15 +125,24 @@ impl GpuCompiler<'_> {
                     .collect();
                 for (symbol_index, &call_hir) in context.call_hirs.iter().enumerate() {
                     let Some(&admitted) = calls_by_hir.get(&call_hir) else {
+                        if context_index >= units.len() {
+                            trace.skipped(context_index, call_hir, "no admitted generic call", None);
+                        }
                         continue;
                     };
                     let call = admitted.checked_call();
                     let Some((library_id, unit_id, declaration_index)) =
                         native_target(call.target, owner_library, owner_unit)
                     else {
+                        if context_index >= units.len() {
+                            trace.skipped(context_index, call_hir, "no native target", Some(call));
+                        }
                         continue;
                     };
                     let Some(template) = templates.get(&(library_id, unit_id)) else {
+                        if context_index >= units.len() {
+                            trace.skipped(context_index, call_hir, "no template unit", Some(call));
+                        }
                         continue;
                     };
                     let identity = declaration_identity(library_id, unit_id, declaration_index);
@@ -154,6 +163,9 @@ impl GpuCompiler<'_> {
                             && symbol_identity(original, symbol) == identity
                     }) {
                         // Tag-only generic functions already have a valid body.
+                        if context_index >= units.len() {
+                            trace.skipped(context_index, call_hir, "tag-only definition", Some(call));
+                        }
                         continue;
                     }
                     let target = (library_id, unit_id, declaration_index);
@@ -173,6 +185,9 @@ impl GpuCompiler<'_> {
                     let Some((concrete_identity, concrete_layouts)) = environment else {
                         // A symbolic call belongs to an uninstantiated template.
                         // Its concrete replay will supply a new call environment.
+                        if context_index >= units.len() {
+                            trace.skipped(context_index, call_hir, "symbolic environment", Some(call));
+                        }
                         continue;
                     };
                     let symbol = objects[context_index]
@@ -205,6 +220,7 @@ impl GpuCompiler<'_> {
                         pending.insert(concrete_identity.clone(), PendingBody {
                             admitted: admitted.clone(),
                             target,
+                            recursive: instantiates_ancestor(&contexts, context_index, caller, target),
                             origin: EntryOrigin {
                                 depth: depth + 1,
                                 parent: Some((context_index, caller)),
@@ -228,8 +244,9 @@ impl GpuCompiler<'_> {
                     let body = &pending[&key];
                     let scope = program.replay_scope(&body.admitted).map_err(native_program_error)?;
                     let entry = replay_entry(body.admitted.checked_call(), body.target);
-                    let placed = runs.iter_mut().try_fold(false, |placed, run| {
-                        if placed || run.keys.len() >= batch_limit { return Ok(placed); }
+                    // Polymorphic recursion replays alone, so a failure is its own.
+                    let placed = !body.recursive && runs.iter_mut().try_fold(false, |placed, run| {
+                        if placed || run.solo || run.keys.len() >= batch_limit { return Ok(placed); }
                         run.try_add(&key, &scope, entry.clone())
                     }).map_err(|error: anyhow::Error| CompileError::GpuCodegen(error.to_string()))?;
                     if !placed {
@@ -237,23 +254,34 @@ impl GpuCompiler<'_> {
                             .map_err(|error| CompileError::Diagnostic(
                                 Diagnostic::error("LNC0017", "generic specialization cannot represent this environment")
                                     .with_note(error.to_string())))?;
-                        runs.push(ReplayRun { keys: vec![key], scopes: vec![scope], batch });
+                        runs.push(ReplayRun { keys: vec![key], scopes: vec![scope], batch, solo: body.recursive });
                     }
                 }
                 for run in runs {
                     let started = std::time::Instant::now();
                     let origins = run.keys.iter().map(|key| &pending[key].admitted).collect::<Vec<_>>();
+                    // A recursively growing environment fails wherever it first
+                    // outgrows a limit; report it as the recursion it is.
+                    let recursion = |error: CompileError| {
+                        let body = &pending[&run.keys[0]];
+                        if !run.solo || !is_capacity_failure(&error) { return error; }
+                        let owner = body.origin.parent.map(|(context, _)|
+                            (contexts[context].library_id, contexts[context].unit_id));
+                        instantiation_depth_error(body.admitted.checked_call(),
+                            owner.and_then(|owner| templates.get(&owner).copied()), Some(error))
+                    };
                     let request = program
                         .prepare_replay_batch(&origins)
-                        .map_err(native_program_error)?;
+                        .map_err(|error| recursion(native_program_error(error)))?;
                     let prepared = std::time::Instant::now();
                     let pending_unit = self
                         .compile_authorized_body_specialization(&request)
-                        .await?;
+                        .await
+                        .map_err(&recursion)?;
                     let compiled = std::time::Instant::now();
                     let selected = request.selected_function_hirs().to_vec();
                     let (replay, replay_calls) =
-                        request.finish(pending_unit).map_err(native_program_error)?;
+                        request.finish(pending_unit).map_err(|error| recursion(native_program_error(error)))?;
                     let finished = std::time::Instant::now();
                     let entry_layouts = replay.body_native_layouts.as_ref()
                         .filter(|layouts| layouts.len() == run.keys.len())
@@ -388,6 +416,9 @@ struct EntryOrigin {
 struct PendingBody {
     admitted: AdmittedCall,
     target: (u32, u32, u32),
+    /// The body instantiates a declaration it was itself instantiated from
+    /// (with another environment: equal environments reuse one body).
+    recursive: bool,
     origin: EntryOrigin,
     /// Retained layout witnesses of every call site that needs this body.
     witnesses: Vec<Vec<u32>>,
@@ -398,6 +429,8 @@ struct ReplayRun {
     keys: Vec<Vec<u8>>,
     scopes: Vec<ReplayScope>,
     batch: gpu_type_checker::CheckedBodySpecializationBatch,
+    /// A polymorphically recursive body, which never shares its run.
+    solo: bool,
 }
 
 impl ReplayRun {
@@ -508,6 +541,18 @@ impl SpecializationTrace {
                 body.origin.depth, body.target.2, &blake3::hash(key).to_hex()[..12],
                 call.arguments, call.constants,
             );
+        }
+    }
+
+    /// A replay's native call that the scan leaves for the linker.
+    fn skipped(&self, context: usize, call_hir: u32, why: &str, call: Option<&CheckedGenericCall>) {
+        if !self.enabled { return; }
+        match call {
+            Some(call) => eprintln!(
+                "[specialization]   skip context={context} call_hir={call_hir}: {why} target={:?} args={:?} consts={:?}",
+                call.target, call.arguments, call.constants,
+            ),
+            None => eprintln!("[specialization]   skip context={context} call_hir={call_hir}: {why}"),
         }
     }
 
@@ -677,10 +722,17 @@ fn instantiation_depth_error(
     };
     let mut diagnostic = Diagnostic::error("LNC0073", "generic instantiation depth exceeded")
         .with_note(note);
-    if let Some(CompileError::Diagnostic(inner)) = &capacity {
-        for note in &inner.notes {
-            diagnostic = diagnostic.with_note(note.clone());
+    match &capacity {
+        Some(CompileError::Diagnostic(inner)) => {
+            for note in &inner.notes {
+                diagnostic = diagnostic.with_note(note.clone());
+            }
         }
+        Some(CompileError::GpuFrontend(detail) | CompileError::GpuSyntax(detail)
+            | CompileError::GpuTypeCheck(detail) | CompileError::GpuCodegen(detail)) => {
+            diagnostic = diagnostic.with_note(detail.clone());
+        }
+        None => {}
     }
     diagnostic = diagnostic
         .with_help(
@@ -703,6 +755,15 @@ fn instantiation_depth_error(
         }
     }
     CompileError::Diagnostic(diagnostic)
+}
+
+/// Whether a replay failed on a limit (an internal LNC0017 or an unmapped
+/// stage error) rather than on a language diagnostic such as a missing impl.
+fn is_capacity_failure(error: &CompileError) -> bool {
+    match error {
+        CompileError::Diagnostic(diagnostic) => diagnostic.code == "LNC0017",
+        _ => true,
+    }
 }
 
 fn specialization_limit_error(detail: &str) -> CompileError {
