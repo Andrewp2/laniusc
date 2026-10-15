@@ -62,7 +62,7 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
         }
     };
 
-    device::persist_pipeline_cache();
+    device::persist_compiled_pipelines();
     if check_only {
         return Ok(());
     }
