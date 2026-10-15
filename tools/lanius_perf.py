@@ -40,6 +40,8 @@ VIEWER_DATA_END = "<!-- lanius-performance-data:end -->"
 LANIUS_MODES = ("process_cold", "daemon_cold_workspace", "daemon_warm_workspace")
 DEFAULT_BENCHMARK_SEED = 20260808
 DEFAULT_SAMPLE_COUNT = 20
+# How long a daemon may take to exit after acknowledging shutdown before it is killed.
+SHUTDOWN_EXIT_TIMEOUT_S = 60.0
 CANONICAL_SINGLE_FILE_PRESET = "single-file-1mb"
 GENERIC_SINGLE_FILE_PRESET = "single-file-generic-1mb"
 GENERIC_NARROW_SINGLE_FILE_PRESET = "single-file-generic-narrow-1mb"
@@ -656,6 +658,9 @@ def report_validation(mode: str, measurement: dict) -> list[str]:
     print(line, flush=True)
     for failure in [*failed, *(verification or {}).get("failures", [])]:
         print(f"lanius_perf:   {json.dumps(failure)[:800]}", flush=True)
+    for record in validation.get("daemon_shutdown_problems", []):
+        print(f"lanius_perf: warning: {mode}: daemon did not exit cleanly after the samples: "
+              f"{json.dumps(record)}", file=sys.stderr, flush=True)
     return problems
 
 
@@ -964,6 +969,7 @@ def measure_mode(
     daemon_argv = daemon_command(laniusc, target)
     raw_samples: list[dict] = []
     ready_samples = []
+    shutdowns: list[dict] = []
     sample_commands = []
     suffix = "wasm" if target == "wasm" else "bin"
     last_output = artifact_dir / f"{mode}-0.{suffix}"
@@ -1023,8 +1029,10 @@ def measure_mode(
                         sample_from_response(index, wall_ms, response, case)
                     )
                     sample_outputs.append((index, case, output))
-            finally:
-                daemon.shutdown(job_timeout)
+            except BaseException:
+                daemon.kill()
+                raise
+            shutdowns.append(daemon.shutdown(job_timeout))
             sample_requests.append(request)
             last_output = output
         commands = {
@@ -1109,8 +1117,10 @@ def measure_mode(
                 sample_outputs.append((index, case, output))
                 sample_requests.append(request)
                 last_output = output
-        finally:
-            daemon.shutdown(job_timeout)
+        except BaseException:
+            daemon.kill()
+            raise
+        shutdowns.append(daemon.shutdown(job_timeout))
         commands = {
             "daemon_start": command_record(daemon_argv, ROOT),
             "capacity_primer_counts_by_seed": primer_counts,
@@ -1151,6 +1161,10 @@ def measure_mode(
         validation["output_verification"] = verification
     if failed_compiles:
         validation["failed_compiles"] = failed_compiles
+    unclean = [record for record in shutdowns if not record["exited"] or record["killed"]]
+    if unclean:
+        # The samples are still valid; the daemon's exit is a separate defect.
+        validation["daemon_shutdown_problems"] = unclean
 
     return {
         "id": f"lanius-{target}-{mode}",
@@ -1325,8 +1339,13 @@ def profile_daemon_job(
             ),
             job_timeout,
         )
-    finally:
-        daemon.shutdown(job_timeout)
+    except BaseException:
+        daemon.kill()
+        raise
+    shutdown = daemon.shutdown(job_timeout)
+    if not shutdown["exited"] or shutdown["killed"]:
+        print(f"lanius_perf: warning: profile {mode}: daemon did not exit cleanly, so its "
+              f"trace may be incomplete: {json.dumps(shutdown)}", file=sys.stderr, flush=True)
     trace = json.loads(trace_path.read_text())
     timeline = profile_timeline(trace, "daemon.job.profile")
     compiler_graphs = response.pop("compiler_graphs", [])
@@ -2012,17 +2031,35 @@ class Daemon:
             raise RuntimeError(f"{description} was not a JSON object")
         return value
 
-    def shutdown(self, timeout: float) -> None:
+    def shutdown(self, timeout: float, exit_timeout: float = SHUTDOWN_EXIT_TIMEOUT_S) -> dict:
+        """Ask the daemon to exit; kill it if it does not. Never raises, so a slow or
+        stuck exit cannot discard samples already measured: the returned record says
+        what happened and callers keep it with the result."""
+        record = {"acknowledged": False, "exited": False, "killed": False}
         if self.process.poll() is None:
+            started = time.perf_counter()
             try:
                 self.request({"id": "shutdown", "command": "shutdown"}, timeout)
+                record["acknowledged"] = True
                 assert self.process.stdin is not None
                 self.process.stdin.close()
-                self.process.wait(timeout=timeout)
-            except Exception:
-                self.process.kill()
-                self.process.wait()
-                raise
+                self.process.wait(timeout=exit_timeout)
+                record["exited"] = True
+            except Exception as error:
+                record["error"] = f"{type(error).__name__}: {error}"[:300]
+                self.kill()
+                record["killed"] = True
+            record["seconds"] = round(time.perf_counter() - started, 3)
+        else:
+            record["exited"] = True
+            record["exit_status_before_shutdown"] = self.process.returncode
+        self.stderr_file.close()
+        return record
+
+    def kill(self) -> None:
+        if self.process.poll() is None:
+            self.process.kill()
+            self.process.wait()
         self.stderr_file.close()
 
 

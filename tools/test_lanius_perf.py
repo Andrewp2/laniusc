@@ -1,9 +1,14 @@
+import sys
+import tempfile
+import time
 import unittest
 from argparse import Namespace
 from collections import defaultdict, deque
+from pathlib import Path
 
 from lanius_perf import (
     CANONICAL_SINGLE_FILE_PRESET,
+    Daemon,
     annotate_timeline_event,
     custom_workload_warning,
     execution_graph,
@@ -605,6 +610,49 @@ class TimelineClassificationTests(unittest.TestCase):
         }
         annotate_timeline_event(event)
         self.assertEqual(event["phase"], "artifact_emission")
+
+
+# A stand-in daemon: ready, then answers shutdown and either exits or hangs.
+FAKE_DAEMON = """
+import json, sys, time
+print(json.dumps({"event": "ready"}), flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    print(json.dumps({"id": request["id"], "event": "shutdown"}), flush=True)
+    break
+if sys.argv[1] == "hang":
+    time.sleep(60)
+"""
+
+
+class DaemonShutdownTests(unittest.TestCase):
+    def start(self, behavior: str, directory: str) -> Daemon:
+        script = Path(directory) / "fake_daemon.py"
+        script.write_text(FAKE_DAEMON)
+        return Daemon([sys.executable, str(script), behavior], Path(directory), {}, 10,
+                      Path(directory) / "daemon.stderr")
+
+    def test_clean_exit_is_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = self.start("exit", directory).shutdown(10)
+
+        self.assertTrue(record["acknowledged"])
+        self.assertTrue(record["exited"])
+        self.assertFalse(record["killed"])
+
+    def test_daemon_that_does_not_exit_is_killed_without_raising(self):
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = self.start("hang", directory)
+            started = time.perf_counter()
+            record = daemon.shutdown(10, exit_timeout=0.5)
+            elapsed = time.perf_counter() - started
+
+        self.assertTrue(record["acknowledged"])
+        self.assertFalse(record["exited"])
+        self.assertTrue(record["killed"])
+        self.assertIn("TimeoutExpired", record["error"])
+        self.assertIsNotNone(daemon.process.poll())
+        self.assertLess(elapsed, 5)
 
 
 if __name__ == "__main__":
