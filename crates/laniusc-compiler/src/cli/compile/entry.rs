@@ -59,12 +59,10 @@ pub(super) fn compile_stdlib_root(
                 .map_err(CliError::from_compile_error)?,
         ))
     } else {
-        let bytes = pollster::block_on(compile_entry_to_x86_64_with_stdlib(input, stdlib_root));
-        if let Ok(gpu) = crate::gpu::device::global_result() {
-            crate::gpu::passes_core::debug_dump_buffers(&gpu.device, &gpu.queue, "x86_64");
-            crate::gpu::passes_core::debug_write_capture(&gpu.device, &gpu.queue);
-        }
-        Ok(CliEmission::Bytes(bytes.map_err(CliError::from_compile_error)?))
+        Ok(CliEmission::Bytes(
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(input, stdlib_root))
+                .map_err(CliError::from_compile_error)?,
+        ))
     }
 }
 

@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use super::{
     buffers::LaniusBuffer,
+    dispatch_capture::{CaptureLaunch, debug_capture_begin, debug_capture_end},
     passes_core::{
         DispatchDim,
         InputElements,
@@ -73,6 +74,8 @@ fn record_direct_with_offsets(
     if defer_compute_direct_with_offsets(pass, bind_group, groups, dynamic_offsets, label) {
         return Ok(());
     }
+    let launch = CaptureLaunch::Direct(groups);
+    let captured = debug_capture_begin(encoder, label, pass, bind_group, dynamic_offsets, launch);
     let mut compute = begin_counted_compute_pass(
         encoder,
         &wgpu::ComputePassDescriptor {
@@ -83,12 +86,11 @@ fn record_direct_with_offsets(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     crate::gpu::passes_core::record_compute_dispatch();
-    crate::gpu::passes_core::debug_capture_dispatch(label, bind_group, groups);
     if !crate::gpu::passes_core::debug_operation_skipped() {
         compute.dispatch_workgroups(groups.0, groups.1, groups.2);
     }
     drop(compute);
-    crate::gpu::passes_core::debug_capture_snapshot(encoder);
+    debug_capture_end(encoder, captured);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
     Ok(())
 }
@@ -123,6 +125,8 @@ fn record_indirect_at(
     ) {
         return Ok(());
     }
+    let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, absolute_offset);
+    let captured = debug_capture_begin(encoder, label, pass, bind_group, &[], launch);
     let mut compute = begin_counted_compute_pass(
         encoder,
         &wgpu::ComputePassDescriptor {
@@ -137,6 +141,7 @@ fn record_indirect_at(
         compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
     }
     drop(compute);
+    debug_capture_end(encoder, captured);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
     Ok(())
 }
@@ -160,6 +165,8 @@ fn record_indirect_with_offsets(
     ) {
         return Ok(());
     }
+    let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
+    let captured = debug_capture_begin(encoder, label, pass, bind_group, dynamic_offsets, launch);
     let mut compute = begin_counted_compute_pass(
         encoder,
         &wgpu::ComputePassDescriptor {
@@ -174,6 +181,7 @@ fn record_indirect_with_offsets(
         compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
     }
     drop(compute);
+    debug_capture_end(encoder, captured);
     crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
     Ok(())
 }
