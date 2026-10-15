@@ -11,7 +11,7 @@ use crate::gpu::{
 };
 
 // Ordinary literals are required by laniusc-shaders/build.rs artifact discovery.
-const CATALOG_KEYS: [&str; 22] = [
+const CATALOG_KEYS: [&str; 23] = [
     "type_checker/program_evidence/entries/00_initialize",
     "type_checker/program_evidence/entries/01_clear_atom_index",
     "type_checker/program_evidence/entries/02_00_admit_snapshots",
@@ -23,7 +23,8 @@ const CATALOG_KEYS: [&str; 22] = [
     "type_checker/program_evidence/entries/02_06_admit_edges",
     "type_checker/program_evidence/entries/02_07_admit_roots",
     "type_checker/program_evidence/entries/02_08_admit_predicates",
-    "type_checker/program_evidence/entries/02_09_admit_implementations",
+    "type_checker/program_evidence/entries/02_09_admit_implementation_heads",
+    "type_checker/program_evidence/entries/02_09_admit_implementation_members",
     "type_checker/program_evidence/entries/02_10_admit_methods",
     "type_checker/program_evidence/entries/03_build_atom_index",
     "type_checker/program_evidence/entries/04_check_atom_identity",
@@ -35,6 +36,12 @@ const CATALOG_KEYS: [&str; 22] = [
     "type_checker/program_evidence/entries/10_check_coherence",
     "type_checker/program_evidence/entries/11_freeze_catalog",
 ];
+
+// 02_09 admits implementations in two kernels split at head coverage. The
+// members kernel runs only while the catalog is still building, so every row
+// it sees has passed its head; the two run chunk by chunk, in the one-kernel
+// order (a failure in one chunk stops every later chunk).
+const IMPLEMENTATION_HEADS: usize = 11;
 
 pub(super) struct CatalogKernels {
     passes: Vec<PassData>,
@@ -62,7 +69,7 @@ impl CatalogKernels {
         let clear_count = work_rows.max(buckets); // >=1, even for empty catalog.
         // Phase02 is one typed shader per catalog table. Keep explicit phase
         // numbers: shader array index11 is an admission, not singleton freeze.
-        let schedule: [(u32, u32); 22] = [
+        let schedule: [(u32, u32); 23] = [
             (0, 1),
             (1, clear_count),
             (2, count(0)),
@@ -74,6 +81,7 @@ impl CatalogKernels {
             (2, count(6)),
             (2, count(7)),
             (2, count(8)),
+            (2, count(9)),
             (2, count(9)),
             (2, count(10)),
             (3, count(1)),
@@ -90,19 +98,39 @@ impl CatalogKernels {
             self.passes.len() == schedule.len(),
             "catalog kernel/schedule inventory differs"
         );
-        for (pass, (phase, count)) in self.passes.iter().zip(schedule) {
+        ensure!(
+            CATALOG_KEYS[IMPLEMENTATION_HEADS].ends_with("02_09_admit_implementation_heads")
+                && CATALOG_KEYS[IMPLEMENTATION_HEADS + 1].ends_with("02_09_admit_implementation_members"),
+            "implementation admission kernels moved in the catalog inventory"
+        );
+        for (index, (pass, (phase, count))) in self.passes.iter().zip(schedule).enumerate() {
+            if index == IMPLEMENTATION_HEADS + 1 {
+                continue; // recorded with its heads below
+            }
             let threads = if matches!(phase, 0 | 11) { 1 } else { 256 };
-            record_phase(
-                device,
-                encoder,
-                pass,
-                phase,
-                Span::new(0, count)?,
-                threads,
-                storage,
-                input,
-                output,
-            )?;
+            let (steps, chunk) = if index == IMPLEMENTATION_HEADS {
+                (&self.passes[index..index + 2], THREAD_SCRATCH_SLOTS)
+            } else {
+                (std::slice::from_ref(pass), count.max(1))
+            };
+            let mut done = 0u32;
+            while done < count {
+                let rows = (count - done).min(chunk);
+                for step in steps {
+                    record_phase(
+                        device,
+                        encoder,
+                        step,
+                        phase,
+                        Span::new(done, rows)?,
+                        threads,
+                        storage,
+                        input,
+                        output,
+                    )?;
+                }
+                done += rows;
+            }
         }
         Ok(())
     }

@@ -8,4 +8,3 @@
 57083 tests/owned_type_constraints_fixed
 56881 tests/typed_constant_identity_requests
 51215 tests/owned_type_constraints_overlap
-46696 type_checker/program_evidence/entries/02_09_admit_implementations

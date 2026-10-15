@@ -195,7 +195,9 @@ public EvidenceStatus pev_admit_catalog_predicate(uint row)
     return pev_admit_predicate(row);
 }
 
-public EvidenceStatus pev_admit_catalog_implementation(uint row)
+// 02_09 admits an implementation row in two dispatches (definition_admission:
+// pev_admit_implementation_head, then pev_admit_implementation_members).
+public EvidenceStatus pev_admit_catalog_implementation_head(uint row)
 {
     uint4 low; uint4 middle; uint4 high;
     if (!pev_catalog_row(9u, row) || !pev_read8(9u, row, low, middle) || !pev_read4(9u, row, 8u, high))
@@ -208,6 +210,11 @@ public EvidenceStatus pev_admit_catalog_implementation(uint row)
         !pev_catalog_span(8u, high.x, high.y)) return pev_invalid(1u, row, PEV_INVALID);
     EvidenceStatus status = pev_admit_catalog_atom(low.x);
     if (status.state != PEV_VALID) return status;
+    return pev_admit_implementation_head(row);
+}
+
+public EvidenceStatus pev_admit_catalog_implementation_members(uint row)
+{
     // Complete head coverage precedes both exact/coarse index publication and
     // any early match. Up to 33 admitted roots retain their prior visit budget.
     // Resolving a constant operand charges one substitution step per count
@@ -215,7 +222,7 @@ public EvidenceStatus pev_admit_catalog_implementation(uint row)
     // needs the same bounded budget for those steps.
     OwnedConstraintLimits limits = { PEV_DEPTH_LIMIT, 0u, 33u * PEV_VISIT_LIMIT,
         33u * PEV_VISIT_LIMIT };
-    return pev_admit_implementation_with_owned_solver(row, limits);
+    return pev_admit_implementation_members(row, limits);
 }
 
 public EvidenceStatus pev_admit_catalog_method(uint row)
