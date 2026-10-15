@@ -1,6 +1,7 @@
-// Owned char-to-u32 map with linear lookup. Keys and values occupy adjacent
-// 32-bit cells in one allocation. Character keys preserve every 32-bit code,
-// including non-scalar patterns; values preserve every u32 bit pattern.
+// Owned char-to-u32 map with linear lookup. Entry i occupies two native
+// eight-byte slots in one allocation: its char key at storage + 16 * i and its
+// u32 value right after it. Both are read and written at their own types, so
+// no integer conversion is involved.
 // Ownership is linear by convention: use only the newest returned map, and
 // destroy it exactly once.
 module std::map_char_u32;
@@ -13,8 +14,44 @@ pub struct MapCharU32 {
     reserved: i32,
 }
 
-// Each entry occupies two i32 cells (eight bytes).
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
 pub const MAX_ENTRIES: i32 = 268435455;
+
+fn key_slot(storage: ptr, index: i32) -> [char] {
+    let offset: usize = (index as usize) * 16;
+    return core::mem::typed_slice_from_raw_parts(storage + offset, 1);
+}
+
+fn value_slot(storage: ptr, index: i32) -> [u32] {
+    let offset: usize = (index as usize) * 16 + 8;
+    return core::mem::typed_slice_from_raw_parts(storage + offset, 1);
+}
+
+fn load_key(storage: ptr, index: i32) -> char {
+    let view: [char] = key_slot(storage, index);
+    return view[0];
+}
+
+fn load_value(storage: ptr, index: i32) -> u32 {
+    let view: [u32] = value_slot(storage, index);
+    return view[0];
+}
+
+fn store_entry(storage: ptr, index: i32, key: char, item: u32) {
+    let keys: [char] = key_slot(storage, index);
+    keys[0] = key;
+    let values: [u32] = value_slot(storage, index);
+    values[0] = item;
+}
+
+fn store_value(storage: ptr, index: i32, item: u32) {
+    let values: [u32] = value_slot(storage, index);
+    values[0] = item;
+}
+
+fn byte_size(count: i32) -> usize {
+    return (count as usize) * 16;
+}
 
 pub fn new() -> MapCharU32 {
     let empty: ptr = 0;
@@ -37,13 +74,9 @@ pub fn contains_key(value: MapCharU32, key: char) -> bool {
     if (value.length == 0) {
         return false;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.reserved * 2);
     let index: i32 = 0;
     while (index < value.length) {
-        let raw_key: i32 = cells[index * 2];
-        let stored_key: char = raw_key;
-        if (stored_key == key) {
+        if (load_key(value.storage, index) == key) {
             return true;
         }
         index += 1;
@@ -57,16 +90,10 @@ pub fn get_or(value: MapCharU32, key: char, fallback: u32) -> u32 {
     if (value.length == 0) {
         return fallback;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.reserved * 2);
     let index: i32 = 0;
     while (index < value.length) {
-        let offset: i32 = index * 2;
-        let raw_key: i32 = cells[offset];
-        let stored_key: char = raw_key;
-        if (stored_key == key) {
-            let raw_item: i32 = cells[offset + 1];
-            return raw_item as u32;
+        if (load_key(value.storage, index) == key) {
+            return load_value(value.storage, index);
         }
         index += 1;
     }
@@ -79,20 +106,14 @@ pub fn key_at_or(value: MapCharU32, ordinal: i32, fallback: char) -> char {
     if (ordinal < 0 || ordinal >= value.length) {
         return fallback;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.reserved * 2);
-    let raw_key: i32 = cells[ordinal * 2];
-    return raw_key;
+    return load_key(value.storage, ordinal);
 }
 
 pub fn value_at_or(value: MapCharU32, ordinal: i32, fallback: u32) -> u32 {
     if (ordinal < 0 || ordinal >= value.length) {
         return fallback;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.reserved * 2);
-    let raw_item: i32 = cells[ordinal * 2 + 1];
-    return raw_item as u32;
+    return load_value(value.storage, ordinal);
 }
 
 // Negative or oversized requests and allocation failure return the original
@@ -102,15 +123,12 @@ pub fn try_reserve(value: MapCharU32, minimum_entries: i32) -> MapCharU32 {
         minimum_entries <= value.reserved) {
         return value;
     }
-    let byte_count: i32 = minimum_entries * 8;
-    let new_bytes: usize = byte_count as usize;
+    let new_bytes: usize = byte_size(minimum_entries);
     let next: ptr = 0;
     if (value.storage == 0) {
-        next = alloc::allocator::alloc(new_bytes, 4);
+        next = alloc::allocator::alloc(new_bytes, 8);
     } else {
-        let old_byte_count: i32 = value.reserved * 8;
-        let old_bytes: usize = old_byte_count as usize;
-        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+        next = alloc::allocator::realloc(value.storage, byte_size(value.reserved), new_bytes, 8);
     }
     if (next == 0) {
         return value;
@@ -148,11 +166,7 @@ pub fn try_insert(value: MapCharU32, key: char, item: u32) -> MapCharU32 {
             return value;
         }
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        grown.storage, grown.reserved * 2);
-    let offset: i32 = grown.length * 2;
-    cells[offset] = key;
-    cells[offset + 1] = item as i32;
+    store_entry(grown.storage, grown.length, key, item);
     return MapCharU32 {
         storage: grown.storage,
         length: needed,
@@ -166,15 +180,10 @@ pub fn try_set(value: MapCharU32, key: char, item: u32) -> bool {
     if (value.length == 0) {
         return false;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.reserved * 2);
     let index: i32 = 0;
     while (index < value.length) {
-        let offset: i32 = index * 2;
-        let raw_key: i32 = cells[offset];
-        let stored_key: char = raw_key;
-        if (stored_key == key) {
-            cells[offset + 1] = item as i32;
+        if (load_key(value.storage, index) == key) {
+            store_value(value.storage, index, item);
             return true;
         }
         index += 1;
@@ -188,19 +197,13 @@ pub fn try_remove(value: MapCharU32, key: char) -> MapCharU32 {
     if (value.length == 0) {
         return value;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.reserved * 2);
     let index: i32 = 0;
     while (index < value.length) {
-        let raw_key: i32 = cells[index * 2];
-        let stored_key: char = raw_key;
-        if (stored_key == key) {
+        if (load_key(value.storage, index) == key) {
             let cursor: i32 = index;
             while (cursor + 1 < value.length) {
-                let destination: i32 = cursor * 2;
-                let source: i32 = destination + 2;
-                cells[destination] = cells[source];
-                cells[destination + 1] = cells[source + 1];
+                store_entry(value.storage, cursor, load_key(value.storage, cursor + 1),
+                    load_value(value.storage, cursor + 1));
                 cursor += 1;
             }
             return MapCharU32 {
@@ -232,11 +235,8 @@ pub fn try_shrink_to_fit(value: MapCharU32) -> MapCharU32 {
         destroy(value);
         return new();
     }
-    let old_byte_count: i32 = value.reserved * 8;
-    let new_byte_count: i32 = value.length * 8;
-    let old_bytes: usize = old_byte_count as usize;
-    let new_bytes: usize = new_byte_count as usize;
-    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    let next: ptr = alloc::allocator::realloc(
+        value.storage, byte_size(value.reserved), byte_size(value.length), 8);
     if (next == 0) {
         return value;
     }
@@ -258,14 +258,10 @@ pub fn try_clone(value: MapCharU32) -> MapCharU32 {
     if (copy.reserved < value.length) {
         return new();
     }
-    let source: [i32] = core::mem::i32_slice_from_raw_parts(
-        value.storage, value.length * 2);
-    let destination: [i32] = core::mem::i32_slice_from_raw_parts(
-        copy.storage, copy.reserved * 2);
     let index: i32 = 0;
-    let count: i32 = value.length * 2;
-    while (index < count) {
-        destination[index] = source[index];
+    while (index < value.length) {
+        store_entry(copy.storage, index, load_key(value.storage, index),
+            load_value(value.storage, index));
         index += 1;
     }
     return MapCharU32 {
@@ -277,8 +273,6 @@ pub fn try_clone(value: MapCharU32) -> MapCharU32 {
 
 pub fn destroy(value: MapCharU32) {
     if (value.storage != 0) {
-        let byte_count: i32 = value.reserved * 8;
-        let bytes: usize = byte_count as usize;
-        alloc::allocator::dealloc(value.storage, bytes, 4);
+        alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
     }
 }

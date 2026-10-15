@@ -1,9 +1,11 @@
+// An i32 code point reaches char only through the checked conversion.
 module app::main;
+import core::char;
 fn from_scalar(value: i32) -> char {
-    return value as char;
+    return core::char::from_u32_or(value as u32, '?');
 }
 fn main() -> i32 {
     let letter: char = from_scalar(937);
-    if (letter == 'Ω') { return 0; }
+    if (letter == 'Ω' && from_scalar(-1) == '?') { return 0; }
     return 1;
 }
