@@ -22,7 +22,41 @@ public EvidenceStatus pps_admit_term(uint2 reference, uint owner, uint domain,
     if (require_closed && !closed) return pev_invalid(10u, reference.y, owner);
     return pev_ok();
 }
+// A goal hash is a pure function of its rows. Ordinary admission recomputes
+// and compares it; the stage that has just computed and recorded it from the
+// same unchanged rows skips that identical second traversal.
+public interface IGoalHashCheck
+{
+    static bool mix_root(uint2 root, uint nodes, uint atoms, inout uint hash);
+    static bool matches(uint hash, uint recorded);
+}
+public struct RecomputedGoalHash : IGoalHashCheck
+{
+    [ForceInline]
+    public static bool mix_root(uint2 root, uint nodes, uint atoms, inout uint hash)
+    {
+        uint root_hash;
+        if (!scoped_type_ref_hash<SolverProofTermGraph>(root.x, root.y,
+            PEV_INVALID, nodes, atoms, root_hash)) return false;
+        hash = scoped_type_hash_mix(hash, root_hash);
+        return true;
+    }
+    [ForceInline]
+    public static bool matches(uint hash, uint recorded) { return hash == recorded; }
+}
+public struct RecordedGoalHash : IGoalHashCheck
+{
+    public static bool mix_root(uint2 root, uint nodes, uint atoms, inout uint hash) { return true; }
+    public static bool matches(uint hash, uint recorded) { return true; }
+}
+
+[ForceInline]
 public EvidenceStatus pps_admit_goal(uint goal, uint context, out bool closed)
+{
+    return pps_admit_goal_checked<RecomputedGoalHash>(goal, context, closed);
+}
+public EvidenceStatus pps_admit_goal_checked<Check : IGoalHashCheck>(uint goal, uint context,
+    out bool closed)
 {
     closed = false; uint4 low; uint4 high; uint owner; bool require_closed; uint state;
     uint admitted_goals;
@@ -55,12 +89,9 @@ public EvidenceStatus pps_admit_goal(uint goal, uint context, out bool closed)
             require_closed, root_closed);
         if (status.state != PEV_VALID) return status;
         all_closed = all_closed && root_closed;
-        uint root_hash;
-        if (!scoped_type_ref_hash<SolverProofTermGraph>(root.x, root.y,
-            PEV_INVALID, nodes, atoms, root_hash)) return pev_invalid(15u, goal, i);
-        hash = scoped_type_hash_mix(hash, root_hash);
+        if (!Check.mix_root(root, nodes, atoms, hash)) return pev_invalid(15u, goal, i);
     }
-    if (hash != high.y || high.z != (all_closed ? 1u : 0u))
+    if (!Check.matches(hash, high.y) || high.z != (all_closed ? 1u : 0u))
         return pev_invalid(67u, goal, context);
     closed = all_closed; return pev_ok();
 }

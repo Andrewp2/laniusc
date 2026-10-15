@@ -374,8 +374,10 @@ public EvidenceStatus pps_hash_normalized_goal(uint work)
     }
     extra.y = hash;
     if (!pps_write8(PPS_GOALS, key.y, goal, extra)) return pev_invalid(1u, work, key.y);
+    // Admission rereads the row just written; its hash already covers these
+    // unchanged roots, so only the other admission checks remain.
     bool closed;
-    EvidenceStatus status = pps_admit_goal(key.y, key.x, closed);
+    EvidenceStatus status = pps_admit_goal_checked<RecordedGoalHash>(key.y, key.x, closed);
     if (status.state != PEV_VALID) return status;
     return pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_GOAL_VALIDATED) ?
         pev_ok() : pev_invalid(1u, work, PPS_WORK);
