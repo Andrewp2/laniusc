@@ -13,3 +13,10 @@ Probes:
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
 P10 found (x1..x5) are the directory probes m00..m05.
+
+Open stdlib needs (owner TBD):
+- String equality on `str` elements. `words[0] != "after"` with
+  `words: [str; 2]` fails with LNC0006, and docs/compiler-generic-types.md
+  calls the operator unsupported. Keyed string containers and parsers need
+  it. Repro: tests/fixtures/stdlib_foundation/repro_ordinary_string_comparison.lani
+  (expects exit 42; listed in tests/fixtures/known_gaps.txt).

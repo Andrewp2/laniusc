@@ -1,0 +1,10 @@
+# Fixtures whose expected outcome needs a feature the compiler or stdlib
+# does not have yet. tools/fixture_sweep.py reports a listed fixture as
+# KNOWN-GAP, apart from the failures, while it fails the way recorded here.
+# Once it passes it is GAP-CLOSED, and its line should be removed. Any other
+# failure is still a failure.
+#
+# One fixture per line: path, failure today (an error code such as LNC0006,
+# a FAIL-* status, or `any`), owner, reason.
+
+tests/fixtures/stdlib_foundation/repro_ordinary_string_comparison.lani  LNC0006  TBD  `!=` between a str array element and a string literal is unsupported; see tests/fixtures/generics_backlog/README.md
