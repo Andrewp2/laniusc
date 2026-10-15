@@ -6,5 +6,5 @@ fn main() -> i32 {
     let values: [i16; 1] = [one];
     // Claiming two elements makes index 1 logically valid but physically out of bounds.
     let value: i16 = core::slice_i16::get_or(values, 2, 1, 0);
-    return value;
+    return value as i32;
 }

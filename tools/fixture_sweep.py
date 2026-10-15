@@ -21,6 +21,11 @@ DIR/results-shard-I-of-N.json; `report` merges every shard file in DIR and print
 pass/fail counts grouped by status and diagnostic code, with the largest failure
 groups and an example location for each.
 
+A fixture listed in tests/fixtures/known_gaps.txt expects a feature that is
+not there yet. While it fails the way its entry records, it is KNOWN-GAP and
+is reported with its owner apart from the failures; once it passes it is
+GAP-CLOSED, so the entry can be removed. A different failure stays a failure.
+
 `stdlib` runs `laniusc check` on an entry that imports every stdlib module; with
 --each it also compiles one entry per module through the daemon, so every
 failing module is listed (a single check stops at the first error).
@@ -60,7 +65,10 @@ SUITES = ("stdlib_foundation", "generics_matrix", "generics_backlog")
 RUNNABLE_NEEDS = {"multiple-expectations", "fault-injection", "source-pack"}
 # Needs without which the fixture is not the program its test compiles.
 SKIPPED_NEEDS = {"source-concat", "generated-stdlib"}
-OK_STATUSES = ("PASS", "COMPILED-ONLY", "SKIPPED")
+OK_STATUSES = ("PASS", "COMPILED-ONLY", "SKIPPED", "GAP-CLOSED")
+# Not passing, but recorded in KNOWN_GAPS: reported apart from the failures.
+GAP_STATUSES = ("KNOWN-GAP",)
+KNOWN_GAPS = "tests/fixtures/known_gaps.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +165,43 @@ def relative(path: pathlib.Path) -> str:
         return str(path.resolve().relative_to(ROOT))
     except ValueError:
         return str(path)
+
+
+def load_known_gaps(root: pathlib.Path) -> dict[str, dict]:
+    """KNOWN_GAPS lines: fixture path, the failure it shows today, owner, reason.
+
+    The failure is an error code (LNC0006), a status (FAIL-EXIT), or `any`.
+    """
+    path = root / KNOWN_GAPS
+    gaps = {}
+    if not path.exists():
+        return gaps
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split(None, 3)
+        if len(fields) < 4:
+            raise SystemExit(f"{KNOWN_GAPS}:{number}: want `fixture failure owner reason`, got {line!r}")
+        fixture, failure, owner, reason = fields
+        if not (root / fixture).exists():
+            raise SystemExit(f"{KNOWN_GAPS}:{number}: no fixture {fixture}")
+        gaps[fixture] = {"failure": failure, "owner": owner, "reason": reason}
+    return gaps
+
+
+def apply_known_gap(record: dict, gaps: dict[str, dict]):
+    """Mark a listed fixture KNOWN-GAP while it fails as recorded, GAP-CLOSED once it passes."""
+    gap = gaps.get(record["name"])
+    if gap is None:
+        return
+    record["known_gap"] = gap
+    failure = gap["failure"]
+    if record["status"] in OK_STATUSES:
+        record.update(status="GAP-CLOSED", detail=f"passes now; remove it from {KNOWN_GAPS}")
+    elif failure == "any" or failure in (record["status"], record.get("code")):
+        record["gap_status"] = record["status"]
+        record["status"] = "KNOWN-GAP"
 
 
 def load_cases(suites: list[str], patterns: list[str]) -> list:
@@ -284,6 +329,7 @@ def check_jumps(elf: pathlib.Path, record: dict):
 def sweep(args) -> int:
     suites = args.suite or list(SUITES)
     cases = load_cases(suites, args.pattern)
+    gaps = load_known_gaps(ROOT)
     index, count = parse_shard(args.shard)
     cases = [case for position, case in enumerate(cases) if position % count == index - 1]
     out = pathlib.Path(args.out)
@@ -405,10 +451,14 @@ def sweep(args) -> int:
             record["compile_s"] = round(elapsed, 3)
             if compiled:
                 check_jumps(elf, record)
+        apply_known_gap(record, gaps)
         record["elapsed_s"] = round(time.time() - started, 3)
         results.append(record)
         line = f"{record['status']:22} {record['elapsed_s']:6.1f}s  {name}"
-        if record["status"] not in OK_STATUSES:
+        if record["status"] in GAP_STATUSES:
+            gap = record["known_gap"]
+            line += f"\n    {record['gap_status']} {record.get('code') or ''}: {gap['reason'][:160]} (owner {gap['owner']})"
+        elif record["status"] not in OK_STATUSES or record["status"] == "GAP-CLOSED":
             line += f"\n    {record.get('code') or ''} {record.get('location') or ''} {record.get('detail', '')[:200]}"
             if record.get("bad_jumps") and record["status"] != "FAIL-JUMP":
                 line += f"\n    {record['bad_jumps']} bad jumps; first: {record['bad_jump_examples'][0]}"
@@ -424,8 +474,10 @@ def sweep(args) -> int:
     digests_seen.append(shader_digest(args.laniusc))
     write(complete=len(results) == len(cases))
     passed = sum(1 for result in results if result["status"] in OK_STATUSES)
-    print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled; wrote {relative(result_path)}")
-    return 0 if passed == len(results) else 1
+    known = sum(1 for result in results if result["status"] in GAP_STATUSES)
+    print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled"
+          + (f", {known} known gaps" if known else "") + f"; wrote {relative(result_path)}")
+    return 0 if passed + known == len(results) else 1
 
 
 def parse_shard(text: str) -> tuple[int, int]:
@@ -547,7 +599,7 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
     by_suite = collections.defaultdict(collections.Counter)
     for result in results.values():
         by_suite[result["suite"]][result["status"]] += 1
-    failures = [result for result in results.values() if result["status"] not in OK_STATUSES]
+    failures = [result for result in results.values() if result["status"] not in OK_STATUSES + GAP_STATUSES]
     groups = collections.defaultdict(list)
     for result in failures:
         groups[failure_group(result)].append(result)
@@ -578,14 +630,33 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
         for _, document in documents)
     lines.append(f"Shards: {shard_times}")
     lines.append("")
-    lines.append("| suite | fixtures | pass | compiled only | skipped | fail |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| suite | fixtures | pass | compiled only | skipped | known gap | fail |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
     for suite, counts in sorted(by_suite.items()):
         total = sum(counts.values())
-        failed = total - sum(counts[status] for status in OK_STATUSES)
-        lines.append(f"| {suite} | {total} | {counts['PASS']} | {counts['COMPILED-ONLY']} | "
-                     f"{counts['SKIPPED']} | {failed} |")
+        failed = total - sum(counts[status] for status in OK_STATUSES + GAP_STATUSES)
+        lines.append(f"| {suite} | {total} | {counts['PASS'] + counts['GAP-CLOSED']} | {counts['COMPILED-ONLY']} | "
+                     f"{counts['SKIPPED']} | {counts['KNOWN-GAP']} | {failed} |")
     lines.append("")
+    gaps = sorted((result for result in results.values() if result["status"] in GAP_STATUSES),
+                  key=lambda result: (result["known_gap"]["owner"], result["name"]))
+    if gaps:
+        lines.append(f"## Known gaps ({len(gaps)})")
+        lines.append("")
+        lines.append(f"Listed in `{KNOWN_GAPS}`; not counted as failures while they fail as recorded.")
+        lines.append("")
+        lines.append("| fixture | owner | today | reason |")
+        lines.append("| --- | --- | --- | --- |")
+        for result in gaps:
+            gap = result["known_gap"]
+            today = f"{result['gap_status']} {result.get('code') or ''}".strip()
+            lines.append(f"| `{result['name']}` | {gap['owner']} | {today} | {gap['reason']} |")
+        lines.append("")
+    closed = sorted(result["name"] for result in results.values() if result["status"] == "GAP-CLOSED")
+    if closed:
+        lines.append(f"Known gaps that pass now; remove them from `{KNOWN_GAPS}`: "
+                     + ", ".join(f"`{name}`" for name in closed) + ".")
+        lines.append("")
     lines.append("## Failures by group")
     lines.append("")
     lines.append("| group | count | example | location |")
@@ -674,6 +745,8 @@ def render_jump_check(results: dict[str, dict], elf_dir: pathlib.Path) -> list[s
 def outcome(result: dict | None) -> str:
     if result is None:
         return "absent"
+    if result["status"] in GAP_STATUSES:
+        return "known gap"
     return "ok" if result["status"] in OK_STATUSES else failure_group(result)
 
 
