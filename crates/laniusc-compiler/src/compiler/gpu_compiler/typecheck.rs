@@ -1575,6 +1575,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             template_sources,
             source_paths,
             template_dependency_pages,
+            &[],
             SourcePackArtifactTarget::X86_64,
             library_id,
             unit_id,
@@ -1855,6 +1856,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             template_sources,
             source_paths,
             template_dependency_pages,
+            body_specialization.map_or(&[][..], |input| input.specialization.impl_bindings()),
             target,
             library_id,
             unit_id,
@@ -2535,6 +2537,7 @@ fn finish_source_pack_unit(
     template_sources: std::sync::Arc<[String]>,
     source_paths: Option<&[Option<PathBuf>]>,
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+    impl_bindings: &[gpu_type_checker::BodyImplBinding],
     target: SourcePackArtifactTarget,
     library_id: u32,
     unit_id: u32,
@@ -2573,6 +2576,7 @@ fn finish_source_pack_unit(
     gpu_type_checker::resolve_generic_requirements(
         &mut artifacts.generic_calls,
         template_dependency_pages.as_ref(),
+        impl_bindings,
     );
     let x86_call_function_hirs = retain_native_call_owners(
         &artifacts.x86_call_hirs, &artifacts.native_call_owners,
