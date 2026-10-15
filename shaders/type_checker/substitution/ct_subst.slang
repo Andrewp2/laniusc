@@ -164,7 +164,9 @@ uint subst_build<S : ICtSlots>(S slots, uint env, uint node, bool intern, inout 
         if (status != CT_KEY_BUILT) return status;
         return ct_spare_publish(key, key.extra, intern, spare);
     }
-    if (kind < CT_KIND_NAMED || kind > CT_KIND_REF) return CT_UNKNOWN;
+    // An environment keeps its masks and substitutes its bindings, so a
+    // call site's environment composes with its caller's.
+    if ((kind < CT_KIND_NAMED || kind > CT_KIND_REF) && kind != CT_KIND_ENV) return CT_UNKNOWN;
     key = ct_key_begin(kind, arity, ct_type_slots(node), ct_words(node));
     if (!ct_spare_reserve(spare, key)) return CT_UNKNOWN;
     for (uint index = 0u; index < arity; index++)
