@@ -11,9 +11,15 @@ RWStructuredBuffer<uint> family_flag;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
+// An argument row is a type, a literal, or a signed literal (`-5`, `+0.0`);
+// the links pass seeds owners only for those argument roots.
+bool argument_value_kind(uint kind)
+{ return kind == HIR_TYPE || kind == HIR_LITERAL_EXPR || kind == HIR_UNARY_EXPR; }
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
@@ -28,7 +34,7 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     bool valid_owner = owner < gCanonical.raw_capacity &&
                        (hir_kind[owner] == HIR_TYPE || hir_kind[owner] == HIR_PATH_EXPR ||
                         hir_kind[owner] == HIR_MEMBER_EXPR);
-    if ((hir_kind[raw] != HIR_TYPE && hir_kind[raw] != 23u) || !valid_owner || owner == raw ||
+    if (!argument_value_kind(hir_kind[raw]) || !valid_owner || owner == raw ||
         hir_type_arg_rank[raw] >= gCanonical.canonical_capacity) return;
     uint head = raw_to_hir[seed];
     if (head >= min(canonical_count[0u], gCanonical.canonical_capacity)) return;

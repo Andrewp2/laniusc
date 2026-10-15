@@ -941,11 +941,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         } else {
             Default::default()
         };
+        finish_timer.stamp("unit_facts");
         let body_native_layouts = object_request
             .and_then(LoweringObjectRequest::body_specialization)
             .map(|specialization| self.type_checker.retained_body_native_layouts(device, queue, specialization))
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
+        finish_timer.stamp("body_native_layouts");
         // An original x86 unit with an interface keeps the byte spans of its
         // generic bodies, from which a concrete replay copies instances. A
         // unit without a generic owner has no such body, and skips the readback.

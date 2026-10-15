@@ -514,6 +514,13 @@ pub(super) const CALL_INFERENCE_REPEAT_WARNING_ROUNDS: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
     "type_checker/type/instances/00g_specialize_checked_references";
+/// The call constants a replay closed: claims and contextual constants that
+/// reach a body parameter through count projections fold to atoms once the
+/// body's constants are installed.
+pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS: &str =
+    "type_check.body_specialization.constant_claims";
+pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL: &str =
+    "type_checker/type/instances/00g2_fold_body_constant_claims";
 /// The body canonical stage and the substitution restart follow this body
 /// specialization pass: the body passes after it read the specialized
 /// rows' IDs.
@@ -6269,6 +6276,11 @@ fn build_graph(
             "type_check.body_specialization.constants",
             "type_checker/type/instances/00g_apply_body_constants",
             ResourceDomain::Types,
+        ),
+        (
+            BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS,
+            BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL,
+            ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.arguments",

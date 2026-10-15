@@ -1,3 +1,5 @@
+// stdlib-root: repro_generic_slice_payload_root
+// expect: 0
 module app::main;
 import core::view;
 

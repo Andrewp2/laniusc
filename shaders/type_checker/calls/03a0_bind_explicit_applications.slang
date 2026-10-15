@@ -39,6 +39,24 @@ struct KernelTypeRefs : IExplicitOperandTypeRefs
     uint type_ref_tag(uint token) { return type_expr_ref_tag[token]; }
     uint type_ref_payload(uint token) { return type_expr_ref_payload[token]; }
 }
+// Every local value declaration of the unit (parameters, let, const, for and
+// match binders) marks its name in the visible-declaration pass, which runs
+// before call binding in the same job (visible/03b_mark_hir_decl_names).
+StructuredBuffer<uint> hir_value_decl_name_present;
+
+// A body operand `f<NAME>()` means the module constant when no local value
+// declaration of the unit carries NAME. A shadowing local, or the same name
+// declared in another body, keeps the explicit rejection.
+struct KernelBodyNames : IExplicitOperandBodyNames
+{
+    bool body_name_unshadowed(uint name_token)
+    {
+        uint name = explicit_operand_name_id(name_token);
+        uint capacity; uint stride;
+        hir_value_decl_name_present.GetDimensions(capacity, stride);
+        return name < capacity && hir_value_decl_name_present[name] == 0u;
+    }
+}
 RWStructuredBuffer<uint4> call_explicit_environment;
 RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> call_explicit_binding_payload;
@@ -286,8 +304,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         { call_explicit_application_status[token] = 4u; return; }
         if (constant)
         {
-            if (!bind_explicit_constant_operand(KernelTypeRefs(), arguments.start + ordinal,
-                type_const_param_scalar_by_token[parameter.name_token]))
+            if (!bind_scoped_explicit_constant_operand(KernelTypeRefs(), KernelBodyNames(),
+                arguments.start + ordinal, type_const_param_scalar_by_token[parameter.name_token]))
             { call_explicit_application_status[token] = 3u; return; }
             constant_seen |= 1u << slot;
         }

@@ -1,3 +1,5 @@
+// expect: 7
+// main returns number() as i32.
 module app::main;
 
 fn number() -> u32 {

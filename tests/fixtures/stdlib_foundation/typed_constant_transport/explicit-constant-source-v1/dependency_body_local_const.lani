@@ -1,4 +1,7 @@
+// expect: 0
+// Fails explicitly until lexical constant lookup lands (README; known_gaps.txt);
+// then it must bind the local VALUE = 2, never the module VALUE = 1.
 module app::local;
 const VALUE:u32 = 1;
 fn value<const N:u32>()->u32 { return N; }
-fn main()->i32 { const VALUE:u32 = 2; let result:u32 = value<VALUE>(); return 0; }
+fn main()->i32 { const VALUE:u32 = 2; let result:u32 = value<VALUE>(); if (result != 2) { return 1; } return 0; }

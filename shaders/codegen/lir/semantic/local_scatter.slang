@@ -26,6 +26,8 @@ RWStructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+#include "receiver_source.slang"
+
 bool match_payload_binding(uint hir)
 {
     uint count = min(compact_match_payload_row_count[0u], gParams.n_hir_nodes);
@@ -68,17 +70,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     SemanticLirFunction function = semantic_lir_functions[function_id];
     uint width = semantic_local_flag[hir];
     if (row + width > gParams.local_capacity) return;
+    // A call owns the stored copy of a `&self` receiver that is not a
+    // place, keyed by its method name token (receiver_temporary.slang).
+    // The copy has the type of the value under the receiver's fields.
+    uint member = compact_hir_core[hir].kind == HIR_CALL_EXPR
+        ? compact_hir_payload[hir].a : LIR_INVALID;
+    bool receiver_temporary = member < hir_count;
+    uint holder = receiver_temporary
+        ? receiver_projection_root(compact_hir_payload[member].b, hir_count) : LIR_INVALID;
+    uint holder_type = holder < hir_count ? semantic_value_type_by_hir[holder] : 0u;
     for (uint local = 0u; local < width; local += 1u)
     {
         bool match_result = compact_hir_core[hir].kind == HIR_MATCH_EXPR;
         bool match_binding = match_payload_binding(hir);
         bool short_circuit = semantic_lir_is_short_circuit(
             compact_hir_core[hir], compact_hir_payload[hir]);
-        // A call owns the stored copy of a `&self` receiver that is not a
-        // place, keyed by its method name token (receiver_temporary.slang).
-        uint member = compact_hir_core[hir].kind == HIR_CALL_EXPR
-            ? compact_hir_payload[hir].a : LIR_INVALID;
-        bool receiver_temporary = member < hir_count;
         SemanticLirLocal result;
         result.function_id = function_id;
         result.declaration_id = match_result
@@ -90,7 +96,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.ordinal = row + local - function.local_start;
         result.type_id = short_circuit ? 2u
             : match_result && local == 1u ? SEMANTIC_LIR_TY_POINTER
-            : receiver_temporary ? semantic_value_type_by_hir[compact_hir_payload[member].b]
+            : receiver_temporary ? holder_type
             : local == 0u ? semantic_value_type_by_hir[hir] : 3u;
         HirCore core = compact_hir_core[hir];
         HirPayload payload = compact_hir_payload[hir];

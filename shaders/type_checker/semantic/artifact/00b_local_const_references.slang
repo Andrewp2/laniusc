@@ -53,7 +53,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint4 constant = project_checked_constant_value(2u, declaration_token, gParams.n_tokens);
         semantic_value_const_by_hir[row] = constant.yz;
-        if (constant.w != 0u) semantic_expr_scalar_type_by_hir[row] = constant.x;
+        if (constant.w != 0u) semantic_expr_scalar_type_by_hir[row] = packed_checked_constant_scalar(constant.x);
         // The presence column is a tagged fact: a literal value, an imported
         // variant ordinal, or an unbound constant-parameter declaration. The
         // last case keeps the checked body symbolic until concrete replay.

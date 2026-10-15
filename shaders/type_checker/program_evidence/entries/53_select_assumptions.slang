@@ -6,6 +6,6 @@ import type_checker.program_evidence.proof_frontier_stages;
 [numthreads(256, 1, 1)]
 void main(uint3 thread_id : SV_DispatchThreadID)
 {
-    if (program_evidence_params.phase != 54u || proof_store_params.phase != 54u) return;
-    pps_stage_admit_substitutions(thread_id.x);
+    if (program_evidence_params.phase != 53u || proof_store_params.phase != 53u) return;
+    pps_stage_select_assumptions(thread_id.x);
 }

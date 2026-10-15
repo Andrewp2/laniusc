@@ -8,6 +8,7 @@ import type_checker.program_evidence.proof_frontier_selection;
 import type_checker.program_evidence.proof_binding_materialization;
 import type_checker.program_evidence.proof_frontier_expansion;
 import type_checker.program_evidence.proof_frontier_reduction;
+import type_checker.program_evidence.proof_substitution_walk;
 import type_checker.program_evidence.proof_row_admission;
 import type_checker.program_evidence.proof_span_coverage;
 
@@ -165,18 +166,51 @@ public void pps_stage_resolve_work(uint local)
     if (pev_bind_scratch(local, row, status)) status = pps_resolve_work(row);
     pev_batch_failure(status);
 }
+// Work selection phases; see pps_select_implementation.
+public void pps_stage_select_implementations(uint local, bool coarse)
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_select_implementation(row, coarse);
+    pev_batch_failure(status);
+}
+public void pps_stage_select_assumptions(uint local)
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_select_assumption(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_select_work(uint local)
 {
     uint row; EvidenceStatus status;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
-    if (pev_bind_scratch(local, row, status)) status = pps_select_work(row);
+    if (pev_bind_scratch(local, row, status)) status = pps_select_finish(row);
     pev_batch_failure(status);
 }
-public void pps_stage_admit_substitutions(uint local)
+// Substitution walk dispatches over work rows (phase 54) or ready proof
+// events (phases 59 and 66); see pps_walk_goals.
+uint pps_walk_table(uint phase)
+{ return phase == PPS_WALK_PHASE_WORK ? PPS_WORK : PPS_REDUCTION_QUEUE; }
+public void pps_stage_walk_goals(uint local, uint consumer)
 {
     uint row; EvidenceStatus status;
-    if (!pps_stage_row(local, PPS_WORK, row)) return;
-    if (pev_bind_scratch(local, row, status)) status = pps_admit_selected_work(row);
+    if (!pps_stage_row(local, pps_walk_table(consumer), row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_walk_goals(consumer, row);
+    pev_batch_failure(status);
+}
+public void pps_stage_walk_roots(uint local, uint phase)
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, pps_walk_table(phase), row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_walk_roots(phase, row);
+    pev_batch_failure(status);
+}
+public void pps_stage_walk_bindings(uint local, uint consumer)
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, pps_walk_table(consumer), row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_walk_bindings(consumer, row);
     pev_batch_failure(status);
 }
 public void pps_stage_admit_binding_rows(uint local)
@@ -210,13 +244,6 @@ public void pps_stage_link_requirements(uint local)
 { uint row; if (pps_stage_row(local, PPS_REQUIREMENTS, row)) pev_batch_failure(pps_link_requirement(row)); }
 public void pps_stage_emit_ready_proofs(uint local)
 { uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) pev_batch_failure(pps_emit_ready_proof(row)); }
-public void pps_stage_admit_implementation_proofs(uint local)
-{
-    uint row; EvidenceStatus status;
-    if (!pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) return;
-    if (pev_bind_scratch(local, row, status)) status = pps_admit_ready_implementation_proof(row);
-    pev_batch_failure(status);
-}
 public void pps_stage_admit_assumption_proofs(uint local)
 {
     uint row; EvidenceStatus status;
