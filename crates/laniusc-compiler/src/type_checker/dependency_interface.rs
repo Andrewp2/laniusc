@@ -484,6 +484,15 @@ impl GpuDependencyInterfacePages {
             .as_ref()
             .is_none_or(|state| state.capacities() != allocation)
         {
+            // A new allocation changes the type-check workspace's input
+            // fingerprint, so the whole resident workspace is rebuilt.
+            if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+                eprintln!(
+                    "[gpu_compile_host_timer] typecheck.dependency_interfaces.allocate: previous={:?} required={required:?} pages={}",
+                    resident_state.as_ref().map(GpuDependencyInterfaceState::capacities),
+                    pages.len(),
+                );
+            }
             *resident_state = Some(GpuDependencyInterfaceState::with_capacities(
                 device, allocation,
             ));

@@ -87,6 +87,10 @@ impl GpuX86Linker {
         buffer
     }
 
+    // Storage and input views below cover the whole retained allocation. The
+    // link kernels read active counts from their parameters, never from the
+    // binding size, so a job-sized view would only key a new bind group for
+    // every program size inside the same retained capacity.
     pub(super) fn reusable_storage_u32(
         &self,
         device: &wgpu::Device,
@@ -94,8 +98,15 @@ impl GpuX86Linker {
         count: usize,
         extra_usage: wgpu::BufferUsages,
     ) -> LaniusBuffer<u32> {
-        self.job_buffers
-            .storage_u32(device, label, count, extra_usage)
+        self.job_buffers.binding_capacity(
+            device,
+            label,
+            count.max(1) * std::mem::size_of::<u32>(),
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST
+                | extra_usage,
+        )
     }
 
     pub(super) fn reusable_input_u32(
@@ -111,11 +122,10 @@ impl GpuX86Linker {
         } else {
             u32_words_bytes(words)
         };
-        let buffer = self.job_buffers.buffer(
+        let buffer = self.job_buffers.binding_capacity(
             device,
             label,
             contents.len(),
-            words.len().max(1),
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         );
         buffer.write(queue, 0, &contents);
@@ -130,10 +140,9 @@ impl GpuX86Linker {
         bytes: &[u8],
     ) -> LaniusBuffer<u8> {
         let byte_len = bytes.len().max(4).next_multiple_of(4);
-        let buffer = self.job_buffers.buffer(
+        let buffer = self.job_buffers.binding_capacity(
             device,
             label,
-            byte_len,
             byte_len,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         );

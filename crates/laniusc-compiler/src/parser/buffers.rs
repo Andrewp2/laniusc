@@ -956,6 +956,7 @@ impl ParserBuffers {
             "the graph retains one bindable semantic indirect row when no relation-walk step is scheduled",
         );
         let tree_depth_block_max = graph_buffer!(u32, "tree_depth_block_max");
+        let tree_depth_block_close = graph_buffer!(u32, "tree_depth_block_close");
         let tree_prefix_scan_steps =
             make_tree_prefix_scan_steps(device, tree_prefix_params_base, tree_n_node_blocks);
         let tree_prefix_inblock = graph_buffer!(i32, "tree_prefix_inblock");
@@ -1183,7 +1184,7 @@ impl ParserBuffers {
         let hir_semantic_parent_link_b = graph_buffer!(u32, "hir_semantic_parent_link_b");
         let hir_semantic_parent_value_a = graph_buffer!(u32, "hir_semantic_parent_value_a");
         let hir_semantic_parent_value_b = graph_buffer!(u32, "hir_semantic_parent_value_b");
-        let tree_depth = graph_buffer!(u32, "tree_depth");
+        let tree_depth_close_count = graph_buffer!(u32, "tree_depth_close_count");
         // File identity is fundamentally token-indexed. Production HIR
         // projection resolves it through each raw node's token anchor instead
         // of retaining a duplicate raw-tree-sized column. Debug parsing keeps
@@ -2078,6 +2079,7 @@ impl ParserBuffers {
             hir_semantic_dispatch_args,
             hir_semantic_relation_dispatch_args,
             tree_depth_block_max,
+            tree_depth_block_close,
             tree_prefix_inblock,
             tree_block_sum,
             tree_block_prefix_a,
@@ -2186,7 +2188,7 @@ impl ParserBuffers {
             hir_semantic_parent_link_b,
             hir_semantic_parent_value_a,
             hir_semantic_parent_value_b,
-            tree_depth,
+            tree_depth_close_count,
             hir_semantic_count,
             hir_canonical_params,
             hir_canonical_scan_params,

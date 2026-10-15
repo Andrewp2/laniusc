@@ -60,6 +60,72 @@ impl KernelReflections for KernelCatalog {
     }
 }
 
+/// Kernels that need the most per-thread local memory on the development GPU,
+/// largest first, one artifact key per line. `tools/local_memory_report.py
+/// --write-order` regenerates the list from a memory probe.
+const LARGEST_LOCAL_MEMORY_KERNELS: &str = include_str!("largest_local_memory_kernels.txt");
+
+/// Creates the listed largest-local-memory kernels that `include` accepts,
+/// in list order. Returns how many pipelines were created.
+///
+/// A resident compiler calls this before it creates any other pipeline. When
+/// a new pipeline needs a larger local-memory reservation, the NVIDIA driver
+/// allocates the new size and keeps the previous reservation as well. Created
+/// in arbitrary order, the 1 MB daemon held 1959 MiB + 2219 MiB. With the
+/// largest first, every later pipeline fits and the driver allocates only
+/// once. A stale list costs device memory, never correctness, and listed
+/// kernels that no longer exist are skipped.
+pub(crate) fn prepare_largest_local_memory_kernels(
+    device: &wgpu::Device,
+    include: impl Fn(&str) -> bool,
+) -> Result<usize> {
+    let mut created = 0;
+    for key in LARGEST_LOCAL_MEMORY_KERNELS
+        .lines()
+        .filter_map(|line| line.split('#').next().map(str::trim))
+        .filter(|key| !key.is_empty() && include(key))
+    {
+        if !crate::shader_artifacts::artifact_path(&format!("{key}.reflect.json")).exists() {
+            continue;
+        }
+        if super::passes_core::prepare_main_shader_kernel(device, key)
+            .with_context(|| format!("prepare GPU kernel `{key}`"))?
+        {
+            created += 1;
+        }
+    }
+    Ok(created)
+}
+
+/// Creates the `main` pipeline of every generated kernel that `include`
+/// accepts and is not prepared yet, retaining each one for later on-demand
+/// loads. Returns how many pipelines were created.
+///
+/// A resident compiler calls this before its first job. The NVIDIA driver sizes
+/// one device-wide local-memory (scratch) reservation when a pipeline is
+/// created: the largest per-thread local memory of any pipeline times the
+/// resident threads. A large-frame pipeline first created during a job grows
+/// that reservation while the job's buffers fill device memory, so the growth
+/// lands in system memory and every kernel with local memory then runs its
+/// stack over PCIe for the rest of the daemon's life. Creating all pipelines
+/// first places the reservation before any buffer exists.
+pub(crate) fn prepare_remaining_kernels(
+    device: &wgpu::Device,
+    include: impl Fn(&str) -> bool,
+) -> Result<usize> {
+    let keys = crate::shader_artifacts::shader_keys("")
+        .context("discover generated GPU kernels")?;
+    let mut created = 0;
+    for key in keys.iter().filter(|key| include(key)) {
+        if super::passes_core::prepare_main_shader_kernel(device, key)
+            .with_context(|| format!("prepare GPU kernel `{key}`"))?
+        {
+            created += 1;
+        }
+    }
+    Ok(created)
+}
+
 /// Pipelines prepared before a compilation job begins.
 pub(crate) struct KernelRegistry {
     kernels: HashMap<String, PassData>,
