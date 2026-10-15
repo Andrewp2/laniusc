@@ -1,6 +1,10 @@
-// Computes match depths and block minima for all four delimiter classes.
+// Computes match depths, block minima and each block's local minimum heap
+// for all four delimiter classes (x paren, y brace, z bracket, w angle). The
+// heaps let 03_enclosing_opens search without scanning rows; see
+// blocked_search_tree.slang for the layout.
 
 import prefix_scan;
+import blocked_search_tree;
 
 struct Params
 {
@@ -35,6 +39,7 @@ RWStructuredBuffer<int> paren_match_block_min;
 RWStructuredBuffer<int> brace_match_block_min;
 RWStructuredBuffer<int> bracket_match_block_min;
 RWStructuredBuffer<int> angle_match_block_min;
+RWStructuredBuffer<int4> delimiter_match_local_min;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -85,7 +90,7 @@ static const uint TK_PATH_TYPE_ARG_GT = 185u;
 static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
-groupshared int4 local_depth[256];
+groupshared int4 local_heap[512];
 
 struct PrefixScanI32x4Min : IPrefixScanOp<int4>
 {
@@ -176,12 +181,11 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         angle_match_depth[token_i] = event_depth.w;
     }
 
-    int4 block_min = prefix_scan_inclusive<int4, PrefixScanI32x4Min, 256>(
-        ltid.x,
-        event_depth,
-        local_depth);
-    if (ltid.x + 1u == WG_SIZE)
+    blocked_local_heap_build<int4, PrefixScanI32x4Min>(ltid.x, event_depth, local_heap);
+    delimiter_match_local_min[block_idx * WG_SIZE + ltid.x] = local_heap[max(ltid.x, 1u)];
+    if (ltid.x == 0u)
     {
+        int4 block_min = local_heap[1];
         paren_match_block_min[block_idx] = block_min.x;
         brace_match_block_min[block_idx] = block_min.y;
         bracket_match_block_min[block_idx] = block_min.z;
