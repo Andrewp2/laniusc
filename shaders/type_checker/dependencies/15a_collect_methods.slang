@@ -1,57 +1,102 @@
-import type_checker.constant_constraints;
 // Collect public implementation candidates from every retained dependency page.
 // The candidate universe is this unit's retained interface inventory, not its
 // source import edges. Visibility and global depth ranking finish only after
 // all local and imported candidates have been offered.
 #include "method_candidates.slang"
+import type_checker.constant_atoms;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
+import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_checked;
+import type_checker.match.ct_match;
 
-bool receiver_type_matches(uint type, uint tag, uint payload,
-    out uint2 inferred[32], out uint inferred_mask,
-    out InferredConstant constants[32], out uint constant_mask)
+// Imported patterns bind only their declaration's slot leaves, which carry
+// their own slots; a local parameter token has no slot here.
+struct DependencySlots : ICtSlots
 {
-    return canonical_type_and_constant_constraints<MethodReceiverGraph>(INVALID,
-        type, tag, payload, method_receiver_type_capacity(), gParams.visible_capacity,
-        true, inferred, inferred_mask, constants, constant_mask, true);
+    uint type_slot(uint token) { return CT_SLOT_NONE; }
+    uint const_slot(uint token) { return CT_SLOT_NONE; }
+    uint const_scalar(uint token) { return 0u; }
 }
 
-bool imported_candidate_matches(uint member, bool dotted, uint tag, uint payload,
-    out uint receiver_mode)
+// The canonical ID of node `t` of the resident page (an alias is its
+// signature), interned with the page.
+uint dependency_type_id(uint t)
+{
+    uint roots; uint stride;
+    canonical_type_roots.GetDimensions(roots, stride);
+    uint root = t < roots ? canonical_type_roots[t] : INVALID;
+    uint base = dependency_constant_type_span_base();
+    uint capacity = ct_dependency_capacity();
+    if (root >= dependency_type_count() || base > capacity || root >= capacity - base) return CT_UNKNOWN;
+    return canonical_dependency_type[base + root];
+}
+
+// Row reads for interning a receiver that inference produced.
+struct ReceiverRows : ICtRowReader
+{
+    static uint kind(uint row) { return type_instance_kind[row]; }
+    static uint decl_token(uint row) { return type_instance_decl_token[row]; }
+    static uint arg_count(uint row) { return type_instance_arg_count[row]; }
+    static bool argument(uint row, uint index, out uint tag, out uint payload)
+    { return MethodReceiverGraph.argument(row, index, tag, payload); }
+    static uint2 elem(uint row)
+    { return uint2(type_instance_elem_ref_tag[row], type_instance_elem_ref_payload[row]); }
+    static uint2 len(uint row)
+    { return uint2(type_instance_len_kind[row], type_instance_len_payload[row]); }
+    static uint3 external(uint row)
+    { return uint3(external_type_library_id[row], external_type_unit_id[row], external_type_local_index[row]); }
+    static uint generic_slot(uint token)
+    {
+        uint count; uint stride;
+        type_generic_param_slot_by_token.GetDimensions(count, stride);
+        return token < count ? type_generic_param_slot_by_token[token] : INVALID;
+    }
+}
+
+// The canonical ID of a receiver operand: a signature node of the resident
+// page, or a checked row (interned here when inference produced it).
+uint receiver_actual_id(uint tag, uint payload, inout uint spare)
+{
+    if (tag == TYPE_REF_EXTERNAL_CANONICAL) return dependency_type_id(payload);
+    return ct_intern_checked<ReceiverRows>(tag, payload, spare);
+}
+
+bool imported_candidate_matches(uint member, bool dotted, uint actual, out uint receiver_mode)
 {
     receiver_mode = 0u;
     uint base = member * MEMBER_WORDS;
-    uint2 inferred[32]; uint inferred_mask;
-    InferredConstant constants[32]; uint constant_mask;
-    if (!receiver_type_matches(dependency_member_word(base + 10u), tag, payload,
-        inferred, inferred_mask, constants, constant_mask)) return false;
     uint mode = (dependency_member_word(base + 8u) >> 28u) & 3u;
     // Qualified static calls have no implicit receiver; dotted calls require
     // one. Ineligible methods must not shadow an applicable deeper candidate.
+    // A typed first parameter of a dotted call consumes exactly the adjusted
+    // receiver value, so it is a second root matched against the same actual;
+    // repeated parameters agree by ID across both roots. Only syntactic &self
+    // creates a borrow of its place.
+    uint pattern0 = dependency_type_id(dependency_member_word(base + 10u));
+    uint pattern1 = CT_NONE;
+    uint actual1 = CT_NONE;
+    if (dotted && mode == 3u)
+    {
+        uint first = dependency_method_parameter_type(member, 0u);
+        if (first == INVALID) return false;
+        pattern1 = dependency_type_id(first);
+        actual1 = actual;
+        if (!ct_is_resolved(pattern1)) return false;
+    }
+    if (!ct_is_resolved(pattern0) || !ct_is_resolved(actual)) return false;
+    DependencySlots slots;
+    CtSpare spare = ct_spare_none();
+    uint count_mask;
+    if (ct_match<DependencySlots>(slots, pattern0, actual, pattern1, actual1,
+        CT_NONE, 0u, false, spare, count_mask) != CT_MATCH_OK) return false;
     if (!dotted) return mode == 0u || mode == 3u;
     if (mode == 0u) return false;
-    if (mode == 1u || mode == 2u) { receiver_mode = mode; return true; }
-    // A typed first parameter consumes exactly the adjusted receiver value.
-    // Only syntactic &self creates a borrow of its place.
-    uint first = dependency_method_parameter_type(member, 0u);
-    if (first == INVALID) return false;
-    uint2 first_types[32]; uint first_mask;
-    InferredConstant first_constants[32]; uint first_constant_mask;
-    if (!receiver_type_matches(first, tag, payload, first_types, first_mask,
-        first_constants, first_constant_mask)) return false;
-    for (uint slot = 0u; slot < 32u; slot++)
-    {
-        uint bit = 1u << slot;
-        if ((inferred_mask & first_mask & bit) != 0u &&
-            !scoped_type_refs_equal<MethodReceiverGraph>(inferred[slot].x, inferred[slot].y,
-                INVALID, first_types[slot].x, first_types[slot].y, INVALID,
-                method_receiver_type_capacity(), gParams.visible_capacity)) return false;
-        if ((constant_mask & first_constant_mask & bit) != 0u &&
-            !inferred_constant_claims_compatible<MethodReceiverGraph>(constants[slot], first_constants[slot], gParams.visible_capacity)) return false;
-    }
-    receiver_mode = 1u;
+    receiver_mode = mode == 3u ? 1u : mode;
     return true;
 }
 
-void collect_at_depth(uint token, bool dotted, uint tag, uint payload, uint depth,
+void collect_at_depth(uint token, bool dotted, uint tag, uint payload, uint actual, uint depth,
     inout MethodCandidate summary)
 {
     uint name = name_id_by_token[token];
@@ -63,7 +108,7 @@ void collect_at_depth(uint token, bool dotted, uint tag, uint payload, uint dept
             dependency_member_word(base + 3u) != name_hash_lo[name] ||
             dependency_member_word(base + 4u) != name_hash_hi[name]) continue;
         uint mode;
-        if (!imported_candidate_matches(row, dotted, tag, payload, mode)) continue;
+        if (!imported_candidate_matches(row, dotted, actual, mode)) continue;
         MethodCandidate candidate = method_candidate_empty();
         candidate.state = METHOD_CANDIDATE_UNIQUE;
         candidate.deref_count = depth;
@@ -92,18 +137,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint payload = method_call_source_ref_payload[token];
     if (tag == TYPE_REF_INVALID || payload == INVALID) return;
     MethodCandidate summary = method_candidate[token];
-    uint visited[64]; uint visited_count = 0u;
+    // A cyclic reference chain has no canonical ID, so it matches nothing;
+    // the depth bound ends its walk.
+    uint spare = CT_NONE;
     for (uint depth = 0u; depth < 64u; depth++)
     {
-        collect_at_depth(token, dotted, tag, payload, depth, summary);
+        collect_at_depth(token, dotted, tag, payload, receiver_actual_id(tag, payload, spare), depth, summary);
         if (!dotted || tag != TYPE_REF_INSTANCE) break;
         if (payload >= method_receiver_type_capacity())
         { summary.state = METHOD_CANDIDATE_INVALID; break; }
         if (type_instance_kind[payload] != 4u) break;
-        bool cycle = false;
-        for (uint i = 0u; i < visited_count; i++) cycle = cycle || visited[i] == payload;
-        if (cycle || depth == 63u) { summary.state = METHOD_CANDIDATE_INVALID; break; }
-        visited[visited_count++] = payload;
+        if (depth == 63u) { summary.state = METHOD_CANDIDATE_INVALID; break; }
         uint instance = payload;
         tag = type_instance_elem_ref_tag[instance];
         payload = type_instance_elem_ref_payload[instance];

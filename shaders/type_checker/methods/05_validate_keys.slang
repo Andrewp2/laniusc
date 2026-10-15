@@ -6,7 +6,9 @@ import type_checker.constant_parameter_slots;
 //   candidate index.
 // - Alpha-equivalent complete receiver patterns are duplicate inherent methods in the
 //   same module for the same receiver type-ref, receiver type arguments, and
-//   interned method name.
+//   interned method name. Receivers are compared as canonical IDs: each
+//   pattern matches the other (ct_match), which keeps independent and
+//   repeated type and constant leaves apart.
 // - This pass writes per-method validation results and reduces invalid or
 //   duplicate method declarations into the compiler-wide type-check status. It
 //   does not resolve calls, inspect source bytes, hash token text, perform CPU
@@ -15,9 +17,11 @@ import type_checker.constant_parameter_slots;
 import hir_records;
 import status;
 import type_checker.methods.lookup;
-import type_checker.scoped_type_equality;
-import type_checker.methods.receiver_pattern;
 import type_checker.instance_arguments;
+import type_checker.constant_atoms;
+import type_checker.canonical.canonical_api;
+import type_checker.substitution.ct_spare;
+import type_checker.match.ct_match;
 
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -117,12 +121,27 @@ bool receiver_head(uint fn_i, out MethodReceiverHead head)
         method_receiver_type_capacity(), active_token_count(), head);
 }
 
+// Binding slots of the receivers' own impl parameters.
+struct ReceiverSlots : ICtSlots
+{
+    uint type_slot(uint token)
+    { return token < active_token_count() ? type_generic_param_slot_by_token[token] : CT_SLOT_NONE; }
+    uint const_slot(uint token)
+    { return token < active_token_count() ? type_const_param_slot_by_token[token] : CT_SLOT_NONE; }
+    uint const_scalar(uint token) { return checked_constant_parameter_scalar(token); }
+}
+
+// The canonical ID of a method's declared receiver pattern (interned with
+// the declared rows, before method validation).
+uint receiver_id(uint fn_i)
+{
+    return ct_ref(method_decl_receiver_ref_tag[fn_i], method_decl_receiver_ref_payload[fn_i]);
+}
+
 bool receiver_graph_valid(uint fn_i)
 {
     MethodReceiverHead head;
-    return receiver_head(fn_i, head) && receiver_pattern_valid<MethodReceiverGraph>(
-        method_decl_receiver_ref_tag[fn_i], method_decl_receiver_ref_payload[fn_i],
-        method_receiver_type_capacity(), active_token_count());
+    return receiver_head(fn_i, head) && ct_is_resolved(receiver_id(fn_i));
 }
 
 uint invalid_method_status(uint fn_i)
@@ -144,12 +163,21 @@ uint invalid_method_status(uint fn_i)
     return METHOD_KEY_STATUS_PRIVATE_OK;
 }
 
+// Alpha-equivalent receivers match each other in both directions. Token
+// identities may differ between the two impl declarations.
 bool receiver_arg_rows_equal(uint left_fn_i, uint right_fn_i)
 {
-    return receiver_patterns_equivalent<MethodReceiverGraph>(
-        method_decl_receiver_ref_tag[left_fn_i], method_decl_receiver_ref_payload[left_fn_i],
-        method_decl_receiver_ref_tag[right_fn_i], method_decl_receiver_ref_payload[right_fn_i],
-        method_receiver_type_capacity(), active_token_count());
+    uint left = receiver_id(left_fn_i);
+    uint right = receiver_id(right_fn_i);
+    ReceiverSlots slots;
+    CtSpare spare = ct_spare_none();
+    for (uint direction = 0u; direction < 2u; direction++)
+    {
+        uint count_mask;
+        if (ct_match<ReceiverSlots>(slots, direction == 0u ? left : right, direction == 0u ? right : left,
+            CT_NONE, CT_NONE, CT_NONE, 0u, false, spare, count_mask) != CT_MATCH_OK) return false;
+    }
+    return true;
 }
 
 bool method_keys_equal(uint left_fn_i, uint right_fn_i)

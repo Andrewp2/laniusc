@@ -1,16 +1,17 @@
-import type_checker.constant_constraints;
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
 import semantic_interface_layout;
 import native_value_layout;
 import type_checker.calls.checked_constant_environment;
-// Validate dependency call results by substituting the accepted environment
-// through the complete canonical type graph. One parameter can stand for a
+// Validate dependency call results over canonical IDs. The declared result
+// pattern is matched against the receiving type (ct_match) and its bindings
+// become the call's context; an imported canonical result is matched against
+// the receiving type under the call's claims. One parameter can stand for a
 // compound graph larger than its declaration-side spelling.
 
 import dependency_interface;
 import type_checker.concrete_type_equality;
-import type_checker.checked_type_graph;
+import type_checker.mutable_checked_type_graph;
 import type_checker.scoped_type_equality;
 import type_checker.instance_arguments;
 import type_checker.dependencies.canonical_field_types;
@@ -20,7 +21,16 @@ import gpu_index;
 import status;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.contextual_call_environment;
-import type_checker.calls.context_constant_publication;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
+import type_checker.canonical.canonical_mutable_rows;
+import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_checked;
+import type_checker.substitution.ct_rows;
+import type_checker.substitution.source_slots;
+import type_checker.match.ct_match;
+import type_checker.match.ct_context_publish;
+import type_checker.match.field_expected;
 import type_checker.local_struct_layout;
 import type_checker.argument_context;
 
@@ -69,7 +79,6 @@ StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> declaration_generic_arity;
-StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
@@ -129,41 +138,6 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
 
-
-public struct CheckedConcreteTypeGraph : IScopedTypeGraph
-{
-    public static bool constant_value(uint row, out uint3 value)
-    { return checked_constant_atom_value(row, value); }
-    public static uint constant_parameter_scalar(uint reference)
-    { return checked_constant_parameter_scalar(reference); }
-    public static bool constant_projection(uint row, out uint scalar, out uint2 child)
-    { return checked_constant_projection(row, scalar, child); }
-    public static bool parameter_is_valid(uint reference, bool constant)
-    { return source_parameter_is_valid<CheckedConcreteTypeGraph>(reference, constant); }
-    public static bool substitute_type_parameter(uint environment, uint reference, out uint tag, out uint payload)
-    { return source_substitute_type_parameter<CheckedConcreteTypeGraph>(environment, reference, tag, payload); }
-    public static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
-    { return source_substitute_constant_parameter<CheckedConcreteTypeGraph>(environment, reference, kind, value); }
-    public static uint constant_parameter_slot(uint token) { return type_const_param_slot_by_token[token]; }
-    public static bool environment_constant(uint environment, uint slot, out uint kind, out uint value)
-    { return checked_call_environment_constant_ref(environment, slot, kind, value); }
-    public static uint parameter_slot(uint token) { return type_generic_param_slot_by_token[token]; }
-    public static bool environment_argument(uint environment, uint slot, out uint tag, out uint payload)
-    {
-        tag = 0u; payload = INVALID;
-        if (environment == INVALID || (environment & 0x80000000u) == 0u) return false;
-        uint row = concrete_claim_row(environment & 0x7fffffffu, slot,
-            min(call_generic_claim_count_out[0u], generic_claim_capacity()));
-        if (row == INVALID) return false;
-        tag = call_generic_claim_ref_tag[row]; payload = call_generic_claim_ref_payload[row];
-        return tag != 0u && payload != INVALID;
-    }
-    public static uint metadata(uint instance, uint field)
-    { return ScopedCheckedTypeGraph.metadata(instance, field); }
-
-    public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
-    { return ScopedCheckedTypeGraph.argument(instance, slot, tag, payload); }
-}
 
 uint active_hir_count()
 {
@@ -310,30 +284,40 @@ uint concrete_claim_row(uint callee, uint slot, uint count)
     return result;
 }
 
-bool instance_arg_ref(uint instance, uint slot, out uint tag, out uint payload)
+// The argument claim of (callee, slot) that binds a result pattern: the
+// first claim row of the slot.
+struct ResultClaims : ICtClaims
 {
-    return CheckedConcreteTypeGraph.argument(instance, slot, tag, payload);
+    static bool claim(uint token, uint slot, out uint tag, out uint payload)
+    {
+        tag = 0u; payload = INVALID;
+        uint row = concrete_claim_row(token, slot,
+            min(call_generic_claim_count_out[0u], generic_claim_capacity()));
+        if (row == INVALID) return false;
+        tag = call_generic_claim_ref_tag[row]; payload = call_generic_claim_ref_payload[row];
+        return tag != 0u && payload != INVALID;
+    }
 }
 
-// Declaration result inference must not consume provisional argument bindings.
-// This adapter's call environments require the high bit, so zero is an empty
-// environment. Keep it distinct from INVALID: constant inspection must still
-// reject a missing substitution, not retain an imported parameter as symbolic.
-// Reuse the graph reader and its checked equality/constant specializations;
-// only the binding authority differs between inference and result validation.
-static const uint DECLARED_RESULT_ENVIRONMENT = 0u;
+// The canonical type of dependency node `t` of the resident page (its alias
+// root's), or CT_UNKNOWN.
+uint dependency_type(uint t)
+{
+    uint count = dependency_type_count();
+    uint root = t < count ? canonical_type_roots[t] : INVALID;
+    uint base = dependency_constant_type_span_base();
+    uint capacity = ct_dependency_capacity();
+    if (root >= count || base > capacity || root >= capacity - base) return CT_UNKNOWN;
+    return canonical_dependency_type[base + root];
+}
 
+#define CANONICAL_FIELD_EXPECTATION
 #include "../result_expression_context.slang"
 
-void publish_result_constraints(uint call, uint callee, uint2 inferred[32], uint mask)
+// The call owns its published context, through the callee token and, for a
+// call that is not dotted, its head and call tokens.
+void publish_result_owner(uint call, uint callee)
 {
-    for (uint slot = 0u; slot < 32u; slot++)
-        if ((mask & (1u << slot)) != 0u)
-        {
-            call_context_ref_tag[call * 32u + slot] = inferred[slot].x;
-            call_context_ref_payload[call * 32u + slot] = inferred[slot].y;
-        }
-    call_context_arg_mask[call] |= mask;
     call_context_owner_by_token[callee] = call;
     uint node = compact_hir_payload[call].a;
     // The member leaf owns a dotted call; leading tokens can name another
@@ -345,14 +329,6 @@ void publish_result_constraints(uint call, uint callee, uint2 inferred[32], uint
         if (valid_token(head)) call_context_owner_by_token[head] = call;
         if (valid_token(call_token)) call_context_owner_by_token[call_token] = call;
     }
-}
-
-void publish_result_environments(uint call, uint callee, uint2 inferred[32], uint mask,
-    InferredConstant constants[32], uint constant_mask)
-{
-    publish_result_constraints(call, callee, inferred, mask);
-    if (!publish_context_constants<CheckedConcreteTypeGraph, CheckedContextConstantAdmission>(call, constants, constant_mask, gParams.visible_capacity))
-    { record_min_token_error(status, callee, 6u, 0x474e0001u); return; }
 }
 
 void publish_direct_generic_result(uint token, uint callee,
@@ -430,25 +406,6 @@ void validate_dependency_result(
     uint expected_external_token)
 {
     if (!valid_token(callee_token)) return;
-    {
-        // Result constraints come from the immutable declaration signature,
-        // even if an earlier iteration published a substituted scalar result.
-        // The portable callable contract distinguishes a function signature
-        // from a method's direct return pattern. Use its shared accessor for
-        // both; method member types are not function-signature nodes.
-        uint pattern = dependency_callable_return_type(call_dependency_library_id[callee_token],
-            call_dependency_unit_id[callee_token], call_dependency_local_index[callee_token]);
-        if (pattern < dependency_type_count())
-        {
-            uint2 inferred[32]; uint mask; InferredConstant constants[32]; uint constant_mask;
-            if (canonical_type_and_constant_constraints<CheckedConcreteTypeGraph>(
-                DECLARED_RESULT_ENVIRONMENT, pattern, expected_tag, expected_payload,
-                type_capacity(), gParams.visible_capacity, true, inferred, mask,
-                constants, constant_mask, true))
-                publish_result_environments(call_node, callee_token, inferred, mask,
-                    constants, constant_mask);
-        }
-    }
     uint actual_tag = call_inference_result_tag[call_node];
     uint actual_payload = call_inference_result_payload[call_node];
     bool accepted_result = actual_tag != 0u && actual_payload != INVALID;
@@ -457,100 +414,187 @@ void validate_dependency_result(
         actual_tag = decl_type_ref_tag[callee_token];
         actual_payload = decl_type_ref_payload[callee_token];
     }
-    if (actual_tag == TYPE_REF_INSTANCE && valid_instance(actual_payload))
+    bool instance_result = actual_tag == TYPE_REF_INSTANCE && valid_instance(actual_payload);
+    // Step 0 infers the declared result pattern's bindings from the receiving
+    // type. Result constraints come from the immutable declaration signature,
+    // even if an earlier iteration published a substituted scalar result. The
+    // portable callable contract distinguishes a function signature from a
+    // method's direct return pattern; its shared accessor serves both.
+    // Step 1 validates the accepted result.
+    uint declared = dependency_callable_return_type(call_dependency_library_id[callee_token],
+        call_dependency_unit_id[callee_token], call_dependency_local_index[callee_token]);
+    SourceSlots slots;
+    CtSpare spare = ct_spare_none();
+    // The canonical IDs of the receiving type and of an instance result.
+    uint expected_id = CT_UNKNOWN;
+    uint actual_id = CT_UNKNOWN;
+    uint operands = instance_result ? 2u : 1u;
+    uint interned_operands = 0u;
+    uint step = 0u;
+    bool matched = false;
+    uint environment = CT_MATCH_FAILED;
+    uint count_mask = 0u;
+    uint3 interned = uint3(0u, INVALID, CT_NONE);
+    // One interning site serves the receiving type, an instance result and
+    // each prior operand the publisher asks for; one matcher and one
+    // publisher serve both steps.
+    uint2 operand = uint2(expected_tag, expected_payload);
+    [loop]
+    for (uint work = 0u; work < 4u + 2u * CT_PUBLISH_REQUEST_LIMIT; work++)
     {
-        // Declaration/method projection can overwrite provisional caches on
-        // the next iteration. Complete caller-side results belong to the
-        // stable accepted relation; pending instances must not diagnose before
-        // their newly published result environment can be materialized.
-        if (!accepted_result && call_inference_state[0u] != 0u) return;
-        if (expected_tag != TYPE_REF_INSTANCE || !valid_instance(expected_payload))
+        uint outcome = CT_PUBLISH_REJECTED;
+        bool ready = true;
+        if (interned_operands < operands || operand.x != 0u)
         {
-            mismatch(callee_token);
-            return;
+            uint id = operand.x == TYPE_REF_EXTERNAL_CANONICAL ? dependency_type(operand.y)
+                : ct_intern_checked<CtMutableRows>(operand.x, operand.y, spare.record);
+            if (interned_operands < operands)
+            {
+                if (interned_operands == 0u) expected_id = id;
+                else actual_id = id;
+                interned_operands++;
+                operand = interned_operands < operands ? uint2(actual_tag, actual_payload) : uint2(0u, INVALID);
+                if (interned_operands < operands) continue;
+            }
+            // A prior that has no ID agrees with no binding.
+            else if (!ct_is_resolved(id)) ready = false;
+            else
+            {
+                interned = uint3(operand, id);
+                operand = uint2(0u, INVALID);
+            }
         }
-        // Direct T results may name a caller-local declaration. Its checked
-        // declaration token and arguments establish identity without an
-        // imported declaration ID. Compare every concrete shape using the
-        // same relation as argument checking.
-        if (!scoped_type_refs_equal<CheckedConcreteTypeGraph>(TYPE_REF_INSTANCE, actual_payload, INVALID,
-                TYPE_REF_INSTANCE, expected_payload, INVALID, type_capacity(), gParams.visible_capacity))
+        if (ready && !matched)
+        {
+            uint pattern = CT_UNKNOWN;
+            if (step == 0u)
+            {
+                // A callee without a declared result pattern publishes nothing.
+                if (declared >= dependency_type_count()) { step = 1u; continue; }
+                pattern = dependency_type(declared);
+            }
+            else
+            {
+                if (instance_result)
+                {
+                    // Declaration/method projection can overwrite provisional
+                    // caches on the next iteration. Complete caller-side results
+                    // belong to the stable accepted relation; pending instances
+                    // must not diagnose before their newly published result
+                    // environment can be materialized.
+                    if (!accepted_result && call_inference_state[0u] != 0u) return;
+                    // Direct T results may name a caller-local declaration; IDs
+                    // compare every concrete shape as argument checking does.
+                    if (expected_tag != TYPE_REF_INSTANCE || !valid_instance(expected_payload) ||
+                        !ct_is_resolved(actual_id) || actual_id != expected_id)
+                    {
+                        mismatch(callee_token);
+                        return;
+                    }
+                    call_result_instance[call_node] = expected_payload;
+                    if (type_instance_kind[actual_payload] == TYPE_INSTANCE_SLICE)
+                        call_return_aggregate_word_count[callee_token] = NATIVE_SLICE_WORDS;
+                    return;
+                }
+                if (actual_tag != TYPE_REF_EXTERNAL_CANONICAL) return;
+                uint actual_canonical = actual_payload;
+                uint type_count = dependency_count(4u);
+                if (actual_canonical >= type_count)
+                {
+                    mismatch(callee_token);
+                    return;
+                }
+                uint actual_root = canonical_type_roots[actual_canonical];
+                uint actual_base = actual_root * TYPE_WORDS;
+                // The same pass first substitutes call nodes and is dispatched
+                // again after a storage barrier for result validation. A
+                // statement lane may observe the pre-substitution generic root
+                // during the first dispatch; defer it rather than racing the
+                // call lane and recording a false mismatch.
+                if (dependency_type_word(actual_base) == INTERFACE_TYPE_GENERIC_PARAMETER)
+                    return;
+                uint actual_count = dependency_type_word(actual_base + 4u);
+                if (expected_tag == TYPE_REF_EXTERNAL_CANONICAL)
+                {
+                    bool matches = expected_payload < type_count &&
+                        (canonical_type_roots[expected_payload] == actual_root ||
+                         canonical_nominal_equal(expected_payload, actual_root));
+                    if (!matches && valid_token(expected_external_token))
+                        matches = dependency_nominal_matches_token(actual_root, expected_external_token);
+                    if (!matches || actual_count != 0u)
+                        mismatch(callee_token);
+                    return;
+                }
+                if (expected_tag != TYPE_REF_INSTANCE || !valid_instance(expected_payload))
+                    return;
+                uint actual_kind = dependency_type_word(actual_base);
+                bool matches = false;
+                if (actual_kind == INTERFACE_TYPE_DECLARATION)
+                {
+                    bool same_nominal = dependency_nominal_matches_token(
+                        actual_root, expected_payload);
+                    uint expected_count = type_instance_arg_count[expected_payload];
+                    matches = same_nominal && expected_count == actual_count;
+                }
+                else if (actual_kind == INTERFACE_TYPE_ARRAY || actual_kind == INTERFACE_TYPE_SLICE ||
+                         actual_kind == 6u)
+                {
+                    uint expected_kind = actual_kind - 2u;
+                    uint expected_edges = actual_kind == INTERFACE_TYPE_ARRAY ? 2u : 1u;
+                    matches = type_instance_kind[expected_payload] == expected_kind && actual_count == expected_edges;
+                }
+                if (!matches)
+                {
+                    mismatch(callee_token);
+                    return;
+                }
+                // A parameter's accepted type may have any number of
+                // structural children: the canonical result is matched under
+                // the call's claims instead of requiring its unsubstituted
+                // syntax tree to have the same node count.
+                pattern = dependency_type(actual_root);
+            }
+            count_mask = 0u;
+            environment = ct_is_resolved(pattern) && ct_is_resolved(expected_id)
+                ? ct_match<SourceSlots>(slots, pattern, expected_id, CT_NONE, CT_NONE, CT_NONE, 0u, true, spare, count_mask)
+                : CT_MATCH_FAILED;
+            matched = true;
+        }
+        if (ready)
+        {
+            if (environment == CT_MATCH_OVERFLOW) outcome = CT_PUBLISH_BUSY;
+            else if (ct_is_record(environment))
+            {
+                uint3 words = ct_words(environment);
+                outcome = ct_publish_context<ResultClaims>(call_node, callee_token, environment,
+                    words.y, words.z, count_mask, step == 0u ? CT_PUBLISH_ADMIT : CT_PUBLISH_ADMIT | CT_PUBLISH_CLAIMS,
+                    interned, operand);
+                if (outcome == CT_PUBLISH_INTERN) continue;
+                if (outcome == CT_PUBLISHED) publish_result_owner(call_node, callee_token);
+            }
+        }
+        if (step == 0u)
+        {
+            // A declared result that does not match publishes nothing; a
+            // match whose constants cannot be published is the publication
+            // error.
+            if (outcome == CT_PUBLISH_CAPACITY || (outcome == CT_PUBLISH_REJECTED && ct_is_record(environment)))
+                record_min_token_error(status, callee_token, 6u, 0x474e0001u);
+            step = 1u;
+            matched = false;
+            interned = uint3(0u, INVALID, CT_NONE);
+            operand = uint2(0u, INVALID);
+            continue;
+        }
+        if (outcome == CT_PUBLISH_BUSY) return;
+        if (outcome != CT_PUBLISHED)
         {
             mismatch(callee_token);
             return;
         }
         call_result_instance[call_node] = expected_payload;
-        if (type_instance_kind[actual_payload] == TYPE_INSTANCE_SLICE)
-            call_return_aggregate_word_count[callee_token] = NATIVE_SLICE_WORDS;
         return;
     }
-    if (actual_tag != TYPE_REF_EXTERNAL_CANONICAL)
-        return;
-
-    uint actual_canonical = actual_payload;
-    uint type_count = dependency_count(4u);
-    if (actual_canonical >= type_count)
-    {
-        mismatch(callee_token);
-        return;
-    }
-    uint actual_root = canonical_type_roots[actual_canonical];
-    uint actual_base = actual_root * TYPE_WORDS;
-    // The same pass first substitutes call nodes and is dispatched again after
-    // a storage barrier for result validation. A statement lane may observe
-    // the pre-substitution generic root during the first dispatch; defer it
-    // rather than racing the call lane and recording a false mismatch.
-    if (dependency_type_word(actual_base) == INTERFACE_TYPE_GENERIC_PARAMETER)
-        return;
-    uint actual_count = dependency_type_word(actual_base + 4u);
-    if (expected_tag == TYPE_REF_EXTERNAL_CANONICAL)
-    {
-        bool matches = expected_payload < type_count &&
-            (canonical_type_roots[expected_payload] == actual_root ||
-             canonical_nominal_equal(expected_payload, actual_root));
-        if (!matches && valid_token(expected_external_token))
-            matches = dependency_nominal_matches_token(actual_root, expected_external_token);
-        if (!matches || actual_count != 0u)
-            mismatch(callee_token);
-        return;
-    }
-    if (expected_tag != TYPE_REF_INSTANCE || !valid_instance(expected_payload))
-        return;
-    uint actual_kind = dependency_type_word(actual_base);
-    bool matches = false;
-    if (actual_kind == INTERFACE_TYPE_DECLARATION)
-    {
-        bool same_nominal = dependency_nominal_matches_token(
-            actual_root, expected_payload);
-        uint expected_count = type_instance_arg_count[expected_payload];
-        matches = same_nominal && expected_count == actual_count;
-    }
-    else if (actual_kind == INTERFACE_TYPE_ARRAY || actual_kind == INTERFACE_TYPE_SLICE ||
-             actual_kind == 6u)
-    {
-        uint expected_kind = actual_kind - 2u;
-        uint expected_edges = actual_kind == INTERFACE_TYPE_ARRAY ? 2u : 1u;
-        matches = type_instance_kind[expected_payload] == expected_kind && actual_count == expected_edges;
-        // Complete matching below substitutes constant lengths before comparison.
-    }
-    if (!matches)
-    {
-        mismatch(callee_token);
-        return;
-    }
-    // A parameter's accepted type may have any number of structural children.
-    // Compare the canonical result under its call environment instead of
-    // requiring its unsubstituted syntax tree to have the same node count.
-    uint2 inferred[32]; uint inferred_mask;
-    if (!canonical_field_ref_constraints<CheckedConcreteTypeGraph>(
-        0x80000000u | callee_token, actual_root, expected_payload,
-        type_capacity(), gParams.visible_capacity, true, inferred, inferred_mask))
-    {
-        mismatch(callee_token);
-        return;
-    }
-    publish_result_constraints(call_node, callee_token, inferred, inferred_mask);
-    call_result_instance[call_node] = expected_payload;
 }
 
 [shader("compute")]
@@ -563,7 +607,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // One call lane owns its result environment, including assignments.
     // The receiving-place projection supplies the complete destination type.
     uint2 reference;
-    if (!result_expression_context<ScopedCheckedTypeGraph>(node, type_capacity(), reference)) return;
+    if (!result_expression_context<MutableCheckedTypeGraph>(node, type_capacity(), reference)) return;
     uint callee_token = dependency_call_token(node);
     if (!valid_token(callee_token)) return;
     uint enclosing_function = enclosing_function_decl_token(compact_hir_core[node].token_start);

@@ -305,6 +305,20 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         } else {
             None
         },
+        field_expected_ids: super::super::match_passes::FieldExpectedIdOperations::new(
+            device,
+            graph,
+            resources,
+            passes,
+            struct_init_passes_required(parser_feature_flags),
+        )?,
+        validation_call_envs: super::super::match_passes::ValidationCallEnvOperation::new(
+            device,
+            graph,
+            resources,
+            passes,
+            hir_dispatch_args,
+        )?,
         project_literal_contexts: inference(
             compiler_graph::CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
             "type_checker/calls/03k1_project_literal_contexts",

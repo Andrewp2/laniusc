@@ -5095,6 +5095,11 @@ fn build_graph(
                 "type_checker/semantic/artifact/01a_struct_literal_refs",
             )?;
             graph.require_complete_reflection(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)?;
+            super::match_passes::register_field_expected_ids_pass(
+                graph,
+                kernels,
+                super::match_passes::FIELD_EXPECTED_IDS_EARLY_PASS,
+            )?;
             Ok(())
         };
     graph.add_kernel_pass_by_name(
@@ -5167,6 +5172,7 @@ fn build_graph(
     super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
     super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
+    super::match_passes::register_match_storage(&mut graph, token_rows)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(
@@ -5820,6 +5826,11 @@ fn build_graph(
                 )?;
                 graph.add_indirect_dispatch(record_name, "hir_active_dispatch_args")?;
             }
+            super::match_passes::register_field_expected_ids_pass(
+                &mut graph,
+                kernels,
+                super::match_passes::FIELD_EXPECTED_IDS_INFERENCE_PASS,
+            )?;
         }
         graph.add_kernel_pass_by_name(
             name,
@@ -6067,6 +6078,7 @@ fn build_graph(
         graph.add_indirect_dispatch(pass, "token_active_dispatch_args")?;
     }
     ReturnValidationOperation::register(&mut graph, kernels)?;
+    super::match_passes::register_validation_call_env_pass(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,

@@ -105,8 +105,14 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
         else return false;
         break;
     }
+#ifdef INFERENCE_INDEX_GRAPH
+    // The including kernel reads the type rows through its own graph.
+    if (!checked_index_elements<INFERENCE_INDEX_GRAPH>(indices, checked_type_capacity(), tag, payload))
+        return false;
+#else
     if (!checked_index_elements(indices, type_instance_kind, type_instance_elem_ref_tag,
         type_instance_elem_ref_payload, tag, payload)) return false;
+#endif
     return (tag == 1u && payload != 0u && payload != INVALID_REF) ||
         (tag == 2u && payload < gParams.n_tokens && type_generic_param_slot_by_token[payload] != INVALID_REF) ||
         (tag == 3u && payload < checked_type_capacity() && type_instance_kind[payload] != 0u);
