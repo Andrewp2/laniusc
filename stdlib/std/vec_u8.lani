@@ -57,13 +57,13 @@ pub fn try_reserve(value: VecU8, minimum_capacity: i32) -> VecU8 {
         return value;
     }
     let byte_count: i32 = minimum_capacity * 4;
-    let new_bytes: usize = byte_count;
+    let new_bytes: usize = byte_count as usize;
     let next: ptr = 0;
     if (value.storage == 0) {
         next = alloc::allocator::alloc(new_bytes, 4);
     } else {
         let old_byte_count: i32 = value.reserved * 4;
-        let old_bytes: usize = old_byte_count;
+        let old_bytes: usize = old_byte_count as usize;
         next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
     }
     if (next == 0) {
@@ -106,7 +106,7 @@ pub fn try_clone(value: VecU8) -> VecU8 {
     index = 0;
     while (index < length) {
         let raw: i32 = source[index];
-        let byte: u8 = raw;
+        let byte: u8 = raw as u8;
         copy = try_push(copy, byte);
         index += 1;
     }
@@ -132,7 +132,7 @@ pub fn try_push(value: VecU8, item: u8) -> VecU8 {
         }
     }
     let elements: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item;
+    let raw_item: i32 = item as i32;
     elements[grown.length] = raw_item;
     return VecU8 { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
 }
@@ -222,7 +222,7 @@ pub fn get_or(value: VecU8, index: i32, fallback: u8) -> u8 {
     }
     let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let raw_item: i32 = elements[index];
-    let result: u8 = raw_item;
+    let result: u8 = raw_item as u8;
     return result;
 }
 
@@ -232,7 +232,7 @@ pub fn try_set(value: VecU8, index: i32, item: u8) -> bool {
         return false;
     }
     let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = item;
+    let raw_item: i32 = item as i32;
     elements[index] = raw_item;
     return true;
 }
@@ -277,7 +277,7 @@ pub fn lower_bound(value: VecU8, needle: u8) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_word: i32 = needle;
+    let needle_word: i32 = needle as i32;
     return core::slice::lower_bound_i32(cells, value.length, needle_word);
 }
 
@@ -286,7 +286,7 @@ pub fn upper_bound(value: VecU8, needle: u8) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_word: i32 = needle;
+    let needle_word: i32 = needle as i32;
     return core::slice::upper_bound_i32(cells, value.length, needle_word);
 }
 
@@ -361,14 +361,14 @@ pub fn try_shrink_to_fit(value: VecU8) -> VecU8 {
     }
     if (value.length == 0) {
         let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count;
+        let bytes: usize = byte_count as usize;
         alloc::allocator::dealloc(value.storage, bytes, 4);
         return new();
     }
     let old_byte_count: i32 = value.reserved * 4;
     let new_byte_count: i32 = value.length * 4;
-    let old_bytes: usize = old_byte_count;
-    let new_bytes: usize = new_byte_count;
+    let old_bytes: usize = old_byte_count as usize;
+    let new_bytes: usize = new_byte_count as usize;
     let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
     if (next == 0) {
         return value;
@@ -381,7 +381,7 @@ pub fn try_shrink_to_fit(value: VecU8) -> VecU8 {
 pub fn destroy(value: VecU8) {
     if (value.storage != 0) {
         let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count;
+        let bytes: usize = byte_count as usize;
         alloc::allocator::dealloc(value.storage, bytes, 4);
     }
 }

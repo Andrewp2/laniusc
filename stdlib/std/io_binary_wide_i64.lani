@@ -12,7 +12,7 @@ pub fn write(handle: i32, value: core::wide_i64::WideI64) -> i32 {
     let position: u32 = 0;
     while (position<length) {
         let digit: u8 = core::binary_wide_i64::byte_at_or(value, position, 0);
-        let byte: i32 = digit;
+        let byte: i32 = digit as i32;
         let written: i32 = std::io::write_byte(handle, byte);
         if (written<0) {
             return written;
@@ -22,7 +22,7 @@ pub fn write(handle: i32, value: core::wide_i64::WideI64) -> i32 {
         }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 // Read all stdin as bounded signed binary. Surrounding SP, HT, LF, and
 // CR, one leading plus or minus, and one optional 0b/0B prefix are accepted.

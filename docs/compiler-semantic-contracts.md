@@ -1,5 +1,47 @@
 # Compiler semantic contracts
 
+## Scalar casts (2026-10-15)
+
+`expr as T` converts one scalar value to another with Rust semantics:
+
+- Integer to integer: a narrower target keeps the low bits; a wider target
+  sign-extends a signed source and zero-extends an unsigned one. So an `i32`
+  -1 cast to `u32` is 4,294,967,295, 300 cast to `u8` is 44, an `i8` -1 cast
+  to `i32` is -1, and a `u8` 255 cast to `i8` is -1.
+- Integer to float rounds to nearest. Float to integer truncates toward zero,
+  saturates at the target's bounds, and maps NaN to zero. `f32` and `f64`
+  convert to each other.
+- `bool` to an integer gives 0 or 1. `char` to an integer gives its code point,
+  truncated to the target width, and `u8` to `char` gives the character with
+  that code point. `bool` and `char` also cast to themselves.
+- Anything else is `LNC0072` "invalid cast". That includes casts to `bool`,
+  `bool` or `char` to a float, any integer type other than `u8` to `char`,
+  and casts from or to a non-scalar type.
+
+A cast binds tighter than every binary operator and looser than unary
+operators: `-x as u32` is `(-x) as u32`, and `a * b as u8` is `a * (b as u8)`.
+Casts chain from left to right. The target is a type name, optionally
+qualified: `u32`, a local alias, or `lib::sizes::Length`. Generic
+applications, arrays, references, and a missing target are parse errors.
+
+Deviations from Rust:
+
+- `x as u32 < y` parses as a comparison. Rust rejects it because it reads `<`
+  as the start of generic arguments. After a qualified target, as in
+  `x as a::b < y`, the `<` can still be taken for a generic application, so
+  parenthesize the cast.
+- An unsuffixed integer literal is `i32`, so `97 as char` is rejected; Rust
+  infers `u8` there. Cast a `u8` value instead.
+- An unsuffixed float literal is `f32`, so `1.5 as f64` widens an `f32`.
+- There are no pointer, reference, enum-discriminant, or function casts.
+
+The parser builds a cast as HIR binary form 36: the operand on the left and the
+target type row on the right. The type checker gives the expression the target
+type and checks the source and target pair. Semantic LIR lowers it to `CONVERT`
+and records the checked source type. x86_64 emits a dedicated conversion
+sequence. The wasm backend does not support `CONVERT` yet. It stops with the
+generic `LNC0057` lowering error, not a dedicated diagnostic.
+
 ## Semantic replay identity, widths, and original recipes (2026-10-11)
 
 A replay seed owns a closed semantic type graph and literal constant arguments.

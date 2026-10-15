@@ -48,8 +48,8 @@ pub fn contains(value: SetWideU64, item: core::wide_u64::WideU64) -> bool {
     let index: i32 = 0;
     while (index < value.length) {
         let offset: i32 = index * 2;
-        let stored_low: u32 = cells[offset];
-        let stored_high: u32 = cells[offset + 1];
+        let stored_low: u32 = cells[offset] as u32;
+        let stored_high: u32 = cells[offset + 1] as u32;
         if (stored_low == core::wide_u64::low_word(item) &&
             stored_high == core::wide_u64::high_word(item)) {
             return true;
@@ -67,8 +67,8 @@ pub fn at_or(value: SetWideU64, ordinal: i32, fallback: core::wide_u64::WideU64)
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
     let offset: i32 = ordinal * 2;
-    let low: u32 = cells[offset];
-    let high: u32 = cells[offset + 1];
+    let low: u32 = cells[offset] as u32;
+    let high: u32 = cells[offset + 1] as u32;
     return core::wide_u64::from_words(high, low);
 }
 
@@ -143,8 +143,8 @@ pub fn try_remove(value: SetWideU64, item: core::wide_u64::WideU64) -> SetWideU6
     let index: i32 = 0;
     while (index < value.length) {
         let offset: i32 = index * 2;
-        let stored_low: u32 = cells[offset];
-        let stored_high: u32 = cells[offset + 1];
+        let stored_low: u32 = cells[offset] as u32;
+        let stored_high: u32 = cells[offset + 1] as u32;
         if (stored_low == core::wide_u64::low_word(item) &&
             stored_high == core::wide_u64::high_word(item)) {
             let cursor: i32 = index;

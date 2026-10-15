@@ -22,7 +22,7 @@ pub fn fill_secure_exact(buffer: ptr, len: usize) -> bool {
         if (received <= 0) {
             return false;
         }
-        let advanced: usize = received;
+        let advanced: usize = received as usize;
         if (advanced>remaining) {
             return false;
         }
@@ -128,12 +128,12 @@ pub fn shuffle_i32(values: [i32], len: i32) -> bool {
     let remaining: i32 = len;
     let failure: u32 = 4294967295;
     while (remaining > 1) {
-        let bound: u32 = remaining;
+        let bound: u32 = remaining as u32;
         let selected: u32 = secure_u32_below_or(bound, failure);
         if (selected == failure) {
             return false;
         }
-        let slot: i32 = selected;
+        let slot: i32 = selected as i32;
         let last: i32 = remaining - 1;
         let previous: i32 = values[last];
         values[last] = values[slot];
