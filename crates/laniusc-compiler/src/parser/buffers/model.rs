@@ -704,6 +704,8 @@ pub struct ParserBuffers {
     pub tree_prefix: LaniusBuffer<i32>,
     pub tree_prefix_block_max: LaniusBuffer<i32>,
     pub tree_prefix_block_max_tree: LaniusBuffer<i32>,
+    /// Local maximum heap of every 256-row prefix block (blocked_search_tree.slang).
+    pub tree_prefix_local_max: LaniusBuffer<i32>,
     pub tree_prefix_max_build_steps: Vec<TreePrefixMaxBuildStep>,
     pub tree_params: LaniusBuffer<super::super::passes::tree::parent::Params>,
     pub tree_span_params: LaniusBuffer<super::super::passes::tree::spans::Params>,
