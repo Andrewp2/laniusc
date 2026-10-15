@@ -22,7 +22,7 @@ OwnedConstraintStatus owned_constant_suffix<Pair : IOwnedConstraintPair>(uint3 t
             uint domain = term.x * 2u + 1u;
             if (classification != OWNED_PARAMETER_BINDABLE || index >= state.counts[domain] ||
                 (state.bound[domain] & (1u << index)) == 0u) return owned_constraint_invalid(3u);
-            uint4 edge = state.bindings[domain * 32u + index];
+            uint4 edge = owned_constraint_binding_cell(state.frame, domain * 32u + index);
             next = edge.xyz; projection = edge.w != 0u;
         }
         else return owned_constraint_invalid(2u);
@@ -55,7 +55,11 @@ OwnedConstraintStatus owned_constant_unify<Pair : IOwnedConstraintPair,
     {
         if (phase != 3u)
         {
-            status = owned_constant_resolve<Pair>(term, state, b);
+            // Left and right keep separate target lists; the revalidation's
+            // list is discarded.
+            uint targets = phase == 0u ? OWNED_TARGETS_LEFT
+                : (phase == 1u ? OWNED_TARGETS_RIGHT : OWNED_TARGETS_DISCARD);
+            status = owned_constant_resolve<Pair>(term, targets, state, b);
             if (status.state != OWNED_CONSTRAINT_MATCHED || phase == 2u) return status;
             if (phase == 0u) { a = b; term = right; phase = 1u; continue; }
             if (!count_identity && a.result_scalar != b.result_scalar)
@@ -87,7 +91,7 @@ OwnedConstraintStatus owned_constant_unify<Pair : IOwnedConstraintPair,
                     if (a.target_count != b.target_count)
                         return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                     for (uint i = 0u; i < a.target_count; i++)
-                        if (a.target_scalars[i] != b.target_scalars[i])
+                        if (owned_constraint_target(a.targets, i) != owned_constraint_target(b.targets, i))
                             return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                 }
                 return owned_constraint_ok();
@@ -104,7 +108,8 @@ OwnedConstraintStatus owned_constant_unify<Pair : IOwnedConstraintPair,
             {
                 uint common = 0u;
                 while (common < a.target_count && common < b.target_count &&
-                    a.target_scalars[common] == b.target_scalars[common]) common++;
+                    owned_constraint_target(a.targets, common) == owned_constraint_target(b.targets, common))
+                    common++;
                 // Only an exposed variable can capture an exact symbolic suffix.
                 // Select the operand first: one suffix walk serves both sides.
                 bool suffix_of_right = common == a.target_count && a_variable;

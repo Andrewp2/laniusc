@@ -7,6 +7,12 @@ use super::{
     passes_core::{self, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
+/// u32 words of a thread-scratch table holding `slots` slots: whole groups of
+/// THREAD_SCRATCH_GROUP slots of THREAD_SCRATCH_CELLS uint4 cells.
+pub(super) fn thread_scratch_words(slots: usize) -> usize {
+    slots.div_ceil(32) * 32 * 1792 * 4
+}
+
 fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]> {
     assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
         "this regression requires a physical GPU");
@@ -15,7 +21,13 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     let results = storage_rw_for_array::<u32>(&gpu.device, key, word_count);
     let pass = make_pass_data_from_shader_key(&gpu.device, key, "main", key).unwrap();
     assert_eq!(pass.thread_group_size, [threads, 1, 1]);
-    let entries = [(binding, results.as_entire_binding())];
+    // One thread-scratch slot per row (shaders/thread_scratch.slang).
+    let scratch = storage_rw_for_array::<u32>(&gpu.device, "typed_constants.thread_scratch",
+        thread_scratch_words(rows));
+    let mut entries = vec![(binding, results.as_entire_binding())];
+    if passes_core::bind_group::declares_binding(&pass, 0, "thread_scratch") {
+        entries.push(("thread_scratch", scratch.as_entire_binding()));
+    }
     passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
     let group = passes_core::bind_group::create_bind_group_from_bindings(
         &gpu.device, Some(key), &pass, 0, &entries).unwrap();

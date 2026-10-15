@@ -93,7 +93,7 @@ public EvidenceStatus pev_admit_implementation_coverage(uint implementation, Own
         return pev_invalid(1u, implementation, PEV_INVALID);
     OwnedConstraintState state;
     OwnedConstraintStatus status = owned_pattern_begin<CatalogImplementationPatternGraph>(
-        low.y, nodes, atoms, limits, state);
+        low.y, nodes, atoms, limits, owned_constraint_frame(0u), state);
     [loop]
     for (uint i = 0u; status.state == OWNED_CONSTRAINT_MATCHED && i <= middle.y; i++)
     {
@@ -121,7 +121,7 @@ public EvidenceStatus pev_implementation_heads_overlap(uint left, uint right,
     // Both heads live in the one catalog graph: share its code for both sides.
     OwnedConstraintStatus status = owned_overlap_begin_pair<
         OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(
-        a.y, b.y, nodes, nodes, atoms, limits, state);
+        a.y, b.y, nodes, nodes, atoms, limits, owned_constraint_frame(0u), state);
     [loop]
     for (uint i = 0u; status.state == OWNED_CONSTRAINT_MATCHED && i <= aa.y; i++)
     {

@@ -20,8 +20,9 @@ public bool pps_goal_root(uint goal, uint ordinal, out uint2 reference)
     return pps_span(PPS_TERM_ROOTS, low.w, high.x) &&
         pps_read2(PPS_TERM_ROOTS, low.w + ordinal - 1u, 0u, reference);
 }
+// The match state uses owned constraint frame `frame` (owned_constraint_frame).
 public EvidenceStatus pev_match_implementation_goal(uint implementation, uint goal,
-    OwnedConstraintLimits limits, out bool matches, out OwnedConstraintState state)
+    OwnedConstraintLimits limits, uint frame, out bool matches, out OwnedConstraintState state)
 {
     matches = false; state = (OwnedConstraintState)0;
     uint4 pattern; uint4 args; uint4 actual; uint4 extra; uint pattern_nodes; uint goal_nodes; uint atoms;
@@ -31,7 +32,7 @@ public EvidenceStatus pev_match_implementation_goal(uint implementation, uint go
         !pev_table_count(1u, atoms)) return pev_invalid(1u, implementation, goal);
     if (pattern.z != actual.x || args.y != extra.x) return pev_ok();
     OwnedConstraintStatus status = owned_constraints_begin<CatalogImplementationPatternGraph>(
-        pattern.y, pattern_nodes, goal_nodes, atoms, limits, state);
+        pattern.y, pattern_nodes, goal_nodes, atoms, limits, frame, state);
     [loop]
     for (uint i = 0u; status.state == OWNED_CONSTRAINT_MATCHED && i <= args.y; i++)
     {

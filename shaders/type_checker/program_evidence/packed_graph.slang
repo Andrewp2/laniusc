@@ -125,18 +125,43 @@ public bool pev_parameter_row_is_valid(uint row, uint expected_owner)
         param.z < 32u && param.w <= 1u && pev_parameter_is_valid(param.y, param.w == 1u) &&
         pev_word(2u, expected_owner, 0u, binder) && pev_atom(param.y, atom, extra) && atom.y == binder;
 }
+// The owner `steps` parent links (Owner word 3) above `owner`. Callers only
+// re-walk a chain prefix they already read, so every read succeeds. Owner
+// chains re-walk their prefix instead of keeping a per-thread visited list.
+public uint pev_owner_ancestor(uint owner, uint steps)
+{
+    [loop]
+    for (uint step = 0u; step < steps; step++)
+    {
+        uint parent;
+        if (!pev_word(2u, owner, 3u, parent)) return PEV_INVALID;
+        owner = parent;
+    }
+    return owner;
+}
+// True when `owner` is one of the `count` owners from `first` up its chain.
+public bool pev_owner_chain_contains(uint first, uint count, uint owner)
+{
+    [loop]
+    for (uint prior = 0u; prior < count; prior++)
+    {
+        if (first == owner) return true;
+        uint parent;
+        if (!pev_word(2u, first, 3u, parent)) return false;
+        first = parent;
+    }
+    return false;
+}
 public bool pev_parameter_visible(uint atom, uint owner)
 {
     uint4 parameter; uint4 extra;
     if (!pev_atom(atom, parameter, extra) || parameter.x != 5u || parameter.z > 1u ||
         !pev_parameter_is_valid(atom, parameter.z == 1u)) return false;
-    uint visited[64];
+    uint first = owner;
     [loop]
     for (uint depth = 0u; depth < 64u && owner != PEV_INVALID; depth++)
     {
-        [loop]
-        for (uint prior = 0u; prior < depth; prior++) if (visited[prior] == owner) return false;
-        visited[depth] = owner;
+        if (pev_owner_chain_contains(first, depth, owner)) return false;
         uint4 low; uint4 high;
         if (!pev_owner_row_is_valid(owner) || !pev_read8(2u, owner, low, high)) return false;
         if (low.x == parameter.y)
@@ -159,17 +184,14 @@ public bool pev_parameter_visible(uint atom, uint owner)
 public EvidenceStatus pev_admit_owner_chain(uint owner, out uint type_count, out uint constant_count)
 {
     type_count = 0u; constant_count = 0u;
-    uint visited[64]; uint type_mask = 0u; uint constant_mask = 0u;
+    uint type_mask = 0u; uint constant_mask = 0u;
     uint chain_length = 0u;
     uint original = owner;
     [loop]
     for (uint depth = 0u; owner != PEV_INVALID; depth++)
     {
         if (depth == 64u) return pev_limit(6u, original, 65u, 64u);
-        [loop]
-        for (uint prior = 0u; prior < depth; prior++)
-            if (visited[prior] == owner) return pev_invalid(5u, original, owner);
-        visited[depth] = owner;
+        if (pev_owner_chain_contains(original, depth, owner)) return pev_invalid(5u, original, owner);
         chain_length = depth + 1u;
         uint4 low; uint4 high;
         uint declared_count;
@@ -211,7 +233,7 @@ public EvidenceStatus pev_admit_owner_chain(uint owner, out uint type_count, out
     [loop]
     for (uint remaining = chain_length; remaining != 0u; remaining--)
     {
-        uint current = visited[remaining - 1u]; uint4 span;
+        uint current = pev_owner_ancestor(original, remaining - 1u); uint4 span;
         if (!pev_read4(2u, current, 4u, span)) return pev_invalid(1u, original, current);
         [loop]
         for (uint i = 0u; i < span.y; i++)

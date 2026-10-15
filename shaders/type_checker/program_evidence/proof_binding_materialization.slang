@@ -77,13 +77,13 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
     {
         scalar = pps_constant_reference_scalar(leaf);
         if (concrete && !pps_constant_value(leaf.y, value)) return pev_invalid(68u, parameter, leaf.y);
-        uint result_scalar = request.target_count == 0u ? scalar : request.target_scalars[0u];
+        uint result_scalar = request.target_count == 0u ? scalar : owned_constraint_target(request.targets, 0u);
         if (result_scalar != pev_constant_parameter_scalar(parameter)) return pev_invalid(68u, parameter, scalar);
     }
     normalized = leaf;
     for (uint remaining = request.target_count; remaining != 0u; remaining--)
     {
-        uint index = remaining - 1u; uint target = request.target_scalars[index];
+        uint index = remaining - 1u; uint target = owned_constraint_target(request.targets, index);
         if (!scalar_is_integer(scalar) || !scalar_is_integer(target) || allocation.x > PEV_INVALID - index)
             return pev_invalid(68u, parameter, target);
         uint row = allocation.x + index;

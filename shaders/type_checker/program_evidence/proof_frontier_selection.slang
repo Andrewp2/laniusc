@@ -58,9 +58,12 @@ public EvidenceStatus pps_find_implementation(uint goal, bool coarse,
             link.z != candidate || link.w != 1u) return pev_invalid(70u, goal, candidate);
         if (link.x == hash)
         {
+            // A candidate never matches into the frame the selected state holds.
             bool matches; OwnedConstraintState current;
+            uint frame = owned_constraint_frame(
+                selected != PEV_INVALID && selected_state.frame == owned_constraint_frame(0u) ? 1u : 0u);
             EvidenceStatus status = pev_match_implementation_goal(candidate, goal,
-                pps_matching_limits(), matches, current);
+                pps_matching_limits(), frame, matches, current);
             if (status.state != PEV_VALID) return status;
             if (matches)
             {

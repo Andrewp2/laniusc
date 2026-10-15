@@ -52,7 +52,8 @@ public EvidenceStatus pps_admit_substitution(uint substitution, uint context,
     if (status.state != PEV_VALID) return status;
 
     bool matches; OwnedConstraintState inferred;
-    status = pev_match_implementation_goal(row.x, row.w, limits, matches, inferred);
+    status = pev_match_implementation_goal(row.x, row.w, limits, owned_constraint_frame(0u),
+        matches, inferred);
     if (status.state != PEV_VALID) return status;
     if (!matches || row.z != inferred.counts.x + inferred.counts.y)
         return pev_invalid(68u, substitution, row.x);

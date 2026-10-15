@@ -4,6 +4,7 @@
 // parameter atom. The selected graph side is part of variable identity.
 import type_checker.concrete_type_equality;
 import type_checker.type_constraint_structure;
+import thread_scratch;
 
 public static const uint OWNED_CONSTRAINT_INVALID = 0xffffffffu;
 public static const uint OWNED_CONSTRAINT_MATCHED = 1u;
@@ -63,9 +64,22 @@ public struct OwnedConstraintBindingRequest
 {
     public uint3 reference;
     public uint target_count;
-    // Outermost first. Publication wraps the copied graph leaf/root in reverse.
-    public uint target_scalars[64];
+    // Outermost first, in the target list at scratch cell `targets` (see
+    // owned_constraint_target). Publication wraps the copied graph leaf/root
+    // in reverse.
+    public uint targets;
 }
+
+// Constant projection target lists live in thread scratch, four scalars per
+// cell: one list per live resolution role (unify left/right, a discarded
+// resolution, a binding request).
+public static const uint OWNED_TARGETS_LEFT = SCRATCH_OWNED_TARGETS;
+public static const uint OWNED_TARGETS_RIGHT = SCRATCH_OWNED_TARGETS + 16u;
+public static const uint OWNED_TARGETS_DISCARD = SCRATCH_OWNED_TARGETS + 32u;
+public static const uint OWNED_TARGETS_REQUEST = SCRATCH_OWNED_TARGETS + 48u;
+[ForceInline]
+public uint owned_constraint_target(uint targets, uint index)
+{ return scratch_word(targets + (index >> 2u), index & 3u); }
 
 public struct OwnedConstantResolution
 {
@@ -77,7 +91,9 @@ public struct OwnedConstantResolution
     public uint concrete;
     public uint3 value;
     public uint target_count;
-    public uint target_scalars[64];
+    // Target list at scratch cell `targets`; first_target is its entry 0.
+    public uint targets;
+    public uint first_target;
     public uint fit_mask;
 }
 
@@ -96,21 +112,48 @@ public struct OwnedConstraintState
     // 0=one-way,1=overlap,2=standalone implementation-head admission.
     public uint overlap;
     public uint finished;
-    // A term is (graph side, reference tag, reference payload). Terms retain
-    // their namespace when followed through substitutions. No scratch terms
-    // are published as proof. One-way bindings always name the rigid goal.
-    // The fourth word is one optional CountProjection target on this edge.
-    public uint4 bindings[128];
-    // Constant domains only: left slots0..31, right slots32..63. Bit zero
-    // requires the count domain; scalar-ID bits retain integer fit duties.
-    public uint constant_fit_masks[64];
-    public uint3 constant_parameters[64];
+    // First thread-scratch cell of this state's frame (owned_constraint_frame).
+    // The frame holds, per variable, a binding cell: a term is (graph side,
+    // reference tag, reference payload). Terms retain their namespace when
+    // followed through substitutions. No scratch terms are published as
+    // proof. One-way bindings always name the rigid goal. The fourth word is
+    // one optional CountProjection target on this edge. Then, for constant
+    // domains only (left slots0..31, right slots32..63), the constant
+    // parameter term with its fit mask in .w: bit zero requires the count
+    // domain; scalar-ID bits retain integer fit duties.
+    public uint frame;
 }
 
+// Frame 0 or 1 of the per-thread owned constraint state frames.
+public uint owned_constraint_frame(uint index)
+{ return SCRATCH_OWNED_STATE + index * SCRATCH_OWNED_STATE_CELLS; }
+[ForceInline]
+public uint4 owned_constraint_binding_cell(uint frame, uint variable)
+{ return scratch_cell(frame + variable); }
+[ForceInline]
+public void owned_constraint_set_binding(uint frame, uint variable, uint4 binding)
+{ scratch_set_cell(frame + variable, binding); }
+// Constant parameter term (.xyz) and fit mask (.w) of one fit index.
+[ForceInline]
+public uint4 owned_constraint_constant_cell(uint frame, uint fit_index)
+{ return scratch_cell(frame + OWNED_CONSTRAINT_BINDINGS + fit_index); }
+[ForceInline]
+public void owned_constraint_set_constant_term(uint frame, uint fit_index, uint3 term)
+{
+    uint cell = frame + OWNED_CONSTRAINT_BINDINGS + fit_index;
+    scratch_set_cell(cell, uint4(term, scratch_word(cell, 3u)));
+}
+[ForceInline]
+public void owned_constraint_set_fit_mask(uint frame, uint fit_index, uint mask)
+{ scratch_set_word(frame + OWNED_CONSTRAINT_BINDINGS + fit_index, 3u, mask); }
+
+// Inlined at every return site; field stores avoid a constructor call.
+[ForceInline]
 public OwnedConstraintStatus owned_constraint_result(uint state, uint detail,
     uint required = 0u, uint available = 0u)
 {
-    OwnedConstraintStatus result = {state, detail, required, available};
+    OwnedConstraintStatus result;
+    result.state = state; result.detail = detail; result.required = required; result.available = available;
     return result;
 }
 

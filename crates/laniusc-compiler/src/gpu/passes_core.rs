@@ -2617,6 +2617,14 @@ pub mod bind_group {
         ))
     }
 
+    /// Whether the pass's reflection declares a bound resource named `name` in
+    /// `set_index`. Resources the shader optimizes out are not declared.
+    pub fn declares_binding(pass: &PassData, set_index: usize, name: &str) -> bool {
+        reflected_parameters_for_set(&pass.reflection, set_index).iter().any(|parameter| {
+            parameter.name == name && parameter.binding.index.is_some() && parameter.ty.kind.is_some()
+        })
+    }
+
     /// Proves that a graph-managed pass binds exactly the resources present in
     /// shader reflection. This catches stale shader artifacts and optimizer
     /// changes which would otherwise make a named resource silently disappear.

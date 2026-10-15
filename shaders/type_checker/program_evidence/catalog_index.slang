@@ -6,6 +6,7 @@ import type_checker.program_evidence.owned_implementation_graph;
 import type_checker.owned_type_constraint_contract;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_scratch;
 
 public uint pev_atom_hash(uint row)
 {
@@ -34,7 +35,7 @@ public EvidenceStatus pev_hash_admitted_catalog_root(uint root, out uint hash)
         return pev_invalid(1u, root, PEV_INVALID);
     // All catalog rows and every owning implementation goal were admitted in
     // an earlier dispatch. No per-candidate preflight is repeated here.
-    if (!scoped_type_ref_hash<CatalogProgramEvidenceTypeGraph>(ref.x, ref.y, PEV_INVALID, nodes, atoms, hash))
+    if (!scoped_type_ref_hash_scratch<CatalogProgramEvidenceTypeGraph>(ref.x, ref.y, PEV_INVALID, nodes, atoms, hash))
         return pev_invalid(15u, root, PEV_INVALID);
     return pev_ok();
 }
@@ -62,7 +63,7 @@ public bool pev_equal_admitted_catalog_roots(uint left_root, uint right_root)
     uint2 left; uint2 right; uint nodes; uint atoms;
     if (!pev_read_root(left_root, left) || !pev_read_root(right_root, right) ||
         !pev_catalog_count(5u, nodes) || !pev_catalog_count(1u, atoms)) return false;
-    return scoped_type_refs_equal<CatalogProgramEvidenceTypeGraph>(
+    return scoped_type_refs_equal_scratch<CatalogProgramEvidenceTypeGraph>(
         left.x, left.y, PEV_INVALID, right.x, right.y, PEV_INVALID, nodes, atoms);
 }
 public bool pev_equal_admitted_implementation_keys(uint left, uint right)

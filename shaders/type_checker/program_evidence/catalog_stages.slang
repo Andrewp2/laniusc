@@ -122,7 +122,7 @@ public void pev_catalog_build_implementations(uint local)
         status = pev_invalid(15u, row, PEV_INVALID);
     else
     {
-        status = pev_hash_coarse_implementation(row, coarse_hash);
+        if (pev_bind_scratch(local, row, status)) status = pev_hash_coarse_implementation(row, coarse_hash);
         if (status.state == PEV_VALID) status = pev_exact_implementation_eligible(row, exact);
         if (status.state == PEV_VALID && exact) status = pev_hash_admitted_implementation(row, exact_hash);
         if (status.state != PEV_VALID) pev_write_status(1u, row, status);
@@ -145,7 +145,8 @@ public void pev_catalog_check_coherence(uint local)
     if (!pev_catalog_is_building()) return;
     uint implementations; uint row;
     if (!pev_catalog_count(9u, implementations) || !pev_dispatch_row(local, implementations, row)) return;
-    EvidenceStatus status = pev_check_impl_coherence(row);
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = pev_check_impl_coherence(row);
     pev_write_status(1u, row, status);
     pev_catalog_failure(status);
 }

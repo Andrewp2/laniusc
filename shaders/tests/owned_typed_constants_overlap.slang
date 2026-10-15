@@ -4,13 +4,13 @@
 [numthreads(16, 1, 1)]
 void main(uint3 tid : SV_DispatchThreadID)
 {
-    uint id = tid.x; if (id >= 13u) return;
+    uint id = tid.x; if (id >= 13u || thread_scratch_begin(id) <= id) return;
     uint left_owner = id == 4u || id == 5u ? 11u : id == 7u || id == 8u ? 0u : 10u;
     uint right_owner = id == 4u || id == 5u ? 21u : id == 7u || id == 8u ? 0u : 20u;
     if (id == 12u) { left_owner = 30u; right_owner = 0u; }
     OwnedConstraintState state;
     owned_overlap_begin<TypedLeftGraph, TypedRightGraph>(left_owner, right_owner,
-        12u, 12u, 512u, typed_limits(), state);
+        12u, 12u, 512u, typed_limits(), owned_constraint_frame(0u), state);
     uint2 left = uint2(C | 3u, 0u); uint2 right = left;
     if (id == 2u || id == 3u) { left.y = 4u; right.y = 5u; }
     if (id == 4u || id == 5u) { left = uint2(3u, 7u); right = left; }
@@ -55,7 +55,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     if (id == 12u)
         extra = all(state.counts == uint4(1u, 0u, 0u, 0u)) &&
             all(state.bound == uint4(1u, 0u, 0u, 0u)) &&
-            all(state.bindings[0u] == uint4(1u, 3u, 5u, 0u)) &&
+            all(owned_constraint_binding_cell(state.frame, 0u) == uint4(1u, 3u, 5u, 0u)) &&
             state.work.occurs_visits != 0u && state.work.substitution_steps != 0u &&
             state.work.pair_visits > 1u;
     typed_result(id, state, expected, extra);

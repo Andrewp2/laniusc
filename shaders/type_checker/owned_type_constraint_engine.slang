@@ -7,6 +7,7 @@ import type_checker.concrete_type_equality;
 // here. The caller retains one state across subject and all ordered operands.
 import type_checker.owned_type_constraint_contract;
 import type_checker.type_constraint_structure;
+import thread_scratch;
 
 // Side-indexed graph capabilities. The engine calls each capability from one
 // site with the term's graph side (0 = left/pattern, otherwise right/goal);
@@ -145,9 +146,11 @@ struct OwnedConstraintSelfRigidPair<Pattern : IOwnedConstraintPatternGraph> : IO
     { return Pattern.constant_projection(row, scalar, child); }
 }
 
+// The frame is never cleared: a binding cell is read only for a bound
+// variable and a constant cell only for a seen one, after this state wrote it.
 OwnedConstraintStatus owned_constraint_initialize<Pair : IOwnedConstraintPair>(
     uint2 owners, uint2 node_capacities, uint identity_capacity,
-    bool overlap, OwnedConstraintLimits limits, out OwnedConstraintState state)
+    bool overlap, OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state)
 {
     state = (OwnedConstraintState)0;
     state.status = owned_constraint_ok();
@@ -156,8 +159,7 @@ OwnedConstraintStatus owned_constraint_initialize<Pair : IOwnedConstraintPair>(
     state.identity_capacity = identity_capacity;
     state.overlap = overlap ? 1u : 0u;
     state.limits = limits;
-    for (uint i = 0u; i < OWNED_CONSTRAINT_BINDINGS; i++)
-        state.bindings[i] = uint4(OWNED_CONSTRAINT_INVALID, 0u, OWNED_CONSTRAINT_INVALID, 0u);
+    state.frame = frame;
     if (limits.depth == 0u)
         state.status = owned_constraint_result(OWNED_CONSTRAINT_RESOURCE_LIMIT, 5u, 1u, 0u);
     else if (limits.depth > OWNED_CONSTRAINT_STACK)
@@ -252,7 +254,7 @@ OwnedConstraintStatus owned_constraint_resolve_type<Pair : IOwnedConstraintPair>
         if (state.work.substitution_steps >= state.limits.substitution_steps)
             return owned_constraint_limit(8u, state.work.substitution_steps, state.limits.substitution_steps);
         state.work.substitution_steps++;
-        term = state.bindings[variable].xyz;
+        term = owned_constraint_binding_cell(state.frame, variable).xyz;
         variable = OWNED_CONSTRAINT_INVALID;
     }
 }
@@ -266,7 +268,7 @@ OwnedConstraintStatus owned_constraint_resolve<Pair : IOwnedConstraintPair>(
     if (owned_constraint_constant(term.y))
     {
         OwnedConstantResolution value;
-        OwnedConstraintStatus status = owned_constant_resolve<Pair>(term, state, value);
+        OwnedConstraintStatus status = owned_constant_resolve<Pair>(term, OWNED_TARGETS_DISCARD, state, value);
         if (status.state == OWNED_CONSTRAINT_MATCHED)
         { term = value.terminal; variable = value.variable; }
         return status;
@@ -314,16 +316,19 @@ OwnedConstraintStatus owned_constraint_child<Pair : IOwnedConstraintPair>(
 // Full occurs check follows prior bindings. It charges a separate traversal
 // budget, including repeated DAG edges. A target occurrence means NoMatch
 // (there is no finite unifier); malformed graph/substitution cycles are Invalid.
+// The stack lives in thread scratch: per depth, cell0 = (term, next child)
+// and cell1 = (child count, kind).
 OwnedConstraintStatus owned_constraint_occurs<Pair : IOwnedConstraintPair>(
     uint variable, uint3 term, inout OwnedConstraintState state)
 {
-    uint3 terms[64]; uint next[64]; uint counts[64]; uint kinds[64];
     uint depth = 0u;
-    terms[0u] = term; next[0u] = OWNED_CONSTRAINT_INVALID;
+    scratch_set_cell(SCRATCH_OWNED_OCCURS, uint4(term, OWNED_CONSTRAINT_INVALID));
     for (;;)
     {
-        term = terms[depth];
-        if (next[depth] == OWNED_CONSTRAINT_INVALID)
+        uint frame = SCRATCH_OWNED_OCCURS + depth * 2u;
+        uint4 top = scratch_cell(frame);
+        term = top.xyz; uint next = top.w;
+        if (next == OWNED_CONSTRAINT_INVALID)
         {
             if (state.work.occurs_visits >= state.limits.occurs_visits)
                 return owned_constraint_limit(7u, state.work.occurs_visits, state.limits.occurs_visits);
@@ -333,30 +338,36 @@ OwnedConstraintStatus owned_constraint_occurs<Pair : IOwnedConstraintPair>(
             if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
             if (variable != OWNED_CONSTRAINT_INVALID && found == variable)
                 return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
-            terms[depth] = term; next[depth] = 0u; counts[depth] = 0u; kinds[depth] = 0u;
+            next = 0u; uint count = 0u; uint kind = 0u;
             if (term.y == 3u)
             {
                 for (uint ancestor = 0u; ancestor < depth; ancestor++)
-                    if (all(terms[ancestor] == term)) return owned_constraint_invalid(9u);
+                    if (all(scratch_cell(SCRATCH_OWNED_OCCURS + ancestor * 2u).xyz == term))
+                        return owned_constraint_invalid(9u);
                 ConstraintNodeHeader header;
                 status = owned_constraint_header<Pair>(term, state.node_capacities, state.identity_capacity, header);
                 if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
-                counts[depth] = owned_constraint_child_count(header);
-                kinds[depth] = header.kind;
+                count = owned_constraint_child_count(header);
+                kind = header.kind;
             }
+            scratch_set_cell(frame, uint4(term, 0u));
+            scratch_set_cell(frame + 1u, uint4(count, kind, 0u, 0u));
         }
-        if (next[depth] == counts[depth])
+        uint2 shape = scratch_cell(frame + 1u).xy;
+        if (next == shape.x)
         {
             if (depth == 0u) return owned_constraint_ok();
             depth--; continue;
         }
+        scratch_set_word(frame, 3u, next + 1u);
         uint3 child;
         OwnedConstraintStatus status = owned_constraint_child<Pair>(
-            term, kinds[depth], counts[depth], next[depth]++, state.node_capacities, child);
+            term, shape.y, shape.x, next, state.node_capacities, child);
         if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
         if (depth + 1u >= state.limits.depth)
             return owned_constraint_limit(5u, depth + 1u, state.limits.depth);
-        depth++; terms[depth] = child; next[depth] = OWNED_CONSTRAINT_INVALID;
+        depth++;
+        scratch_set_cell(SCRATCH_OWNED_OCCURS + depth * 2u, uint4(child, OWNED_CONSTRAINT_INVALID));
     }
 }
 
@@ -407,7 +418,7 @@ OwnedConstraintStatus owned_constraint_bind<Operation : IOwnedConstraintBindingO
     // retains the complete occurs check; one-way retains its rigid-side check.
     OwnedConstraintStatus status = Operation.validate(variable, term, state);
     if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
-    state.bindings[variable] = uint4(term, target);
+    owned_constraint_set_binding(state.frame, variable, uint4(term, target));
     state.bound[domain] |= 1u << index;
     return owned_constraint_ok();
 }
@@ -422,16 +433,21 @@ OwnedConstraintStatus owned_constraint_unify_root<Pair : IOwnedConstraintPair,
     // throughout this shared traversal and agrees with its static operation.
     if (Operation.mode() > 1u || state.overlap != Operation.mode())
         return owned_constraint_invalid(3u);
-    uint3 left_terms[64]; uint3 right_terms[64];
-    uint next[64]; uint counts[64]; uint kinds[64]; bool count_domain[64]; uint depth = 0u;
-    left_terms[0u] = uint3(0u, left.x, left.y);
-    right_terms[0u] = uint3(1u, right.x, right.y);
-    next[0u] = OWNED_CONSTRAINT_INVALID; count_domain[0u] = false;
+    // The stack lives in thread scratch: per depth, cell0 = (left term, next
+    // child), cell1 = (right term, child count), cell2 = (kind, count domain).
+    uint depth = 0u;
+    scratch_set_cell(SCRATCH_OWNED_UNIFY, uint4(0u, left.x, left.y, OWNED_CONSTRAINT_INVALID));
+    scratch_set_cell(SCRATCH_OWNED_UNIFY + 1u, uint4(1u, right.x, right.y, 0u));
+    scratch_set_cell(SCRATCH_OWNED_UNIFY + 2u, uint4(0u, 0u, 0u, 0u));
     for (;;)
     {
-        uint3 a = left_terms[depth]; uint3 b = right_terms[depth];
-        if (next[depth] == OWNED_CONSTRAINT_INVALID)
+        uint frame = SCRATCH_OWNED_UNIFY + depth * 3u;
+        uint4 left_cell = scratch_cell(frame); uint4 right_cell = scratch_cell(frame + 1u);
+        uint3 a = left_cell.xyz; uint3 b = right_cell.xyz; uint next = left_cell.w;
+        if (next == OWNED_CONSTRAINT_INVALID)
         {
+            uint4 shape = scratch_cell(frame + 2u);
+            bool count_domain = shape.y != 0u; uint count = 0u; uint kind = shape.x;
             if (state.work.pair_visits >= state.limits.pair_visits)
                 return owned_constraint_limit(6u, state.work.pair_visits, state.limits.pair_visits);
             state.work.pair_visits++;
@@ -448,7 +464,6 @@ OwnedConstraintStatus owned_constraint_unify_root<Pair : IOwnedConstraintPair,
                 if (!a_constant || !b_constant)
                     return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                 unify = true;
-                next[depth] = 0u; counts[depth] = 0u;
             }
             else
             {
@@ -466,8 +481,7 @@ OwnedConstraintStatus owned_constraint_unify_root<Pair : IOwnedConstraintPair,
                     if (first) { a = term; a_variable = variable; }
                     else { b = term; b_variable = variable; }
                 }
-                left_terms[depth] = a; right_terms[depth] = b;
-                next[depth] = 0u; counts[depth] = 0u; kinds[depth] = 0u;
+                kind = 0u;
                 if (owned_constraint_constant(a.y) != owned_constraint_constant(b.y))
                     return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                 if (a_variable != OWNED_CONSTRAINT_INVALID || b_variable != OWNED_CONSTRAINT_INVALID)
@@ -495,8 +509,12 @@ OwnedConstraintStatus owned_constraint_unify_root<Pair : IOwnedConstraintPair,
                 else
                 {
                     for (uint ancestor = 0u; ancestor < depth; ancestor++)
-                        if (all(left_terms[ancestor] == a) && all(right_terms[ancestor] == b))
+                    {
+                        uint ancestor_frame = SCRATCH_OWNED_UNIFY + ancestor * 3u;
+                        if (all(scratch_cell(ancestor_frame).xyz == a) &&
+                            all(scratch_cell(ancestor_frame + 1u).xyz == b))
                             return owned_constraint_invalid(9u);
+                    }
                     ConstraintNodeHeader a_header = (ConstraintNodeHeader)0;
                     ConstraintNodeHeader b_header = (ConstraintNodeHeader)0;
                     [loop]
@@ -512,23 +530,31 @@ OwnedConstraintStatus owned_constraint_unify_root<Pair : IOwnedConstraintPair,
                         (a_header.kind == 1u && !constraint_nominal_headers_equal(a_header, b_header)))
                         return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                     // Equal kinds and (for nominals) equal arities: one count.
-                    counts[depth] = owned_constraint_child_count(a_header);
-                    kinds[depth] = a_header.kind;
+                    count = owned_constraint_child_count(a_header);
+                    kind = a_header.kind;
                 }
             }
+            // The resolved pair, its child count and kind; a constant pair
+            // has no children (its kind is never read).
+            next = 0u;
+            scratch_set_cell(frame, uint4(a, 0u));
+            scratch_set_cell(frame + 1u, uint4(b, count));
+            scratch_set_word(frame + 2u, 0u, kind);
             if (unify)
             {
                 status = owned_constant_unify<Pair, Operation>(
-                    a, b, count_domain[depth], allow_inference, state, binding);
+                    a, b, count_domain, allow_inference, state, binding);
                 if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
             }
         }
-        if (next[depth] == counts[depth])
+        uint2 shape = uint2(scratch_word(frame + 1u, 3u), scratch_word(frame + 2u, 0u));
+        if (next == shape.x)
         {
             if (depth == 0u) return owned_constraint_ok();
             depth--; continue;
         }
-        uint slot = next[depth]++;
+        uint slot = next;
+        scratch_set_word(frame, 3u, next + 1u);
         uint3 a_child = uint3(0u, 0u, OWNED_CONSTRAINT_INVALID); uint3 b_child = a_child;
         OwnedConstraintStatus status;
         [loop]
@@ -536,28 +562,30 @@ OwnedConstraintStatus owned_constraint_unify_root<Pair : IOwnedConstraintPair,
         {
             bool first = side == 0u; uint3 child;
             status = owned_constraint_child<Pair>(select(bool3(first, first, first), a, b),
-                kinds[depth], counts[depth], slot, state.node_capacities, child);
+                shape.y, shape.x, slot, state.node_capacities, child);
             if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
             if (first) a_child = child; else b_child = child;
         }
         if (depth + 1u >= state.limits.depth)
             return owned_constraint_limit(5u, depth + 1u, state.limits.depth);
-        bool child_count_domain = kinds[depth] == 2u && slot == 1u;
-        depth++; left_terms[depth] = a_child; right_terms[depth] = b_child;
-        count_domain[depth] = child_count_domain;
-        next[depth] = OWNED_CONSTRAINT_INVALID;
+        bool child_count_domain = shape.y == 2u && slot == 1u;
+        depth++;
+        uint child_frame = SCRATCH_OWNED_UNIFY + depth * 3u;
+        scratch_set_cell(child_frame, uint4(a_child, OWNED_CONSTRAINT_INVALID));
+        scratch_set_cell(child_frame + 1u, uint4(b_child, 0u));
+        scratch_set_cell(child_frame + 2u, uint4(0u, child_count_domain ? 1u : 0u, 0u, 0u));
     }
 }
 
 public OwnedConstraintStatus owned_constraints_begin<PatternGraph : IOwnedConstraintPatternGraph>(
     uint owner, uint pattern_node_capacity, uint goal_node_capacity, uint identity_capacity,
-    OwnedConstraintLimits limits, out OwnedConstraintState state)
+    OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state)
 {
     // GoalGraph does not participate in initialization: use a zero-inventory
     // pattern wrapper solely for its owner-count implementation.
     return owned_constraint_initialize<OwnedConstraintSelfRigidPair<PatternGraph>>(
         uint2(owner, OWNED_CONSTRAINT_INVALID), uint2(pattern_node_capacity, goal_node_capacity),
-        identity_capacity, false, limits, state);
+        identity_capacity, false, limits, frame, state);
 }
 
 public OwnedConstraintStatus owned_constraints_match<
@@ -632,22 +660,22 @@ public bool owned_constraint_binding<
     if (state.status.state != OWNED_CONSTRAINT_MATCHED || state.finished == 0u || state.overlap != 0u ||
         index >= state.counts[domain] || index >= 32u ||
         (state.bound[domain] & (1u << index)) == 0u) return false;
+    request.targets = OWNED_TARGETS_REQUEST;
     if (constant)
     {
         OwnedConstantResolution value;
         state.status = owned_constant_resolve<
             OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>>(
-            state.constant_parameters[index], state, value);
+            owned_constraint_constant_cell(state.frame, index).xyz, OWNED_TARGETS_REQUEST, state, value);
         if (state.status.state != OWNED_CONSTRAINT_MATCHED) return false;
         if (value.terminal.x != 1u || value.variable != OWNED_CONSTRAINT_INVALID)
         { state.status = owned_constraint_invalid(3u); return false; }
+        // The resolution wrote its target list at OWNED_TARGETS_REQUEST.
         request.reference = value.terminal; request.target_count = value.target_count;
-        for (uint target = 0u; target < value.target_count; target++)
-            request.target_scalars[target] = value.target_scalars[target];
     }
     else
     {
-        uint4 binding = state.bindings[index];
+        uint4 binding = owned_constraint_binding_cell(state.frame, index);
         if (binding.x != 1u || owned_constraint_constant(binding.y) || binding.w != 0u)
         { state.status = owned_constraint_invalid(2u); return false; }
         request.reference = binding.xyz;
@@ -659,10 +687,10 @@ public bool owned_constraint_binding<
 // one graph capability use OwnedConstraintSameGraphPair so both sides share code.
 public OwnedConstraintStatus owned_overlap_begin_pair<Pair : IOwnedConstraintPair>(
     uint left_owner, uint right_owner, uint left_node_capacity, uint right_node_capacity,
-    uint identity_capacity, OwnedConstraintLimits limits, out OwnedConstraintState state)
+    uint identity_capacity, OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state)
 {
     return owned_constraint_initialize<Pair>(uint2(left_owner, right_owner),
-        uint2(left_node_capacity, right_node_capacity), identity_capacity, true, limits, state);
+        uint2(left_node_capacity, right_node_capacity), identity_capacity, true, limits, frame, state);
 }
 
 public OwnedConstraintStatus owned_overlap_match_pair<Pair : IOwnedConstraintPair>(
@@ -697,10 +725,11 @@ public OwnedConstraintStatus owned_overlap_finish_pair<Pair : IOwnedConstraintPa
 public OwnedConstraintStatus owned_overlap_begin<
     LeftGraph : IOwnedConstraintPatternGraph, RightGraph : IOwnedConstraintPatternGraph>(
     uint left_owner, uint right_owner, uint left_node_capacity, uint right_node_capacity,
-    uint identity_capacity, OwnedConstraintLimits limits, out OwnedConstraintState state)
+    uint identity_capacity, OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state)
 {
     return owned_overlap_begin_pair<OwnedConstraintGraphPair<LeftGraph, RightGraph>>(
-        left_owner, right_owner, left_node_capacity, right_node_capacity, identity_capacity, limits, state);
+        left_owner, right_owner, left_node_capacity, right_node_capacity, identity_capacity, limits,
+        frame, state);
 }
 
 public OwnedConstraintStatus owned_overlap_match<
@@ -719,10 +748,10 @@ public OwnedConstraintStatus owned_overlap_finish<
 // all ordered trait operands and admits their type/constant root roles.
 public OwnedConstraintStatus owned_pattern_begin<PatternGraph : IOwnedConstraintPatternGraph>(
     uint owner, uint node_capacity, uint identity_capacity,
-    OwnedConstraintLimits limits, out OwnedConstraintState state)
+    OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state)
 {
     OwnedConstraintStatus status = owned_constraints_begin<PatternGraph>(
-        owner, node_capacity, 0u, identity_capacity, limits, state);
+        owner, node_capacity, 0u, identity_capacity, limits, frame, state);
     state.overlap = 2u;
     return status;
 }

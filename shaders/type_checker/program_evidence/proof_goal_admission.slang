@@ -9,6 +9,7 @@ import type_checker.program_evidence.proof_store_abi;
 import type_checker.program_evidence.proof_term_graph;
 import type_checker.program_evidence.proof_term_normalization;
 import type_checker.scoped_type_hash;
+import type_checker.scoped_type_scratch;
 
 public EvidenceStatus pps_admit_term(uint2 reference, uint owner, uint domain,
     bool require_closed, out bool closed)
@@ -36,7 +37,7 @@ public struct RecomputedGoalHash : IGoalHashCheck
     public static bool mix_root(uint2 root, uint nodes, uint atoms, inout uint hash)
     {
         uint root_hash;
-        if (!scoped_type_ref_hash<SolverProofTermGraph>(root.x, root.y,
+        if (!scoped_type_ref_hash_scratch<SolverProofTermGraph>(root.x, root.y,
             PEV_INVALID, nodes, atoms, root_hash)) return false;
         hash = scoped_type_hash_mix(hash, root_hash);
         return true;

@@ -1,4 +1,5 @@
 import primitive_types;
+import thread_scratch;
 // Every address is checked before dereference. Logical row IDs span a frozen
 // catalog prefix followed by a retained batch suffix; capacity is not identity.
 public static const uint PEV_INVALID = 0xffffffffu;
@@ -23,8 +24,8 @@ public struct EvidenceStatus
     public uint state; public uint detail; public uint subject_row; public uint related_row;
     public uint required; public uint available;
 }
-// One non-inlined constructor: the status helpers below are inlined at
-// thousands of return sites, each becoming a single call.
+// The status helpers below inline this constructor at every return site.
+[ForceInline]
 public EvidenceStatus pev_status(uint state, uint detail, uint subject, uint related,
     uint required, uint available)
 {
@@ -42,6 +43,14 @@ public EvidenceStatus pev_invalid(uint detail, uint subject, uint related)
 [ForceInline]
 public EvidenceStatus pev_limit(uint detail, uint subject, uint required, uint available)
 { return pev_status(PEV_RESOURCE_LIMIT, detail, subject, PEV_INVALID, required, available); }
+// A row that reaches the thread-scratch walkers binds its dispatch-local slot
+// first. Without a slot it must report `missing` instead of running.
+public bool pev_bind_scratch(uint local, uint subject, out EvidenceStatus missing)
+{
+    uint slots = thread_scratch_begin(local);
+    missing = pev_limit(190u, subject, local + 1u, slots);
+    return local < slots;
+}
 public struct ProgramEvidenceParams
 {
     public uint dispatch_first; public uint dispatch_count; public uint catalog_word_count; public uint batch_word_count;

@@ -33,13 +33,11 @@ public bool pev_batch_span(uint table, uint first, uint count)
 public EvidenceStatus pev_applicable_predicate_count(uint owner, out uint count)
 {
     count = 0u;
-    uint visited[PEV_DEPTH_LIMIT]; uint original = owner;
+    uint original = owner;
     for (uint depth = 0u; owner != PEV_INVALID; depth++)
     {
         if (depth == PEV_DEPTH_LIMIT) return pev_limit(6u, original, depth + 1u, PEV_DEPTH_LIMIT);
-        for (uint prior = 0u; prior < depth; prior++)
-            if (visited[prior] == owner) return pev_invalid(5u, original, owner);
-        visited[depth] = owner;
+        if (pev_owner_chain_contains(original, depth, owner)) return pev_invalid(5u, original, owner);
         uint4 low; uint4 high;
         if (!pev_catalog_row(2u, owner) || !pev_read4(2u, owner, 0u, low) ||
             !pev_read4(2u, owner, 4u, high) || !pev_catalog_span(8u, high.z, high.w))

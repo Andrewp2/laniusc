@@ -7,6 +7,9 @@ import type_checker.program_evidence.native_layout.work_abi;
 import type_checker.program_evidence.proof_term_normalization;
 import type_checker.program_evidence.proof_term_graph;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_scratch;
+import type_checker.concrete_value_layout_scratch;
+import thread_scratch;
 import native_value_layout;
 import primitive_types;
 import type_checker.concrete_value_layout;
@@ -99,53 +102,65 @@ public EvidenceStatus plm_expand_nominal(uint node, out uint first_root, out uin
 public EvidenceStatus plm_expand_value_graph(uint2 root, out uint root_words)
 {
     root_words = PEV_INVALID;
-    uint2 references[PEV_DEPTH_LIMIT];
-    uint next[PEV_DEPTH_LIMIT]; uint count[PEV_DEPTH_LIMIT]; uint roots[PEV_DEPTH_LIMIT];
-    bool nominal[PEV_DEPTH_LIMIT];
-    uint depth = 0u; references[0u] = root; next[0u] = PEV_INVALID;
+    // The stack lives in thread scratch: per depth, cell0 = (reference, next
+    // child, child count), cell1 = (first expanded root, nominal, 0, 0).
+    uint depth = 0u;
+    scratch_set_cell(SCRATCH_NATIVE_MATERIALIZE, uint4(root, PEV_INVALID, 0u));
     for (;;)
     {
-        uint2 current = references[depth];
-        if (next[depth] == PEV_INVALID)
+        uint frame = SCRATCH_NATIVE_MATERIALIZE + depth * 2u;
+        uint4 top = scratch_cell(frame);
+        uint2 current = top.xy; uint next = top.z; uint count = top.w;
+        uint roots = 0u; bool nominal = false;
+        if (next == PEV_INVALID)
         {
             EvidenceStatus status = plm_charge(1u);
             if (status.state != PEV_VALID) return status;
             if (!plm_type_ref(current)) return pev_invalid(179u, current.y, PEV_INVALID);
-            next[depth] = 0u; count[depth] = 0u; roots[depth] = 0u; nominal[depth] = false;
+            next = 0u; count = 0u;
             if (current.x == 3u)
             {
                 uint4 low; uint4 high;
                 if (!plm_node(current.y, false, low, high)) return pev_invalid(179u, current.y, PEV_INVALID);
                 if (low.x == 1u)
                 {
-                    nominal[depth] = true;
+                    nominal = true;
                     uint atoms;
                     if (!pev_table_count(1u, atoms)) return pev_invalid(179u, current.y, PEV_INVALID);
                     // Expanded recipes allocate fresh rows. Compare exact full
                     // nominal applications, not row IDs, for ancestor cycles.
                     for (uint ancestor = 0u; ancestor < depth; ancestor++)
                     {
-                        if (nominal[ancestor] && scoped_type_refs_equal_graphs<NativeLayoutTypeGraph, NativeLayoutTypeGraph>(
-                            current.x, current.y, PEV_INVALID,
-                            references[ancestor].x, references[ancestor].y, PEV_INVALID,
+                        uint ancestor_frame = SCRATCH_NATIVE_MATERIALIZE + ancestor * 2u;
+                        uint2 prior = scratch_cell(ancestor_frame).xy;
+                        if (scratch_word(ancestor_frame + 1u, 1u) != 0u &&
+                            scoped_type_refs_equal_graphs_scratch<NativeLayoutTypeGraph, NativeLayoutTypeGraph>(
+                            current.x, current.y, PEV_INVALID, prior.x, prior.y, PEV_INVALID,
                             plm_used(0u), plm_used(0u), atoms))
-                            return pev_invalid(180u, current.y, references[ancestor].y);
+                            return pev_invalid(180u, current.y, prior.y);
                     }
-                    status = plm_expand_nominal(current.y, roots[depth], count[depth]);
+                    status = plm_expand_nominal(current.y, roots, count);
                     if (status.state != PEV_VALID) return status;
                 }
-                else if (low.x == 2u) count[depth] = 1u;
+                else if (low.x == 2u) count = 1u;
                 // slice/reference (3/4) are complete terminal descriptors.
             }
+            scratch_set_cell(frame, uint4(current, 0u, count));
+            scratch_set_cell(frame + 1u, uint4(roots, nominal ? 1u : 0u, 0u, 0u));
         }
-        if (next[depth] == count[depth])
+        else
+        {
+            uint2 expanded = scratch_cell(frame + 1u).xy;
+            roots = expanded.x; nominal = expanded.y != 0u;
+        }
+        if (next == count)
         {
             if (current.x == 3u || depth == 0u)
             {
                 // Postorder publication makes every by-value child a complete
                 // GPU-computed leaf before its parent is evaluated. Thus the
                 // shared evaluator does not repeatedly walk the expanded tree.
-                uint words = concrete_value_words<MaterializedNativeValueLayout>(current.x, current.y);
+                uint words = concrete_value_words_scratch<MaterializedNativeValueLayout>(current.x, current.y);
                 if (current.x == 3u)
                 {
                     if (words == PEV_INVALID) return pev_limit(182u, current.y, PEV_INVALID, PEV_INVALID - 1u);
@@ -159,10 +174,10 @@ public EvidenceStatus plm_expand_value_graph(uint2 root, out uint root_words)
             depth--; continue;
         }
         uint2 child;
-        if (nominal[depth])
+        if (nominal)
         {
-            if (!plm_read2(3u, roots[depth] + next[depth], 0u, false, child))
-                return pev_invalid(179u, current.y, roots[depth] + next[depth]);
+            if (!plm_read2(3u, roots + next, 0u, false, child))
+                return pev_invalid(179u, current.y, roots + next);
         }
         else
         {
@@ -171,10 +186,11 @@ public EvidenceStatus plm_expand_value_graph(uint2 root, out uint root_words)
                 return pev_invalid(179u, current.y, PEV_INVALID);
             child = high.xy;
         }
-        next[depth]++;
+        scratch_set_word(frame, 2u, next + 1u);
         if (depth + 1u == PEV_DEPTH_LIMIT)
             return pev_limit(181u, current.y, depth + 2u, PEV_DEPTH_LIMIT);
-        depth++; references[depth] = child; next[depth] = PEV_INVALID;
+        depth++;
+        scratch_set_cell(SCRATCH_NATIVE_MATERIALIZE + depth * 2u, uint4(child, PEV_INVALID, 0u));
     }
 }
 

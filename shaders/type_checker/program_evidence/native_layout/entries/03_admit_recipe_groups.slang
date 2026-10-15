@@ -22,5 +22,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     if (!plr_building()) return;
     uint row; uint offset; uint count; uint width;
     if (!plr_table(1u, offset, count, width) || !plr_dispatch_row(local, count, row)) return;
-    plr_failure(plr_admit_group(row));
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = plr_admit_group(row);
+    plr_failure(status);
 }

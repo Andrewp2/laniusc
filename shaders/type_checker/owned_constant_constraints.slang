@@ -37,18 +37,22 @@ OwnedConstraintStatus owned_constant_add_target(uint scalar,
     if (!scalar_is_integer(scalar) || scalar >= 32u) return owned_constraint_invalid(2u);
     if (result.target_count + 1u >= state.limits.depth || result.target_count >= 63u)
         return owned_constraint_limit(5u, result.target_count + 1u, state.limits.depth);
-    result.target_scalars[result.target_count++] = scalar;
+    uint index = result.target_count++;
+    scratch_set_word(result.targets + (index >> 2u), index & 3u, scalar);
+    if (index == 0u) result.first_target = scalar;
     result.fit_mask |= 1u | (1u << scalar);
     return owned_constraint_ok();
 }
 
 // A successful resolution records its terminal's declared scalar, which is
 // exactly owned_constant_scalar of that terminal: a valid literal's own value
-// scalar, or a supported parameter scalar.
+// scalar, or a supported parameter scalar. Its target list is written to the
+// scratch list `targets` (one OWNED_TARGETS_* role).
 OwnedConstraintStatus owned_constant_resolve<Pair : IOwnedConstraintPair>(uint3 term,
-    inout OwnedConstraintState state, out OwnedConstantResolution result)
+    uint targets, inout OwnedConstraintState state, out OwnedConstantResolution result)
 {
     result = (OwnedConstantResolution)0;
+    result.targets = targets;
     result.variable = OWNED_CONSTRAINT_INVALID;
     result.terminal = uint3(0u, 0u, OWNED_CONSTRAINT_INVALID);
     uint4 visited = uint4(0u, 0u, 0u, 0u);
@@ -71,9 +75,9 @@ OwnedConstraintStatus owned_constant_resolve<Pair : IOwnedConstraintPair>(uint3 
             {
                 uint count;
                 if (!constant_value_to_count(value, count) ||
-                    !constant_value_from_count(count, result.target_scalars[0u], result.value))
+                    !constant_value_from_count(count, result.first_target, result.value))
                     return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
-                result.result_scalar = result.target_scalars[0u];
+                result.result_scalar = result.first_target;
             }
             return owned_constraint_ok();
         }
@@ -95,17 +99,20 @@ OwnedConstraintStatus owned_constant_resolve<Pair : IOwnedConstraintPair>(uint3 
                 if (index >= state.counts[domain] || index >= 32u) return owned_constraint_invalid(3u);
                 uint bit = 1u << index; variable = domain * 32u + index;
                 uint fit_index = owned_constant_fit_index(variable);
-                if ((state.seen[domain] & bit) != 0u &&
-                    any(state.constant_parameters[fit_index] != term)) return owned_constraint_invalid(3u);
-                state.constant_parameters[fit_index] = term;
+                // An unseen variable's cell is stale: its term is unset and
+                // its fit mask is zero.
+                bool seen = (state.seen[domain] & bit) != 0u;
+                uint4 constant_cell = owned_constraint_constant_cell(state.frame, fit_index);
+                if (seen && any(constant_cell.xyz != term)) return owned_constraint_invalid(3u);
                 state.seen[domain] |= bit;
-                result.fit_mask |= state.constant_fit_masks[fit_index];
-                state.constant_fit_masks[fit_index] |= result.fit_mask;
+                result.fit_mask |= seen ? constant_cell.w : 0u;
+                scratch_set_cell(state.frame + OWNED_CONSTRAINT_BINDINGS + fit_index,
+                    uint4(term, result.fit_mask));
                 if ((state.bound[domain] & bit) != 0u)
                 {
                     if ((visited[domain] & bit) != 0u) return owned_constraint_invalid(9u);
                     visited[domain] |= bit;
-                    uint4 binding = state.bindings[variable];
+                    uint4 binding = owned_constraint_binding_cell(state.frame, variable);
                     if (binding.x > 1u || !owned_constraint_constant(binding.y) ||
                         binding.z == OWNED_CONSTRAINT_INVALID) return owned_constraint_invalid(2u);
                     uint binding_scalar = binding.w == 0u
@@ -121,7 +128,7 @@ OwnedConstraintStatus owned_constant_resolve<Pair : IOwnedConstraintPair>(uint3 
                 else
                 {
                     result.variable = variable; result.terminal = term; result.terminal_scalar = scalar;
-                    result.result_scalar = result.target_count == 0u ? scalar : result.target_scalars[0u];
+                    result.result_scalar = result.target_count == 0u ? scalar : result.first_target;
                     if (result.fit_mask != 0u && !scalar_is_integer(scalar))
                         return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                     return owned_constraint_ok();
@@ -130,7 +137,7 @@ OwnedConstraintStatus owned_constant_resolve<Pair : IOwnedConstraintPair>(uint3 
             else if (classification == OWNED_PARAMETER_RIGID)
             {
                 result.terminal = term; result.terminal_scalar = scalar;
-                result.result_scalar = result.target_count == 0u ? scalar : result.target_scalars[0u];
+                result.result_scalar = result.target_count == 0u ? scalar : result.first_target;
                 if (result.fit_mask != 0u && !scalar_is_integer(scalar))
                     return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
                 return owned_constraint_ok();
@@ -180,7 +187,12 @@ OwnedConstraintStatus owned_constant_require_fits(uint concrete, uint3 value,
     if (fit_mask != 0u && !scalar_is_integer(terminal_scalar))
         return owned_constraint_result(OWNED_CONSTRAINT_NO_MATCH, 0u);
     if (variable != OWNED_CONSTRAINT_INVALID)
-        state.constant_fit_masks[owned_constant_fit_index(variable)] |= fit_mask;
+    {
+        // A resolved variable is seen, so its cell holds its own fit mask.
+        uint fit_index = owned_constant_fit_index(variable);
+        owned_constraint_set_fit_mask(state.frame, fit_index,
+            owned_constraint_constant_cell(state.frame, fit_index).w | fit_mask);
+    }
     return owned_constraint_ok();
 }
 
@@ -211,10 +223,12 @@ OwnedConstraintStatus owned_constant_recheck_fits<Pair : IOwnedConstraintPair>(
         for (uint index = 0u; index < state.counts[domain]; index++)
         {
             uint fit_index = side * 32u + index;
-            if ((state.seen[domain] & (1u << index)) == 0u || state.constant_fit_masks[fit_index] == 0u) continue;
+            if ((state.seen[domain] & (1u << index)) == 0u) continue;
+            uint4 constant_cell = owned_constraint_constant_cell(state.frame, fit_index);
+            if (constant_cell.w == 0u) continue;
             OwnedConstantResolution value;
             OwnedConstraintStatus status = owned_constant_resolve<Pair>(
-                state.constant_parameters[fit_index], state, value);
+                constant_cell.xyz, OWNED_TARGETS_DISCARD, state, value);
             if (status.state != OWNED_CONSTRAINT_MATCHED) return status;
         }
     }

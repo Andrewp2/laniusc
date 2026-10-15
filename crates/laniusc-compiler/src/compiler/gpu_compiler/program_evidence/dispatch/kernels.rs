@@ -108,6 +108,15 @@ impl CatalogKernels {
     }
 }
 
+/// Dispatch-local thread slots in the shared thread-scratch table
+/// (shaders/thread_scratch.slang). A pass that declares `thread_scratch`
+/// dispatches at most this many rows at a time; slot = row - dispatch_first.
+/// INTERIM: the table holds per-thread walker stacks moved out of local
+/// memory. Program evidence on canonical type IDs (plan P7) deletes them.
+pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
+/// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/thread_scratch.slang.
+pub(super) const THREAD_SCRATCH_CELLS: u32 = 1792;
+
 /// Each dispatch has immutable parameters. A separate compute pass is a WGPU
 /// synchronization boundary; no following phase can observe a partially built
 /// index. Extra boundaries between large chunks are harmless.
@@ -190,6 +199,34 @@ fn record_phase_with_resources(
     let max_rows = max_groups
         .checked_mul(threads)
         .expect("bounded group product");
+    // Walker frames live in one retained table shared by every such dispatch:
+    // fixed size, so its binding never changes. Each chunk owns all slots.
+    let scratch = if passes_core::bind_group::declares_binding(pass, 0, "thread_scratch") {
+        Some(
+            catalog
+                .workspace()
+                .shared("program_evidence.thread_scratch")
+                .buffer(THREAD_SCRATCH_SLOTS * THREAD_SCRATCH_CELLS * 4, wgpu::BufferUsages::STORAGE, None)?,
+        )
+    } else {
+        None
+    };
+    let max_rows = if scratch.is_some() {
+        max_rows.min(THREAD_SCRATCH_SLOTS)
+    } else {
+        max_rows
+    };
+    // LANIUS_DEBUG_EVIDENCE_DISPATCHES=1 logs each requested span, for sizing
+    // the scratch chunk against real row counts.
+    if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_EVIDENCE_DISPATCHES", false) {
+        eprintln!(
+            "[lanius-pev] {} rows={} chunk={} scratch={}",
+            pass.shader_id,
+            span.count,
+            max_rows,
+            scratch.is_some()
+        );
+    }
     let mut done = 0u32;
     while done < span.count {
         let count = (span.count - done).min(max_rows);
@@ -264,6 +301,9 @@ fn record_phase_with_resources(
         }
         if let Some(work) = layout_work {
             resources.push(("program_evidence_native_layout_work", work.buffer.as_entire_binding()));
+        }
+        if let Some(scratch) = &scratch {
+            resources.push(("thread_scratch", scratch.as_entire_binding()));
         }
         let bindings = passes_core::bind_group::create_bind_group_from_bindings(
             device,
@@ -815,5 +855,17 @@ impl NativeLayoutKernel {
         recipes: &Arena, work: &Arena) -> Result<()> {
         record_phase_with_resources(device, encoder, &self.pass, 5, Span::new(0, 1)?, 1,
             catalog, input, output, Some(proof), Some(recipes), Some(work))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn thread_scratch_layout_matches_shader() {
+        let shader = include_str!("../../../../../../../shaders/thread_scratch.slang");
+        let cells = format!("THREAD_SCRATCH_CELLS = {}u;", super::THREAD_SCRATCH_CELLS);
+        assert!(shader.contains(&cells), "host and shader disagree on {cells}");
+        assert!(shader.contains("THREAD_SCRATCH_GROUP = 32u;"));
+        assert_eq!(super::THREAD_SCRATCH_SLOTS % 32, 0, "slots are whole groups");
     }
 }
