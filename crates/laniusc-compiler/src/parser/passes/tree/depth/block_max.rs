@@ -5,7 +5,8 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Reduces exact raw-tree depths to one maximum per workgroup.
+/// Summarizes each workgroup's subtree close counts for the exact raw-tree
+/// height, and checks that every raw parent link points to an earlier node.
 pub struct TreeDepthBlockMaxPass {
     data: PassData,
 }
@@ -42,10 +43,22 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeDepthBlockMa
                     b.ll1_status.as_entire_binding()
                 },
             ),
-            ("tree_depth".into(), b.tree_depth.as_entire_binding()),
+            ("parent".into(), b.parent.as_entire_binding()),
+            (
+                "tree_depth_close_count".into(),
+                b.tree_depth_close_count.as_entire_binding(),
+            ),
             (
                 "tree_depth_block_max".into(),
                 b.tree_depth_block_max.as_entire_binding(),
+            ),
+            (
+                "tree_depth_block_close".into(),
+                b.tree_depth_block_close.as_entire_binding(),
+            ),
+            (
+                "tree_depth_status".into(),
+                b.tree_depth_status.as_entire_binding(),
             ),
         ])
     }
