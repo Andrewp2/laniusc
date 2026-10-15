@@ -547,20 +547,35 @@ def run_lanius(args: argparse.Namespace) -> int:
     problems = []
     for mode in modes:
         print(f"lanius_perf: {run_id} {mode} ({len(sample_cases)} samples)", flush=True)
-        measurement = measure_mode(
-            mode,
-            laniusc,
-            version,
-            sample_cases,
-            cases,
-            primer_case,
-            args.target,
-            artifact_dir,
-            facts,
-            args.startup_timeout,
-            args.job_timeout,
-            args.keep_going,
-        )
+        try:
+            measurement = measure_mode(
+                mode,
+                laniusc,
+                version,
+                sample_cases,
+                cases,
+                primer_case,
+                args.target,
+                artifact_dir,
+                facts,
+                args.startup_timeout,
+                args.job_timeout,
+                args.keep_going,
+            )
+        except AllSamplesFailed as error:
+            if not args.keep_going:
+                raise
+            # A canonical result needs timed samples; keep the diagnostics instead.
+            failures_path = artifact_dir / f"{mode}-failed-compiles.json"
+            failures_path.write_text(json.dumps(
+                {"run_id": run_id, "mode": mode, "compiler_version": version,
+                 "failed_compiles": error.failures}, indent=1) + "\n")
+            print(f"lanius_perf: {mode}: every sample failed to compile "
+                  f"({len(error.failures)} failures); no timings. Diagnostics: {failures_path}", flush=True)
+            for failure in error.failures[:5]:
+                print(f"lanius_perf:   {json.dumps(failure)[:800]}", flush=True)
+            problems.append(f"{mode}: every sample failed to compile")
+            continue
         problems.extend(report_validation(mode, measurement))
         if not args.skip_profile and mode in {
             "daemon_cold_workspace",
@@ -580,6 +595,9 @@ def run_lanius(args: argparse.Namespace) -> int:
             )
         document["measurements"].append(measurement)
 
+    if not document["measurements"]:
+        print("lanius_perf: INVALID RESULT: " + "; ".join(problems), file=sys.stderr, flush=True)
+        return 1
     write_document(output, document)
     catalog_results(DEFAULT_RESULT_ROOT)
     print(output)
@@ -1004,20 +1022,38 @@ def measure_mode(
         daemon = Daemon(daemon_argv, ROOT, {}, startup_timeout, artifact_dir / f"{mode}.stderr")
         ready_samples.append(daemon.ready)
         primer_counts = {}
+        # With --keep-going, a program that fails while priming is recorded
+        # once and not compiled again: its error is deterministic, and failing
+        # 1 MB compiles can take many seconds each.
+        failed_seeds = set()
         try:
             for case in [*capacity_cases, *([primer_case] if primer_case else [])]:
                 primer_output = artifact_dir / f"{mode}-primer-{case.seed}.{suffix}"
-                primer_counts[str(case.seed)] = prime_workspace_until_stable(
-                    daemon,
-                    case.input_path,
-                    case.source_root,
-                    target,
-                    primer_output,
-                    job_timeout,
-                    f"workspace-primer-{case.seed}",
-                )
+                try:
+                    primer_counts[str(case.seed)] = prime_workspace_until_stable(
+                        daemon,
+                        case.input_path,
+                        case.source_root,
+                        target,
+                        primer_output,
+                        job_timeout,
+                        f"workspace-primer-{case.seed}",
+                    )
+                except PrimerCompileFailed as error:
+                    if not keep_going:
+                        raise
+                    failed_seeds.add(case.seed)
+                    sample_index = next(
+                        (index for index, sample in enumerate(sample_cases) if sample.seed == case.seed),
+                        None,
+                    )
+                    failure = compile_failure(-1 if sample_index is None else sample_index, case, error.response)
+                    failure["phase"] = "capacity primer"
+                    failed_compiles.append(failure)
             sample_requests = []
             for index, case in enumerate(sample_cases):
+                if case.seed in failed_seeds:
+                    continue
                 output = artifact_dir / f"{mode}-{index}.{suffix}"
                 _, cleared = daemon.request(
                     {
@@ -1083,7 +1119,7 @@ def measure_mode(
     )
 
     if not raw_samples:
-        raise RuntimeError(f"{mode}: every sample failed to compile: {failed_compiles[:3]}")
+        raise AllSamplesFailed(mode, failed_compiles)
     if sample_outputs:
         last_output = sample_outputs[-1][2]
     validation = {
@@ -1425,6 +1461,23 @@ def profile_gpu_memory_timeline(
     }
 
 
+class AllSamplesFailed(RuntimeError):
+    """No sample compiled, so there is no timing to record; `failures` says why."""
+
+    def __init__(self, mode: str, failures: list[dict]):
+        super().__init__(f"{mode}: every sample failed to compile: {json.dumps(failures[:3])[:3000]}")
+        self.mode = mode
+        self.failures = failures
+
+
+class PrimerCompileFailed(RuntimeError):
+    """A capacity primer did not compile; `response` holds the daemon's answer."""
+
+    def __init__(self, response: dict):
+        super().__init__(f"capacity primer failed to compile: {json.dumps(response)[:2000]}")
+        self.response = response
+
+
 def prime_workspace_until_stable(
     daemon: "Daemon",
     input_path: Path,
@@ -1446,6 +1499,8 @@ def prime_workspace_until_stable(
             ),
             timeout,
         )
+        if response.get("ok") is not True:
+            raise PrimerCompileFailed(response)
         created = response.get("resources_created_during_job", {})
         if not any(
             created.get(kind, 0) for kind in ("buffers", "bind_groups", "compute_pipelines")
