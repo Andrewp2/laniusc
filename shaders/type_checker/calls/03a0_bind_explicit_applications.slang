@@ -46,9 +46,12 @@ RWStructuredBuffer<uint> call_explicit_binding_count;
 
 // A bounded compact arena keeps application storage proportional to source
 // size. Each applying token reserves once, including across inference rounds.
-bool publish_bindings(uint token, uint2 types[32], uint type_mask,
-    uint2 constants[32], uint constant_mask)
+// An application's bindings are its type slots in ascending order, then its
+// constant slots in ascending order. A binding's row is the base plus its rank
+// among the set slots, so each one is written straight to its row.
+bool reserve_bindings(uint token, uint type_mask, uint constant_mask, out uint base)
 {
+    base = 0u;
     uint count = countbits(type_mask) + countbits(constant_mask);
     uint4 descriptor = call_explicit_environment[token];
     uint capacity; uint stride;
@@ -63,61 +66,95 @@ bool publish_bindings(uint token, uint2 types[32], uint type_mask,
     }
     if (descriptor.y < count)
     { call_explicit_application_status[token] = 4u; return false; }
-    uint row = descriptor.x - 1u;
-    for (uint slot = 0u; slot < 32u; slot++)
-        if ((type_mask & (1u << slot)) != 0u)
-        {
-            call_explicit_binding_tag[row] = types[slot].x;
-            call_explicit_binding_payload[row++] = types[slot].y;
-        }
-    for (uint slot = 0u; slot < 32u; slot++)
-        if ((constant_mask & (1u << slot)) != 0u)
-        {
-            // Keep constant parameter identities outside the type-reference
-            // domain when body replay specializes accepted type columns.
-            call_explicit_binding_tag[row] = constants[slot].x | EXPLICIT_CONSTANT_SLOT;
-            call_explicit_binding_payload[row++] = constants[slot].y;
-        }
+    base = descriptor.x - 1u;
     descriptor.z = type_mask; descriptor.w = constant_mask;
     call_explicit_environment[token] = descriptor;
     return true;
 }
 
+void write_type_binding(uint row, uint2 reference)
+{
+    call_explicit_binding_tag[row] = reference.x;
+    call_explicit_binding_payload[row] = reference.y;
+}
+
+// Keep constant parameter identities outside the type-reference domain when
+// body replay specializes accepted type columns.
+void write_constant_binding(uint row, uint2 reference)
+{
+    call_explicit_binding_tag[row] = reference.x | EXPLICIT_CONSTANT_SLOT;
+    call_explicit_binding_payload[row] = reference.y;
+}
+
+// One written argument's slot and reference. False when the argument cannot
+// bind; `status` is then the application status to publish, or 0 to leave it.
+bool source_binding(uint row, uint hir_count, out bool constant, out uint slot,
+    out uint2 reference, out uint status)
+{
+    uint encoded = call_explicit_arg_slot[row];
+    constant = (encoded & EXPLICIT_CONSTANT_SLOT) != 0u;
+    slot = encoded & ~EXPLICIT_CONSTANT_SLOT;
+    reference = uint2(0u, 0u);
+    status = 4u;
+    uint operand = compact_type_args[row].value;
+    if (slot >= 32u || operand >= hir_count) return false;
+    status = 0u;
+    if (constant)
+    {
+        reference = uint2(call_explicit_arg_constant_kind[operand],
+            call_explicit_arg_constant_payload[operand]);
+        return reference.x >= 1u && reference.x <= 3u && reference.y != 0xffffffffu;
+    }
+    if (compact_hir_core[operand].kind != 5u) { status = 3u; return false; }
+    uint anchor = compact_hir_core[operand].token_start;
+    if (anchor >= gParams.n_tokens) return false;
+    reference = uint2(type_expr_ref_tag[anchor], type_expr_ref_payload[anchor]);
+    return checked_claim_reference(reference.x, reference.y);
+}
+
 void publish_source_bindings(uint token, HirRange arguments, uint hir_count)
 {
     if (call_explicit_application_status[token] != 1u) return;
-    uint2 types[32]; uint2 constants[32];
     uint type_mask = 0u; uint constant_mask = 0u;
     for (uint i = 0u; i < arguments.count; i++)
     {
-        uint row = arguments.start + i;
-        uint encoded = call_explicit_arg_slot[row];
-        bool constant = (encoded & EXPLICIT_CONSTANT_SLOT) != 0u;
-        uint slot = encoded & ~EXPLICIT_CONSTANT_SLOT;
-        uint operand = compact_type_args[row].value;
-        if (slot >= 32u || operand >= hir_count ||
-            ((constant ? constant_mask : type_mask) & (1u << slot)) != 0u)
+        bool constant; uint slot; uint2 reference; uint status;
+        bool bound = source_binding(arguments.start + i, hir_count, constant, slot,
+            reference, status);
+        // A slot out of range or repeated fails before the argument's reference.
+        if (!bound && status == 4u) { call_explicit_application_status[token] = 4u; return; }
+        if (((constant ? constant_mask : type_mask) & (1u << slot)) != 0u)
         { call_explicit_application_status[token] = 4u; return; }
-        uint2 reference;
-        if (constant)
+        if (!bound)
         {
-            reference = uint2(call_explicit_arg_constant_kind[operand],
-                call_explicit_arg_constant_payload[operand]);
-            if ((reference.x < 1u || reference.x > 3u) || reference.y == 0xffffffffu) return;
-            constants[slot] = reference; constant_mask |= 1u << slot;
+            if (status != 0u) call_explicit_application_status[token] = status;
+            return;
         }
-        else
-        {
-            if (compact_hir_core[operand].kind != 5u)
-            { call_explicit_application_status[token] = 3u; return; }
-            uint anchor = compact_hir_core[operand].token_start;
-            if (anchor >= gParams.n_tokens) return;
-            reference = uint2(type_expr_ref_tag[anchor], type_expr_ref_payload[anchor]);
-            if (!checked_claim_reference(reference.x, reference.y)) return;
-            types[slot] = reference; type_mask |= 1u << slot;
-        }
+        if (constant) constant_mask |= 1u << slot; else type_mask |= 1u << slot;
     }
-    publish_bindings(token, types, type_mask, constants, constant_mask);
+    uint base;
+    if (!reserve_bindings(token, type_mask, constant_mask, base)) return;
+    uint types = countbits(type_mask);
+    for (uint i = 0u; i < arguments.count; i++)
+    {
+        bool constant; uint slot; uint2 reference; uint status;
+        source_binding(arguments.start + i, hir_count, constant, slot, reference, status);
+        uint below = (1u << slot) - 1u;
+        if (constant)
+            write_constant_binding(base + types + countbits(constant_mask & below), reference);
+        else write_type_binding(base + countbits(type_mask & below), reference);
+    }
+}
+
+// One checked parent argument: 1 for a type, 2 for a constant (with the
+// constant's kind and payload as its reference), 0 when it cannot bind.
+uint parent_binding(uint parent, uint ordinal, out uint2 reference)
+{
+    if (!ScopedCheckedTypeGraph.argument(parent, ordinal, reference.x, reference.y)) return 0u;
+    uint kind; uint payload;
+    if (application_constant_argument(reference.x, reference.y, kind, payload))
+    { reference = uint2(kind, payload); return 2u; }
+    return checked_claim_reference(reference.x, reference.y) ? 1u : 0u;
 }
 
 void publish_checked_parent_bindings(uint token, uint parent)
@@ -128,25 +165,27 @@ void publish_checked_parent_bindings(uint token, uint parent)
     uint count = type_instance_arg_count[parent];
     if (count > 32u)
     { call_explicit_application_status[token] = 4u; return; }
-    uint2 types[32]; uint2 constants[32];
     uint type_count = 0u; uint constant_count = 0u;
     for (uint ordinal = 0u; ordinal < count; ordinal++)
     {
         uint2 reference;
-        if (!ScopedCheckedTypeGraph.argument(parent, ordinal, reference.x, reference.y))
-        { call_explicit_application_status[token] = 4u; return; }
-        uint kind; uint payload;
-        if (application_constant_argument(reference.x, reference.y, kind, payload))
-            constants[constant_count++] = uint2(kind, payload);
-        else if (checked_claim_reference(reference.x, reference.y))
-            types[type_count++] = reference;
-        else
-        { call_explicit_application_status[token] = 4u; return; }
+        uint binding = parent_binding(parent, ordinal, reference);
+        if (binding == 0u) { call_explicit_application_status[token] = 4u; return; }
+        if (binding == 2u) constant_count++; else type_count++;
     }
     uint type_mask = type_count == 32u ? 0xffffffffu : (1u << type_count) - 1u;
     uint constant_mask = constant_count == 32u ? 0xffffffffu : (1u << constant_count) - 1u;
-    if (publish_bindings(token, types, type_mask, constants, constant_mask))
-        call_explicit_application_status[token] = 1u;
+    uint base;
+    if (!reserve_bindings(token, type_mask, constant_mask, base)) return;
+    uint type_row = base; uint constant_row = base + type_count;
+    for (uint ordinal = 0u; ordinal < count; ordinal++)
+    {
+        uint2 reference;
+        if (parent_binding(parent, ordinal, reference) == 2u)
+            write_constant_binding(constant_row++, reference);
+        else write_type_binding(type_row++, reference);
+    }
+    call_explicit_application_status[token] = 1u;
 }
 
 void publish_parent_bindings(uint token, uint owner, bool written_arguments)

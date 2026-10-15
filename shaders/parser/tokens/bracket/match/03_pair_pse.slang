@@ -1,4 +1,16 @@
-import segment_tree;
+// Classifies raw `[`, `]`, and the `,`/`;` they directly own: type array,
+// index, or array literal.
+//
+// Every delimiter relation is read from token_enclosing_open (x paren, y
+// brace, z bracket, w angle) and token_angle_close, published once per token
+// by tokens_delimiter_match_03_enclosing_opens, so this pass does no
+// hierarchy searches and keeps no per-thread arrays.
+//
+// For a token t with class depth D before it, token_enclosing_open[t] is the
+// last earlier row whose match depth is at most D - 1. When that row is a raw
+// opener of the class it encloses t at depth D - 1 (no row between them can
+// reach depth D - 1 without lowering the match depth to it). A raw `]` has
+// match depth D - 1, so its enclosing bracket row is the `[` it closes.
 
 struct Params
 {
@@ -25,18 +37,9 @@ StructuredBuffer<int> depth_brace_inblock;
 StructuredBuffer<int> block_prefix_brace;
 StructuredBuffer<int> depth_angle_inblock;
 StructuredBuffer<int> block_prefix_angle;
-StructuredBuffer<int> bracket_match_depth;
-StructuredBuffer<int> bracket_match_block_min;
-StructuredBuffer<int> bracket_match_min_tree;
-StructuredBuffer<int> paren_match_depth;
-StructuredBuffer<int> paren_match_block_min;
-StructuredBuffer<int> paren_match_min_tree;
-StructuredBuffer<int> brace_match_depth;
-StructuredBuffer<int> brace_match_block_min;
-StructuredBuffer<int> brace_match_min_tree;
 StructuredBuffer<int> angle_match_depth;
-StructuredBuffer<int> angle_match_block_min;
-StructuredBuffer<int> angle_match_min_tree;
+StructuredBuffer<uint4> token_enclosing_open;
+StructuredBuffer<uint> token_angle_close;
 StructuredBuffer<uint> brace_semantic_kind;
 StructuredBuffer<uint> statement_context_kind;
 StructuredBuffer<uint> token_impl_context_event;
@@ -44,6 +47,7 @@ StructuredBuffer<uint> token_impl_context_event;
 RWStructuredBuffer<uint> bracket_semantic_kind;
 
 static const uint WG_SIZE = 256u;
+static const int INF = 2147483647;
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
 static const uint TK_LPAREN = 4u;
@@ -51,34 +55,36 @@ static const uint TK_RPAREN = 5u;
 static const uint TK_LT = 12u;
 static const uint TK_GT = 13u;
 static const uint TK_LBRACKET = 20u;
+static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
-static const uint TK_RBRACKET = 21u;
 static const uint TK_AMPERSAND = 25u;
-static const uint TK_COMMA = 36u;
-static const uint TK_SEMICOLON = 37u;
-static const uint TK_COLON = 38u;
-static const uint TK_ARROW = 75u;
 static const uint TK_STRING = 32u;
 static const uint TK_FLOAT = 33u;
 static const uint TK_CHAR = 34u;
+static const uint TK_COMMA = 36u;
+static const uint TK_SEMICOLON = 37u;
+static const uint TK_COLON = 38u;
+static const uint TK_SHR = 44u;
+static const uint TK_ARROW = 75u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_SELF_VALUE = 105u;
-static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
+static const uint TK_INDEX_LBRACKET = 30u;
+static const uint TK_ARRAY_LBRACKET = 31u;
+static const uint TK_ARRAY_RBRACKET = 64u;
+static const uint TK_INDEX_RBRACKET = 65u;
+static const uint TK_ARRAY_COMMA = 83u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_TYPE_SEMICOLON = 87u;
-static const uint TK_ARRAY_COMMA = 83u;
-static const uint TK_INDEX_LBRACKET = 30u;
-static const uint TK_INDEX_RBRACKET = 65u;
-static const uint TK_ARRAY_LBRACKET = 31u;
-static const uint TK_ARRAY_RBRACKET = 64u;
-static const uint TK_ENUM_LBRACE = 129u;
 static const uint TK_MATCH_LBRACE = 119u;
 static const uint TK_STRUCT_LIT_LBRACE = 125u;
 static const uint TK_STRUCT_LIT_RBRACE = 126u;
-static const int INF = 2147483647;
+static const uint TK_ENUM_LBRACE = 129u;
+static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
+
+#include "../../impl/header/context.slang"
 
 [ForceInline]
 uint active_token_count()
@@ -86,92 +92,59 @@ uint active_token_count()
     return min(lexer_token_count[0], gParams.n_tokens);
 }
 
-uint block_index_for_token(uint token_i)
+int paren_depth_at(uint token_i)
 {
-    return token_i / WG_SIZE;
+    return block_prefix_paren[token_i / WG_SIZE] + depth_paren_inblock[token_i];
 }
 
-bool nearest_bracket_open_before(uint token_i, int depth_before, out uint open_i)
+int brace_depth_at(uint token_i)
 {
-    open_i = 0u;
-    if (depth_before <= 0)
-        return false;
-
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            BracketDepthTree,
-            BracketDepthRows,
-            DepthAtMost>(
-            token_i,
-            depth_before - 1,
-            open_i))
-        return false;
-
-    return open_i < active_token_count() && token_words[open_i].kind == TK_LBRACKET;
+    return block_prefix_brace[token_i / WG_SIZE] + depth_brace_inblock[token_i];
 }
 
-bool nearest_bracket_open_kind_before(uint token_i, int depth_before, uint wanted_kind)
+int bracket_depth_at(uint token_i)
 {
-    uint open_i;
-    return nearest_bracket_open_before(token_i, depth_before, open_i) &&
-        bracket_open_kind(open_i) == wanted_kind;
+    return block_prefix_bracket[token_i / WG_SIZE] + depth_bracket_inblock[token_i];
 }
 
-bool nearest_paren_open_before(uint token_i, int depth_before, out uint open_i)
+int angle_depth_at(uint token_i)
 {
-    open_i = 0u;
-    if (depth_before <= 0)
-        return false;
-
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            ParenDepthTree,
-            ParenDepthRows,
-            DepthAtMost>(
-            token_i,
-            depth_before - 1,
-            open_i))
-        return false;
-
-    uint count = active_token_count();
-    return open_i < count && token_words[open_i].kind == TK_LPAREN;
+    return block_prefix_angle[token_i / WG_SIZE] + depth_angle_inblock[token_i];
 }
 
+// The raw `[` enclosing token_i.
+bool nearest_bracket_open_before(uint token_i, out uint open_i)
+{
+    open_i = token_enclosing_open[token_i].z;
+    return bracket_depth_at(token_i) > 0 &&
+           open_i < active_token_count() &&
+           token_words[open_i].kind == TK_LBRACKET;
+}
+
+// The raw `(` enclosing token_i.
+bool nearest_paren_open_before(uint token_i, out uint open_i)
+{
+    open_i = token_enclosing_open[token_i].x;
+    return paren_depth_at(token_i) > 0 &&
+           open_i < active_token_count() &&
+           token_words[open_i].kind == TK_LPAREN;
+}
+
+// The recorded semantic kind of the raw `{` enclosing token_i, or 0.
 uint enclosing_semantic_brace_open_before(uint token_i)
 {
-    int depth_before = block_prefix_brace[block_index_for_token(token_i)] +
-        depth_brace_inblock[token_i];
-    if (depth_before <= 0)
+    if (brace_depth_at(token_i) <= 0)
         return 0u;
-
-    uint open_i;
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            BraceDepthTree,
-            BraceDepthRows,
-            DepthAtMost>(
-            token_i,
-            depth_before - 1,
-            open_i))
+    uint open_i = token_enclosing_open[token_i].y;
+    if (open_i >= active_token_count() || token_words[open_i].kind != TK_LBRACE)
         return 0u;
-
-    uint count = active_token_count();
-    if (open_i >= count || token_words[open_i].kind != TK_LBRACE)
-        return 0u;
-
     return brace_semantic_kind[open_i];
 }
 
 bool inside_enum_payload_parens(uint token_i)
 {
-    int paren_depth_before = block_prefix_paren[block_index_for_token(token_i)] +
-        depth_paren_inblock[token_i];
-
     uint open_i;
-    if (!nearest_paren_open_before(token_i, paren_depth_before, open_i))
+    if (!nearest_paren_open_before(token_i, open_i))
         return false;
     if (open_i == 0u || token_words[open_i - 1u].kind != TK_IDENT)
         return false;
@@ -179,52 +152,39 @@ bool inside_enum_payload_parens(uint token_i)
     return enclosing_semantic_brace_open_before(open_i) == TK_ENUM_LBRACE;
 }
 
-public struct AngleDepthTree : IRangeSearchTree<int>
+// Raw angles include comparison/shift operators. A candidate pair must stay
+// inside the same statement and structural containers before its tail can
+// establish a value-path application. Equal depths alone would accept
+// separate sibling groups; equal enclosing rows for every container class
+// mean no container closes between the pair.
+bool value_path_arguments_share_container(uint open_i, uint close_i)
 {
-    public static uint n_blocks()
-    {
-        return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.match_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return angle_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return angle_match_min_tree[node];
-    }
+    if (statement_context_kind[open_i] != statement_context_kind[close_i]) return false;
+    if (paren_depth_at(open_i) != paren_depth_at(close_i) ||
+        bracket_depth_at(open_i) != bracket_depth_at(close_i) ||
+        brace_depth_at(open_i) != brace_depth_at(close_i)) return false;
+    uint3 open_owner = token_enclosing_open[open_i].xyz;
+    uint3 close_owner = token_enclosing_open[close_i].xyz;
+    return all(open_owner == close_owner);
 }
 
-public struct AngleDepthRows : IRangeSearchRows<int>
+bool value_path_type_arguments_have_tail(uint open_i, uint count)
 {
-    [ForceInline]
-    public static uint item_count()
-    {
-        return gParams.n_tokens;
-    }
-
-    [ForceInline]
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    [ForceInline]
-    public static int row_value(uint row)
-    {
-        return angle_match_depth[row];
-    }
+    if (open_i == 0u || open_i >= count || token_words[open_i].kind != TK_LT ||
+        token_words[open_i - 1u].kind != TK_IDENT) return false;
+    int depth = angle_match_depth[open_i];
+    uint close_i = token_angle_close[open_i];
+    if (depth == INF || close_i >= count || angle_match_depth[close_i] != depth) return false;
+    uint close = token_words[close_i].kind;
+    if (close != TK_GT && close != TK_SHR) return false;
+    uint next_i = close_i + 1u;
+    if (next_i >= count) return false;
+    uint next = token_words[next_i].kind;
+    bool tail = next == TK_LPAREN ||
+        (next == TK_COLON && next_i + 1u < count && token_words[next_i + 1u].kind == TK_COLON) ||
+        (next == TK_LBRACE && brace_semantic_kind[next_i] == TK_STRUCT_LIT_LBRACE);
+    return tail && value_path_arguments_share_container(open_i, close_i);
 }
-
-#include "../../value_path_type_arguments.slang"
-#include "../../impl/header/context.slang"
 
 bool raw_angle_open_can_start_type_args(uint open_i)
 {
@@ -245,25 +205,16 @@ bool raw_angle_open_can_start_type_args(uint open_i)
            value_path_type_arguments_have_tail(open_i, active_token_count());
 }
 
+// Whether token_i sits directly in a raw `<` list that can hold type
+// arguments. token_i is never a raw `>>`, so its published angle row is
+// queried one level down.
 bool inside_type_arg_angle(uint token_i)
 {
-    int angle_depth_before = block_prefix_angle[block_index_for_token(token_i)] +
-        depth_angle_inblock[token_i];
+    int angle_depth_before = angle_depth_at(token_i);
     if (angle_depth_before <= 0)
         return false;
 
-    uint open_i;
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            AngleDepthTree,
-            AngleDepthRows,
-            DepthAtMost>(
-            token_i,
-            angle_depth_before - 1,
-            open_i))
-        return false;
-
+    uint open_i = token_enclosing_open[token_i].w;
     if (open_i >= active_token_count() ||
         token_words[open_i].kind != TK_LT ||
         angle_match_depth[open_i] != angle_depth_before - 1)
@@ -272,15 +223,15 @@ bool inside_type_arg_angle(uint token_i)
     return raw_angle_open_can_start_type_args(open_i);
 }
 
-bool type_array_open_context(uint token_i, int bracket_depth_before)
+bool type_array_open_context(uint token_i)
 {
     // Nested openers, their separators, and their closers run in parallel.
     // Derive inherited type context from immutable tokens and delimiter
     // ownership instead of reading another lane's bracket-kind publication.
-    if (token_is_in_impl_header(token_i, active_token_count())) return true;
+    uint count = active_token_count();
+    if (token_is_in_impl_header(token_i, count)) return true;
     uint current = token_i;
-    int depth = bracket_depth_before;
-    for (uint guard = 0u; guard < active_token_count(); guard++)
+    for (uint guard = 0u; guard < count; guard++)
     {
         uint prev = current == 0u ? 0u : token_words[current - 1u].kind;
         if (prev == TK_COLON || prev == TK_ARROW)
@@ -299,10 +250,9 @@ bool type_array_open_context(uint token_i, int bracket_depth_before)
             return true;
         if (inside_enum_payload_parens(current)) return true;
         uint outer;
-        if (!nearest_bracket_open_before(current, depth, outer) || outer >= current)
+        if (!nearest_bracket_open_before(current, outer) || outer >= current)
             return false;
         current = outer;
-        depth--;
     }
     return false;
 }
@@ -312,160 +262,18 @@ uint bracket_open_kind(uint token_i)
     uint prev = token_i == 0u ? 0u : token_words[token_i - 1u].kind;
     if (prev == TK_RBRACE && brace_semantic_kind[token_i - 1u] == TK_STRUCT_LIT_RBRACE)
         return TK_INDEX_LBRACKET;
-    int depth = block_prefix_bracket[block_index_for_token(token_i)] +
-        depth_bracket_inblock[token_i];
-    if (type_array_open_context(token_i, depth)) return TK_TYPE_ARRAY_LBRACKET;
+    if (type_array_open_context(token_i)) return TK_TYPE_ARRAY_LBRACKET;
     bool ends_primary = prev == TK_IDENT || prev == TK_INT || prev == TK_RPAREN ||
         prev == TK_RBRACKET || prev == TK_STRING || prev == TK_FLOAT ||
         prev == TK_CHAR || prev == TK_TRUE || prev == TK_FALSE || prev == TK_SELF_VALUE;
     return ends_primary ? TK_INDEX_LBRACKET : TK_ARRAY_LBRACKET;
 }
 
-public struct BracketDepthTree : IRangeSearchTree<int>
+bool nearest_bracket_open_kind_before(uint token_i, uint wanted_kind)
 {
-    public static uint n_blocks()
-    {
-        return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.match_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return bracket_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return bracket_match_min_tree[node];
-    }
-}
-
-public struct BracketDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline]
-    public static uint item_count()
-    {
-        return gParams.n_tokens;
-    }
-
-    [ForceInline]
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    [ForceInline]
-    public static int row_value(uint row)
-    {
-        return bracket_match_depth[row];
-    }
-}
-
-public struct ParenDepthTree : IRangeSearchTree<int>
-{
-    public static uint n_blocks()
-    {
-        return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.match_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return paren_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return paren_match_min_tree[node];
-    }
-}
-
-public struct ParenDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline]
-    public static uint item_count()
-    {
-        return gParams.n_tokens;
-    }
-
-    [ForceInline]
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    [ForceInline]
-    public static int row_value(uint row)
-    {
-        return paren_match_depth[row];
-    }
-}
-
-public struct BraceDepthTree : IRangeSearchTree<int>
-{
-    public static uint n_blocks()
-    {
-        return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.match_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return brace_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return brace_match_min_tree[node];
-    }
-}
-
-public struct BraceDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline]
-    public static uint item_count()
-    {
-        return gParams.n_tokens;
-    }
-
-    [ForceInline]
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    [ForceInline]
-    public static int row_value(uint row)
-    {
-        return brace_match_depth[row];
-    }
-}
-
-public struct DepthAtMost : IRangeSearchPredicate<int, int>
-{
-    [ForceInline]
-    public static bool aggregate_may_match(int aggregate, int query)
-    {
-        return aggregate <= query;
-    }
-
-    [ForceInline]
-    public static bool leaf_matches(int leaf, int query)
-    {
-        return leaf <= query;
-    }
+    uint open_i;
+    return nearest_bracket_open_before(token_i, open_i) &&
+        bracket_open_kind(open_i) == wanted_kind;
 }
 
 uint close_kind_for_open_kind(uint open_kind)
@@ -489,8 +297,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint raw_kind = token_words[token_i].kind;
-    int depth_before = block_prefix_bracket[block_index_for_token(token_i)] +
-        depth_bracket_inblock[token_i];
     if (raw_kind == TK_LBRACKET)
     {
         bracket_semantic_kind[token_i] = bracket_open_kind(token_i);
@@ -500,10 +306,10 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (raw_kind == TK_COMMA || raw_kind == TK_SEMICOLON)
     {
         if (raw_kind == TK_COMMA &&
-            nearest_bracket_open_kind_before(token_i, depth_before, TK_ARRAY_LBRACKET))
+            nearest_bracket_open_kind_before(token_i, TK_ARRAY_LBRACKET))
             bracket_semantic_kind[token_i] = TK_ARRAY_COMMA;
         if (raw_kind == TK_SEMICOLON &&
-            nearest_bracket_open_kind_before(token_i, depth_before, TK_TYPE_ARRAY_LBRACKET))
+            nearest_bracket_open_kind_before(token_i, TK_TYPE_ARRAY_LBRACKET))
             bracket_semantic_kind[token_i] = TK_TYPE_SEMICOLON;
         return;
     }
@@ -511,22 +317,10 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (raw_kind != TK_RBRACKET)
         return;
 
-    int close_depth = bracket_match_depth[token_i];
-    if (close_depth == INF)
-        return;
-
-    uint open_i;
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            BracketDepthTree,
-            BracketDepthRows,
-            DepthAtMost>(
-            token_i,
-            close_depth,
-            open_i))
-        return;
-
+    // The closer's match depth is its depth before minus one, which is the
+    // published bracket query, so its enclosing row is the opener it closes
+    // (with no depth guard, as unbalanced input pairs the same way).
+    uint open_i = token_enclosing_open[token_i].z;
     if (open_i >= count || token_words[open_i].kind != TK_LBRACKET)
         return;
 

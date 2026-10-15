@@ -4,6 +4,7 @@
 // is interned by its own lane in one pass, and no lane waits for another.
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_candidates;
+import type_checker.canonical.canonical_checked_rows;
 
 // Two frontier lists of ct_candidate_count() entries each; round r reads list
 // r & 1 and appends to list (r + 1) & 1.
@@ -32,7 +33,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (i >= ct_counts[CT_COUNT_PENDING]) return;
         candidate = canonical_frontier[(round & 1u) * count + i];
     }
-    uint id = canonical_intern_candidate(candidate, ct_counts[CT_COUNT_FINAL] != 0u);
+    uint id = canonical_intern_candidate<CtCheckedRows>(candidate, ct_counts[CT_COUNT_FINAL] != 0u);
     if (id != CT_PENDING)
     {
         ct_publish_candidate(candidate, id);

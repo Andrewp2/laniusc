@@ -178,10 +178,6 @@ impl GpuParser {
             bufs.clear_operations()
                 .record_tree_depth_status(ctx.encoder);
             self.passes
-                .tree_depth_traverse
-                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_traverse");
-            self.passes
                 .tree_depth_block_max
                 .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_block_max");

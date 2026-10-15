@@ -74,8 +74,15 @@ fn exported_alias_targets_preserve_structural_roots_and_parameter_identity() {
         let alias = declaration(&artifact, name);
         let root = artifact.types[alias.signature_type as usize];
         assert_eq!(root.kind, GpuSemanticInterfaceTypeKind::Array as u32, "{name}: {root:?}");
-        assert_eq!(root.length_kind, 2, "{name}: {root:?}");
-        assert_eq!(root.length_lo, alias.first_member + constant_ordinal, "{name}: {root:?}");
+        assert_eq!((root.edge_count, root.length_kind, root.length_lo), (2, 0, 0), "{name}: {root:?}");
+        // The extent is the second child: the parameter, through its checked
+        // count conversion when the export keeps one.
+        let mut extent = artifact.types[artifact.type_edges[root.first_edge as usize + 1].type_index as usize];
+        if extent.kind == GpuSemanticInterfaceTypeKind::CountProjection as u32 {
+            extent = artifact.types[artifact.type_edges[extent.first_edge as usize].type_index as usize];
+        }
+        assert_eq!(extent.kind, GpuSemanticInterfaceTypeKind::ConstParameter as u32, "{name}: {extent:?}");
+        assert_eq!(extent.payload_lo, alias.first_member + constant_ordinal, "{name}: {extent:?}");
         let element = artifact.types[artifact.type_edges[root.first_edge as usize].type_index as usize];
         if name == "Constant" {
             assert_eq!((element.kind, element.payload_lo),

@@ -654,6 +654,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.parser
             .with_current_resident_buffers_with_tree_capacity_and_features(
                 parser.token_capacity,
+                bufs.n,
                 &self.parse_tables,
                 parser.tree_capacity,
                 parser.parser_feature_flags,
@@ -972,7 +973,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         device: &wgpu::Device,
         replacement: FrontendWorkspaceReplacement,
     ) {
-        self.type_checker.release_current_resident_workspace();
+        self.type_checker.release_frontend_bound_workspace();
         self.release_typecheck_workspace_consumers();
         if replacement.invalidates_parser_allocation() {
             // Lexer replacement invalidates every parser binding, so the
@@ -1014,6 +1015,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.parser
             .with_current_resident_buffers_with_tree_capacity_and_features(
                 token_capacity,
+                source_len,
                 &self.parse_tables,
                 tree_capacity,
                 parser_feature_flags,
@@ -2497,6 +2499,26 @@ fn finish_source_pack_unit(
         .iter()
         .map(|owner| owner.call_hir)
         .collect::<std::collections::BTreeSet<_>>();
+    if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false) {
+        // Call environments of the unit, for sizing the canonical
+        // environment and substitution tables: distinct (target, type
+        // arguments, constant arguments) bindings over the retained calls.
+        let environments = artifacts
+            .generic_calls
+            .iter()
+            .map(|call| format!("{:?}{:?}{:?}", call.target, call.arguments, call.constants))
+            .collect::<std::collections::HashSet<_>>();
+        eprintln!(
+            "[typecheck.canonical.environments] generic_calls={} distinct_environments={} bound_slots={}",
+            artifacts.generic_calls.len(),
+            environments.len(),
+            artifacts
+                .generic_calls
+                .iter()
+                .map(|call| call.arguments.len() + call.constants.len())
+                .sum::<usize>(),
+        );
+    }
     if call_ids.len() != artifacts.generic_calls.len()
         || owner_ids.len() != artifacts.checked_call_owners.len()
         || call_ids != owner_ids
