@@ -144,8 +144,9 @@ two differ, this section is authoritative.
 A lane interns a key in one pass, and no lane ever waits for another.
 
 1. **Write the complete record.** This covers the key (`ct_head`, `ct_args`)
-   and the facts (`ct_meta`, `ct_extra`). The record is either the lane's
-   fixed candidate record or a lane-owned *spare*.
+   and the facts (`ct_meta`, `ct_extra`). The record is allocated when the
+   probe first reaches an empty slot (`ct_intern_key`), or it is a lane-owned
+   *spare*.
 2. **Release.** Call `DeviceMemoryBarrier()`.
 3. **Publish.** `InterlockedCompareExchange(ct_slot[s], 0, record)` on the
    first empty slot of the linear probe sequence, which starts at
@@ -176,18 +177,17 @@ a lane only reads records whose publication it has already observed.
 
 Allocation stays bounded:
 
-- **Candidates use fixed records.** Candidate `c` owns record `32 + c`, and
-  dependency node `i` (job-wide) owns record `32 + candidates + i`, so rows,
-  atoms, projections and dependency nodes never allocate. The one exception
-  is a re-interned candidate after a body replay (see Stages): its fixed
-  record may already hold its earlier key, so a new key takes a dynamic
+- **Only a new key takes a record.** No candidate or dependency node owns a
+  record. `ct_intern_key` probes the table, adopts an equal published
+  record, and allocates (`ct_alloc_record`) and stores a record only when it
+  reaches an empty slot. Count classes (`cc_intern_count`) and other small
+  keys do the same through `ct_intern_small`. A re-interned candidate after
+  a body replay (see Stages) therefore never touches its earlier key's
   record.
-- **Dynamic records come from small keys.** Count classes (`cc_intern_count`)
-  and other small keys use `ct_intern_small`. It looks the key up first and
-  stores a record only on a miss.
-- **Losers keep their record.** A lane that loses the race keeps its record as
-  a `spare` and reuses it for its next key, so allocation is at most live
-  records plus lanes.
+- **Losers keep their record.** A lane that loses the slot to an equal key
+  keeps its record unpublished. A `spare` lane reuses it for its next key; a
+  candidate lane interns one key, so its record is simply never referenced.
+  Allocation is at most one record per key a lane publishes or loses.
 
 **Gate (week 1).** Two tests in
 `crates/laniusc-compiler/src/gpu/canonical_intern_stress_tests.rs` exercise the
@@ -308,8 +308,7 @@ collides.
 1. **Uniqueness.** Two published records are never key-equal. Equal keys
    always yield the same ID within one job, so identity is `==`.
 2. **Immutability.** A record is complete before its slot CAS, and it is
-   never written again. Only a lane's unpublished spare or its own
-   unpublished fixed record is ever rewritten.
+   never written again. Only a lane's unpublished spare is ever rewritten.
 3. **Children first.** Children are canonical before their parent's key is
    built. `ct_args` holds IDs or parameter leaves, never a sentinel.
 4. **IDs are job-local; `ct_shash` is not.** ID numbering depends on atomic
@@ -399,12 +398,9 @@ Each job interns into one table, so an ID stays valid for the whole job.
   has a type or constant argument) rewrites rows and constants after the
   early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
   `[i32; 2]` in place. Its late `03_rearm` therefore re-arms every
-  candidate and sets `CT_COUNT_REINTERN`. With the flag set, a candidate
-  looks its key up first and adopts an equal record; on a miss it stores
-  into its fixed record only if that record is not published
-  (`ct_is_published`), and otherwise into a dynamic one. Unchanged rows
-  keep their IDs, and the early records stay valid for the references
-  that still name them. A consumer recorded between the replay and the
+  candidate. A candidate adopts an equal published record or takes a new
+  one, so unchanged rows keep their IDs, and the early records stay valid
+  for the references that still name them. A consumer recorded between the replay and the
   late stage would read early IDs of rewritten rows; none exists yet.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a
@@ -417,135 +413,116 @@ Each job interns into one table, so an ID stays valid for the whole job.
   the canonical passes keeps its workspace from sharing storage with the
   canonical tables.
 - Each page costs one readback when its rounds fit one batch.
-- **Not built yet:** call and nominal environments (`CT_ENV`). These wait
-  for P1's published binding tables (`call_env_type_binding`, `03a3b`).
+- Call environments (`CT_ENV`) are interned by the substitution passes
+  (`shaders/type_checker/substitution/`, `substitution_passes.rs`) once
+  per inference round, after the early stage; they are not candidates.
 
 ### Capacities and overflow
 
+No candidate or dependency node owns a record. A key the table does not hold
+yet takes one at the first empty slot it reaches (`ct_intern_key`), and an
+equal key found while probing is adopted. Scalar rows reuse the preseeded
+IDs 1..17, and empty rows are `CT_NONE`, so neither takes a record.
+
 Worst-case bounds:
 
-- **Fixed records:** 32 + candidates + dependency nodes, one per candidate
-  and per dependency node (`ct_dynamic_base`). Always allocated exactly.
-- **Dynamic records:** candidates + 4 × constant rows + dependency nodes.
-  That is at most one count class per constant candidate or constant node,
-  and the same again for a body replay's re-interning.
+- **Records:** 32 + 2 × (candidates + dependency nodes) + 4 × constant rows
+  + the substitution producers' records (`substitution_canonical_extra`).
+  - A candidate or node allocates at most once per stage it is re-armed in:
+    the early stage, and the late stage again after a body replay.
+  - Count classes add at most 4 records per constant row.
+  - A lost race wastes its record. When the lanes of one wave intern the
+    same new key, all of them miss and all of them allocate. The losers'
+    records stay stored, but no slot or row references them, as with an
+    unused spare. The waste is bounded by the concurrent attempts on one
+    key, which the per-attempt bound already counts.
 - **Slots:** the next power of two at or above 2 × records.
 - **Arguments:** the checked argument storage, plus 2 words per row and 1
   word per projection, twice (a replay builds every candidate's key again),
   plus 2 words per dependency node (a signature tree has fewer edges than
-  nodes).
+  nodes), plus the substitution producers' words.
 - **Frontier:** two lists of max(candidates, largest page's nodes).
 
-A job starts at capacity scale 1. The dynamic records and the argument words
-start at 1/64 of their bounds, with floors of 4,096 records and 16,384 words
-(`canonical_scaled_capacity`). An overflow sets a sticky `CT_OVERFLOW_*` bit.
-On a table, record or argument bit, the host abandons the job
-(`CanonicalCapacityOverflow`), doubles the scale (part of the resident cache
-key, and it only grows) and records the job again. At scale 64 the tables
-hold the worst-case bounds, so an overflow there is a broken invariant and
-fails the job. The round-limit bit never retries.
-`LANIUS_DEBUG_CANONICAL_SHRINK=n` divides the dynamic records and argument
-words by 2^n to exercise the retry. `LANIUS_TRACE_CANONICAL=1` prints the use
-per batch.
+A job starts at capacity scale 1. The records, the argument words and the
+frontier lists start at 1/64 of their bounds, with floors of 4,096 records,
+16,384 words and 4,096 frontier rows (`canonical_scaled_capacity`).
 
-Measured use at scale 1, 2026-10-14. No job retried.
+An overflow sets a sticky `CT_OVERFLOW_*` bit:
 
-| job | fixed records | dynamic records | argument words |
+| bit | name | retries |
+|---:|---|---|
+| 1 | `CT_OVERFLOW_TABLE` | yes |
+| 2 | `CT_OVERFLOW_RECORDS` | yes |
+| 4 | `CT_OVERFLOW_ARGS` | yes |
+| 8 | `CT_OVERFLOW_ROUNDS` | no |
+| 16 | `CT_OVERFLOW_SUBST_MEMO` (`substitution/ct_subst.slang`) | yes |
+| 32 | `CT_OVERFLOW_FRONTIER` (a frontier append past the end) | yes |
+
+On a retrying bit (`CANONICAL_RETRY_OVERFLOW_BITS`):
+
+1. The host abandons the job (`CanonicalCapacityOverflow`).
+2. It doubles the scale, which is part of the resident cache key and only
+   grows.
+3. It records the job again.
+
+At scale 64 the tables hold the worst-case bounds, so an overflow there is a
+broken invariant and fails the job.
+
+Debug variables:
+
+- `LANIUS_DEBUG_CANONICAL_SHRINK=n` divides the records, the argument words
+  and the frontier lists by 2^n to exercise the retry. It divides the whole
+  bound, so a large `n` can fail at scale 64 on a valid job. On generics
+  matrix probe p04, `n` = 12 passes after 4 retries and `n` = 14 fails.
+- `LANIUS_TRACE_CANONICAL=1` prints the use per batch. Its `records=` count
+  excludes the 32 preseeded records.
+
+What stays capacity-sized:
+
+- The per-candidate outputs (`canonical_row`, `canonical_atom`,
+  `canonical_projection`), at 4 bytes per row, which consumers index by row.
+- The round-0 dispatch over every candidate. A lane on an empty row returns
+  at once.
+- Shrinking these needs compacted `type_instances` rows.
+
+Measured use at scale 1, 2026-10-15, harness build (late stage, after both
+stages). No job retried.
+
+| job | records | argument words | frontier rows |
 |---|---:|---:|---:|
-| 100-file generated project (29,956 lines), check | 2,130,209 | 27 / 86,538 | 295 / 326,218 |
-| whole stdlib, one check job | 2,375,969 | 48 / 96,522 | 1,759 / 363,850 |
-| generics matrix (30 probes, largest) | 41,249 | 3 / 4,096 | 43 / 16,384 |
+| 100-file generated project (29,956 lines), check | 267 / 133,166 | 375 / 352,842 | 33,284 |
+| whole stdlib, one check job | 932 / 148,526 | 1,823 / 393,546 | 37,124 |
+| generics probe (option results) | 130 / 4,128 | 191 / 16,384 | 4,096 |
 
-With the validator on: the generated project has 197 live records, maximum
-height 2 and 57 type applications. Probe jobs have at most 36 live records,
-height 4 and 6 distinct call environments. The generated project has no
-generic calls. On the generated project, the scale-1 tables take about
-123 MB, against 457 MB for the earlier fixed worst-case sizing. Nearly all of
-it is the fixed region (40 bytes per record, plus its slots). That region is
-sized by row capacity, not by row count. Sizing it from counts needs the
-candidates compacted first.
+Before compaction (2026-10-14), the generated project took 2,130,209 fixed
+plus 86,538 dynamic records, and the stdlib took 2,375,969 plus 96,522.
 
-### Planned: records only for new keys (approved 2026-10-14)
+The `ct_*` tables of the generated project at scale 1:
 
-The fixed region gives every candidate and dependency node a record. On the
-generated project only 197 of its 2.13M records hold a live key. Scalar rows
-reuse the preseeded IDs 1..17 and empty rows are `CT_NONE`, so neither
-needs a record. The plan below compacts record use in the interning step
-itself: only a key that the table does not hold yet takes a record. It adds
-no kernel and no prefix-scan pass.
-
-1. **Intern a candidate.**
-   - Build the candidate's key as now. Its arguments are reserved in
-     `ct_args`.
-   - `ct_lookup(key)`. On a hit, adopt the record and allocate nothing.
-   - On a miss, take a record from `ct_alloc_record`, store the key and
-     `ct_intern` it. As now, the CAS goes into the first empty slot, and an
-     equal occupant found while probing is adopted.
-   - This is `ct_intern_spare` with a spare that ends with the lane.
-     Dependency nodes (`05_intern_dependency`) do the same.
-   - `ct_candidate_record` and `ct_dependency_record` go away, and so does
-     the re-intern special case: every miss takes a fresh record, so no
-     published record is ever overwritten.
-   - `00_clear` starts `CT_COUNT_NEXT_RECORD` at `CT_FIRST_RECORD`.
-2. **Lost races waste records.**
-   - When the lanes of one wave intern the same new key, all of them miss
-     the lookup and all of them allocate. The losers' records stay stored but
-     are in no slot and are never referenced, which is what an unused spare
-     is today.
-   - `validate_slot` walks slots and `validate_candidate` walks candidate
-     states, so neither one sees a wasted record.
-   - Waste is bounded by the concurrent attempts on one key. Use is at most
-     one record per resolved non-scalar attempt.
-3. **Bounds and sizing.**
-   - A candidate or node allocates at most once per stage it is re-armed
-     in: the early stage, plus the late stage after a body replay. Count
-     classes add at most 4 per constant row, as now.
-   - The worst case is 2 × (candidates + dependency nodes) + 4 × constant
-     rows. That equals today's fixed plus dynamic bound, so the largest
-     retry scale still holds every input.
-   - At scale 1 the records take 1/64 of this bound, with the 4,096-record
-     floor (`canonical_scaled_capacity`). A record overflow already retries.
-4. **Frontier.**
-   - Today the two lists are sized from the candidates. They get the same
-     1/64 start and floor.
-   - An append past the end sets a new `CT_OVERFLOW_FRONTIER` bit, which
-     retries like the record bit.
-5. **What stays capacity-sized.**
-   - The per-candidate outputs (`canonical_row`, `canonical_atom`,
-     `canonical_projection`), at 4 bytes per row, which consumers index by
-     row.
-   - The round-0 dispatch over every candidate. A lane on an empty row
-     returns at once.
-   - Shrinking these needs compacted `type_instances` rows, which is out of
-     scope here.
-
-Expected effect on the generated project at scale 1:
-
-| | before | after |
+| | fixed records (2026-10-14) | records only for new keys |
 |---|---:|---:|
-| records | 2.13M fixed + 86.5K dynamic | about 120K (1/64 of the bound) |
-| `ct_head`, `ct_meta`, `ct_extra` | 89 MB | 4.8 MB |
-| `ct_slot` | 34 MB | 1 MB |
-| `ct_args` | 1.3 MB | 1.3 MB (unchanged) |
-| `canonical_frontier` | 17 MB | 0.3 MB |
+| `ct_head`, `ct_meta`, `ct_extra` | 89 MB | 5.3 MB |
+| `ct_slot` | 34 MB | 2.1 MB |
+| `ct_args` | 1.4 MB | 1.4 MB |
+| `canonical_frontier` | 17 MB | 0.27 MB |
+| total | about 141 MB | about 9 MB |
 
-The `ct_*` tables shrink from 123 MB to about 7 MB. The per-row outputs, at
-about 8.5 MB, are then most of what remains.
+The per-row outputs, at about 8.5 MB, are now most of what remains.
 
-**Validation.**
+With the validator on, the generated project shows:
 
-- Record IDs depend on atomic order, so the old and new kernels cannot be
-  compared buffer for buffer. The CPU replay compare of captured
-  `01_intern` and `05_intern_dependency` dispatches therefore compares each
-  candidate's `ct_shash` and resolved state between the old and new kernels.
-  Both are ID-free.
-- With `LANIUS_DEBUG_VALIDATE_CANONICAL=1`, run the generated project, the
-  stdlib and the generics matrix. They must show no duplicates, broken
-  chains or unpublished states, and the same live-record and
-  resolved-candidate counts as before. `LANIUS_TRACE_CANONICAL=1` records
-  the new record use.
-- `canonical_type_boundary_intern.slang` and the stress gate start their
-  allocation at `CT_FIRST_RECORD`.
+- 201 live records;
+- no duplicates, broken chains, inconsistent facts, unpublished or pending
+  states, or missed merges.
+
+The validator's `false_merges` counts (133 on the generated project, 14 on
+the option-results probe and 1,516 on the stdlib) still need a comparison
+against a pinned build from before compaction (`tools/pin_laniusc.py`).
+
+Record IDs depend on atomic order, so the old and new kernels cannot be
+compared buffer for buffer. The CPU replay compare of captured `01_intern`
+dispatches compares each candidate's `ct_shash` and resolved state instead,
+which are ID-free, and finds them equal.
 
 ### Validation
 
@@ -684,13 +661,14 @@ not generic, and it imports `primitive_types` only.
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
-| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_spare`) |
+| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_intern_key(key)`, `ct_lookup(key)`, `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_key`) |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
-| dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`, `ct_dependency_record(index)`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
+| dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
 | bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |
 | constant keys | `canonical_constants.slang`: `ct_build_value(value, key)`, `ct_build_projection(target, child, param_scalar, fold, value, key)` |
 | constant view | `dependencies/constant_view.slang`: `CanonicalConstantGraph<G>`, `CanonicalConstantEnvironment<G>`, `canonical_constant_view_reference`, `canonical_constant_view_ranges` (see Constant view) |
 
 Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
-builder. They intern through `ct_intern_spare` with one lane-owned spare
-record, or through `ct_intern` with a record they own.
+builder. They intern through `ct_intern_key` (a record only for a new
+key), through `ct_intern_spare` with one lane-owned spare record, or through
+`ct_intern` with a record they own.
