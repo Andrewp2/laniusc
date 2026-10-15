@@ -8,7 +8,7 @@ use std::{
         Mutex,
         OnceLock,
         Weak,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -421,6 +421,7 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
             required_features |= wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
         }
     }
+    DEVICE_VENDOR.store(adapter_info.vendor, Ordering::Release);
     if adapter_info.vendor != NVIDIA_VENDOR_ID {
         NAMED_DRIVER_SHARD_UNDECIDED.store(false, Ordering::Release);
     }
@@ -802,6 +803,10 @@ struct NamedDriverShard {
 }
 
 static NAMED_DRIVER_SHARD: OnceLock<NamedDriverShard> = OnceLock::new();
+/// When this process started: before main, when the driver cache was set up.
+static PROCESS_STARTED: OnceLock<SystemTime> = OnceLock::new();
+/// The PCI vendor of the device the compiler opened; 0 before one is open.
+static DEVICE_VENDOR: AtomicU32 = AtomicU32::new(0);
 /// Cleared once `check_named_driver_shard` decided, or on a non-NVIDIA device.
 static NAMED_DRIVER_SHARD_UNDECIDED: AtomicBool = AtomicBool::new(false);
 
@@ -840,6 +845,7 @@ static CONFIGURE_DRIVER_SHADER_CACHE_BEFORE_MAIN: extern "C" fn() = {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 unsafe fn configure_driver_shader_cache() {
     let started = SystemTime::now();
+    let _ = PROCESS_STARTED.set(started);
     let names_shard = std::env::var_os(NVIDIA_SHADER_CACHE_APP_NAME_VAR).is_none();
     if names_shard {
         // SAFETY: the caller guarantees no other thread runs yet.
@@ -921,14 +927,19 @@ enum ShardNaming {
     Ignored,
 }
 
+/// Whether `file` is `<app_name><digits>.<extension>`: a shard the driver
+/// named after `app_name`.
+fn is_named_shard(file: &str, app_name: &str, extension: &str) -> bool {
+    file.strip_suffix(extension)
+        .and_then(|stem| stem.strip_suffix('.'))
+        .and_then(|stem| stem.strip_prefix(app_name))
+        .is_some_and(|index| !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// Looks for `<app_name><digits>.toc` in each `GLCache/<driver>/<device>/`
 /// directory that holds a shard index written at or after `started`.
 fn classify_shard_naming(glcache: &std::path::Path, app_name: &str, started: SystemTime) -> ShardNaming {
-    let named = |name: &str| {
-        name.strip_suffix(".toc")
-            .and_then(|stem| stem.strip_prefix(app_name))
-            .is_some_and(|index| !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()))
-    };
+    let named = |name: &str| is_named_shard(name, app_name, "toc");
     let mut naming = ShardNaming::Unknown;
     let Ok(drivers) = fs::read_dir(glcache) else {
         return naming;
@@ -960,6 +971,146 @@ fn classify_shard_naming(glcache: &std::path::Path, app_name: &str, started: Sys
         }
     }
     naming
+}
+
+/// What NVIDIA's shader disk cache did for this process, for startup reports
+/// (the daemon's ready event, `LANIUS_GPU_COMPILE_HOST_TIMING`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DriverShaderCacheStatus {
+    /// The device's PCI vendor; 0 before the compiler opened a device.
+    pub vendor: u32,
+    /// Whether the driver cache is on (`__GL_SHADER_DISK_CACHE` is not `0`).
+    pub enabled: bool,
+    /// The driver cache directory; its shards are under `GLCache/`.
+    pub dir: Option<PathBuf>,
+    /// `__GL_SHADER_DISK_CACHE_APP_NAME`: the name of the shard.
+    pub app_name: Option<String>,
+    /// Bytes of the shards named after `app_name`, over every device directory.
+    pub named_shard_bytes: u64,
+    /// Shard files (`GLCache/<driver>/<device>/<file>`) written since this
+    /// process started. The driver appends a pipeline it compiled and leaves
+    /// the shard alone when it loads one, so this is empty on a hit. Another
+    /// process using the same directory at the same time also writes here.
+    pub written_since_start: Option<Vec<String>>,
+    /// Compute pipelines this process created.
+    pub pipelines: u64,
+    /// The time creating them took, summed over threads.
+    pub pipeline_time: Duration,
+}
+
+/// The mean pipeline creation time above which pipelines were compiled, even
+/// when the driver wrote no shard (a read-only cache directory): a hit is well
+/// under a millisecond, a compile ~250 ms.
+const COMPILED_PIPELINE_MEAN: Duration = Duration::from_millis(50);
+
+impl DriverShaderCacheStatus {
+    /// `hit` when the driver loaded every pipeline from its cache, `miss` when
+    /// it compiled some; `off`, `not-nvidia`, or `unknown` otherwise.
+    pub fn result(&self) -> &'static str {
+        if self.vendor != 0 && self.vendor != NVIDIA_VENDOR_ID {
+            return "not-nvidia";
+        }
+        if !self.enabled {
+            return "off";
+        }
+        let compiled = self.pipelines != 0
+            && self.pipeline_time / self.pipelines.min(u32::MAX as u64) as u32 > COMPILED_PIPELINE_MEAN;
+        match &self.written_since_start {
+            Some(written) if !written.is_empty() => "miss",
+            _ if compiled => "miss",
+            Some(_) if self.pipelines != 0 => "hit",
+            _ => "unknown",
+        }
+    }
+
+    /// One line: `result=hit pipelines=854 create_ms=310.2 ...`.
+    pub fn summary(&self) -> String {
+        let dir = self
+            .dir
+            .as_deref()
+            .map_or_else(|| "-".to_string(), |dir| dir.display().to_string());
+        let written = self.written_since_start.as_ref().map_or_else(
+            || "unknown".to_string(),
+            |written| match written.as_slice() {
+                [] => "none".to_string(),
+                [only] => only.clone(),
+                [first, rest @ ..] => format!("{first} (+{} more)", rest.len()),
+            },
+        );
+        format!(
+            "result={} pipelines={} create_ms={:.1} app_name={} named_shard_bytes={} written_since_start={written} dir={dir}",
+            self.result(),
+            self.pipelines,
+            self.pipeline_time.as_secs_f64() * 1000.0,
+            self.app_name.as_deref().unwrap_or("-"),
+            self.named_shard_bytes,
+        )
+    }
+}
+
+/// The driver cache's state now, against this process's start.
+pub fn driver_shader_cache_status() -> DriverShaderCacheStatus {
+    let enabled = std::env::var_os(NVIDIA_SHADER_CACHE_VARS[0]).is_none_or(|value| value != "0");
+    let dir = driver_shader_cache_dir();
+    let app_name = std::env::var(NVIDIA_SHADER_CACHE_APP_NAME_VAR).ok().filter(|name| !name.is_empty());
+    let (written_since_start, named_shard_bytes) = match (&dir, PROCESS_STARTED.get()) {
+        (Some(dir), Some(&started)) if enabled => {
+            let (written, bytes) = scan_driver_shards(&dir.join("GLCache"), app_name.as_deref(), started);
+            (Some(written), bytes)
+        }
+        _ => (None, 0),
+    };
+    DriverShaderCacheStatus {
+        vendor: DEVICE_VENDOR.load(Ordering::Acquire),
+        enabled,
+        dir,
+        app_name,
+        named_shard_bytes,
+        written_since_start,
+        pipelines: crate::gpu::passes_core::pipeline_creation_count(),
+        pipeline_time: crate::gpu::passes_core::pipeline_creation_time(),
+    }
+}
+
+/// The shard files under `glcache` (`<driver>/<device>/<file>.{bin,toc}`)
+/// modified at or after `started`, sorted, and the bytes of the shards named
+/// after `app_name`.
+fn scan_driver_shards(glcache: &std::path::Path, app_name: Option<&str>, started: SystemTime) -> (Vec<String>, u64) {
+    let (mut written, mut named_bytes) = (Vec::new(), 0);
+    let Ok(drivers) = fs::read_dir(glcache) else {
+        return (written, named_bytes);
+    };
+    for driver in drivers.flatten() {
+        let Ok(devices) = fs::read_dir(driver.path()) else {
+            continue;
+        };
+        for device_dir in devices.flatten() {
+            let Ok(files) = fs::read_dir(device_dir.path()) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let name = file.file_name();
+                let Some(name) = name.to_str().filter(|name| name.ends_with(".bin") || name.ends_with(".toc")) else {
+                    continue;
+                };
+                let Ok(metadata) = file.metadata() else {
+                    continue;
+                };
+                if app_name.is_some_and(|app_name| is_named_shard(name, app_name, "bin")) {
+                    named_bytes += metadata.len();
+                }
+                if metadata.modified().is_ok_and(|modified| modified >= started) {
+                    written.push(format!(
+                        "{}/{}/{name}",
+                        driver.file_name().to_string_lossy(),
+                        device_dir.file_name().to_string_lossy()
+                    ));
+                }
+            }
+        }
+    }
+    written.sort();
+    (written, named_bytes)
 }
 
 /// Verifies once per process, after pipelines were created, that the driver
@@ -1546,6 +1697,60 @@ mod tests {
         shard_dir(&root, "c", &[("laniusc12.toc", 600), ("00ff00ff00ff00ff.toc", 1)], now);
         assert_eq!(classify(), ShardNaming::Honored);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn driver_shard_scan_reports_shards_written_since_start() {
+        let root = std::env::temp_dir().join(format!("laniusc-shard-scan-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let now = SystemTime::now();
+        let started = now - Duration::from_secs(60);
+        let glcache = root.join("GLCache");
+        let scan = || scan_driver_shards(&glcache, Some("laniusc"), started);
+
+        assert_eq!(scan(), (Vec::new(), 0), "no cache directory yet");
+        // A warm start: the shards predate the process, so nothing was written.
+        shard_dir(&root, "a", &[("laniusc0.toc", 600), ("0123456789abcdef.toc", 600)], now);
+        fs::write(root.join("GLCache/driver/a/laniusc0.bin"), [0u8; 100]).unwrap();
+        File::options()
+            .write(true)
+            .open(root.join("GLCache/driver/a/laniusc0.bin"))
+            .unwrap()
+            .set_modified(now - Duration::from_secs(600))
+            .unwrap();
+        assert_eq!(scan(), (Vec::new(), 100));
+        // The driver compiled and appended: a sibling shard and a hashed one.
+        shard_dir(&root, "b", &[("laniusc1.toc", 1), ("fedcba9876543210.toc", 1), ("laniusc.toc", 1)], now);
+        assert_eq!(
+            scan().0,
+            ["driver/b/fedcba9876543210.toc", "driver/b/laniusc.toc", "driver/b/laniusc1.toc"]
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn driver_shader_cache_result_needs_no_shard_write_and_fast_pipelines() {
+        let status = |written: Option<&[&str]>, pipelines: u64, ms: u64| DriverShaderCacheStatus {
+            vendor: NVIDIA_VENDOR_ID,
+            enabled: true,
+            dir: None,
+            app_name: Some("laniusc".into()),
+            named_shard_bytes: 0,
+            written_since_start: written.map(|files| files.iter().map(|file| file.to_string()).collect()),
+            pipelines,
+            pipeline_time: Duration::from_millis(ms),
+        };
+        assert_eq!(status(Some(&[]), 854, 330).result(), "hit");
+        assert_eq!(status(Some(&["d/g/laniusc0.toc"]), 854, 330).result(), "miss");
+        // Compiled but not saved (a read-only cache directory).
+        assert_eq!(status(Some(&[]), 854, 227_000).result(), "miss");
+        assert_eq!(status(None, 854, 330).result(), "unknown");
+        assert_eq!(status(Some(&[]), 0, 0).result(), "unknown", "no pipeline created yet");
+        let off = DriverShaderCacheStatus { enabled: false, ..status(None, 854, 330) };
+        assert_eq!(off.result(), "off");
+        let other = DriverShaderCacheStatus { vendor: 0x1002, ..status(Some(&[]), 854, 330) };
+        assert_eq!(other.result(), "not-nvidia");
+        assert!(status(Some(&[]), 854, 330).summary().starts_with("result=hit pipelines=854 create_ms=330.0 "));
     }
 
     #[test]
