@@ -17,6 +17,8 @@ use crate::{
     compiler::{Diagnostic, DiagnosticLabel, diagnostic_label_from_source_span, source_pack_diagnostic_files},
     type_checker::CheckedOwnerSpan,
 };
+#[cfg(test)]
+use crate::type_checker::{CheckedImplHeader, CheckedTraitCut};
 
 /// Copies are named `__lanius_inst_<entry>_<original name>`. Source code
 /// cannot rely on this reserved prefix.
@@ -48,8 +50,9 @@ pub(super) struct InstanceCopy {
     pub range: [u32; 2],
     /// The copied name-to-body-end segment.
     pub body: CopiedSegment,
-    /// The copied impl header segment of a method copy.
-    pub header: Option<CopiedSegment>,
+    /// The copied impl header segments of a method copy: one for an
+    /// inherent impl, two around the left-out trait path for a trait impl.
+    pub header: Vec<CopiedSegment>,
 }
 
 /// Template sources with the copies appended to the last file.
@@ -62,17 +65,39 @@ pub(super) struct InstanceSources {
 }
 
 impl InstanceSources {
+    /// Whether a body can replay as a copy. Copies are appended to the
+    /// template's last file, so they resolve names in that file's module
+    /// and imports: a body declared in another file, or a trait-impl method
+    /// whose self type is declared in another file, replays in its original
+    /// scope instead.
+    pub(super) fn copyable(template: &[String], span: &CheckedOwnerSpan) -> bool {
+        let Some(last) = template.last() else { return false };
+        let total = template.iter().map(String::len).sum::<usize>();
+        let last_start = total - last.len();
+        let in_last = |byte: u32| (byte as usize) >= last_start && (byte as usize) < total;
+        in_last(span.first_byte()) && (span.end_byte as usize) <= total
+            && span.enclosing_impl
+                .and_then(|header| header.trait_cut)
+                .is_none_or(|cut| in_last(cut.self_declaration_byte))
+    }
+
     /// Copy each span once, in the given order. Spans index the template's
     /// global bytes; a top-level function copy is
     /// `fn __lanius_inst_<n>_` + template[name..end], and a method copy is
     /// template[impl..brace_end] + `fn __lanius_inst_<n>_` + template[name..end]
-    /// + `}`, each copy on new lines after the template text.
+    /// + `}`, each copy on new lines after the template text. A trait-impl
+    /// method's header leaves out its trait path and `for`, so the copy is a
+    /// method of an inherent impl of the same self type. `<n>` is the
+    /// entry's index, unique in the unit; source names never use the
+    /// reserved prefix, so a copy cannot collide with a declared method.
     pub(super) fn build(template: &[String], spans: &[CheckedOwnerSpan]) -> Result<Self> {
         ensure!(!template.is_empty(), "an instance unit needs a template source file");
         let template_len = template.iter().try_fold(0u32, |total, source| {
             u32::try_from(source.len()).ok().and_then(|len| total.checked_add(len))
         }).ok_or_else(|| anyhow!("template source pack exceeds u32 bytes"))?;
         let last_start = template_len as usize - template.last().expect("nonempty").len();
+        ensure!(spans.iter().all(|span| Self::copyable(template, span)),
+            "an instance copy's body is declared outside the template's last file");
         let mut text = String::new();
         let mut copies = Vec::with_capacity(spans.len());
         // Global offset of the next byte appended to `text`.
@@ -91,21 +116,25 @@ impl InstanceSources {
             };
             let start = offset(&text)?;
             text.push('\n');
-            let header = match span.inherent_impl {
-                Some((_, keyword, brace_end)) => {
-                    let header = copy(keyword, brace_end, &mut text)?;
-                    text.push_str("\n    ");
-                    Some(header)
+            let mut header = Vec::new();
+            if let Some(implementation) = span.enclosing_impl {
+                let (keyword, brace_end) = (implementation.keyword_byte, implementation.brace_end);
+                match implementation.trait_cut {
+                    None => header.push(copy(keyword, brace_end, &mut text)?),
+                    Some(cut) => {
+                        header.push(copy(keyword, cut.start, &mut text)?);
+                        header.push(copy(cut.end, brace_end, &mut text)?);
+                    }
                 }
-                None => None,
-            };
+                text.push_str("\n    ");
+            }
             let fn_byte = offset(&text)?;
             text.push_str("fn ");
             text.push_str(INSTANCE_NAME_PREFIX);
             text.push_str(&index.to_string());
             text.push('_');
             let body = copy(span.name_byte, span.end_byte, &mut text)?;
-            if header.is_some() {
+            if !header.is_empty() {
                 text.push_str("\n}");
             }
             copies.push(InstanceCopy {
@@ -262,10 +291,11 @@ mod tests {
         let keyword = find(TEMPLATE, "impl<T>");
         let brace_end = find(TEMPLATE, "Cell<T> {\n    pub") + "Cell<T> {".len() as u32;
         vec![
-            CheckedOwnerSpan { function_hir: 4, name_byte: keep_name, end_byte: keep_end, inherent_impl: None, native_symbol: 1 },
+            CheckedOwnerSpan { function_hir: 4, name_byte: keep_name, end_byte: keep_end, enclosing_impl: None, native_symbol: 1 },
             CheckedOwnerSpan { function_hir: 9, name_byte: get_name, end_byte: get_end,
-                inherent_impl: Some((8, keyword, brace_end)), native_symbol: 2 },
-            CheckedOwnerSpan { function_hir: 4, name_byte: keep_name, end_byte: keep_end, inherent_impl: None, native_symbol: 1 },
+                enclosing_impl: Some(CheckedImplHeader { hir: 8, keyword_byte: keyword, brace_end, trait_cut: None }),
+                native_symbol: 2 },
+            CheckedOwnerSpan { function_hir: 4, name_byte: keep_name, end_byte: keep_end, enclosing_impl: None, native_symbol: 1 },
         ]
     }
 
@@ -299,7 +329,9 @@ mod tests {
         assert!(instance.copies.windows(2).all(|pair| pair[0].fn_byte < pair[1].fn_byte));
         assert_eq!(instance.copy_at(instance.template_len - 1), None);
         assert_eq!(instance.copy_at(all.len() as u32), None);
-        assert_eq!(instance.copies[1].header.unwrap().original_start, find(TEMPLATE, "impl<T>"));
+        assert_eq!(instance.copies[1].header.len(), 1);
+        assert_eq!(instance.copies[1].header[0].original_start, find(TEMPLATE, "impl<T>"));
+        assert!(instance.copies[0].header.is_empty());
     }
 
     #[test]
@@ -319,7 +351,7 @@ mod tests {
         // Template bytes are unchanged; added text maps to the body start.
         assert_eq!(instance.original_byte(7), Some(7));
         assert_eq!(instance.original_byte(instance.copies[1].fn_byte), Some(body.original_start));
-        let header = instance.copies[1].header.unwrap();
+        let header = instance.copies[1].header[0];
         assert_eq!(instance.original_byte(header.instance_start + 2), Some(header.original_start + 2));
     }
 
@@ -359,12 +391,80 @@ mod tests {
     #[test]
     fn copies_reject_spans_outside_one_file() {
         let template = vec!["fn a<T>() {}".to_string(), "fn b<T>() {}".to_string()];
-        let crossing = CheckedOwnerSpan { function_hir: 1, name_byte: 3, end_byte: 15, inherent_impl: None, native_symbol: 0 };
+        let crossing = CheckedOwnerSpan { function_hir: 1, name_byte: 3, end_byte: 15, enclosing_impl: None, native_symbol: 0 };
         assert!(InstanceSources::build(&template, &[crossing]).is_err());
         let outside = CheckedOwnerSpan { end_byte: 99, ..crossing };
         assert!(InstanceSources::build(&template, &[outside]).is_err());
         let second = CheckedOwnerSpan { name_byte: 15, end_byte: 24, ..crossing };
         let instance = InstanceSources::build(&template, &[second]).unwrap();
         assert_eq!(&instance.sources[1][12..], "\nfn __lanius_inst_0_b<T>() {}");
+    }
+
+    const TRAIT_TEMPLATE: &str = "module m;\ntrait Get<T> { fn get(self) -> T; }\nstruct Slot<T> { value: T }\nimpl<T> Get<T> for Slot<T> where T: Copy {\n    fn get(self) -> T { return self.value; }\n}\n";
+
+    fn trait_span(template: &str) -> CheckedOwnerSpan {
+        let keyword = find(template, "impl<T> Get");
+        let name = find(template, "get(self) -> T {");
+        let end = find(template, "self.value; }") + "self.value; }".len() as u32;
+        CheckedOwnerSpan {
+            function_hir: 12, name_byte: name, end_byte: end,
+            enclosing_impl: Some(CheckedImplHeader {
+                hir: 10, keyword_byte: keyword,
+                brace_end: find(template, "Copy {") + "Copy {".len() as u32,
+                trait_cut: Some(CheckedTraitCut {
+                    start: find(template, "Get<T> for"),
+                    end: find(template, "Slot<T> where"),
+                    self_declaration_byte: find(template, "Slot<T> {"),
+                }),
+            }),
+            native_symbol: 3,
+        }
+    }
+
+    #[test]
+    fn a_trait_impl_method_copies_as_an_inherent_method_of_its_self_type() {
+        let span = trait_span(TRAIT_TEMPLATE);
+        let instance = InstanceSources::build(&[TRAIT_TEMPLATE.to_string()], &[span, span]).unwrap();
+        let all = instance.sources.concat();
+        assert_eq!(&all[TRAIT_TEMPLATE.len()..], concat!(
+            "\nimpl<T> Slot<T> where T: Copy {\n    fn __lanius_inst_0_get(self) -> T { return self.value; }\n}",
+            "\nimpl<T> Slot<T> where T: Copy {\n    fn __lanius_inst_1_get(self) -> T { return self.value; }\n}",
+        ));
+        let copy = &instance.copies[1];
+        assert_eq!(copy.header.len(), 2);
+        // Both header segments map back to their own template bytes.
+        let [first, second] = [copy.header[0], copy.header[1]];
+        assert_eq!(instance.original_byte(first.instance_start), Some(find(TRAIT_TEMPLATE, "impl<T> Get")));
+        assert_eq!(instance.original_byte(second.instance_start), Some(find(TRAIT_TEMPLATE, "Slot<T> where")));
+        assert_eq!(second.instance_start, first.instance_start + first.len);
+        assert_eq!(&all[copy.fn_byte as usize..copy.fn_byte as usize + 3], "fn ");
+    }
+
+    #[test]
+    fn only_bodies_of_the_last_file_are_copyable() {
+        // The same declarations split over two files: the trait impl in the
+        // first, or its self type in the first.
+        let split_at = find(TRAIT_TEMPLATE, "impl<T> Get") as usize;
+        let impl_first = vec![TRAIT_TEMPLATE.to_string(), "fn tail() {}\n".to_string()];
+        let span = trait_span(TRAIT_TEMPLATE);
+        assert!(!InstanceSources::copyable(&impl_first, &span));
+        assert!(InstanceSources::build(&impl_first, &[span]).is_err());
+
+        let type_first = vec![TRAIT_TEMPLATE[..split_at].to_string(), TRAIT_TEMPLATE[split_at..].to_string()];
+        assert!(!InstanceSources::copyable(&type_first, &span), "self type declared in another file");
+        let mut local_type = span;
+        if let Some(header) = local_type.enclosing_impl.as_mut() {
+            header.trait_cut.as_mut().unwrap().self_declaration_byte = split_at as u32 + 2;
+        }
+        assert!(InstanceSources::copyable(&type_first, &local_type));
+
+        // A top-level function or inherent method is copyable by its own bytes.
+        let spans = spans();
+        let one = vec![TEMPLATE.to_string()];
+        assert!(spans.iter().all(|span| InstanceSources::copyable(&one, span)));
+        let keep_end = spans[0].end_byte as usize;
+        let keep_first = vec![TEMPLATE[..keep_end].to_string(), TEMPLATE[keep_end..].to_string()];
+        assert!(!InstanceSources::copyable(&keep_first, &spans[0]));
+        assert!(InstanceSources::copyable(&keep_first, &spans[1]));
     }
 }

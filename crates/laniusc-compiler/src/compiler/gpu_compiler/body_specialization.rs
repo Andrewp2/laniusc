@@ -393,7 +393,7 @@ impl GpuCompiler<'_> {
                     trace.replay(
                         &run.keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
                         specializations.len(), [started, prepared, compiled, finished],
-                        concrete.text.len(), replay_calls.len());
+                        concrete.text.len(), replay_calls.len(), run_kind(run.copies, run.solo));
                     contexts.push(ReplayContext {
                         library_id,
                         unit_id,
@@ -554,8 +554,18 @@ struct SpecializationTrace {
     start: std::time::Instant,
     reused: usize,
     runs: usize,
+    /// Runs by kind: instance copies, original scope, polymorphic recursion.
+    kinds: [usize; 3],
     phases_ms: [f64; 3],
 }
+
+/// Trace index of a run's kind: 0 copies, 1 original scope, 2 solo
+/// (polymorphic recursion, in its original scope).
+fn run_kind(copies: bool, solo: bool) -> usize {
+    if solo { 2 } else if copies { 0 } else { 1 }
+}
+
+const RUN_KINDS: [&str; 3] = ["copies", "original", "solo"];
 
 impl SpecializationTrace {
     fn new() -> Self {
@@ -564,6 +574,7 @@ impl SpecializationTrace {
             start: std::time::Instant::now(),
             reused: 0,
             runs: 0,
+            kinds: [0; 3],
             phases_ms: [0.0; 3],
         }
     }
@@ -575,16 +586,18 @@ impl SpecializationTrace {
         times: [std::time::Instant; 4],
         text_bytes: usize,
         replay_calls: usize,
+        kind: usize,
     ) {
         self.runs += 1;
+        self.kinds[kind] += 1;
         if !self.enabled { return; }
         let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
         let phases = [ms(times[0], times[1]), ms(times[1], times[2]), ms(times[2], times[3])];
         for (total, phase) in self.phases_ms.iter_mut().zip(phases) { *total += phase; }
         let (library, unit, _) = bodies[0].1.target;
         eprintln!(
-            "[specialization] run={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls}",
-            self.runs, bodies.len(), phases[0], phases[1], phases[2],
+            "[specialization] run={} kind={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls}",
+            self.runs, RUN_KINDS[kind], bodies.len(), phases[0], phases[1], phases[2],
         );
         for (key, body) in bodies {
             let call = body.admitted.checked_call();
@@ -611,8 +624,9 @@ impl SpecializationTrace {
     fn finish(&self, bodies: usize, text_bytes: usize) {
         if !self.enabled { return; }
         eprintln!(
-            "[specialization] summary bodies={bodies} runs={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
-            self.runs, self.reused, self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
+            "[specialization] summary bodies={bodies} runs={} copy_runs={} original_runs={} solo_runs={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
+            self.runs, self.kinds[0], self.kinds[1], self.kinds[2], self.reused,
+            self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
             self.start.elapsed().as_secs_f64() * 1000.0,
         );
     }

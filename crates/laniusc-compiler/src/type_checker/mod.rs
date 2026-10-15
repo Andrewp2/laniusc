@@ -18,7 +18,7 @@ mod compiler_graph;
 mod generic_body;
 mod generic_calls;
 mod owner_spans;
-pub(crate) use owner_spans::{CheckedOwnerSpan, CheckedOwnerSpans};
+pub(crate) use owner_spans::{CheckedImplHeader, CheckedOwnerSpan, CheckedOwnerSpans, CheckedTraitCut};
 mod checked_contracts;
 #[cfg(test)]
 mod scoped_type_graph_tests;

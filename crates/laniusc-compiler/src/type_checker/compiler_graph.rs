@@ -2950,10 +2950,10 @@ fn build_graph(
         _retained_callable_local_prefix as "retained_callable_local_prefix" in HirNodes => hir_rows * 4;
         _retained_callable_block_sum as "retained_callable_block_sum" in HirNodes => hir_rows.div_ceil(256) * 4;
         _retained_callable_block_prefix as "retained_callable_block_prefix" in HirNodes => hir_rows.div_ceil(256) * 4;
-        // Instance-copy spans: one 32-byte record per 16 HIR rows is far more
+        // Instance-copy spans: one 44-byte record per 16 HIR rows is far more
         // than the generic bodies of any unit; the host refuses an overflow.
         _retained_owner_span_count as "retained_owner_span_count" in Calls => 4;
-        _retained_owner_spans as "retained_owner_spans" in Calls => (hir_rows * 2).max(64 * 32);
+        _retained_owner_spans as "retained_owner_spans" in Calls => (hir_rows.div_ceil(16) * 44).max(64 * 44);
     });
     graph.add_storage(
         "body_specialization_inputs",
@@ -6559,6 +6559,10 @@ fn build_graph(
             "retained_owner_span_count" => _retained_owner_span_count: ReadWrite,
             "retained_owner_spans" => _retained_owner_spans: Write,
             "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Read,
+            "semantic_type_ref_tag_by_hir" => semantic_type_ref_tag_by_hir: Read,
+            "semantic_type_ref_payload_by_hir" => semantic_type_ref_payload_by_hir: Read,
+            "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Read,
+            "type_instance_decl_token" => _type_instance_decl_token: Read,
         ],
     )?;
     graph.add_kernel_pass_by_name(

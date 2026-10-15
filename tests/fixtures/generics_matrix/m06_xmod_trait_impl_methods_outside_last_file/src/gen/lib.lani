@@ -1,0 +1,21 @@
+module gen::lib;
+
+import gen::area;
+
+trait Weight {
+    fn weight(self) -> i32;
+}
+
+impl<T> Weight for gen::area::Slot<T> {
+    fn weight(self) -> i32 {
+        return 21;
+    }
+}
+
+fn heavy<W>(w: W) -> i32 where W: Weight {
+    return w.weight();
+}
+
+pub fn evaluate() -> i32 {
+    return heavy(gen::area::make(true, 0)) + heavy(gen::area::make(1, 0)) - 21;
+}

@@ -153,12 +153,16 @@ impl NativeProgramSession {
     }
 
     /// Whether an origin's body can replay as an instance copy: its template
-    /// retained the byte span of the selected callable.
+    /// retained the byte span of the selected callable, and the copy, which
+    /// is appended to the template's last file, resolves names in the same
+    /// module as the body (`InstanceSources::copyable`).
     pub fn instance_copy_available(&mut self, origin: &AdmittedCall) -> Result<bool> {
         self.ready()?;
         let (_, snapshot, selected_owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
-        Ok(self.catalog.snapshots[snapshot as usize].original_facts.owner_spans()
-            .is_some_and(|spans| spans.get(selected_owner_hir).is_some()))
+        let facts = &self.catalog.snapshots[snapshot as usize].original_facts;
+        Ok(facts.owner_spans()
+            .and_then(|spans| spans.get(selected_owner_hir))
+            .is_some_and(|span| InstanceSources::copyable(facts.template_sources(), span)))
     }
 
     /// Like `prepare_replay_batch`, but every origin replays a renamed copy of
@@ -203,7 +207,7 @@ impl NativeProgramSession {
                 .collect::<Result<Vec<_>>>()?;
             let sources = InstanceSources::build(template.template_sources(), &selected)?;
             let owners = selected.iter()
-                .map(|span| (span.function_hir, span.inherent_impl.map(|(row, _, _)| row)))
+                .map(|span| (span.function_hir, span.enclosing_impl.map(|header| header.hir)))
                 .collect();
             Some(InstanceRequest { sources: Arc::new(sources), first_copy_row: spans.hir_count, owners })
         } else {
