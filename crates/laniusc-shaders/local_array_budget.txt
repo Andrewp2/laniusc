@@ -11,7 +11,6 @@
 2048 type_checker/calls/03g_project_expression_types
 2048 type_checker/calls/03h_project_array_literal_elements
 2048 type_checker/canonical/90_validate
-2048 type_checker/methods/09_route_bound_members
 1536 type_checker/calls/03a4_validate_generic_claims
 1280 type_checker/type/instances/02c_index_closed_applications
 1024 type_checker/dependencies/14_project_type_instances

@@ -1025,6 +1025,12 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_semantic_end_local_max"
             | "hir_semantic_end_blocks"
             | "hir_semantic_end_top"
+            | "hir_canonical_end_local_max"
+            | "hir_canonical_end_blocks"
+            | "hir_canonical_end_top"
+            | "hir_semantic_child_local"
+            | "hir_semantic_child_blocks"
+            | "hir_semantic_child_top"
             | "hir_semantic_parent"
             | "hir_semantic_first_child"
             | "hir_semantic_next_sibling"
@@ -1404,6 +1410,16 @@ fn build_graph(
             capacity.tree_node_blocks,
         ),
     );
+    // The canonical tables have one row per input token.
+    let canonical_end_blocks = u64::from(
+        crate::parser::passes::hir::canonical::parent::block_count(capacity.token_capacity),
+    );
+    let canonical_end_leaf_base = u64::from(
+        crate::parser::passes::hir::canonical::parent::leaf_base(capacity.token_capacity),
+    );
+    let canonical_end_groups = u64::from(
+        crate::parser::passes::hir::canonical::parent::group_count(capacity.token_capacity),
+    );
 
     for (name, domain, bytes) in [
         ("token_kinds", ResourceDomain::Tokens, token_rows * 4),
@@ -1640,6 +1656,36 @@ fn build_graph(
             "hir_semantic_end_top",
             ResourceDomain::HirNodes,
             semantic_end_groups * 4,
+        ),
+        (
+            "hir_canonical_end_local_max",
+            ResourceDomain::HirNodes,
+            canonical_end_blocks * 256 * 4,
+        ),
+        (
+            "hir_canonical_end_blocks",
+            ResourceDomain::HirNodes,
+            canonical_end_leaf_base * 4,
+        ),
+        (
+            "hir_canonical_end_top",
+            ResourceDomain::HirNodes,
+            canonical_end_groups * 4,
+        ),
+        (
+            "hir_semantic_child_local",
+            ResourceDomain::HirNodes,
+            tree_blocks * 256 * 8,
+        ),
+        (
+            "hir_semantic_child_blocks",
+            ResourceDomain::HirNodes,
+            semantic_end_leaf_base * 8,
+        ),
+        (
+            "hir_semantic_child_top",
+            ResourceDomain::HirNodes,
+            semantic_end_groups * 8,
         ),
         (
             "hir_semantic_parent",
@@ -2952,6 +2998,51 @@ fn build_graph(
     indirect(&mut graph, "hir_semantic_nav", "hir_semantic_dispatch_args")?;
     static_pass(
         &mut graph,
+        &passes.hir_semantic_child_index_rows,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_child_local",
+                "hir_semantic_child_local",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    indirect(
+        &mut graph,
+        "hir_semantic_child_index_rows",
+        "hir_semantic_dispatch_args",
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_child_index_blocks,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_child_blocks",
+                "hir_semantic_child_blocks",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_child_index_top,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    // Each level of the top heap reads the level below it.
+    graph.mark_pass_bindings_initialize(
+        "hir_semantic_child_index_top",
+        &["hir_semantic_child_top"],
+    )?;
+    static_pass(
+        &mut graph,
         &passes.hir_semantic_child_index_traverse,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
@@ -3536,17 +3627,46 @@ mod tests {
         // Constructor braces and value-path array arguments share the raw
         // angle relation. Reflection must keep every input read-only and live
         // until its consumer, including before semantic bracket projection.
-        for consumer in [
-            "parser.tokens.delimiters.owner_apply",
-            "parser.tokens.bracket_match.pair_pse",
-            token_frontend::ENCLOSING_OPENS,
+        // Bracket pairing reads each open's enclosing angle through the
+        // enclosing-opens tables instead of searching the angle tree itself.
+        let bracket_pair = graph
+            .pass_id("parser.tokens.bracket_match.pair_pse")
+            .unwrap();
+        for name in ["token_enclosing_open", "token_angle_close"] {
+            let resource = graph.resource_id(name).unwrap();
+            assert!(
+                graph.pass(bracket_pair).unwrap().accesses.iter().any(|access| {
+                    access.resource == resource && access.mode == AccessMode::Read
+                }),
+                "parser.tokens.bracket_match.pair_pse must declare its read of {name}",
+            );
+            assert!(
+                graph.lifetime(resource).unwrap().last_pass.index() >= bracket_pair.index(),
+                "{name} must survive through parser.tokens.bracket_match.pair_pse",
+            );
+        }
+        // Owner application searches the angle tree by block minimum; the
+        // enclosing-opens search climbs the per-block heaps instead.
+        for (consumer, names) in [
+            (
+                "parser.tokens.delimiters.owner_apply",
+                &[
+                    "angle_match_depth",
+                    "angle_match_block_min",
+                    "angle_match_min_tree",
+                ][..],
+            ),
+            (
+                token_frontend::ENCLOSING_OPENS,
+                &[
+                    "angle_match_depth",
+                    "angle_match_min_tree",
+                    "delimiter_match_local_min",
+                ][..],
+            ),
         ] {
             let pass = graph.pass_id(consumer).unwrap();
-            for name in [
-                "angle_match_depth",
-                "angle_match_block_min",
-                "angle_match_min_tree",
-            ] {
+            for &name in names {
                 let resource = graph.resource_id(name).unwrap();
                 assert!(
                     graph.pass(pass).unwrap().accesses.iter().any(|access| {
@@ -3724,6 +3844,9 @@ mod tests {
             "hir_semantic_compact_scatter",
             "hir_semantic_dispatch_args",
             "hir_semantic_nav",
+            "hir_semantic_child_index_rows",
+            "hir_semantic_child_index_blocks",
+            "hir_semantic_child_index_top",
             "hir_semantic_child_index_traverse",
             "hir_type_arg_links",
             "hir_type_arg_rank_prefix_00_local",
@@ -3853,6 +3976,9 @@ mod tests {
             "hir_canonical_type_arg_local",
             "hir_canonical_type_arg_prefix_01_blocks.up",
             "hir_canonical_type_arg_scatter",
+            "hir_canonical_end_rows",
+            "hir_canonical_end_blocks",
+            "hir_canonical_end_top",
             "hir_canonical_core",
             "hir_canonical_nav",
             "hir_canonical_expr_forest_edges",
