@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fixture_sweep import failure_group, render_diff, render_stdlib_diff, run_elf
+from fixture_sweep import check_jumps, failure_group, render_diff, render_stdlib_diff, run_elf
 from x86_jump_check import jumps_leaving_function
 
 
@@ -104,6 +104,19 @@ class JumpCheckTests(unittest.TestCase):
             jumps = jumps_leaving_function(str(elf))
 
         self.assertEqual(jumps, [{"at": 0x400080, "op": "je", "target": 0x40008C, "function": 0x400078}])
+
+    def test_a_bad_jump_fails_a_passing_fixture_and_annotates_a_failing_one(self):
+        code = bytes.fromhex("554889e5" "740a" "c9c3" "554889e5" "90909090" "c9c3")
+        with tempfile.TemporaryDirectory() as directory:
+            elf = Path(directory) / "program.elf"
+            elf.write_bytes(bytes(0x78) + code)
+            passing, failing = result("a", "PASS"), result("b", "FAIL-EXIT", detail="got exit 3")
+            check_jumps(elf, passing)
+            check_jumps(elf, failing)
+
+        self.assertEqual(passing["status"], "FAIL-JUMP")
+        self.assertEqual(failure_group(passing), "jump leaves its function (run passed)")
+        self.assertEqual((failing["status"], failing["bad_jumps"]), ("FAIL-EXIT", 1))
 
     def test_reports_a_frameless_leaf_jumping_to_its_own_entry(self):
         code = bytes.fromhex(

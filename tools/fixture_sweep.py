@@ -10,7 +10,9 @@ usage:
   tools/fixture_sweep.py list [--suite NAME]...
 
 `run` compiles each fixture with the resident daemon (like tools/generics_matrix.py),
-runs the ELF, and compares the result with the fixture's expectation. Suites:
+runs the ELF, and compares the result with the fixture's expectation. Every
+compiled ELF also goes through tools/x86_jump_check.py: a jmp/jcc that leaves its
+function fails a fixture that otherwise passed (FAIL-JUMP). Suites:
 stdlib_foundation (tests/fixtures/stdlib_foundation, expectations parsed from the
 Rust tests by tools/fixture_expectations.py), generics_matrix and generics_backlog
 (exit 42 unless the first line is `// expect: N`). Results go to
@@ -258,6 +260,26 @@ def judge_run(expectation, run: dict) -> tuple[str, str]:
     return "PASS", ""
 
 
+def check_jumps(elf: pathlib.Path, record: dict):
+    """Run tools/x86_jump_check.py on a compiled fixture. A jmp/jcc into another
+    function is a miscompile even when the run passed, so it fails the fixture."""
+    from x86_jump_check import describe, jumps_leaving_function
+
+    if shutil.which("objdump") is None:
+        record["jump_check"] = "skipped: no objdump"
+        return
+    try:
+        jumps = jumps_leaving_function(str(elf))
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        jumps = [{"error": str(error)[:200]}]
+    if not jumps:
+        return
+    record["bad_jumps"] = len(jumps)
+    record["bad_jump_examples"] = [jump.get("error") or describe(jump) for jump in jumps[:5]]
+    if record["status"] in OK_STATUSES:
+        record.update(status="FAIL-JUMP", detail=f"{len(jumps)} bad jumps; first: {record['bad_jump_examples'][0]}")
+
+
 def sweep(args) -> int:
     suites = args.suite or list(SUITES)
     cases = load_cases(suites, args.pattern)
@@ -380,11 +402,15 @@ def sweep(args) -> int:
                         "stderr": run["stderr"].decode("utf-8", "replace")[:300],
                     }
             record["compile_s"] = round(elapsed, 3)
+            if compiled:
+                check_jumps(elf, record)
         record["elapsed_s"] = round(time.time() - started, 3)
         results.append(record)
         line = f"{record['status']:22} {record['elapsed_s']:6.1f}s  {name}"
         if record["status"] not in OK_STATUSES:
             line += f"\n    {record.get('code') or ''} {record.get('location') or ''} {record.get('detail', '')[:200]}"
+            if record.get("bad_jumps") and record["status"] != "FAIL-JUMP":
+                line += f"\n    {record['bad_jumps']} bad jumps; first: {record['bad_jump_examples'][0]}"
         print(line, flush=True)
         # Written after every fixture, so a hold that is cut short keeps its
         # results and `--resume` continues where it stopped.
@@ -476,6 +502,7 @@ def failure_group(result: dict) -> str:
         "FAIL-EXIT": "wrong exit status",
         "FAIL-STDOUT": "wrong stdout",
         "FAIL-RUN-TIMEOUT": "program timeout",
+        "FAIL-JUMP": "jump leaves its function (run passed)",
     }.get(status, status)
 
 
