@@ -19,7 +19,8 @@ public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
     for (;;)
     {
         uint3 ref = SH_REF(depth);
-        if (SH_NEXT(depth) == INVALID)
+        bool classify = SH_NEXT(depth) == INVALID;
+        if (classify)
         {
             if (ref.x == 2u && ref.z != INVALID)
             {
@@ -30,6 +31,13 @@ public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
             }
             if (ref.y == INVALID) return false;
             SH_CLASSIFIED(depth, ref);
+        }
+        // A node frame (tag 3, in range) reads its fields once per step: its
+        // header when classified, then the reference of the child it enters.
+        TypeNodeFields node = type_node_step_fields<Graph>(ref.y, ref.x == 3u && ref.y < type_capacity &&
+            (classify || SH_NEXT(depth) != SH_COUNT(depth)), classify);
+        if (classify)
+        {
             hash = scoped_type_hash_mix(hash,
                 application_argument_is_constant(ref.x) ? APPLICATION_CONSTANT_ARGUMENT : ref.x);
             // The constant leaf or array length whose identity ends this
@@ -55,32 +63,27 @@ public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
             }
             else if (ref.x == 3u && ref.y < type_capacity)
             {
-                uint kind = Graph.metadata(ref.y, 0u);
-                hash = scoped_type_hash_mix(hash, kind);
-                if (kind == 1u)
+                hash = scoped_type_hash_mix(hash, node.kind);
+                if (node.kind == 1u)
                 {
-                    uint declaration = Graph.metadata(ref.y, 1u);
-                    hash = scoped_type_hash_mix(hash, declaration);
-                    if (declaration == INVALID)
+                    hash = scoped_type_hash_mix(hash, node.declaration);
+                    if (node.declaration == INVALID)
                     {
-                        for (uint field = 7u; field <= 9u; field++)
-                        {
-                            uint identity = Graph.metadata(ref.y, field);
-                            if (identity == INVALID) return false;
-                            hash = scoped_type_hash_mix(hash, identity);
-                        }
+                        if (any(node.identity == INVALID)) return false;
+                        hash = scoped_type_hash_mix(scoped_type_hash_mix(scoped_type_hash_mix(
+                            hash, node.identity.x), node.identity.y), node.identity.z);
                     }
-                    else if (declaration >= token_capacity) return false;
-                    SH_SET_COUNT(depth, Graph.metadata(ref.y, 2u));
-                    if (SH_COUNT(depth) > NOMINAL_APPLICATION_ARGUMENT_LIMIT) return false;
-                    hash = scoped_type_hash_mix(hash, SH_COUNT(depth));
+                    else if (node.declaration >= token_capacity) return false;
+                    SH_SET_COUNT(depth, node.count);
+                    if (node.count > NOMINAL_APPLICATION_ARGUMENT_LIMIT) return false;
+                    hash = scoped_type_hash_mix(hash, node.count);
                 }
-                else if (kind == 2u || kind == 3u || kind == 4u)
+                else if (node.kind == 2u || node.kind == 3u || node.kind == 4u)
                 {
-                    if (kind == 2u)
+                    if (node.kind == 2u)
                     {
                         constant = true; count_identity = true;
-                        constant_ref = uint3(Graph.metadata(ref.y, 5u), Graph.metadata(ref.y, 6u), ref.z);
+                        constant_ref = uint3(node.length, ref.z);
                     }
                     SH_SET_COUNT(depth, 1u);
                 }
@@ -104,16 +107,8 @@ public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
         }
         uint slot = SH_NEXT(depth);
         SH_SET_NEXT(depth, slot + 1u);
-        uint child_tag; uint child_payload;
-        if (Graph.metadata(ref.y, 0u) == 1u)
-        {
-            if (!Graph.argument(ref.y, slot, child_tag, child_payload)) return false;
-        }
-        else
-        {
-            child_tag = Graph.metadata(ref.y, 3u);
-            child_payload = Graph.metadata(ref.y, 4u);
-        }
+        uint child_tag = node.element.x; uint child_payload = node.element.y;
+        if (node.kind == 1u && !Graph.argument(ref.y, slot, child_tag, child_payload)) return false;
         if (depth + 1u == DEPTH_LIMIT) return false;
         for (uint ancestor = 0u; ancestor <= depth; ancestor++)
             if (SH_REF(ancestor).x == child_tag && SH_REF(ancestor).y == child_payload &&

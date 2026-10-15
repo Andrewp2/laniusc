@@ -41,6 +41,8 @@ public bool scoped_type_ref_hash_stackless<Graph : IParameterScopedTypeGraph>(
         }
         if (ref.y == INVALID) return false;
         uint count = 0u;
+        // A node (tag 3, in range) reads its header and child reference once.
+        TypeNodeFields node = type_node_step_fields<Graph>(ref.y, ref.x == 3u && ref.y < type_capacity, true);
         hash = scoped_type_hash_mix(hash,
             application_argument_is_constant(ref.x) ? APPLICATION_CONSTANT_ARGUMENT : ref.x);
         bool constant = false; bool count_identity = false;
@@ -62,32 +64,27 @@ public bool scoped_type_ref_hash_stackless<Graph : IParameterScopedTypeGraph>(
         }
         else if (ref.x == 3u && ref.y < type_capacity)
         {
-            uint kind = Graph.metadata(ref.y, 0u);
-            hash = scoped_type_hash_mix(hash, kind);
-            if (kind == 1u)
+            hash = scoped_type_hash_mix(hash, node.kind);
+            if (node.kind == 1u)
             {
-                uint declaration = Graph.metadata(ref.y, 1u);
-                hash = scoped_type_hash_mix(hash, declaration);
-                if (declaration == INVALID)
+                hash = scoped_type_hash_mix(hash, node.declaration);
+                if (node.declaration == INVALID)
                 {
-                    for (uint field = 7u; field <= 9u; field++)
-                    {
-                        uint identity = Graph.metadata(ref.y, field);
-                        if (identity == INVALID) return false;
-                        hash = scoped_type_hash_mix(hash, identity);
-                    }
+                    if (any(node.identity == INVALID)) return false;
+                    hash = scoped_type_hash_mix(scoped_type_hash_mix(scoped_type_hash_mix(
+                        hash, node.identity.x), node.identity.y), node.identity.z);
                 }
-                else if (declaration >= token_capacity) return false;
-                count = Graph.metadata(ref.y, 2u);
+                else if (node.declaration >= token_capacity) return false;
+                count = node.count;
                 if (count > NOMINAL_APPLICATION_ARGUMENT_LIMIT) return false;
                 hash = scoped_type_hash_mix(hash, count);
             }
-            else if (kind == 2u || kind == 3u || kind == 4u)
+            else if (node.kind == 2u || node.kind == 3u || node.kind == 4u)
             {
-                if (kind == 2u)
+                if (node.kind == 2u)
                 {
                     constant = true; count_identity = true;
-                    constant_ref = uint3(Graph.metadata(ref.y, 5u), Graph.metadata(ref.y, 6u), ref.z);
+                    constant_ref = uint3(node.length, ref.z);
                 }
                 count = 1u;
             }
@@ -117,16 +114,8 @@ public bool scoped_type_ref_hash_stackless<Graph : IParameterScopedTypeGraph>(
             depth = 0u; ref = uint3(tag, payload, context);
             continue;
         }
-        uint child_tag; uint child_payload;
-        if (Graph.metadata(ref.y, 0u) == 1u)
-        {
-            if (!Graph.argument(ref.y, slot, child_tag, child_payload)) return false;
-        }
-        else
-        {
-            child_tag = Graph.metadata(ref.y, 3u);
-            child_payload = Graph.metadata(ref.y, 4u);
-        }
+        uint child_tag = node.element.x; uint child_payload = node.element.y;
+        if (node.kind == 1u && !Graph.argument(ref.y, slot, child_tag, child_payload)) return false;
         if (depth + 1u == DEPTH_LIMIT) return false;
         SCOPED_TYPE_PATH_SET(path, depth, slot);
         depth++;
@@ -164,6 +153,12 @@ public bool scoped_type_refs_equal_graphs_stackless<
             context.y = INVALID;
         }
         uint count = 0u;
+        // A node pair (both tag 3, in range) reads each side's header and
+        // child reference once.
+        TypeNodeFields left = type_node_step_fields<LeftGraph>(pair.y,
+            pair.x == 3u && pair.y < left_type_capacity, true);
+        TypeNodeFields right = type_node_step_fields<RightGraph>(pair.w,
+            pair.z == 3u && pair.w < right_type_capacity, true);
         bool compare_constant = false; bool count_identity = false;
         uint2 constant_left = uint2(0u, INVALID); uint2 constant_right = uint2(0u, INVALID);
         if (application_argument_is_constant(pair.x) || application_argument_is_constant(pair.z))
@@ -186,34 +181,23 @@ public bool scoped_type_refs_equal_graphs_stackless<
         else
         {
             if (pair.y >= left_type_capacity || pair.w >= right_type_capacity) return false;
-            uint kind = LeftGraph.metadata(pair.y, 0u);
-            if (kind < 1u || kind > 4u || kind != RightGraph.metadata(pair.w, 0u)) return false;
+            uint kind = left.kind;
+            if (kind < 1u || kind > 4u || kind != right.kind) return false;
             if (kind == 1u)
             {
-                uint left_decl = LeftGraph.metadata(pair.y, 1u);
-                uint right_decl = RightGraph.metadata(pair.w, 1u);
-                if (left_decl != INVALID || right_decl != INVALID)
+                if (left.declaration != INVALID || right.declaration != INVALID)
                 {
-                    if (left_decl >= token_capacity || left_decl != right_decl) return false;
+                    if (left.declaration >= token_capacity || left.declaration != right.declaration) return false;
                 }
-                else
-                {
-                    for (uint field = 7u; field <= 9u; field++)
-                    {
-                        uint identity = LeftGraph.metadata(pair.y, field);
-                        if (identity == INVALID || identity != RightGraph.metadata(pair.w, field)) return false;
-                    }
-                }
-                count = LeftGraph.metadata(pair.y, 2u);
-                if (count > NOMINAL_APPLICATION_ARGUMENT_LIMIT ||
-                    count != RightGraph.metadata(pair.w, 2u)) return false;
+                else if (any(left.identity == INVALID) || any(left.identity != right.identity)) return false;
+                count = left.count;
+                if (count > NOMINAL_APPLICATION_ARGUMENT_LIMIT || count != right.count) return false;
             }
             else
             {
                 if (kind == 2u)
                 {
-                    constant_left = uint2(LeftGraph.metadata(pair.y, 5u), LeftGraph.metadata(pair.y, 6u));
-                    constant_right = uint2(RightGraph.metadata(pair.w, 5u), RightGraph.metadata(pair.w, 6u));
+                    constant_left = left.length; constant_right = right.length;
                     compare_constant = true; count_identity = true;
                 }
                 count = 1u;
@@ -235,17 +219,10 @@ public bool scoped_type_refs_equal_graphs_stackless<
             context = uint2(left_context, right_context);
             continue;
         }
-        uint tag_l; uint payload_l; uint tag_r; uint payload_r;
-        if (LeftGraph.metadata(pair.y, 0u) == 1u)
-        {
-            if (!LeftGraph.argument(pair.y, slot, tag_l, payload_l) ||
-                !RightGraph.argument(pair.w, slot, tag_r, payload_r)) return false;
-        }
-        else
-        {
-            tag_l = LeftGraph.metadata(pair.y, 3u); payload_l = LeftGraph.metadata(pair.y, 4u);
-            tag_r = RightGraph.metadata(pair.w, 3u); payload_r = RightGraph.metadata(pair.w, 4u);
-        }
+        uint tag_l = left.element.x; uint payload_l = left.element.y;
+        uint tag_r = right.element.x; uint payload_r = right.element.y;
+        if (left.kind == 1u && (!LeftGraph.argument(pair.y, slot, tag_l, payload_l) ||
+            !RightGraph.argument(pair.w, slot, tag_r, payload_r))) return false;
         if (depth + 1u == DEPTH_LIMIT) return false;
         SCOPED_TYPE_PATH_SET(path, depth, slot);
         depth++;

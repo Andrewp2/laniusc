@@ -22,7 +22,8 @@ public bool SCOPED_TYPE_EQUALITY_WALK<
     {
         uint4 pair = SE_PAIR(depth);
         uint2 context = SE_CONTEXT(depth);
-        if (SE_NEXT(depth) == INVALID)
+        bool classify = SE_NEXT(depth) == INVALID;
+        if (classify)
         {
             if (pair.x == 2u && context.x != INVALID)
             {
@@ -39,6 +40,16 @@ public bool SCOPED_TYPE_EQUALITY_WALK<
                 context.y = INVALID;
             }
             SE_CLASSIFIED(depth, pair, context);
+        }
+        // A node pair (both tag 3, in range) reads each side's fields once per
+        // step: the headers when classified, then the child references.
+        bool step = classify || SE_NEXT(depth) != SE_COUNT(depth);
+        TypeNodeFields left = type_node_step_fields<LeftGraph>(pair.y,
+            step && pair.x == 3u && pair.y < left_type_capacity, classify);
+        TypeNodeFields right = type_node_step_fields<RightGraph>(pair.w,
+            step && pair.z == 3u && pair.w < right_type_capacity, classify);
+        if (classify)
+        {
             // A constant argument (typed identity) or an array length (count
             // identity) is compared once, after classification, by one call.
             bool compare_constant = false; bool count_identity = false;
@@ -63,34 +74,23 @@ public bool SCOPED_TYPE_EQUALITY_WALK<
             else
             {
                 if (pair.y >= left_type_capacity || pair.w >= right_type_capacity) return false;
-                uint kind = LeftGraph.metadata(pair.y, 0u);
-                if (kind < 1u || kind > 4u || kind != RightGraph.metadata(pair.w, 0u)) return false;
+                uint kind = left.kind;
+                if (kind < 1u || kind > 4u || kind != right.kind) return false;
                 if (kind == 1u)
                 {
-                    uint left_decl = LeftGraph.metadata(pair.y, 1u);
-                    uint right_decl = RightGraph.metadata(pair.w, 1u);
-                    if (left_decl != INVALID || right_decl != INVALID)
+                    if (left.declaration != INVALID || right.declaration != INVALID)
                     {
-                        if (left_decl >= token_capacity || left_decl != right_decl) return false;
+                        if (left.declaration >= token_capacity || left.declaration != right.declaration) return false;
                     }
-                    else
-                    {
-                        for (uint field = 7u; field <= 9u; field++)
-                        {
-                            uint identity = LeftGraph.metadata(pair.y, field);
-                            if (identity == INVALID || identity != RightGraph.metadata(pair.w, field)) return false;
-                        }
-                    }
-                    SE_SET_COUNT(depth, LeftGraph.metadata(pair.y, 2u));
-                    if (SE_COUNT(depth) > NOMINAL_APPLICATION_ARGUMENT_LIMIT ||
-                        SE_COUNT(depth) != RightGraph.metadata(pair.w, 2u)) return false;
+                    else if (any(left.identity == INVALID) || any(left.identity != right.identity)) return false;
+                    SE_SET_COUNT(depth, left.count);
+                    if (left.count > NOMINAL_APPLICATION_ARGUMENT_LIMIT || left.count != right.count) return false;
                 }
                 else
                 {
                     if (kind == 2u)
                     {
-                        constant_left = uint2(LeftGraph.metadata(pair.y, 5u), LeftGraph.metadata(pair.y, 6u));
-                        constant_right = uint2(RightGraph.metadata(pair.w, 5u), RightGraph.metadata(pair.w, 6u));
+                        constant_left = left.length; constant_right = right.length;
                         compare_constant = true; count_identity = true;
                     }
                     SE_SET_COUNT(depth, 1u);
@@ -107,17 +107,10 @@ public bool SCOPED_TYPE_EQUALITY_WALK<
             continue;
         }
         uint slot = SE_NEXT_INCREMENT(depth);
-        uint tag_l; uint payload_l; uint tag_r; uint payload_r;
-        if (LeftGraph.metadata(pair.y, 0u) == 1u)
-        {
-            if (!LeftGraph.argument(pair.y, slot, tag_l, payload_l) ||
-                !RightGraph.argument(pair.w, slot, tag_r, payload_r)) return false;
-        }
-        else
-        {
-            tag_l = LeftGraph.metadata(pair.y, 3u); payload_l = LeftGraph.metadata(pair.y, 4u);
-            tag_r = RightGraph.metadata(pair.w, 3u); payload_r = RightGraph.metadata(pair.w, 4u);
-        }
+        uint tag_l = left.element.x; uint payload_l = left.element.y;
+        uint tag_r = right.element.x; uint payload_r = right.element.y;
+        if (left.kind == 1u && (!LeftGraph.argument(pair.y, slot, tag_l, payload_l) ||
+            !RightGraph.argument(pair.w, slot, tag_r, payload_r))) return false;
         if (depth + 1u == DEPTH_LIMIT) return false;
         depth++;
         SE_PUSH(depth, uint4(tag_l, payload_l, tag_r, payload_r), context);

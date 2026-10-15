@@ -46,6 +46,9 @@ public bool canonical_type_reference_matches_stackless<Graph : IScopedTypeGraph>
             if (!constant && !canonical_type_field_leaf<Graph>(instance, expected)) return false;
         }
         uint count = 0u;
+        // A field node (tag 3, in range) reads its header and child reference once.
+        TypeNodeFields node = type_node_step_fields<Graph>(pair.z,
+            !constant && expected.x == 5u && pair.y == 3u && pair.z < capacity, true);
         // A constant operand or an array length shares one match site.
         bool constant_identity = constant; bool count_identity = false;
         uint constant_type = root; uint2 actual = uint2(0u, INVALID);
@@ -63,22 +66,21 @@ public bool canonical_type_reference_matches_stackless<Graph : IScopedTypeGraph>
             pair.x = expected.y;
             if (pair.y != 3u || pair.z >= capacity) return false;
             uint kind = dependency_type_word(pair.x * 9u) - 2u;
-            uint actual_kind = Graph.metadata(pair.z, 0u);
-            if (kind < 1u || kind > 4u || kind != actual_kind) return false;
+            if (kind < 1u || kind > 4u || kind != node.kind) return false;
             if (kind == 1u)
             {
-                if (Graph.metadata(pair.z, 1u) != INVALID ||
-                    dependency_type_word(pair.x * 9u + 1u) != Graph.metadata(pair.z, 7u) ||
-                    dependency_type_word(pair.x * 9u + 8u) != Graph.metadata(pair.z, 8u) ||
-                    dependency_type_word(pair.x * 9u + 2u) != Graph.metadata(pair.z, 9u)) return false;
+                if (node.declaration != INVALID ||
+                    dependency_type_word(pair.x * 9u + 1u) != node.identity.x ||
+                    dependency_type_word(pair.x * 9u + 8u) != node.identity.y ||
+                    dependency_type_word(pair.x * 9u + 2u) != node.identity.z) return false;
                 count = dependency_type_word(pair.x * 9u + 4u);
-                if (count > 32u || count != Graph.metadata(pair.z, 2u)) return false;
+                if (count > 32u || count != node.count) return false;
             }
             else
             {
                 if (kind == 2u)
                 {
-                    actual = uint2(Graph.metadata(pair.z, 5u), Graph.metadata(pair.z, 6u));
+                    actual = node.length;
                     constant_type = dependency_array_length_type(pair.x);
                     constant_identity = true; count_identity = true;
                 }
@@ -97,12 +99,8 @@ public bool canonical_type_reference_matches_stackless<Graph : IScopedTypeGraph>
             resume = depth - 1u; depth = 0u; pair = root_pair;
             continue;
         }
-        uint tag; uint payload;
-        if (Graph.metadata(pair.z, 0u) == 1u)
-        {
-            if (!Graph.argument(pair.z, slot, tag, payload)) return false;
-        }
-        else { tag = Graph.metadata(pair.z, 3u); payload = Graph.metadata(pair.z, 4u); }
+        uint tag = node.element.x; uint payload = node.element.y;
+        if (node.kind == 1u && !Graph.argument(pair.z, slot, tag, payload)) return false;
         uint child = dependency_type_edge_word(dependency_type_word(pair.x * 9u + 3u) + slot);
         if (depth + 1u == LIMIT) return false;
         SCOPED_TYPE_PATH_SET(path, depth, slot);
