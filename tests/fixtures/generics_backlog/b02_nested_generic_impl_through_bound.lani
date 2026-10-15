@@ -1,0 +1,8 @@
+// expect: 0
+trait Area { fn area(self) -> i32; }
+struct Rect { w: i32, h: i32 }
+struct Twice<T> { inner: T }
+impl Area for Rect { fn area(self) -> i32 { return self.w * self.h; } }
+impl<T> Area for Twice<T> where T: Area { fn area(self) -> i32 { return self.inner.area() * 2; } }
+fn total<T>(a: T) -> i32 where T: Area { return a.area(); }
+fn main() -> i32 { return total(Twice { inner: Twice { inner: Rect { w: 3, h: 7 } } }) - 84; }
