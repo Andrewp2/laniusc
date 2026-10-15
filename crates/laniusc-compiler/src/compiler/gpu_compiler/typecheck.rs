@@ -3105,6 +3105,8 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     6 => "a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required",
                     7 => "a retained native width witness conflicts with the GPU-derived replay layout",
                     8 => "a replay seed has malformed graph roots or exceeds the supported native width",
+                    16 => "checked call inference did not converge: its passes changed more than 32 facts per HIR node and token",
+                    17 => "call inference needed more than 1024 dependent rounds; add a type annotation to break the chain",
                     _ => "a nested type application could not be instantiated from its checked environment",
                 }),
         ),

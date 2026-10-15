@@ -480,7 +480,27 @@ pub(super) const SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS: &str =
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
+pub(super) const CALLS_INFERENCE_STATUS_READBACK_PASS: &str =
+    "type_check.calls.inference.status.readback";
 pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
+/// The language's call inference depth limit (like Rust's recursion_limit;
+/// docs/compiler-semantic-contracts.md): inference may take at most this many
+/// rounds. A dependent call chain resolves about one link per round, so a
+/// longer chain needs a type annotation.
+pub(super) const CALL_INFERENCE_DEPTH_LIMIT: u32 = 1024;
+/// GenericInstantiationBoundary detail when inference reaches the depth limit.
+pub(crate) const CALL_INFERENCE_DEPTH_DETAIL: u32 = 17;
+/// Monotone inference changes each of its facts a bounded number of times, so
+/// the changes of all rounds together are at most this many per HIR node and
+/// token slot (per dependency page). A larger total means producers rewrite
+/// facts without progress.
+pub(super) const CALL_INFERENCE_CHANGES_PER_SLOT: u64 = 32;
+/// GenericInstantiationBoundary detail for that report. GPU details are
+/// realize failure bits (at most 15) or small codes, so 16 is free.
+pub(crate) const CALL_INFERENCE_STALL_DETAIL: u32 = 16;
+/// Rounds whose change counts repeat (period 1 to 4) before a traced run
+/// warns that inference may not converge.
+pub(super) const CALL_INFERENCE_REPEAT_WARNING_ROUNDS: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
     "type_checker/type/instances/00g_specialize_checked_references";
@@ -3893,7 +3913,7 @@ fn build_graph(
         _status as "status" in Bytes => 16;
         _status_readback as "status_readback" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
-        call_inference_readback as "call_inference_readback" in Calls => 8;
+        call_inference_readback as "call_inference_readback" in Calls => 24;
     });
     graph_resources!(graph, Workspace {
         _return_fn_flags as "return_fn_flags" in HirNodes => hir_rows * 4;
@@ -5853,6 +5873,16 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         "call_inference_state",
         call_inference_state,
+        "call_inference_readback",
+        call_inference_readback,
+    )?;
+    // The status words follow the round's progress words, so the host stops
+    // iterating once a pass has recorded an error.
+    graph.add_buffer_copy_pass(
+        CALLS_INFERENCE_STATUS_READBACK_PASS,
+        CompilerPhase::TypeCheck,
+        "status",
+        _status,
         "call_inference_readback",
         call_inference_readback,
     )?;
