@@ -88,7 +88,9 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) decl_refs_for_bindings: ComputeInvocation,
     pub(in crate::type_checker) infer_imported_decl_refs: ComputeOperation,
     pub(in crate::type_checker) index_closed_applications: Option<ComputeOperation>,
-    pub(in crate::type_checker) materialize_applications: Option<ComputeOperation>,
+    /// The field closure of the closed source applications.
+    pub(in crate::type_checker) source_field_closure:
+        Option<super::substitution_passes::FieldClosureOperations>,
     pub(in crate::type_checker) index_generated_applications: Option<ComputeOperation>,
     pub(in crate::type_checker) project_imported_fields: Option<ComputeOperation>,
     pub(in crate::type_checker) member_receivers: ComputeOperation,
@@ -160,7 +162,8 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) apply_row_args: ComputeOperation,
     pub(in crate::type_checker) bind_method_receiver_environment: Option<ComputeOperation>,
     pub(in crate::type_checker) materialize_return_types: Option<ComputeOperation>,
-    pub(in crate::type_checker) expand_application_fields: Option<ComputeOperation>,
+    /// The field closure of the call results and argument contexts.
+    pub(in crate::type_checker) call_field_closure: super::substitution_passes::FieldClosureOperations,
     pub(in crate::type_checker) project_argument_contexts:
         Option<super::substitution_passes::ArgumentContextOperations>,
     pub(in crate::type_checker) substitution: super::substitution_passes::SubstitutionOperations,

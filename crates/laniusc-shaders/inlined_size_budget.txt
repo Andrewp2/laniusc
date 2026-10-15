@@ -32,7 +32,6 @@
 100066 type_checker/calls/03a4b_contextual_result_requests
 95932 type_checker/type/instances/02d_materialize_applications
 90893 type_checker/program_evidence/entries/09_build_implementation_index
-90621 type_checker/calls/03e1_expand_application_fields
 90279 type_checker/predicates/02b_validate_obligations
 88912 tests/owned_typed_constants_overlap
 88756 type_checker/dependencies/14a_materialize_alias_targets

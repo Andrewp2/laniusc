@@ -297,7 +297,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/methods/07_resolve_table"
             | "type_checker/calls/03k3_project_record_contexts"
             | "type_checker/calls/03e_materialize_return_types"
-            | "type_checker/calls/03e1_expand_application_fields"
             | "type_checker/dependencies/08a_validate_call_results"
             | "type_checker/dependencies/08_validate_call_args"
             | "type_checker/dependencies/15a_collect_methods"

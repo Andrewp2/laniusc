@@ -325,8 +325,6 @@ pub(super) const TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS: &str =
     "type_check.type_instances.validate_aggregate_access";
 pub(super) const TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS: &str =
     "type_check.type_instances.index_closed_applications";
-pub(super) const TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS: &str =
-    "type_check.type_instances.materialize_applications";
 pub(super) const TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS: &str =
     "type_check.type_instances.index_generated_applications";
 pub(super) const TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS: &str =
@@ -335,8 +333,6 @@ pub(super) const CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS: &str =
     "type_check.calls.bind_method_receiver_environment";
 pub(super) const CALLS_MATERIALIZE_RETURN_TYPES_PASS: &str =
     "type_check.calls.materialize_return_types";
-pub(super) const CALLS_EXPAND_APPLICATION_FIELDS_PASS: &str =
-    "type_check.calls.expand_application_fields";
 pub(super) const CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS: &str = "type_check.calls.argument_contexts";
 pub(super) const CALLS_PROJECT_LITERAL_CONTEXTS_PASS: &str = "type_check.calls.literal_contexts";
 pub(super) const CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS: &str =
@@ -5164,21 +5160,17 @@ fn build_graph(
             TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
             "token_active_dispatch_args",
         )?;
-        graph.add_kernel_pass_by_name(
-            TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::Tokens,
+        super::substitution_passes::register_field_closure_passes(
+            &mut graph,
             kernels,
-            "type_checker/type/instances/02d_materialize_applications",
+            &super::substitution_passes::SOURCE_FIELD_CLOSURE,
+            ResourceDomain::Tokens,
+            "token_active_dispatch_args",
             reflected_bindings![
                 "canonical_type_roots" => dependency_canonical_type_roots: Read,
                 "type_native_word_count" => _type_native_word_count: Write,
                 "type_native_scalar_identity" => _type_native_scalar_identity: Write,
             ],
-        )?;
-        graph.add_indirect_dispatch(
-            TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
-            "token_active_dispatch_args",
         )?;
         graph.add_kernel_pass_by_name(
             TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS,
@@ -5652,12 +5644,6 @@ fn build_graph(
             &application_bindings[..],
         ),
         (
-            CALLS_EXPAND_APPLICATION_FIELDS_PASS,
-            "type_checker/calls/03e1_expand_application_fields",
-            ResourceDomain::HirNodes,
-            &application_bindings[..],
-        ),
-        (
             CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
             "type_checker/calls/03k2_materialize_match_payloads",
             ResourceDomain::HirNodes,
@@ -5747,6 +5733,17 @@ fn build_graph(
     ] {
         if name == CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS {
             super::substitution_passes::register_call_env_pass(&mut graph, kernels)?;
+        }
+        if name == CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS {
+            // The field closure of the return types and argument contexts.
+            super::substitution_passes::register_field_closure_passes(
+                &mut graph,
+                kernels,
+                &super::substitution_passes::CALL_FIELD_CLOSURE,
+                ResourceDomain::HirNodes,
+                "hir_active_dispatch_args",
+                &application_bindings[..],
+            )?;
         }
         if name == CALLS_MATERIALIZE_RETURN_TYPES_PASS && struct_init_passes_required(parser_feature_flags) {
             graph.add_kernel_pass_by_name(

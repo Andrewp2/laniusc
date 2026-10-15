@@ -1158,8 +1158,8 @@ impl GpuTypeChecker {
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }
-            if let Some(producer) = &bind_groups.type_instances.materialize_applications {
-                producer.record(encoder)?;
+            if let Some(closure) = &bind_groups.type_instances.source_field_closure {
+                closure.record(encoder)?;
             }
             if let Some(index) = &bind_groups.type_instances.index_generated_applications {
                 index.record(encoder)?;
@@ -1602,9 +1602,11 @@ impl GpuTypeChecker {
                         ContextConstantProducer::RecordContexts,
                     )?;
                 }
+                if let Some(operation) = &bind_groups.calls.materialize_return_types {
+                    operation.record(encoder)?;
+                }
+                bind_groups.calls.call_field_closure.record(encoder)?;
                 for operation in [
-                    &bind_groups.calls.materialize_return_types,
-                    &bind_groups.calls.expand_application_fields,
                     &bind_groups.calls.materialize_match_payloads,
                     &bind_groups.calls.return_type_index,
                     &bind_groups.calls.return_imported_fields,

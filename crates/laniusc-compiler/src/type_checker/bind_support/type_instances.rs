@@ -236,10 +236,14 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         } else {
             None
         },
-        materialize_applications: if generic_param_record_passes_required(parser_feature_flags) {
-            Some(indirect_token(
-                compiler_graph::TYPE_INSTANCES_MATERIALIZE_APPLICATIONS_PASS,
-                "type_checker/type/instances/02d_materialize_applications",
+        source_field_closure: if generic_param_record_passes_required(parser_feature_flags) {
+            Some(substitution_passes::FieldClosureOperations::new(
+                device,
+                graph,
+                resources,
+                passes,
+                &substitution_passes::SOURCE_FIELD_CLOSURE,
+                &token_dispatch_args,
             )?)
         } else {
             None
