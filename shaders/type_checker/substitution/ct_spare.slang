@@ -1,12 +1,13 @@
-// A lane's unpublished canonical record and argument block, binding slots
-// of parameter leaves, and environment bindings. Graph-free, so every kernel
-// can import it. (Placeholder for P3's p3-ct-subst version of this module:
-// same names and contracts; take P3's on merge.)
+// Graph-free pieces shared by the canonical producers: a lane's spare
+// record and argument block, the parameter-slot adapter, and environment
+// lookup. Imports only the canonical tables, so a kernel that declares its
+// own checked-graph buffers can use them.
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_constants;
 
-// A lane's unpublished record and argument block. Both are reused for the
-// lane's next key until a key is published with them; nobody else reads
+// ---------------------------------------------------------------------------
+// Spare storage. A lane's unpublished record and argument block are reused
+// for its next key until a key is published with them; nobody else reads
 // them, so rewriting is safe.
 public struct CtSpare
 {
@@ -59,33 +60,37 @@ public uint ct_spare_publish(CtKey key, uint2 extra, bool intern, inout CtSpare 
 }
 
 // ---------------------------------------------------------------------------
-// Binding slots of local parameter leaves, read from the tables the kernel
-// binds. Implementations return CT_SLOT_NONE for unknown or out-of-range
-// tokens.
+// Parameter slots. A local parameter leaf carries its declaration token; the
+// kernel's own tables give its slot and a constant's declared scalar.
+// Implementations return CT_SLOT_NONE (scalar 0) for a token they do not
+// know, including one outside their tables.
 public static const uint CT_SLOT_NONE = 32u;
 
 public interface ICtSlots
 {
     uint type_slot(uint token);
     uint const_slot(uint token);
-    // The declared scalar of constant parameter `token`, 0 when unsupported.
     uint const_scalar(uint token);
 }
 
-// The binding slot of a parameter leaf; dependency leaves carry their own.
+// The environment slot of parameter leaf `param`, or CT_SLOT_NONE.
 public uint ct_param_slot<S : ICtSlots>(S slots, uint param)
 {
     if (ct_is_dep_param(param)) return ct_dep_param_slot(param);
     uint token = ct_param_token(param);
     uint slot = ct_is_const_param(param) ? slots.const_slot(token) : slots.type_slot(token);
-    return min(slot, CT_SLOT_NONE);
+    return slot < CT_SLOT_NONE ? slot : CT_SLOT_NONE;
 }
 
-// The declared scalar of a constant parameter leaf, 0 when unsupported.
+// The declared scalar of constant parameter leaf `param`, or 0.
 public uint ct_param_scalar<S : ICtSlots>(S slots, uint param)
 {
-    return ct_is_dep_param(param) ? ct_dep_param_scalar(param) : slots.const_scalar(ct_param_token(param));
+    if (ct_is_dep_param(param)) return ct_dep_param_scalar(param);
+    return slots.const_scalar(ct_param_token(param));
 }
+
+// ---------------------------------------------------------------------------
+// Environments.
 
 // The `ordinal`-th set bit of `mask`, or 32.
 public uint ct_nth_set_bit(uint mask, uint ordinal)
@@ -94,9 +99,10 @@ public uint ct_nth_set_bit(uint mask, uint ordinal)
     return mask == 0u ? 32u : firstbitlow(mask);
 }
 
-// The binding of type (or constant) slot `slot`, or CT_UNKNOWN when the
-// environment does not bind it. An environment is a CT_ENV record or a
-// named application (type slot i is its i-th type operand).
+// The binding of type (or constant) slot `slot` in `env`, or CT_UNKNOWN
+// when it binds none. `env` is a CT_ENV record or a CT_NAMED application
+// (type slot i is its i-th type operand, constant slot i its i-th constant
+// operand).
 public uint ct_env_binding(uint env, uint slot, bool constant)
 {
     if (slot >= 32u) return CT_UNKNOWN;

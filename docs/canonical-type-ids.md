@@ -412,12 +412,13 @@ Each job interns into one table, so an ID stays valid for the whole job.
 
 ### Capacities and overflow
 
-Each table has a fixed size:
+Worst-case bounds:
 
-- **Records:** 32 + 2 × (candidates + 2 × constant rows) + 2 × dependency
-  nodes. That covers one fixed record per candidate and per dependency
-  node, plus at most one count class per constant candidate or constant
-  node, and the same again for a body replay's re-interning.
+- **Fixed records:** 32 + candidates + dependency nodes, one per candidate
+  and per dependency node (`ct_dynamic_base`). Always allocated exactly.
+- **Dynamic records:** candidates + 4 × constant rows + dependency nodes.
+  That is at most one count class per constant candidate or constant node,
+  and the same again for a body replay's re-interning.
 - **Slots:** the next power of two at or above 2 × records.
 - **Arguments:** the checked argument storage, plus 2 words per row and 1
   word per projection, twice (a replay builds every candidate's key again),
@@ -425,11 +426,34 @@ Each table has a fixed size:
   nodes).
 - **Frontier:** two lists of max(candidates, largest page's nodes).
 
-So overflow means a broken invariant rather than a large input. It still sets
-a `CT_OVERFLOW_*` bit, and the host prints the counters. Consumers do not read
-IDs yet, so an overflowing candidate simply becomes `CT_UNKNOWN`. Before
-consumers rely on IDs (P3), overflow must become a job retry with doubled
-canonical capacities.
+A job starts at capacity scale 1. The dynamic records and the argument words
+start at 1/64 of their bounds, with floors of 4,096 records and 16,384 words
+(`canonical_scaled_capacity`). An overflow sets a sticky `CT_OVERFLOW_*` bit.
+On a table, record or argument bit, the host abandons the job
+(`CanonicalCapacityOverflow`), doubles the scale (part of the resident cache
+key, and it only grows) and records the job again. At scale 64 the tables
+hold the worst-case bounds, so an overflow there is a broken invariant and
+fails the job. The round-limit bit never retries.
+`LANIUS_DEBUG_CANONICAL_SHRINK=n` divides the dynamic records and argument
+words by 2^n to exercise the retry. `LANIUS_TRACE_CANONICAL=1` prints the use
+per batch.
+
+Measured use at scale 1, 2026-10-14. No job retried.
+
+| job | fixed records | dynamic records | argument words |
+|---|---:|---:|---:|
+| 100-file generated project (29,956 lines), check | 2,130,209 | 27 / 86,538 | 295 / 326,218 |
+| whole stdlib, one check job | 2,375,969 | 48 / 96,522 | 1,759 / 363,850 |
+| generics matrix (30 probes, largest) | 41,249 | 3 / 4,096 | 43 / 16,384 |
+
+With the validator on: the generated project has 197 live records, maximum
+height 2 and 57 type applications. Probe jobs have at most 36 live records,
+height 4 and 6 distinct call environments. The generated project has no
+generic calls. On the generated project, the scale-1 tables take about
+123 MB, against 457 MB for the earlier fixed worst-case sizing. Nearly all of
+it is the fixed region (40 bytes per record, plus its slots). That region is
+sized by row capacity, not by row count. Sizing it from counts needs the
+candidates compacted first.
 
 ### Validation
 

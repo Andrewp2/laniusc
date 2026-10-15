@@ -139,26 +139,53 @@ bool checked_export_child(uint2 ref, uint ordinal, out uint2 child)
     child = uint2(type_instance_elem_ref_tag[ref.y], type_instance_elem_ref_payload[ref.y]);
     return child.x != 0u && child.y != INVALID;
 }
+// An export walk keeps two words per level, so its per-thread stack stays
+// small: the reference's payload and a packed level word with the tag's code
+// (bits 0-2), the next child ordinal (bits 3-8, EXPORT_UNVISITED until the
+// node is visited) and the child count (bits 9-14). checked_export_kind
+// accepts at most 32 children and only the six tags coded here; any other
+// tag codes to 0, which it rejects as before.
+static const uint EXPORT_UNVISITED = 63u;
+uint export_level(uint2 ref)
+{
+    uint code = ref.x >= 1u && ref.x <= 3u ? ref.x
+        : ref.x >= 0x80000001u && ref.x <= 0x80000003u ? ref.x - 0x80000001u + 4u : 0u;
+    return code | (EXPORT_UNVISITED << 3u);
+}
+uint2 export_level_ref(uint level, uint payload)
+{
+    uint code = level & 7u;
+    return uint2(code <= 3u ? code : 0x80000001u + code - 4u, payload);
+}
+uint export_level_next(uint level) { return (level >> 3u) & 63u; }
+uint export_level_children(uint level) { return level >> 9u; }
+// Visited with `children` (at most 32) children; the next ordinal is 0.
+uint export_level_visit(uint level, uint children) { return (level & 7u) | (children << 9u); }
+uint export_level_advance(uint level) { return level + 8u; }
 bool checked_export_size(uint node, out uint count)
 {
-    uint2 refs[EXPORT_DEPTH_LIMIT];
-    uint next[EXPORT_DEPTH_LIMIT]; uint children[EXPORT_DEPTH_LIMIT];
+    uint payload[EXPORT_DEPTH_LIMIT]; uint level[EXPORT_DEPTH_LIMIT];
     uint depth = 0u; count = 0u;
-    refs[0u] = checked_export_root(node); next[0u] = INVALID;
+    uint2 top = checked_export_root(node);
+    payload[0u] = top.y; level[0u] = export_level(top);
     for (;;)
     {
-        if (next[depth] == INVALID)
+        uint2 ref = export_level_ref(level[depth], payload[depth]);
+        if (export_level_next(level[depth]) == EXPORT_UNVISITED)
         {
-            if (checked_export_kind(refs[depth], children[depth]) == 0u || count >= gParams.hir_capacity) return false;
-            count++; next[depth] = 0u;
+            uint children;
+            if (checked_export_kind(ref, children) == 0u || count >= gParams.hir_capacity) return false;
+            count++; level[depth] = export_level_visit(level[depth], children);
         }
-        if (next[depth] == children[depth])
+        uint next = export_level_next(level[depth]);
+        if (next == export_level_children(level[depth]))
         {
             if (depth == 0u) return true;
             depth--; continue;
         }
         uint2 child;
-        if (depth + 1u == EXPORT_DEPTH_LIMIT || !checked_export_child(refs[depth], next[depth]++, child)) return false;
-        depth++; refs[depth] = child; next[depth] = INVALID;
+        level[depth] = export_level_advance(level[depth]);
+        if (depth + 1u == EXPORT_DEPTH_LIMIT || !checked_export_child(ref, next, child)) return false;
+        depth++; payload[depth] = child.y; level[depth] = export_level(child);
     }
 }

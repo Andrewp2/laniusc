@@ -10,6 +10,9 @@ import type_checker.canonical.canonical_api;
 RWStructuredBuffer<uint> canonical_validation;
 // Bucket chains of the cross-check (canonical_crosscheck.slang), cleared here.
 RWStructuredBuffer<uint> canonical_crosscheck_links;
+// Generated application rows of the job (allocate_application.slang): the
+// (environment, type) instantiations of the current materialization.
+StructuredBuffer<uint> type_application_count;
 
 static const uint V_UNKNOWN_ROWS = 2u;
 static const uint V_RESOLVED_ROWS = 3u;
@@ -26,6 +29,8 @@ static const uint V_ROUNDS = 13u;
 // After the witness pairs (90_validate).
 static const uint V_UNKNOWN_DEPENDENCY = 36u;
 static const uint V_RESOLVED_DEPENDENCY = 37u;
+static const uint V_MAX_HEIGHT = 39u;
+static const uint V_TYPE_APPLICATIONS = 40u;
 
 void count(uint word)
 {
@@ -63,6 +68,7 @@ void validate_slot(uint slot)
         return;
     }
     if (!facts_consistent(record)) count(V_FACTS);
+    InterlockedMax(canonical_validation[V_MAX_HEIGHT], ct_meta[record].y & 0xffffu);
     uint slots = ct_slot_capacity();
     uint probe = ct_probe_start(ct_meta[record].zw);
     for (uint step = 0u; step < slots && probe != slot; step++)
@@ -118,5 +124,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         canonical_validation[V_OVERFLOW] = ct_counts[CT_COUNT_OVERFLOW];
         canonical_validation[V_ROUNDS] = ct_counts[CT_COUNT_ROUND];
+        canonical_validation[V_TYPE_APPLICATIONS] = type_application_count[0u];
     }
 }
