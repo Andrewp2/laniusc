@@ -28,7 +28,7 @@ pub(crate) use checked_contracts::{
     CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
     CheckedPredicateContract,
 };
-pub(crate) use generic_body::CheckedBodySpecialization;
+pub(crate) use generic_body::{CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
@@ -134,6 +134,7 @@ pub enum GpuTypeCheckCode {
     IntegerLiteralRange,
     FloatLiteral,
     ComputedFloatConstant,
+    InvalidCast,
     MissingConstantBinding,
     GenericInstantiationBoundary,
     Unknown(u32),
@@ -167,6 +168,7 @@ impl GpuTypeCheckCode {
             24 => Self::IntegerLiteralRange,
             25 => Self::FloatLiteral,
             26 => Self::ComputedFloatConstant,
+            27 => Self::InvalidCast,
             other => Self::Unknown(other),
         }
     }
@@ -197,6 +199,7 @@ impl GpuTypeCheckCode {
             Self::IntegerLiteralRange => "integer literal is outside its checked type range".to_string(),
             Self::FloatLiteral => "floating literal cannot be represented by its checked type".to_string(),
             Self::ComputedFloatConstant => "computed floating constant is not supported".to_string(),
+            Self::InvalidCast => "invalid cast".to_string(),
             Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
             Self::GenericInstantiationBoundary => {
                 "generic type instantiation reached a compiler boundary".to_string()
@@ -267,7 +270,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// workspace unmaterialized.
     pub semantic_interface_required: bool,
     /// One explicit body replay. Ordinary jobs upload an empty packet.
-    pub(crate) body_specialization: Option<&'a CheckedBodySpecialization>,
+    pub(crate) body_specialization: Option<&'a CheckedBodySpecializationBatch>,
     /// Derived from the same private frontend request as the body packet.
     pub(crate) frontend_trait_check: FrontendTraitCheck,
     /// The parser's compact semantic artifact. Keeping this as one typed view
@@ -533,7 +536,12 @@ mod resident_typecheck_cache_key_tests {
         use super::canonical_passes::{CANONICAL_MAX_SCALE, canonical_retry_scale};
         assert_eq!(canonical_retry_scale(1, 1), Some(2));
         assert_eq!(canonical_retry_scale(4, 4 | 8), Some(8));
+        // The substitution memo and the frontier lists grow with the scale.
+        assert_eq!(canonical_retry_scale(2, 16), Some(4));
+        assert_eq!(canonical_retry_scale(2, 32), Some(4));
         assert_eq!(canonical_retry_scale(1, 8), None);
+        // A full substitution memo (CT_OVERFLOW_SUBST_MEMO) also retries.
+        assert_eq!(canonical_retry_scale(2, 16), Some(4));
         assert_eq!(canonical_retry_scale(1, 0), None);
         assert_eq!(canonical_retry_scale(CANONICAL_MAX_SCALE, 2), None);
     }

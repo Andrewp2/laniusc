@@ -115,7 +115,6 @@ impl GpuWasmLinker {
             executable_page_graph: Mutex::new(None),
             symbol_partition_graph: Mutex::new(None),
         };
-        gpu.persist_pipeline_cache();
         Ok(linker)
     }
 

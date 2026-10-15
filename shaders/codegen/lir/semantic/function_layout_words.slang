@@ -7,12 +7,17 @@ import type_checker.checked_array_counts;
 import hir_records;
 import gpu_index;
 
-struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
+// root_rows selects the lanes: one per HIR row, or (in the fixed-point
+// rounds) one per field row, where only a struct's first field row takes the
+// struct. A struct without fields keeps its first-pass width of zero, so the
+// rounds need not visit it.
+struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint root_rows; };
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
@@ -39,6 +44,7 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint MAX_LAYOUT_DEPTH = 64u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint LAYOUT_ROOTS_FIRST_FIELD_ROWS = 1u;
 
 uint nested_struct(uint type_node, uint hir_count)
 {
@@ -121,8 +127,16 @@ uint array_element_type(uint type_node, uint hir_count)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint root = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint lane = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint root = lane;
+    if (gParams.root_rows == LAYOUT_ROOTS_FIRST_FIELD_ROWS)
+    {
+        if (lane >= min(compact_field_count[0u], gParams.n_hir_nodes)) return;
+        root = compact_fields[lane].owner;
+        if (root >= hir_count || semantic_struct_field_start_by_hir[root] != lane)
+            return;
+    }
     if (root >= hir_count || compact_hir_core[root].kind != HIR_STRUCT_ITEM) return;
 
     // The traversal keeps two words per nested frame: the field row it was

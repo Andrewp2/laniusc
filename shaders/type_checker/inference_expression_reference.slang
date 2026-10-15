@@ -35,17 +35,24 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
             root = indexed_root;
             continue;
         }
-        if (core.kind == 14u || core.kind == 16u || core.kind == 17u)
+        // Unsigned range tests (x - lo <= hi - lo) keep this shared walk small.
+        if (core.kind - 16u <= 1u || core.kind == 14u)
         {
-            if (value.a == 1u) { root = value.b; continue; }
+            uint form = value.a;
+            if (form == 1u) { root = value.b; continue; }
             if (indices != 0u) return false;
-            if ((value.a >= 4u && value.a <= 12u) || value.a == 17u || value.a == 18u)
+            // true/false, not, comparisons, and logical and/or are bool.
+            if (form - 4u <= 8u || form - 17u <= 1u)
             { tag = 1u; payload = 2u; break; }
             // Arithmetic inherits its checked operand type, as in scalar
             // projection. An unresolved operand must not become guessed i32.
-            if ((value.a >= 13u && value.a <= 16u) || (value.a >= 19u && value.a <= 25u))
+            if (form - 13u <= 3u || form - 19u <= 6u)
             { root = value.b; continue; }
-            return false;
+            // `value as T` has its target's checked reference, published at
+            // the target type's first token (payload.d).
+            if (form != 36u || value.d >= gParams.n_tokens) return false;
+            tag = type_expr_ref_tag[value.d]; payload = type_expr_ref_payload[value.d];
+            break;
         }
         if (core.kind == 19u)
         {
@@ -54,7 +61,14 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
             if (tag == 0u)
             {
                 uint instance = call_result_instance[root];
+#if defined(INFERENCE_DEFERRED_CLOSURE)
+                // The includer requires this row to be closed (its canonical
+                // ID read at the includer's one ID site), as if this check
+                // had failed otherwise.
+                inference_deferred_closure = instance;
+#else
                 if (!INFERENCE_CALL_RESULT_CLOSED(instance)) return false;
+#endif
                 tag = 3u; payload = instance;
             }
         }

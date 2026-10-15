@@ -27,6 +27,8 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> call_generic_return_arg_node;
 RWStructuredBuffer<uint> compact_expr_scalar_type_out;
@@ -69,6 +71,7 @@ static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_STRING = 28u;
+static const uint HIR_EXPR_CAST = 36u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
@@ -209,6 +212,12 @@ uint direct_result_type(uint node)
     if (form == HIR_EXPR_STRING) return TY_STRING;
     if (form == HIR_EXPR_NAME)
         return visible_type_for_token(payload.d);
+    // A cast's result is its target type. The type collector publishes the
+    // checked reference at the target's first token (payload.d); only scalar
+    // targets have a result here, and the cast validator rejects the rest.
+    if (form == HIR_EXPR_CAST && valid_token(payload.d) &&
+        type_expr_ref_tag[payload.d] == TYPE_REF_SCALAR)
+        return checked_scalar_type(type_expr_ref_payload[payload.d]);
     return TY_UNKNOWN;
 }
 

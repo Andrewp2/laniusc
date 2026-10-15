@@ -27,13 +27,13 @@ pub fn wrapping_mul(left: u16, right: u16) -> u16 {
     return core::number_u16::wrapping_mul(left, right);
 }
 pub fn checked_add(left: u16, right: u16) -> core::option_u16::OptionU16 {
-    let wide_left: u32 = left;
-    let wide_right: u32 = right;
+    let wide_left: u32 = left as u32;
+    let wide_right: u32 = right as u32;
     let sum: u32 = wide_left + wide_right;
     if (sum > 65535) {
         return core::option_u16::none();
     }
-    let narrowed: u16 = sum;
+    let narrowed: u16 = sum as u16;
     return core::option_u16::some(narrowed);
 }
 pub fn checked_sub(left: u16, right: u16) -> core::option_u16::OptionU16 {

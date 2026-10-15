@@ -244,20 +244,23 @@ fn record_canonical_types(
     let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
     let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
     for batch in 0..batches {
+        let batch_started = std::time::Instant::now();
         let counts =
             submit_and_read_u32s(device, queue, encoder, counts_readback, "type_check.canonical")?;
+        let wait_ms = batch_started.elapsed().as_secs_f64() * 1000.0;
         let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
-        let [record_capacity, argument_capacity, dynamic_base] = canonical.capacity();
+        let [record_capacity, argument_capacity, frontier_rows] = canonical.capacity();
         if trace || overflow != 0 {
+            // Records from 32 on are allocated; the frontier lengths are the
+            // last round's (the next round's input and its output so far).
             eprintln!(
-                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} dynamic={}/{} args={}/{argument_capacity} overflow={overflow:#x} scale={canonical_scale}",
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} args={}/{argument_capacity} frontier={}/{frontier_rows} overflow={overflow:#x} scale={canonical_scale} wait_ms={wait_ms:.3}",
                 stage.label(),
                 counts[canonical_passes::CANONICAL_COUNT_ROUND],
-                counts[0],
-                counts[0].saturating_sub(dynamic_base),
-                record_capacity.saturating_sub(dynamic_base),
+                counts[0].saturating_sub(32),
                 counts[1],
+                counts[5].max(counts[6]),
             );
         }
         // Overflow bits stay set until the next job's clear, so the first
@@ -325,7 +328,7 @@ impl GpuTypeChecker {
         let body_specialization_inputs = storage_ro_from_u32s(
             device,
             "type_check.body_specialization_inputs",
-            &[0; generic_body::BODY_SPECIALIZATION_WORDS],
+            &[0; generic_body::BODY_BATCH_WORDS],
         );
         // An absent interface still has a valid, immutable zero-count page.
         // It must never alias workspace columns written by the same shader.
@@ -765,12 +768,14 @@ impl GpuTypeChecker {
         let defer_inference = 1u8;
         self.call_inference_state
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
+        // Only the used prefix is written: an ordinary job's zero header and
+        // zero extra-entry count make every later packet row unreachable.
         let specialization = hir_items
             .body_specialization
-            .map(CheckedBodySpecialization::packet)
+            .map(CheckedBodySpecializationBatch::packet)
             .transpose()
             .map_err(GpuTypeCheckError::Gpu)?
-            .unwrap_or([0; generic_body::BODY_SPECIALIZATION_WORDS]);
+            .unwrap_or_else(|| vec![0; generic_body::BODY_SPECIALIZATION_WORDS]);
         let specialization_bytes: Vec<u8> = specialization
             .into_iter()
             .flat_map(u32::to_le_bytes)
@@ -1005,6 +1010,11 @@ impl GpuTypeChecker {
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                // Imported alias targets substitute before the early stage.
+                bind_groups.calls.substitution.record_clear(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.clear_ahead_of_pages.done");
+                }
                 // Each page interns its signature types while it is resident.
                 let intern_page = |encoder: &mut wgpu::CommandEncoder| {
                     record_canonical_types(
@@ -1095,6 +1105,11 @@ impl GpuTypeChecker {
                     record_each_dependency_page(device, queue, encoder, pages, materialize_alias_targets)?;
                 } else {
                     materialize_alias_targets(encoder)?;
+                }
+                // Every page has contributed its targets: realize them.
+                bind_groups.calls.substitution.record_alias_targets(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.alias_targets.done");
                 }
             }
             if aliases_required {
@@ -1223,8 +1238,8 @@ impl GpuTypeChecker {
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }
-            if let Some(producer) = &bind_groups.type_instances.materialize_applications {
-                producer.record(encoder)?;
+            if let Some(closure) = &bind_groups.type_instances.source_field_closure {
+                closure.record(encoder)?;
             }
             if let Some(index) = &bind_groups.type_instances.index_generated_applications {
                 index.record(encoder)?;
@@ -1668,9 +1683,11 @@ impl GpuTypeChecker {
                         ContextConstantProducer::RecordContexts,
                     )?;
                 }
+                if let Some(operation) = &bind_groups.calls.materialize_return_types {
+                    operation.record(encoder)?;
+                }
+                bind_groups.calls.call_field_closure.record(encoder)?;
                 for operation in [
-                    &bind_groups.calls.materialize_return_types,
-                    &bind_groups.calls.expand_application_fields,
                     &bind_groups.calls.materialize_match_payloads,
                     &bind_groups.calls.return_type_index,
                     &bind_groups.calls.return_imported_fields,
@@ -1826,6 +1843,9 @@ impl GpuTypeChecker {
                 let mut repeat_warned = false;
                 let mut first_error_round = None;
                 for round in 0..round_limit {
+                    let round_started = std::time::Instant::now();
+                    let dispatches_before =
+                        crate::gpu::passes_core::recorded_compute_dispatch_count();
                     self.call_inference_state
                         .write(queue, 0, &[1, 0, 0, 0, 0, 0, 0, 0]);
                     record_returns(encoder)?;
@@ -1840,12 +1860,14 @@ impl GpuTypeChecker {
                         "type-check call inference",
                         recorded.finish(),
                     );
+                    let submitted = std::time::Instant::now();
                     let slice = self.call_inference_readback.slice(..);
                     crate::gpu::passes_core::map_readback_blocking(
                         device,
                         &slice,
                         "type_check.call_inference",
                     )?;
+                    let mapped_at = std::time::Instant::now();
                     let mapped = slice.get_mapped_range();
                     let words: [u32; 6] = crate::gpu::readback::read_u32_words(
                         &mapped,
@@ -1855,7 +1877,16 @@ impl GpuTypeChecker {
                     self.call_inference_readback.unmap();
                     let changed = words[1];
                     if trace_inference {
-                        eprintln!("[typecheck.call_inference] round={round} changed={changed}");
+                        // record = host recording and submit (the GPU idles
+                        // unless earlier work is queued); wait = the round's
+                        // GPU time plus the map round trip.
+                        eprintln!(
+                            "[typecheck.call_inference] round={round} changed={changed} dispatches={} record_ms={:.3} wait_ms={:.3}",
+                            crate::gpu::passes_core::recorded_compute_dispatch_count()
+                                - dispatches_before,
+                            (submitted - round_started).as_secs_f64() * 1000.0,
+                            (mapped_at - submitted).as_secs_f64() * 1000.0,
+                        );
                     }
                     // A recorded error fails the check whatever later rounds
                     // infer, but the final passes report the root error only
@@ -2122,9 +2153,37 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
             if hir_items.body_specialization.is_some() {
-                for (required_feature, operation) in
-                    &bind_groups.semantic_projection.body_specialization
+                let projection = &bind_groups.semantic_projection;
+                for (index, (required_feature, operation)) in
+                    projection.body_specialization.iter().enumerate()
                 {
+                    if index == projection.body_canonical_split {
+                        // The body passes from here on read the IDs of the
+                        // specialized rows.
+                        record_canonical_types(
+                            device,
+                            queue,
+                            encoder,
+                            &projection.canonical_types,
+                            CanonicalStage::Body,
+                            &self.canonical_counts_readback,
+                            &self.canonical_validation_readback,
+                            canonical_scale,
+                        )?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.canonical.body.done");
+                        }
+                        bind_groups.calls.substitution.record_body_start(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_start.done");
+                        }
+                    }
+                    if index == projection.body_field_closure_at {
+                        projection.body_field_closure.record(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_field_closure.done");
+                        }
+                    }
                     if *required_feature != 0 && parser_feature_flags & required_feature == 0 {
                         continue;
                     }
@@ -2146,6 +2205,8 @@ impl GpuTypeChecker {
                 &self.canonical_validation_readback,
                 canonical_scale,
             )?;
+            bind_groups.semantic_projection.late_row_seed.record(encoder)?;
+            bind_groups.semantic_projection.native_word_memo_clear.record(encoder);
             bind_groups
                 .semantic_projection
                 .generic_native_words

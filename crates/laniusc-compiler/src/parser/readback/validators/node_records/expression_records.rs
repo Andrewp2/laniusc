@@ -343,6 +343,33 @@ pub fn validate_hir_expression_records(
                 }
                 require_no_value(row, "range record")?;
             }
+            HIR_EXPR_FORM_CAST => {
+                require_expression_owner(row, "cast record")?;
+                let operand = require_expression_edge(row, left_nodes[row], "cast operand")?;
+                let target = right_nodes[row];
+                if target == INVALID
+                    || target as usize >= row_count
+                    || kinds[target as usize] != HIR_NODE_TYPE
+                {
+                    return Err(anyhow!(
+                        "parser HIR expression row {row} published a cast without a target type row"
+                    ));
+                }
+                let target = target as usize;
+                if token_pos[target] <= token_pos[operand]
+                    || token_end[operand] > token_pos[target]
+                    || token_end[target] > token_end[row]
+                {
+                    return Err(anyhow!(
+                        "parser HIR expression row {row} published cast edges out of source order"
+                    ));
+                }
+                if value_tokens[row] != token_pos[target] {
+                    return Err(anyhow!(
+                        "parser HIR expression row {row} cast value token is not its target type token"
+                    ));
+                }
+            }
             HIR_EXPR_FORM_INDEX => {
                 require_expression_owner(row, "index record")?;
                 let base = require_expression_edge(row, left_nodes[row], "index base")?;

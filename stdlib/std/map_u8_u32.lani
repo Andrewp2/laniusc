@@ -26,7 +26,7 @@ pub fn contains_key(keys: [u32], key: u8) -> bool {
 // contains_key when the distinction matters.
 pub fn get_or(keys: [u32], values: [u32], key: u8, fallback: u32) -> u32 {
     if (!contains_key(keys, key)) { return fallback; }
-    let index: i32 = key;
+    let index: i32 = key as i32;
     return values[index];
 }
 
@@ -45,7 +45,7 @@ pub fn value_at_or(keys: [u32], values: [u32], ordinal: i32, fallback: u32) -> u
 // duplicate; true means a new entry was stored.
 pub fn insert(keys: [u32], values: [u32], key: u8, value: u32) -> bool {
     if (contains_key(keys, key)) { return false; }
-    let index: i32 = key;
+    let index: i32 = key as i32;
     values[index] = value;
     std::set_u8::insert(keys, key);
     return true;
@@ -55,7 +55,7 @@ pub fn insert(keys: [u32], values: [u32], key: u8, value: u32) -> bool {
 // existing entry; both results mean the write succeeded on valid backing.
 pub fn put(keys: [u32], values: [u32], key: u8, value: u32) -> bool {
     let fresh: bool = !contains_key(keys, key);
-    let index: i32 = key;
+    let index: i32 = key as i32;
     values[index] = value;
     std::set_u8::insert(keys, key);
     return fresh;
@@ -64,7 +64,7 @@ pub fn put(keys: [u32], values: [u32], key: u8, value: u32) -> bool {
 // Update only a present key. Missing keys return false without writing.
 pub fn set(keys: [u32], values: [u32], key: u8, value: u32) -> bool {
     if (!contains_key(keys, key)) { return false; }
-    let index: i32 = key;
+    let index: i32 = key as i32;
     values[index] = value;
     return true;
 }
@@ -73,7 +73,7 @@ pub fn set(keys: [u32], values: [u32], key: u8, value: u32) -> bool {
 // without writing.
 pub fn remove(keys: [u32], values: [u32], key: u8) -> bool {
     if (!contains_key(keys, key)) { return false; }
-    let index: i32 = key;
+    let index: i32 = key as i32;
     values[index] = 0;
     std::set_u8::remove(keys, key);
     return true;

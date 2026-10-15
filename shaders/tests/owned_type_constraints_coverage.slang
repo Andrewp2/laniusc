@@ -9,7 +9,7 @@ struct CoverageFixtureOperations : IOwnedFixtureOperations
         switch (opcode)
         {
         case OP_BEGIN_PATTERN:
-            owned_pattern_begin<LeftGraph>(args.x, 17u, 128u, budget, state); return true;
+            owned_pattern_begin<LeftGraph>(args.x, 17u, 128u, budget, owned_constraint_frame(0u), state); return true;
         case OP_VISIT:
             owned_pattern_visit<LeftGraph>(args.xy, state); return true;
         case OP_FINISH_PATTERN:

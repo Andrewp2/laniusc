@@ -18,7 +18,8 @@ public void pev_batch_validate_contexts(uint local)
     if (!pev_batch_is_building()) return;
     uint count; uint row;
     if (!pev_table_count(13u, count) || !pev_dispatch_row(local, count, row)) return;
-    EvidenceStatus status = pev_validate_context(row);
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = pev_validate_context(row);
     pev_write_status(2u, row, status);
     pev_batch_failure(status);
 }
@@ -27,7 +28,9 @@ public void pev_batch_index_assumptions(uint local)
     if (!pev_batch_is_building()) return;
     uint count; uint row;
     if (!pev_table_count(14u, count) || !pev_dispatch_row(local, count, row)) return;
-    pev_batch_failure(pev_build_assumption_index(row));
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = pev_build_assumption_index(row);
+    pev_batch_failure(status);
 }
 void pev_call_status(uint call, uint state, uint detail, uint failed, uint required, uint available)
 {
@@ -63,8 +66,8 @@ public void pev_batch_reduce_calls(uint local)
         }
         hypothesis = hypothesis || state == 2u;
     }
-    bool closed;
-    EvidenceStatus status = pev_environment_is_closed(high.x, low.z, closed);
+    bool closed = false; EvidenceStatus status;
+    if (pev_bind_scratch(local, call, status)) status = pev_environment_is_closed(high.x, low.z, closed);
     if (status.state != PEV_VALID)
     {
         uint state = status.state == PEV_RESOURCE_LIMIT ? 5u : (status.state == PEV_UNSUPPORTED ? 6u : 4u);

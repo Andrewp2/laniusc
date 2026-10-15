@@ -1,8 +1,11 @@
 import primitive_types;
 import type_checker.checked_array_counts;
-import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
+import type_checker.checked_type_identity;
+import type_checker.checked_slots;
 // HIR array-literal projection and validation.
 //
 // This pass consumes return-statement records, expression records, parser-owned
@@ -13,7 +16,9 @@ import type_checker.scoped_type_equality;
 // array-element record, so array literal size does not become a per-thread loop.
 // It also validates annotated local array literal declarations from HIR records.
 // It does not inspect token kinds, token spelling, source bytes, helper names,
-// or punctuation.
+// or punctuation. Element types compare by canonical ID
+// (docs/canonical-type-ids.md); rows written during inference are interned
+// on demand.
 
 import hir_records;
 import status;
@@ -215,11 +220,25 @@ uint field_array_instance(uint array_node)
     return INVALID;
 }
 
+// Both references are in the literal's own scope. Rows and constants
+// compare by canonical ID, interned on demand from one site; the walker's
+// admission (same tags, declared parameter slots) is kept.
 bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
 {
-    return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-        lhs_tag, lhs_payload, INVALID, rhs_tag, rhs_payload, INVALID,
-        checked_type_capacity(), gParams.n_tokens);
+    uint spare = CT_NONE;
+    uint lhs = CT_UNKNOWN; uint rhs = CT_UNKNOWN;
+    [loop]
+    for (uint side = 0u; side < 2u; side++)
+    {
+        uint tag = side == 0u ? lhs_tag : rhs_tag;
+        uint payload = side == 0u ? lhs_payload : rhs_payload;
+        uint id = tag == TYPE_REF_INSTANCE || checked_operand_is_constant(tag)
+            ? ct_intern_checked<CtCheckedRows>(tag, payload, spare) : CT_UNKNOWN;
+        if (side == 0u) lhs = id;
+        else rhs = id;
+    }
+    return checked_types_equal_ids(CheckedSlots(), lhs_tag, lhs_payload, lhs,
+        rhs_tag, rhs_payload, rhs, true);
 }
 
 bool publish_scalar_ref(uint ty, out uint tag, out uint payload)
@@ -578,23 +597,14 @@ void record_array_literal_element_mismatch(
     }
 }
 
-void validate_array_literal_let_length(uint array_node)
+void validate_array_literal_length(uint array_node, uint dst_instance)
 {
-    if (!valid_compact_node(array_node) ||
-        compact_hir_core[array_node].kind != HIR_ARRAY_EXPR)
-        return;
-
-    uint let_node = direct_array_literal_let_node(array_node);
-    uint dst_instance = field_array_instance(array_node);
-    if (dst_instance == INVALID) dst_instance = let_array_instance(let_node);
-    if (dst_instance == INVALID)
-        return;
-
     uint actual_len = compact_array_length(array_node);
     if (checked_source_array_length_matches_count(type_instance_len_kind[dst_instance],
         type_instance_len_payload[dst_instance], actual_len, gParams.n_tokens))
         return;
 
+    uint let_node = direct_array_literal_let_node(array_node);
     uint error_token = compact_hir_core[array_node].token_start;
     if (!valid_token(error_token) && valid_compact_node(let_node))
         error_token = compact_hir_core[let_node].token_start;
@@ -608,17 +618,8 @@ void validate_array_literal_let_length(uint array_node)
     }
 }
 
-void validate_array_literal_let_element(uint array_node, uint element_node)
+void validate_array_literal_element(uint element_node, uint dst_instance)
 {
-    if (!valid_compact_node(array_node) || !valid_compact_node(element_node))
-        return;
-
-    uint let_node = direct_array_literal_let_node(array_node);
-    uint dst_instance = field_array_instance(array_node);
-    if (dst_instance == INVALID) dst_instance = let_array_instance(let_node);
-    if (dst_instance == INVALID)
-        return;
-
     uint expected_tag = type_instance_elem_ref_tag[dst_instance];
     uint expected_payload = type_instance_elem_ref_payload[dst_instance];
 
@@ -630,18 +631,8 @@ void validate_array_literal_let_element(uint array_node, uint element_node)
 
     uint actual_tag = 0u;
     uint actual_payload = INVALID;
-    if (!compact_scalar_expr_ref(element_node, actual_tag, actual_payload))
-    {
-        record_array_literal_element_mismatch(
-            element_node,
-            expected_tag,
-            expected_payload,
-            actual_tag,
-            actual_payload);
-        return;
-    }
-
-    if (same_type_ref(expected_tag, expected_payload, actual_tag, actual_payload))
+    if (compact_scalar_expr_ref(element_node, actual_tag, actual_payload) &&
+        same_type_ref(expected_tag, expected_payload, actual_tag, actual_payload))
         return;
 
     record_array_literal_element_mismatch(
@@ -652,50 +643,19 @@ void validate_array_literal_let_element(uint array_node, uint element_node)
         actual_payload);
 }
 
-void validate_array_literal_return_element(uint array_node, uint element_node)
+// The bounded array an array literal is checked against: its assignment,
+// struct-literal field or let annotation (`returned` false), or the
+// enclosing function's return type (`returned` true).
+uint array_literal_destination(uint array_node, bool returned)
 {
-    if (!valid_compact_node(array_node) || !valid_compact_node(element_node))
-        return;
-
-    uint return_node = direct_array_literal_return_node(array_node);
-    if (!valid_compact_node(return_node))
-        return;
-
-    uint dst_instance = function_return_array_instance(return_node);
-    if (dst_instance == INVALID)
-        return;
-
-    uint expected_tag = type_instance_elem_ref_tag[dst_instance];
-    uint expected_payload = type_instance_elem_ref_payload[dst_instance];
-
-    if (compact_struct_literal_matches_expected_ref(
-            element_node,
-            expected_tag,
-            expected_payload))
-        return;
-
-    uint actual_tag = 0u;
-    uint actual_payload = INVALID;
-    if (!compact_scalar_expr_ref(element_node, actual_tag, actual_payload))
+    if (returned)
     {
-        record_array_literal_element_mismatch(
-            element_node,
-            expected_tag,
-            expected_payload,
-            actual_tag,
-            actual_payload);
-        return;
+        uint return_node = direct_array_literal_return_node(array_node);
+        return valid_compact_node(return_node) ? function_return_array_instance(return_node) : INVALID;
     }
-
-    if (same_type_ref(expected_tag, expected_payload, actual_tag, actual_payload))
-        return;
-
-    record_array_literal_element_mismatch(
-        element_node,
-        expected_tag,
-        expected_payload,
-        actual_tag,
-        actual_payload);
+    uint dst_instance = field_array_instance(array_node);
+    return dst_instance != INVALID ? dst_instance
+        : let_array_instance(direct_array_literal_let_node(array_node));
 }
 
 [shader("compute")]
@@ -703,17 +663,31 @@ void validate_array_literal_return_element(uint array_node, uint element_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (valid_compact_node(node))
+    bool array_lane = valid_compact_node(node);
+    if (array_lane)
     {
         publish_array_literal_return(node);
-        validate_array_literal_let_length(node);
+        array_lane = compact_hir_core[node].kind == HIR_ARRAY_EXPR;
     }
-
-    if (node >= active_compact_array_element_count())
-        return;
-    HirArrayElement element = compact_array_elements[node];
-    if (!valid_compact_node(element.array) || !valid_compact_node(element.value))
-        return;
-    validate_array_literal_let_element(element.array, element.value);
-    validate_array_literal_return_element(element.array, element.value);
+    uint element_array = INVALID; uint element_value = INVALID;
+    if (node < active_compact_array_element_count())
+    {
+        HirArrayElement element = compact_array_elements[node];
+        if (valid_compact_node(element.array) && valid_compact_node(element.value))
+        { element_array = element.array; element_value = element.value; }
+    }
+    // Work 0: this lane's array literal length against its let or field
+    // destination. Work 1 and 2: this lane's element against the let or
+    // field destination, then the return destination. One site each, so
+    // the destination and comparison readers are inlined once.
+    [loop]
+    for (uint work = 0u; work < 3u; work++)
+    {
+        uint array_node = work == 0u ? (array_lane ? node : INVALID) : element_array;
+        if (array_node == INVALID) continue;
+        uint dst_instance = array_literal_destination(array_node, work == 2u);
+        if (dst_instance == INVALID) continue;
+        if (work == 0u) validate_array_literal_length(array_node, dst_instance);
+        else validate_array_literal_element(element_value, dst_instance);
+    }
 }

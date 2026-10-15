@@ -4,24 +4,29 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{BindGroupCache, PassData},
-    parser::buffers::ParserBuffers,
+    parser::{buffers::ParserBuffers, passes::hir::list::rank::step::list_rank_step_capacity},
 };
 
-/// Pointer-jump pass that propagates binary-expression span starts.
+/// Bounded-walk pass that propagates binary-expression span starts over the
+/// compacted rows whose left chain outlived the seed's local walk.
 pub struct HirBinarySpanStepPass {
     data: PassData,
 }
 
 pub(in crate::parser) const A_TO_B: &str = "hir_binary_span_step.a_to_b";
 pub(in crate::parser) const B_TO_A: &str = "hir_binary_span_step.b_to_a";
-pub(in crate::parser) const A_TO_B_FINAL: &str = "hir_binary_span_step.a_to_b_final";
-pub(in crate::parser) const FINALIZE: &str = "hir_binary_span_step.finalize";
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirBinarySpanStepPass,
     label: "hir_binary_span_step",
     shader: "parser/hir/binary/span/step"
 );
+
+/// Bounded-walk steps for a tree of `items` nodes: always even, so the
+/// result ends in the A buffers.
+pub(in crate::parser) fn binary_span_step_capacity(items: u32) -> u32 {
+    list_rank_step_capacity(items)
+}
 
 impl HirBinarySpanStepPass {
     /// Records binary-span propagation steps with indirect dispatch.
@@ -33,24 +38,10 @@ impl HirBinarySpanStepPass {
         dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
+        let steps = binary_span_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
-            self.record_step(
-                device,
-                encoder,
-                buffers,
-                step,
-                step % 2 == 0,
-                step + 1 == steps && steps % 2 == 1,
-                dispatch_args,
-                cache,
-            )?;
+            self.record_step(device, encoder, buffers, step, dispatch_args, cache)?;
         }
-
-        if steps % 2 == 1 {
-            buffers.record_finalizer(FINALIZE, encoder)?;
-        }
-
         Ok(())
     }
 
@@ -60,12 +51,11 @@ impl HirBinarySpanStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         step: u32,
-        read_from_a: bool,
-        final_unpaired_step: bool,
         dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        let (link_in, start_in, link_out, start_out) = if read_from_a {
+        let read_a = step % 2 == 0;
+        let (link_in, start_in, link_out, start_out) = if read_a {
             (
                 &buffers.hir_binary_span_link_a,
                 &buffers.hir_binary_span_start_a,
@@ -91,6 +81,14 @@ impl HirBinarySpanStepPass {
                 buffers.hir_semantic_count.as_entire_binding(),
             ),
             (
+                "hir_list_rank_node".into(),
+                buffers.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_count".into(),
+                buffers.hir_list_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_binary_span_link_in".into(),
                 link_in.as_entire_binding(),
             ),
@@ -108,13 +106,7 @@ impl HirBinarySpanStepPass {
             ),
         ]);
 
-        let label = if final_unpaired_step {
-            A_TO_B_FINAL
-        } else if read_from_a {
-            A_TO_B
-        } else {
-            B_TO_A
-        };
+        let label = if read_a { A_TO_B } else { B_TO_A };
         let invocation = format!("{label}.{step}");
         let bind_group = cache
             .reflected_for_graph_invocation(
@@ -144,24 +136,17 @@ impl HirBinarySpanStepPass {
     }
 }
 
-pub(in crate::parser) fn pointer_jump_steps_for_items(items: u32) -> u32 {
-    crate::parser::buffers::pointer_jump_step_capacity(items.max(1).div_ceil(32))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::pointer_jump_steps_for_items;
+    use super::binary_span_step_capacity;
 
     #[test]
-    fn bounded_local_compression_preserves_arbitrary_chain_coverage() {
-        for items in [0, 1, 31, 32, 33, 64, 65, 4_096, 1_687_524, u32::MAX] {
-            let steps = pointer_jump_steps_for_items(items);
-            let covered = 32u64 << steps;
-            assert!(covered >= u64::from(items.max(1)));
-            if steps != 0 {
-                assert!((covered / 2) < u64::from(items.max(1)));
-            }
+    fn steps_are_even_and_cover_any_chain_with_sixteen_links_each() {
+        for items in [0, 1, 2, 16, 17, 256, 257, 4_096, 1_687_524, u32::MAX] {
+            let steps = binary_span_step_capacity(items);
+            assert_eq!(steps % 2, 0);
+            assert!(16u128.pow(steps) >= u128::from(items.max(1)));
         }
-        assert_eq!(pointer_jump_steps_for_items(1_687_524), 16);
+        assert_eq!(binary_span_step_capacity(1_687_524), 6);
     }
 }

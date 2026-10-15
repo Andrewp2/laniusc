@@ -17,6 +17,7 @@ pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
 pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};
 pub(super) use native_session::{
     NativeProgramSession,
+    ReplayScope,
     ValidatedOriginalUnit,
     ValidatedReplayRequest,
     native_program_error,

@@ -258,7 +258,7 @@ require further compiler work.
 | `core::number_u16` constants and all 25 public functions | Executable on x86_64 | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
 | `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
-| `core::narrow` all 24 public 32-bit-to-8/16-bit conversion functions | Executable on x86_64 | The imported fixture calls every signed and unsigned source/target combination in wrapping, checked-fallback, and saturating forms. It checks ordinary values, signed and unsigned boundaries, out-of-range values, negative values, and full-width i32/u32 extremes. The input-driven byte report combines narrowing, byte arithmetic, and decimal I/O. General explicit cast syntax and out-of-range narrowing remain compiler dependencies. |
+| `core::narrow` all 24 public 32-bit-to-8/16-bit conversion functions | Executable on x86_64 | The imported fixture calls every signed and unsigned source/target combination in wrapping, checked-fallback, and saturating forms. It checks ordinary values, signed and unsigned boundaries, out-of-range values, negative values, and full-width i32/u32 extremes. The input-driven byte report combines narrowing, byte arithmetic, and decimal I/O. A bare `as` cast truncates; the helpers name the wrapping, checked, and saturating policies and narrow with `as` after normalizing or checking the value. |
 | `core::wide_u64` all 24 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, division and remainder, zero-divisor fallbacks, full-width decimal digits and parsing, malformed input, and overflow. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight operand pairs and four values at eight shift counts. The decimal-double program reads and prints full-width values. The representation is two `u32` words; this does not claim native `u64` correctness. |
 | `core::wide_i64` all 29 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, zero-divisor and `MIN/-1` fallbacks, and full-width signed decimal parsing and output. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. A decimal-double program exercises real input and output, including signed extrema and failure cases. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
 | `core::wide_u64_checked` all 9 public functions and `core::wide_i64_checked` all 11 public functions | Executable on x86_64 | Imported fixtures call every checked and saturating operation with ordinary values, zero, high-bit values, signed extrema, overflow, zero divisors, and `MIN / -1`. Generated native fixtures compare checked arithmetic, powers, and saturation with Rust `u64` and `i64` across eight operand pairs and boundary exponents. The checked-factorial program prints `20!` and rejects `21!` overflow through `OptionWideU64`. These modules use explicit two-word arithmetic, not native 64-bit operators. |
@@ -317,7 +317,7 @@ require further compiler work.
 | `core::mem::typed_slice_from_raw_parts<T>` | Executable on x86_64 Linux for tested caller-backed `i32`, `u32`, and record slices | The imported runtime fixture checks access, mutation, aliasing, an empty view, and three element types. Separate imported fixtures check that a negative length traps with SIGILL and indexing at the length exits 101. The caller must provide storage in the target's layout, keep it alive, and supply a valid aligned pointer; the constructor cannot validate physical backing. The `u32` and record cases use separately allocated native element slots, not a reinterpretation of a packed `i32` array. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for tested scalar and string instantiations on the resident native path | Runtime fixture exercises each helper and both selector branches for `i32`, high-bit `u32`, Unicode `char`, and finite `f32`, plus `identity<bool>`. The new actual-root fixture executes every helper for bool, i32, u32, f32, char, and str, including both selector branches, NaN, negative zero, empty strings, and forwarding through another function. Record body specialization remains unavailable and deferred; dependency 62 records the earlier miscompile, while dependency 92 records the scalar repair. |
 | `core::mem` capability metadata, all 10 public functions | Executable on x86_64 Linux | The native metadata fixture calls every function and checks runtime-free value helpers and the unavailable raw-memory host API against `core::runtime`. The unavailable host API is distinct from the four executable compiler-provided intrinsics above. `tests/stdlib_mem_execution.rs` requires a runtime call for all 19 source-defined public functions across its fixtures. |
-| `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks before narrowing because direct unsigned casts misexecute (dependency 33). The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
+| `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks each shifted word before narrowing it. The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
 | `core::option_i32` all 12 public functions and 8 receiver methods; `core::result_i32` all 10 public functions and 8 receiver methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function and receiver method to have a runtime call. The option/result sample chains imported receiver methods and prints `38`. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
 | `core::option_u32` all 12 public functions and 8 receiver methods; `core::result_u32` all 10 public functions and 8 receiver methods | Executable on x86_64 | The matching runtime fixture covers every function and method with both variants, zero, ordinary values, the high bit, and `u32::MAX`. It executes borrowed predicates, fallbacks, aggregate-returning combinators, and Option-to-Result conversion. Both the success payload and error code are `u32`; inactive fields are zero. Source scans require every public function and method to have a runtime call. See dependency 39 for local return coverage. |
@@ -515,8 +515,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   i16, and u16. `*_wrapping` retains the low target-width bits and interprets
   signed results as two's complement. `*_or` returns the caller's fallback
   for an out-of-range value; a valid converted value may equal that fallback.
-  `*_saturating` clamps to the target bounds. Every narrow typed assignment
-  receives an in-range value, avoiding the current narrowing miscompile.
+  `*_saturating` clamps to the target bounds. Each helper normalizes or checks
+  the value and then narrows it with `as`.
 - `core::wide_u64` represents an unsigned 64-bit integer explicitly as high
   and low `u32` words. It performs unsigned comparisons, arithmetic modulo
   2^64, bitwise operations, logical shifts, and quotient/remainder without
@@ -2695,22 +2695,18 @@ also fixes the imported struct-return relocation path described below.
     ordinary condition with the parity flag. The executable fixtures cover
     direct branches, bool values passed between functions, both operand
     orders, signed zero, and NaN behavior of `core::f32` helpers.
-33. **Out-of-range narrow integer casts.**
-    `tests/fixtures/stdlib_foundation/repro_signed_narrow_cast.lani` passes
-    `laniusc check --stdlib-root stdlib` and emits x86_64 output. It casts
-    128 from `i16` to `i8` and 32,768 from `i32` to `i16`, then compares the
-    results with -128 and -32,768. Both comparisons fail: the ELF exits 3
-    instead of 0. The executable signed wrapping helpers reduce the widened
-    result modulo the target width and bring it into the signed range before
-    casting. `repro_unsigned_narrow_cast.lani` demonstrates the same issue for
-    `u32 as u8` and `u32 as u16`: values 256 and 65,536 retain their full
-    native values instead of becoming zero, so the ELF exits 3. The wide hash
-    byte extractor masks every shifted word to 0..255 before casting.
-    The executable `core::narrow` module supplies explicit wrapping,
-    checked-fallback, and saturating conversions for all i32/u32 to
-    i8/u8/i16/u16 combinations. They use typed assignments after validating
-    or normalizing values; general `as` syntax and out-of-range narrowing
-    still need compiler fixes.
+33. **Resolved: out-of-range narrow integer casts.**
+    `tests/fixtures/stdlib_foundation/repro_signed_narrow_cast.lani` casts
+    128 from `i16` to `i8` and 32,768 from `i32` to `i16` and expects -128
+    and -32,768. `repro_unsigned_narrow_cast.lani` casts 256 and 65,536 from
+    `u32` to `u8` and `u16` and expects zero. Both used to exit 3 because
+    `as T` was ignored (dependency 51). `as` is now a real operator: a
+    narrowing cast keeps the low bits of the target width, and a widening cast
+    sign-extends a signed source and zero-extends an unsigned one. Both
+    fixtures exit 0 on x86_64. `tests/cast_expression.rs` runs an x86_64
+    program with 24 more width, signedness, and `bool` checks. The
+    `core::narrow` helpers keep their explicit wrapping, checked-fallback, and
+    saturating policies and now narrow with `as`.
 34. **Resolved: qualified imported unit enum variants.**
     The original `repro_ordering_variant_import.lani` passed `laniusc check`
     but native compilation reported `LNC0005` at `core::ordering::Less`.
@@ -2828,13 +2824,15 @@ also fixes the imported struct-return relocation path described below.
     following expression wrappers. The reproducer and
     `sample_programs/vector_true_count.lani` compile and execute on x86. A
     separate negative fixture confirms that passing a bare i32 still fails.
-43. **Floating-to-integer casts are rejected.**
-    `repro_f32_to_i32_cast.lani` assigns `7.0 as i32` to an i32 local.
-    `laniusc check --stdlib-root stdlib` reports `LNC0006`, expecting i32 but
-    seeing float. The executable floating-window sample checks its f32 total
-    and prints a separately computed integer index. The language needs a
-    defined checked or saturating conversion rule and compiler support before
-    an f32-to-i32 helper can be claimed.
+43. **Resolved: floating-to-integer casts.**
+    `repro_f32_to_i32_cast.lani` assigns `7.0 as i32` to an i32 local. It used
+    to fail with `LNC0006`, expecting i32 but seeing float. Float-to-integer
+    casts now follow Rust: they truncate toward zero, saturate at the target's
+    bounds, and map NaN to zero. Integer-to-float casts round to nearest, and
+    `f32` and `f64` convert to each other. The fixture exits 0 on x86_64.
+    `tests/cast_expression.rs` checks truncation, saturation of `u8`, `i8`,
+    `i32`, `i64`, and `u64`, NaN, infinities, and `u32` and `u64` round trips
+    through `f64`. The wasm backend does not support conversions yet.
 44. **Resolved: raw secure byte fill inherited stale syscall flags.**
     Compile `tests/fixtures/stdlib_foundation/repro_random_fill_flags.lani`
     with `--stdlib-root stdlib --emit x86_64` and run it on Linux. Before the
@@ -2907,24 +2905,25 @@ also fixes the imported struct-return relocation path described below.
     8-byte-stride load from its copied result. The relaxation was reverted.
     Contextual element typing and the corresponding native literal materialization
     must both work before this form can be exposed as executable.
-51. **Cast spelling is not an executable language guarantee.**
-    `repro_ignored_postfix_identifier.lani` contains `x not_a_cast NotAType`.
-    GPU `check` accepts it, and the native executable exits zero after using
-    `x` as the value; neither trailing identifier is diagnosed. Replacing
-    those words with `as i32` or `as NotAType` behaves the same way for a
-    simple name, so a successful compile does not establish that an explicit
-    cast was parsed or checked. `repro_cast_call_result.lani` and
+51. **Partially resolved: trailing identifiers after an expression.**
+    `as` is now a keyword, and `expr as T` is parsed, type-checked, and
+    executed (see "Scalar casts" in `docs/compiler-semantic-contracts.md`). A
+    cast between unsupported types reports `LNC0072`, and a generic, array, or
+    reference target is a parse error. `repro_cast_call_result.lani` and
     `repro_cast_arithmetic_result.lani` put `as` after a call and a grouped
-    arithmetic expression; GPU `check` instead reports `LNC0016` at `as`.
-    An indexed read followed directly by `as u32` has the same parse error.
-    The deque and `core::narrow` modules use typed locals and assignments
-    and verify actual high-bit behavior at runtime. The UTF-8, bit, endian,
-    UTF-8 view, owned byte-vector, owned UTF-8 text, and UTF-8 I/O modules now
-    also use typed assignments. Earlier `as` spellings made imported UTF-8
-    clients fail parsing at `core::utf8::to_byte` and, once repaired,
-    `core::bits::widen_byte`. Their focused executable suites pass after the
-    change. A real cast operator needs grammar, semantic checking, and target
-    execution before source spelling can be relied on.
+    arithmetic expression. They used to stop with `LNC0016` at `as`; they now
+    exit 7 and 0 on x86_64. Before this change, `as T` after a simple name was
+    silently ignored. `repro_ignored_postfix_identifier.lani` still shows that
+    parser defect for other words. In `let y: i32 = x not_a_cast NotAType;`,
+    GPU `check` now reports only `LNC0006` at `x` (u32 where i32 is expected).
+    Neither trailing identifier is diagnosed.
+    The type checker no longer converts scalars implicitly, so the stdlib's
+    older idiom of converting through a typed `let`, `return`, or assignment
+    made more than 50 stdlib fixtures fail `check`. About 400 such sites in 55
+    modules now use `as`. The `i32` cells of `std::vec_char`, `std::set_char`,
+    `std::map_char_u32`, and `std::deque_char` still convert back to `char`
+    implicitly. Rust has no `i32 as char`; those modules need a checked
+    code-point conversion.
 52. **Resolved: cast directly into a byte-array slot misexecuted on x86.**
     `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
     `i32` value to `u8` on the right side of two indexed assignments. GPU

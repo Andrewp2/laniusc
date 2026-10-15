@@ -567,13 +567,9 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
         })
         .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
     }
-    #[cfg(not(debug_assertions))]
-    if matches!(options.backend, BackendSelection::X86) {
-        // Program evidence and specialization create pipelines on demand after
-        // the ready event. Keep the device cache available to those pipelines;
-        // run_session persists their additions when the daemon shuts down.
-        device::persist_pipeline_cache();
-    }
+    // Compare the cache with its file off the startup path: reading the data
+    // back costs ~90 ms even when every pipeline above was a hit.
+    device::persist_created_pipelines_in_background();
     let startup_ms = startup.elapsed().as_secs_f64() * 1000.0;
 
     match &options.transport {
@@ -772,6 +768,9 @@ async fn run_session(
         let compute_dispatches_before = recorded_compute_dispatch_count();
         let operation_capture_scopes_before = crate::gpu::timer::operation_capture_scope_count();
         let operation_timestamps_before = crate::gpu::timer::operation_timestamp_count();
+        let readbacks_before = crate::gpu::passes_core::readback_round_trips();
+        let readback_breakdown_before = crate::gpu::passes_core::readback_breakdown_enabled()
+            .then(crate::gpu::passes_core::readback_round_trips_by_label);
         let compute_schedule_job = begin_compute_schedule_job();
         let compute_pass_breakdown_before =
             compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
@@ -791,8 +790,16 @@ async fn run_session(
             |id| format!("daemon.job.{id}"),
         );
         let job_trace_started = Instant::now();
+        // Program evidence and the x86 link record dispatches outside every
+        // phase timer; the session stamps them in profiled jobs.
+        let job_timing =
+            crate::gpu::timer::GpuJobTimingSession::begin(&compiler.gpu().device, &compiler.gpu().queue);
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        if let Some(job_timing) = job_timing {
+            let completed = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+            job_timing.finish(&compiler.gpu().device, &compiler.gpu().queue, completed);
+        }
         crate::gpu::trace::record_host_span(
             "host.daemon",
             &job_trace_name,
@@ -855,6 +862,24 @@ async fn run_session(
                 "recorded_compute_dispatches_during_job".into(),
                 json!(recorded_compute_dispatches_during_job),
             );
+            let readbacks_after = crate::gpu::passes_core::readback_round_trips();
+            response.insert(
+                "readback_round_trips_during_job".into(),
+                json!(readbacks_after.0.saturating_sub(readbacks_before.0)),
+            );
+            response.insert(
+                "readback_wait_ms_during_job".into(),
+                json!(readbacks_after.1.saturating_sub(readbacks_before.1) as f64 / 1e6),
+            );
+            if let Some(before) = &readback_breakdown_before {
+                response.insert(
+                    "readback_breakdown".into(),
+                    readback_delta_rows(
+                        &crate::gpu::passes_core::readback_round_trips_by_label(),
+                        before,
+                    ),
+                );
+            }
             if let (Some(before), Some(after)) = (
                 &compute_pass_breakdown_before,
                 &compute_pass_breakdown_after,
@@ -910,10 +935,12 @@ async fn run_session(
             }
         }
         write_response(&mut output, &response)?;
+        // A daemon killed later keeps pipelines this job created lazily.
+        device::persist_created_pipelines_in_background();
         reaper.arm();
     }
     crate::gpu::trace::flush();
-    device::persist_pipeline_cache();
+    device::persist_created_pipelines();
     Ok(())
 }
 
@@ -950,6 +977,29 @@ fn job_resource_creation_counts() -> JobResourceCreationCounts {
         bind_groups: bind_group_creation_count(),
         compute_pipelines: pipeline_creation_count(),
     }
+}
+
+/// Readback round trips per label during a job, most waiting first.
+fn readback_delta_rows(
+    after: &HashMap<String, (u64, u64)>,
+    before: &HashMap<String, (u64, u64)>,
+) -> Value {
+    let mut rows = after
+        .iter()
+        .filter_map(|(label, &(count, wait_ns))| {
+            let (count_before, wait_before) = before.get(label).copied().unwrap_or((0, 0));
+            let count = count.saturating_sub(count_before);
+            (count > 0).then(|| (label, count, wait_ns.saturating_sub(wait_before)))
+        })
+        .collect::<Vec<_>>();
+    rows.sort_unstable_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(right.0)));
+    Value::Array(
+        rows.into_iter()
+            .map(|(label, count, wait_ns)| {
+                json!({"label": label, "round_trips": count, "wait_ms": wait_ns as f64 / 1e6})
+            })
+            .collect(),
+    )
 }
 
 fn compute_pass_delta_rows(after: &HashMap<String, u64>, before: &HashMap<String, u64>) -> Value {

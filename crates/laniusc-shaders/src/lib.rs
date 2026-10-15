@@ -117,3 +117,8 @@ mod spirv_size;
 #[cfg(test)]
 #[path = "../reflection_names.rs"]
 mod reflection_names;
+
+// The kernel-key check runs in build.rs; compile it here so its tests run.
+#[cfg(test)]
+#[path = "../kernel_keys.rs"]
+mod kernel_keys;

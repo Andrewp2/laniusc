@@ -8,6 +8,7 @@ import type_checker.program_evidence.checked_graph_operations;
 import type_checker.program_evidence.graph_admission;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_scratch;
 
 public struct EvidenceGoal
 {
@@ -67,7 +68,7 @@ public bool pev_equal_admitted_goal_roots(uint left_root, uint left_env, uint ri
     uint2 left; uint2 right; uint nodes; uint atoms;
     if (!pev_read_root(left_root, left) || !pev_read_root(right_root, right) ||
         !pev_table_count(5u, nodes) || !pev_table_count(1u, atoms)) return false;
-    return scoped_type_refs_equal<ProgramEvidenceTypeGraph>(
+    return scoped_type_refs_equal_scratch<ProgramEvidenceTypeGraph>(
         left.x, left.y, left_env, right.x, right.y, right_env, nodes, atoms);
 }
 public bool pev_equal_admitted_goals(EvidenceGoal left, EvidenceGoal right)
