@@ -45,6 +45,7 @@ static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 [ForceInline]
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 [ForceInline]
@@ -52,22 +53,30 @@ bool valid_hir(uint node) { return node < active_hir_count(); }
 [ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 bool valid_instance(uint instance) { return instance < checked_type_capacity(); }
+// An array or slice row: either gives an array literal its element type; only
+// an array also gives it a length.
+bool sequence_instance(uint instance)
+{
+    return valid_instance(instance) && (type_instance_kind[instance] == TYPE_INSTANCE_ARRAY ||
+        type_instance_kind[instance] == TYPE_INSTANCE_SLICE);
+}
 #include "../array_literal_expected.slang"
 
 // Nested literals consume the enclosing literal's expected type, including an
-// annotation above multiple array layers. The accepted relation is a snapshot
-// from a preceding dispatch, never another array producer lane's output.
-uint expected_array_literal_instance(uint node)
+// annotation above multiple array layers: the nearest array or slice context,
+// descended one element per layer. The accepted relation is a snapshot from a
+// preceding dispatch, never another array producer lane's output.
+uint expected_literal_sequence_instance(uint node)
 {
     uint root = node; uint layers = 0u; uint expected = INVALID;
     for (uint depth = 0u; depth < 64u && valid_hir(root); depth++)
     {
         expected = declared_array_literal_instance(root);
-        if (valid_instance(expected) && type_instance_kind[expected] == TYPE_INSTANCE_ARRAY) break;
+        if (sequence_instance(expected)) break;
         if (root != node && call_inference_result_tag[root] == TYPE_REF_INSTANCE)
         {
             expected = call_inference_result_payload[root];
-            if (valid_instance(expected) && type_instance_kind[expected] == TYPE_INSTANCE_ARRAY) break;
+            if (sequence_instance(expected)) break;
         }
         uint parent = compact_hir_core[root].parent;
         if (!valid_hir(parent) || compact_hir_core[parent].kind != HIR_ARRAY_EXPR) return INVALID;
@@ -75,10 +84,9 @@ uint expected_array_literal_instance(uint node)
     }
     for (uint i = 0u; i < layers; i++)
     {
-        if (!valid_instance(expected) || type_instance_kind[expected] != TYPE_INSTANCE_ARRAY ||
+        if (!sequence_instance(expected) ||
             type_instance_elem_ref_tag[expected] != TYPE_REF_INSTANCE) return INVALID;
         expected = type_instance_elem_ref_payload[expected];
     }
-    return valid_instance(expected) && type_instance_kind[expected] == TYPE_INSTANCE_ARRAY
-        ? expected : INVALID;
+    return sequence_instance(expected) ? expected : INVALID;
 }
