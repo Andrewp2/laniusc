@@ -1829,7 +1829,15 @@ pub(crate) fn finish_readback_map(
             ));
             next_progress += Duration::from_millis(500);
         }
-        std::thread::sleep(Duration::from_millis(1));
+        // Most readbacks complete within a few hundred microseconds of the
+        // first poll. A 1 ms sleep made every one of them cost at least
+        // 1.1 ms, which added up to tens of milliseconds per warm job. Long
+        // waits back off to 1 ms.
+        std::thread::sleep(if elapsed < Duration::from_millis(20) {
+            Duration::from_micros(50)
+        } else {
+            Duration::from_millis(1)
+        });
     }
 }
 
@@ -1947,6 +1955,32 @@ where
         &reflection_json,
         dynamic_uniforms,
     )
+}
+
+/// Creates and retains the `main` pipeline of a generated kernel unless one is
+/// already prepared, so a later on-demand load reuses it. Returns whether a
+/// pipeline was created; artifacts without a `main` compute entry are skipped.
+pub(crate) fn prepare_main_shader_kernel(device: &wgpu::Device, shader: &str) -> Result<bool> {
+    let key = prepared_kernel_key(device, "main", shader, &[]);
+    if prepared_kernel_cache()
+        .lock()
+        .expect("prepared kernel cache poisoned")
+        .contains_key(&key)
+    {
+        return Ok(false);
+    }
+    let path = crate::shader_artifacts::artifact_path(&format!("{shader}.reflect.json"));
+    let bytes = std::fs::read(&path)
+        .map_err(|err| anyhow!("read shader reflection {}: {err}", path.display()))?;
+    let reflection = parse_reflection_from_bytes(&bytes).map_err(anyhow::Error::msg)?;
+    let has_main = reflection.entry_points.iter().any(|entry| {
+        entry.stage.as_deref() == Some("compute") && entry.name.as_deref() == Some("main")
+    });
+    if !has_main {
+        return Ok(false);
+    }
+    make_pass_data_from_shader_key(device, shader, "main", shader)?;
+    Ok(true)
 }
 
 /// Builds `PassData` from a shader artifact key without extensions.

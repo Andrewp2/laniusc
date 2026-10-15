@@ -185,12 +185,20 @@ impl PagedReadback {
             .map(|region| Vec::with_capacity(region.byte_len))
             .collect::<Vec<_>>();
         let mut consumed = vec![0usize; regions.len()];
+        // Sparse fact readers pass thousands of regions; report where their
+        // time goes (copy encoding vs. the GPU round trip).
+        let timing = regions.len() >= 32
+            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+        let started = std::time::Instant::now();
+        let mut pages = 0usize;
+        let mut encode = std::time::Duration::ZERO;
 
         while regions
             .iter()
             .zip(&consumed)
             .any(|(region, consumed)| *consumed < region.byte_len)
         {
+            let page_started = std::time::Instant::now();
             let mut encoder = device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
             let mut page_cursor = 0usize;
@@ -231,7 +239,10 @@ impl PagedReadback {
                     self.staging.byte_size
                 ));
             }
-            queue.submit(Some(encoder.finish()));
+            let command_buffer = encoder.finish();
+            encode += page_started.elapsed();
+            pages += 1;
+            queue.submit(Some(command_buffer));
 
             let slice = self.staging.buffer.slice(..page_cursor as u64);
             let mapping = self.map_staging(device, &slice, label)?;
@@ -241,6 +252,16 @@ impl PagedReadback {
             }
             drop(mapped);
             drop(mapping);
+        }
+        if timing {
+            let total = started.elapsed();
+            eprintln!(
+                "[gpu_compile_host_timer] readback.regions: label={label} regions={} bytes={} pages={pages} encode_ms={:.3} total_ms={:.3}",
+                regions.len(),
+                regions.iter().map(|region| region.byte_len).sum::<usize>(),
+                encode.as_secs_f64() * 1000.0,
+                total.as_secs_f64() * 1000.0,
+            );
         }
 
         Ok(outputs)

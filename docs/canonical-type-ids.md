@@ -455,6 +455,88 @@ it is the fixed region (40 bytes per record, plus its slots). That region is
 sized by row capacity, not by row count. Sizing it from counts needs the
 candidates compacted first.
 
+### Planned: records only for new keys (approved 2026-10-14)
+
+The fixed region gives every candidate and dependency node a record. On the
+generated project only 197 of its 2.13M records hold a live key. Scalar rows
+reuse the preseeded IDs 1..17 and empty rows are `CT_NONE`, so neither
+needs a record. The plan below compacts record use in the interning step
+itself: only a key that the table does not hold yet takes a record. It adds
+no kernel and no prefix-scan pass.
+
+1. **Intern a candidate.**
+   - Build the candidate's key as now. Its arguments are reserved in
+     `ct_args`.
+   - `ct_lookup(key)`. On a hit, adopt the record and allocate nothing.
+   - On a miss, take a record from `ct_alloc_record`, store the key and
+     `ct_intern` it. As now, the CAS goes into the first empty slot, and an
+     equal occupant found while probing is adopted.
+   - This is `ct_intern_spare` with a spare that ends with the lane.
+     Dependency nodes (`05_intern_dependency`) do the same.
+   - `ct_candidate_record` and `ct_dependency_record` go away, and so does
+     the re-intern special case: every miss takes a fresh record, so no
+     published record is ever overwritten.
+   - `00_clear` starts `CT_COUNT_NEXT_RECORD` at `CT_FIRST_RECORD`.
+2. **Lost races waste records.**
+   - When the lanes of one wave intern the same new key, all of them miss
+     the lookup and all of them allocate. The losers' records stay stored but
+     are in no slot and are never referenced, which is what an unused spare
+     is today.
+   - `validate_slot` walks slots and `validate_candidate` walks candidate
+     states, so neither one sees a wasted record.
+   - Waste is bounded by the concurrent attempts on one key. Use is at most
+     one record per resolved non-scalar attempt.
+3. **Bounds and sizing.**
+   - A candidate or node allocates at most once per stage it is re-armed
+     in: the early stage, plus the late stage after a body replay. Count
+     classes add at most 4 per constant row, as now.
+   - The worst case is 2 × (candidates + dependency nodes) + 4 × constant
+     rows. That equals today's fixed plus dynamic bound, so the largest
+     retry scale still holds every input.
+   - At scale 1 the records take 1/64 of this bound, with the 4,096-record
+     floor (`canonical_scaled_capacity`). A record overflow already retries.
+4. **Frontier.**
+   - Today the two lists are sized from the candidates. They get the same
+     1/64 start and floor.
+   - An append past the end sets a new `CT_OVERFLOW_FRONTIER` bit, which
+     retries like the record bit.
+5. **What stays capacity-sized.**
+   - The per-candidate outputs (`canonical_row`, `canonical_atom`,
+     `canonical_projection`), at 4 bytes per row, which consumers index by
+     row.
+   - The round-0 dispatch over every candidate. A lane on an empty row
+     returns at once.
+   - Shrinking these needs compacted `type_instances` rows, which is out of
+     scope here.
+
+Expected effect on the generated project at scale 1:
+
+| | before | after |
+|---|---:|---:|
+| records | 2.13M fixed + 86.5K dynamic | about 120K (1/64 of the bound) |
+| `ct_head`, `ct_meta`, `ct_extra` | 89 MB | 4.8 MB |
+| `ct_slot` | 34 MB | 1 MB |
+| `ct_args` | 1.3 MB | 1.3 MB (unchanged) |
+| `canonical_frontier` | 17 MB | 0.3 MB |
+
+The `ct_*` tables shrink from 123 MB to about 7 MB. The per-row outputs, at
+about 8.5 MB, are then most of what remains.
+
+**Validation.**
+
+- Record IDs depend on atomic order, so the old and new kernels cannot be
+  compared buffer for buffer. The CPU replay compare of captured
+  `01_intern` and `05_intern_dependency` dispatches therefore compares each
+  candidate's `ct_shash` and resolved state between the old and new kernels.
+  Both are ID-free.
+- With `LANIUS_DEBUG_VALIDATE_CANONICAL=1`, run the generated project, the
+  stdlib and the generics matrix. They must show no duplicates, broken
+  chains or unpublished states, and the same live-record and
+  resolved-candidate counts as before. `LANIUS_TRACE_CANONICAL=1` records
+  the new record use.
+- `canonical_type_boundary_intern.slang` and the stress gate start their
+  allocation at `CT_FIRST_RECORD`.
+
 ### Validation
 
 Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a

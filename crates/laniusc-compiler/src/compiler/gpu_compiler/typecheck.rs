@@ -654,6 +654,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.parser
             .with_current_resident_buffers_with_tree_capacity_and_features(
                 parser.token_capacity,
+                bufs.n,
                 &self.parse_tables,
                 parser.tree_capacity,
                 parser.parser_feature_flags,
@@ -972,7 +973,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         device: &wgpu::Device,
         replacement: FrontendWorkspaceReplacement,
     ) {
-        self.type_checker.release_current_resident_workspace();
+        self.type_checker.release_frontend_bound_workspace();
         self.release_typecheck_workspace_consumers();
         if replacement.invalidates_parser_allocation() {
             // Lexer replacement invalidates every parser binding, so the
@@ -1014,6 +1015,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.parser
             .with_current_resident_buffers_with_tree_capacity_and_features(
                 token_capacity,
+                source_len,
                 &self.parse_tables,
                 tree_capacity,
                 parser_feature_flags,
