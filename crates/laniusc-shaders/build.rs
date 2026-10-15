@@ -108,7 +108,7 @@ fn main() -> Result<()> {
             report_downstream_time,
             report_perf,
             report_detailed_perf,
-            noinline_min_instructions,
+            noinline_stamp(noinline_min_instructions),
             source_digest,
             extra
         );
@@ -543,6 +543,16 @@ fn check_inlined_size_budget(
 /// fully inlined in under a minute, and marking them only exposes them to the
 /// driver's divergent out-of-line call hangs.
 const NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS: u64 = 100_000;
+
+/// The harness settings an artifact was marked with, so changing either one
+/// recompiles instead of reusing artifacts marked under the other.
+fn noinline_stamp(min_instructions: u64) -> String {
+    if min_instructions == 0 {
+        "0".to_string()
+    } else {
+        format!("{min_instructions} kernel>={NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS}")
+    }
+}
 
 fn shader_noinline_min_instructions() -> Result<u64> {
     match env::var("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS") {
