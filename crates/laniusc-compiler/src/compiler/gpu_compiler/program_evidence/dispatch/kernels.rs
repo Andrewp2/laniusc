@@ -5,7 +5,10 @@ use super::{
     BatchPlan,
     arena::Arena,
 };
-use crate::gpu::passes_core::{self, PassData};
+use crate::gpu::{
+    dispatch_capture,
+    passes_core::{self, PassData},
+};
 
 // Ordinary literals are required by laniusc-shaders/build.rs artifact discovery.
 const CATALOG_KEYS: [&str; 22] = [
@@ -270,6 +273,16 @@ fn record_phase_with_resources(
             &resources,
         )?;
         passes_core::flush_deferred_compute(encoder);
+        let groups = (count.div_ceil(threads), 1, 1);
+        // LANIUS_DEBUG_CAPTURE_PASS support (tools/cpu_kernel_replay.py).
+        let captured = dispatch_capture::debug_capture_begin(
+            encoder,
+            &pass.shader_id,
+            pass,
+            &bindings,
+            &[],
+            dispatch_capture::CaptureLaunch::Direct(groups),
+        );
         {
             let mut compute = passes_core::begin_counted_compute_pass(
                 encoder,
@@ -282,9 +295,10 @@ fn record_phase_with_resources(
             compute.set_bind_group(0, Some(&bindings), &[]);
             passes_core::record_compute_dispatch();
             if !crate::gpu::passes_core::debug_operation_skipped() {
-                compute.dispatch_workgroups(count.div_ceil(threads), 1, 1);
+                compute.dispatch_workgroups(groups.0, groups.1, groups.2);
             }
         }
+        dispatch_capture::debug_capture_end(encoder, captured);
         done += count;
     }
     Ok(())
