@@ -4599,9 +4599,6 @@ fn build_graph(
         "member_result_field_ordinal" => member_result_field_ordinal: Write,
         "member_result_field_node" => member_result_field_node: Write,
     ];
-    let member_result_overrides = reflected_bindings![
-        "canonical_type_roots" => dependency_canonical_type_roots: Read,
-    ];
     let application_bindings = reflected_bindings![
         "canonical_type_roots" => dependency_canonical_type_roots: Read,
         "type_native_word_count" => _type_native_word_count: Write,
@@ -4963,9 +4960,7 @@ fn build_graph(
                 ResourceDomain::HirNodes,
                 kernels,
                 "type_checker/type/instances/03_member_results",
-                reflected_bindings![
-                    "canonical_type_roots" => dependency_canonical_type_roots: Read,
-                ],
+                application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
                 TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS,
@@ -5006,7 +5001,7 @@ fn build_graph(
                 ResourceDomain::HirNodes,
                 kernels,
                 "type_checker/type/instances/04a3_nested_struct_contexts",
-                member_result_overrides,
+                application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
                 DEPENDENCY_STRUCT_LITERALS_PROJECT.name,
@@ -5240,9 +5235,7 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/03_member_results",
-        reflected_bindings![
-            "canonical_type_roots" => dependency_canonical_type_roots: Read,
-        ],
+        application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
@@ -5697,7 +5690,7 @@ fn build_graph(
             TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
             "type_checker/type/instances/03_member_results",
             ResourceDomain::HirNodes,
-            member_result_overrides,
+            application_bindings,
         ),
         (
             TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
@@ -5799,7 +5792,7 @@ fn build_graph(
                 (
                     CALLS_RECORD_NESTED_CONTEXTS_PASS,
                     "type_checker/type/instances/04a3_nested_struct_contexts",
-                    &member_result_overrides[..],
+                    &application_bindings[..],
                 ),
                 (
                     CALLS_RECORD_IMPORTED_FIELDS_PASS,
@@ -5889,9 +5882,7 @@ fn build_graph(
         ResourceDomain::HirNodes,
         kernels,
         "type_checker/type/instances/03_member_results",
-        reflected_bindings![
-            "canonical_type_roots" => dependency_canonical_type_roots: Read,
-        ],
+        application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
@@ -5910,7 +5901,7 @@ fn build_graph(
         ResourceDomain::Tokens,
         kernels,
         "type_checker/type/instances/04b_struct_init_substitute",
-        &[],
+        application_bindings,
     )?;
     TYPE_INSTANCES_ARRAY_RETURN_REFS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_ARRAY_LITERAL_RETURN_REFS.register_kernel(&mut graph, kernels)?;
@@ -6305,8 +6296,10 @@ fn build_graph(
                 member_receiver_overrides
             } else if kernel == "type_checker/type/instances/03_member_results"
                 || kernel == "type_checker/type/instances/04a3_nested_struct_contexts"
+                || kernel == "type_checker/type/instances/04b_struct_init_substitute"
             {
-                member_result_overrides
+                // Field types under a receiver application are realized.
+                application_bindings
             } else {
                 &[]
             },
