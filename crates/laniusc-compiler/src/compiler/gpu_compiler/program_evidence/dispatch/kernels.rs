@@ -282,6 +282,8 @@ fn record_phase_with_resources(
                 compute.dispatch_workgroups(count.div_ceil(threads), 1, 1);
             }
         }
+        // Profiled jobs need one timestamp per recorded dispatch.
+        crate::gpu::timer::stamp_active_operation(encoder, pass.shader_id.clone());
         done += count;
     }
     Ok(())
