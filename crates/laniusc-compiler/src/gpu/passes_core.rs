@@ -1949,6 +1949,32 @@ where
     )
 }
 
+/// Creates and retains the `main` pipeline of a generated kernel unless one is
+/// already prepared, so a later on-demand load reuses it. Returns whether a
+/// pipeline was created; artifacts without a `main` compute entry are skipped.
+pub(crate) fn prepare_main_shader_kernel(device: &wgpu::Device, shader: &str) -> Result<bool> {
+    let key = prepared_kernel_key(device, "main", shader, &[]);
+    if prepared_kernel_cache()
+        .lock()
+        .expect("prepared kernel cache poisoned")
+        .contains_key(&key)
+    {
+        return Ok(false);
+    }
+    let path = crate::shader_artifacts::artifact_path(&format!("{shader}.reflect.json"));
+    let bytes = std::fs::read(&path)
+        .map_err(|err| anyhow!("read shader reflection {}: {err}", path.display()))?;
+    let reflection = parse_reflection_from_bytes(&bytes).map_err(anyhow::Error::msg)?;
+    let has_main = reflection.entry_points.iter().any(|entry| {
+        entry.stage.as_deref() == Some("compute") && entry.name.as_deref() == Some("main")
+    });
+    if !has_main {
+        return Ok(false);
+    }
+    make_pass_data_from_shader_key(device, shader, "main", shader)?;
+    Ok(true)
+}
+
 /// Builds `PassData` from a shader artifact key without extensions.
 pub fn make_pass_data_from_shader_key(
     device: &wgpu::Device,

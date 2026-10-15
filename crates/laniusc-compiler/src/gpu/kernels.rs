@@ -60,6 +60,35 @@ impl KernelReflections for KernelCatalog {
     }
 }
 
+/// Creates the `main` pipeline of every generated kernel that `include`
+/// accepts and is not prepared yet, retaining each one for later on-demand
+/// loads. Returns how many pipelines were created.
+///
+/// A resident compiler calls this before its first job. The NVIDIA driver sizes
+/// one device-wide local-memory (scratch) reservation when a pipeline is
+/// created: the largest per-thread local memory of any pipeline times the
+/// resident threads. A large-frame pipeline first created during a job grows
+/// that reservation while the job's buffers fill device memory, so the growth
+/// lands in system memory and every kernel with local memory then runs its
+/// stack over PCIe for the rest of the daemon's life. Creating all pipelines
+/// first places the reservation before any buffer exists.
+pub(crate) fn prepare_remaining_kernels(
+    device: &wgpu::Device,
+    include: impl Fn(&str) -> bool,
+) -> Result<usize> {
+    let keys = crate::shader_artifacts::shader_keys("")
+        .context("discover generated GPU kernels")?;
+    let mut created = 0;
+    for key in keys.iter().filter(|key| include(key)) {
+        if super::passes_core::prepare_main_shader_kernel(device, key)
+            .with_context(|| format!("prepare GPU kernel `{key}`"))?
+        {
+            created += 1;
+        }
+    }
+    Ok(created)
+}
+
 /// Pipelines prepared before a compilation job begins.
 pub(crate) struct KernelRegistry {
     kernels: HashMap<String, PassData>,

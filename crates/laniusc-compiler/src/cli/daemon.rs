@@ -539,6 +539,20 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
             .await
             .map_err(CliError::from_compile_error)?,
     );
+    // Create every pipeline the selected backends can load before the first
+    // job, so the driver's local-memory reservation is placed in device memory
+    // ahead of any buffer (see `prepare_remaining_kernels`).
+    if crate::gpu::env::env_bool_strict("LANIUS_DAEMON_PREPARE_ALL_KERNELS", true) {
+        let backends = options.backend.compiler_backends();
+        let wasm_only = |key: &str| key.starts_with("codegen/wasm/") || key.starts_with("codegen/lir/wasm/");
+        let x86_only = |key: &str| key.starts_with("codegen/x86/") || key.starts_with("codegen/lir/x86/");
+        crate::gpu::kernels::prepare_remaining_kernels(&compiler.gpu().device, |key| {
+            !key.starts_with("tests/")
+                && (backends.wasm || !wasm_only(key))
+                && (backends.x86 || !x86_only(key))
+        })
+        .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
+    }
     #[cfg(not(debug_assertions))]
     if matches!(options.backend, BackendSelection::X86) {
         // Program evidence and specialization create pipelines on demand after
