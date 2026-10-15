@@ -15,6 +15,7 @@ import type_checker.calls.contextual_call_environment;
 import type_checker.checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;
+import type_checker.argument_context;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -27,8 +28,38 @@ StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> resolved_value_type_qualifier_token;
 StructuredBuffer<HirRange> compact_path_type_arg_ranges;
+StructuredBuffer<HirTypeArg> compact_type_args;
 RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
+static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint ERR_INTEGER_LITERAL_RANGE = 24u;
+// Operand reasons of a diagnosed application (explicit_constant_operand).
+static const uint OPERAND_LITERAL_RANGE = 2u;
+
+// One operand of the application is diagnosed at itself: an integer literal
+// outside the parameter's range at the literal (LNC0069), or a named constant
+// declared with another scalar, which is conflicting type evidence (LNC0006).
+void record_operand_diagnostic(HirRange arguments, uint binding_status, uint anchor, uint count)
+{
+    uint reason = (binding_status >> 4u) & 15u;
+    uint ordinal = (binding_status >> 8u) & 255u;
+    uint scalar = binding_status >> 16u;
+    uint capacity; uint stride;
+    compact_type_args.GetDimensions(capacity, stride);
+    uint operand = ordinal < arguments.count && arguments.start < capacity &&
+        ordinal < capacity - arguments.start ? compact_type_args[arguments.start + ordinal].value : INVALID;
+    uint token = operand < count ? compact_hir_core[operand].token_start : INVALID;
+    if (reason == OPERAND_LITERAL_RANGE)
+    {
+        uint literal; bool negative;
+        if (integer_literal_magnitude(operand, count, compact_hir_core, compact_hir_payload,
+            literal, negative))
+            token = compact_hir_core[literal].token_start;
+    }
+    record_min_token_error(status, token < gParams.n_tokens ? token : anchor,
+        reason == OPERAND_LITERAL_RANGE ? ERR_INTEGER_LITERAL_RANGE : ERR_ASSIGN_MISMATCH,
+        reason == OPERAND_LITERAL_RANGE ? scalar : 0u);
+}
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -51,8 +82,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint anchor = compact_hir_core[call].token_start;
     if (repeated) { record_min_token_error(status, anchor, 10u, 0xffffff09u); return; }
     uint binding_status = call_explicit_application_status[token];
-    // The binder already recorded this application's operand diagnostic.
-    if (binding_status == EXPLICIT_APPLICATION_OPERAND_DIAGNOSED) return;
+    if ((binding_status & 15u) == EXPLICIT_APPLICATION_OPERAND_DIAGNOSED)
+    { record_operand_diagnostic(arguments, binding_status, anchor, count); return; }
     if (binding_status != 1u || descriptor.x == 0u)
     {
         uint detail = binding_status == 2u ? 0xffffff09u

@@ -28,8 +28,9 @@ public bool checked_source_constant_operand(uint operand, out uint kind, out uin
     return (kind >= 1u && kind <= 3u) && payload != 0xffffffffu;
 }
 
-// 5: the application binder recorded one operand's own diagnostic (an
-// out-of-range literal); it matches explicit_binding_metadata.
+// Low nibble 5: one operand is diagnosed at itself (an integer literal out of
+// range, or a named constant of another scalar), packed as in
+// explicit_binding_metadata's explicit_operand_failure_status.
 public static const uint EXPLICIT_APPLICATION_OPERAND_DIAGNOSED = 5u;
 
 // Metadata uses the applying name even when the accepted environment is keyed
@@ -51,7 +52,7 @@ public bool explicit_application_operand_diagnosed(uint token)
     call_explicit_application_status.GetDimensions(capacity, stride);
     token = checked_call_application_owner(token);
     return token < capacity &&
-        call_explicit_application_status[token] == EXPLICIT_APPLICATION_OPERAND_DIAGNOSED;
+        (call_explicit_application_status[token] & 15u) == EXPLICIT_APPLICATION_OPERAND_DIAGNOSED;
 }
 
 // The producer decodes source syntax or normalized parent operands once.

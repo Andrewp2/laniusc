@@ -8,7 +8,6 @@ import type_checker.calls.explicit_constant_operand;
 import type_checker.calls.claim_reference;
 import type_checker.checked_type_graph;
 import type_checker.concrete_type_equality;
-import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };
 ConstantBuffer<Params> gParams;
@@ -58,8 +57,6 @@ struct KernelBodyNames : IExplicitOperandBodyNames
         return name < capacity && hir_value_decl_name_present[name] == 0u;
     }
 }
-RWStructuredBuffer<uint> status;
-static const uint ERR_INTEGER_LITERAL_RANGE = 24u;
 RWStructuredBuffer<uint4> call_explicit_environment;
 RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> call_explicit_binding_payload;
@@ -308,19 +305,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (constant)
         {
             uint scalar = type_const_param_scalar_by_token[parameter.name_token];
-            if (!bind_scoped_explicit_constant_operand(KernelTypeRefs(), KernelBodyNames(),
-                arguments.start + ordinal, scalar))
+            uint reason = bind_scoped_explicit_constant_operand(KernelTypeRefs(), KernelBodyNames(),
+                arguments.start + ordinal, scalar);
+            if (reason != EXPLICIT_OPERAND_BOUND)
             {
-                // `small<-129>()` for `const V: i8` is a literal range error at
-                // the literal, not a mismatch of the whole application.
-                uint literal_token;
-                if (explicit_constant_operand_out_of_range(arguments.start + ordinal, scalar,
-                    literal_token))
-                {
-                    record_min_token_error(status, literal_token, ERR_INTEGER_LITERAL_RANGE, scalar);
-                    call_explicit_application_status[token] = EXPLICIT_APPLICATION_OPERAND_DIAGNOSED;
-                }
-                else call_explicit_application_status[token] = 3u;
+                call_explicit_application_status[token] = explicit_operand_failure_status(reason,
+                    ordinal, scalar);
                 return;
             }
             constant_seen |= 1u << slot;
