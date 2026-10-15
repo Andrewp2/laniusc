@@ -1,4 +1,12 @@
 // Build capacity-stable pointer-jump commands from actual raw parse-tree depth.
+//
+// tree/depth/block_max leaves, per node block, the maximum of i - C_local(i)
+// and the block's subtree close total. The depth of node i is that value minus
+// the closes of all earlier blocks, so each lane walks a contiguous run of
+// blocks with a running close count, and a workgroup scan of the runs' totals
+// supplies the closes before each run.
+import prefix_scan;
+
 struct Params { uint n; uint uses_status_count; uint n_prefix_blocks; uint max_tree_leaf_base; };
 ConstantBuffer<Params> gTree;
 struct CanonicalParams { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; uint records_use_token_rows; };
@@ -6,12 +14,14 @@ ConstantBuffer<CanonicalParams> gCanonical;
 struct HirParams { uint n; uint uses_status_count; uint semantic_parent_local_ancestor_span; uint retain_debug_rows; uint parser_feature_flags; };
 ConstantBuffer<HirParams> gHir;
 StructuredBuffer<uint> tree_active_dispatch_args;
-StructuredBuffer<uint> tree_depth_block_max;
+StructuredBuffer<int> tree_depth_block_max;
+StructuredBuffer<uint> tree_depth_block_close;
 RWStructuredBuffer<uint> hir_raw_relation_dispatch_args;
 RWStructuredBuffer<uint> hir_local_relation_dispatch_args;
 
 static const uint WG_SIZE = 256u;
-groupshared uint lane_max_depth[WG_SIZE];
+static const int NO_DEPTH = -2147483647;
+groupshared int lane_max_depth[WG_SIZE];
 
 uint step_capacity(uint items)
 {
@@ -26,10 +36,20 @@ uint step_capacity(uint items)
 void main(uint3 lane: SV_GroupThreadID)
 {
     uint group_count = tree_active_dispatch_args[0u] * tree_active_dispatch_args[1u];
-    uint local_max = 0u;
-    for (uint group = lane.x; group < group_count; group += WG_SIZE)
-        local_max = max(local_max, tree_depth_block_max[group]);
-    lane_max_depth[lane.x] = local_max;
+    uint run = (group_count + WG_SIZE - 1u) / WG_SIZE;
+    uint run_begin = min(lane.x * run, group_count);
+    uint run_end = min(run_begin + run, group_count);
+    int run_max = NO_DEPTH;
+    uint run_closes = 0u;
+    for (uint group = run_begin; group < run_end; group += 1u)
+    {
+        int block_max = tree_depth_block_max[group];
+        if (block_max != NO_DEPTH)
+            run_max = max(run_max, block_max - int(run_closes));
+        run_closes += tree_depth_block_close[group];
+    }
+    uint closes_before = prefix_scan_u32_256(lane.x, run_closes) - run_closes;
+    lane_max_depth[lane.x] = run_max == NO_DEPTH ? 0 : max(0, run_max - int(closes_before));
     GroupMemoryBarrierWithGroupSync();
     for (uint stride = WG_SIZE / 2u; stride != 0u; stride >>= 1u)
     {
@@ -37,9 +57,10 @@ void main(uint3 lane: SV_GroupThreadID)
         GroupMemoryBarrierWithGroupSync();
     }
 
+    uint max_depth = uint(lane_max_depth[0u]);
     uint raw_span = max(1u, gCanonical.local_ancestor_span);
     uint raw_required_steps = step_capacity(
-        (lane_max_depth[0u] + 1u + raw_span - 1u) / raw_span);
+        (max_depth + 1u + raw_span - 1u) / raw_span);
     uint raw_capacity = step_capacity((gTree.n + raw_span - 1u) / raw_span);
     uint raw_scheduled_steps = raw_required_steps +
         ((raw_required_steps ^ raw_capacity) & 1u);
@@ -57,7 +78,7 @@ void main(uint3 lane: SV_GroupThreadID)
 
     uint local_span = max(1u, gHir.semantic_parent_local_ancestor_span);
     uint local_required_steps = step_capacity(
-        (lane_max_depth[0u] + 1u + local_span - 1u) / local_span);
+        (max_depth + 1u + local_span - 1u) / local_span);
     uint local_capacity = step_capacity((gTree.n + local_span - 1u) / local_span);
     uint local_scheduled_steps = local_required_steps +
         ((local_required_steps ^ local_capacity) & 1u);
