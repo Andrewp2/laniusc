@@ -2692,6 +2692,9 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_enclosing_fn_by_hir", checked_enclosing_functions),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_calls_by_hir", checked_calls),
+            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+            PassAccess::read("type_instance_kind", type_instance_kind),
             PassAccess::write("semantic_local_flag", semantic_local_flags),
         ],
     })?;

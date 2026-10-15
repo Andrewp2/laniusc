@@ -5,6 +5,7 @@
 // row of an ID is stable once every source spelling of it is seeded.
 import type_checker.canonical.canonical_api;
 import primitive_types;
+#include "../type/instances/body_graph_layout.slang"
 
 public globallycoherent RWStructuredBuffer<uint> ct_row_of;
 
@@ -60,7 +61,7 @@ public void ct_seed_type_row(uint row, uint kind, uint token, uint id, uint toke
 {
     // Body rows are rewritten by each body specialization; they are not
     // stable spellings.
-    if (row - tokens < 64u) return;
+    if (row - tokens < BODY_GRAPH_NODES) return;
     if (kind == 0u || kind > 4u || row >= CT_ROW_LIMIT || !ct_is_record(id) || id >= ct_row_of_capacity()) return;
     if (ct_kind(id) != kind + (CT_KIND_NAMED - 1u)) return;
     if (kind == 1u && token != ct_named_decl_token(id)) return;

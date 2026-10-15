@@ -1,5 +1,6 @@
 module app::main;
 import core::char;
+import core::option;
 fn check_ascii_pair(upper: char, lower: char) -> bool {
     return core::char::to_ascii_lowercase(upper) == lower && core::char::to_ascii_uppercase(lower) == upper && core::char::eq_ignore_ascii_case(upper, lower);
 }
@@ -55,6 +56,29 @@ fn main() -> i32 {
     }
     if (!core::char::is_ascii_printable(' ') || !core::char::is_ascii_printable('~') || core::char::is_ascii_printable('\n')) {
         return 12;
+    }
+    let all_bits: u32 = 4294967295;
+    if (!core::char::is_scalar_value(0) || !core::char::is_scalar_value(55295) ||
+        core::char::is_scalar_value(55296) || core::char::is_scalar_value(57343) ||
+        !core::char::is_scalar_value(57344) || !core::char::is_scalar_value(1114111) ||
+        core::char::is_scalar_value(1114112) || core::char::is_scalar_value(all_bits)) {
+        return 18;
+    }
+    let omega_code: u32 = 937;
+    let last_code: u32 = 1114111;
+    let omega: char = core::option::unwrap_or(core::char::from_u32(omega_code), '?');
+    let last: char = core::char::from_u32_or(last_code, '?');
+    if (omega != 'Ω' || !(omega > 'A') || core::char::from_u32_or(128512, '?') != '😀' ||
+        core::char::from_u32_or(65, '?') != 'A' || core::char::from_u32_or(0, '?') != '\0' ||
+        (last as u32) != last_code || !(last > '😀')) {
+        return 19;
+    }
+    if (core::char::from_u32_or(55296, '?') != '?' ||
+        core::char::from_u32_or(1114112, '?') != '?' ||
+        core::char::from_u32_or(all_bits, '?') != '?' ||
+        core::option::is_some(core::char::from_u32(57343)) ||
+        core::option::is_none(core::char::from_u32(57344))) {
+        return 20;
     }
     return 0;
 }

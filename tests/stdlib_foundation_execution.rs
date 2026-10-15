@@ -1475,7 +1475,7 @@ fn executable_core_function_surface_has_runtime_cases() {
             "option",
             include_str!("../stdlib/core/option.lani"),
             generic_option_fixture.as_str(),
-            11,
+            12,
         ),
         (
             "result_bool",

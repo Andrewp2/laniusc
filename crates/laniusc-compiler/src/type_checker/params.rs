@@ -210,6 +210,9 @@ pub(in crate::type_checker) struct DependencyInterfaceVisibilityParams {
     pub(in crate::type_checker) hir_capacity: u32,
 }
 
+/// The checked constant atom table's replay tail (generic_body::BODY_ATOM_RESERVE_ROWS).
+const REPLAY_ATOM_ROWS: u32 = super::generic_body::BODY_ATOM_RESERVE_ROWS as u32;
+
 /// Immutable workspace allocation partitions. Current-job token/HIR bounds
 /// never select these addresses; smaller reused jobs retain the same plan.
 #[repr(C)]
@@ -225,12 +228,12 @@ impl ConstantStoragePlan {
         hir_capacity: u32, token_capacity: u32, dependency_rows: u32, enabled: bool,
     ) -> Option<Self> {
         if !enabled {
-            return Some(Self { imported_base: 0, dynamic_base: 0, dynamic_limit: 0, total_rows: 96 });
+            return Some(Self { imported_base: 0, dynamic_base: 0, dynamic_limit: 0, total_rows: REPLAY_ATOM_ROWS });
         }
         let imported_base = hir_capacity.max(1).checked_mul(2)?;
         let dynamic_base = imported_base.checked_add(dependency_rows)?;
         let dynamic_limit = dynamic_base.checked_add(token_capacity.max(64).checked_mul(2)?)?;
-        let total_rows = dynamic_limit.checked_add(96)?;
+        let total_rows = dynamic_limit.checked_add(REPLAY_ATOM_ROWS)?;
         Some(Self { imported_base, dynamic_base, dynamic_limit, total_rows })
     }
 }
@@ -796,7 +799,7 @@ mod tests {
 
 #[cfg(test)]
 mod constant_storage_plan_tests {
-    use super::ConstantStoragePlan;
+    use super::{ConstantStoragePlan, REPLAY_ATOM_ROWS};
 
     #[test]
     fn reused_workspace_partitions_keep_imported_atoms_disjoint() {
@@ -806,7 +809,7 @@ mod constant_storage_plan_tests {
         assert_eq!(plan.imported_base, 8192);
         assert_eq!(plan.dynamic_base, 11192);
         assert!(2 * 3000 <= plan.imported_base);
-        assert_eq!(plan.dynamic_limit + 96, plan.total_rows);
+        assert_eq!(plan.dynamic_limit + REPLAY_ATOM_ROWS, plan.total_rows);
         assert_eq!(plan.dynamic_limit - plan.dynamic_base, 2 * 8192);
     }
 
@@ -816,6 +819,6 @@ mod constant_storage_plan_tests {
         assert!(ConstantStoragePlan::new(1, 1, u32::MAX, true).is_none());
         assert!(ConstantStoragePlan::new(1, u32::MAX, 0, true).is_none());
         assert_eq!(ConstantStoragePlan::new(0, 0, 0, false).unwrap(),
-            ConstantStoragePlan { imported_base: 0, dynamic_base: 0, dynamic_limit: 0, total_rows: 96 });
+            ConstantStoragePlan { imported_base: 0, dynamic_base: 0, dynamic_limit: 0, total_rows: REPLAY_ATOM_ROWS });
     }
 }

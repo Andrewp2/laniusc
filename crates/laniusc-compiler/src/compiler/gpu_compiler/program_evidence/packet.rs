@@ -471,7 +471,6 @@ impl ProgramPacket {
     /// `admitted_context_calls` returns them once the GPU admits them.
     /// Replay routes its added calls through `append_replay_batch_calls`;
     /// this entry point is for the calls of copied instance bodies.
-    #[allow(dead_code)]
     pub fn append_context_calls(
         &mut self,
         snapshot: u32,

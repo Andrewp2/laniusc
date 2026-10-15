@@ -15,11 +15,24 @@ compiled ELF also goes through tools/x86_jump_check.py: a jmp/jcc that leaves it
 function fails a fixture that otherwise passed (FAIL-JUMP). Suites:
 stdlib_foundation (tests/fixtures/stdlib_foundation, expectations parsed from the
 Rust tests by tools/fixture_expectations.py), generics_matrix and generics_backlog
-(exit 42). In every suite a first line `// expect: N` sets the expected exit status
-and `// expect: LNCdddd` expects a rejection with that code. Results go to
-DIR/results-shard-I-of-N.json; `report` merges every shard file in DIR and prints
-pass/fail counts grouped by status and diagnostic code, with the largest failure
-groups and an example location for each.
+(exit 42). In every suite the fixture's leading comment lines can set the
+expectation and the stdlib root (`// expect: N`, `// expect: signal N`,
+`// expect: LNCdddd`, `// expect: reject`, `// stdlib-root: DIR`; see
+tools/fixture_expectations.py). Results go to DIR/results-shard-I-of-N.json;
+`report` merges every shard file in DIR and prints pass/fail counts grouped by
+status and diagnostic code, with the largest failure groups and an example
+location for each.
+
+A fixture that no Rust test compiles and that has no `// expect:` line is
+judged against a guess (run with the repo stdlib, exit 0; a `reject*` name must
+fail to compile). Its failures are marked with a dagger everywhere (FAIL-EXIT†,
+the fail† column, "wrong exit status †" in a diff), so they never read as plain
+failures: the fixture needs a real expectation before anyone debugs it.
+
+A fixture listed in tests/fixtures/known_gaps.txt expects a feature that is
+not there yet. While it fails the way its entry records, it is KNOWN-GAP and
+is reported with its owner apart from the failures; once it passes it is
+GAP-CLOSED, so the entry can be removed. A different failure stays a failure.
 
 `stdlib` runs `laniusc check` on an entry that imports every stdlib module; with
 --each it also compiles one entry per module through the daemon, so every
@@ -60,7 +73,10 @@ SUITES = ("stdlib_foundation", "generics_matrix", "generics_backlog")
 RUNNABLE_NEEDS = {"multiple-expectations", "fault-injection", "source-pack"}
 # Needs without which the fixture is not the program its test compiles.
 SKIPPED_NEEDS = {"source-concat", "generated-stdlib"}
-OK_STATUSES = ("PASS", "COMPILED-ONLY", "SKIPPED")
+OK_STATUSES = ("PASS", "COMPILED-ONLY", "SKIPPED", "GAP-CLOSED")
+# Not passing, but recorded in KNOWN_GAPS: reported apart from the failures.
+GAP_STATUSES = ("KNOWN-GAP",)
+KNOWN_GAPS = "tests/fixtures/known_gaps.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +175,54 @@ def relative(path: pathlib.Path) -> str:
         return str(path)
 
 
+def guessed(result: dict) -> bool:
+    """A failure judged against a guess: no Rust test compiles the fixture and it has no `// expect:` line."""
+    source = result.get("expected", {}).get("source", "")
+    return (result["status"] not in OK_STATUSES + GAP_STATUSES and source.startswith("default")
+            and not source.startswith("default:generics"))  # generics probes exit 42 by convention
+
+
+def dagger(result: dict) -> str:
+    return "†" if guessed(result) else ""
+
+
+def load_known_gaps(root: pathlib.Path) -> dict[str, dict]:
+    """KNOWN_GAPS lines: fixture path, the failure it shows today, owner, reason.
+
+    The failure is an error code (LNC0006), a status (FAIL-EXIT), or `any`.
+    """
+    path = root / KNOWN_GAPS
+    gaps = {}
+    if not path.exists():
+        return gaps
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split(None, 3)
+        if len(fields) < 4:
+            raise SystemExit(f"{KNOWN_GAPS}:{number}: want `fixture failure owner reason`, got {line!r}")
+        fixture, failure, owner, reason = fields
+        if not (root / fixture).exists():
+            raise SystemExit(f"{KNOWN_GAPS}:{number}: no fixture {fixture}")
+        gaps[fixture] = {"failure": failure, "owner": owner, "reason": reason}
+    return gaps
+
+
+def apply_known_gap(record: dict, gaps: dict[str, dict]):
+    """Mark a listed fixture KNOWN-GAP while it fails as recorded, GAP-CLOSED once it passes."""
+    gap = gaps.get(record["name"])
+    if gap is None:
+        return
+    record["known_gap"] = gap
+    failure = gap["failure"]
+    if record["status"] in OK_STATUSES:
+        record.update(status="GAP-CLOSED", detail=f"passes now; remove it from {KNOWN_GAPS}")
+    elif failure == "any" or failure in (record["status"], record.get("code")):
+        record["gap_status"] = record["status"]
+        record["status"] = "KNOWN-GAP"
+
+
 def load_cases(suites: list[str], patterns: list[str]) -> list:
     from fixture_expectations import load_expectations
 
@@ -179,6 +243,7 @@ def describe_expectation(expectation) -> dict:
         "signal": expectation.signal,
         "stdout": None if expectation.stdout is None else expectation.stdout.decode("utf-8", "replace")[:300],
         "error_code": expectation.error_code,
+        "stdlib_root": relative(expectation.stdlib_root) if expectation.stdlib_root else None,
         "harness": list(expectation.harness),
         "source": expectation.source,
     }
@@ -284,6 +349,7 @@ def check_jumps(elf: pathlib.Path, record: dict):
 def sweep(args) -> int:
     suites = args.suite or list(SUITES)
     cases = load_cases(suites, args.pattern)
+    gaps = load_known_gaps(ROOT)
     index, count = parse_shard(args.shard)
     cases = [case for position, case in enumerate(cases) if position % count == index - 1]
     out = pathlib.Path(args.out)
@@ -405,10 +471,14 @@ def sweep(args) -> int:
             record["compile_s"] = round(elapsed, 3)
             if compiled:
                 check_jumps(elf, record)
+        apply_known_gap(record, gaps)
         record["elapsed_s"] = round(time.time() - started, 3)
         results.append(record)
-        line = f"{record['status']:22} {record['elapsed_s']:6.1f}s  {name}"
-        if record["status"] not in OK_STATUSES:
+        line = f"{record['status'] + dagger(record):22} {record['elapsed_s']:6.1f}s  {name}"
+        if record["status"] in GAP_STATUSES:
+            gap = record["known_gap"]
+            line += f"\n    {record['gap_status']} {record.get('code') or ''}: {gap['reason'][:160]} (owner {gap['owner']})"
+        elif record["status"] not in OK_STATUSES or record["status"] == "GAP-CLOSED":
             line += f"\n    {record.get('code') or ''} {record.get('location') or ''} {record.get('detail', '')[:200]}"
             if record.get("bad_jumps") and record["status"] != "FAIL-JUMP":
                 line += f"\n    {record['bad_jumps']} bad jumps; first: {record['bad_jump_examples'][0]}"
@@ -424,8 +494,13 @@ def sweep(args) -> int:
     digests_seen.append(shader_digest(args.laniusc))
     write(complete=len(results) == len(cases))
     passed = sum(1 for result in results if result["status"] in OK_STATUSES)
-    print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled; wrote {relative(result_path)}")
-    return 0 if passed == len(results) else 1
+    known = sum(1 for result in results if result["status"] in GAP_STATUSES)
+    guesses = sum(1 for result in results if guessed(result))
+    print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled"
+          + (f", {known} known gaps" if known else "")
+          + (f", {guesses} of the failures against a guessed expectation (†)" if guesses else "")
+          + f"; wrote {relative(result_path)}")
+    return 0 if passed + known == len(results) else 1
 
 
 def parse_shard(text: str) -> tuple[int, int]:
@@ -547,7 +622,8 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
     by_suite = collections.defaultdict(collections.Counter)
     for result in results.values():
         by_suite[result["suite"]][result["status"]] += 1
-    failures = [result for result in results.values() if result["status"] not in OK_STATUSES]
+        by_suite[result["suite"]]["guessed"] += guessed(result)
+    failures = [result for result in results.values() if result["status"] not in OK_STATUSES + GAP_STATUSES]
     groups = collections.defaultdict(list)
     for result in failures:
         groups[failure_group(result)].append(result)
@@ -578,32 +654,55 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
         for _, document in documents)
     lines.append(f"Shards: {shard_times}")
     lines.append("")
-    lines.append("| suite | fixtures | pass | compiled only | skipped | fail |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| suite | fixtures | pass | compiled only | skipped | known gap | fail | fail† |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for suite, counts in sorted(by_suite.items()):
-        total = sum(counts.values())
-        failed = total - sum(counts[status] for status in OK_STATUSES)
-        lines.append(f"| {suite} | {total} | {counts['PASS']} | {counts['COMPILED-ONLY']} | "
-                     f"{counts['SKIPPED']} | {failed} |")
+        total = sum(counts.values()) - counts["guessed"]
+        failed = total - sum(counts[status] for status in OK_STATUSES + GAP_STATUSES) - counts["guessed"]
+        lines.append(f"| {suite} | {total} | {counts['PASS'] + counts['GAP-CLOSED']} | {counts['COMPILED-ONLY']} | "
+                     f"{counts['SKIPPED']} | {counts['KNOWN-GAP']} | {failed} | {counts['guessed']} |")
     lines.append("")
+    if any(counts["guessed"] for counts in by_suite.values()):
+        lines.append("fail†: the fixture failed an expectation that is a guess (no Rust test compiles it and it "
+                     "has no `// expect:` line), so the guess may be what is wrong. Give it a real expectation "
+                     "before routing it to a compiler owner.")
+        lines.append("")
+    gaps = sorted((result for result in results.values() if result["status"] in GAP_STATUSES),
+                  key=lambda result: (result["known_gap"]["owner"], result["name"]))
+    if gaps:
+        lines.append(f"## Known gaps ({len(gaps)})")
+        lines.append("")
+        lines.append(f"Listed in `{KNOWN_GAPS}`; not counted as failures while they fail as recorded.")
+        lines.append("")
+        lines.append("| fixture | owner | today | reason |")
+        lines.append("| --- | --- | --- | --- |")
+        for result in gaps:
+            gap = result["known_gap"]
+            today = f"{result['gap_status']} {result.get('code') or ''}".strip()
+            lines.append(f"| `{result['name']}` | {gap['owner']} | {today} | {gap['reason']} |")
+        lines.append("")
+    closed = sorted(result["name"] for result in results.values() if result["status"] == "GAP-CLOSED")
+    if closed:
+        lines.append(f"Known gaps that pass now; remove them from `{KNOWN_GAPS}`: "
+                     + ", ".join(f"`{name}`" for name in closed) + ".")
+        lines.append("")
     lines.append("## Failures by group")
     lines.append("")
-    lines.append("| group | count | example | location |")
-    lines.append("| --- | ---: | --- | --- |")
+    lines.append("| group | count | of which † | example | location |")
+    lines.append("| --- | ---: | ---: | --- | --- |")
     for group, members in sorted(groups.items(), key=lambda item: -len(item[1])):
         example = members[0]
-        lines.append(f"| {group} | {len(members)} | `{example['name']}` | {example.get('location') or ''} |")
+        lines.append(f"| {group} | {len(members)} | {sum(map(guessed, members))} | "
+                     f"`{example['name']}`{dagger(example)} | {example.get('location') or ''} |")
     lines.append("")
     # Generics matrix fixtures all exit 42 by convention; other unreferenced fixtures are a guess.
-    guessed = sorted(result["name"] for result in failures
-                     if result["expected"].get("source", "").startswith("default")
-                     and not result["expected"]["source"].startswith("default:generics"))
-    if guessed:
-        lines.append(f"{len(guessed)} of the {len(failures)} failures are fixtures that no Rust test "
-                     "compiles, so their expected outcome is a guess: a `reject*` name must fail to "
-                     "compile, anything else must run with the stdlib root and exit 0. Some need a setup "
-                     "the sweep does not know, such as a test-specific stdlib root: "
-                     + ", ".join(name.rsplit("/", 1)[-1] for name in guessed) + ".")
+    guesses = sorted(result["name"] for result in failures if guessed(result))
+    if guesses:
+        lines.append(f"{len(guesses)} of the {len(failures)} failures (†) are fixtures that no Rust test "
+                     "compiles and that have no `// expect:` line, so their expected outcome is a guess: a "
+                     "`reject*` name must fail to compile, anything else must run with the repo stdlib and "
+                     "exit 0. Some need a setup the guess does not know, such as their own `// stdlib-root:`: "
+                     + ", ".join(name.rsplit("/", 1)[-1] for name in guesses) + ".")
         lines.append("")
     for group, members in sorted(groups.items(), key=lambda item: -len(item[1])):
         lines.append(f"### {group} ({len(members)})")
@@ -625,10 +724,10 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
         for message, same in sorted(messages.items(), key=lambda item: -len(item[1])):
             example = same[0]
             lines.append(f"- {len(same)} x {message or '(no message)'}")
-            lines.append(f"  - e.g. `{example['name']}` {example.get('location') or ''}"
+            lines.append(f"  - e.g. `{example['name']}`{dagger(example)} {example.get('location') or ''}"
                          + (f": `{example['source_line']}`" if example.get("source_line") else "")
                          + (f" ({example.get('detail', '')[:160]})" if example.get('detail') and example['status'] != 'FAIL-COMPILE' else ""))
-            others = ", ".join(member["name"].rsplit("/", 1)[-1] for member in same[1:8])
+            others = ", ".join(member["name"].rsplit("/", 1)[-1] + dagger(member) for member in same[1:8])
             if others:
                 lines.append(f"  - also: {others}{' ...' if len(same) > 8 else ''}")
         lines.append("")
@@ -674,7 +773,11 @@ def render_jump_check(results: dict[str, dict], elf_dir: pathlib.Path) -> list[s
 def outcome(result: dict | None) -> str:
     if result is None:
         return "absent"
-    return "ok" if result["status"] in OK_STATUSES else failure_group(result)
+    if result["status"] in GAP_STATUSES:
+        return "known gap"
+    if result["status"] in OK_STATUSES:
+        return "ok"
+    return failure_group(result) + (" †" if guessed(result) else "")
 
 
 def diff(args) -> int:

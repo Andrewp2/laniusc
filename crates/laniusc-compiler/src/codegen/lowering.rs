@@ -120,7 +120,8 @@ struct SemanticTemplateParams {
     replay_function: u32,
     /// Further selected callables of a batched replay, each HIR plus one.
     replay_extra_count: u32,
-    _pad0: u32,
+    /// Instance-copy replay: first copy HIR row plus one (0 otherwise).
+    replay_copy_start: u32,
     _pad1: u32,
     _pad2: u32,
     replay_extra: [ReplayFunctionRow; REPLAY_EXTRA_ROWS],
@@ -129,6 +130,16 @@ struct SemanticTemplateParams {
 /// Batched replays select at most 64 bodies: the first in `replay_function`,
 /// the other 63 in these rows (16-byte uniform array stride).
 const REPLAY_EXTRA_ROWS: usize = 16;
+
+/// The bodies a replay object holds.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ReplaySelection<'a> {
+    /// These lexical callables; none for an ordinary or strict job.
+    Functions(&'a [u32]),
+    /// An instance-copy replay: every function from this HIR row on (the
+    /// copies appended after the template), and none before it.
+    CopiesFrom(u32),
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, ShaderType)]
@@ -1373,7 +1384,7 @@ impl GpuSemanticLoweringStage {
                 n_tokens: capacities.tokens,
                 replay_function: 0,
                 replay_extra_count: 0,
-                _pad0: 0,
+                replay_copy_start: 0,
                 _pad1: 0,
                 _pad2: 0,
                 replay_extra: [ReplayFunctionRow::default(); REPLAY_EXTRA_ROWS],
@@ -1807,12 +1818,18 @@ impl GpuSemanticLoweringStage {
     pub(crate) fn set_replay_functions(
         &self,
         queue: &wgpu::Queue,
-        selected_hirs: &[u32],
+        selection: ReplaySelection<'_>,
     ) -> Result<()> {
         // A replay object holds only the selected bodies; calls to ordinary
         // local helpers link against the original object's definitions.
         // LANIUS_REPLAY_KEEP_LOCAL_HELPERS=1 emits them again (old behavior).
         const KEEP_LOCAL_HELPERS: u32 = 0x8000_0000;
+        let (selected_hirs, copy_start) = match selection {
+            ReplaySelection::Functions(hirs) => (hirs, 0),
+            ReplaySelection::CopiesFrom(row) => (&[][..], row.checked_add(1)
+                .filter(|&value| value < KEEP_LOCAL_HELPERS)
+                .context("first instance copy row cannot be encoded")?),
+        };
         ensure!(selected_hirs.len() <= 1 + REPLAY_EXTRA_ROWS * 4,
             "a batched replay selects at most {} bodies", 1 + REPLAY_EXTRA_ROWS * 4);
         let encoded = selected_hirs.iter().map(|&hir| {
@@ -1820,7 +1837,8 @@ impl GpuSemanticLoweringStage {
                 .filter(|&value| value < KEEP_LOCAL_HELPERS)
                 .context("replay callable HIR cannot be encoded")
         }).collect::<Result<Vec<_>>>()?;
-        let first = encoded.first().copied().unwrap_or(0);
+        // A copy replay is a replay too: it drops ordinary local helpers.
+        let first = encoded.first().copied().unwrap_or(copy_start);
         let first = if first != 0
             && crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_KEEP_LOCAL_HELPERS", false)
         {
@@ -1832,9 +1850,11 @@ impl GpuSemanticLoweringStage {
         let mut bytes = Vec::with_capacity(20 + 12 + extra.len() * 4);
         bytes.extend_from_slice(&first.to_le_bytes());
         bytes.extend_from_slice(&(extra.len() as u32).to_le_bytes());
-        // Ordinary and single-entry jobs leave the extra rows unread.
+        // Every job overwrites the copy start; only batched replays read the
+        // extra rows.
+        bytes.extend_from_slice(&copy_start.to_le_bytes());
         if !extra.is_empty() {
-            bytes.extend_from_slice(&[0; 12]);
+            bytes.extend_from_slice(&[0; 8]);
             bytes.extend(extra.iter().flat_map(|value| value.to_le_bytes()));
         }
         self.template_params.write(queue, 12, &bytes);

@@ -1,0 +1,28 @@
+module gen::area;
+
+trait Score {
+    fn score(self) -> i32;
+}
+
+pub struct Slot<T> {
+    value: T,
+    k: i32,
+}
+
+pub fn make<T>(value: T, k: i32) -> Slot<T> {
+    return Slot { value: value, k: k };
+}
+
+impl<T> Score for Slot<T> {
+    fn score(self) -> i32 {
+        return self.k;
+    }
+}
+
+fn total<S>(s: S) -> i32 where S: Score {
+    return s.score();
+}
+
+pub fn evaluate() -> i32 {
+    return total(make(true, 10)) + total(make(3, 11));
+}

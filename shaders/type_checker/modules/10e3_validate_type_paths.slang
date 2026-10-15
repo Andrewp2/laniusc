@@ -40,6 +40,11 @@ StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<HirRange> compact_type_arg_ranges;
 StructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> module_value_path_expr_head;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<HirPathSegment> compact_path_segments;
+StructuredBuffer<HirRange> compact_path_type_arg_ranges;
 
 RWStructuredBuffer<uint> status;
 
@@ -74,6 +79,46 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
+// Whether `node` is an argument in `arguments`.
+bool range_has_argument(HirRange arguments, uint node, uint total)
+{
+    if (arguments.count > 64u || arguments.start > total || arguments.count > total - arguments.start)
+        return false;
+    bool found = false;
+    for (uint i = 0u; i < arguments.count; i++)
+        found = found || compact_type_args[arguments.start + i].value == node;
+    return found;
+}
+
+// Whether `node` is an argument of an application at `token`: a value path
+// segment (`f<N>`, `Type<N>::f`) or a member (`value.f<N>`).
+bool token_applies_argument(uint token, uint node, uint total)
+{
+    return token < gParams.n_tokens &&
+        range_has_argument(compact_path_type_arg_ranges[token], node, total);
+}
+
+// Whether `node` is an argument of a value path or member applying it.
+// Their applications are token owned; only a type owns a node range.
+bool value_application_argument(uint parent, uint node, uint count, uint total)
+{
+    uint kind = compact_hir_core[parent].kind;
+    if (kind == 21u) return token_applies_argument(compact_hir_payload[parent].c, node, total);
+    if (kind != 33u) return false;
+    uint path = path_id_by_owner_hir[parent];
+    if (path >= min(compact_path_count[0u], count)) return false;
+    HirPath record = compact_paths[path];
+    uint capacity; uint stride;
+    compact_path_segments.GetDimensions(capacity, stride);
+    if (record.owner != parent || record.segment_start > capacity ||
+        record.segment_count > min(capacity - record.segment_start, 64u)) return false;
+    bool found = false;
+    for (uint segment = 0u; segment < record.segment_count; segment++)
+        found = found || token_applies_argument(
+            compact_path_segments[record.segment_start + segment].name_token, node, total);
+    return found;
+}
+
 bool is_constant_operand_path(uint path)
 {
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
@@ -83,11 +128,9 @@ bool is_constant_operand_path(uint path)
     if (parent >= count) return false;
     HirPayload owner = compact_hir_payload[parent];
     bool operand = compact_hir_core[parent].kind == 5u && owner.a == 2u && owner.d == node;
-    HirRange arguments = compact_type_arg_ranges[parent];
     uint total = min(compact_type_arg_count[0u], gParams.n_hir_nodes);
-    if (arguments.count <= 64u && arguments.start <= total && arguments.count <= total - arguments.start)
-        for (uint i = 0u; i < arguments.count; i++)
-            operand = operand || compact_type_args[arguments.start + i].value == node;
+    operand = operand || range_has_argument(compact_type_arg_ranges[parent], node, total) ||
+        value_application_argument(parent, node, count, total);
     if (!operand || resolved_value_status[path] != PATH_RESOLVE_STATUS_OK) return false;
     if (resolved_dependency_value_metadata[path * 4u] == 3u) return true;
     uint declaration = resolved_value_decl[path];

@@ -1,4 +1,6 @@
-use anyhow::{Result, ensure};
+use std::num::NonZeroU64;
+
+use anyhow::{Result, anyhow, ensure};
 
 use super::{
     super::{abi::Span, catalog::FrozenCatalog},
@@ -6,12 +8,13 @@ use super::{
     arena::Arena,
 };
 use crate::gpu::{
+    buffers::LaniusBuffer,
     dispatch_capture,
     passes_core::{self, PassData},
 };
 
 // Ordinary literals are required by laniusc-shaders/build.rs artifact discovery.
-const CATALOG_KEYS: [&str; 22] = [
+const CATALOG_KEYS: [&str; 23] = [
     "type_checker/program_evidence/entries/00_initialize",
     "type_checker/program_evidence/entries/01_clear_atom_index",
     "type_checker/program_evidence/entries/02_00_admit_snapshots",
@@ -23,7 +26,8 @@ const CATALOG_KEYS: [&str; 22] = [
     "type_checker/program_evidence/entries/02_06_admit_edges",
     "type_checker/program_evidence/entries/02_07_admit_roots",
     "type_checker/program_evidence/entries/02_08_admit_predicates",
-    "type_checker/program_evidence/entries/02_09_admit_implementations",
+    "type_checker/program_evidence/entries/02_09_admit_implementation_heads",
+    "type_checker/program_evidence/entries/02_09_admit_implementation_members",
     "type_checker/program_evidence/entries/02_10_admit_methods",
     "type_checker/program_evidence/entries/03_build_atom_index",
     "type_checker/program_evidence/entries/04_check_atom_identity",
@@ -35,6 +39,12 @@ const CATALOG_KEYS: [&str; 22] = [
     "type_checker/program_evidence/entries/10_check_coherence",
     "type_checker/program_evidence/entries/11_freeze_catalog",
 ];
+
+// 02_09 admits implementations in two kernels split at head coverage. The
+// members kernel runs only while the catalog is still building, so every row
+// it sees has passed its head; the two run chunk by chunk, in the one-kernel
+// order (a failure in one chunk stops every later chunk).
+const IMPLEMENTATION_HEADS: usize = 11;
 
 pub(super) struct CatalogKernels {
     passes: Vec<PassData>,
@@ -62,7 +72,7 @@ impl CatalogKernels {
         let clear_count = work_rows.max(buckets); // >=1, even for empty catalog.
         // Phase02 is one typed shader per catalog table. Keep explicit phase
         // numbers: shader array index11 is an admission, not singleton freeze.
-        let schedule: [(u32, u32); 22] = [
+        let schedule: [(u32, u32); 23] = [
             (0, 1),
             (1, clear_count),
             (2, count(0)),
@@ -74,6 +84,7 @@ impl CatalogKernels {
             (2, count(6)),
             (2, count(7)),
             (2, count(8)),
+            (2, count(9)),
             (2, count(9)),
             (2, count(10)),
             (3, count(1)),
@@ -90,19 +101,39 @@ impl CatalogKernels {
             self.passes.len() == schedule.len(),
             "catalog kernel/schedule inventory differs"
         );
-        for (pass, (phase, count)) in self.passes.iter().zip(schedule) {
+        ensure!(
+            CATALOG_KEYS[IMPLEMENTATION_HEADS].ends_with("02_09_admit_implementation_heads")
+                && CATALOG_KEYS[IMPLEMENTATION_HEADS + 1].ends_with("02_09_admit_implementation_members"),
+            "implementation admission kernels moved in the catalog inventory"
+        );
+        for (index, (pass, (phase, count))) in self.passes.iter().zip(schedule).enumerate() {
+            if index == IMPLEMENTATION_HEADS + 1 {
+                continue; // recorded with its heads below
+            }
             let threads = if matches!(phase, 0 | 11) { 1 } else { 256 };
-            record_phase(
-                device,
-                encoder,
-                pass,
-                phase,
-                Span::new(0, count)?,
-                threads,
-                storage,
-                input,
-                output,
-            )?;
+            let (steps, chunk) = if index == IMPLEMENTATION_HEADS {
+                (&self.passes[index..index + 2], THREAD_SCRATCH_SLOTS)
+            } else {
+                (std::slice::from_ref(pass), count.max(1))
+            };
+            let mut done = 0u32;
+            while done < count {
+                let rows = (count - done).min(chunk);
+                for step in steps {
+                    record_phase(
+                        device,
+                        encoder,
+                        step,
+                        phase,
+                        Span::new(done, rows)?,
+                        threads,
+                        storage,
+                        input,
+                        output,
+                    )?;
+                }
+                done += rows;
+            }
         }
         Ok(())
     }
@@ -115,7 +146,7 @@ impl CatalogKernels {
 /// memory. Program evidence on canonical type IDs (plan P7) deletes them.
 pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
 /// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/thread_scratch.slang.
-pub(super) const THREAD_SCRATCH_CELLS: u32 = 1792;
+pub(super) const THREAD_SCRATCH_CELLS: u32 = 1808;
 
 /// Each dispatch has immutable parameters. A separate compute pass is a WGPU
 /// synchronization boundary; no following phase can observe a partially built
@@ -199,15 +230,8 @@ fn record_phase_with_resources(
     let max_rows = max_groups
         .checked_mul(threads)
         .expect("bounded group product");
-    // Walker frames live in one retained table shared by every such dispatch:
-    // fixed size, so its binding never changes. Each chunk owns all slots.
     let scratch = if passes_core::bind_group::declares_binding(pass, 0, "thread_scratch") {
-        Some(
-            catalog
-                .workspace()
-                .shared("program_evidence.thread_scratch")
-                .buffer(THREAD_SCRATCH_SLOTS * THREAD_SCRATCH_CELLS * 4, wgpu::BufferUsages::STORAGE, None)?,
-        )
+        Some(thread_scratch(catalog)?)
     } else {
         None
     };
@@ -257,16 +281,7 @@ fn record_phase_with_resources(
                 "program_evidence.proof_params",
                 8,
                 wgpu::BufferUsages::UNIFORM,
-                Some(&[
-                    proof.storage.logical_words,
-                    proof.epoch as u32,
-                    (proof.epoch >> 32) as u32,
-                    proof.arena_id as u32,
-                    (proof.arena_id >> 32) as u32,
-                    proof.serial,
-                    phase,
-                    0,
-                ]),
+                Some(&proof_params_words(proof, phase)),
             )?)
         } else {
             None
@@ -312,38 +327,83 @@ fn record_phase_with_resources(
             0,
             &resources,
         )?;
-        passes_core::flush_deferred_compute(encoder);
-        let groups = (count.div_ceil(threads), 1, 1);
-        // LANIUS_DEBUG_CAPTURE_PASS support (tools/cpu_kernel_replay.py).
-        let captured = dispatch_capture::debug_capture_begin(
-            encoder,
-            &pass.shader_id,
-            pass,
-            &bindings,
-            &[],
-            dispatch_capture::CaptureLaunch::Direct(groups),
-        );
-        {
-            let mut compute = passes_core::begin_counted_compute_pass(
-                encoder,
-                &wgpu::ComputePassDescriptor {
-                    label: Some(&pass.shader_id),
-                    timestamp_writes: None,
-                },
-            );
-            compute.set_pipeline(&pass.pipeline);
-            compute.set_bind_group(0, Some(&bindings), &[]);
-            passes_core::record_compute_dispatch();
-            if !crate::gpu::passes_core::debug_operation_skipped() {
-                compute.dispatch_workgroups(groups.0, groups.1, groups.2);
-            }
-        }
-        dispatch_capture::debug_capture_end(encoder, captured);
-        // Profiled jobs need one timestamp per recorded dispatch.
-        crate::gpu::timer::stamp_active_operation(encoder, pass.shader_id.clone());
+        dispatch_pass(encoder, pass, &bindings, Launch::Direct((count.div_ceil(threads), 1, 1)));
         done += count;
     }
     Ok(())
+}
+
+/// Walker frames live in one retained table shared by every dispatch that
+/// declares it: fixed size, so its binding never changes. Each chunk owns all
+/// slots.
+fn thread_scratch(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
+    catalog
+        .workspace()
+        .shared("program_evidence.thread_scratch")
+        .buffer(THREAD_SCRATCH_SLOTS * THREAD_SCRATCH_CELLS * 4, wgpu::BufferUsages::STORAGE, None)
+}
+
+#[derive(Clone, Copy)]
+enum Launch<'a> {
+    Direct((u32, u32, u32)),
+    Indirect(&'a wgpu::Buffer, u64),
+}
+
+/// One dispatch in its own compute pass.
+fn dispatch_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bindings: &wgpu::BindGroup,
+    launch: Launch<'_>,
+) {
+    passes_core::flush_deferred_compute(encoder);
+    let capture_launch = match launch {
+        Launch::Direct(groups) => dispatch_capture::CaptureLaunch::Direct(groups),
+        Launch::Indirect(buffer, offset) => dispatch_capture::CaptureLaunch::Indirect(buffer, offset),
+    };
+    // LANIUS_DEBUG_CAPTURE_PASS support (tools/cpu_kernel_replay.py).
+    let captured = dispatch_capture::debug_capture_begin(
+        encoder,
+        &pass.shader_id,
+        pass,
+        bindings,
+        &[],
+        capture_launch,
+    );
+    {
+        let mut compute = passes_core::begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some(&pass.shader_id),
+                timestamp_writes: None,
+            },
+        );
+        compute.set_pipeline(&pass.pipeline);
+        compute.set_bind_group(0, Some(bindings), &[]);
+        passes_core::record_compute_dispatch();
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            match launch {
+                Launch::Direct(groups) => compute.dispatch_workgroups(groups.0, groups.1, groups.2),
+                Launch::Indirect(buffer, offset) => compute.dispatch_workgroups_indirect(buffer, offset),
+            }
+        }
+    }
+    dispatch_capture::debug_capture_end(encoder, captured);
+    // Profiled jobs need one timestamp per recorded dispatch.
+    crate::gpu::timer::stamp_active_operation(encoder, pass.shader_id.clone());
+}
+
+fn proof_params_words(proof: ProofResources<'_>, phase: u32) -> [u32; 8] {
+    [
+        proof.storage.logical_words,
+        proof.epoch as u32,
+        (proof.epoch >> 32) as u32,
+        proof.arena_id as u32,
+        (proof.arena_id >> 32) as u32,
+        proof.serial,
+        phase,
+        0,
+    ]
 }
 
 // These literal keys also register the batch entry artifacts with the build.
@@ -523,6 +583,48 @@ impl BatchKernels {
 
 // Literal artifact inventory. Stage numbers are independent of chronological
 // order: original Work initialization precedes its normalization stages.
+/// PPS_SELECT_PHASE_EXACT and PPS_SELECT_PHASE_GENERIC in
+/// proof_frontier_selection.slang.
+const SELECTION_PHASE: u32 = 53;
+const GENERIC_SELECTION_PHASE: u32 = 65;
+/// PPS_WALK_PHASE_WORK, PPS_WALK_PHASE_PROOFS and
+/// PPS_WALK_PHASE_PREREQUISITES in proof_substitution_walk.slang.
+const SUBSTITUTION_PHASE: u32 = 54;
+const IMPLEMENTATION_PROOF_PHASE: u32 = 59;
+const PREREQUISITE_PHASE: u32 = 66;
+const WALK_GOALS: &str = "type_checker/program_evidence/entries/54_walk_substitution_goals";
+const WALK_ROOTS: &str = "type_checker/program_evidence/entries/54_walk_substitution_roots";
+const WALK_BINDINGS: &str = "type_checker/program_evidence/entries/54_walk_substitution_bindings";
+const SELECT_IMPLEMENTATIONS: &str = "type_checker/program_evidence/entries/53_select_implementations";
+/// Exact implementation match, caller assumption search, generic
+/// implementation match (the first kernel again, as phase 65), then the
+/// finish (proof_frontier_selection.slang).
+const SELECTION_STEPS: [(&str, u32); 4] = [
+    (SELECT_IMPLEMENTATIONS, SELECTION_PHASE),
+    ("type_checker/program_evidence/entries/53_select_assumptions", SELECTION_PHASE),
+    (SELECT_IMPLEMENTATIONS, GENERIC_SELECTION_PHASE),
+    ("type_checker/program_evidence/entries/53_select_work", SELECTION_PHASE),
+];
+/// Up to the head match, the head's root unification, then the bindings
+/// (proof_substitution_walk.slang).
+const SUBSTITUTION_STEPS: [(&str, u32); 3] = [
+    (WALK_GOALS, SUBSTITUTION_PHASE),
+    (WALK_ROOTS, SUBSTITUTION_PHASE),
+    (WALK_BINDINGS, SUBSTITUTION_PHASE),
+];
+/// The substitution walk's three dispatches, then the root unification kernel
+/// again (phase 66) for the proof's fixed prerequisite checks.
+const IMPLEMENTATION_PROOF_STEPS: [(&str, u32); 4] = [
+    (WALK_GOALS, IMPLEMENTATION_PROOF_PHASE),
+    (WALK_ROOTS, IMPLEMENTATION_PROOF_PHASE),
+    (WALK_BINDINGS, IMPLEMENTATION_PROOF_PHASE),
+    (WALK_ROOTS, PREREQUISITE_PHASE),
+];
+const BINDING_ROWS: &str = "type_checker/program_evidence/entries/54_admit_binding_rows";
+const ASSUMPTION_PROOFS: &str = "type_checker/program_evidence/entries/59_admit_assumption_proofs";
+const PROOF_EDGE_ROWS: &str = "type_checker/program_evidence/entries/59_admit_proof_edge_rows";
+/// The GPU planner of recorded solver rounds (proof_solver_wave.slang).
+const WAVE_PLAN_PHASE: u32 = 70;
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
@@ -589,21 +691,24 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/52_resolve_work",
         256,
     ),
+    // Work selection: see ProofKernels::record_selection.
+    (53, SELECT_IMPLEMENTATIONS, 256),
+    (
+        53,
+        "type_checker/program_evidence/entries/53_select_assumptions",
+        256,
+    ),
     (
         53,
         "type_checker/program_evidence/entries/53_select_work",
         256,
     ),
-    (
-        54,
-        "type_checker/program_evidence/entries/54_admit_substitutions",
-        256,
-    ),
-    (
-        54,
-        "type_checker/program_evidence/entries/54_admit_binding_rows",
-        256,
-    ),
+    // Substitution walk (phases 54, 59 and 66): see
+    // ProofKernels::record_substitutions.
+    (54, WALK_GOALS, 256),
+    (54, WALK_ROOTS, 256),
+    (54, WALK_BINDINGS, 256),
+    (54, BINDING_ROWS, 256),
     (
         55,
         "type_checker/program_evidence/entries/55_commit_substitutions",
@@ -624,21 +729,8 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/58_emit_ready_proofs",
         256,
     ),
-    (
-        59,
-        "type_checker/program_evidence/entries/59_admit_implementation_proofs",
-        256,
-    ),
-    (
-        59,
-        "type_checker/program_evidence/entries/59_admit_assumption_proofs",
-        256,
-    ),
-    (
-        59,
-        "type_checker/program_evidence/entries/59_admit_proof_edge_rows",
-        256,
-    ),
+    (59, ASSUMPTION_PROOFS, 256),
+    (59, PROOF_EDGE_ROWS, 256),
     (
         60,
         "type_checker/program_evidence/entries/60_commit_proofs",
@@ -663,6 +755,11 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         64,
         "type_checker/program_evidence/entries/64_publish_roots",
         256,
+    ),
+    (
+        WAVE_PLAN_PHASE,
+        "type_checker/program_evidence/entries/70_plan_solver_wave",
+        1,
     ),
 ];
 
@@ -710,11 +807,103 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
+        ensure!(
+            !matches!(phase, SELECTION_PHASE | SUBSTITUTION_PHASE | IMPLEMENTATION_PROOF_PHASE
+                | WAVE_PLAN_PHASE),
+            "proof stage {phase} records through its own recorder"
+        );
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
             .ok_or_else(|| anyhow::anyhow!("unregistered proof stage {phase}"))?;
         self.record_index(device, encoder, index, span, catalog, input, output, proof)
+    }
+    /// INTERIM (P7): work selection runs as four dispatches per chunk of at
+    /// most THREAD_SCRATCH_SLOTS work rows, so no kernel inlines more than
+    /// one search: exact implementation match, caller assumption search,
+    /// generic implementation match (the first kernel again, as phase 65),
+    /// then the finish (proof_frontier_selection.slang).
+    pub fn record_selection(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        self.record_chunked(device, encoder, &SELECTION_STEPS, span, catalog, input, output, proof)
+    }
+    /// INTERIM (P7): substitution admission walks each selected work's
+    /// substitution as three dispatches per chunk of at most
+    /// THREAD_SCRATCH_SLOTS work rows: up to the head match, the head's root
+    /// unification, then the bindings (proof_substitution_walk.slang).
+    pub fn record_substitutions(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        self.record_chunked(device, encoder, &SUBSTITUTION_STEPS, span, catalog, input, output, proof)
+    }
+    /// INTERIM (P7): implementation proof admission over ready proof events:
+    /// the same three walk dispatches per chunk as record_substitutions, then
+    /// the root unification kernel again (phase 66) for the proof's fixed
+    /// prerequisite checks.
+    pub fn record_implementation_proofs(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        self.record_chunked(device, encoder, &IMPLEMENTATION_PROOF_STEPS, span, catalog, input,
+            output, proof)
+    }
+    /// A proof stage split over several dispatches per chunk of at most
+    /// THREAD_SCRATCH_SLOTS rows. Each step hands its rows' progress on to
+    /// the next in the row's thread-scratch slot (proof_scratch_handoff.slang),
+    /// so all steps of one chunk run before the next chunk's.
+    fn record_chunked(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        steps: &[(&str, u32)],
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        let steps = steps
+            .iter()
+            .map(|&(key, phase)| {
+                PROOF_KEYS
+                    .iter()
+                    .position(|(_, entry, _)| *entry == key)
+                    .map(|index| (index, phase))
+                    .ok_or_else(|| anyhow::anyhow!("unregistered proof kernel {key}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut done = 0u32;
+        while done < span.count {
+            let count = (span.count - done).min(THREAD_SCRATCH_SLOTS);
+            let chunk = Span::new(span.first.checked_add(done).expect("checked span"), count)?;
+            for &(index, phase) in &steps {
+                record_phase_with_proof(device, encoder, &self.passes[index], phase, chunk,
+                    PROOF_KEYS[index].2, catalog, input, output, Some(proof))?;
+            }
+            done += count;
+        }
+        Ok(())
     }
     pub fn record_binding_rows(
         &self,
@@ -726,10 +915,9 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        let key = "type_checker/program_evidence/entries/54_admit_binding_rows";
         let index = PROOF_KEYS
             .iter()
-            .position(|(_, entry, _)| *entry == key)
+            .position(|(_, entry, _)| *entry == BINDING_ROWS)
             .expect("binding admission is a required proof kernel");
         self.record_index(device, encoder, index, span, catalog, input, output, proof)
     }
@@ -743,10 +931,9 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        let key = "type_checker/program_evidence/entries/59_admit_assumption_proofs";
         let index = PROOF_KEYS
             .iter()
-            .position(|(_, entry, _)| *entry == key)
+            .position(|(_, entry, _)| *entry == ASSUMPTION_PROOFS)
             .expect("assumption admission is a required proof kernel");
         self.record_index(device, encoder, index, span, catalog, input, output, proof)
     }
@@ -760,10 +947,9 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        let key = "type_checker/program_evidence/entries/59_admit_proof_edge_rows";
         let index = PROOF_KEYS
             .iter()
-            .position(|(_, entry, _)| *entry == key)
+            .position(|(_, entry, _)| *entry == PROOF_EDGE_ROWS)
             .expect("proof-edge admission is a required proof kernel");
         self.record_index(device, encoder, index, span, catalog, input, output, proof)
     }
@@ -796,6 +982,427 @@ impl ProofKernels {
             Some(proof),
         )
     }
+}
+
+/// State words and values of the recorded solver rounds
+/// (proof_solver_wave.slang).
+pub(super) mod wave {
+    pub const STOP: usize = 0;
+    pub const FAULT_DETAIL: usize = 1;
+    pub const WORK_CURSOR: usize = 2;
+    pub const REQUIREMENT_CURSOR: usize = 3;
+    pub const QUEUE_CURSOR: usize = 4;
+    pub const ROUNDS: usize = 12;
+    pub const OVERFLOW_POINT: usize = 13;
+    pub const OVERFLOW_ROWS: usize = 14;
+    pub const CHUNK_ROWS: usize = 15;
+    pub const SLOT_WORDS: usize = 16;
+    /// Words the host reads back: the scalar state, not the span records.
+    pub const READ_WORDS: u32 = 32;
+    pub const STATE_WORDS: u32 = 64;
+    pub const RUNNING: u32 = 0;
+    pub const STOPPED: u32 = 1;
+    pub const DONE: u32 = 2;
+    pub const FAULT: u32 = 3;
+    pub const OVERFLOW: u32 = 4;
+    pub const FAULT_IDENTITY: u32 = 1;
+    pub const FAULT_LAYOUT: u32 = 2;
+    pub const FAULT_RECEIPT: u32 = 3;
+    pub const FAULT_CURSOR: u32 = 4;
+    pub const FAULT_REQUIREMENTS: u32 = 5;
+}
+// Slot words (proof_solver_wave.slang): ProgramEvidenceParams, indirect
+// arguments, then the step's static description.
+const SLOT_ARGS: u32 = 8;
+const SLOT_SPAN: usize = 11;
+const SLOT_CHUNK: usize = 12;
+const SLOT_THREADS: usize = 13;
+const SLOT_LIMIT: usize = 14;
+const SLOT_MIN_WORDS: u32 = 64;
+/// Chunk steps per span at most; with 4096-row chunks this is any span a
+/// 32-bit row count allows.
+pub(super) const WAVE_MAX_CHUNKS: u32 = 1 << 20;
+
+/// Planning points, in recording order: where the host loop read the
+/// counters back (dispatch/mod.rs, run_solver_attempt).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WavePoint {
+    FirstWork = 0,
+    Round = 1,
+    Selected = 2,
+    Expanded = 3,
+    Queue = 4,
+    Emitted = 5,
+}
+impl WavePoint {
+    pub const ROUND: [WavePoint; 5] = [
+        WavePoint::Round,
+        WavePoint::Selected,
+        WavePoint::Expanded,
+        WavePoint::Queue,
+        WavePoint::Emitted,
+    ];
+    pub fn from_word(word: u32) -> Option<Self> {
+        [WavePoint::FirstWork].into_iter().chain(Self::ROUND).find(|point| *point as u32 == word)
+    }
+    /// This point and the rest of its round; the first-work point is alone.
+    pub fn remainder(self) -> &'static [WavePoint] {
+        match self {
+            WavePoint::FirstWork => &[WavePoint::FirstWork],
+            point => &Self::ROUND[point as usize - 1..],
+        }
+    }
+}
+
+/// Row spans the planner computes (proof_solver_wave.slang, PSW_SPAN_*).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WaveSpan {
+    FirstWork = 0,
+    FirstOne = 1,
+    Work = 2,
+    WorkOne = 3,
+    Requirements = 4,
+    SelectedWork = 5,
+    Bindings = 6,
+    SelectedOne = 7,
+    ExpandedWork = 8,
+    ExpandedOne = 9,
+    Queue = 10,
+    EmittedQueue = 11,
+    ProofEdges = 12,
+    EmittedOne = 13,
+}
+impl WaveSpan {
+    fn is_one(self) -> bool {
+        matches!(
+            self,
+            WaveSpan::FirstOne
+                | WaveSpan::WorkOne
+                | WaveSpan::SelectedOne
+                | WaveSpan::ExpandedOne
+                | WaveSpan::EmittedOne
+        )
+    }
+}
+
+/// The steps between one point and the next, as the host loop recorded them:
+/// groups of kernels over one span, each group dispatched chunk by chunk.
+fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
+    let stage = |phase: u32| -> Result<(&'static str, u32)> {
+        PROOF_KEYS
+            .iter()
+            .find(|(entry, _, _)| *entry == phase)
+            .map(|(_, key, _)| (*key, phase))
+            .ok_or_else(|| anyhow!("unregistered proof stage {phase}"))
+    };
+    use WaveSpan::*;
+    Ok(match point {
+        WavePoint::FirstWork => vec![(FirstWork, vec![stage(49)?]), (FirstOne, vec![stage(50)?])],
+        WavePoint::Round => {
+            // ProofKernels::record_normalization, 51, 52, 57, record_selection.
+            let mut groups = Vec::new();
+            for phase in 41..=47 {
+                let span = if matches!(phase, 45 | 47) { WorkOne } else { Work };
+                groups.push((span, vec![stage(phase)?]));
+            }
+            groups.push((Work, vec![stage(51)?]));
+            groups.push((Work, vec![stage(52)?]));
+            groups.push((Requirements, vec![stage(57)?]));
+            groups.push((Work, SELECTION_STEPS.to_vec()));
+            groups
+        }
+        WavePoint::Selected => vec![
+            (SelectedWork, SUBSTITUTION_STEPS.to_vec()),
+            (Bindings, vec![(BINDING_ROWS, SUBSTITUTION_PHASE)]),
+            (SelectedOne, vec![stage(55)?]),
+            (SelectedWork, vec![stage(56)?]),
+        ],
+        WavePoint::Expanded => vec![(ExpandedWork, vec![stage(49)?]), (ExpandedOne, vec![stage(50)?])],
+        WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
+        WavePoint::Emitted => vec![
+            (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
+            (EmittedQueue, vec![(ASSUMPTION_PROOFS, IMPLEMENTATION_PROOF_PHASE)]),
+            (ProofEdges, vec![(PROOF_EDGE_ROWS, IMPLEMENTATION_PROOF_PHASE)]),
+            (EmittedOne, vec![stage(60)?]),
+            (EmittedQueue, vec![stage(61)?]),
+            (EmittedQueue, vec![stage(62)?]),
+            (EmittedOne, vec![stage(63)?]),
+        ],
+    })
+}
+
+/// Words per step slot: whole uniform-offset alignments, at least the slot.
+pub(super) fn wave_slot_words(device: &wgpu::Device) -> u32 {
+    (device.limits().min_uniform_buffer_offset_alignment / 4).max(SLOT_MIN_WORDS)
+}
+
+/// The solver state of one attempt, planned and read only by the GPU
+/// planner until the host reads it back.
+pub(super) fn wave_state(device: &wgpu::Device, catalog: &Arena) -> Result<LaniusBuffer<u32>> {
+    let mut words = [0u32; wave::STATE_WORDS as usize];
+    words[wave::CHUNK_ROWS] = THREAD_SCRATCH_SLOTS;
+    words[wave::SLOT_WORDS] = wave_slot_words(device);
+    catalog.workspace().initialized(
+        "program_evidence.solver_wave",
+        wave::STATE_WORDS,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        Some(&words),
+    )
+}
+
+struct WaveStep {
+    pass: usize,
+    bindings: wgpu::BindGroup,
+    /// None: the planner, one thread. Some: the byte offset of the step's
+    /// indirect arguments in the slot buffer.
+    indirect: Option<u64>,
+}
+
+impl WaveStep {
+    fn launch<'a>(&self, template: &'a WaveTemplate) -> Launch<'a> {
+        match self.indirect {
+            None => Launch::Direct((1, 1, 1)),
+            Some(offset) => Launch::Indirect(&template.slots.buffer, offset),
+        }
+    }
+}
+
+/// Recorded steps of some planning points with bind groups built once: each
+/// step reads its parameters and indirect arguments from its slot, which the
+/// point's planner rewrites every time it runs.
+pub(super) struct WaveTemplate {
+    slots: LaniusBuffer<u32>,
+    steps: Vec<WaveStep>,
+    pub chunks: u32,
+    pub dispatches: usize,
+}
+
+impl ProofKernels {
+    /// Whether every kernel of the recorded rounds chunks by thread-scratch
+    /// slots, as the stepped recorder chunks it.
+    pub fn waves_supported(&self) -> Result<bool> {
+        for point in [WavePoint::FirstWork].into_iter().chain(WavePoint::ROUND) {
+            for (_, steps) in wave_segment(point)? {
+                for (key, _) in steps {
+                    let index = proof_key_index(key)?;
+                    if !passes_core::bind_group::declares_binding(&self.passes[index], 0, "thread_scratch") {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    /// Builds the steps of `points` with `chunks` chunk steps for every span
+    /// that is not a single row.
+    pub fn wave_template(
+        &self,
+        device: &wgpu::Device,
+        points: &[WavePoint],
+        chunks: u32,
+        state: &LaniusBuffer<u32>,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<WaveTemplate> {
+        ensure!((1..=WAVE_MAX_CHUNKS).contains(&chunks), "solver wave chunk count {chunks}");
+        let stride = wave_slot_words(device);
+        // (pass, phase, span, chunk, recorded rows of the span) per slot.
+        let mut slots: Vec<(usize, u32, WaveSpan, u32, u32)> = Vec::new();
+        let mut segments = Vec::new();
+        for &point in points {
+            let first = slots.len();
+            for (span, steps) in wave_segment(point)? {
+                let span_chunks = if span.is_one() { 1 } else { chunks };
+                let limit = span_chunks.saturating_mul(THREAD_SCRATCH_SLOTS);
+                let steps = steps
+                    .into_iter()
+                    .map(|(key, phase)| proof_key_index(key).map(|index| (index, phase)))
+                    .collect::<Result<Vec<_>>>()?;
+                for chunk in 1..=span_chunks {
+                    for &(index, phase) in &steps {
+                        ensure!(
+                            PROOF_KEYS[index].2 != 1 || span.is_one(),
+                            "singleton proof stage needs exactly one dispatch"
+                        );
+                        slots.push((index, phase, span, chunk, limit));
+                    }
+                }
+            }
+            segments.push((point, first, slots.len()));
+        }
+        let slot_count = u32::try_from(slots.len())?;
+        let total_words = slot_count
+            .max(1)
+            .checked_mul(stride)
+            .ok_or_else(|| anyhow!("solver wave slot table overflow"))?;
+        let mut words = vec![0u32; total_words as usize];
+        for (slot, &(index, phase, span, chunk, limit)) in slots.iter().enumerate() {
+            let base = slot * stride as usize;
+            let row = &mut words[base..base + stride as usize];
+            row[2] = catalog.logical_words;
+            row[3] = input.logical_words;
+            row[4] = output.logical_words;
+            row[5] = phase;
+            row[SLOT_ARGS as usize + 1] = 1;
+            row[SLOT_ARGS as usize + 2] = 1;
+            row[SLOT_SPAN] = span as u32;
+            row[SLOT_CHUNK] = chunk;
+            row[SLOT_THREADS] = PROOF_KEYS[index].2;
+            row[SLOT_LIMIT] = limit;
+        }
+        let workspace = catalog.workspace();
+        let slot_buffer = workspace.initialized(
+            "program_evidence.solver_wave_slots",
+            total_words,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::INDIRECT,
+            Some(&words),
+        )?;
+        let scratch = thread_scratch(catalog)?;
+        // One proof-store parameter block per phase.
+        let mut phases = vec![WAVE_PLAN_PHASE];
+        for &(_, phase, _, _, _) in &slots {
+            if !phases.contains(&phase) {
+                phases.push(phase);
+            }
+        }
+        let proof_uniforms = phases
+            .iter()
+            .map(|&phase| workspace.initialized(
+                "program_evidence.proof_params",
+                8,
+                wgpu::BufferUsages::UNIFORM,
+                Some(&proof_params_words(proof, phase)),
+            ))
+            .collect::<Result<Vec<_>>>()?;
+        let proof_uniform = |phase: u32| {
+            &proof_uniforms[phases.iter().position(|entry| *entry == phase).expect("phase block")]
+        };
+        let plan = proof_key_index("type_checker/program_evidence/entries/70_plan_solver_wave")?;
+        let slot_bytes = u64::from(stride) * 4;
+        let params_size = NonZeroU64::new(32).expect("nonzero parameter block");
+        let mut steps = Vec::with_capacity(slots.len() + segments.len());
+        for (point, first, end) in segments {
+            let params = workspace.initialized(
+                "program_evidence.params",
+                8,
+                wgpu::BufferUsages::UNIFORM,
+                Some(&[0, 1, catalog.logical_words, input.logical_words, output.logical_words,
+                    WAVE_PLAN_PHASE, 0, 0]),
+            )?;
+            let plan_params = workspace.initialized(
+                "program_evidence.solver_wave_plan",
+                4,
+                wgpu::BufferUsages::UNIFORM,
+                Some(&[point as u32, u32::try_from(first)?, u32::try_from(end)?, 0]),
+            )?;
+            let resources = [
+                ("program_evidence_params", params.as_entire_binding()),
+                ("program_evidence_catalog", catalog.buffer.as_entire_binding()),
+                ("program_evidence_batch", input.buffer.as_entire_binding()),
+                ("program_evidence_output", output.buffer.as_entire_binding()),
+                ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
+                ("proof_store_params", proof_uniform(WAVE_PLAN_PHASE).as_entire_binding()),
+                ("thread_scratch", scratch.as_entire_binding()),
+                ("program_evidence_wave", state.as_entire_binding()),
+                ("program_evidence_wave_slots", slot_buffer.as_entire_binding()),
+                ("program_evidence_wave_plan", plan_params.as_entire_binding()),
+            ];
+            let bindings = passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some("program_evidence.solver_wave_plan"),
+                &self.passes[plan],
+                0,
+                &resources,
+            )?;
+            steps.push(WaveStep { pass: plan, bindings, indirect: None });
+            for slot in first..end {
+                let (index, phase, _, _, _) = slots[slot];
+                let offset = slot_buffer.absolute_offset(slot as u64 * slot_bytes);
+                let resources = [
+                    (
+                        "program_evidence_params",
+                        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &slot_buffer.buffer,
+                            offset,
+                            size: Some(params_size),
+                        }),
+                    ),
+                    ("program_evidence_catalog", catalog.buffer.as_entire_binding()),
+                    ("program_evidence_batch", input.buffer.as_entire_binding()),
+                    ("program_evidence_output", output.buffer.as_entire_binding()),
+                    ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
+                    ("proof_store_params", proof_uniform(phase).as_entire_binding()),
+                    ("thread_scratch", scratch.as_entire_binding()),
+                ];
+                let bindings = passes_core::bind_group::create_bind_group_from_bindings(
+                    device,
+                    Some("program_evidence.bindings"),
+                    &self.passes[index],
+                    0,
+                    &resources,
+                )?;
+                steps.push(WaveStep {
+                    pass: index,
+                    bindings,
+                    indirect: Some(offset + u64::from(SLOT_ARGS) * 4),
+                });
+            }
+        }
+        let dispatches = steps.len();
+        Ok(WaveTemplate { slots: slot_buffer, steps, chunks, dispatches })
+    }
+
+    /// Records every step of each template, in order, in one compute pass:
+    /// most steps of a recorded round dispatch no workgroups, and a pass per
+    /// step cost more than the steps. Operation limits and timers that cannot
+    /// stamp inside a pass keep a pass per step.
+    pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
+        if crate::gpu::timer::operation_capture_requires_split_passes()
+            || passes_core::debug_operation_limited()
+        {
+            for template in templates {
+                for step in &template.steps {
+                    dispatch_pass(encoder, &self.passes[step.pass], &step.bindings, step.launch(template));
+                }
+            }
+            return;
+        }
+        passes_core::flush_deferred_compute(encoder);
+        let timed = crate::gpu::timer::operation_capture_active();
+        let mut compute = passes_core::begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some("program_evidence.solver_wave"),
+                timestamp_writes: None,
+            },
+        );
+        for template in templates {
+            for step in &template.steps {
+                let pass = &self.passes[step.pass];
+                compute.set_pipeline(&pass.pipeline);
+                compute.set_bind_group(0, Some(&step.bindings), &[]);
+                passes_core::record_compute_dispatch();
+                match step.launch(template) {
+                    Launch::Direct(groups) => compute.dispatch_workgroups(groups.0, groups.1, groups.2),
+                    Launch::Indirect(buffer, offset) => compute.dispatch_workgroups_indirect(buffer, offset),
+                }
+                // Profiled jobs need one timestamp per recorded dispatch.
+                if timed {
+                    crate::gpu::timer::stamp_active_operation_in_pass(&mut compute, pass.shader_id.clone());
+                }
+            }
+        }
+    }
+}
+
+fn proof_key_index(key: &str) -> Result<usize> {
+    PROOF_KEYS
+        .iter()
+        .position(|(_, entry, _)| *entry == key)
+        .ok_or_else(|| anyhow!("unregistered proof kernel {key}"))
 }
 
 // Recipe roots are admitted with the catalog graph before this sidecar is

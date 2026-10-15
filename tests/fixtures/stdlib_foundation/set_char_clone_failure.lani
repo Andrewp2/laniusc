@@ -2,19 +2,19 @@ module app::main;
 import std::set_char;
 
 fn main() -> i32 {
-    let value: std::set_char::SetChar = std::set_char::try_insert(std::set_char::new(), 4294967255);
+    let value: std::set_char::SetChar = std::set_char::try_insert(std::set_char::new(), '􏿗');
     if (std::set_char::len(value) != 1) { return 2; }
     let copy: std::set_char::SetChar = std::set_char::try_clone(value);
     if (std::set_char::len(copy) == 0 &&
         std::set_char::capacity(copy) == 0 &&
-        std::set_char::at_or(value, 0, 0) == 4294967255) {
+        std::set_char::at_or(value, 0, '\0') == '􏿗') {
         std::set_char::destroy(copy);
         std::set_char::destroy(value);
         return 0;
     }
     if (std::set_char::len(copy) == 1 &&
-        std::set_char::at_or(copy, 0, 0) == 4294967255 &&
-        std::set_char::at_or(value, 0, 0) == 4294967255) {
+        std::set_char::at_or(copy, 0, '\0') == '􏿗' &&
+        std::set_char::at_or(value, 0, '\0') == '􏿗') {
         std::set_char::destroy(copy);
         std::set_char::destroy(value);
         return 4;

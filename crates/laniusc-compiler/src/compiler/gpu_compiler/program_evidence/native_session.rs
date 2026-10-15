@@ -23,9 +23,16 @@ use crate::{
         },
         source_pack_diagnostic_files,
         source_pack_file_for_global_span,
+        gpu_compiler::instance_copies::InstanceSources,
     },
-    type_checker::{CheckedBodySpecialization, CheckedBodySpecializationBatch, CheckedGenericTarget},
-    codegen::x86::GpuX86ObjectSection,
+    type_checker::{
+        BODY_COPY_TARGET,
+        CheckedBodySpecialization,
+        CheckedBodySpecializationBatch,
+        CheckedGenericCall,
+        CheckedGenericTarget,
+    },
+    codegen::{lowering::ReplaySelection, x86::GpuX86ObjectSection},
 };
 
 pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
@@ -45,8 +52,12 @@ impl NativeProgramSession {
         // Facts contain no object. Freeze the complete exact source inventory
         // before any pending unit can be released or native bodies reused.
         let inputs = units.iter().map(|facts| CatalogInput { facts }).collect::<Vec<_>>();
+        let start = std::time::Instant::now();
         let catalog = FrozenCatalog::freeze(&inputs)?;
+        let frozen = std::time::Instant::now();
+        crate::gpu::trace::record_host_span("host.compiler", "program_evidence.catalog_freeze", start, frozen);
         let gpu = GpuProgramEvidence::admit(workspace.checkout(), catalog.clone())?;
+        crate::gpu::trace::record_host_span("host.compiler", "program_evidence.admit", frozen, std::time::Instant::now());
         let mut packet = gpu.new_packet()?;
         for snapshot in &catalog.snapshots {
             packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;
@@ -142,34 +153,94 @@ impl NativeProgramSession {
         &'session mut self,
         origins: &[&AdmittedCall],
     ) -> Result<ValidatedReplayRequest<'session>> {
+        self.prepare_batch(origins, false)
+    }
+
+    /// Whether an origin's body can replay as an instance copy: its template
+    /// retained the byte span of the selected callable, and the copy, which
+    /// is appended to the template's last file, resolves names in the same
+    /// module as the body (`InstanceSources::copyable`).
+    pub fn instance_copy_available(&mut self, origin: &AdmittedCall) -> Result<bool> {
+        self.ready()?;
+        let (_, snapshot, selected_owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
+        let facts = &self.catalog.snapshots[snapshot as usize].original_facts;
+        Ok(facts.owner_spans()
+            .and_then(|spans| spans.get(selected_owner_hir))
+            .is_some_and(|span| InstanceSources::copyable(facts.template_sources(), span)))
+    }
+
+    /// Like `prepare_replay_batch`, but every origin replays a renamed copy of
+    /// its body appended after the template text, so origins may share one
+    /// lexical scope. Each copy is checked under its origin's own context.
+    pub fn prepare_instance_batch<'session>(
+        &'session mut self,
+        origins: &[&AdmittedCall],
+    ) -> Result<ValidatedReplayRequest<'session>> {
+        self.prepare_batch(origins, true)
+    }
+
+    fn prepare_batch<'session>(
+        &'session mut self,
+        origins: &[&AdmittedCall],
+        copies: bool,
+    ) -> Result<ValidatedReplayRequest<'session>> {
         self.ready()?;
         ensure!(!origins.is_empty(), "replay batch has no origin");
-        let mut batch: Option<CheckedBodySpecializationBatch> = None;
         let mut target_snapshot = None;
-        let mut entries: Vec<(u32, u32)> = Vec::with_capacity(origins.len());
+        let mut resolved = Vec::with_capacity(origins.len());
         for origin in origins {
             let (origin_call, snapshot, selected_owner_hir, obligations) =
                 self.packet.packet_mut()?.replay_origin(origin)?;
             ensure!(*target_snapshot.get_or_insert(snapshot) == snapshot,
                 "replay batch spans several template snapshots");
-            ensure!(entries.iter().all(|&(hir, _)| hir != selected_owner_hir),
+            ensure!(copies || resolved.iter().all(|&(_, _, hir, _)| hir != selected_owner_hir),
                 "replay batch selects one lexical body twice");
+            resolved.push((origin_call, snapshot, selected_owner_hir, obligations));
+        }
+        let target_snapshot = target_snapshot.expect("nonempty batch");
+        let template = self.catalog.snapshots.get(target_snapshot as usize)
+            .ok_or_else(|| anyhow!("replay target snapshot has no retained template"))?
+            .original_facts.clone();
+        // The copies come only from the frozen template text and the byte
+        // spans its own check retained.
+        let instance = if copies {
+            let spans = template.owner_spans()
+                .ok_or_else(|| anyhow!("template retained no owner spans for instance copies"))?;
+            let selected = resolved.iter().map(|&(_, _, hir, _)| spans.get(hir).copied()
+                .ok_or_else(|| anyhow!("selected body has no retained owner span")))
+                .collect::<Result<Vec<_>>>()?;
+            let sources = InstanceSources::build(template.template_sources(), &selected)?;
+            let owners = selected.iter()
+                .map(|span| (span.function_hir, span.enclosing_impl.map(|header| header.hir)))
+                .collect();
+            Some(InstanceRequest { sources: Arc::new(sources), first_copy_row: spans.hir_count, owners })
+        } else {
+            None
+        };
+        let mut batch: Option<CheckedBodySpecializationBatch> = None;
+        let mut entries: Vec<(u32, u32)> = Vec::with_capacity(origins.len());
+        for (index, (origin, &(origin_call, snapshot, selected_owner_hir, obligations))) in
+            origins.iter().zip(&resolved).enumerate()
+        {
             let call = origin.checked_call();
             let specialization = CheckedBodySpecialization {
-                target_symbol: match call.target {
-                    CheckedGenericTarget::Local {
+                target_symbol: match (&instance, call.target) {
+                    (Some(instance), _) => BODY_COPY_TARGET | instance.sources.copies[index].fn_byte,
+                    (None, CheckedGenericTarget::Local {
                         specialization_symbol,
                         ..
-                    } => specialization_symbol,
-                    CheckedGenericTarget::Dependency {
+                    }) => specialization_symbol,
+                    (None, CheckedGenericTarget::Dependency {
                         declaration_index, ..
-                    } => declaration_index,
-                    CheckedGenericTarget::DependencyMethod { method_symbol, .. } => method_symbol,
+                    }) => declaration_index,
+                    (None, CheckedGenericTarget::DependencyMethod { method_symbol, .. }) => method_symbol,
                 },
                 source_unit: self.catalog.snapshots[snapshot as usize].unit,
                 arguments: call.arguments.clone(),
                 constants: call.constants.clone(),
             };
+            ensure!(specialization.target_symbol & BODY_COPY_TARGET != BODY_COPY_TARGET || instance.is_some(),
+                "an original replay target uses the instance-copy selector");
             match batch.as_mut() {
                 None => batch = Some(CheckedBodySpecializationBatch::single(specialization)
                     .map_err(|error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"))?),
@@ -203,10 +274,10 @@ impl NativeProgramSession {
                 })?;
             entries.push((selected_owner_hir, context));
         }
-        let target_snapshot = target_snapshot.expect("nonempty batch");
-        let template = self.catalog.snapshots.get(target_snapshot as usize)
-            .ok_or_else(|| anyhow!("replay target snapshot has no retained template"))?
-            .original_facts.clone();
+        let mut specialization = batch.expect("nonempty batch");
+        if let Some(instance) = &instance {
+            specialization.set_instance_copies(instance.first_copy_row, instance.owners.clone())?;
+        }
         // GPU checks each new context against the exact origin environment and
         // retained evidence before the frontend can defer a local-only lookup.
         self.check()?;
@@ -216,8 +287,9 @@ impl NativeProgramSession {
             target_snapshot,
             selected_hirs: entries.iter().map(|&(hir, _)| hir).collect(),
             entries,
-            specialization: batch.expect("nonempty batch"),
+            specialization,
             identity: Arc::new(()),
+            instance,
         })
     }
 }
@@ -257,6 +329,29 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedReplayRequest<'session> {
     selected_hirs: Vec<u32>,
     specialization: CheckedBodySpecializationBatch,
     identity: Arc<()>,
+    /// An instance-copy replay checks these copies instead of the template's
+    /// own bodies.
+    instance: Option<InstanceRequest>,
+}
+
+struct InstanceRequest {
+    sources: Arc<InstanceSources>,
+    /// The template's HIR row count: every copy row is at or past it.
+    first_copy_row: u32,
+    /// Per copy: the template function HIR and a method's template impl HIR.
+    owners: Vec<(u32, Option<u32>)>,
+}
+
+/// The calls a replay admitted and where its published bodies are.
+pub(in crate::compiler::gpu_compiler) struct CheckedReplayCalls {
+    pub calls: Vec<AdmittedCall>,
+    /// Per entry, the lexical callable HIR of its body in the replay unit:
+    /// the selected template HIR, or the copy's row (u32::MAX for a copy
+    /// with no generic call, which nothing looks up).
+    pub entry_hirs: Vec<u32>,
+    /// Per entry of an instance-copy replay, the native symbol of its copy's
+    /// definition in the replay object.
+    pub copy_symbols: Option<Vec<u32>>,
 }
 
 impl<'session> ValidatedReplayRequest<'session> {
@@ -271,8 +366,23 @@ impl<'session> ValidatedReplayRequest<'session> {
     pub fn selected_function_hir(&self) -> u32 {
         self.selected_hirs[0]
     }
-    pub fn selected_function_hirs(&self) -> &[u32] {
-        &self.selected_hirs
+    /// The bodies the replay object may hold.
+    pub fn replay_selection(&self) -> ReplaySelection<'_> {
+        match &self.instance {
+            Some(instance) => ReplaySelection::CopiesFrom(instance.first_copy_row),
+            None => ReplaySelection::Functions(&self.selected_hirs),
+        }
+    }
+    /// The source files the frontend checks: the template's, or the template's
+    /// with the instance copies appended.
+    pub fn frontend_sources(&self) -> &Arc<[String]> {
+        match &self.instance {
+            Some(instance) => &instance.sources.sources,
+            None => self.template.template_sources(),
+        }
+    }
+    pub fn instance_sources(&self) -> Option<&Arc<InstanceSources>> {
+        self.instance.as_ref().map(|instance| &instance.sources)
     }
     pub fn identity(&self) -> Arc<()> {
         self.identity.clone()
@@ -281,7 +391,7 @@ impl<'session> ValidatedReplayRequest<'session> {
     pub fn finish(
         self,
         pending: PendingReplayUnit,
-    ) -> Result<(CompiledSourcePackUnit, Vec<AdmittedCall>)> {
+    ) -> Result<(CompiledSourcePackUnit, CheckedReplayCalls)> {
         pending.finish(self)
     }
 
@@ -291,12 +401,15 @@ impl<'session> ValidatedReplayRequest<'session> {
         self,
         unit: &mut CompiledSourcePackUnit,
         request_identity: &Arc<()>,
-    ) -> Result<Vec<AdmittedCall>> {
+    ) -> Result<CheckedReplayCalls> {
         ensure!(
             Arc::ptr_eq(&self.identity, request_identity),
             "replay result belongs to another checked request"
         );
         self.session.ready()?;
+        if self.instance.is_some() {
+            return self.check_instance_unit(unit);
+        }
         let selected: BTreeMap<u32, u32> = self.entries.iter().copied().collect();
         normalize_omitted_batch_template_calls(
             &self.session.catalog, self.target_snapshot,
@@ -312,9 +425,142 @@ impl<'session> ValidatedReplayRequest<'session> {
         for &context in selected.values() {
             calls.extend(packet.admitted_context_calls(self.target_snapshot, context)?);
         }
-        Ok(calls)
+        Ok(CheckedReplayCalls { calls, entry_hirs: self.selected_hirs, copy_symbols: None })
+    }
+
+    /// An instance-copy replay publishes exactly one definition per copy and
+    /// only calls from the copies. Each copy's calls are checked under its
+    /// entry's replay context; the template part of the unit is discarded.
+    fn check_instance_unit(self, unit: &mut CompiledSourcePackUnit) -> Result<CheckedReplayCalls> {
+        let instance = self.instance.as_ref().expect("instance replay");
+        let first_row = instance.first_copy_row;
+        let copies = &instance.sources;
+        let catalog = &self.session.catalog;
+        let frozen = &catalog.snapshots[self.target_snapshot as usize];
+        ensure!(
+            Arc::ptr_eq(&frozen.contracts, &unit.checked_contracts)
+                && Arc::ptr_eq(&frozen.sources, &unit.template_sources)
+                && frozen.source_paths.as_ref() == unit.template_source_paths.as_ref()
+                && Arc::ptr_eq(&frozen.dependency_pages, &unit.template_dependency_pages),
+            "instance replay does not retain frozen definition provenance"
+        );
+        let callable_symbols = frozen.contracts.binders.iter()
+            .filter_map(|owner| owner.callable.map(|callable| callable.native_symbol))
+            .collect::<BTreeSet<_>>();
+        let CompiledSourcePackObject::X86_64(object) = &unit.object else {
+            return Err(anyhow!("replay emission has the wrong target"));
+        };
+        object.validate().map_err(anyhow::Error::msg)?;
+        ensure!([object.library_id, object.unit_id] == frozen.unit,
+            "replay emission has the wrong source unit");
+        let identity_of = |symbol: &crate::codegen::x86::GpuX86ObjectSymbolRecord| -> Option<[u32; 3]> {
+            let start = symbol.identity_byte_start as usize;
+            let bytes = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)?;
+            (bytes.len() == 12).then(|| [
+                u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+                u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+                u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            ])
+        };
+        let mut undefined_count = 0usize;
+        let mut definitions_started = false;
+        let mut copy_symbols = Vec::with_capacity(self.entries.len());
+        for symbol in &object.symbols {
+            let identity = identity_of(symbol);
+            if symbol.section == GpuX86ObjectSection::Undefined {
+                ensure!(!definitions_started, "native undefined symbols are not a prefix");
+                undefined_count += 1;
+                // A call into this unit links against the original object, so
+                // it must name a callable of the frozen template.
+                if let Some(identity) = identity.filter(|identity| identity[..2] == frozen.unit) {
+                    ensure!(callable_symbols.contains(&identity[2]),
+                        "instance copy calls a callable outside the template inventory");
+                }
+                continue;
+            }
+            definitions_started = true;
+            if symbol.section != GpuX86ObjectSection::Text { continue; }
+            let identity = identity.ok_or_else(|| anyhow!("native definition has no checked callable identity"))?;
+            ensure!(identity[..2] == frozen.unit, "native definition belongs to another source unit");
+            ensure!(identity[2] & 0xc000_0000 == 0x4000_0000 && !callable_symbols.contains(&identity[2]),
+                "instance replay emitted a definition that is not a private copy");
+            copy_symbols.push(identity[2]);
+        }
+        // Copies are private functions named by their first token, which
+        // increases with the entry index.
+        copy_symbols.sort_unstable();
+        ensure!(copy_symbols.len() == self.entries.len()
+            && copy_symbols.windows(2).all(|pair| pair[0] < pair[1]),
+            "instance replay must define exactly one body per copy");
+        ensure!(unit.x86_call_hirs.len() == undefined_count
+            && unit.x86_call_function_hirs.len() == undefined_count,
+            "replay native call inventory does not match undefined symbols");
+
+        let owners = unit.checked_call_owners.iter()
+            .map(|owner| (owner.call_hir, owner.function_hir)).collect::<BTreeMap<_, _>>();
+        let mut facts = vec![Vec::<CheckedGenericCall>::new(); self.entries.len()];
+        let mut entry_hirs = vec![u32::MAX; self.entries.len()];
+        for call in unit.generic_calls.iter() {
+            let owner = *owners.get(&call.call_hir)
+                .ok_or_else(|| anyhow!("checked call missing actual owner"))?;
+            let entry = copies.copy_at(call.source_span[0]);
+            if owner == u32::MAX || owner < first_row {
+                // Template facts are not published; the template's own
+                // admission already covers them.
+                ensure!(entry.is_none(), "a call inside a copy has a template owner");
+                continue;
+            }
+            let entry = entry.ok_or_else(|| anyhow!("a copy-owned call lies outside every copy"))?;
+            let span = copies.original_body_span(entry, call.source_span)
+                .ok_or_else(|| anyhow!("a copy call span leaves its copied body"))?;
+            ensure!(call.call_hir >= first_row, "a copy call precedes the copy rows");
+            let slot = &mut entry_hirs[entry];
+            if *slot == u32::MAX { *slot = owner; }
+            ensure!(*slot == owner, "one copy's calls have several lexical owners");
+            let mut translated = call.clone();
+            translated.source_span = span;
+            facts[entry].push(translated);
+        }
+        let rows = entry_hirs.iter().copied().filter(|&row| row != u32::MAX).collect::<BTreeSet<_>>();
+        ensure!(rows.len() == entry_hirs.iter().filter(|&&row| row != u32::MAX).count(),
+            "two copies share one lexical owner");
+        let generic_owner = unit.generic_calls.iter()
+            .map(|call| (call.call_hir, owners[&call.call_hir])).collect::<BTreeMap<_, _>>();
+        for (&hir, &owner) in unit.x86_call_hirs.iter().zip(unit.x86_call_function_hirs.iter()) {
+            ensure!(owner != u32::MAX && owner >= first_row,
+                "instance replay emitted a call outside the copies");
+            if let Some(&generic) = generic_owner.get(&hir) {
+                ensure!(generic == owner, "native and generic call ownership disagree");
+            }
+        }
+        let mut calls = Vec::new();
+        let mut published = Vec::new();
+        for (index, &(selected_hir, context)) in self.entries.iter().enumerate() {
+            let entry_facts: Arc<[CheckedGenericCall]> = std::mem::take(&mut facts[index]).into();
+            let call_hirs = entry_facts.iter().map(|call| call.call_hir).collect::<Vec<_>>();
+            published.extend(entry_facts.iter().cloned());
+            // A copy's calls are context calls of its entry, owned by the
+            // template body the copy reproduces.
+            let indices = (0..entry_facts.len()).collect::<Vec<_>>();
+            self.session.packet.packet_mut()?.append_context_calls(
+                self.target_snapshot, context, selected_hir, entry_facts, &indices)?;
+            calls.push((context, call_hirs));
+        }
+        unit.generic_calls = published.into();
+        self.session.check()?;
+        let packet = self.session.packet.packet_mut()?;
+        let mut admitted = Vec::new();
+        for (context, call_hirs) in calls {
+            let context_calls = packet.admitted_context_calls(self.target_snapshot, context)?;
+            ensure!(context_calls.len() == call_hirs.len()
+                && context_calls.iter().zip(&call_hirs).all(|(call, &hir)| call.source().call_hir == hir),
+                "an instance copy's admitted calls differ from its appended calls");
+            admitted.extend(context_calls);
+        }
+        Ok(CheckedReplayCalls { calls: admitted, entry_hirs, copy_symbols: Some(copy_symbols) })
     }
 }
+
 
 /// Scratch replay substitutes the selected enclosing impl environment in
 /// the whole source unit. Only the selected generic body may be published;

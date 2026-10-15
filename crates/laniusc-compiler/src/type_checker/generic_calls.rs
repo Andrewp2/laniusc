@@ -176,6 +176,8 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "semantic_type_ref_payload_by_hir",
     "semantic_function_native_symbol_by_hir",
     "semantic_predicate_subject_parameter_token_by_hir",
+    "retained_owner_span_count",
+    "retained_owner_spans",
 ];
 
 /// These facts are produced by the separate interface-export graph. The
@@ -825,6 +827,25 @@ pub(crate) fn dependency_method_requirements(
     (types <= 32 && constants <= 32).then_some((types, constants))
 }
 
+/// Trace spans for the unit snapshot's stages, so the host work between its
+/// readbacks shows up in a profile. Each span includes its stage's readback.
+struct UnitFactsHostTimer(Option<std::time::Instant>);
+
+impl UnitFactsHostTimer {
+    fn new() -> Self {
+        Self(crate::gpu::trace::enabled().then(std::time::Instant::now))
+    }
+
+    fn stamp(&mut self, stage: &str) {
+        if let Some(last) = self.0 {
+            let now = std::time::Instant::now();
+            let name = format!("generic_calls.unit_facts.{stage}");
+            crate::gpu::trace::record_host_span("host.compiler", &name, last, now);
+            self.0 = Some(now);
+        }
+    }
+}
+
 pub(super) fn words(bytes: &[u8]) -> Vec<u32> {
     bytes
         .chunks_exact(4)
@@ -1403,7 +1424,9 @@ impl CheckedTypeReadback {
         metadata: &[Vec<u32>],
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
+        owner_aliases: &BTreeMap<u32, u32>,
     ) -> Result<Self> {
+        let template_hir = |hir: u32| owner_aliases.get(&hir).copied().unwrap_or(hir);
         let owner_width = if interface_exported { 4 } else { 3 };
         ensure!(
             parameters.len() % 4 == 0
@@ -1423,7 +1446,7 @@ impl CheckedTypeReadback {
                 contracts
                     .binders
                     .iter()
-                    .find(|owner| owner.source_hir == hir)
+                    .find(|owner| owner.source_hir == template_hir(hir))
             });
             ensure!(
                 interface_exported || template_owner.is_some(),
@@ -1512,7 +1535,7 @@ impl CheckedTypeReadback {
                         contracts
                             .binders
                             .iter()
-                            .find(|owner| owner.source_hir == row[0])
+                            .find(|owner| owner.source_hir == template_hir(row[0]))
                     })
                     .and_then(|owner| {
                         owner.parameters.iter().find(|parameter| {
@@ -1618,6 +1641,7 @@ pub(super) fn read_unit_facts(
     semantic: &OwnedGpuSemanticArtifact,
     interface_exported: bool,
     template_contracts: Option<&CheckedUnitContracts>,
+    instance_copies: Option<&super::CheckedBodySpecializationBatch>,
 ) -> Result<CheckedUnitFacts> {
     // Ordinary object-only jobs do not publish a definition contract snapshot.
     // Body replay is explicit and supplies the immutable template instead.
@@ -1627,6 +1651,7 @@ pub(super) fn read_unit_facts(
     let Some(inputs) = semantic.generic_call_inputs.as_ref() else {
         return Ok(CheckedUnitFacts::default());
     };
+    let mut timer = UnitFactsHostTimer::new();
     // This page is physical staging only. Each read copies the current accepted
     // rows while the caller holds the resident pipeline lock; no facts survive
     // here between jobs. Resident workspace trim clears the owning cache.
@@ -1705,6 +1730,7 @@ pub(super) fn read_unit_facts(
         ],
         "generic call counts",
     )?;
+    timer.stamp("counts");
     // Inactive producer families may share reused scratch. Current job flags,
     // not previous buffer contents, determine whether those counts are valid.
     let claim_count = if inputs.call_facts_active {
@@ -1857,6 +1883,7 @@ pub(super) fn read_unit_facts(
         .iter()
         .map(|bytes| words(bytes))
         .collect::<Vec<_>>();
+    timer.stamp("claims");
     // The compact producer owns all three columns. Invalid spans must fail
     // retention rather than silently remove a call from program obligations.
     let mut call_spans = BTreeMap::new();
@@ -1868,6 +1895,12 @@ pub(super) fn read_unit_facts(
             "retained call {} has no valid checked source span", record[0]);
         ensure!(call_spans.insert(record[0], [record[1], record[2]]).is_none(),
             "retained call {} has duplicate source records", record[0]);
+    }
+    // An instance-copy replay publishes only its copies' calls (rows at or
+    // past the first copy row); the template's own calls were admitted with
+    // the template, so their facts are not read again.
+    if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row()) {
+        call_spans.retain(|&call, _| call >= first);
     }
     let call_ids = call_spans.keys().copied().collect::<Vec<_>>();
     let calls_with_claims = (0..claim_count)
@@ -1902,6 +1935,12 @@ pub(super) fn read_unit_facts(
         !callable_hirs.contains(&INVALID),
         "retained callable declaration has no HIR"
     );
+    // The owners of an instance-copy replay's copies take their template's
+    // immutable identity.
+    let owner_aliases = instance_copies
+        .map(|batch| batch.instance_owner_aliases(&callable_hirs.iter().copied().collect::<Vec<_>>(), &method_impls))
+        .transpose()?
+        .unwrap_or_default();
     let parameter_owners = parameters
         .chunks_exact(4)
         .map(|row| row[0])
@@ -2017,6 +2056,7 @@ pub(super) fn read_unit_facts(
     if let Some(regions) = contract_metadata {
         metadata_regions.extend(regions);
     }
+    timer.stamp("plan_rows");
     let metadata = readback
         .read_regions(device, queue, &metadata_regions, "generic call rows")?
         .iter()
@@ -2029,11 +2069,13 @@ pub(super) fn read_unit_facts(
         &metadata[call_ids.len()..nominal_metadata_start],
         interface_exported,
         template_contracts,
+        &owner_aliases,
     )?;
     types.read_nominal_metadata(
         &nominal_headers,
         &metadata[nominal_metadata_start..caller_metadata_start],
     )?;
+    timer.stamp("rows");
     // Both result domains share one sparse mask readback. Masks own validity;
     // unpublished context payload cells need no initialization or readback.
     let mut context_masks = vec![0; call_ids.len()];
@@ -2104,10 +2146,11 @@ pub(super) fn read_unit_facts(
     if !interface_exported {
         if let Some(template) = template_contracts {
             for owner in types.owners.values_mut() {
+                let source_hir = owner_aliases.get(&owner.source_hir).copied().unwrap_or(owner.source_hir);
                 let original = template
                     .binders
                     .iter()
-                    .find(|row| row.source_hir == owner.source_hir)
+                    .find(|row| row.source_hir == source_hir)
                     .ok_or_else(|| anyhow!("replayed owner has no immutable template scope"))?;
                 // Indices belong to the immutable definition table. The replay
                 // publishes that original table, not its sparse decoder cache.
@@ -2150,6 +2193,7 @@ pub(super) fn read_unit_facts(
             });
         }
     }
+    timer.stamp("masks_and_owners");
     let mut contracts = if interface_exported {
         checked_contracts::read_contracts(
             &readback,
@@ -2179,6 +2223,7 @@ pub(super) fn read_unit_facts(
             },
         )?;
     }
+    timer.stamp("contracts");
     if call_ids.is_empty() {
         return Ok(CheckedUnitFacts {
             generic_calls: Vec::new(),
@@ -2418,6 +2463,7 @@ pub(super) fn read_unit_facts(
     for &token in &local_tokens {
         specialization_symbols.insert(token, 0x4000_0000 | token);
     }
+    timer.stamp("local_lookups");
     let mut calls = BTreeMap::new();
     for (&call_hir, record) in call_ids.iter().zip(call_records) {
         let target = match record[11] {
@@ -2667,6 +2713,7 @@ pub(super) fn read_unit_facts(
             call.arguments.sort_by_key(|arg| arg.slot);
         }
     }
+    timer.stamp("calls");
     let native_call_owners: Vec<_> = call_ids
         .iter()
         .enumerate()
@@ -2694,6 +2741,7 @@ pub(super) fn read_unit_facts(
     }
     let call_owners = native_call_owners.iter().copied()
         .filter(|owner| calls.contains_key(&owner.call_hir)).collect();
+    timer.stamp("owners");
     Ok(CheckedUnitFacts {
         generic_calls: calls.into_values().collect(),
         contracts,
@@ -2709,6 +2757,7 @@ impl super::GpuTypeChecker {
         queue: &wgpu::Queue,
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
+        instance_copies: Option<&super::CheckedBodySpecializationBatch>,
     ) -> Result<CheckedUnitFacts> {
         let semantic = self
             .semantic_artifact()
@@ -2720,6 +2769,7 @@ impl super::GpuTypeChecker {
             &semantic,
             interface_exported,
             template_contracts,
+            instance_copies,
         )
     }
 }
@@ -3365,8 +3415,9 @@ mod tests {
             vec![0], vec![INVALID], vec![INVALID], vec![0], vec![2], vec![10],
             vec![INVALID], vec![0], vec![INVALID], vec![SCALAR_U64], vec![0], vec![INVALID],
         ];
+        let none = BTreeMap::new();
         let original = CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, true, None).unwrap();
+            &parameters, &[7], &metadata, true, None, &none).unwrap();
         assert_eq!(original.parameters[&10].constant_scalar, None);
         assert_eq!(original.parameters[&11].constant_scalar, Some(SCALAR_U64));
         let contracts = CheckedUnitContracts {
@@ -3374,14 +3425,24 @@ mod tests {
         };
         metadata.remove(3); // Replay inherits the immutable template's public scope.
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts)).is_ok());
+            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_ok());
+        // An instance copy at row 20 of template owner 7 takes 7's binder.
+        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
+        assert!(CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[20], &metadata, false, Some(&contracts), &none).is_err(),
+            "a copied owner without its template has no immutable identity");
+        let aliases = BTreeMap::from([(20, 7)]);
+        let copy = CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[20], &metadata, false, Some(&contracts), &aliases).unwrap();
+        assert_eq!(copy.owners[&20].binder, original.owners[&7].binder);
+        assert_eq!(copy.parameters[&31], original.parameters[&11]);
         metadata[12][0] = SCALAR_I64;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts)).is_err(),
+            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_err(),
             "same binder and slot cannot silently change scalar");
         metadata[12][0] = SCALAR_UNIT;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts)).is_err());
+            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_err());
     }
 
 }
