@@ -311,27 +311,6 @@ uint dependency_type(uint t)
     return canonical_dependency_type[base + root];
 }
 
-// Struct-literal field contexts in caller scope (declared_expression_context
-// reads them through this): the field's reference `reference` as it is when
-// it has no context instance, else the checked row of its substituted ID
-// (field_expected.slang), never a scoped hash walk.
-bool canonical_field_reference(uint token, uint scope, uint type_capacity, uint tokens,
-    inout uint2 reference)
-{
-    if (scope == INVALID)
-    {
-        uint tag = reference.x;
-        uint payload = reference.y;
-        if (tag == TYPE_REF_SCALAR) return payload != 0u;
-        if (tag == 2u) return payload < tokens && MutableCheckedTypeGraph.parameter_slot(payload) != INVALID;
-        uint kind = tag == TYPE_REF_INSTANCE && payload < type_capacity
-            ? MutableCheckedTypeGraph.metadata(payload, 0u) : 0u;
-        return kind >= 1u && kind <= 4u;
-    }
-    reference = ct_realized_ref(ct_field_expected(token));
-    return reference.x >= TYPE_REF_SCALAR && reference.x <= TYPE_REF_INSTANCE;
-}
-
 #define CANONICAL_FIELD_EXPECTATION
 #include "../result_expression_context.slang"
 

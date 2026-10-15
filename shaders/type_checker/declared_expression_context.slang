@@ -24,6 +24,28 @@ bool statement_expression_context(uint node, uint statement, out uint2 reference
     return reference.x != 0u && reference.y != INVALID;
 }
 
+#ifdef CANONICAL_FIELD_EXPECTATION
+// A struct-literal field's context in caller scope: its reference as it is
+// when it has no context instance, else the checked row of its substituted
+// ID (match/field_expected.slang), never a scoped hash walk. The including
+// kernel imports match.field_expected and substitution.ct_rows.
+bool canonical_field_reference<TGraph : IScopedTypeGraph>(uint token, uint scope,
+    uint type_capacity, uint tokens, inout uint2 reference)
+{
+    if (scope == INVALID)
+    {
+        uint tag = reference.x;
+        uint payload = reference.y;
+        if (tag == 1u) return payload != 0u;
+        if (tag == 2u) return payload < tokens && TGraph.parameter_slot(payload) != INVALID;
+        uint kind = tag == 3u && payload < type_capacity ? TGraph.metadata(payload, 0u) : 0u;
+        return kind >= 1u && kind <= 4u;
+    }
+    reference = ct_realized_ref(ct_field_expected(token));
+    return reference.x >= 1u && reference.x <= 3u;
+}
+#endif
+
 bool declared_expression_context<TGraph : IScopedTypeGraph>(uint node,
     uint type_capacity, out uint2 reference)
 {
@@ -73,8 +95,8 @@ bool declared_expression_context<TGraph : IScopedTypeGraph>(uint node,
                     // The including kernel reads a scoped field's substituted
                     // ID (match/field_expected.slang) instead of the hash walk.
                     if (reference.x != 0u && reference.y != INVALID &&
-                        canonical_field_reference(field.name_token, scope, type_capacity, tokens,
-                            reference)) return true;
+                        canonical_field_reference<TGraph>(field.name_token, scope, type_capacity,
+                            tokens, reference)) return true;
 #else
                     if (reference.x != 0u && reference.y != INVALID &&
                         instance_scoped_reference<TGraph>(reference.x, reference.y, scope,
