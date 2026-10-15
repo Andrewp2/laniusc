@@ -1025,6 +1025,9 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_semantic_end_local_max"
             | "hir_semantic_end_blocks"
             | "hir_semantic_end_top"
+            | "hir_semantic_child_local"
+            | "hir_semantic_child_blocks"
+            | "hir_semantic_child_top"
             | "hir_semantic_parent"
             | "hir_semantic_first_child"
             | "hir_semantic_next_sibling"
@@ -1640,6 +1643,21 @@ fn build_graph(
             "hir_semantic_end_top",
             ResourceDomain::HirNodes,
             semantic_end_groups * 4,
+        ),
+        (
+            "hir_semantic_child_local",
+            ResourceDomain::HirNodes,
+            tree_blocks * 256 * 8,
+        ),
+        (
+            "hir_semantic_child_blocks",
+            ResourceDomain::HirNodes,
+            semantic_end_leaf_base * 8,
+        ),
+        (
+            "hir_semantic_child_top",
+            ResourceDomain::HirNodes,
+            semantic_end_groups * 8,
         ),
         (
             "hir_semantic_parent",
@@ -2952,6 +2970,51 @@ fn build_graph(
     indirect(&mut graph, "hir_semantic_nav", "hir_semantic_dispatch_args")?;
     static_pass(
         &mut graph,
+        &passes.hir_semantic_child_index_rows,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_child_local",
+                "hir_semantic_child_local",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    indirect(
+        &mut graph,
+        "hir_semantic_child_index_rows",
+        "hir_semantic_dispatch_args",
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_child_index_blocks,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_child_blocks",
+                "hir_semantic_child_blocks",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_child_index_top,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    // Each level of the top heap reads the level below it.
+    graph.mark_pass_bindings_initialize(
+        "hir_semantic_child_index_top",
+        &["hir_semantic_child_top"],
+    )?;
+    static_pass(
+        &mut graph,
         &passes.hir_semantic_child_index_traverse,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
@@ -3536,9 +3599,26 @@ mod tests {
         // Constructor braces and value-path array arguments share the raw
         // angle relation. Reflection must keep every input read-only and live
         // until its consumer, including before semantic bracket projection.
+        // Bracket pairing reads each open's enclosing angle through the
+        // enclosing-opens tables instead of searching the angle tree itself.
+        let bracket_pair = graph
+            .pass_id("parser.tokens.bracket_match.pair_pse")
+            .unwrap();
+        for name in ["token_enclosing_open", "token_angle_close"] {
+            let resource = graph.resource_id(name).unwrap();
+            assert!(
+                graph.pass(bracket_pair).unwrap().accesses.iter().any(|access| {
+                    access.resource == resource && access.mode == AccessMode::Read
+                }),
+                "parser.tokens.bracket_match.pair_pse must declare its read of {name}",
+            );
+            assert!(
+                graph.lifetime(resource).unwrap().last_pass.index() >= bracket_pair.index(),
+                "{name} must survive through parser.tokens.bracket_match.pair_pse",
+            );
+        }
         for consumer in [
             "parser.tokens.delimiters.owner_apply",
-            "parser.tokens.bracket_match.pair_pse",
             token_frontend::ENCLOSING_OPENS,
         ] {
             let pass = graph.pass_id(consumer).unwrap();
@@ -3724,6 +3804,9 @@ mod tests {
             "hir_semantic_compact_scatter",
             "hir_semantic_dispatch_args",
             "hir_semantic_nav",
+            "hir_semantic_child_index_rows",
+            "hir_semantic_child_index_blocks",
+            "hir_semantic_child_index_top",
             "hir_semantic_child_index_traverse",
             "hir_type_arg_links",
             "hir_type_arg_rank_prefix_00_local",

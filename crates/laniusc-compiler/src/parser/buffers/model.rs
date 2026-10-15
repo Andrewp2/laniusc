@@ -757,6 +757,11 @@ pub struct ParserBuffers {
     pub hir_semantic_next_sibling: LaniusBuffer<u32>,
     pub hir_semantic_depth: LaniusBuffer<u32>,
     pub hir_semantic_child_index: LaniusBuffer<u32>,
+    /// Child-index (minimum, count) heaps, two words per entry
+    /// (`passes::hir::semantic::child::index::index_tree`).
+    pub hir_semantic_child_local: LaniusBuffer<u32>,
+    pub hir_semantic_child_blocks: LaniusBuffer<u32>,
+    pub hir_semantic_child_top: LaniusBuffer<u32>,
     pub hir_semantic_parent_link_a: LaniusBuffer<u32>,
     pub hir_semantic_parent_link_b: LaniusBuffer<u32>,
     pub hir_semantic_parent_value_a: LaniusBuffer<u32>,

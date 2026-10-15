@@ -276,6 +276,12 @@ pub struct ParserPasses {
         hir::semantic::parent::traverse::HirSemanticParentTraversePass,
     pub hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation,
     pub hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass,
+    pub hir_semantic_child_index_rows:
+        hir::semantic::child::index::index_tree::HirSemanticChildIndexRowsPass,
+    pub hir_semantic_child_index_blocks:
+        hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass,
+    pub hir_semantic_child_index_top:
+        hir::semantic::child::index::index_tree::HirSemanticChildIndexTopPass,
     pub hir_semantic_child_index_traverse:
         hir::semantic::child::index::traverse::HirSemanticChildIndexTraversePass,
     pub hir_record_clear_base: hir::record::clear::base::HirRecordClearBasePass,
@@ -503,6 +509,18 @@ impl ParserPasses {
                 device,
             )?,
             hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass::new(device)?,
+            hir_semantic_child_index_rows:
+                hir::semantic::child::index::index_tree::HirSemanticChildIndexRowsPass::new(
+                    device,
+                )?,
+            hir_semantic_child_index_blocks:
+                hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass::new(
+                    device,
+                )?,
+            hir_semantic_child_index_top:
+                hir::semantic::child::index::index_tree::HirSemanticChildIndexTopPass::new(
+                    device,
+                )?,
             hir_semantic_child_index_traverse:
                 hir::semantic::child::index::traverse::HirSemanticChildIndexTraversePass::new(
                     device,

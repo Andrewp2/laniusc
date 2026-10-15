@@ -1183,6 +1183,9 @@ impl ParserBuffers {
         let hir_semantic_next_sibling = graph_buffer!(u32, "hir_semantic_next_sibling");
         let hir_semantic_depth = graph_buffer!(u32, "hir_semantic_depth");
         let hir_semantic_child_index = graph_buffer!(u32, "hir_semantic_child_index");
+        let hir_semantic_child_local = graph_buffer!(u32, "hir_semantic_child_local");
+        let hir_semantic_child_blocks = graph_buffer!(u32, "hir_semantic_child_blocks");
+        let hir_semantic_child_top = graph_buffer!(u32, "hir_semantic_child_top");
         let hir_semantic_parent_link_a = graph_buffer!(u32, "hir_semantic_parent_link_a");
         let hir_semantic_parent_link_b = graph_buffer!(u32, "hir_semantic_parent_link_b");
         let hir_semantic_parent_value_a = graph_buffer!(u32, "hir_semantic_parent_value_a");
@@ -2149,6 +2152,9 @@ impl ParserBuffers {
             hir_semantic_next_sibling,
             hir_semantic_depth,
             hir_semantic_child_index,
+            hir_semantic_child_local,
+            hir_semantic_child_blocks,
+            hir_semantic_child_top,
             hir_semantic_parent_link_a,
             hir_semantic_parent_link_b,
             hir_semantic_parent_value_a,
