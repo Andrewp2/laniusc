@@ -59,8 +59,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeSpansPass {
             ("parent".into(), b.parent.as_entire_binding()),
             ("tree_prefix".into(), b.tree_prefix.as_entire_binding()),
             (
-                "prefix_block_max".into(),
-                b.tree_prefix_block_max.as_entire_binding(),
+                "prefix_local_max".into(),
+                b.tree_prefix_local_max.as_entire_binding(),
             ),
             (
                 "prefix_block_max_tree".into(),

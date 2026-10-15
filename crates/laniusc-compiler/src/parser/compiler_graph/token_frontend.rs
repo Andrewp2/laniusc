@@ -150,6 +150,17 @@ pub(super) fn register_resources(
             graph.mark_zero_initialized(resource)?;
         }
     }
+    // Every 256-token block's local minimum heap, one int4 (paren, brace,
+    // bracket, angle) per heap node, so delimiter searches need no row scans.
+    let local_min = workspace(
+        graph,
+        "delimiter_match_local_min",
+        ResourceDomain::Tokens,
+        block_rows * 256 * 16,
+    )?;
+    if capacity.preclassified_token_kinds {
+        graph.mark_zero_initialized(local_min)?;
+    }
     Ok(())
 }
 
@@ -469,6 +480,11 @@ pub(super) fn register_schedule(
             (
                 "angle_match_block_min",
                 "angle_match_block_min",
+                Some(AccessMode::Write),
+            ),
+            (
+                "delimiter_match_local_min",
+                "delimiter_match_local_min",
                 Some(AccessMode::Write),
             ),
         ],

@@ -1,12 +1,12 @@
 // Parallel preorder parent recovery.
 //
 // The prefix stage computes E[p] = sum_{k < p}(1 - arity[k]). For node i,
-// the parent is the nearest previous node j with E[j] >= E[i]. This pass
-// searches inside the current 256-prefix block, then uses a max segment tree to
-// find the nearest previous candidate block without walking all intervening
-// blocks.
+// the parent is the nearest previous node j with E[j] >= E[i], found by
+// climbing the per-block maximum heaps and the block maximum tree
+// (blocked_search_tree.slang).
 
 import segment_tree;
+import blocked_search_tree;
 import generated_parse_production_ids;
 
 struct Params
@@ -21,8 +21,8 @@ ConstantBuffer<Params> gTree;
 StructuredBuffer<uint> emit_stream;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<int> tree_prefix;
-StructuredBuffer<int> prefix_block_max;
 StructuredBuffer<int> prefix_block_max_tree;
+StructuredBuffer<int> prefix_local_max;
 
 RWStructuredBuffer<uint> node_kind;
 RWStructuredBuffer<uint> parent;
@@ -41,58 +41,20 @@ uint active_node_count()
     return gTree.uses_status_count != 0u ? min(gTree.n, tree_count_status[5u]) : gTree.n;
 }
 
-public struct ParserPrefixMaxTree : IRangeSearchTree<int>
+public struct ParserPrefixTree : IBlockedSearchTree<int>
 {
-    public static uint n_blocks()
-    {
-        return gTree.n_prefix_blocks;
-    }
-
-    public static uint leaf_base()
-    {
-        return gTree.max_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return prefix_block_max[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return prefix_block_max_tree[node];
-    }
-}
-
-public struct ParserPrefixRows : IRangeSearchRows<int>
-{
-    public static uint item_count()
-    {
-        return active_node_count();
-    }
-
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    public static int row_value(uint row)
-    {
-        return tree_prefix[row];
-    }
+    [ForceInline] public static uint row_count() { return active_node_count(); }
+    [ForceInline] public static int row_value(uint row) { return tree_prefix[row]; }
+    [ForceInline] public static int local_node(uint block, uint node) { return prefix_local_max[block * WG_SIZE + node]; }
+    [ForceInline] public static uint block_leaf_base() { return gTree.max_tree_leaf_base; }
+    [ForceInline] public static int block_node(uint node) { return prefix_block_max_tree[node]; }
 }
 
 uint find_parent(uint i, uint n)
 {
-    int target = tree_prefix[i];
-    uint found;
-    if (range_search_tree_last_index_before<int, int, ParserPrefixMaxTree, ParserPrefixRows, RangeSearchI32AtLeast>(
+    return blocked_search_last_before<int, int, ParserPrefixTree, RangeSearchI32AtLeast>(
         i,
-        target,
-        found))
-        return found;
-
-    return INVALID;
+        tree_prefix[i]);
 }
 
 [shader("compute")]
