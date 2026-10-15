@@ -1,0 +1,5 @@
+trait Area { fn area(self) -> i32; }
+struct Twice<T> { inner: T, k: i32 }
+impl<T> Area for Twice<T> { fn area(self) -> i32 { return self.k; } }
+fn total<T>(a: T) -> i32 where T: Area { return a.area(); }
+fn main() -> i32 { return total(Twice { inner: true, k: 42 }); }
