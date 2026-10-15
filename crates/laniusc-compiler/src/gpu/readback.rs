@@ -1,5 +1,7 @@
 use anyhow::{Result, anyhow};
 
+mod gather;
+
 use super::{
     buffers::{LaniusBuffer, readback_bytes},
     passes_core::map_readback_blocking,
@@ -172,7 +174,9 @@ impl PagedReadback {
     /// Copies unrelated logical buffer ranges into the same reusable staging
     /// page and maps that page once. Large aggregate outputs still paginate,
     /// but small object columns no longer pay one queue synchronization per
-    /// column.
+    /// column. Many small regions are first gathered on the GPU into one
+    /// dense image (see [`gather`]), and ranges that are contiguous in both
+    /// source and page share one copy.
     pub(crate) fn read_regions(
         &self,
         device: &wgpu::Device,
@@ -180,18 +184,40 @@ impl PagedReadback {
         regions: &[ReadbackRegion<'_>],
         label: &str,
     ) -> Result<Vec<Vec<u8>>> {
-        let mut outputs = regions
-            .iter()
-            .map(|region| Vec::with_capacity(region.byte_len))
-            .collect::<Vec<_>>();
-        let mut consumed = vec![0usize; regions.len()];
         // Sparse fact readers pass thousands of regions; report where their
         // time goes (copy encoding vs. the GPU round trip).
         let timing = regions.len() >= 32
             && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
         let started = std::time::Instant::now();
         let mut pages = 0usize;
+        let mut copies = 0usize;
         let mut encode = std::time::Duration::ZERO;
+
+        let mut first_encoder = Some(
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) }),
+        );
+        let mut lease = gather::lease(device, regions.len());
+        let gathered = match lease.as_mut() {
+            Some(lease) => lease.record(
+                device,
+                queue,
+                first_encoder.as_mut().expect("first readback encoder"),
+                regions,
+                label,
+            )?,
+            None => None,
+        };
+        let (gathered_regions, gather_dispatches) = gathered
+            .as_ref()
+            .map_or((0, 0), |gathered| (gathered.gathered_regions, gathered.dispatches));
+        let regions = gathered.as_ref().map_or(regions, |gathered| &gathered.regions[..]);
+        encode += started.elapsed();
+
+        let mut outputs = regions
+            .iter()
+            .map(|region| Vec::with_capacity(region.byte_len))
+            .collect::<Vec<_>>();
+        let mut consumed = vec![0usize; regions.len()];
 
         while regions
             .iter()
@@ -199,10 +225,13 @@ impl PagedReadback {
             .any(|(region, consumed)| *consumed < region.byte_len)
         {
             let page_started = std::time::Instant::now();
-            let mut encoder = device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+            let mut encoder = first_encoder.take().unwrap_or_else(|| {
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
+            });
             let mut page_cursor = 0usize;
             let mut page_copies = Vec::new();
+            // The copy being extended: source, source offset, page offset, length.
+            let mut pending: Option<(&wgpu::Buffer, u64, u64, u64)> = None;
 
             for (index, region) in regions.iter().enumerate() {
                 while consumed[index] < region.byte_len && page_cursor < self.staging.byte_size {
@@ -217,13 +246,29 @@ impl PagedReadback {
                         break;
                     }
                     let source_offset = region.source_offset + consumed[index] as u64;
-                    encoder.copy_buffer_to_buffer(
-                        region.source,
-                        source_offset,
-                        &self.staging.buffer,
-                        page_cursor as u64,
-                        copy_len as u64,
-                    );
+                    match &mut pending {
+                        Some((source, source_start, page_start, len))
+                            if *source == region.source
+                                && *source_start + *len == source_offset
+                                && *page_start + *len == page_cursor as u64 =>
+                        {
+                            *len += copy_len as u64;
+                        }
+                        _ => {
+                            if let Some((source, source_start, page_start, len)) = pending.take() {
+                                encoder.copy_buffer_to_buffer(
+                                    source,
+                                    source_start,
+                                    &self.staging.buffer,
+                                    page_start,
+                                    len,
+                                );
+                                copies += 1;
+                            }
+                            pending =
+                                Some((region.source, source_offset, page_cursor as u64, copy_len as u64));
+                        }
+                    }
                     page_copies.push((index, page_cursor, logical_len));
                     consumed[index] += logical_len;
                     page_cursor += copy_len;
@@ -233,6 +278,16 @@ impl PagedReadback {
                 }
             }
 
+            if let Some((source, source_start, page_start, len)) = pending.take() {
+                encoder.copy_buffer_to_buffer(
+                    source,
+                    source_start,
+                    &self.staging.buffer,
+                    page_start,
+                    len,
+                );
+                copies += 1;
+            }
             if page_copies.is_empty() {
                 return Err(anyhow!(
                     "{label} could not fit an aligned copy in its {}-byte staging page",
@@ -256,7 +311,7 @@ impl PagedReadback {
         if timing {
             let total = started.elapsed();
             eprintln!(
-                "[gpu_compile_host_timer] readback.regions: label={label} regions={} bytes={} pages={pages} encode_ms={:.3} total_ms={:.3}",
+                "[gpu_compile_host_timer] readback.regions: label={label} regions={} gathered={gathered_regions} gather_dispatches={gather_dispatches} copies={copies} bytes={} pages={pages} encode_ms={:.3} total_ms={:.3}",
                 regions.len(),
                 regions.iter().map(|region| region.byte_len).sum::<usize>(),
                 encode.as_secs_f64() * 1000.0,
@@ -420,6 +475,67 @@ mod lifecycle_tests {
                 .unwrap(),
             expected
         );
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
+
+    fn storage_source(device: &wgpu::Device, queue: &wgpu::Queue, seed: u8) -> LaniusBuffer<u8> {
+        let size = 8192usize;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback gather source"),
+            size: size as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let source = LaniusBuffer::new_labeled((buffer, size as u64), size, "readback gather source");
+        let bytes = (0..size)
+            .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
+            .collect::<Vec<_>>();
+        source.write(queue, 0, &bytes);
+        source
+    }
+
+    #[test]
+    fn gpu_paged_readback_gathers_many_small_regions() {
+        let gpu = device::global();
+        let first = storage_source(&gpu.device, &gpu.queue, 7);
+        let second = storage_source(&gpu.device, &gpu.queue, 101);
+        // A copy-only source (no STORAGE usage) must still read correctly.
+        let copy_only = source(&gpu.device);
+        copy_only.write(&gpu.queue, 0, &[9u8; 16]);
+        // A small page forces the gathered image across several pages.
+        let readback = PagedReadback::new(&gpu.device, "readback gather page", 512);
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+
+        let mut regions = Vec::new();
+        let mut expected = Vec::new();
+        for i in 0..300u64 {
+            let (buffer, seed) = if i % 3 == 0 { (&second, 101u8) } else { (&first, 7u8) };
+            let offset = (i * 52) % 7936 / 4 * 4;
+            let len = [4usize, 3, 8, 12, 1, 40][i as usize % 6];
+            regions.push(ReadbackRegion::from_buffer(buffer, offset, len, "gather region").unwrap());
+            expected.push(
+                (offset as usize..offset as usize + len)
+                    .map(|b| (b as u8).wrapping_mul(31).wrapping_add(seed))
+                    .collect::<Vec<_>>(),
+            );
+            if i == 150 {
+                // A large region and a copy-only region in the middle.
+                regions.push(ReadbackRegion::from_buffer(&first, 1024, 1500, "large region").unwrap());
+                expected.push(
+                    (1024..2524usize)
+                        .map(|b| (b as u8).wrapping_mul(31).wrapping_add(7))
+                        .collect(),
+                );
+                regions.push(ReadbackRegion::from_buffer(&copy_only, 4, 8, "copy region").unwrap());
+                expected.push(vec![9u8; 8]);
+            }
+        }
+        let read = readback
+            .read_regions(&gpu.device, &gpu.queue, &regions, "gather test")
+            .unwrap();
+        assert_eq!(read, expected);
         assert!(pollster::block_on(validation.pop()).is_none());
     }
 }
