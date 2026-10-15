@@ -1022,6 +1022,9 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_semantic_prefix_before_node"
             | "hir_semantic_count"
             | "hir_semantic_subtree_end"
+            | "hir_semantic_end_local_max"
+            | "hir_semantic_end_blocks"
+            | "hir_semantic_end_top"
             | "hir_semantic_parent"
             | "hir_semantic_first_child"
             | "hir_semantic_next_sibling"
@@ -1391,6 +1394,16 @@ fn build_graph(
     let prefix_blocks = u64::from(capacity.tree_prefix_blocks.max(1));
     let bracket_leaf_base = capacity.bracket_blocks.max(1).next_power_of_two();
     let prefix_leaf_base = capacity.tree_prefix_blocks.max(1).next_power_of_two();
+    let semantic_end_leaf_base = u64::from(
+        crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+            capacity.tree_node_blocks,
+        ),
+    );
+    let semantic_end_groups = u64::from(
+        crate::parser::passes::hir::semantic::parent::end_tree::group_count(
+            capacity.tree_node_blocks,
+        ),
+    );
 
     for (name, domain, bytes) in [
         ("token_kinds", ResourceDomain::Tokens, token_rows * 4),
@@ -1612,6 +1625,21 @@ fn build_graph(
             "hir_semantic_subtree_end",
             ResourceDomain::HirNodes,
             tree_rows * 4,
+        ),
+        (
+            "hir_semantic_end_local_max",
+            ResourceDomain::HirNodes,
+            tree_blocks * 256 * 4,
+        ),
+        (
+            "hir_semantic_end_blocks",
+            ResourceDomain::HirNodes,
+            semantic_end_leaf_base * 4,
+        ),
+        (
+            "hir_semantic_end_top",
+            ResourceDomain::HirNodes,
+            semantic_end_groups * 4,
         ),
         (
             "hir_semantic_parent",
@@ -2836,6 +2864,48 @@ fn build_graph(
         "hir_semantic_subtree_end",
         "hir_semantic_dispatch_args",
     )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_end_rows,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_end_local_max",
+                "hir_semantic_end_local_max",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    indirect(
+        &mut graph,
+        "hir_semantic_end_rows",
+        "hir_semantic_dispatch_args",
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_end_blocks,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_semantic_end_blocks",
+                "hir_semantic_end_blocks",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    static_pass(
+        &mut graph,
+        &passes.hir_semantic_end_top,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    // Each level of the top heap reads the level below it.
+    graph.mark_pass_bindings_initialize("hir_semantic_end_top", &["hir_semantic_end_top"])?;
     static_pass(
         &mut graph,
         &passes.hir_semantic_parent_traverse,

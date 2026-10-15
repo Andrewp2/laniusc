@@ -269,6 +269,9 @@ pub struct ParserPasses {
     pub hir_semantic_compact_scatter: hir::semantic::compact_scatter::HirSemanticCompactScatterPass,
     pub hir_semantic_dispatch_args: hir::semantic::dispatch_args::HirSemanticDispatchArgsPass,
     pub hir_semantic_subtree_end: hir::semantic::subtree_end::HirSemanticSubtreeEndPass,
+    pub hir_semantic_end_rows: hir::semantic::parent::end_tree::HirSemanticEndRowsPass,
+    pub hir_semantic_end_blocks: hir::semantic::parent::end_tree::HirSemanticEndBlocksPass,
+    pub hir_semantic_end_top: hir::semantic::parent::end_tree::HirSemanticEndTopPass,
     pub hir_semantic_parent_traverse:
         hir::semantic::parent::traverse::HirSemanticParentTraversePass,
     pub hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation,
@@ -488,6 +491,12 @@ impl ParserPasses {
             hir_semantic_subtree_end: hir::semantic::subtree_end::HirSemanticSubtreeEndPass::new(
                 device,
             )?,
+            hir_semantic_end_rows:
+                hir::semantic::parent::end_tree::HirSemanticEndRowsPass::new(device)?,
+            hir_semantic_end_blocks:
+                hir::semantic::parent::end_tree::HirSemanticEndBlocksPass::new(device)?,
+            hir_semantic_end_top:
+                hir::semantic::parent::end_tree::HirSemanticEndTopPass::new(device)?,
             hir_semantic_parent_traverse:
                 hir::semantic::parent::traverse::HirSemanticParentTraversePass::new(device)?,
             hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation::new(

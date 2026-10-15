@@ -1174,6 +1174,9 @@ impl ParserBuffers {
             .buffer::<u32>("hir_semantic_dense_node")
             .expect("parser graph must own semantic-to-raw dense ids");
         let hir_semantic_subtree_end = graph_buffer!(u32, "hir_semantic_subtree_end");
+        let hir_semantic_end_local_max = graph_buffer!(u32, "hir_semantic_end_local_max");
+        let hir_semantic_end_blocks = graph_buffer!(u32, "hir_semantic_end_blocks");
+        let hir_semantic_end_top = graph_buffer!(u32, "hir_semantic_end_top");
         let hir_semantic_count = graph_buffer!(u32, "hir_semantic_count");
         let hir_semantic_parent = graph_buffer!(u32, "hir_semantic_parent");
         let hir_semantic_first_child = graph_buffer!(u32, "hir_semantic_first_child");
@@ -2138,6 +2141,9 @@ impl ParserBuffers {
             hir_semantic_prefix_before_node,
             hir_semantic_dense_node,
             hir_semantic_subtree_end,
+            hir_semantic_end_local_max,
+            hir_semantic_end_blocks,
+            hir_semantic_end_top,
             hir_semantic_parent,
             hir_semantic_first_child,
             hir_semantic_next_sibling,

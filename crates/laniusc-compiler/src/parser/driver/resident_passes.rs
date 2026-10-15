@@ -275,6 +275,24 @@ impl GpuParser {
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_subtree_end");
             self.passes
+                .hir_semantic_end_rows
+                .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_end_rows");
+            self.passes.hir_semantic_end_blocks.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(
+                    crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+                        bufs.tree_n_node_blocks,
+                    ),
+                ),
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_end_blocks");
+            self.passes.hir_semantic_end_top.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(256),
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_end_top");
+            self.passes
                 .hir_semantic_parent_traverse
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(
