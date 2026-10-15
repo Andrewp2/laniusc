@@ -32,6 +32,7 @@ use laniusc_compiler::compiler::{
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
+    write_debug_dispatch_capture,
 };
 use log::warn;
 
@@ -191,13 +192,16 @@ pub fn type_check_source_pack_with_dependencies_with_timeout(
         .iter()
         .map(|source| (*source).to_owned())
         .collect::<Vec<_>>();
-    run_with_timeout("GPU dependency-interface type check", move || {
+    let result = run_with_timeout("GPU dependency-interface type check", move || {
         pollster::block_on(type_check_source_pack_with_dependency_interfaces_with_gpu(
             library_id,
             &sources,
             &dependency_interfaces,
         ))
-    })
+    });
+    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected dispatch for replay.
+    write_debug_dispatch_capture();
+    result
 }
 
 pub fn type_check_path_with_timeout(path: &Path) -> Result<(), CompileError> {

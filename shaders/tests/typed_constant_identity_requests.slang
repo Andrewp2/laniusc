@@ -112,11 +112,14 @@ void main(uint3 dtid : SV_DispatchThreadID)
     {
         bool a = array_accepted[0u];
         bool b = array_accepted[1u];
+        // Count evidence admits both arrays; the later exact claim of the same
+        // count and result scalar is compatible and wins the slot outright.
+        // Each array graph keeps its own fit obligations.
         bool exact = constant_parameter_constraint<LeftGraph>(SCALAR_U64, 0u, INVALID,
             uint2(2u, 1u), 64u, true, inferred, mask);
-        results[id] = uint4(a ? 1u : 0u, b ? 1u : 0u, exact ? 0u : 1u,
-            all(inferred[0u].reference == uint2(3u, 3u)) &&
-                inferred[0u].target_scalar == SCALAR_U64 ? 1u : 0u);
+        results[id] = uint4(a ? 1u : 0u, b ? 1u : 0u, exact ? 1u : 0u,
+            all(inferred[0u].reference == uint2(2u, 1u)) &&
+                inferred[0u].identity_mode == 0u ? 1u : 0u);
     }
     else if (id == 35u)
     {
@@ -128,19 +131,16 @@ void main(uint3 dtid : SV_DispatchThreadID)
     else if (id == 36u)
     {
         uint3 a = uint3(3u, 3u, INVALID); uint3 b = uint3(2u, 1u, INVALID);
-        uint left_hash; uint right_hash;
         bool equal = scoped_constant_counts_equal<LeftGraph, LeftGraph>(a, b, 64u);
         uint hashes_by_side[2]; hashes_by_side[0u] = 0u; hashes_by_side[1u] = 0u;
         bool hash_ok[2]; hash_ok[0u] = false; hash_ok[1u] = false;
         [loop]
         for (uint side = 0u; side < 2u; side++)
         {
-            if (side != 0u && !hash_ok[0u]) break;
             hash_ok[side] = scoped_constant_count_hash<LeftGraph>(
                 side == 0u ? a : b, 64u, hashes_by_side[side]);
         }
-        left_hash = hashes_by_side[0u]; right_hash = hashes_by_side[1u];
-        bool hashes = hash_ok[0u] && hash_ok[1u] && left_hash == right_hash;
+        bool hashes = hash_ok[0u] && hash_ok[1u] && hashes_by_side[0u] == hashes_by_side[1u];
         ConstantReferenceDescriptor descriptor;
         bool retained = scoped_constant_reference<LeftGraph>(a, 64u, descriptor) && descriptor.pending_fit == 1u;
         results[id] = uint4(equal ? 1u : 0u, hashes ? 1u : 0u, retained ? 1u : 0u,

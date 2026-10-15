@@ -1,0 +1,6 @@
+struct Wrap<A> { value: A }
+impl<T, const N: usize> Wrap<[T; N]> {
+    fn length(&self) -> usize { return N; }
+    fn copy(&self) -> [T; N] { return self.value; }
+}
+fn main() -> i32 { let w: Wrap<[i32; 3]> = Wrap { value: [40, 1, 1] }; if (w.length() != 3) { return 1; } let c: [i32; 3] = w.copy(); return c[0] + c[1] + c[2]; }

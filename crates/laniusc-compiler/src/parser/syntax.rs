@@ -2129,7 +2129,7 @@ where
     let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
     ub.write(value)
         .expect("failed to write syntax uniform buffer");
-    queue.write_buffer(buffer, 0, ub.as_ref());
+    buffer.write(queue, 0, ub.as_ref());
 }
 
 fn read_status_words(bytes: &[u8]) -> Result<[u32; 4]> {

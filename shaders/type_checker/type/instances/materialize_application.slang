@@ -6,29 +6,17 @@ import type_checker.checked_array_counts;
 #ifndef MATERIALIZE_NORMALIZE_ALIASES
 #define MATERIALIZE_NORMALIZE_ALIASES 0
 #endif
+// Expansion (expand_materialized_instance.slang) passes its visited rows.
+#ifndef MATERIALIZE_ROOT_CANDIDATES
+#define MATERIALIZE_ROOT_CANDIDATES 0
+#endif
+#if MATERIALIZE_ROOT_CANDIDATES && MATERIALIZE_NORMALIZE_ALIASES
+#error root candidates are not supported while normalizing aliases
+#endif
 #include "allocate_application.slang"
 // Shared GPU materialization under record or call parameter environments.
 // The including pass owns immutable source inputs and private output rows.
-uint indexed_application<Graph : IScopedTypeGraph>(uint3 reference)
-{
-    uint hash;
-    uint capacity = mutable_type_capacity();
-    if (!scoped_type_ref_hash<Graph>(reference.x, reference.y,
-        reference.z, capacity, gParams.n_tokens, hash)) return INVALID;
-    uint buckets; uint stride;
-    type_instance_lookup_head.GetDimensions(buckets, stride);
-    uint link = type_instance_lookup_head[hash % buckets];
-    for (uint steps = 0u; steps < capacity && link != 0u; steps++)
-    {
-        uint candidate = link - 1u;
-        if (candidate >= capacity) return INVALID;
-        if (scoped_type_refs_equal<Graph>(reference.x, reference.y,
-            reference.z, 3u, candidate, INVALID, capacity, gParams.n_tokens)) return candidate;
-        link = type_instance_lookup_next[candidate];
-    }
-    return INVALID;
-}
-
+#if MATERIALIZE_NORMALIZE_ALIASES
 bool materialize_source_constant<Graph : IScopedTypeGraph>(uint environment,
     inout uint kind, inout uint payload, out uint failure)
 {
@@ -37,17 +25,26 @@ bool materialize_source_constant<Graph : IScopedTypeGraph>(uint environment,
         uint3(kind, payload, environment), gParams.n_tokens, result, failure)) return false;
     kind = result.x; payload = result.y; return true;
 }
-
-#if !MATERIALIZE_NORMALIZE_ALIASES
-bool materialize_canonical_constant<Graph : IScopedTypeGraph>(uint environment,
-    uint canonical, out uint kind, out uint payload, out uint failure)
+#else
+// Materialize a source constant reference (`canonical` INVALID) or canonical
+// dependency constant `canonical` under `environment`. The canonical view's
+// graph passes source rows and parameters through unchanged, so both kinds
+// share one walker; source references keep the source parameter limit.
+bool materialize_constant_operand<Graph : IScopedTypeGraph>(uint environment,
+    uint canonical, inout uint kind, inout uint payload, out uint failure)
 {
-    kind = 0u; payload = INVALID; failure = 4u;
-    uint parameters; uint projections; uint tokens; uint2 input; uint2 result;
-    if (!canonical_constant_view_ranges(parameters, projections, tokens) ||
-        !canonical_constant_view_reference<Graph>(canonical, input) ||
-        !materialize_checked_constant<CanonicalConstantGraph<Graph>, CanonicalConstantEnvironment<Graph>>(
-            uint3(input, environment), tokens, result, failure)) return false;
+    failure = 4u;
+    uint parameters; uint projections; uint limit; uint2 result;
+    uint2 input = uint2(kind, payload);
+    uint tokens = gParams.n_tokens;
+    if (!canonical_constant_view_ranges(parameters, projections, limit)) return false;
+    if (canonical != INVALID)
+    {
+        if (!canonical_constant_view_reference<Graph>(canonical, input)) return false;
+        tokens = limit;
+    }
+    if (!materialize_checked_constant<CanonicalConstantGraph<Graph>, CanonicalConstantEnvironment<Graph>>(
+        uint3(input, environment), tokens, result, failure)) return false;
     kind = result.x; payload = result.y; return true;
 }
 #endif
@@ -107,7 +104,13 @@ uint allocate_normalized_application<Graph : IScopedTypeGraph>(uint3 ref, uint r
 // This lane can reuse its completed nodes immediately. Other lanes see the
 // immutable source index; duplicate complete nodes are safe and compare by
 // their entire structure, rather than allocation order or native width.
+// With MATERIALIZE_ROOT_CANDIDATES, a root pattern equal to one of the
+// caller's `root_rows` resolves to that row, so the caller can recognize
+// visited rows by ID; the same equality site serves both purposes.
 bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH_LIMIT], inout uint created_count,
+#if MATERIALIZE_ROOT_CANDIDATES
+    uint root_rows[DEPTH_LIMIT], uint root_count,
+#endif
     out uint2 result, out uint failure)
 {
     uint3 refs[DEPTH_LIMIT];
@@ -149,20 +152,21 @@ bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH
             }
 #endif
 #if !MATERIALIZE_NORMALIZE_ALIASES
+            // A canonical constant is materialized at the constant site below.
+            // Other canonical patterns resolve their type leaf; an alias root
+            // keeps its kind, so it never turns a type into a constant.
+            uint canonical_constant = INVALID;
             if (ref.x == 5u)
             {
                 uint portable_kind = dependency_type_word(ref.y * 9u);
                 if (portable_kind == 8u || portable_kind == 9u || portable_kind == 10u)
+                    canonical_constant = ref.y;
+                else
                 {
-                    uint constant_kind; uint constant_payload;
-                    if (!materialize_canonical_constant<Graph>(ref.z, ref.y,
-                        constant_kind, constant_payload, failure)) return false;
-                    ref = uint3(APPLICATION_CONSTANT_ARGUMENT | constant_kind, constant_payload, INVALID);
+                    uint2 canonical = ref.xy;
+                    if (!canonical_type_field_leaf<Graph>(ref.z, canonical)) { failure = 4u; return false; }
+                    ref = uint3(canonical, canonical.x == 5u ? ref.z : INVALID);
                 }
-                uint2 canonical = ref.xy;
-                if (ref.x == 5u && !canonical_field_leaf<Graph>(ref.z, canonical))
-                    { failure = 4u; return false; }
-                ref = uint3(canonical, canonical.x == 5u ? ref.z : INVALID);
             }
 #endif
             if (ref.x == 2u && ref.z != INVALID)
@@ -173,6 +177,7 @@ bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH
                     { failure = 3u; return false; }
                 ref = uint3(tag, payload, INVALID);
             }
+#if MATERIALIZE_NORMALIZE_ALIASES
             if (application_argument_is_constant(ref.x))
             {
                 uint kind = ref.x & ~APPLICATION_CONSTANT_ARGUMENT;
@@ -189,7 +194,6 @@ bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH
             {
                 value = ref.xy; complete = true;
             }
-#if MATERIALIZE_NORMALIZE_ALIASES
             else if (ref.x == 3u && ref.y < mutable_type_capacity())
             {
                 uint kind = type_instance_kind[ref.y];
@@ -210,85 +214,117 @@ bool materialize<Graph : IScopedTypeGraph>(uint3 input, inout uint created[DEPTH
                     }
                 }
             }
+            else { failure = 3u; return false; }
 #else
-            else if (ref.x == 3u && ref.z == INVALID && ref.y < mutable_type_capacity())
+            // Classify the node. A constant operand and the array length of a
+            // new row share one materialization site; patterns share one hash
+            // site per domain and one equality site.
+            bool constant = canonical_constant != INVALID || application_argument_is_constant(ref.x);
+            bool pattern = !constant && ((ref.x == 3u && ref.y < mutable_type_capacity()) || ref.x == 5u);
+            if (!constant && !pattern && !(ref.x == 1u && ref.y != 0u && ref.y != INVALID) &&
+                !(ref.x == 2u && ref.y < gParams.n_tokens && type_generic_param_slot_by_token[ref.y] != INVALID))
+                { failure = 3u; return false; }
+            uint found = INVALID;
+            uint kind = 0u; uint arguments = 0u; uint length_kind = 0u; uint length = INVALID;
+            if (pattern)
             {
-                // Substitution has already produced a caller-side reference.
-                // Validate its complete graph, then retain it directly. Looking
-                // it up again can compare the same tree repeatedly or allocate
-                // a duplicate before the next index publication.
                 uint hash;
-                if (!scoped_type_ref_hash<Graph>(ref.x, ref.y, INVALID,
-                    mutable_type_capacity(), gParams.n_tokens, hash))
-                    { failure = 3u; return false; }
-                value = ref.xy; complete = true;
-            }
-            else if ((ref.x == 3u && ref.y < mutable_type_capacity()) || ref.x == 5u)
-            {
-                uint found = INVALID;
-                if (ref.x == 3u)
+                bool hashed = ref.x == 5u
+                    ? canonical_field_ref_hash<Graph>(ref.z, ref.y, mutable_type_capacity(), gParams.n_tokens, hash)
+                    : scoped_type_ref_hash<Graph>(ref.x, ref.y, ref.z, mutable_type_capacity(), gParams.n_tokens, hash);
+                if (!hashed) { failure = ref.x == 5u ? 4u : 3u; return false; }
+                // Substitution has already produced a caller-side reference.
+                // Its complete graph is validated above; retain it directly.
+                // Looking it up again can compare the same tree repeatedly or
+                // allocate a duplicate before the next index publication.
+                bool retain = ref.x == 3u && ref.z == INVALID;
+                // Candidates: the caller's root rows (an equal one is returned
+                // instead of the reference or a new row), then the immutable
+                // checked index, then this lane's new rows.
+                uint buckets; uint stride;
+                type_instance_lookup_head.GetDimensions(buckets, stride);
+                uint link = retain || buckets == 0u ? 0u : type_instance_lookup_head[hash % buckets];
+                uint chain = 0u;
+                uint created_next = retain ? created_count : 0u;
+#if MATERIALIZE_ROOT_CANDIDATES
+                uint root_next = depth == 0u ? 0u : root_count;
+#endif
+                [loop]
+                for (;;)
                 {
-                    found = indexed_application<Graph>(ref);
-                    for (uint i = 0u; found == INVALID && i < created_count; i++)
-                        if (scoped_type_refs_equal<Graph>(ref.x, ref.y, ref.z,
-                            3u, created[i], INVALID, mutable_type_capacity(), gParams.n_tokens)) found = created[i];
+                    uint candidate;
+#if MATERIALIZE_ROOT_CANDIDATES
+                    if (root_next < root_count) candidate = root_rows[root_next++];
+                    else
+#endif
+                    if (link != 0u && chain < mutable_type_capacity() && link - 1u < mutable_type_capacity())
+                    {
+                        candidate = link - 1u; chain++;
+                        link = type_instance_lookup_next[candidate];
+                    }
+                    else if (created_next < created_count)
+                    {
+                        link = 0u;
+                        candidate = created[created_next++];
+                    }
+                    else break;
+                    if (ref.x == 5u
+                        ? canonical_field_ref_matches<Graph>(ref.z, ref.y, candidate,
+                            mutable_type_capacity(), gParams.n_tokens)
+                        : scoped_type_refs_equal<Graph>(ref.x, ref.y, ref.z,
+                            3u, candidate, INVALID, mutable_type_capacity(), gParams.n_tokens))
+                        { found = candidate; break; }
                 }
-                else
+                if (found == INVALID && retain) found = ref.y;
+                if (found == INVALID)
                 {
-                    uint hash;
-                    if (!canonical_field_ref_hash<Graph>(ref.z, ref.y,
-                        mutable_type_capacity(), gParams.n_tokens, hash)) { failure = 4u; return false; }
-                    found = canonical_indexed_application<Graph>(ref.z, ref.y, hash,
-                        mutable_type_capacity(), gParams.n_tokens,
-                        type_instance_lookup_head, type_instance_lookup_next);
-                    for (uint i = 0u; found == INVALID && i < created_count; i++)
-                        if (canonical_field_ref_matches<Graph>(ref.z, ref.y, created[i],
-                            mutable_type_capacity(), gParams.n_tokens)) found = created[i];
-                }
-                if (found != INVALID)
-                {
-                    value = uint2(3u, found); complete = true;
-                }
-                else
-                {
-                    uint hash;
-                    if (ref.x == 3u && !scoped_type_ref_hash<Graph>(ref.x, ref.y, ref.z,
-                        mutable_type_capacity(), gParams.n_tokens, hash)) { failure = 3u; return false; }
-                    uint kind = ref.x == 5u ? dependency_type_word(ref.y * 9u) - 2u : type_instance_kind[ref.y];
-                    uint arguments = kind == 1u ? (ref.x == 5u
+                    kind = ref.x == 5u ? dependency_type_word(ref.y * 9u) - 2u : type_instance_kind[ref.y];
+                    arguments = kind == 1u ? (ref.x == 5u
                         ? dependency_type_word(ref.y * 9u + 4u) : type_instance_arg_count[ref.y]) : 0u;
                     if (arguments > ARG_LIMIT) { failure = 2u; return false; }
                     uint2 domains = ref.x == 5u && kind == 1u ? canonical_application_domains(ref.y) : uint2(0u, 0u);
-                    uint length_kind = ref.x == 5u
+                    length_kind = ref.x == 5u
                         ? (kind == 1u ? domains.x : 0u)
                         : type_instance_len_kind[ref.y];
-                    uint length = ref.x == 5u
+                    length = ref.x == 5u
                         ? (kind == 1u ? domains.y : INVALID)
                         : type_instance_len_payload[ref.y];
-                    if (kind == 2u)
-                    {
-                        bool resolved = ref.x == 5u
-                            ? materialize_canonical_constant<Graph>(ref.z, dependency_array_length_type(ref.y),
-                                length_kind, length, failure)
-                            : materialize_source_constant<Graph>(ref.z, length_kind, length, failure);
-                        if (!resolved) return false;
-                        if (!checked_source_array_length_valid(length_kind, length, gParams.n_tokens))
-                            { failure = 3u; return false; }
-                    }
-                    uint target = allocate_application(
-                        ref.x == 5u ? INVALID : type_instance_decl_token[ref.y], arguments,
-                        length_kind, length,
-                        ref.x == 5u ? (kind == 1u ? dependency_type_word(ref.y * 9u + 1u) : INVALID) : external_type_library_id[ref.y],
-                        ref.x == 5u ? (kind == 1u ? dependency_type_word(ref.y * 9u + 8u) : INVALID) : external_type_unit_id[ref.y],
-                        ref.x == 5u ? (kind == 1u ? dependency_type_word(ref.y * 9u + 2u) : INVALID) : external_type_local_index[ref.y]);
-                    if (target == INVALID) { failure = 1u; return false; }
-                    targets[depth] = target; next[depth] = 0u;
-                    kinds[depth] = kind;
-                    counts[depth] = kind == 1u ? arguments : 1u;
                 }
             }
-            #endif
-            else { failure = 3u; return false; }
+            bool array_length = pattern && found == INVALID && kind == 2u;
+            if (constant || array_length)
+            {
+                uint constant_kind = constant ? ref.x & ~APPLICATION_CONSTANT_ARGUMENT : length_kind;
+                uint constant_payload = constant ? ref.y : length;
+                uint canonical = constant ? canonical_constant
+                    : ref.x == 5u ? dependency_array_length_type(ref.y) : INVALID;
+                if (!materialize_constant_operand<Graph>(ref.z, canonical,
+                    constant_kind, constant_payload, failure)) return false;
+                if (constant) ref = uint3(APPLICATION_CONSTANT_ARGUMENT | constant_kind, constant_payload, INVALID);
+                else
+                {
+                    length_kind = constant_kind; length = constant_payload;
+                    if (!checked_source_array_length_valid(length_kind, length, gParams.n_tokens))
+                        { failure = 3u; return false; }
+                }
+            }
+            refs[depth] = ref;
+            if (!pattern) { value = ref.xy; complete = true; }
+            else if (found != INVALID) { value = uint2(3u, found); complete = true; }
+            else
+            {
+                uint target = allocate_application(
+                    ref.x == 5u ? INVALID : type_instance_decl_token[ref.y], arguments,
+                    length_kind, length,
+                    ref.x == 5u ? (kind == 1u ? dependency_type_word(ref.y * 9u + 1u) : INVALID) : external_type_library_id[ref.y],
+                    ref.x == 5u ? (kind == 1u ? dependency_type_word(ref.y * 9u + 8u) : INVALID) : external_type_unit_id[ref.y],
+                    ref.x == 5u ? (kind == 1u ? dependency_type_word(ref.y * 9u + 2u) : INVALID) : external_type_local_index[ref.y]);
+                if (target == INVALID) { failure = 1u; return false; }
+                targets[depth] = target; next[depth] = 0u;
+                kinds[depth] = kind;
+                counts[depth] = kind == 1u ? arguments : 1u;
+            }
+#endif
         }
         if (!complete && next[depth] == counts[depth])
         {

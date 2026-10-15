@@ -1,0 +1,14 @@
+// expect: 0
+struct Cell<T> { value: T }
+trait Mark {}
+impl Mark for i32 {}
+impl<T> Mark for Cell<T> where T: Mark {}
+impl<T, const N: usize> Mark for [T; N] where T: Mark {}
+fn keep<T>(value: T) -> T where T: Mark { return value; }
+fn lift<T>(value: T) -> Cell<T> where T: Mark { let cell: Cell<T> = Cell { value: value }; return keep(cell); }
+fn main() -> i32 {
+    let nested: Cell<Cell<i32>> = lift(lift(42));
+    let pair = keep([19, 23]);
+    if (pair[0] != 19 || pair[1] != 23) { return 1; }
+    return nested.value.value - 42;
+}

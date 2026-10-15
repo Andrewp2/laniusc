@@ -309,6 +309,11 @@ impl GpuTypeChecker {
         resources.buffer("status_readback", &self.status_readback);
         resources.buffer("call_inference_state", &self.call_inference_state);
         resources.buffer("call_inference_readback", &self.call_inference_readback);
+        resources.buffer("canonical_counts_readback", &self.canonical_counts_readback);
+        resources.buffer(
+            "canonical_validation_readback",
+            &self.canonical_validation_readback,
+        );
         resources.buffer("visible_decl", &visible_decl);
         resources.buffer("visible_type", &visible_type);
         resources.buffer("hir_value_decl_name_present", &hir_value_decl_name_present);

@@ -150,6 +150,80 @@ fn trace_range_inference(
     Ok(())
 }
 
+/// Submits the recorded work and reads a small host-visible buffer.
+fn submit_and_read_u32s(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    readback: &LaniusBuffer<u32>,
+    label: &'static str,
+) -> Result<Vec<u32>> {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("type-check-canonical-encoder"),
+    });
+    let recorded = std::mem::replace(encoder, next);
+    crate::gpu::passes_core::submit_with_progress(queue, label, recorded.finish());
+    let slice = readback.slice(..);
+    crate::gpu::passes_core::map_readback_blocking(device, &slice, label)?;
+    let words = slice
+        .get_mapped_range()
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte word")))
+        .collect();
+    readback.unmap();
+    Ok(words)
+}
+
+/// Interns canonical type identities (docs/canonical-type-ids.md): the first
+/// batch of rounds, then one more batch per counter readback that still
+/// reports pending candidates. The GPU's round limit finalizes every
+/// candidate within the last batch.
+fn record_canonical_types(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    canonical: &CanonicalTypeOperations,
+    stage: CanonicalStage,
+    counts_readback: &LaniusBuffer<u32>,
+    validation_readback: &LaniusBuffer<u32>,
+) -> Result<()> {
+    canonical.record_first_batch(encoder, stage)?;
+    let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
+    let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
+    for batch in 0..batches {
+        let counts =
+            submit_and_read_u32s(device, queue, encoder, counts_readback, "type_check.canonical")?;
+        let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
+        let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
+        if trace || overflow != 0 {
+            eprintln!(
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={} args={} overflow={overflow:#x}",
+                stage.label(),
+                counts[canonical_passes::CANONICAL_COUNT_ROUND],
+                counts[0],
+                counts[1],
+            );
+        }
+        if pending == 0 || batch + 1 == batches {
+            break;
+        }
+        canonical.record_batch(encoder, stage)?;
+    }
+    if stage == CanonicalStage::Late && canonical_passes::canonical_validation_enabled() {
+        canonical.record_validation(encoder)?;
+        let words = submit_and_read_u32s(
+            device,
+            queue,
+            encoder,
+            validation_readback,
+            "type_check.canonical.validation",
+        )?;
+        eprintln!("{}", canonical_passes::canonical_validation_report(&words));
+    }
+    Ok(())
+}
+
 impl GpuTypeChecker {
     /// Creates a type checker from the shared compiler GPU device wrapper.
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
@@ -169,8 +243,8 @@ impl GpuTypeChecker {
                 if key.starts_with("type_checker/program_evidence/") {
                     return false;
                 }
-                if key == compiler_graph::CANONICAL_VALIDATE_KERNEL
-                    && !compiler_graph::canonical_validation_enabled()
+                if canonical_passes::CANONICAL_DEBUG_KERNELS.contains(&key)
+                    && !canonical_passes::canonical_validation_enabled()
                 {
                     return false;
                 }
@@ -207,6 +281,16 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
         let call_inference_readback = readback_u32s(device, "rb.type_check.calls.inference", 2);
+        let canonical_counts_readback = readback_u32s(
+            device,
+            "rb.type_check.canonical.counts",
+            canonical_passes::CANONICAL_COUNT_WORDS,
+        );
+        let canonical_validation_readback = readback_u32s(
+            device,
+            "rb.type_check.canonical.validation",
+            canonical_passes::CANONICAL_VALIDATION_WORDS,
+        );
         let preflight_graph = preflight::TypeCheckPreflightGraph::new(device, &passes)?;
 
         Ok(Self {
@@ -218,6 +302,8 @@ impl GpuTypeChecker {
             status_readback,
             call_inference_state,
             call_inference_readback,
+            canonical_counts_readback,
+            canonical_validation_readback,
             preflight_graph,
             resident_workspace: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
@@ -560,6 +646,10 @@ impl GpuTypeChecker {
             retain_callable_owners: u32::from(hir_items.semantic_interface_required),
             trait_obligation_mode,
             authorized_replay_callable,
+            canonical_library_id: dependency_pages
+                .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_library_id()),
+            canonical_unit_id: dependency_pages
+                .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_unit_id()),
         };
         self.params_buf
             .write(queue, 0, &type_check_params_bytes(&params));
@@ -637,8 +727,12 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.workspace_ready");
             }
-            queue.write_buffer(
-                &bind_groups.if_depth_params,
+            // Both uniforms are suballocated from the workspace uniform arena.
+            // Writing through the view puts the bytes at its own offset; a raw
+            // `queue.write_buffer(.., 0, ..)` overwrote the arena's first
+            // occupant, the constant storage plan.
+            bind_groups.if_depth_params.write(
+                queue,
                 0,
                 &uniform_bytes(&IfDepthParams {
                     n_tokens: token_capacity,
@@ -647,8 +741,8 @@ impl GpuTypeChecker {
                     scan_step: 0,
                 }),
             );
-            queue.write_buffer(
-                &bind_groups.fn_params,
+            bind_groups.fn_params.write(
+                queue,
                 0,
                 &uniform_bytes(&FnContextParams {
                     n_tokens: token_capacity,
@@ -802,7 +896,21 @@ impl GpuTypeChecker {
                 .bind_groups
                 .project_type_instances
                 .record(encoder)?;
+            let canonical = &bind_groups.semantic_projection.canonical_types;
+            canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                // Each page interns its signature types while it is resident.
+                let intern_page = |encoder: &mut wgpu::CommandEncoder| {
+                    record_canonical_types(
+                        device,
+                        queue,
+                        encoder,
+                        canonical,
+                        CanonicalStage::Dependency,
+                        &self.canonical_counts_readback,
+                        &self.canonical_validation_readback,
+                    )
+                };
                 let record_projection = |encoder: &mut wgpu::CommandEncoder| {
                     record_dependency_type_index(
                         &self.passes,
@@ -812,7 +920,8 @@ impl GpuTypeChecker {
                     )?;
                     dependency_visibility
                         .project_type_instances_group
-                        .record(encoder)
+                        .record(encoder)?;
+                    intern_page(encoder)
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                     record_each_dependency_page(device, queue, encoder, pages, record_projection)?;
@@ -820,6 +929,9 @@ impl GpuTypeChecker {
                     dependency_visibility
                         .project_type_instances_group
                         .record(encoder)?;
+                    if dependency_pages.is_some() {
+                        intern_page(encoder)?;
+                    }
                 }
             }
             module_path
@@ -990,6 +1102,15 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_decl_refs.done");
             }
+            record_canonical_types(
+                device,
+                queue,
+                encoder,
+                &bind_groups.semantic_projection.canonical_types,
+                CanonicalStage::Early,
+                &self.canonical_counts_readback,
+                &self.canonical_validation_readback,
+            )?;
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }
@@ -1843,7 +1964,15 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .generic_call_results
                 .record(encoder)?;
-            bind_groups.semantic_projection.canonical_types.record(encoder)?;
+            record_canonical_types(
+                device,
+                queue,
+                encoder,
+                &bind_groups.semantic_projection.canonical_types,
+                CanonicalStage::Late,
+                &self.canonical_counts_readback,
+                &self.canonical_validation_readback,
+            )?;
             bind_groups
                 .semantic_projection
                 .generic_native_words

@@ -30,6 +30,8 @@ pub(crate) struct GpuDependencyInterfaceState {
 pub(crate) struct GpuDependencyInterfacePages {
     state: GpuDependencyInterfaceState,
     pages: Vec<PackedGpuDependencyInterfacePage>,
+    current_library_id: u32,
+    current_unit_id: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -490,7 +492,7 @@ impl GpuDependencyInterfacePages {
             .as_ref()
             .expect("dependency resident state allocated")
             .clone();
-        let pages = Self { state, pages };
+        let pages = Self { state, pages, current_library_id, current_unit_id };
         pages.write(queue, 0)?;
         Ok(pages)
     }
@@ -509,6 +511,15 @@ impl GpuDependencyInterfacePages {
 
     pub(crate) fn len(&self) -> usize {
         self.pages.len()
+    }
+
+    /// The (library, unit) of the job these pages were prepared for.
+    pub(crate) fn current_library_id(&self) -> u32 {
+        self.current_library_id
+    }
+
+    pub(crate) fn current_unit_id(&self) -> u32 {
+        self.current_unit_id
     }
 
     /// Empty pages still carry the owning unit identity. Test the current

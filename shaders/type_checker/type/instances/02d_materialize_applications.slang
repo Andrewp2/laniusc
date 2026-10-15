@@ -1,5 +1,6 @@
 import type_checker.dependencies.constant_view;
 #include "materialize_application_inputs.slang"
+#define MATERIALIZE_ROOT_CANDIDATES 1
 #include "materialize_application.slang"
 #include "expand_materialized_instance.slang"
 StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;

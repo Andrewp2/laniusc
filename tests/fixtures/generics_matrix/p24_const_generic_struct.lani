@@ -1,0 +1,4 @@
+struct Buffer<T, const N: usize> { values: [T; N] }
+fn keep_length<T, const M: usize>(value: [T; M]) -> [T; M] { return value; }
+fn first<T, const N: usize>(b: Buffer<T, N>) -> T { return b.values[0]; }
+fn main() -> i32 { let b: Buffer<i32, 3> = Buffer<i32, 3> { values: [40, 1, 1] }; let v: [i32; 3] = keep_length(b.values); return first(b) + v[1] + v[2]; }

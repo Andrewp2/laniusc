@@ -1,13 +1,26 @@
-// Reset canonical interning state for one type-check job. One lane per hash
-// slot; row, atom and record clears share the same lanes.
-import type_checker.canonical.canonical_types;
-import type_checker.checked_type_graph;
-import type_checker.constant_atoms;
-import constant_value;
-import primitive_types;
+// Reset canonical interning for one type-check job (docs/canonical-type-ids.md).
+// One lane per hash slot; candidate and counter resets share the lanes.
+import type_checker.canonical.canonical_api;
 
-// Debug validation counters (90_validate); cleared here so every job's
-// validation starts from zero whether or not the validator is recorded.
+// The type-check params prefix through the job's unit identity.
+struct Params
+{
+    uint n_tokens;
+    uint source_len;
+    uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
+    uint dependency_interfaces_present;
+    uint retain_callable_owners;
+    uint trait_obligation_mode;
+    uint authorized_replay_callable;
+    uint canonical_library_id;
+    uint canonical_unit_id;
+};
+ConstantBuffer<Params> gParams;
+
+// Debug validation counters (88_validate_table, 90_validate); cleared so a
+// job's validation starts from zero whether or not a validator is recorded.
 RWStructuredBuffer<uint> canonical_validation;
 
 [shader("compute")]
@@ -15,29 +28,21 @@ RWStructuredBuffer<uint> canonical_validation;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = dtid.x + dtid.y * 16776960u;
-    if (i < canonical_slot_capacity()) canonical_ct_slot[i] = 0u;
+    if (i < ct_slot_capacity()) ct_slot[i] = 0u;
+    if (i < ct_row_capacity()) canonical_row[i] = CT_PENDING;
+    if (i < ct_atom_capacity()) canonical_atom[i] = CT_PENDING;
+    if (i < ct_projection_capacity()) canonical_projection[i] = CT_PENDING;
+    if (i < ct_dependency_capacity()) canonical_dependency_type[i] = CT_PENDING;
     uint count; uint stride;
-    canonical_row.GetDimensions(count, stride);
-    if (i < count) canonical_row[i] = CANON_PENDING;
-    canonical_atom.GetDimensions(count, stride);
-    if (i < count) canonical_atom[i] = CANON_PENDING;
-    canonical_cand_state.GetDimensions(count, stride);
-    if (i < count) canonical_cand_state[i] = CAND_IDLE;
-    if (i < canonical_record_capacity())
-    {
-        // Scalar codes are their own canonical IDs.
-        bool scalar = i >= 1u && i <= SCALAR_USIZE;
-        canonical_ct_key_a[i] = scalar ? uint4(CT_SCALAR, i, 0u, 0u) : uint4(0u, 0u, 0u, 0u);
-        canonical_ct_key_b[i] = uint4(0u, 0u, 0u, 0u);
-        canonical_ct_rep[i] = 0xffffffffu;
-    }
     canonical_validation.GetDimensions(count, stride);
     if (i < count) canonical_validation[i] = 0u;
-    if (i == 0u)
+    if (i < CT_COUNT_WORDS)
     {
-        canonical_counts[0u] = CANON_FIRST_DYNAMIC;
-        canonical_counts[1u] = 0u;
-        canonical_counts[2u] = 0u;
-        canonical_counts[3u] = 0u;
+        uint value = 0u;
+        if (i == CT_COUNT_NEXT_RECORD) value = ct_dynamic_base();
+        if (i == CT_COUNT_PENDING) value = ct_candidate_count();
+        if (i == CT_COUNT_LIBRARY) value = gParams.canonical_library_id;
+        if (i == CT_COUNT_UNIT) value = gParams.canonical_unit_id;
+        ct_counts[i] = value;
     }
 }
