@@ -38,16 +38,6 @@ impl Arena {
 
     pub(super) fn workspace(&self) -> &WorkspaceLease { self.slot.lease() }
 
-    /// Recipe/layout wire formats require an exact logical binding extent.
-    /// Retained allocation capacity remains invisible to those validators.
-    pub(super) fn logical_binding(&self) -> wgpu::BindingResource<'_> {
-        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-            buffer: &self.buffer.buffer,
-            offset: self.buffer.byte_offset,
-            size: std::num::NonZeroU64::new(byte_offset(self.logical_words.max(1))),
-        })
-    }
-
     /// Preserve the old logical prefix before moving table slices. A rare
     /// physical growth copies that prefix once; ordinary submissions copy only
     /// the serializer's relocated ranges, never the entire history.

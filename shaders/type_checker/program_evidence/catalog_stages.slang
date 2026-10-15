@@ -116,25 +116,37 @@ public void pev_catalog_build_implementations(uint local)
     if (!pev_catalog_is_building()) return;
     uint implementations; uint row;
     if (!pev_catalog_count(9u, implementations) || !pev_dispatch_row(local, implementations, row)) return;
-    uint admitted;
+    uint admitted; uint coarse_hash = 0u; uint exact_hash = 0u; bool exact = false;
+    EvidenceStatus status;
     if (!pev_output_read(1u, row, 0u, admitted) || admitted != PEV_VALID)
-    { pev_catalog_failure(pev_invalid(15u, row, PEV_INVALID)); return; }
-    uint coarse_hash; uint exact_hash = 0u; bool exact = false;
-    EvidenceStatus status = pev_hash_coarse_implementation(row, coarse_hash);
-    if (status.state == PEV_VALID) status = pev_exact_implementation_eligible(row, exact);
-    if (status.state == PEV_VALID && exact) status = pev_hash_admitted_implementation(row, exact_hash);
-    if (status.state != PEV_VALID) { pev_write_status(1u, row, status); pev_catalog_failure(status); return; }
+        status = pev_invalid(15u, row, PEV_INVALID);
+    else
+    {
+        if (pev_bind_scratch(local, row, status)) status = pev_hash_coarse_implementation(row, coarse_hash);
+        if (status.state == PEV_VALID) status = pev_exact_implementation_eligible(row, exact);
+        if (status.state == PEV_VALID && exact) status = pev_hash_admitted_implementation(row, exact_hash);
+        if (status.state != PEV_VALID) pev_write_status(1u, row, status);
+    }
     // All definitions participate in coarse selection/coherence. Only closed,
-    // unconditional definitions enter the existing exact fast path.
-    pev_publish_coarse_implementation(row, coarse_hash);
-    if (exact) pev_publish_index(row, exact_hash, row);
+    // unconditional definitions enter the existing exact fast path. Each
+    // publication, or the failure above, is reported in order at one site.
+    uint publications = status.state != PEV_VALID ? 0u : exact ? 2u : 1u;
+    [loop]
+    for (uint index = 0u; ; index++)
+    {
+        if (index < publications)
+            status = pev_publish_implementation_index(row, index, index == 0u ? coarse_hash : exact_hash);
+        pev_catalog_failure(status);
+        if (index + 1u >= max(publications, 1u)) return;
+    }
 }
 public void pev_catalog_check_coherence(uint local)
 {
     if (!pev_catalog_is_building()) return;
     uint implementations; uint row;
     if (!pev_catalog_count(9u, implementations) || !pev_dispatch_row(local, implementations, row)) return;
-    EvidenceStatus status = pev_check_impl_coherence(row);
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = pev_check_impl_coherence(row);
     pev_write_status(1u, row, status);
     pev_catalog_failure(status);
 }

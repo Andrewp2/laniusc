@@ -257,6 +257,11 @@ define_token_kinds! {
     ConstantArgumentPlus,
     ConstantArgumentMinus,
     ArrayLengthIdent,
+
+    // keyword retag from the `as` identifier lexeme (cast operator)
+    As,
+    // parser retags of identifiers that name a cast target type
+    CastTypeIdent,
 }
 
 impl TokenKind {
@@ -276,7 +281,8 @@ impl TokenKind {
             | Self::BoundTypeIdent
             | Self::RangeEndIdent
             | Self::PathGenericIdent
-            | Self::ArrayLengthIdent => Self::Ident,
+            | Self::ArrayLengthIdent
+            | Self::CastTypeIdent => Self::Ident,
             Self::CallLParen
             | Self::GroupLParen
             | Self::ParamLParen
@@ -421,7 +427,7 @@ mod tests {
         let is_raw_kind = |kind: TokenKind| {
             matches!(
                 kind as u32,
-                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195
             )
         };
 

@@ -1,8 +1,12 @@
-// Follow a bounded run of type-root links per dispatch.
+// Follow a bounded run of type-root links per dispatch, for the compacted type
+// nodes only. Every other node keeps the record its init pass seeded into both
+// ping-pong buffers.
 
 struct Params { uint n; uint uses_status_count; };
 ConstantBuffer<Params> gHirType;
 StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> hir_list_rank_node;
+StructuredBuffer<uint> hir_list_rank_count;
 StructuredBuffer<uint> hir_type_root_link_in;
 StructuredBuffer<uint> hir_type_root_owner_in;
 RWStructuredBuffer<uint> hir_type_root_link_out;
@@ -23,11 +27,13 @@ uint active_node_count()
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint node = tid.x + tid.y * MAX_GROUPS_X * WG_SIZE;
+    uint row = tid.x + tid.y * MAX_GROUPS_X * WG_SIZE;
+    if (row >= gHirType.n || row >= hir_list_rank_count[0u]) return;
+    uint node = hir_list_rank_node[row];
     uint active = active_node_count();
-    if (node >= gHirType.n) return;
-    uint link = node < active ? hir_type_root_link_in[node] : INVALID;
-    uint owner = node < active ? hir_type_root_owner_in[node] : INVALID;
+    if (node >= active) return;
+    uint link = hir_type_root_link_in[node];
+    uint owner = hir_type_root_owner_in[node];
     for (uint hop = 0u; hop < LINKS_PER_STEP && link < active; ++hop)
     {
         uint ancestor_owner = hir_type_root_owner_in[link];

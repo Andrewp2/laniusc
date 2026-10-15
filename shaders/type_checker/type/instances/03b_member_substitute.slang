@@ -1,11 +1,8 @@
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
 // Publish the visible type of each already-substituted member field.
 // The chain pass applies receiver environments exactly once. Symbolic leaves
 // that remain belong to the enclosing generic body and await specialization.
-
+import type_checker.checked_type_graph;
 import status;
-import type_checker.concrete_type_closure;
 
 struct Params
 {
@@ -47,6 +44,14 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+// A checked instance reference outside any receiver scope: a type row.
+bool checked_row_reference(uint row)
+{
+    if (row >= checked_type_capacity()) return false;
+    uint kind = type_instance_kind[row];
+    return kind >= 1u && kind <= 4u;
+}
+
 uint type_ref_to_type_code(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
@@ -71,8 +76,8 @@ void publish_substituted_member_ref(uint member_token)
     // The chain pass already substituted each field in its receiver scope.
     // A surviving symbolic leaf belongs to the enclosing generic function;
     // substituting it again would confuse that function's slot with a field's.
-    if (tag == TYPE_REF_INSTANCE && !checked_scoped_reference(
-        tag, payload, INVALID, gParams.n_tokens, tag, payload))
+    // So the reference is published as it is; it only has to name a row.
+    if (tag == TYPE_REF_INSTANCE && !checked_row_reference(payload))
     {
         record_min_token_error(status, member_token, ERR_ASSIGN_MISMATCH, 0u);
         return;

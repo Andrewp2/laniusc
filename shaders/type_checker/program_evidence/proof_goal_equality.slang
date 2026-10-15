@@ -8,6 +8,7 @@ import type_checker.program_evidence.goal_operations;
 import type_checker.program_evidence.proof_store_abi;
 import type_checker.program_evidence.proof_term_graph;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_scratch;
 
 // A proof used by replay must belong to a prior fully accepted submission. An
 // admitted row in the current unfinished frontier does not authorize replay.
@@ -59,7 +60,7 @@ public EvidenceStatus pps_predicate_equals_goal(uint predicate, uint environment
         if (!pev_read_root(source_root, source) || (ordinal != 0u &&
             !pps_read2(PPS_TERM_ROOTS, low.w + ordinal - 1u, 0u, normalized)))
             return pev_invalid(1u, predicate, goal);
-        if (!scoped_type_refs_equal_graphs<ProgramEvidenceTypeGraph, SolverProofTermGraph>(
+        if (!scoped_type_refs_equal_graphs_scratch<ProgramEvidenceTypeGraph, SolverProofTermGraph>(
             source.x, source.y, environment, normalized.x, normalized.y, PEV_INVALID,
             input_nodes, solver_nodes, atoms)) return pev_ok();
     }

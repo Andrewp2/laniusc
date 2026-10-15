@@ -1,5 +1,88 @@
 # Compiler semantic contracts
 
+## Scalar casts (2026-10-15)
+
+`expr as T` converts one scalar value to another with Rust semantics:
+
+- Integer to integer: a narrower target keeps the low bits; a wider target
+  sign-extends a signed source and zero-extends an unsigned one. So an `i32`
+  -1 cast to `u32` is 4,294,967,295, 300 cast to `u8` is 44, an `i8` -1 cast
+  to `i32` is -1, and a `u8` 255 cast to `i8` is -1.
+- Integer to float rounds to nearest. Float to integer truncates toward zero,
+  saturates at the target's bounds, and maps NaN to zero. `f32` and `f64`
+  convert to each other.
+- `bool` to an integer gives 0 or 1. `char` to an integer gives its code point,
+  truncated to the target width, and `u8` to `char` gives the character with
+  that code point. `bool` and `char` also cast to themselves.
+- Anything else is `LNC0072` "invalid cast". That includes casts to `bool`,
+  `bool` or `char` to a float, any integer type other than `u8` to `char`,
+  and casts from or to a non-scalar type.
+
+A cast binds tighter than every binary operator and looser than unary
+operators: `-x as u32` is `(-x) as u32`, and `a * b as u8` is `a * (b as u8)`.
+Casts chain from left to right. The target is a type name, optionally
+qualified: `u32`, a local alias, or `lib::sizes::Length`. Generic
+applications, arrays, references, and a missing target are parse errors.
+
+Deviations from Rust:
+
+- `x as u32 < y` parses as a comparison. Rust rejects it because it reads `<`
+  as the start of generic arguments. After a qualified target, as in
+  `x as a::b < y`, the `<` can still be taken for a generic application, so
+  parenthesize the cast.
+- An unsuffixed integer literal is `i32`, so `97 as char` is rejected; Rust
+  infers `u8` there. Cast a `u8` value instead.
+- An unsuffixed float literal is `f32`, so `1.5 as f64` widens an `f32`.
+- There are no pointer, reference, enum-discriminant, or function casts.
+
+The parser builds a cast as HIR binary form 36: the operand on the left and the
+target type row on the right. The type checker gives the expression the target
+type and checks the source and target pair. Semantic LIR lowers it to `CONVERT`
+and records the checked source type. x86_64 emits a dedicated conversion
+sequence. The wasm backend does not support `CONVERT` yet. It stops with the
+generic `LNC0057` lowering error, not a dedicated diagnostic.
+
+A char literal has no semantic scalar type of its own, so `'Z' as u8` type
+checks but x86_64 rejects it with `LNC0017` (unsupported LIR opcode 3). Cast a
+char local or parameter instead. The fix is a `HIR_EXPR_CHAR` case in
+`expression_types/00_init.slang`'s `direct_result_type`.
+
+## Call inference termination (2026-10-15)
+
+Call inference repeats its passes until a round changes nothing. The host reads
+two things after each round: the round's change count and the status words. It
+stops in four ways:
+
+- **Converged.** The round changed nothing. The final passes then run with
+  inference closed.
+- **Error recorded.** The check fails whatever later rounds would infer, and an
+  unresolved callee or type can keep producers changing forever. The loop stops
+  at the first round with an error and the remaining passes run as usual. The
+  check then reports the status words from the moment inference stopped,
+  because the later passes ran on facts inference never finished, and their
+  errors can be consequences of the stop. So a program with several errors
+  reports the smallest-token error recorded by the round in which the first
+  error appeared.
+- **Depth limit.** This is a language limit, like Rust's `recursion_limit`.
+  - Inference may take at most `CALL_INFERENCE_DEPTH_LIMIT` (1024) rounds. A
+    chain of dependent calls usually resolves one link per round, so a longer
+    chain needs a type annotation to break it.
+  - Reaching the limit is LNC0047 GenericInstantiationBoundary detail 17.
+  - Programs under the limit always pass, and the worst case is about 15 s
+    (1024 rounds of ~15 ms on 740 KB).
+- **Change bound.** Inference is monotone, so each fact changes a bounded
+  number of times. The changes of all rounds together are therefore at most
+  `CALL_INFERENCE_CHANGES_PER_SLOT` (32) per HIR node and token slot, per
+  dependency page. A larger total means some producer rewrites facts without
+  progress, which is a compiler bug (detail 16).
+
+A producer counts a change only when the fact's value changes. Rows with one
+canonical ID are one value. Two producers can publish the same application as
+different checked rows: the nested-literal pass its indexed field row, and the
+canonical context path the realized row of the ID. Comparing rows there instead
+of IDs counted a change every round (`calls/03k3_project_record_contexts`, the
+same rule as `calls/03e_materialize_return_types`).
+
 ## Semantic replay identity, widths, and original recipes (2026-10-11)
 
 A replay seed owns a closed semantic type graph and literal constant arguments.
@@ -1095,10 +1178,10 @@ Counts, retained logs, and remaining language/runtime dependencies are in
 | Raw delimiter structure and semantic roles | `parser/tokens/delimiter_match/01_depth_blocks.slang`, `parser/tokens/delimiter_match/02_build_min_tree.slang`, `parser/tokens/delimiters/04_owner_apply.slang`, `parser/tokens/value_path_type_arguments.slang`, `parser/tokens/bracket/01_kinds.slang` | Matching depths and hierarchy publish before brace ownership; lost condition owners use matching parentheses. Constructor braces and value-path array arguments share complete raw angle evidence. Bracket roles consume statement context in a later dispatch. |
 | Ordered source applications | `parser/hir/type/arg/links.slang`, `parser/hir/canonical/type_args/{mark,scatter}.slang`, `type/instances/named_application_owner.slang`, `type/instances/01b_collect_named_instances.slang`, `type/instances/01e_collect_named_arg_refs.slang`, `checked_record_constructor_reference.slang` | List identity and applying name token survive ranking. Weighted scan and ordinal scatter allocate independent contiguous ranges. Constructors/types apply the final segment; associated paths apply the receiver segment. Explicit record actuals survive context and strict validation. |
 | Explicit callable binding and admission | `calls/03a0_bind_explicit_applications.slang`, `calls/explicit_dependency_binding.slang`, `calls/explicit_call_environment.slang`, `calls/03a8_validate_explicit_applications.slang`, `semantic/features/01_dispatch_args.slang`, `CallBindGroups`, resident recording | Source order maps only the callable's own header to lexical slots; receiver domains remain separate. Immutable caller-side checked references feed inference and final validation. Arity, unsupported kinds, and conflicting types reject before publication. Dispatch reads actual parser counts, and final retention supplies native specialization. |
-| Method receiver applicability | `methods/lookup.slang`, `methods/receiver_pattern.slang`, `methods/receiver_graph.slang`, `scoped_type_constraints.slang`, `dependencies/canonical_field_types.slang`, `calls/03e_materialize_return_types.slang` | Indexes select nominal/name candidates. Complete local or canonical patterns decide matches and preserve repeated type/constant leaves. Accepted bindings feed the ordinary call environment; duplicate and ambiguous methods reject explicitly. |
-| Checked type identity and structural constraints | `checked_type_graph.slang`, `checked_scoped_types.slang`, `scoped_reference_lookup.slang`, `scoped_type_equality.slang`, `scoped_type_hash.slang`, `calls/parameter_type_pattern.slang`, `dependencies/canonical_field_types.slang` | Argument collection, claim emission, result constraints, and interface decoding consume complete checked references. Canonical-to-checked lookup uses hashes only to select candidates and complete equality to decide. Scalar caches cannot decide generic equality. |
+| Method receiver applicability | `methods/lookup.slang`, `methods/receiver_graph.slang`, `match/ct_match.slang`, `dependencies/canonical_field_types.slang`, `calls/03e_materialize_return_types.slang` | Indexes select nominal/name candidates. Complete local or canonical patterns decide matches and preserve repeated type/constant leaves. Accepted bindings feed the ordinary call environment; duplicate and ambiguous methods reject explicitly. |
+| Checked type identity and structural constraints | `checked_type_graph.slang`, `checked_scoped_types.slang`, `scoped_reference_lookup.slang`, `scoped_type_equality.slang`, `scoped_type_hash.slang`, `calls/argument_pattern_ids.slang`, `match/ct_match.slang`, `dependencies/canonical_field_types.slang` | Argument collection, claim emission, result constraints, and interface decoding consume complete checked references. Canonical-to-checked lookup uses hashes only to select candidates and complete equality to decide. Scalar caches cannot decide generic equality. |
 | Expected expression context | `argument_context.slang`, `declared_expression_context.slang`, `calls/03k_project_argument_contexts.slang`, `calls/array_shape_context.slang`, `calls/03k1_project_literal_contexts.slang`, `calls/03k3_project_record_contexts.slang`, `array_literal_expected.slang` | Expressions consume retained complete parameter patterns and declaration/return/field context. Eligible scalar/array integer literals, bare records, and match arms receive context in both inference facts and final semantic types; known values and explicit applications retain their actual types. |
-| Lexical parameter identity and substitution | `type/instances/lexical_parameter_lookup.slang`, `constant_constraints.slang`, `calls/checked_constant_environment.slang`, `type_checker/generic_calls.rs`, `compiler/semantic_interface.rs` | Declaration uses, structural length constraints, export/import, required binding checks, retention, and replay preserve exact parameter ownership and separate type/constant domains. |
+| Lexical parameter identity and substitution | `type/instances/lexical_parameter_lookup.slang`, `match/ct_match.slang`, `calls/checked_constant_environment.slang`, `type_checker/generic_calls.rs`, `compiler/semantic_interface.rs` | Declaration uses, structural length constraints, export/import, required binding checks, retention, and replay preserve exact parameter ownership and separate type/constant domains. |
 | Accepted result environments | `calls/contextual_call_environment.slang`, `calls/03a4b_contextual_result_requests.slang`, `dependencies/08a_validate_call_results.slang` | Declaration result matching publishes independent type/constant masks and references. Expected-context readers prefer these facts; argument-only readers preserve actual argument evidence. Final validation compares accepted call results and checks every argument against the closed environment. |
 | Constant value facts and body closure | `visible/04_hir_names.slang`, `type/instances/01f_decl_refs.slang`, `semantic/artifact/00b_local_const_references.slang`, `codegen/lir/semantic/function_templates.slang` | Value lookup preserves lexical declaration identity and declared types. Bound values execute; symbolic constant uses keep bodies pending until concrete replay. Mutation and noninteger array lengths reject explicitly. |
 | Concrete value layout and native storage capabilities | `concrete_value_layout.slang`, `codegen/lir/semantic/concrete_struct_layout.slang`, `codegen/lir/x86/storage_layout.slang` | Field ranges, copies, address generation, byte counting, and emission consume concrete widths and explicit storage conventions. Incompatible borrowing rejects before ELF publication. |
@@ -1159,9 +1242,10 @@ the other argument claims. The provider does not add HIR buffers to other graph
 consumers or weaken complete type equality.
 
 Array dimensions are parser-owned facts even when a literal's element type is
-pending. `array_shape_context.slang` walks matching literal/pattern array levels,
-materializes the complete leaf once under the accepted environment, and wraps
-that leaf in the actual dimensions. The resulting relation is optional literal
+pending. `calls/03k_project_argument_contexts.slang` walks matching
+literal/pattern array levels by canonical ID, substitutes the element pattern
+once under the accepted environment, and wraps the result in the actual
+dimensions. The resulting relation is optional literal
 context. It does not replace the declaration pattern or publish accepted claims.
 Complete matching still rejects inconsistent dimensions, element types, and
 repeated parameters. An empty outer array cannot infer an unknown inner
@@ -1216,8 +1300,9 @@ constant-length nodes, interface normalization, and replay share that lookup.
 Substitution applies once: an accepted argument is already in caller scope.
 
 Constant bindings retain either a literal length, including zero, or the exact
-caller parameter token. `constant_constraints.slang` owns their structural
-comparison and inference rules for local and imported patterns. Literal values
+caller parameter token. `match/ct_match.slang` owns their structural
+comparison and inference rules for local and imported patterns, on canonical
+IDs. Literal values
 and parameter identities never share an untagged value field. Type and constant
 slots have independent 32-parameter limits, enforced when declarations publish
 their slots, including unused parameters. Invalid scope and resource exhaustion

@@ -396,6 +396,14 @@ impl GpuParser {
             timer_ref,
         )?;
         self.record_token_file_ids(encoder, bufs, token_file_id_buf, token_capacity)?;
+        // Start the GPU on the workspace clear and token kinds while the host
+        // records (and finishes) the LL(1) and HIR passes.
+        crate::gpu::passes_core::submit_recorded_prefix(
+            &self.device,
+            &self.queue,
+            encoder,
+            "compile.parser.tokens",
+        );
         self.record_ll1_resident_passes(
             encoder,
             bufs,

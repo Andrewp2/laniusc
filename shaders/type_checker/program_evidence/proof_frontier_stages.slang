@@ -159,11 +159,26 @@ public void pps_stage_commit_work()
 public void pps_stage_index_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_insert_work(row)); }
 public void pps_stage_resolve_work(uint local)
-{ uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_resolve_work(row)); }
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_resolve_work(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_select_work(uint local)
-{ uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_select_work(row)); }
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_select_work(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_admit_substitutions(uint local)
-{ uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_admit_selected_work(row)); }
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_WORK, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_admit_selected_work(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_admit_binding_rows(uint local)
 { uint row; if (pps_stage_row(local, PPS_BINDINGS, row)) pev_batch_failure(pps_admit_binding_row(row)); }
 public void pps_stage_commit_substitutions()
@@ -196,9 +211,19 @@ public void pps_stage_link_requirements(uint local)
 public void pps_stage_emit_ready_proofs(uint local)
 { uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) pev_batch_failure(pps_emit_ready_proof(row)); }
 public void pps_stage_admit_implementation_proofs(uint local)
-{ uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) pev_batch_failure(pps_admit_ready_implementation_proof(row)); }
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_admit_ready_implementation_proof(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_admit_assumption_proofs(uint local)
-{ uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) pev_batch_failure(pps_admit_ready_assumption_proof(row)); }
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_admit_ready_assumption_proof(row);
+    pev_batch_failure(status);
+}
 public void pps_stage_admit_proof_edge_rows(uint local)
 { uint row; if (pps_stage_row(local, PPS_PROOF_EDGES, row)) pev_batch_failure(pps_admit_proof_edge_row(row)); }
 public void pps_stage_commit_proofs()
@@ -218,4 +243,9 @@ public void pps_stage_commit_queue()
     pev_batch_failure(pps_commit_tables(tables, 1u));
 }
 public void pps_stage_publish_roots(uint local)
-{ uint row; if (pps_stage_row(local, PPS_ROOT_LINKS, row)) pev_batch_failure(pps_publish_root(row)); }
+{
+    uint row; EvidenceStatus status;
+    if (!pps_stage_row(local, PPS_ROOT_LINKS, row)) return;
+    if (pev_bind_scratch(local, row, status)) status = pps_publish_root(row);
+    pev_batch_failure(status);
+}

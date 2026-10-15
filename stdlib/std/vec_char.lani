@@ -113,7 +113,7 @@ pub fn try_push(value: VecChar, item: char) -> VecChar {
         }
     }
     let elements: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item;
+    let raw_item: i32 = item as i32;
     elements[grown.length] = raw_item;
     return VecChar { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
 }
@@ -213,7 +213,7 @@ pub fn try_set(value: VecChar, index: i32, item: char) -> bool {
         return false;
     }
     let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = item;
+    let raw_item: i32 = item as i32;
     elements[index] = raw_item;
     return true;
 }
@@ -244,7 +244,7 @@ pub fn lower_bound(value: VecChar, needle: char) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_bits: i32 = needle;
+    let needle_bits: i32 = needle as i32;
     return core::u32_cells::lower_bound(cells, value.length, needle_bits);
 }
 
@@ -253,7 +253,7 @@ pub fn upper_bound(value: VecChar, needle: char) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_bits: i32 = needle;
+    let needle_bits: i32 = needle as i32;
     return core::u32_cells::upper_bound(cells, value.length, needle_bits);
 }
 

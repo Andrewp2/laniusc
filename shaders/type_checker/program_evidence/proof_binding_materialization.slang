@@ -34,14 +34,14 @@ public struct OwnedBindingCheckSink : IProofNormalizationSink
             ? pps_read8(PPS_TERM_NODES, row, low, high)
             : pps_read_pending8(PPS_TERM_NODES, row, low, high));
     }
-    public static bool begin_node(uint row, uint4 expected, uint4 unused)
+    public static bool begin_node(uint mode, uint row, uint4 expected, uint4 unused)
     {
         uint4 low; uint4 high;
         if (!read(row, low, high) || any(low != expected)) return false;
         return low.x == 6u ? all(high == uint4(0u, 0u, 0u, 0u)) :
             low.x == 5u && all(high.zw == uint2(0u, 0u));
     }
-    public static bool set_child(uint row, uint ordinal, uint2 expected)
+    public static bool set_child(uint mode, uint row, uint ordinal, uint2 expected)
     {
         uint4 low; uint4 high;
         return ordinal == 0u && read(row, low, high) && low.x == 5u && all(high.xy == expected);
@@ -56,20 +56,38 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
     bool require_closed, uint4 allocation, out uint2 normalized, out bool closed)
 {
     normalized = uint2(0u, PEV_INVALID); closed = false;
+    uint2 leaf; bool constant;
+    EvidenceStatus status = pps_binding_request_leaf(request, parameter, allocation, leaf, constant);
+    if (status.state != PEV_VALID) return status;
+    status = pps_admit_term(leaf, visible_owner,
+        constant ? PEV_ADMITTED_DOMAIN_CONSTANT : PEV_ADMITTED_DOMAIN_TYPE, require_closed, closed);
+    if (status.state != PEV_VALID) return status;
+    return pps_binding_request_targets<Sink>(request, parameter, allocation, leaf, constant,
+        normalized);
+}
+// The request's leaf, admitted in the constant domain for a constant parameter.
+public EvidenceStatus pps_binding_request_leaf(OwnedConstraintBindingRequest request,
+    uint parameter, uint4 allocation, out uint2 leaf, out bool constant)
+{
+    leaf = request.reference.yz; constant = false;
     uint4 parameter_atom;
     if (request.reference.x != 1u || request.target_count >= PEV_DEPTH_LIMIT ||
         request.target_count != allocation.y || any(allocation.zw != uint2(0u, 0u)) ||
         (allocation.y == 0u && allocation.x != 0u) ||
         !pev_read_admitted_parameter(parameter, parameter_atom) || parameter_atom.z > 1u)
         return pev_invalid(68u, parameter, request.reference.z);
-    bool constant = parameter_atom.z == 1u;
-    uint2 leaf = request.reference.yz;
+    constant = parameter_atom.z == 1u;
     if ((!constant && request.target_count != 0u) ||
         (constant && leaf.x != 0x80000001u && leaf.x != 0x80000002u))
         return pev_invalid(68u, parameter, leaf.y);
-    EvidenceStatus status = pps_admit_term(leaf, visible_owner,
-        constant ? PEV_ADMITTED_DOMAIN_CONSTANT : PEV_ADMITTED_DOMAIN_TYPE, require_closed, closed);
-    if (status.state != PEV_VALID) return status;
+    return pev_ok();
+}
+// After the leaf's admission: its scalar, then each owned target row.
+public EvidenceStatus pps_binding_request_targets<Sink : IProofNormalizationSink>(
+    OwnedConstraintBindingRequest request, uint parameter, uint4 allocation, uint2 leaf,
+    bool constant, out uint2 normalized)
+{
+    normalized = uint2(0u, PEV_INVALID);
     uint3 value = uint3(0u, 0u, 0u);
     bool concrete = constant && leaf.x == 0x80000001u;
     uint scalar = 0u;
@@ -77,13 +95,13 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
     {
         scalar = pps_constant_reference_scalar(leaf);
         if (concrete && !pps_constant_value(leaf.y, value)) return pev_invalid(68u, parameter, leaf.y);
-        uint result_scalar = request.target_count == 0u ? scalar : request.target_scalars[0u];
+        uint result_scalar = request.target_count == 0u ? scalar : owned_constraint_target(request.targets, 0u);
         if (result_scalar != pev_constant_parameter_scalar(parameter)) return pev_invalid(68u, parameter, scalar);
     }
     normalized = leaf;
     for (uint remaining = request.target_count; remaining != 0u; remaining--)
     {
-        uint index = remaining - 1u; uint target = request.target_scalars[index];
+        uint index = remaining - 1u; uint target = owned_constraint_target(request.targets, index);
         if (!scalar_is_integer(scalar) || !scalar_is_integer(target) || allocation.x > PEV_INVALID - index)
             return pev_invalid(68u, parameter, target);
         uint row = allocation.x + index;
@@ -92,14 +110,14 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
             uint count; uint3 fitted;
             if (!constant_value_to_count(value, count) || !constant_value_from_count(count, target, fitted))
                 return pev_invalid(66u, parameter, target);
-            if (!Sink.begin_node(row, uint4(6u, fitted), uint4(0u, 0u, 0u, 0u)))
+            if (!Sink.begin_node(0u, row, uint4(6u, fitted), uint4(0u, 0u, 0u, 0u)))
                 return pev_invalid(68u, parameter, row);
             value = fitted; normalized = uint2(0x80000001u, row);
         }
         else
         {
-            if (!Sink.begin_node(row, uint4(5u, target, 0u, 0u), uint4(0u, 0u, 0u, 0u)) ||
-                !Sink.set_child(row, 0u, normalized)) return pev_invalid(68u, parameter, row);
+            if (!Sink.begin_node(0u, row, uint4(5u, target, 0u, 0u), uint4(0u, 0u, 0u, 0u)) ||
+                !Sink.set_child(0u, row, 0u, normalized)) return pev_invalid(68u, parameter, row);
             normalized = uint2(0x80000003u, row);
         }
         scalar = target;

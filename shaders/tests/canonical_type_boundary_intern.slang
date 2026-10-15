@@ -14,7 +14,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
 {
     if (dtid.x != 0u) return;
     for (uint i = 0u; i < CT_COUNT_WORDS; i++) ct_counts[i] = 0u;
-    ct_counts[CT_COUNT_NEXT_RECORD] = ct_dynamic_base();
+    ct_counts[CT_COUNT_NEXT_RECORD] = CT_FIRST_RECORD;
     for (uint t = 0u; t < dependency_type_count(); t++)
     {
         uint id = canonical_intern_dependency(t, true);

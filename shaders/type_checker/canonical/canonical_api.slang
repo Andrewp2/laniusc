@@ -89,7 +89,10 @@ public static const uint CT_COUNT_FRONTIER = 5u;  // [5], [6]: ping-pong frontie
 public static const uint CT_COUNT_FINAL = 7u;     // nonzero: pending candidates become UNKNOWN
 public static const uint CT_COUNT_LIBRARY = 8u;   // job identity of local declarations
 public static const uint CT_COUNT_UNIT = 9u;
-public static const uint CT_COUNT_REINTERN = 10u; // nonzero: interned candidates were re-armed (03_rearm)
+// Nonzero: candidates were interned ahead of the early stage
+// (dependencies/14a), so its 03_rearm re-arms every interned candidate;
+// round 0 of 01_intern clears it.
+public static const uint CT_COUNT_EARLY_REARM = 10u;
 public static const uint CT_COUNT_WORDS = 16u;
 
 // Interning rounds per job: a candidate still pending at the limit becomes
@@ -100,6 +103,9 @@ public static const uint CT_OVERFLOW_TABLE = 1u;
 public static const uint CT_OVERFLOW_RECORDS = 2u;
 public static const uint CT_OVERFLOW_ARGS = 4u;
 public static const uint CT_OVERFLOW_ROUNDS = 8u;
+// 16 is CT_OVERFLOW_SUBST_MEMO (substitution/ct_subst.slang).
+// A round appended more pending candidates or nodes than a frontier list holds.
+public static const uint CT_OVERFLOW_FRONTIER = 32u;
 
 public uint ct_record_capacity()
 {
@@ -337,27 +343,11 @@ public uint ct_constant_ref(uint kind, uint payload)
 }
 
 // Interning candidates: rows [0, R), atoms [R, R + A), projections
-// [R + A, R + A + P). Candidate c owns the fixed record CT_FIRST_RECORD + c;
-// dependency node i owns the record after every candidate's; dynamic records
-// (count classes) follow.
+// [R + A, R + A + P). No candidate or dependency node owns a record: a key
+// takes one from ct_alloc_record only when the table lacks it (ct_intern_key).
 public uint ct_candidate_count()
 {
     return ct_row_capacity() + ct_atom_capacity() + ct_projection_capacity();
-}
-
-public uint ct_candidate_record(uint candidate)
-{
-    return CT_FIRST_RECORD + candidate;
-}
-
-public uint ct_dependency_record(uint index)
-{
-    return CT_FIRST_RECORD + ct_candidate_count() + index;
-}
-
-public uint ct_dynamic_base()
-{
-    return CT_FIRST_RECORD + ct_candidate_count() + ct_dependency_capacity();
 }
 
 public uint ct_candidate_state(uint candidate)
@@ -534,6 +524,42 @@ public uint ct_intern(uint record, CtKey key)
     return CT_UNKNOWN;
 }
 
+// Intern a built key (arguments already written) that owns no record. The
+// probe adopts an equal published record; only a key the table lacks takes a
+// record, allocated and stored once, at the first empty slot. A lane that
+// then loses that slot to an equal key keeps its record unpublished, and
+// nothing references it.
+public uint ct_intern_key(CtKey key)
+{
+    if (!key.ok) return CT_UNKNOWN;
+    uint slots = ct_slot_capacity();
+    uint slot = ct_probe_start(key.shash);
+    uint record = CT_NONE;
+    for (uint probe = 0u; probe < slots; probe++)
+    {
+        uint value = ct_slot[slot];
+        if (value == 0u)
+        {
+            if (record == CT_NONE)
+            {
+                record = ct_alloc_record();
+                if (record == CT_UNKNOWN) return CT_UNKNOWN;
+                ct_key_store(key, record, key.extra);
+            }
+            // Release: the complete record precedes its publication.
+            DeviceMemoryBarrier();
+            InterlockedCompareExchange(ct_slot[slot], 0u, record, value);
+            if (value == 0u) return record;
+        }
+        // Acquire: the occupant's record was complete before its CAS.
+        DeviceMemoryBarrier();
+        if (ct_record_matches(value, key)) return value;
+        slot = (slot + 1u) & (slots - 1u);
+    }
+    InterlockedOr(ct_counts[3u], CT_OVERFLOW_TABLE);
+    return CT_UNKNOWN;
+}
+
 // Find a published record equal to a stored key without publishing it.
 public uint ct_lookup(CtKey key)
 {
@@ -549,6 +575,51 @@ public uint ct_lookup(CtKey key)
         slot = (slot + 1u) & (slots - 1u);
     }
     return CT_NONE;
+}
+
+// Arguments of a key built with ct_key_fold only: no argument words are
+// reserved until the key turns out to be new, so a lookup that hits costs no
+// ct_args words. `arg(i)` must return the child that was folded at index i.
+public interface ICtKeyArgs
+{
+    uint arg(uint index);
+}
+
+// Find the published record equal to `key`, whose arguments are `args`
+// (not written to ct_args). CT_NONE on a miss, CT_UNKNOWN when !key.ok.
+public uint ct_lookup_with<A : ICtKeyArgs>(CtKey key, A args)
+{
+    if (!key.ok) return CT_UNKNOWN;
+    uint slots = ct_slot_capacity();
+    uint slot = ct_probe_start(key.shash);
+    uint arity = (key.head.x >> 8u) & 0xffu;
+    for (uint probe = 0u; probe < slots; probe++)
+    {
+        uint value = ct_slot[slot];
+        if (value == 0u) return CT_NONE;
+        // Acquire: the occupant's record was complete before its CAS.
+        DeviceMemoryBarrier();
+        if (value < ct_record_capacity() && all(ct_head[value] == key.head))
+        {
+            uint4 meta = ct_meta[value];
+            bool equal = all(meta.zw == key.shash);
+            for (uint i = 0u; i < arity && equal; i++)
+                equal = ct_args[meta.x + i] == args.arg(i);
+            if (equal) return value;
+        }
+        slot = (slot + 1u) & (slots - 1u);
+    }
+    return CT_NONE;
+}
+
+// Reserve the argument words of a key built with ct_key_fold only and write
+// `args` into them. False (key.ok cleared) on CT_OVERFLOW_ARGS.
+public bool ct_key_write_args<A : ICtKeyArgs>(inout CtKey key, A args)
+{
+    if (!ct_key_reserve_args(key)) return false;
+    uint arity = (key.head.x >> 8u) & 0xffu;
+    for (uint i = 0u; i < arity; i++) ct_args[key.arg_base + i] = args.arg(i);
+    return true;
 }
 
 // Whether `record` is in the table. A published record is never rewritten,

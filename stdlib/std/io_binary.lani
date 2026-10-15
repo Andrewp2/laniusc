@@ -12,7 +12,7 @@ pub fn write_u32(handle: i32, value: u32) -> i32 {
     let position: u32 = 0;
     while (position < length) {
         let digit: u8 = core::binary::byte_at_or_u32(value, position, 0);
-        let byte: i32 = digit;
+        let byte: i32 = digit as i32;
         let written: i32 = std::io::write_byte(handle, byte);
         if (written < 0) {
             return written;
@@ -22,7 +22,7 @@ pub fn write_u32(handle: i32, value: u32) -> i32 {
         }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 
 pub fn write_u16(handle: i32, value: u16) -> i32 {

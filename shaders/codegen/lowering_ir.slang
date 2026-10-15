@@ -819,6 +819,9 @@ static const uint X86_LIR_UNARY_NEG_I32 = 1u;
 static const uint X86_LIR_UNARY_NOT_BOOL = 2u;
 // IR_OPCODE
 static const uint X86_LIR_UNARY_NEG_FLOAT = 3u;
+// `value as T`. Operand c is the source scalar; metadata names the target.
+// IR_OPCODE
+static const uint X86_LIR_UNARY_CONVERT = 4u;
 // IR_OPCODE
 static const uint X86_LIR_BINARY_ADD_I32 = 1u;
 // IR_OPCODE

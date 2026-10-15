@@ -16,6 +16,7 @@ import type_checker.program_evidence.proof_normalization_sources;
 import type_checker.program_evidence.proof_goal_admission;
 import type_checker.program_evidence.proof_span_coverage;
 import type_checker.scoped_type_hash;
+import type_checker.scoped_type_scratch;
 
 // Zero-sized allocation spans have canonical first=0. Nonempty spans must be
 // wholly in this wave's reserved suffix, never in an immutable admitted prefix.
@@ -220,8 +221,8 @@ EvidenceStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uin
         // equality/hash/matching capability, even after this check succeeds.
         uint2 unused; bool candidate_closed; ProofNormalizationCounts candidate;
         ProofNormalizationReservation empty = (ProofNormalizationReservation)0;
-        status = pev_normalize_proof_root<CandidateProofTermGraph, CandidateProofTermGraph,
-            SolverProofBindings, SolverProofTermSink>(normalized, PEV_INVALID, owner,
+        status = pev_normalize_proof_root<SameProofNormalizationGraph<CandidateProofTermGraph>,
+            NoProofNormalizationBindings, NoProofNormalizationSink>(normalized, PEV_INVALID, owner,
                 pps_normalization_domain(ordinal), false, empty, unused, candidate_closed, candidate);
         if (status.state != PEV_VALID) return status;
         // Exact source replay above checks every allocated row. Folding a
@@ -368,14 +369,16 @@ public EvidenceStatus pps_hash_normalized_goal(uint work)
         uint2 root = goal.yz; uint root_hash;
         if (ordinal != 0u && !pps_read2(PPS_TERM_ROOTS, goal.w + ordinal - 1u, 0u, root))
             return pev_invalid(1u, work, ordinal);
-        if (!scoped_type_ref_hash<SolverProofTermGraph>(root.x, root.y, PEV_INVALID, nodes, atoms, root_hash))
+        if (!scoped_type_ref_hash_scratch<SolverProofTermGraph>(root.x, root.y, PEV_INVALID, nodes, atoms, root_hash))
             return pev_invalid(15u, work, ordinal);
         hash = scoped_type_hash_mix(hash, root_hash);
     }
     extra.y = hash;
     if (!pps_write8(PPS_GOALS, key.y, goal, extra)) return pev_invalid(1u, work, key.y);
+    // Admission rereads the row just written; its hash already covers these
+    // unchanged roots, so only the other admission checks remain.
     bool closed;
-    EvidenceStatus status = pps_admit_goal(key.y, key.x, closed);
+    EvidenceStatus status = pps_admit_goal_checked<RecordedGoalHash>(key.y, key.x, closed);
     if (status.state != PEV_VALID) return status;
     return pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_GOAL_VALIDATED) ?
         pev_ok() : pev_invalid(1u, work, PPS_WORK);

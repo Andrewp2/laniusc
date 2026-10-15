@@ -39,6 +39,57 @@ impl TypeCheckRecordHostTimer {
     }
 }
 
+/// The rejection a status buffer's words describe, if a pass recorded one.
+fn status_rejection(words: [u32; 4]) -> Option<GpuTypeCheckError> {
+    if words[0] != 0 {
+        return None;
+    }
+    if words[2] == 6 && words[3] & 0xffff_0000 == 0x474e_0000 {
+        return Some(GpuTypeCheckError::Rejected {
+            token: words[1],
+            code: GpuTypeCheckCode::GenericInstantiationBoundary,
+            detail: words[3] & 0xffff,
+        });
+    }
+    Some(GpuTypeCheckError::Rejected {
+        token: words[1],
+        code: GpuTypeCheckCode::from_u32(words[2]),
+        detail: words[3],
+    })
+}
+
+/// Change counts that repeat with a period of 1 to 4 usually mean producers
+/// rewrite facts between equal values. Long valid dependency chains give the
+/// same pattern, so this only feeds a traced run's warning; the cumulative
+/// change bound ends inference.
+struct CallInferenceRepeats {
+    recent: [u32; 4],
+    rounds: usize,
+    streak: [u32; 4],
+}
+
+impl CallInferenceRepeats {
+    fn new() -> Self {
+        Self { recent: [0; 4], rounds: 0, streak: [0; 4] }
+    }
+
+    /// Records one round's change count. True once a period has repeated for
+    /// `limit` rounds.
+    fn record(&mut self, changed: u32, limit: u32) -> bool {
+        let mut stalled = false;
+        for period in 1..=4usize {
+            let repeats =
+                self.rounds >= period && self.recent[(self.rounds - period) % 4] == changed;
+            let streak = &mut self.streak[period - 1];
+            *streak = if repeats { streak.saturating_add(1) } else { 0 };
+            stalled |= *streak >= limit;
+        }
+        self.recent[self.rounds % 4] = changed;
+        self.rounds += 1;
+        stalled
+    }
+}
+
 // Opt-in source fact dump only: no inference, normalization, or semantic writes.
 fn trace_range_inference(
     device: &wgpu::Device,
@@ -199,16 +250,17 @@ fn record_canonical_types(
         let wait_ms = batch_started.elapsed().as_secs_f64() * 1000.0;
         let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
-        let [record_capacity, argument_capacity, dynamic_base] = canonical.capacity();
+        let [record_capacity, argument_capacity, frontier_rows] = canonical.capacity();
         if trace || overflow != 0 {
+            // Records from 32 on are allocated; the frontier lengths are the
+            // last round's (the next round's input and its output so far).
             eprintln!(
-                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} dynamic={}/{} args={}/{argument_capacity} overflow={overflow:#x} scale={canonical_scale} wait_ms={wait_ms:.3}",
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} args={}/{argument_capacity} frontier={}/{frontier_rows} overflow={overflow:#x} scale={canonical_scale} wait_ms={wait_ms:.3}",
                 stage.label(),
                 counts[canonical_passes::CANONICAL_COUNT_ROUND],
-                counts[0],
-                counts[0].saturating_sub(dynamic_base),
-                record_capacity.saturating_sub(dynamic_base),
+                counts[0].saturating_sub(32),
                 counts[1],
+                counts[5].max(counts[6]),
             );
         }
         // Overflow bits stay set until the next job's clear, so the first
@@ -276,7 +328,7 @@ impl GpuTypeChecker {
         let body_specialization_inputs = storage_ro_from_u32s(
             device,
             "type_check.body_specialization_inputs",
-            &[0; generic_body::BODY_SPECIALIZATION_WORDS],
+            &[0; generic_body::BODY_BATCH_WORDS],
         );
         // An absent interface still has a valid, immutable zero-count page.
         // It must never alias workspace columns written by the same shader.
@@ -298,7 +350,9 @@ impl GpuTypeChecker {
             2,
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
-        let call_inference_readback = readback_u32s(device, "rb.type_check.calls.inference", 2);
+        // Words 0-1: inference state (word 1 counts the round's changes);
+        // words 2-5: the status words after the round.
+        let call_inference_readback = readback_u32s(device, "rb.type_check.calls.inference", 6);
         let canonical_counts_readback = readback_u32s(
             device,
             "rb.type_check.canonical.counts",
@@ -714,12 +768,14 @@ impl GpuTypeChecker {
         let defer_inference = 1u8;
         self.call_inference_state
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
+        // Only the used prefix is written: an ordinary job's zero header and
+        // zero extra-entry count make every later packet row unreachable.
         let specialization = hir_items
             .body_specialization
-            .map(CheckedBodySpecialization::packet)
+            .map(CheckedBodySpecializationBatch::packet)
             .transpose()
             .map_err(GpuTypeCheckError::Gpu)?
-            .unwrap_or([0; generic_body::BODY_SPECIALIZATION_WORDS]);
+            .unwrap_or_else(|| vec![0; generic_body::BODY_SPECIALIZATION_WORDS]);
         let specialization_bytes: Vec<u8> = specialization
             .into_iter()
             .flat_map(u32::to_le_bytes)
@@ -749,6 +805,8 @@ impl GpuTypeChecker {
         } else {
             "resident_workspace_reused"
         });
+        // The status words when call inference stopped on a recorded error.
+        let mut inference_error = None;
         {
             let resident_workspace_guard = self
                 .resident_workspace
@@ -952,6 +1010,11 @@ impl GpuTypeChecker {
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {
+                // Imported alias targets substitute before the early stage.
+                bind_groups.calls.substitution.record_clear(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.clear_ahead_of_pages.done");
+                }
                 // Each page interns its signature types while it is resident.
                 let intern_page = |encoder: &mut wgpu::CommandEncoder| {
                     record_canonical_types(
@@ -1042,6 +1105,11 @@ impl GpuTypeChecker {
                     record_each_dependency_page(device, queue, encoder, pages, materialize_alias_targets)?;
                 } else {
                     materialize_alias_targets(encoder)?;
+                }
+                // Every page has contributed its targets: realize them.
+                bind_groups.calls.substitution.record_alias_targets(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.substitution.alias_targets.done");
                 }
             }
             if aliases_required {
@@ -1170,8 +1238,8 @@ impl GpuTypeChecker {
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }
-            if let Some(producer) = &bind_groups.type_instances.materialize_applications {
-                producer.record(encoder)?;
+            if let Some(closure) = &bind_groups.type_instances.source_field_closure {
+                closure.record(encoder)?;
             }
             if let Some(index) = &bind_groups.type_instances.index_generated_applications {
                 index.record(encoder)?;
@@ -1272,6 +1340,7 @@ impl GpuTypeChecker {
                         encoder,
                         &bind_groups.semantic_projection.struct_literal_refs_early,
                     )?;
+                bind_groups.calls.field_expected_ids.record_early(encoder)?;
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instance_fields.done");
@@ -1614,9 +1683,11 @@ impl GpuTypeChecker {
                         ContextConstantProducer::RecordContexts,
                     )?;
                 }
+                if let Some(operation) = &bind_groups.calls.materialize_return_types {
+                    operation.record(encoder)?;
+                }
+                bind_groups.calls.call_field_closure.record(encoder)?;
                 for operation in [
-                    &bind_groups.calls.materialize_return_types,
-                    &bind_groups.calls.expand_application_fields,
                     &bind_groups.calls.materialize_match_payloads,
                     &bind_groups.calls.return_type_index,
                     &bind_groups.calls.return_imported_fields,
@@ -1703,6 +1774,7 @@ impl GpuTypeChecker {
                     }
                     records.fields.record(encoder)?;
                     records.references.record(encoder)?;
+                    bind_groups.calls.field_expected_ids.record_inference(encoder)?;
                 }
                 if enums_required || dependency_types_present {
                     module_path.bind_groups.consume_value_enum_units.record_as(
@@ -1750,11 +1822,25 @@ impl GpuTypeChecker {
                 // an arbitrary number of fixed sweeps cannot express this.
                 // Each round publishes accepted GPU facts only. The host reads
                 // a progress count and neither infers types nor guesses layouts.
-                let round_limit = hir_node_capacity
+                // The language's inference depth limit; tiny programs keep the
+                // per-node limit.
+                let node_round_limit = hir_node_capacity
                     .max(1)
                     .saturating_mul(compiler_graph::CALL_INFERENCE_ROUND_FACTOR);
+                let round_limit = node_round_limit.min(compiler_graph::CALL_INFERENCE_DEPTH_LIMIT);
+                // A sound bound on the changes of all rounds together: each
+                // fact changes a bounded number of times, and every fact lives
+                // in a HIR node or token slot (03f runs once per dependency
+                // page).
+                let change_limit = (u64::from(hir_node_capacity) + u64::from(token_capacity))
+                    .max(1)
+                    .saturating_mul(dependency_pages.map_or(1, |pages| pages.len().max(1)) as u64)
+                    .saturating_mul(compiler_graph::CALL_INFERENCE_CHANGES_PER_SLOT);
+                let mut total_changed = 0u64;
                 let trace_inference =
                     crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CALL_INFERENCE", false);
+                let mut repeats = CallInferenceRepeats::new();
+                let mut repeat_warned = false;
                 for round in 0..round_limit {
                     let round_started = std::time::Instant::now();
                     let dispatches_before =
@@ -1763,6 +1849,7 @@ impl GpuTypeChecker {
                         .write(queue, 0, &[1, 0, 0, 0, 0, 0, 0, 0]);
                     record_returns(encoder)?;
                     bind_groups.calls.inference_readback.record(encoder);
+                    bind_groups.calls.inference_status_readback.record(encoder);
                     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("type-check-call-inference-encoder"),
                     });
@@ -1781,13 +1868,13 @@ impl GpuTypeChecker {
                     )?;
                     let mapped_at = std::time::Instant::now();
                     let mapped = slice.get_mapped_range();
-                    let changed = u32::from_le_bytes(
-                        mapped[4..8]
-                            .try_into()
-                            .expect("two-word inference readback"),
-                    );
+                    let words: [u32; 6] = crate::gpu::readback::read_u32_words(
+                        &mapped,
+                        "type checker call inference",
+                    )?;
                     drop(mapped);
                     self.call_inference_readback.unmap();
+                    let changed = words[1];
                     if trace_inference {
                         // record = host recording and submit (the GPU idles
                         // unless earlier work is queued); wait = the round's
@@ -1800,6 +1887,21 @@ impl GpuTypeChecker {
                             (mapped_at - submitted).as_secs_f64() * 1000.0,
                         );
                     }
+                    // A recorded error fails the check whatever later rounds
+                    // infer, and an unresolved callee can keep producers
+                    // changing forever. Stop at the first round with an error;
+                    // the remaining passes still run, and the check reports
+                    // this error.
+                    let status = [words[2], words[3], words[4], words[5]];
+                    if status_rejection(status).is_some() {
+                        if trace_inference {
+                            eprintln!(
+                                "[typecheck.call_inference] round={round} stopped on a recorded error"
+                            );
+                        }
+                        inference_error = Some(status);
+                        break;
+                    }
                     if changed == 0 {
                         if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
                             trace_range_inference(device, queue, bind_groups, hir_items.hir)?;
@@ -1810,8 +1912,30 @@ impl GpuTypeChecker {
                         return Err(GpuTypeCheckError::Rejected {
                             token: 0,
                             code: GpuTypeCheckCode::GenericInstantiationBoundary,
-                            detail: 5,
+                            detail: if round_limit < node_round_limit {
+                                compiler_graph::CALL_INFERENCE_DEPTH_DETAIL
+                            } else {
+                                5
+                            },
                         });
+                    }
+                    total_changed = total_changed.saturating_add(u64::from(changed));
+                    if total_changed > change_limit {
+                        return Err(GpuTypeCheckError::Rejected {
+                            token: 0,
+                            code: GpuTypeCheckCode::GenericInstantiationBoundary,
+                            detail: compiler_graph::CALL_INFERENCE_STALL_DETAIL,
+                        });
+                    }
+                    if repeats.record(changed, compiler_graph::CALL_INFERENCE_REPEAT_WARNING_ROUNDS)
+                        && trace_inference
+                        && !repeat_warned
+                    {
+                        repeat_warned = true;
+                        eprintln!(
+                            "[typecheck.call_inference] round={round} warning: change counts have repeated for {} rounds; inference may not converge",
+                            compiler_graph::CALL_INFERENCE_REPEAT_WARNING_ROUNDS
+                        );
                     }
                 }
                 // The same producer diagnoses missing or unsupported types
@@ -1993,6 +2117,9 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.returns.done");
             }
+            if module_path.dependency_visibility.is_some() {
+                bind_groups.calls.validation_call_envs.record(encoder)?;
+            }
             if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                 record_each_dependency_page(device, queue, encoder, pages, |encoder| {
                     record_dependency_call_validation(
@@ -2020,9 +2147,37 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
             if hir_items.body_specialization.is_some() {
-                for (required_feature, operation) in
-                    &bind_groups.semantic_projection.body_specialization
+                let projection = &bind_groups.semantic_projection;
+                for (index, (required_feature, operation)) in
+                    projection.body_specialization.iter().enumerate()
                 {
+                    if index == projection.body_canonical_split {
+                        // The body passes from here on read the IDs of the
+                        // specialized rows.
+                        record_canonical_types(
+                            device,
+                            queue,
+                            encoder,
+                            &projection.canonical_types,
+                            CanonicalStage::Body,
+                            &self.canonical_counts_readback,
+                            &self.canonical_validation_readback,
+                            canonical_scale,
+                        )?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.canonical.body.done");
+                        }
+                        bind_groups.calls.substitution.record_body_start(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_start.done");
+                        }
+                    }
+                    if index == projection.body_field_closure_at {
+                        projection.body_field_closure.record(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_field_closure.done");
+                        }
+                    }
                     if *required_feature != 0 && parser_feature_flags & required_feature == 0 {
                         continue;
                     }
@@ -2044,6 +2199,8 @@ impl GpuTypeChecker {
                 &self.canonical_validation_readback,
                 canonical_scale,
             )?;
+            bind_groups.semantic_projection.late_row_seed.record(encoder)?;
+            bind_groups.semantic_projection.native_word_memo_clear.record(encoder);
             bind_groups
                 .semantic_projection
                 .generic_native_words
@@ -2131,7 +2288,7 @@ impl GpuTypeChecker {
             bind_groups.status_readback.record(encoder);
         }
         host_timer.stamp("status_readback_recorded");
-        Ok(RecordedTypeCheck {})
+        Ok(RecordedTypeCheck { inference_error })
     }
 
     /// Reads the recorded status buffer and converts GPU status words to an
@@ -2139,7 +2296,7 @@ impl GpuTypeChecker {
     pub fn finish_recorded_check(
         &self,
         device: &wgpu::Device,
-        _recorded: &RecordedTypeCheck,
+        recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
         crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.status")?;
@@ -2147,22 +2304,14 @@ impl GpuTypeChecker {
         let words = read_status_words(&mapped)?;
         drop(mapped);
         self.status_readback.unmap();
-
-        if words[0] != 0 {
-            return Ok(());
-        }
-        if words[2] == 6 && words[3] & 0xffff_0000 == 0x474e_0000 {
-            return Err(GpuTypeCheckError::Rejected {
-                token: words[1],
-                code: GpuTypeCheckCode::GenericInstantiationBoundary,
-                detail: words[3] & 0xffff,
-            });
-        }
-        Err(GpuTypeCheckError::Rejected {
-            token: words[1],
-            code: GpuTypeCheckCode::from_u32(words[2]),
-            detail: words[3],
-        })
+        // When call inference stopped on an error, the passes after it ran on
+        // facts it did not finish, so their errors can follow from the stop.
+        // Report the error that stopped it.
+        let words = match recorded.inference_error {
+            Some(stopped) if words[0] == 0 => stopped,
+            _ => words,
+        };
+        status_rejection(words).map_or(Ok(()), Err)
     }
 
     /// Borrows the retained visible-value declaration table if a resident check
@@ -2504,5 +2653,33 @@ impl GpuTypeChecker {
             &buffers[13],
             &buffers[14],
         ))
+    }
+}
+
+#[cfg(test)]
+mod call_inference_repeat_tests {
+    use super::CallInferenceRepeats;
+
+    fn first_stall(counts: impl IntoIterator<Item = u32>, limit: u32) -> Option<usize> {
+        let mut repeats = CallInferenceRepeats::new();
+        counts.into_iter().position(|changed| repeats.record(changed, limit))
+    }
+
+    #[test]
+    fn a_constant_change_count_stalls() {
+        let counts = [4914, 5].into_iter().chain(std::iter::repeat(3));
+        assert_eq!(first_stall(counts.take(100), 8), Some(10));
+    }
+
+    #[test]
+    fn an_alternating_change_count_stalls() {
+        let counts = [87556, 104].into_iter().chain([51, 7].into_iter().cycle());
+        assert_eq!(first_stall(counts.take(100), 8), Some(11));
+    }
+
+    #[test]
+    fn changing_counts_do_not_stall() {
+        let counts = (0..200u32).map(|round| 1000 - round * 5 + round % 3);
+        assert_eq!(first_stall(counts, 8), None);
     }
 }

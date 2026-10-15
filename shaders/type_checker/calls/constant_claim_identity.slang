@@ -15,6 +15,14 @@ public bool checked_constant_claim_descriptor(uint2 reference, uint identity_mod
         (identity_mode == 0u || scalar_is_integer(scalar));
 }
 
+// The claim is a valid constant reference with a result scalar, which is an
+// integer for a count claim.
+public bool checked_constant_claim_admitted(uint2 reference, uint identity_mode, uint tokens)
+{
+    ConstantReferenceDescriptor descriptor; uint scalar;
+    return checked_constant_claim_descriptor(reference, identity_mode, tokens, descriptor, scalar);
+}
+
 public bool checked_constant_claims_compatible(uint2 left, uint left_mode,
     uint2 right, uint right_mode, uint tokens)
 {

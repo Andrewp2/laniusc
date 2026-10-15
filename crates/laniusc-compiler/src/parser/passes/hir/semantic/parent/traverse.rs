@@ -5,7 +5,8 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Finds each dense semantic row's nearest semantic parent with a local traversal.
+/// Finds each dense semantic row's nearest semantic parent: the last earlier
+/// row whose dense subtree end lies past it, searched in the semantic-end heaps.
 pub struct HirSemanticParentTraversePass {
     data: PassData,
 }
@@ -42,11 +43,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticParen
                     b.ll1_status.as_entire_binding()
                 },
             ),
-            ("parent".into(), b.parent.as_entire_binding()),
-            (
-                "hir_node_dense_id".into(),
-                b.hir_node_dense_id.as_entire_binding(),
-            ),
             (
                 "hir_semantic_dense_node".into(),
                 b.hir_semantic_dense_node.as_entire_binding(),
@@ -54,6 +50,22 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticParen
             (
                 "hir_semantic_count".into(),
                 b.hir_semantic_count.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_subtree_end".into(),
+                b.hir_semantic_subtree_end.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_end_local_max".into(),
+                b.hir_semantic_end_local_max.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_end_blocks".into(),
+                b.hir_semantic_end_blocks.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_end_top".into(),
+                b.hir_semantic_end_top.as_entire_binding(),
             ),
             (
                 "hir_semantic_parent".into(),

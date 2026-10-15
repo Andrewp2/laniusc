@@ -14,6 +14,8 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
+mod kernel_keys;
+mod reflection_names;
 mod spirv_size;
 
 fn main() -> Result<()> {
@@ -58,6 +60,19 @@ fn main() -> Result<()> {
         collect_slang_sources(&shader_root).context("walk workspace shaders/ for .slang files")?;
     sources.sort();
     let runtime_shader_keys = collect_runtime_shader_keys(&compiler_source_root)?;
+    let unbuilt = kernel_keys::keys_without_entry_point(
+        runtime_shader_keys.iter().map(String::as_str),
+        |key| {
+            let path = shader_root.join(format!("{key}.slang"));
+            if path.is_file() { fs::read_to_string(path).ok() } else { None }
+        },
+    );
+    if !unbuilt.is_empty() {
+        return Err(anyhow!(
+            "the compiler names kernel(s) whose shader file has no entry point, so the build would not compile them: {}; give each file its own [shader(\"compute\")] main (an #include of another kernel does not count)",
+            unbuilt.join(", ")
+        ));
+    }
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
@@ -156,6 +171,7 @@ fn main() -> Result<()> {
         .map(|(artifact_key, _, _)| artifact_key.clone())
         .collect();
     remove_stale_shader_artifacts(&shader_out_dir, &active_artifact_keys)?;
+    check_reflection_binding_names(&shader_artifacts)?;
     check_inlined_size_budget(&workspace_root, &shader_out_dir, &shader_artifacts)?;
     write_generated_shader_artifacts(&out_dir, &shader_artifacts)?;
     let shader_digest = shader_artifact_digest(&shader_artifacts)?;
@@ -260,7 +276,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "tests/typed_constant_identity_array_constraints"
             | "tests/typed_constant_identity_claim_merge"
             | "tests/typed_constant_identity_claim_priority"
-            | "tests/canonical_type_constraint_boundary"
             | "tests/canonical_type_identity_boundary"
             | "tests/constant_claim_publication"
             | "tests/parameter_scoped_type_graph"
@@ -297,7 +312,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/methods/07_resolve_table"
             | "type_checker/calls/03k3_project_record_contexts"
             | "type_checker/calls/03e_materialize_return_types"
-            | "type_checker/calls/03e1_expand_application_fields"
             | "type_checker/dependencies/08a_validate_call_results"
             | "type_checker/dependencies/08_validate_call_args"
             | "type_checker/dependencies/15a_collect_methods"
@@ -311,7 +325,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/conditions/compact_aggregate_requests"
             | "type_checker/canonical/90_validate"
             | "type_checker/dependencies/14a_materialize_alias_targets"
-            | "type_checker/type/instances/02d_materialize_applications"
             | "type_checker/modules/10e0l_normalize_type_aliases"
             | "type_checker/calls/03k_project_argument_contexts"
             | "type_checker/calls/03k1_project_literal_contexts"
@@ -319,7 +332,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/semantic/artifact/01b_array_index_refs"
             | "type_checker/semantic/artifact/01c_generic_native_words"
             | "type_checker/semantic/artifact/01d_member_layout"
-            | "type_checker/type/instances/02e_project_imported_fields"
             | "type_checker/type/instances/03_member_results"
             | "type_checker/type/instances/03b_member_substitute"
             | "type_checker/type/instances/04a3_nested_struct_contexts"
@@ -630,6 +642,44 @@ fn check_driver_hazards(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Resu
         }
     }
     driver_hazard_result(&hazards)
+}
+
+/// Fails the build, in every budget mode, when a kernel's reflection lists two
+/// top-level bindings with one name. The runtime binds parameters by name, so
+/// such a kernel cannot be bound: the type-check graph refuses to build and
+/// every program fails with LNC0047 before any dispatch. The usual cause is a
+/// kernel redeclaring a global that an imported module also declares.
+fn check_reflection_binding_names(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Result<()> {
+    let mut duplicates = Vec::new();
+    for (artifact_key, _, reflection_path) in shader_artifacts {
+        let json = fs::read_to_string(reflection_path).with_context(|| {
+            format!(
+                "read shader reflection artifact {}",
+                reflection_path.display()
+            )
+        })?;
+        let names = reflection_names::duplicate_binding_names(&json)
+            .with_context(|| format!("parse shader reflection {}", reflection_path.display()))?;
+        if !names.is_empty() {
+            duplicates.push((artifact_key, names));
+        }
+    }
+    if duplicates.is_empty() {
+        return Ok(());
+    }
+    let mut message = format!(
+        "{} kernels reflect two top-level bindings with the same name, which the runtime cannot \
+         bind by name (the type-check graph fails with LNC0047):\n",
+        duplicates.len()
+    );
+    for (key, names) in &duplicates {
+        message.push_str(&format!("  {key}: {}\n", names.join(", ")));
+    }
+    message.push_str(
+        "Declare each global once: drop the kernel's copy of a global that an imported module \
+         already declares (mark the module's declaration `public` if the kernel uses it).",
+    );
+    Err(anyhow!(message))
 }
 
 /// Fails on SPIR-V that the driver cannot compile, in every budget mode: a
@@ -1531,5 +1581,5 @@ fn collect_slang_sources(root: &Path) -> io::Result<Vec<PathBuf>> {
 /// We detect `[shader("...")]` anywhere in the file.
 fn has_entrypoint(path: &Path) -> io::Result<bool> {
     let text = fs::read_to_string(path)?;
-    Ok(text.contains("[shader(\"") || text.contains("[shader('") || text.contains("[shader("))
+    Ok(kernel_keys::has_entry_point_text(&text))
 }

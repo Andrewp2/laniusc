@@ -73,13 +73,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
         flags |= SEMANTIC_FEATURE_METHODS;
     // A concrete imported alias can bind a constructor's complete parent
-    // without any written type operands in this source unit.
+    // without any written type operands in this source unit. A qualified
+    // value can also be a type-qualified call such as `Buffer<3, i32>::width`
+    // of an imported impl's method. A unit with only such calls has no local
+    // method rows and no member expression, but its calls still need the
+    // method key and resolution passes.
     if (node < compact_path_count[0u])
     {
         HirPath path = compact_paths[node];
         if (path.segment_count > 1u && path.owner < active_hir_node_count() &&
             compact_hir_core[path.owner].kind == 33u)
-            flags |= SEMANTIC_FEATURE_QUALIFIED_VALUES;
+            flags |= SEMANTIC_FEATURE_QUALIFIED_VALUES | SEMANTIC_FEATURE_METHODS;
     }
     if (flags != 0u)
         atomic_u32_or(semantic_feature_flags, 0u, flags);

@@ -24,7 +24,7 @@ use crate::{
         source_pack_diagnostic_files,
         source_pack_file_for_global_span,
     },
-    type_checker::{CheckedBodySpecialization, CheckedGenericTarget},
+    type_checker::{CheckedBodySpecialization, CheckedBodySpecializationBatch, CheckedGenericTarget},
     codegen::x86::GpuX86ObjectSection,
 };
 
@@ -116,71 +116,124 @@ impl NativeProgramSession {
         Ok(ValidatedOriginalUnit { facts: frozen.original_facts.clone(), calls })
     }
 
-    pub fn prepare_replay<'session>(
+    /// The lexical scope a concrete origin call would replay: its template
+    /// snapshot, selected callable HIR and, for each enclosing owner (the
+    /// callable first), that owner's parameter (binding slot, domain) pairs.
+    /// Two replays of one snapshot can share a frontend run when they select
+    /// different callables and every common owner binds identically.
+    pub fn replay_scope(&mut self, origin: &AdmittedCall) -> Result<ReplayScope> {
+        self.ready()?;
+        let (_, snapshot, selected_owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
+        let owner = self.catalog.owner(snapshot, selected_owner_hir)?;
+        let owners = self.catalog.owner_chain(owner)?.into_iter().map(|owner| {
+            let row = self.catalog.tables.row(2, owner)?;
+            let end = row[4].checked_add(row[5]).ok_or_else(|| anyhow!("parameter span overflow"))?;
+            let parameters = (row[4]..end)
+                .map(|index| {
+                    let parameter = self.catalog.tables.row(3, index)?;
+                    Ok((parameter[2], parameter[3]))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok((owner, parameters))
+        }).collect::<Result<Vec<_>>>()?;
+        Ok(ReplayScope { snapshot, selected_owner_hir, owners })
+    }
+
+    /// Validate several concrete origins of one template snapshot for one
+    /// frontend run. Each origin gets its own replay context; one GPU check
+    /// covers them all. The caller groups compatible scopes (`replay_scope`).
+    pub fn prepare_replay_batch<'session>(
         &'session mut self,
-        origin: &AdmittedCall,
+        origins: &[&AdmittedCall],
     ) -> Result<ValidatedReplayRequest<'session>> {
         self.ready()?;
-        let (origin_call, target_snapshot, selected_owner_hir, obligations) =
-            self.packet.packet_mut()?.replay_origin(origin)?;
+        ensure!(!origins.is_empty(), "replay batch has no origin");
+        let mut batch: Option<CheckedBodySpecializationBatch> = None;
+        let mut target_snapshot = None;
+        let mut entries: Vec<(u32, u32)> = Vec::with_capacity(origins.len());
+        for origin in origins {
+            let (origin_call, snapshot, selected_owner_hir, obligations) =
+                self.packet.packet_mut()?.replay_origin(origin)?;
+            ensure!(*target_snapshot.get_or_insert(snapshot) == snapshot,
+                "replay batch spans several template snapshots");
+            ensure!(entries.iter().all(|&(hir, _)| hir != selected_owner_hir),
+                "replay batch selects one lexical body twice");
+            let call = origin.checked_call();
+            let specialization = CheckedBodySpecialization {
+                target_symbol: match call.target {
+                    CheckedGenericTarget::Local {
+                        specialization_symbol,
+                        ..
+                    } => specialization_symbol,
+                    CheckedGenericTarget::Dependency {
+                        declaration_index, ..
+                    } => declaration_index,
+                    CheckedGenericTarget::DependencyMethod { method_symbol, .. } => method_symbol,
+                },
+                source_unit: self.catalog.snapshots[snapshot as usize].unit,
+                arguments: call.arguments.clone(),
+                constants: call.constants.clone(),
+            };
+            match batch.as_mut() {
+                None => batch = Some(CheckedBodySpecializationBatch::single(specialization)
+                    .map_err(|error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"))?),
+                Some(batch) => ensure!(
+                    batch.try_push(specialization)
+                        .map_err(|error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"))?,
+                    "replay batch exceeds the shared packet capacity"),
+            }
+            let end = obligations
+                .first
+                .checked_add(obligations.count)
+                .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
+            let evidence = self
+                .evidence
+                .get(obligations.first as usize..end as usize)
+                .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?
+                .iter()
+                .map(|proof| {
+                    ensure!(proof.is_concrete(), "concrete replay origin retains symbolic evidence");
+                    Ok(proof.clone())
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let context = self
+                .packet
+                .packet_mut()?
+                .replay_context(ReplayContextInput {
+                    snapshot,
+                    selected_owner_hir,
+                    evidence: &evidence,
+                    origin_call,
+                })?;
+            entries.push((selected_owner_hir, context));
+        }
+        let target_snapshot = target_snapshot.expect("nonempty batch");
         let template = self.catalog.snapshots.get(target_snapshot as usize)
             .ok_or_else(|| anyhow!("replay target snapshot has no retained template"))?
             .original_facts.clone();
-        let call = origin.checked_call();
-        let specialization = CheckedBodySpecialization {
-            target_symbol: match call.target {
-                CheckedGenericTarget::Local {
-                    specialization_symbol,
-                    ..
-                } => specialization_symbol,
-                CheckedGenericTarget::Dependency {
-                    declaration_index, ..
-                } => declaration_index,
-                CheckedGenericTarget::DependencyMethod { method_symbol, .. } => method_symbol,
-            },
-            source_unit: self.catalog.snapshots[target_snapshot as usize].unit,
-            arguments: call.arguments.clone(),
-            constants: call.constants.clone(),
-        };
-        specialization
-            .packet()
-            .map_err(|error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"))?;
-        let end = obligations
-            .first
-            .checked_add(obligations.count)
-            .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
-        let evidence = self
-            .evidence
-            .get(obligations.first as usize..end as usize)
-            .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?
-            .iter()
-            .map(|proof| {
-                ensure!(proof.is_concrete(), "concrete replay origin retains symbolic evidence");
-                Ok(proof.clone())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let context = self
-            .packet
-            .packet_mut()?
-            .replay_context(ReplayContextInput {
-                snapshot: target_snapshot,
-                selected_owner_hir,
-                evidence: &evidence,
-                origin_call,
-            })?;
-        // GPU checks the new context against the exact origin environment and
+        // GPU checks each new context against the exact origin environment and
         // retained evidence before the frontend can defer a local-only lookup.
         self.check()?;
         Ok(ValidatedReplayRequest {
             session: self,
             template,
             target_snapshot,
-            selected_owner_hir,
-            context,
-            specialization,
+            selected_hirs: entries.iter().map(|&(hir, _)| hir).collect(),
+            entries,
+            specialization: batch.expect("nonempty batch"),
             identity: Arc::new(()),
         })
     }
+}
+
+/// See `NativeProgramSession::replay_scope`.
+#[derive(Clone)]
+pub(in crate::compiler::gpu_compiler) struct ReplayScope {
+    pub snapshot: u32,
+    pub selected_owner_hir: u32,
+    /// (catalog owner, [(binding slot, domain 0 = type / 1 = constant)]),
+    /// innermost owner first.
+    pub owners: Vec<(u32, Vec<(u32, u32)>)>,
 }
 
 /// Private constructor and immutable snapshot identity prevent source text,
@@ -203,9 +256,10 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedReplayRequest<'session> {
     session: &'session mut NativeProgramSession,
     template: OriginalUnitFacts,
     target_snapshot: u32,
-    selected_owner_hir: u32,
-    context: u32,
-    specialization: CheckedBodySpecialization,
+    /// (selected owner HIR, replay context) per batch entry, in entry order.
+    entries: Vec<(u32, u32)>,
+    selected_hirs: Vec<u32>,
+    specialization: CheckedBodySpecializationBatch,
     identity: Arc<()>,
 }
 
@@ -213,11 +267,16 @@ impl<'session> ValidatedReplayRequest<'session> {
     pub fn template(&self) -> &OriginalUnitFacts {
         &self.template
     }
-    pub fn specialization(&self) -> &CheckedBodySpecialization {
+    pub fn specialization(&self) -> &CheckedBodySpecializationBatch {
         &self.specialization
     }
+    /// The first entry's callable: frontend predicate checks use it only to
+    /// know that an authorized replay is active.
     pub fn selected_function_hir(&self) -> u32 {
-        self.selected_owner_hir
+        self.selected_hirs[0]
+    }
+    pub fn selected_function_hirs(&self) -> &[u32] {
+        &self.selected_hirs
     }
     pub fn identity(&self) -> Arc<()> {
         self.identity.clone()
@@ -242,18 +301,17 @@ impl<'session> ValidatedReplayRequest<'session> {
             "replay result belongs to another checked request"
         );
         self.session.ready()?;
-        normalize_omitted_template_calls(
-            &self.session.catalog, self.target_snapshot, self.selected_owner_hir, unit,
+        let selected: BTreeMap<u32, u32> = self.entries.iter().copied().collect();
+        normalize_omitted_batch_template_calls(
+            &self.session.catalog, self.target_snapshot,
+            &selected.keys().copied().collect(), unit,
         )?;
         self.session
             .packet
             .packet_mut()?
-            .append_replay_unit_calls(unit, self.selected_owner_hir, self.context)?;
+            .append_replay_batch_calls(unit, &selected)?;
         self.session.check()?;
-        self.session.packet.packet_mut()?.admitted_unit_calls(
-            self.target_snapshot,
-            Some((self.selected_owner_hir, self.context)),
-        )
+        self.session.packet.packet_mut()?.admitted_batch_calls(self.target_snapshot, &selected)
     }
 }
 
@@ -262,10 +320,22 @@ impl<'session> ValidatedReplayRequest<'session> {
 /// other generic bodies remain templates. Ordinary local helpers remain in
 /// text because direct calls use already emitted relative displacements.
 /// Check that native publication boundary before discarding scratch facts.
+#[cfg(test)]
 pub(super) fn normalize_omitted_template_calls(
     catalog: &FrozenCatalog,
     target_snapshot: u32,
     selected_owner_hir: u32,
+    unit: &mut CompiledSourcePackUnit,
+) -> Result<()> {
+    normalize_omitted_batch_template_calls(
+        catalog, target_snapshot, &BTreeSet::from([selected_owner_hir]), unit)
+}
+
+/// The same boundary for a batched replay: every selected body may be published.
+pub(super) fn normalize_omitted_batch_template_calls(
+    catalog: &FrozenCatalog,
+    target_snapshot: u32,
+    selected_owner_hirs: &BTreeSet<u32>,
     unit: &mut CompiledSourcePackUnit,
 ) -> Result<()> {
     let frozen = &catalog.snapshots[target_snapshot as usize];
@@ -286,7 +356,7 @@ pub(super) fn normalize_omitted_template_calls(
         let Some(callable) = owner.callable else { continue };
         ensure!(callable_symbols.insert(callable.native_symbol),
             "frozen callable identities are not unique");
-        if owner.source_hir == selected_owner_hir { continue; }
+        if selected_owner_hirs.contains(&owner.source_hir) { continue; }
         let catalog_owner = catalog.owner(target_snapshot, owner.source_hir)?;
         if !catalog.composed_parameters(catalog_owner)?.is_empty() {
             omitted_hirs.insert(owner.source_hir);

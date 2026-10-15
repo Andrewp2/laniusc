@@ -6,6 +6,7 @@ import type_checker.program_evidence.owned_implementation_graph;
 import type_checker.owned_type_constraint_contract;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_scratch;
 
 public uint pev_atom_hash(uint row)
 {
@@ -34,7 +35,7 @@ public EvidenceStatus pev_hash_admitted_catalog_root(uint root, out uint hash)
         return pev_invalid(1u, root, PEV_INVALID);
     // All catalog rows and every owning implementation goal were admitted in
     // an earlier dispatch. No per-candidate preflight is repeated here.
-    if (!scoped_type_ref_hash<CatalogProgramEvidenceTypeGraph>(ref.x, ref.y, PEV_INVALID, nodes, atoms, hash))
+    if (!scoped_type_ref_hash_scratch<CatalogProgramEvidenceTypeGraph>(ref.x, ref.y, PEV_INVALID, nodes, atoms, hash))
         return pev_invalid(15u, root, PEV_INVALID);
     return pev_ok();
 }
@@ -43,19 +44,18 @@ public EvidenceStatus pev_hash_admitted_implementation(uint implementation, out 
     hash = 0u; uint4 low; uint4 args;
     if (!pev_read4(9u, implementation, 0u, low) || !pev_read4(9u, implementation, 4u, args))
         return pev_invalid(1u, implementation, PEV_INVALID);
-    uint subject_hash;
-    EvidenceStatus status = pev_hash_admitted_catalog_root(low.w, subject_hash);
-    if (status.state != PEV_VALID) return status;
-    hash = scoped_type_hash_mix(2166136261u, low.z);
-    hash = scoped_type_hash_mix(hash, args.y);
-    hash = scoped_type_hash_mix(hash, subject_hash);
-    for (uint argument = 0u; argument < args.y; argument++)
+    // The subject root (ordinal 0) and each argument root share one hash site.
+    uint mixed = scoped_type_hash_mix(scoped_type_hash_mix(2166136261u, low.z), args.y);
+    [loop]
+    for (uint ordinal = 0u; ordinal <= args.y; ordinal++)
     {
         uint child_hash;
-        status = pev_hash_admitted_catalog_root(args.x + argument, child_hash);
+        EvidenceStatus status = pev_hash_admitted_catalog_root(
+            ordinal == 0u ? low.w : args.x + ordinal - 1u, child_hash);
         if (status.state != PEV_VALID) return status;
-        hash = scoped_type_hash_mix(hash, child_hash);
+        mixed = scoped_type_hash_mix(mixed, child_hash);
     }
+    hash = mixed;
     return pev_ok();
 }
 public bool pev_equal_admitted_catalog_roots(uint left_root, uint right_root)
@@ -63,7 +63,7 @@ public bool pev_equal_admitted_catalog_roots(uint left_root, uint right_root)
     uint2 left; uint2 right; uint nodes; uint atoms;
     if (!pev_read_root(left_root, left) || !pev_read_root(right_root, right) ||
         !pev_catalog_count(5u, nodes) || !pev_catalog_count(1u, atoms)) return false;
-    return scoped_type_refs_equal<CatalogProgramEvidenceTypeGraph>(
+    return scoped_type_refs_equal_scratch<CatalogProgramEvidenceTypeGraph>(
         left.x, left.y, PEV_INVALID, right.x, right.y, PEV_INVALID, nodes, atoms);
 }
 public bool pev_equal_admitted_implementation_keys(uint left, uint right)
@@ -104,16 +104,18 @@ public EvidenceStatus pev_exact_implementation_eligible(uint implementation, out
     return pev_ok();
 }
 
-void pev_publish_catalog_index(uint index_table, uint bucket_table,
+// Publication returns its failure; the caller owns its stage's one catalog
+// failure report site.
+EvidenceStatus pev_publish_catalog_index(uint index_table, uint bucket_table,
     uint row, uint hash, uint admitted_row, uint rows, uint buckets)
 {
-    if (row >= rows || buckets == 0u) { pev_catalog_failure(pev_invalid(1u, row, index_table)); return; }
+    if (row >= rows || buckets == 0u) return pev_invalid(1u, row, index_table);
     uint arena; uint address;
     if (!pev_output_address(bucket_table, hash & (buckets - 1u), 0u, arena, address) || arena != 0u ||
         !pev_output_write(index_table, row, 0u, hash) ||
         !pev_output_write(index_table, row, 2u, admitted_row) ||
         !pev_output_write(index_table, row, 3u, 1u))
-    { pev_catalog_failure(pev_invalid(1u, row, bucket_table)); return; }
+        return pev_invalid(1u, row, bucket_table);
     // Lookup never overlaps this dispatch. A barrier before readers ensures
     // every head/link is complete even when the CAS publishes the head first.
     // Each row inserts once; an initial miss may observe a prior chunk's head,
@@ -128,25 +130,31 @@ void pev_publish_catalog_index(uint index_table, uint bucket_table,
         if (previous == expected)
         {
             if (!pev_output_write(index_table, row, 1u, previous))
-                pev_catalog_failure(pev_invalid(1u, row, index_table));
-            return;
+                return pev_invalid(1u, row, index_table);
+            return pev_ok();
         }
         expected = previous;
     }
-    pev_catalog_failure(pev_limit(8u, row, rows + 1u, rows));
+    return pev_limit(8u, row, rows + 1u, rows);
 }
 public void pev_publish_index(uint row, uint hash, uint admitted_row)
 {
     uint rows; uint buckets;
-    if (!pev_work_counts(rows, buckets)) { pev_catalog_failure(pev_invalid(1u, row, 6u)); return; }
-    pev_publish_catalog_index(6u, 7u, row, hash, admitted_row, rows, buckets);
+    EvidenceStatus status = pev_invalid(1u, row, 6u);
+    if (pev_work_counts(rows, buckets))
+        status = pev_publish_catalog_index(6u, 7u, row, hash, admitted_row, rows, buckets);
+    pev_catalog_failure(status);
 }
-public void pev_publish_coarse_implementation(uint implementation, uint hash)
+// Index 0 is the coarse implementation index, index 1 the exact one.
+public EvidenceStatus pev_publish_implementation_index(uint implementation, uint index, uint hash)
 {
-    uint rows; uint work_rows; uint buckets;
-    if (!pev_catalog_count(9u, rows) || !pev_work_counts(work_rows, buckets))
-    { pev_catalog_failure(pev_invalid(1u, implementation, 11u)); return; }
-    pev_publish_catalog_index(11u, 12u, implementation, hash, implementation, rows, buckets);
+    bool coarse = index == 0u;
+    uint catalog_rows = 0u; uint work_rows; uint buckets;
+    bool counted = pev_work_counts(work_rows, buckets);
+    if (coarse) counted = pev_catalog_count(9u, catalog_rows) && counted;
+    if (!counted) return pev_invalid(1u, implementation, coarse ? 11u : 6u);
+    return pev_publish_catalog_index(coarse ? 11u : 6u, coarse ? 12u : 7u, implementation, hash,
+        implementation, coarse ? catalog_rows : work_rows, buckets);
 }
 
 public EvidenceStatus pev_check_atom_unique(uint atom)

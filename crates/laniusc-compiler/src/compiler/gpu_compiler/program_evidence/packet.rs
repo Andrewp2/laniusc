@@ -374,17 +374,28 @@ impl ProgramPacket {
                 this.original_units.insert(snapshot),
                 "original unit inventory was already appended"
             );
-            this.append_call_inventory(snapshot, facts.generic_calls().clone(), owners, None)
+            this.append_call_inventory(snapshot, facts.generic_calls().clone(), owners, &BTreeMap::new())
         })
     }
 
     /// A replay reparse is routed by its admitted selected owner. All other
     /// occurrences must equal already admitted original siblings byte for byte.
+    #[cfg(test)]
     pub fn append_replay_unit_calls(
         &mut self,
         unit: &CompiledSourcePackUnit,
         selected_hir: u32,
         context: u32,
+    ) -> Result<Span> {
+        self.append_replay_batch_calls(unit, &BTreeMap::from([(selected_hir, context)]))
+    }
+
+    /// A batched replay reparse: each selected owner HIR routes its calls to
+    /// its own replay context.
+    pub fn append_replay_batch_calls(
+        &mut self,
+        unit: &CompiledSourcePackUnit,
+        selected: &BTreeMap<u32, u32>,
     ) -> Result<Span> {
         self.append_guard(|this| {
             let unit_key = [unit.interface.library_id, unit.interface.unit_id];
@@ -408,11 +419,12 @@ impl ProgramPacket {
                 owner_by_call == frozen.call_owner_by_hir,
                 "reparse changed the complete original call occurrence inventory"
             );
+            ensure!(!selected.is_empty(), "replay reparse selects no body");
             this.append_call_inventory(
                 snapshot,
                 unit.generic_calls.clone(),
                 owner_by_call,
-                Some((selected_hir, context)),
+                selected,
             )
         })
     }
@@ -422,12 +434,12 @@ impl ProgramPacket {
         snapshot: u32,
         facts: Arc<[CheckedGenericCall]>,
         owner_by_call: BTreeMap<u32, u32>,
-        selected_replay: Option<(u32, u32)>,
+        selected_replay: &BTreeMap<u32, u32>,
     ) -> Result<Span> {
         // Validate the routing authority before examining calls. An empty
         // body or a wrong selected HIR must not bypass this check merely
         // because every encountered call belongs to an original sibling.
-        if let Some((selected_hir, context)) = selected_replay {
+        for (&selected_hir, &context) in selected_replay {
             let selected_owner = self.catalog.owner(snapshot, selected_hir)?;
             ensure!(
                 self.catalog.callable_by_owner.contains_key(&selected_owner),
@@ -444,15 +456,15 @@ impl ProgramPacket {
             let actual_hir = *owner_by_call
                 .get(&call.call_hir)
                 .ok_or_else(|| anyhow!("checked call missing actual owner"))?;
-            let context = match selected_replay {
-                Some((selected_hir, context)) if actual_hir == selected_hir => context,
-                _ => self.original_context_inner(snapshot, actual_hir)?,
+            let context = match selected_replay.get(&actual_hir) {
+                Some(&context) => context,
+                None => self.original_context_inner(snapshot, actual_hir)?,
             };
             // Only already GPU-admitted original sibling occurrences can be
             // reused during this exact immutable-source reparse.
             if let Some(prior) = self.call_occurrences.get(&(context, call.call_hir)) {
                 ensure!(
-                    selected_replay.is_some()
+                    !selected_replay.is_empty()
                         && self.tables.row(13, context)?[5] != 1
                         && self.admitted_calls.contains_key(&prior.row),
                     "duplicate call occurrence is not an admitted original sibling"
@@ -531,13 +543,23 @@ impl ProgramPacket {
         snapshot: u32,
         selected_replay: Option<(u32, u32)>,
     ) -> Result<Vec<AdmittedCall>> {
+        self.admitted_batch_calls(snapshot, &selected_replay.into_iter().collect::<BTreeMap<_, _>>())
+    }
+
+    /// Every admitted call of the unit; calls in a selected owner HIR use
+    /// that owner's replay context.
+    pub fn admitted_batch_calls(
+        &self,
+        snapshot: u32,
+        selected_replay: &BTreeMap<u32, u32>,
+    ) -> Result<Vec<AdmittedCall>> {
         self.ready()?;
         let frozen = self
             .catalog
             .snapshots
             .get(snapshot as usize)
             .ok_or_else(|| anyhow!("call snapshot absent"))?;
-        if let Some((selected_hir, context)) = selected_replay {
+        for (&selected_hir, &context) in selected_replay {
             let selected_owner = self.catalog.owner(snapshot, selected_hir)?;
             let row = self.tables.row(13, context)?;
             ensure!(
@@ -556,9 +578,9 @@ impl ProgramPacket {
                     .call_owner_by_hir
                     .get(&call.call_hir)
                     .ok_or_else(|| anyhow!("original call has no accepted owner"))?;
-                let context = match selected_replay {
-                    Some((selected_hir, context)) if selected_hir == actual_hir => context,
-                    _ => *self
+                let context = match selected_replay.get(&actual_hir) {
+                    Some(&context) => context,
+                    None => *self
                         .original_contexts
                         .get(&(snapshot, actual_hir))
                         .ok_or_else(|| anyhow!("original call context absent"))?,

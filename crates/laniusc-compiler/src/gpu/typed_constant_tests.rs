@@ -7,6 +7,12 @@ use super::{
     passes_core::{self, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
+/// u32 words of a thread-scratch table holding `slots` slots: whole groups of
+/// THREAD_SCRATCH_GROUP slots of THREAD_SCRATCH_CELLS uint4 cells.
+pub(super) fn thread_scratch_words(slots: usize) -> usize {
+    slots.div_ceil(32) * 32 * 1792 * 4
+}
+
 fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]> {
     assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
         "this regression requires a physical GPU");
@@ -15,7 +21,13 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     let results = storage_rw_for_array::<u32>(&gpu.device, key, word_count);
     let pass = make_pass_data_from_shader_key(&gpu.device, key, "main", key).unwrap();
     assert_eq!(pass.thread_group_size, [threads, 1, 1]);
-    let entries = [(binding, results.as_entire_binding())];
+    // One thread-scratch slot per row (shaders/thread_scratch.slang).
+    let scratch = storage_rw_for_array::<u32>(&gpu.device, "typed_constants.thread_scratch",
+        thread_scratch_words(rows));
+    let mut entries = vec![(binding, results.as_entire_binding())];
+    if passes_core::bind_group::declares_binding(&pass, 0, "thread_scratch") {
+        entries.push(("thread_scratch", scratch.as_entire_binding()));
+    }
     passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
     let group = passes_core::bind_group::create_bind_group_from_bindings(
         &gpu.device, Some(key), &pass, 0, &entries).unwrap();
@@ -106,6 +118,74 @@ fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_merge() {
 #[test]
 fn physical_gpu_typed_constant_identity_and_claim_provenance_claim_priority() {
     assert_typed_constant_identity_family("tests/typed_constant_identity_claim_priority", &[60, 61, 63]);
+}
+
+const CHECKED_IDENTITY: &str = "tests/checked_type_identity";
+const CHECKED_IDENTITY_CHECKS: usize = 50;
+
+/// The identity cases above on canonical IDs (checked_type_identity.slang):
+/// typed constant identity, folded and symbolic casts, count-class array
+/// identity, closure and the walkers' operand admission. The shader interns
+/// its own constants through the production key builders.
+#[test]
+fn physical_gpu_checked_type_identity_by_canonical_id() {
+    assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+        "this regression requires a physical GPU");
+    let gpu = device::global();
+    let (device, queue) = (&gpu.device, &gpu.queue);
+    let key = CHECKED_IDENTITY;
+    let pass = make_pass_data_from_shader_key(device, key, "main", key).unwrap();
+    let buffers: Vec<_> = [
+        ("ct_head", 1024 * 4),
+        ("ct_meta", 1024 * 4),
+        ("ct_extra", 1024 * 2),
+        ("ct_args", 4096),
+        ("ct_slot", 4096),
+        ("ct_counts", 16),
+        ("canonical_row", 16),
+        ("canonical_atom", 16),
+        ("canonical_projection", 16),
+        ("canonical_dependency_type", 16),
+        ("identity_errors", 4 + CHECKED_IDENTITY_CHECKS),
+    ]
+    .into_iter()
+    .map(|(name, words)| (name, storage_rw_for_array::<u32>(device, name, words)))
+    .collect();
+    let entries: Vec<_> = buffers.iter().map(|(name, buffer)| (*name, buffer.as_entire_binding())).collect();
+    passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
+    let group = passes_core::bind_group::create_bind_group_from_bindings(
+        device, Some(key), &pass, 0, &entries).unwrap();
+    let slots = &buffers.iter().find(|(name, _)| *name == "ct_slot").unwrap().1;
+    let errors = &buffers.iter().find(|(name, _)| *name == "identity_errors").unwrap().1;
+    let words = 4 + CHECKED_IDENTITY_CHECKS;
+    let readback = readback_bytes(device, key, words * 4, words);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(key) });
+    encoder.clear_buffer(slots, 0, None);
+    encoder.clear_buffer(errors, 0, None);
+    {
+        let mut compute = passes_core::begin_counted_compute_pass(&mut encoder,
+            &wgpu::ComputePassDescriptor { label: Some(key), timestamp_writes: None });
+        compute.set_pipeline(&pass.pipeline);
+        compute.set_bind_group(0, Some(&group), &[]);
+        passes_core::record_compute_dispatch();
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+    }
+    errors.copy_to(&mut encoder, 0, &readback, 0, (words * 4) as u64);
+    queue.submit(Some(encoder.finish()));
+    let slice = readback.slice(..);
+    map_readback_blocking(device, &slice, key).unwrap();
+    let mapped = slice.get_mapped_range();
+    let errors: Vec<u32> = mapped.chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().unwrap())).collect();
+    drop(mapped);
+    readback.unmap();
+    let failed: Vec<_> = (0..CHECKED_IDENTITY_CHECKS)
+        .filter(|check| errors[check / 32] & (1 << (check % 32)) != 0)
+        .map(|check| format!("check {check}: {:#x}", errors[4 + check]))
+        .collect();
+    assert!(failed.is_empty(), "checked type identity failed: {}", failed.join(", "));
 }
 
 fn assert_owned(key: &str, expected: &[u32], threads: u32) {

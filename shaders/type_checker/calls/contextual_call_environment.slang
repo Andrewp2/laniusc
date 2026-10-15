@@ -1,4 +1,3 @@
-import type_checker.constant_constraints;
 import type_checker.scoped_type_equality;
 import type_checker.constant_publication;
 // Accepted result constraints, owned by one call HIR row. Token aliases only

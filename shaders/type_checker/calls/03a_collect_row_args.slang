@@ -1,18 +1,29 @@
-import type_checker.constant_constraints;
 import type_checker.constant_parameter_slots;
-// Row-dispatched direct call argument validation and generic inference.
+// Row-dispatched direct call argument validation and generic inference over
+// canonical IDs.
 //
 // Argument-to-parameter matching is built before this pass by the compact
 // linked-list matcher. This pass consumes that relation and owns validation,
-// generic claim marking, and per-argument diagnostics.
+// generic claim marking, and per-argument diagnostics. A parameter pattern's
+// slot masks size its claim spans (ct_pattern_masks); the argument is matched
+// against it once (ct_match) for the closed-pattern mismatch and the legacy
+// scalar slot cache. Claims themselves are emitted by 03a1.
 
-import external_type_identity;
 import dependency_interface;
 import type_checker.calls.parameter_pattern_page;
 import hir_records;
 import atomics;
 import hir_expr_semantics;
 import type_checker.checked_index_reference;
+import type_checker.checked_type_graph;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonical.canonical_dependency;
+import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_checked;
+import type_checker.match.ct_match;
+import constant_value;
 import status;
 
 struct Params
@@ -59,22 +70,6 @@ StructuredBuffer<uint> call_param_row_ordinal;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_ref_tag;
 StructuredBuffer<uint> call_param_row_ref_payload;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-
 RWStructuredBuffer<uint> call_generic_slot_type;
 RWStructuredBuffer<uint> call_generic_slot_ordinal;
 RWStructuredBuffer<uint> call_generic_return_arg_node;
@@ -162,8 +157,10 @@ static const uint INTRINSIC_NONE = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-#include "parameter_type_pattern.slang"
+uint parameter_type_capacity() { return checked_type_capacity(); }
+#define ARGUMENT_TYPE_GRAPH ScopedCheckedTypeGraph
 #include "argument_value_reference.slang"
+#include "argument_pattern_ids.slang"
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -287,8 +284,9 @@ void collect_row_argument(uint row)
         type_instance_kind[payload] == 4u;
     if (tag == 5u)
     {
-        uint root = canonical_field_root(payload);
-        reference = root != INVALID && dependency_type_word(root * 9u) == 6u;
+        uint count = dependency_type_count();
+        uint root = payload < count ? canonical_type_roots[payload] : INVALID;
+        reference = root < count && dependency_type_word(root * 9u) == 6u;
     }
     // Transparent aliases have already been resolved by type checking. Their
     // source-level arguments are not nominal call constraints.
@@ -306,9 +304,25 @@ void collect_row_argument(uint row)
         return;
     }
     if (tag == 0u || payload == INVALID) return;
-    uint mask; uint constant_mask; uint failure;
-    if (!parameter_argument_mask(tag, payload, mask, constant_mask, failure))
-    { record_error(error_token, 6u, 0x474e0000u | failure); return; }
+    ClaimSlots slots;
+    CtSpare spare = ct_spare_none();
+    uint actual_tag; uint actual_payload;
+    bool known = argument_value_reference(node, actual_tag, actual_payload);
+    // Interned at one site: the parameter pattern, then the argument.
+    uint pattern = CT_UNKNOWN;
+    uint actual = CT_UNKNOWN;
+    for (uint step = 0u; step < (known ? 2u : 1u); step++)
+    {
+        uint id = operand_id<CtCheckedRows>(step == 0u ? uint2(tag, payload)
+            : uint2(actual_tag, actual_payload), spare);
+        if (step == 0u) pattern = id;
+        else actual = id;
+    }
+    // The slots a pattern uses do not depend on the argument: they size its
+    // claim spans before any argument type is known.
+    uint mask; uint constant_mask;
+    if (!ct_pattern_masks<ClaimSlots>(slots, pattern, mask, constant_mask))
+    { record_error(error_token, 6u, 0x474e0000u | (ct_is_resolved(pattern) ? 3u : 4u)); return; }
     call_generic_claim_pattern_mask[row] = mask;
     call_generic_claim_scan_input[row] = countbits(mask);
     call_const_claim_pattern_mask[row] = constant_mask;
@@ -321,23 +335,36 @@ void collect_row_argument(uint row)
         uint ignored;
         InterlockedMin(call_generic_return_arg_node[call], node, ignored);
     }
-    uint actual_tag; uint actual_payload;
-    if (argument_value_reference(node, actual_tag, actual_payload))
+    // An argument without an ID yet is matched in a later round.
+    if (!ct_is_resolved(actual)) return;
+    // Only the legacy cache's four scalar slots need bindings. A parameter
+    // root binds the argument itself, so its match interns nothing.
+    bool root = ct_is_type_param(pattern);
+    bool intern = !root && (mask & 0xfu) != 0u;
+    uint count_mask;
+    uint environment = ct_match<ClaimSlots>(slots, pattern, actual, CT_NONE, CT_NONE, CT_NONE,
+        CT_MATCH_SLICE_ROOT0, intern, spare, count_mask);
+    // An interning overflow retries the job with larger tables.
+    if (environment == CT_MATCH_OVERFLOW) return;
+    bool matches = intern ? ct_is_record(environment) : environment == CT_MATCH_OK;
+    if (mask == 0u && constant_mask == 0u && !matches)
+        record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
+    if (!matches) return;
+    // Legacy scalar consumers get only projections of complete structural
+    // bindings. These four cache slots do not validate any parameter.
+    for (uint slot = 0u; slot < 4u; slot++)
     {
-        uint2 inferred[32]; uint inferred_mask; InferredConstant constants[32]; uint inferred_constants;
-        bool matches = parameter_argument_constraints(tag, payload, actual_tag, actual_payload,
-            inferred, inferred_mask, constants, inferred_constants);
-        if (mask == 0u && constant_mask == 0u && !matches)
-            record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
-        // Legacy scalar consumers get only projections of complete structural
-        // bindings. These four cache slots do not validate any parameter.
-        if (matches)
-            for (uint slot = 0u; slot < 4u; slot++)
-                if ((inferred_mask & (1u << slot)) != 0u && inferred[slot].x == 1u)
-                    claim_generic_slot(callee, slot, inferred[slot].y, error_token,
-                        call_param_row_ordinal[param]);
+        if ((mask & (1u << slot)) == 0u) continue;
+        uint code = 0u;
+        if (root) code = actual_tag == TYPE_REF_SCALAR ? actual_payload : 0u;
+        else if (intern)
+        {
+            uint binding = ct_env_binding(environment, slot, false);
+            code = ct_kind(binding) == CT_KIND_SCALAR ? ct_words(binding).x : 0u;
+        }
+        if (code != 0u)
+            claim_generic_slot(callee, slot, code, error_token, call_param_row_ordinal[param]);
     }
-
 }
 
 [shader("compute")]

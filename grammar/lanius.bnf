@@ -189,10 +189,10 @@ add_tail     [add_tail]      -> 'InfixPlus' mul add_tail;
 add_tail     [sub_tail]      -> 'InfixMinus' mul add_tail;
 add_tail     [add_end]       -> ;
 
-mul                          -> unary mul_tail;
-mul_tail     [mul_tail]      -> 'Star' unary mul_tail;
-mul_tail     [div_tail]      -> 'Slash' unary mul_tail;
-mul_tail     [mod_tail]      -> 'Percent' unary mul_tail;
+mul                          -> cast mul_tail;
+mul_tail     [mul_tail]      -> 'Star' cast mul_tail;
+mul_tail     [div_tail]      -> 'Slash' cast mul_tail;
+mul_tail     [mod_tail]      -> 'Percent' cast mul_tail;
 mul_tail     [mul_end]       -> ;
 
 # ----- Unary and postfix -----
@@ -365,3 +365,20 @@ scalar_constant_argument [generic_argument_true] -> 'True';
 scalar_constant_argument [generic_argument_false] -> 'False';
 scalar_constant_argument [generic_argument_char] -> 'Char';
 scalar_constant_argument [generic_argument_float] -> 'Float';
+
+# ----- Casts -----
+# `as` binds tighter than every binary operator and looser than the unary
+# prefix operators, as in Rust: `-x as u32` is `(-x) as u32` and
+# `a * b as u32` is `a * (b as u32)`. Casts chain left to right.
+# A cast target is a type name, possibly qualified, never an application,
+# array, or reference. Its names have their own token kind, so the end of
+# `let x = y as T;` is not the end of the declared type in `let x: T;`. The
+# productions sit at the end of the file to keep earlier production IDs.
+cast                         -> unary cast_tail;
+cast_tail    [cast_tail]     -> 'As' cast_type cast_tail;
+cast_tail    [cast_end]      -> ;
+cast_type [cast_type_name] -> cast_type_path;
+cast_type_path [cast_type_path] -> cast_type_path_segment cast_type_path_tail;
+cast_type_path_segment [cast_type_path_ident] -> 'CastTypeIdent';
+cast_type_path_tail [cast_type_path_more] -> 'PathColon' 'PathColon' cast_type_path_segment cast_type_path_tail;
+cast_type_path_tail [cast_type_path_end] -> ;

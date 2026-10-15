@@ -1,19 +1,23 @@
-import type_checker.constant_constraints;
 import type_checker.constant_parameter_slots;
 // Collect local candidates into the common cross-inventory transaction.
 //
 // Source refs are frozen before reset. This pass never writes callable or
 // return facts; imported contributors can replace any deeper local candidate.
-// Full patterns decide applicability after the shape/name bucket probe.
+// Full patterns decide applicability after the shape/name bucket probe: the
+// receiver's canonical ID is matched against each candidate's receiver
+// pattern ID (ct_match, no interning).
 
 import gpu_index;
 import hir_records;
 import type_checker.methods.lookup;
 import type_checker.methods.candidate;
 import type_checker.instance_arguments;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_constraints;
-import type_checker.methods.receiver_pattern;
+import type_checker.constant_atoms;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
+import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_checked;
+import type_checker.match.ct_match;
 
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -118,52 +122,64 @@ bool visible_method(uint token, uint fn_token)
          method_decl_module_id[fn_token] == method_call_site_module_id[token]);
 }
 
-bool local_receiver_matches(uint fn_token, uint mode, bool dotted, uint tag, uint payload)
+// Binding slots of the impl's own parameters.
+struct ReceiverSlots : ICtSlots
 {
-    // Phase 0 matches the declared receiver pattern (the impl root of a dotted
-    // mode-3 method). Phase 1 matches that method's self parameter and requires
-    // its bindings to agree with phase 0. One inlined matcher serves both.
-    uint phases = (!dotted || mode != 3u) ? 1u : 2u;
-    uint2 impl_types[32]; uint impl_mask = 0u;
-    InferredConstant impl_constants[32]; uint impl_constant_mask = 0u;
-    uint2 types[32]; uint mask;
-    InferredConstant constants[32]; uint constant_mask;
-    [loop]
-    for (uint phase = 0u; phase < phases; phase++)
-    {
-        uint pattern_tag = method_decl_receiver_ref_tag[fn_token];
-        uint pattern_payload = method_decl_receiver_ref_payload[fn_token];
-        if (phase == 1u)
-        {
-            uint row = call_param_row_start[fn_token];
-            if (row >= call_param_row_count_out[0u]) return false;
-            pattern_tag = call_param_row_ref_tag[row];
-            pattern_payload = call_param_row_ref_payload[row];
-        }
-        if (!scoped_type_and_constant_constraints<MethodReceiverGraph>(
-            pattern_tag, pattern_payload, INVALID,
-            tag, payload, method_receiver_type_capacity(), active_token_count(),
-            types, mask, constants, constant_mask, true)) return false;
-        if (phase == 0u)
-        {
-            impl_types = types; impl_mask = mask;
-            impl_constants = constants; impl_constant_mask = constant_mask;
-        }
-    }
-    if (phases == 1u) return true;
-    for (uint slot = 0u; slot < 32u; slot++)
-    {
-        if (((impl_mask & mask) & (1u << slot)) != 0u &&
-            !scoped_type_refs_equal<MethodReceiverGraph>(impl_types[slot].x, impl_types[slot].y, INVALID,
-                types[slot].x, types[slot].y, INVALID,
-                method_receiver_type_capacity(), active_token_count())) return false;
-        if (((impl_constant_mask & constant_mask) & (1u << slot)) != 0u &&
-            !inferred_constant_claims_compatible<MethodReceiverGraph>(impl_constants[slot], constants[slot], active_token_count())) return false;
-    }
-    return true;
+    uint type_slot(uint token)
+    { return token < active_token_count() ? type_generic_param_slot_by_token[token] : CT_SLOT_NONE; }
+    uint const_slot(uint token)
+    { return token < active_token_count() ? type_const_param_slot_by_token[token] : CT_SLOT_NONE; }
+    uint const_scalar(uint token) { return checked_constant_parameter_scalar(token); }
 }
 
-void collect_bucket(uint token, uint bucket, uint tag, uint payload,
+// Row reads for interning a receiver that inference produced.
+struct ReceiverRows : ICtRowReader
+{
+    static uint kind(uint row) { return type_instance_kind[row]; }
+    static uint decl_token(uint row) { return type_instance_decl_token[row]; }
+    static uint arg_count(uint row) { return type_instance_arg_count[row]; }
+    static bool argument(uint row, uint index, out uint tag, out uint payload)
+    { return MethodReceiverGraph.argument(row, index, tag, payload); }
+    static uint2 elem(uint row)
+    { return uint2(type_instance_elem_ref_tag[row], type_instance_elem_ref_payload[row]); }
+    static uint2 len(uint row)
+    { return uint2(type_instance_len_kind[row], type_instance_len_payload[row]); }
+    static uint3 external(uint row)
+    { return uint3(external_type_library_id[row], external_type_unit_id[row], external_type_local_index[row]); }
+    static uint generic_slot(uint token)
+    {
+        uint count; uint stride;
+        type_generic_param_slot_by_token.GetDimensions(count, stride);
+        return token < count ? type_generic_param_slot_by_token[token] : INVALID;
+    }
+}
+
+bool local_receiver_matches(uint fn_token, uint mode, bool dotted, uint actual)
+{
+    // Root 0 matches the declared receiver pattern (the impl root of a dotted
+    // mode-3 method). A dotted mode-3 method's self parameter is root 1,
+    // matched against the same receiver; repeated parameters agree by ID
+    // across both roots.
+    uint pattern0 = ct_ref(method_decl_receiver_ref_tag[fn_token], method_decl_receiver_ref_payload[fn_token]);
+    uint pattern1 = CT_NONE;
+    uint actual1 = CT_NONE;
+    if (dotted && mode == 3u)
+    {
+        uint row = call_param_row_start[fn_token];
+        if (row >= call_param_row_count_out[0u]) return false;
+        pattern1 = ct_ref(call_param_row_ref_tag[row], call_param_row_ref_payload[row]);
+        actual1 = actual;
+        if (!ct_is_resolved(pattern1)) return false;
+    }
+    if (!ct_is_resolved(pattern0) || !ct_is_resolved(actual)) return false;
+    ReceiverSlots slots;
+    CtSpare spare = ct_spare_none();
+    uint count_mask;
+    return ct_match<ReceiverSlots>(slots, pattern0, actual, pattern1, actual1,
+        CT_NONE, 0u, false, spare, count_mask) == CT_MATCH_OK;
+}
+
+void collect_bucket(uint token, uint bucket, uint tag, uint payload, uint actual,
     uint deref_count, bool dotted, inout MethodCandidate summary)
 {
     uint count = active_method_count();
@@ -182,7 +198,7 @@ void collect_bucket(uint token, uint bucket, uint tag, uint payload,
         uint mode = method_decl_receiver_mode[fn_token];
         if (dotted ? (mode == 0u || (mode == 3u && call_param_count[fn_token] == 0u)) :
             (mode == 1u || mode == 2u)) continue;
-        if (!local_receiver_matches(fn_token, mode, dotted, tag, payload)) continue;
+        if (!local_receiver_matches(fn_token, mode, dotted, actual)) continue;
         MethodCandidate candidate = method_candidate_empty();
         candidate.state = METHOD_CANDIDATE_UNIQUE;
         candidate.deref_count = deref_count;
@@ -209,18 +225,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint payload = method_call_source_ref_payload[token];
     if (tag == 0u || payload == INVALID) return;
     MethodCandidate summary = method_candidate[token];
-    if (!receiver_pattern_valid<MethodReceiverGraph>(tag, payload,
-        method_receiver_type_capacity(), active_token_count()))
-    {
-        summary.state = METHOD_CANDIDATE_INVALID;
-        method_candidate[token] = summary;
-        return;
-    }
     bool dotted = method_call_receiver_hir[token] != INVALID;
     uint wildcard = method_lookup_bucket(method_receiver_wildcard_head(),
         method_call_name_id[token], active_method_count());
+    uint spare = CT_NONE;
     for (uint depth = 0u; depth < 64u; depth++)
     {
+        // The receiver's canonical ID (interned here when inference produced
+        // it); the whole receiver must have one.
+        uint actual = ct_intern_checked<ReceiverRows>(tag, payload, spare);
+        if (depth == 0u && !ct_is_resolved(actual)) { summary.state = METHOD_CANDIDATE_INVALID; break; }
         MethodReceiverHead head;
         if (!method_receiver_head<MethodReceiverGraph>(tag, payload,
             method_receiver_type_capacity(), active_token_count(), head))
@@ -231,7 +245,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         for (uint source = 0u; source < 2u; source++)
         {
             if (source == 1u && wildcard == bucket) break;
-            collect_bucket(token, source == 0u ? bucket : wildcard, tag, payload, depth, dotted, summary);
+            collect_bucket(token, source == 0u ? bucket : wildcard, tag, payload, actual, depth, dotted, summary);
         }
         if (summary.state == METHOD_CANDIDATE_INVALID || !dotted || tag != 3u ||
             type_instance_kind[payload] != 4u) break;

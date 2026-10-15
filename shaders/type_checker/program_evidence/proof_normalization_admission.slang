@@ -9,7 +9,7 @@ import type_checker.program_evidence.proof_term_normalization;
 
 public struct SolverProofNormalizationCheckSink : IProofNormalizationSink
 {
-    public static bool begin_node(uint row, uint4 expected_low, uint4 unused_high)
+    public static bool begin_node(uint mode, uint row, uint4 expected_low, uint4 unused_high)
     {
         uint4 low; uint4 high;
         if (!pps_read_pending8(PPS_TERM_NODES, row, low, high) ||
@@ -19,7 +19,7 @@ public struct SolverProofNormalizationCheckSink : IProofNormalizationSink
         return (low.x == 1u || low.x == 6u) ? all(high == uint4(0u, 0u, 0u, 0u)) :
             (low.x == 2u || (high.z == 0u && high.w == 0u));
     }
-    public static bool set_child(uint row, uint ordinal, uint2 expected)
+    public static bool set_child(uint mode, uint row, uint ordinal, uint2 expected)
     {
         uint4 low; uint4 high;
         if (!pps_read_pending8(PPS_TERM_NODES, row, low, high)) return false;
@@ -53,8 +53,8 @@ public EvidenceStatus pps_validate_original_normalization(
 {
     closed = false; uint2 source; uint2 normalized; ProofNormalizationCounts counts;
     if (!pev_read_root(input_root, source)) return pev_invalid(1u, input_root, PEV_INVALID);
-    EvidenceStatus status = pev_normalize_proof_root<InputProofNormalizationGraph,
-        InputProofNormalizationGraph, InputProofNormalizationBindings,
+    EvidenceStatus status = pev_normalize_proof_root<
+        SameProofNormalizationGraph<InputProofNormalizationGraph>, InputProofNormalizationBindings,
         SolverProofNormalizationCheckSink>(source, environment, owner, domain,
             true, reservation, normalized, closed, counts);
     if (status.state != PEV_VALID) return status;
@@ -69,8 +69,9 @@ public EvidenceStatus pps_validate_prerequisite_normalization(
 {
     closed = false; uint2 source; uint2 normalized; ProofNormalizationCounts counts;
     if (!pev_read_root(input_root, source)) return pev_invalid(1u, input_root, PEV_INVALID);
-    EvidenceStatus status = pev_normalize_proof_root<InputProofNormalizationGraph,
-        SolverProofTermGraph, SolverProofBindings, SolverProofNormalizationCheckSink>(
+    EvidenceStatus status = pev_normalize_proof_root<
+        SplitProofNormalizationGraphs<InputProofNormalizationGraph, SolverProofTermGraph>,
+        SolverProofBindings, SolverProofNormalizationCheckSink>(
             source, substitution, caller_owner, domain, true, reservation,
             normalized, closed, counts);
     if (status.state != PEV_VALID) return status;
