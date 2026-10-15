@@ -41,6 +41,10 @@ public bool scoped_type_ref_hash<Graph : IParameterScopedTypeGraph>(
             counts[depth] = 0u;
             hash = scoped_type_hash_mix(hash,
                 application_argument_is_constant(ref.x) ? APPLICATION_CONSTANT_ARGUMENT : ref.x);
+            // The constant leaf or array length whose identity ends this
+            // node's header; both share one hash site.
+            bool constant = false; bool count_identity = false;
+            uint3 constant_ref = uint3(0u, INVALID, INVALID);
             if (ref.x == 1u)
             {
                 if (ref.y == 0u) return false;
@@ -55,10 +59,8 @@ public bool scoped_type_ref_hash<Graph : IParameterScopedTypeGraph>(
             }
             else if (application_argument_is_constant(ref.x))
             {
-                uint identity_hash;
-                if (!scoped_constant_ref_hash<Graph>(uint3(ref.x & ~APPLICATION_CONSTANT_ARGUMENT,
-                    ref.y, ref.z), token_capacity, identity_hash)) return false;
-                hash = scoped_type_hash_mix(hash, identity_hash);
+                constant = true;
+                constant_ref = uint3(ref.x & ~APPLICATION_CONSTANT_ARGUMENT, ref.y, ref.z);
             }
             else if (ref.x == 3u && ref.y < type_capacity)
             {
@@ -86,18 +88,21 @@ public bool scoped_type_ref_hash<Graph : IParameterScopedTypeGraph>(
                 {
                     if (kind == 2u)
                     {
-                        uint length_kind = Graph.metadata(ref.y, 5u);
-                        uint length = Graph.metadata(ref.y, 6u);
-                        uint identity_hash;
-                        if (!scoped_constant_count_hash<Graph>(uint3(length_kind, length, ref.z),
-                            token_capacity, identity_hash)) return false;
-                        hash = scoped_type_hash_mix(hash, identity_hash);
+                        constant = true; count_identity = true;
+                        constant_ref = uint3(Graph.metadata(ref.y, 5u), Graph.metadata(ref.y, 6u), ref.z);
                     }
                     counts[depth] = 1u;
                 }
                 else return false;
             }
             else return false;
+            if (constant)
+            {
+                uint identity_hash;
+                if (!scoped_constant_ref_or_count_hash<Graph>(constant_ref, token_capacity,
+                    count_identity, identity_hash)) return false;
+                hash = scoped_type_hash_mix(hash, identity_hash);
+            }
         }
         if (next[depth] == counts[depth])
         {

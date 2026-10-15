@@ -200,16 +200,14 @@ public bool canonical_field_ref_hash<Graph : IScopedTypeGraph>(uint instance, ui
             refs[depth] = ref; next[depth] = 0u; counts[depth] = 0u;
             hash = scoped_type_hash_mix(hash, canonical_constant || application_argument_is_constant(ref.x)
                 ? APPLICATION_CONSTANT_ARGUMENT : ref.x == 5u ? 3u : ref.x);
-            if (canonical_constant || application_argument_is_constant(ref.x))
-            {
-                uint identity_hash;
-                bool valid = canonical_constant
-                    ? canonical_constant_hash<Graph>(instance, constant_type, false, identity_hash)
-                    : scoped_constant_ref_hash<Graph>(uint3(ref.x & ~APPLICATION_CONSTANT_ARGUMENT,
-                        ref.y, INVALID), tokens, identity_hash);
-                if (!valid) return false;
-                hash = scoped_type_hash_mix(hash, identity_hash);
-            }
+            // A constant operand or an array length ends the node header;
+            // each domain shares one identity hash site (below).
+            bool canonical_identity = canonical_constant;
+            bool source_identity = !canonical_constant && application_argument_is_constant(ref.x);
+            bool count_identity = false;
+            uint3 source_constant = uint3(ref.x & ~APPLICATION_CONSTANT_ARGUMENT, ref.y, INVALID);
+            // A constant operand has no structure of its own to hash here.
+            if (canonical_identity || source_identity) {}
             else if (ref.x == 1u || ref.x == 2u)
             {
                 if (ref.y == 0u || ref.y == INVALID || (ref.x == 2u &&
@@ -246,19 +244,25 @@ public bool canonical_field_ref_hash<Graph : IScopedTypeGraph>(uint instance, ui
                 {
                     if (kind == 2u)
                     {
-                        uint identity_hash;
-                        bool valid = ref.x == 5u
-                            ? canonical_constant_hash<Graph>(instance,
-                                dependency_array_length_type(ref.y), true, identity_hash)
-                            : scoped_constant_count_hash<Graph>(uint3(Graph.metadata(ref.y, 5u),
-                                Graph.metadata(ref.y, 6u), INVALID), tokens, identity_hash);
-                        if (!valid) return false;
-                        hash = scoped_type_hash_mix(hash, identity_hash);
+                        count_identity = true;
+                        canonical_identity = ref.x == 5u; source_identity = ref.x != 5u;
+                        constant_type = ref.x == 5u ? dependency_array_length_type(ref.y) : INVALID;
+                        source_constant = uint3(Graph.metadata(ref.y, 5u), Graph.metadata(ref.y, 6u), INVALID);
                     }
                     counts[depth] = 1u;
                 }
             }
             else return false;
+            if (canonical_identity || source_identity)
+            {
+                uint identity_hash;
+                bool valid = canonical_identity
+                    ? canonical_constant_hash<Graph>(instance, constant_type, count_identity, identity_hash)
+                    : scoped_constant_ref_or_count_hash<Graph>(source_constant, tokens,
+                        count_identity, identity_hash);
+                if (!valid) return false;
+                hash = scoped_type_hash_mix(hash, identity_hash);
+            }
         }
         if (next[depth] == counts[depth])
         {
@@ -436,11 +440,12 @@ public bool canonical_field_ref_matches<Graph : IScopedTypeGraph>(uint instance,
             bool constant = root_kind == 8u || root_kind == 9u || root_kind == 10u;
             if (!constant && !canonical_type_field_leaf<Graph>(instance, expected)) return false;
             next[depth] = 0u; counts[depth] = 0u;
+            // A constant operand or an array length shares one match site.
+            bool constant_identity = constant; bool count_identity = false;
+            uint constant_type = root; uint2 actual = uint2(0u, INVALID);
             if (constant)
             {
-                uint2 actual;
-                if (!application_constant_argument(pair.y, pair.z, actual.x, actual.y) ||
-                    !canonical_constant_matches<Graph>(instance, root, actual, tokens, false)) return false;
+                if (!application_constant_argument(pair.y, pair.z, actual.x, actual.y)) return false;
             }
             else if (expected.x != 5u)
             {
@@ -469,13 +474,15 @@ public bool canonical_field_ref_matches<Graph : IScopedTypeGraph>(uint instance,
                 {
                     if (kind == 2u)
                     {
-                        uint2 actual = uint2(Graph.metadata(pair.z, 5u), Graph.metadata(pair.z, 6u));
-                        if (!canonical_constant_matches<Graph>(instance,
-                            dependency_array_length_type(pair.x), actual, tokens, true)) return false;
+                        actual = uint2(Graph.metadata(pair.z, 5u), Graph.metadata(pair.z, 6u));
+                        constant_type = dependency_array_length_type(pair.x);
+                        constant_identity = true; count_identity = true;
                     }
                     counts[depth] = 1u;
                 }
             }
+            if (constant_identity && !canonical_constant_matches<Graph>(instance,
+                constant_type, actual, tokens, count_identity)) return false;
         }
         if (next[depth] == counts[depth])
         {

@@ -1,5 +1,8 @@
 import semantic_interface_layout;
 // Expand declaration fields and enum payloads of a materialized root.
+#if !MATERIALIZE_ROOT_CANDIDATES
+#error define MATERIALIZE_ROOT_CANDIDATES before including materialize_application.slang
+#endif
 
 
 bool child_reference(uint instance, uint ordinal, out uint3 reference)
@@ -116,7 +119,8 @@ bool expand_materialized_instance<Graph : IScopedTypeGraph>(uint root,
             depth--; continue;
         }
         uint2 child;
-        if (!materialize<Graph>(ref, created, created_count, child, failure))
+        // A child structurally equal to an expanded row resolves to that row.
+        if (!materialize<Graph>(ref, created, created_count, expanded, expanded_count, child, failure))
         {
             return false;
         }
@@ -125,9 +129,7 @@ bool expand_materialized_instance<Graph : IScopedTypeGraph>(uint root,
         // A type can occur as an argument and again as a declaration field.
         // Expand the accepted DAG once, rather than revisiting every path.
         for (uint prior = 0u; prior < expanded_count; prior++)
-            if (expanded[prior] == child.y || scoped_type_refs_equal<Graph>(3u, expanded[prior], INVALID,
-                3u, child.y, INVALID, mutable_type_capacity(), gParams.n_tokens))
-            { visited = true; break; }
+            if (expanded[prior] == child.y) { visited = true; break; }
         if (visited) continue;
         if (depth + 1u == DEPTH_LIMIT || expanded_count == DEPTH_LIMIT)
         {

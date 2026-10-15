@@ -255,8 +255,11 @@ A reference is one of three things:
   - constant parameters are `CT_PARAM_BIT | CT_CONST_PARAM_BIT | token`;
   - parameters of a dependency signature add `CT_DEP_PARAM_BIT` and carry
     the declaration's slot instead of a token (`ct_dep_type_param(slot)`,
-    `ct_dep_const_param(slot)`); their binder is the declaration or callee
-    whose environment is applied, so they never equal a local parameter;
+    `ct_dep_const_param(slot, scalar)`); their binder is the declaration or
+    callee whose environment is applied, so they never equal a local
+    parameter. A constant slot also carries its declared scalar in bits
+    5..9 (`ct_dep_param_slot`, `ct_dep_param_scalar`), so a substitution is
+    checked without the signature node;
 - a sentinel: `CT_PENDING`, `CT_UNKNOWN` or `CT_NONE`, the three largest
   values.
 
@@ -498,6 +501,40 @@ straight-line selects (about 230 instructions per call site), because the
 old walkers expand a graph read at each site: 20 reads cost 90_validate
 7.6k.
 
+### Constant view (first consumer)
+
+The dependency constant view (`dependencies/constant_view.slang`) is read by
+materialization and by the canonical field walkers (02d, 02e, 03e, 03e1, 03k,
+03k2, 14a, 01f2, 08 and their tests). It used to build a virtual overlay of
+the dependency page node by node. It now reads canonical IDs:
+
+- Dependency constant node `t` is `canonical_dependency_type[span + t]`. A
+  constant parameter is its ID (a parameter reference above every source
+  token, with slot and scalar in the ID); a value is `(1, CT_ROW_BASE + id)`
+  and a cast is `(3, CT_ROW_BASE + id)`. `CanonicalConstantGraph<G>` decodes
+  those with `ct_words` and `ct_arg`, and passes source rows and parameters
+  through to `G`.
+- A literal keeps its caller-owned source atom (checked against the
+  record's value), so materialization can reuse it.
+- Readers must run after their page was interned. In a job every consumer
+  is recorded after the per-page dependency rounds. The boundary tests
+  intern their fixture page first (`tests/canonical_type_boundary_intern`).
+- Differences from the overlay: a projection of a concrete value is folded
+  when interned, so its view root is a value (materialization publishes an
+  atom, or reuses an equal one, instead of following the projection); a
+  literal projection that does not fit its target is `CT_UNKNOWN` and fails
+  as an invalid view (failure 4) rather than in the walker.
+
+Materialization (`materialize_application.slang`) expands each constant and
+identity walker once. Source constants and canonical constants share one
+`materialize_checked_constant` site (through the canonical view's graph),
+array lengths of new rows use the same site, and every lookup (the caller's
+root rows, the checked index, then the lane's new rows) shares one equality
+site per domain. Expansion (`expand_materialized_instance.slang`) passes its
+visited rows as root candidates, so a field equal to a visited row resolves
+to that row and the visited check is an ID comparison. 03e1 went from 474k
+to 90k inlined instructions this way.
+
 ### API (frozen for P3–P5)
 
 The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
@@ -505,7 +542,7 @@ not generic, and it imports `primitive_types` only.
 
 | group | functions |
 |---|---|
-| classify | `ct_is_resolved`, `ct_is_record`, `ct_is_stored`, `ct_is_param`, `ct_is_type_param`, `ct_is_const_param`, `ct_is_dep_param`, `ct_is_constant`, `ct_type_param(token)`, `ct_const_param(token)`, `ct_dep_type_param(slot)`, `ct_dep_const_param(slot)`, `ct_param_token` |
+| classify | `ct_is_resolved`, `ct_is_record`, `ct_is_stored`, `ct_is_param`, `ct_is_type_param`, `ct_is_const_param`, `ct_is_dep_param`, `ct_is_constant`, `ct_type_param(token)`, `ct_const_param(token)`, `ct_dep_type_param(slot)`, `ct_dep_const_param(slot, scalar)`, `ct_dep_param_slot`, `ct_dep_param_scalar`, `ct_param_token` |
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
@@ -513,7 +550,8 @@ not generic, and it imports `primitive_types` only.
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
 | dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`, `ct_dependency_record(index)`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
 | bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |
-| constant keys | `canonical_constants.slang`: `ct_build_value(value, record, key)`, `ct_build_projection(target, child, param_scalar, record, fold, value, key)` |
+| constant keys | `canonical_constants.slang`: `ct_build_value(value, key)`, `ct_build_projection(target, child, param_scalar, fold, value, key)` |
+| constant view | `dependencies/constant_view.slang`: `CanonicalConstantGraph<G>`, `CanonicalConstantEnvironment<G>`, `canonical_constant_view_reference`, `canonical_constant_view_ranges` (see Constant view) |
 
 Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
 builder. They intern through `ct_intern_spare` with one lane-owned spare
