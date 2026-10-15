@@ -25,6 +25,7 @@ use laniusc_compiler::{
         GpuSemanticInterfaceMemberKind,
         GpuSemanticInterfaceImplementationKind,
         GpuSemanticInterfaceTypeKind,
+        GpuSemanticInterfaceTypeRecord,
         GpuSourcePackArtifactDescriptor,
         GpuSourcePackArtifactExecutor,
         GpuSourcePackCodegenObjectFormat,
@@ -41,6 +42,44 @@ use laniusc_compiler::{
         type_check_entry_with_stdlib,
     },
 };
+
+/// An exported array's extent is its second child: a constant parameter, a
+/// typed constant value, or a count projection.
+fn array_extent(
+    artifact: &GpuSemanticInterfaceArtifact,
+    array: GpuSemanticInterfaceTypeRecord,
+) -> GpuSemanticInterfaceTypeRecord {
+    assert_eq!(array.kind, GpuSemanticInterfaceTypeKind::Array as u32);
+    assert_eq!(array.edge_count, 2, "an array has an element and an extent: {array:?}");
+    assert_eq!((array.length_kind, array.length_lo, array.length_hi), (0, 0, 0),
+        "array length words are reserved");
+    artifact.types[artifact.type_edges[array.first_edge as usize + 1].type_index as usize]
+}
+
+/// The constant parameter behind a symbolic exported array extent. A
+/// parameter extent is exported through its checked count conversion
+/// (`CountProjection`), whose one child is the parameter.
+fn symbolic_array_extent(
+    artifact: &GpuSemanticInterfaceArtifact,
+    array: GpuSemanticInterfaceTypeRecord,
+) -> GpuSemanticInterfaceTypeRecord {
+    let mut extent = array_extent(artifact, array);
+    if extent.kind == GpuSemanticInterfaceTypeKind::CountProjection as u32 {
+        assert_eq!(extent.edge_count, 1, "{extent:?}");
+        extent = artifact.types[artifact.type_edges[extent.first_edge as usize].type_index as usize];
+    }
+    extent
+}
+
+/// The exact `usize` value of a concrete exported array extent.
+fn concrete_array_extent(
+    artifact: &GpuSemanticInterfaceArtifact,
+    array: GpuSemanticInterfaceTypeRecord,
+) -> (u32, u32) {
+    let extent = array_extent(artifact, array);
+    assert_eq!(extent.kind, GpuSemanticInterfaceTypeKind::ConstValue as u32, "{extent:?}");
+    (extent.length_lo, extent.length_hi)
+}
 
 fn assert_gpu_type_check_rejects(src: &str) {
     match common::type_check_source_with_timeout(src) {
@@ -217,9 +256,9 @@ pub trait Other<U> { pub fn inspect(value: U) -> bool; }
     assert_eq!(apply.method_type_parameter_count(), 0);
     assert_eq!(apply.method_constant_parameter_count(), 0);
     let result = artifact.types[apply.type_index as usize];
-    assert_eq!(result.kind, GpuSemanticInterfaceTypeKind::Array as u32);
-    assert_eq!(result.length_kind, 2);
-    let length = artifact.members[result.length_lo as usize];
+    let extent = symbolic_array_extent(&artifact, result);
+    assert_eq!(extent.kind, GpuSemanticInterfaceTypeKind::ConstParameter as u32, "{extent:?}");
+    let length = artifact.members[extent.payload_lo as usize];
     assert_eq!(length.owner_ref, owner as u32);
     assert_eq!(length.value_hi, 0);
     assert_eq!(length.generic_parameter_ordinal, 0);
@@ -317,11 +356,15 @@ fn hidden<T>(v:T)->T where T:Marker {return v;}
                     "same-named parameters in other functions must remain distinct");
                 assert_eq!(member.value_hi, 0);
             }
-            if ty.kind == GpuSemanticInterfaceTypeKind::Array as u32 && ty.length_kind == 2 {
-                let member = artifact.members[ty.length_lo as usize];
-                assert_eq!(member.owner_ref, predicate.owner_ref);
-                assert_eq!(member.kind, GpuSemanticInterfaceMemberKind::GenericConstParameter as u32);
-                saw_symbolic_array = true;
+            if ty.kind == GpuSemanticInterfaceTypeKind::Array as u32 {
+                let extent = symbolic_array_extent(&artifact, ty);
+                if extent.kind == GpuSemanticInterfaceTypeKind::ConstParameter as u32 {
+                    let member = artifact.members[extent.payload_lo as usize];
+                    assert_eq!(member.owner_ref, predicate.owner_ref);
+                    assert_eq!(member.kind,
+                        GpuSemanticInterfaceMemberKind::GenericConstParameter as u32);
+                    saw_symbolic_array = true;
+                }
             }
             saw_reference |= ty.kind == GpuSemanticInterfaceTypeKind::Reference as u32;
             saw_slice |= ty.kind == GpuSemanticInterfaceTypeKind::Slice as u32;
@@ -329,7 +372,7 @@ fn hidden<T>(v:T)->T where T:Marker {return v;}
                 ..(ty.first_edge + ty.edge_count) as usize].iter().map(|edge| edge.type_index));
         }
     }
-    assert!(saw_symbolic_array && saw_reference && saw_slice);
+    assert_eq!((saw_symbolic_array, saw_reference, saw_slice), (true, true, true));
     artifact.validate().unwrap();
     assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&artifact.to_bytes().unwrap()).unwrap(), artifact);
 }
@@ -457,10 +500,7 @@ fn semantic_interface_preserves_thirty_two_ordered_callable_predicate_operands()
         assert_eq!(cell.kind, GpuSemanticInterfaceTypeKind::Declaration as u32);
         assert_eq!(cell.edge_count, 1);
         let array = artifact.types[artifact.type_edges[cell.first_edge as usize].type_index as usize];
-        assert_eq!(array.kind, GpuSemanticInterfaceTypeKind::Array as u32);
-        assert_eq!(array.length_kind, 1);
-        assert_eq!(array.length_lo, ordinal as u32);
-        assert_eq!(array.length_hi, 0);
+        assert_eq!(concrete_array_extent(&artifact, array), (ordinal as u32, 0));
     }
     assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&artifact.to_bytes().unwrap()).unwrap(), artifact);
 }
@@ -548,7 +588,9 @@ fn semantic_interface_implementation_reference_operands_preserve_nested_graphs()
         for (depth, kind) in kinds.iter().enumerate() {
             let node = interface.types[root as usize];
             assert_eq!(node.kind, *kind as u32, "{operand} at depth {depth}");
-            assert_eq!(node.edge_count, u32::from(depth + 1 < kinds.len()), "{operand}");
+            // An array's second edge is its extent; the walk follows the element.
+            let edges = if *kind == Array { 2 } else { u32::from(depth + 1 < kinds.len()) };
+            assert_eq!(node.edge_count, edges, "{operand} at depth {depth}");
             if node.edge_count != 0 { root = interface.type_edges[node.first_edge as usize].type_index; }
         }
     }
@@ -569,8 +611,7 @@ fn semantic_interface_implementation_operands_preserve_thirty_two_independent_gr
         let cell = interface.types[*root as usize];
         assert_eq!(cell.kind, GpuSemanticInterfaceTypeKind::Declaration as u32);
         let array = interface.types[interface.type_edges[cell.first_edge as usize].type_index as usize];
-        assert_eq!(array.kind, GpuSemanticInterfaceTypeKind::Array as u32);
-        assert_eq!((array.length_kind, array.length_lo, array.length_hi), (1, ordinal as u32, 0));
+        assert_eq!(concrete_array_extent(&interface, array), (ordinal as u32, 0));
     }
     assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&interface.to_bytes().unwrap()).unwrap(), interface);
 }
