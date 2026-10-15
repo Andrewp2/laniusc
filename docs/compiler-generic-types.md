@@ -178,12 +178,58 @@ NVIDIA cache leaf. That cache condition and the unresolved startup limit are
 recorded with the evidence. These are correctness results, not refreshed cold,
 large-workload, or cross-compiler performance acceptance.
 
-Abstract member calls through `T: Trait` remain unfinished, as do trait methods'
-own generic headers and own `where` clauses. Those cases still reject explicitly.
-Direct generic impl methods do not establish that broader required-member
-routing. Complete primitive widths/floating point, full-width constant identity
-and forwarding, durable file-backed native publication, and the full stdlib
-acceptance gate also remain open.
+Abstract member calls through `T: Trait` are implemented only for the cases in
+[bound-member calls](#bound-member-calls-through-t-trait-2026-10-14) below.
+Trait methods' own generic headers and own `where` clauses remain unfinished and
+still reject explicitly. Direct generic impl methods do not establish broader
+required-member routing. Complete primitive widths/floating point, full-width
+constant identity and forwarding, durable file-backed native publication, and
+the full stdlib acceptance gate also remain open.
+
+## Bound-member calls through `T: Trait` (2026-10-14)
+
+A dotted call whose receiver type is a lexical type parameter `P` (directly or
+behind references) now resolves when an accepted predicate `P: Trait` of the
+call's enclosing generic scopes declares a member of that name.
+`methods/07a_offer_bound_members` joins the published predicate tables: the owner
+lookup, the subject's parameter row, the trait reference and the member
+contracts. It offers the required member as a local candidate in every method
+selection stage, at the receiver's dereference rank. Ordinary ranking, ambiguity
+and unresolved-method rejection still apply. Required members publish signature
+metadata (name, receiver mode, parameter offset) but no method row, so they never
+enter receiver lookup. The early predicate passes now run before scope
+resolution, so their tables exist when method selection runs.
+
+The generic body stays a template. Codegen defers a body that has a call whose
+receiver parameter is still `P`. A trait's own member is a contract over `Self`
+and never becomes a native definition. Body replay substitutes each call's
+accepted receiver and parameter types. `methods/09_route_bound_members` then
+routes the call to the implementation member of the bounding trait whose closed
+receiver pattern equals the concrete receiver. It updates the accepted candidate
+and the callee together, so call artifacts read one fact.
+
+Limits:
+- Only local traits without arguments. Only dotted calls of `self` and `&self`
+  members. Only non-generic local implementations.
+- Imported traits and traits with arguments offer no bound member. They keep the
+  ordinary unresolved-method rejection.
+- A generic implementation (`impl<U> Read for Box<U>`) needs its own call
+  environment, which symbolic selection cannot produce. Such calls reject with
+  LNC0027 ("no concrete implementation member to route to"). So do imported
+  implementations and receivers with no matching implementation.
+- Static members and explicitly typed `self` members are invalid candidates.
+
+Evidence:
+- Generics-matrix p12 and focused probes now execute. Tested programs: by-value
+  `self` with two calls in one body, `&self`, and a scalar `impl Twice for i32`.
+  The generic implementation rejects as described above.
+- `generic_bound_member_calls_*` in `tests/compiler_generic_types_execution.rs`
+  covers these cases.
+- Two related programs still time out in the call-inference loop, as
+  generics-matrix p04 and p14 do: a `&T` receiver, and two instantiations of one
+  bounded function. For p04 the hanging kernel is
+  `calls/03e1_expand_application_fields`. A control with two instantiations and
+  no trait times out the same way, so this is not a routing failure.
 
 ## Conditional and blanket implementations (2026-10-11)
 
