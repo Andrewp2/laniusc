@@ -56,6 +56,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsApplyPre
             // read-only view of depths for offset
             ("out_depths_ro".into(), b.depths_out.as_entire_binding()),
             ("layer".into(), b.b_layer.as_entire_binding()),
+            (
+                "layer_local_min".into(),
+                b.b_layer_local_min.as_entire_binding(),
+            ),
         ])
     }
 }
