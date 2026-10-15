@@ -42,8 +42,13 @@ DEFAULT_BENCHMARK_SEED = 20260808
 DEFAULT_SAMPLE_COUNT = 20
 CANONICAL_SINGLE_FILE_PRESET = "single-file-1mb"
 GENERIC_SINGLE_FILE_PRESET = "single-file-generic-1mb"
+GENERIC_NARROW_SINGLE_FILE_PRESET = "single-file-generic-narrow-1mb"
 GENERIC_PROJECT_PRESET = "project-generic-1mb"
+GENERIC_NARROW_PROJECT_PRESET = "project-generic-narrow-1mb"
 GENERIC_PROFILE = "generic-stdlib-heavy"
+# Four record types as type arguments: ~160 concrete generic bodies instead of
+# ~2200, under the compiler's current 256-body specialization limit (LNC0017).
+GENERIC_NARROW_PROFILE = "generic-stdlib-heavy-type-pool-4"
 GPU_COMPILER_PHASES = frozenset(
     {
         "lexing",
@@ -74,6 +79,7 @@ class WorkloadSpec:
     # (tools/generate_generic_workload.py); layout applies to "generic".
     generator: str = "compiler-stress"
     layout: str = "single-file"
+    generator_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -121,6 +127,31 @@ CANONICAL_WORKLOAD_PRESETS = {
         primer_seed=19,
         generator="generic",
         layout="project",
+    ),
+    # Same mix and size with fewer distinct type arguments, so the programs fit
+    # today's specialization limit and the generic paths can be timed now.
+    GENERIC_NARROW_SINGLE_FILE_PRESET: WorkloadSpec(
+        kind="single_file",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=GENERIC_NARROW_SINGLE_FILE_PRESET,
+        target_bytes=1_000_000,
+        profile=GENERIC_NARROW_PROFILE,
+        primer_seed=19,
+        generator="generic",
+        generator_args=("--type-pool", "4"),
+    ),
+    GENERIC_NARROW_PROJECT_PRESET: WorkloadSpec(
+        kind="typical_project",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=GENERIC_NARROW_PROJECT_PRESET,
+        target_bytes=1_000_000,
+        profile=GENERIC_NARROW_PROFILE,
+        primer_seed=19,
+        generator="generic",
+        layout="project",
+        generator_args=("--type-pool", "4"),
     ),
 }
 
@@ -610,6 +641,7 @@ def prepare_generic_workload(spec: WorkloadSpec, target: str):
             str(spec.target_bytes),
             "--seed",
             str(seed),
+            *spec.generator_args,
         ]
         checked(command, ROOT)
         generation_commands.append(command)
@@ -639,6 +671,7 @@ def prepare_generic_workload(spec: WorkloadSpec, target: str):
         "preset": spec.preset,
         "profile": spec.profile,
         "layout": spec.layout,
+        "generator_args": list(spec.generator_args),
         "measured_seeds": list(spec.seeds),
         "primer_seed": spec.primer_seed,
         "target_source_bytes": spec.target_bytes,

@@ -37,34 +37,43 @@ comments and strings stripped):
   generic impls, 59 type applications per KSLOC, 5.7 impls per trait, method
   calls 60% of calls.
 
-The generated program sits between the two, as stdlib-heavy user code does:
-* about 12% of lines are the library and per-area generic helpers; the rest
-  is user code (records, trait impls, leaf functions, area dispatchers);
-* leaf function sizes follow tools/typical_project_profile.json's step bands
-  (65% 1-3 steps, 25% 4-8, 8% 9-20, 2% 21-55), so median functions are ~10
-  lines and the p99 is ~150;
+The generated program sits between the two, as stdlib-heavy user code does.
+Measured on the 1 MB, seed 20 program (`--stats`):
+* 28.2k nonblank lines (29.8k physical) in 1,000,000 bytes; the canonical
+  single-file-1mb corpus has 31.7k shorter lines;
+* 87% of lines are leaf functions, 6% record types with their impls, 4% area
+  dispatchers, 2% per-area generic helpers, 1% the shared library. Leaf sizes
+  follow tools/typical_project_profile.json's step bands (65% 1-3 steps, 25%
+  4-8, 8% 9-20, 2% 21-55): median 16 lines, p90 46, p99 121;
 * 30% of steps are plain scalar arithmetic like the canonical benchmark; 70%
-  go through the generic library. Step kinds are weighted towards the common
-  stdlib shapes (Box/Pair/Option/Result/Stack/slices first, then const
-  generics, nested applications and trait bounds); see STEP_KINDS;
+  go through the generic library, weighted towards the common stdlib shapes
+  (Box/Pair/Option/Result/Stack/slices first, then methods of generic types,
+  nested applications, trait bounds and const-length arrays); see STEP_KINDS;
+* 114 type applications per KSLOC (corpora: 59 user, 129 stdlib-like); 66% of
+  free-function call sites call generic functions; method calls are 25% of
+  calls (the Lanius library leans on free functions, as stdlib/core does);
 * each area declares 4 record types (2 or 3 i32 fields), each with a `Score`
-  impl, a `Weight` impl and an inherent `borrow(&self)`; one generic
-  `Ledger<T>` with an `impl<T>` block; and one bounded generic fold
-  `fold<T>(items: [T], ...) where T: Score`;
-* 80% of record steps use the area's own records, 20% another area's, so the
-  1 MB program instantiates the library at several hundred distinct type
-  arguments.
-The script prints measured statistics (type applications per KSLOC, generic
-call sites, distinct instantiations) with --stats.
+  impl, a `Weight` impl and an inherent `borrow(&self)`, so traits have ~88
+  impls each; one generic `Ledger<T>` with an `impl<T>` block; and one bounded
+  generic fold `fold<T>(items: [T], ...) where T: Score`;
+* 80% of record steps use the area's own records, 20% another area's: 808
+  distinct concrete type applications and ~2,260 concrete generic bodies
+  (functions and methods per type-argument list).
+`--type-pool N` draws record type arguments from the first N record types
+only (N = 4: 59 applications, ~160 bodies), which fits the compiler's current
+256-body specialization limit (LNC0017) without changing the mix.
 
-Only shapes that tests/fixtures/generics_matrix shows working are emitted by
-default, plus combinations of them validated with `--probes`. `--backlog`
-adds steps that need unimplemented features (methods of generic impls called
-through a trait bound, tests/fixtures/generics_backlog/b00).
+Only shapes that tests/fixtures/generics_matrix shows working, and
+combinations of them validated with `--probes` on the GPU, are emitted by
+default. `--backlog` adds steps that need features that do not work yet:
+methods of generic impls called through a trait bound
+(tests/fixtures/generics_backlog/b00), conditional marker impls (matrix p27)
+and const-generic structs (matrix p24 shape). Match arms are kept to `name`
+or `a + b`, because an arm like `(v ^ x) & 4095` is a syntax error today.
 
-`--probes DIR` writes one small program per step kind with a matrix-style
-`// expect: N` first line (N is the checksum modulo 128, returned from main),
-for `tools/generics_matrix.py --probes DIR`.
+`--probes DIR` writes one small program per step kind, plus one mixing all of
+them, with a matrix-style `// expect: N` first line (N is the checksum modulo
+128, returned from main), for `tools/generics_matrix.py --probes DIR`.
 """
 
 from __future__ import annotations
@@ -111,21 +120,31 @@ STEP_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
     "nested_box_maybe_arr": (3, ("Pair", "Box", "unbox", "Maybe", "unwrap_or"), False),
     "nested_box_pair": (3, ("Pair", "make_pair", "Box", "boxed", "unbox"), True),
     "nested_maybe_box": (3, ("Maybe", "just", "Box", "boxed"), True),
-    "const_buffer": (4, ("Buffer", "keep_length", "buffer_first"), False),
-    "const_buffer_rec": (2, ("Buffer", "buffer_first"), True),
     "wrap_const": (3, ("Wrap", "Wrap_impl"), False),
     "repeat_rec": (3, ("repeat3",), True),
     "view_i32": (3, ("View", "view_first"), False),
     "pick_ref": (3, ("pick",), True),
-    "slot_get": (3, ("Get", "Slot", "Slot_impl"), True),
-    "cell_get": (3, ("Cell", "Cell_impl"), False),
+    "slot_get": (4, ("Get", "Slot", "Slot_impl"), True),
+    "cell_get": (4, ("Cell", "Cell_impl"), False),
     "choose": (4, ("choose",), False),
     "fold": (4, ("Score",), True),
     "ledger": (4, ("Score", "score_of"), True),
+    "maybe_method": (6, ("Maybe", "maybe_if", "Maybe_impl"), True),
+    "stack_push": (4, ("Stack", "Stack_impl"), False),
+    "score_i32": (3, ("Score", "Score_i32", "total"), False),
+    "twice_box": (3, ("Box", "boxed", "twice_box"), True),
+    "pair_methods": (5, ("Pair", "Pair_impl"), True),
 }
 # Steps that need features the matrix does not pass yet (generics_backlog).
 BACKLOG_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
     "twice_bound": (3, ("Score", "score_of", "Twice", "Twice_impl"), True),
+    # Conditional marker impls over generic structs and const-length arrays
+    # (generics_matrix p27, failing on the code-38 bug).
+    "marker_bound": (3, ("Cell", "Mark", "keep"), False),
+    # Const-generic structs (generics_matrix p24 shape): the semantic
+    # interface export fails with status 0x80 on the 2026-10-14 build.
+    "const_buffer": (4, ("Buffer", "keep_length", "buffer_first"), False),
+    "const_buffer_rec": (2, ("Buffer", "buffer_first"), True),
 }
 PLAIN_KINDS = ("add", "mul", "xor", "branch")
 
@@ -133,8 +152,15 @@ LIBRARY = {
     "Box": "struct Box<T> {\n    value: T,\n}\n",
     "boxed": "fn boxed<T>(value: T) -> Box<T> {\n    return Box { value: value };\n}\n",
     "unbox": "fn unbox<T>(b: Box<T>) -> T {\n    return b.value;\n}\n",
+    "twice_box": "fn twice_box<T>(value: T) -> Box<Box<T>> {\n    return boxed(boxed(value));\n}\n",
     "Pair": "struct Pair<A, B> {\n    first: A,\n    second: B,\n}\n",
     "make_pair": "fn make_pair<A, B>(a: A, b: B) -> Pair<A, B> {\n    return Pair { first: a, second: b };\n}\n",
+    "Pair_impl": (
+        "impl<A, B> Pair<A, B> {\n"
+        "    fn swapped(self) -> Pair<B, A> {\n"
+        "        return Pair { first: self.second, second: self.first };\n    }\n\n"
+        "    fn left(&self) -> A {\n        return self.first;\n    }\n}\n"
+    ),
     "pair_first": "fn pair_first<A, B>(p: Pair<A, B>) -> A {\n    return p.first;\n}\n",
     "pair_second": "fn pair_second<A, B>(p: Pair<A, B>) -> B {\n    return p.second;\n}\n",
     "Maybe": "enum Maybe<T> {\n    Nothing,\n    Just(T),\n}\n",
@@ -148,6 +174,13 @@ LIBRARY = {
         "fn unwrap_or<T>(m: Maybe<T>, fallback: T) -> T {\n"
         "    return match (m) { Nothing => fallback, Just(v) => v };\n}\n"
     ),
+    "Maybe_impl": (
+        "impl<T> Maybe<T> {\n"
+        "    fn or_value(self, fallback: T) -> T {\n"
+        "        return match (self) { Nothing => fallback, Just(v) => v };\n    }\n\n"
+        "    fn is_just(&self) -> bool {\n"
+        "        return match (self) { Nothing => false, Just(v) => true };\n    }\n}\n"
+    ),
     "Outcome": "enum Outcome<T, E> {\n    Good(T),\n    Bad(E),\n}\n",
     "good_if": (
         "fn good_if<T, E>(ok: bool, value: T, error: E) -> Outcome<T, E> {\n"
@@ -159,7 +192,10 @@ LIBRARY = {
         "impl<T> Stack<T> {\n"
         "    fn top(&self) -> T {\n        return self.items[self.len - 1];\n    }\n\n"
         "    fn at(&self, index: i32) -> T {\n        return self.items[index];\n    }\n\n"
-        "    fn size(&self) -> i32 {\n        return self.len;\n    }\n}\n"
+        "    fn size(&self) -> i32 {\n        return self.len;\n    }\n\n"
+        "    fn pushed(self, value: T) -> Stack<T> {\n"
+        "        let items: [T; 4] = self.items;\n        items[self.len] = value;\n"
+        "        return Stack { items: items, len: self.len + 1 };\n    }\n}\n"
     ),
     "get": "fn get<T>(values: [T], index: i32) -> T {\n    return values[index];\n}\n",
     "swap": (
@@ -200,6 +236,7 @@ LIBRARY = {
         f"    return (a.score() + b.score()) {MASK};\n}}\n"
     ),
     "score_of": "fn score_of<T>(value: T) -> i32 where T: Score {\n    return value.score();\n}\n",
+    "Score_i32": f"impl Score for i32 {{\n    fn score(self) -> i32 {{\n        return (self * 3 + 1) {MASK};\n    }}\n}}\n",
     "Weight": "trait Weight {\n    fn weight(self) -> i32;\n}\n",
     "heavier": (
         "fn heavier<T>(a: T, b: T) -> T where T: Weight {\n"
@@ -210,6 +247,13 @@ LIBRARY = {
         "impl<T> Score for Twice<T> where T: Score {\n"
         f"    fn score(self) -> i32 {{\n        return (self.inner.score() * 2) {MASK};\n    }}\n}}\n"
     ),
+    "Mark": (
+        "trait Mark {}\n\n"
+        "impl Mark for i32 {}\n\n"
+        "impl<T> Mark for Cell<T> where T: Mark {}\n\n"
+        "impl<T, const N: usize> Mark for [T; N] where T: Mark {}\n"
+    ),
+    "keep": "fn keep<T>(value: T) -> T where T: Mark {\n    return value;\n}\n",
 }
 LIBRARY_ORDER = tuple(LIBRARY)
 LIBRARY_TRAITS = ("Score", "Weight", "Get")
@@ -308,9 +352,13 @@ def build_workload(
     leaf_count: int,
     kinds: dict[str, tuple[int, tuple[str, ...], bool]],
     only_kind: str | None = None,
+    type_pool: int | None = None,
 ) -> Workload:
+    """`type_pool` limits record type arguments to the first N record types."""
     area_count = (leaf_count + LEAVES_PER_AREA - 1) // LEAVES_PER_AREA
     areas = [build_area(seed, index) for index in range(area_count)]
+    all_records = [record for area in areas for record in area.records]
+    pool_records = all_records[:type_pool] if type_pool else None
     names = sorted(kinds)
     weights = [kinds[name][0] for name in names]
     for leaf_index in range(leaf_count):
@@ -328,9 +376,17 @@ def build_workload(
                 kind = rng.choices(names, weights)[0]
             record = other = None
             if kind not in PLAIN_KINDS and kinds[kind][2]:
-                pool = area.records if rng.randrange(100) < 80 or len(areas) == 1 else rng.choice(areas).records
-                record = rng.choice(pool)
-                other = rng.choice(pool)
+                if pool_records:
+                    pool = pool_records
+                elif rng.randrange(100) < 80 or len(areas) == 1:
+                    pool = area.records
+                else:
+                    pool = rng.choice(areas).records
+                index = rng.randrange(len(pool))
+                record = pool[index]
+                # Pairs of records use the next record type, so each record
+                # adds one two-record application rather than len(pool).
+                other = pool[(index + 1) % len(pool)]
             a = rng.randint(1, 9) if kind == "mul" else rng.randint(0, M)
             steps.append(Step(kind, a, rng.randint(0, M), rng.randint(0, 1 << 30), record, other))
         role = ROLES[leaf_index % len(ROLES)]
@@ -373,7 +429,7 @@ def evaluate_step(step: Step, value: int, x: int) -> int:
     if kind == "pair_rec_rec":
         return (r.score(record_values(r, value, a, x)) + x) & M
     if kind == "maybe_i32_match":
-        return (((value + a) & M) ^ x) & M
+        return (((value + a) & M) + x) & M
     if kind == "maybe_rec":
         bit = 1 << (c % 12)
         return (value + a) & M if value & bit else (b + x) & M
@@ -448,7 +504,67 @@ def evaluate_step(step: Step, value: int, x: int) -> int:
         return (head[0] + area_ledger_count(step) + r.score(tail)) & M
     if kind == "twice_bound":
         return (r.score(record_values(r, value, a, x)) * 2) & M
+    if kind == "maybe_method":
+        bit = 1 << (c % 12)
+        return (value + a + 1) & M if value & bit else (b + x) & M
+    if kind == "stack_push":
+        return (((value + a) & M) + 3 + 2) & M
+    if kind == "score_i32":
+        return ((((value * 3 + 1) & M) + ((x * 3 + 1) & M)) & M) + a & M
+    if kind == "twice_box":
+        return (value + a) & M
+    if kind == "pair_methods":
+        return (((x + b) & M) + a + value) & M
+    if kind == "marker_bound":
+        return (value + x + a) & M
     raise ValueError(f"unknown step kind {kind}")
+
+
+def step_specializations(step: Step) -> list[str]:
+    """Concrete generic bodies a step needs (functions and methods with type arguments)."""
+    r = step.record.name if step.record else ""
+    o = step.other.name if step.other else ""
+    area = area_name(step.record.area) if step.record else ""
+    ledger = f"{camel(area)}Ledger"
+    c = step.c
+    table = {
+        "box_i32": ["boxed<i32>", "unbox<i32>"],
+        "box_rec": [f"boxed<{r}>", f"unbox<{r}>"],
+        "pair_rec_i32": [f"make_pair<{r},i32>", f"pair_first<{r},i32>", f"pair_second<{r},i32>"],
+        "pair_i32_bool": ["make_pair<i32,bool>", "pair_first<i32,bool>", "pair_second<i32,bool>"],
+        "pair_rec_rec": [f"make_pair<{r},{o}>", f"pair_first<{r},{o}>", f"pair_second<{r},{o}>", f"score_of<{r}>"],
+        "maybe_i32_match": ["just<i32>"],
+        "maybe_rec": [f"maybe_if<{r}>", f"unwrap_or<{r}>"],
+        "outcome_rec": [f"good_if<i32,{r}>"],
+        "stack_i32": ["Stack<i32>::top", "Stack<i32>::at", "Stack<i32>::size"],
+        "stack_rec": [f"Stack<{r}>::top", f"Stack<{r}>::size"],
+        "slice_i32": ["swap<i32>", "get<i32>", "count<i32>"],
+        "slice_rec": [f"swap<{r}>", f"get<{r}>"],
+        "trait_total": [f"total<{r}>"],
+        "heavier": [f"heavier<{r}>"],
+        "nested_box_maybe_arr": ["unwrap_or<[i32;4]>", "unbox<i32>"],
+        "nested_box_pair": [f"make_pair<{r},i32>", f"boxed<Pair<{r},i32>>", f"unbox<Pair<{r},i32>>"],
+        "nested_maybe_box": [f"boxed<{r}>", f"just<Box<{r}>>"],
+        "const_buffer": [f"keep_length<i32,{2 + c % 4}>", f"buffer_first<i32,{2 + c % 4}>"],
+        "const_buffer_rec": [f"buffer_first<{r},2>"],
+        "wrap_const": [f"Wrap<[i32;{2 + c % 3}]>::copy", f"Wrap<[i32;{2 + c % 3}]>::length"],
+        "repeat_rec": [f"repeat3<{r}>"],
+        "view_i32": ["view_first<i32>"],
+        "pick_ref": [f"pick<{r}>"],
+        "slot_get": [f"Slot<{r}>::get"],
+        "cell_get": ["Cell<i32>::get"],
+        "choose": ["choose<i32>"],
+        "fold": [f"{area}_fold<{r}>"],
+        "ledger": [f"{ledger}<{r}>::head", f"{ledger}<{r}>::tail", f"{ledger}<{r}>::count", f"score_of<{r}>"],
+        "maybe_method": [f"maybe_if<{r}>", f"Maybe<{r}>::or_value", f"Maybe<{r}>::is_just"],
+        "stack_push": ["Stack<i32>::pushed", "Stack<i32>::top", "Stack<i32>::size"],
+        "score_i32": ["total<i32>"],
+        "twice_box": [f"twice_box<{r}>", f"boxed<{r}>", f"boxed<Box<{r}>>"],
+        "pair_methods": [f"Pair<{r},i32>::swapped", f"Pair<{r},i32>::left", f"Pair<i32,{r}>::left"],
+        "twice_bound": [f"score_of<Twice<{r}>>", f"Twice<{r}>::score"],
+        "marker_bound": ["keep<[i32;2]>", "keep<Cell<Cell<i32>>>"],
+    }
+    return table.get(step.kind, [])
 
 
 def record_values(record: Record, f0: int, f1: int, f2: int) -> tuple[int, ...]:
@@ -573,8 +689,9 @@ def render_step(q: Names, area: Area, step: Step, n: int) -> list[str]:
             f"    let m{n}: {q('Maybe')}<i32> = {q('just')}((value + {a}) {MASK});",
             f"    value = match (m{n}) {{",
             f"        {q('Nothing')} => {b},",
-            f"        {q('Just')}(inner{n}) => (inner{n} ^ x) {MASK},",
+            f"        {q('Just')}(inner{n}) => inner{n} + x,",
             "    };",
+            f"    value = value {MASK};",
         ]
     if kind == "maybe_rec":
         bit = 1 << (c % 12)
@@ -596,8 +713,9 @@ def render_step(q: Names, area: Area, step: Step, n: int) -> list[str]:
             "    );",
             f"    value = match (o{n}) {{",
             f"        {q('Good')}(g{n}) => g{n},",
-            f"        {q('Bad')}(e{n}) => (e{n}.f0 + e{n}.f1) {MASK},",
+            f"        {q('Bad')}(e{n}) => e{n}.f0 + e{n}.f1,",
             "    };",
+            f"    value = value {MASK};",
         ]
     if kind == "stack_i32":
         length = 1 + c % 4
@@ -678,8 +796,9 @@ def render_step(q: Names, area: Area, step: Step, n: int) -> list[str]:
             "    ));",
             f"    value = match (m{n}) {{",
             f"        {q('Nothing')} => {b},",
-            f"        {q('Just')}(bx{n}) => (bx{n}.value.f0 + {a}) {MASK},",
+            f"        {q('Just')}(bx{n}) => bx{n}.value.f0 + {a},",
             "    };",
+            f"    value = value {MASK};",
         ]
     if kind == "const_buffer":
         size = 2 + c % 4
@@ -765,6 +884,51 @@ def render_step(q: Names, area: Area, step: Step, n: int) -> list[str]:
             f"    let h{n}: {r.name} = l{n}.head();",
             f"    let t{n}: {r.name} = l{n}.tail();",
             f"    value = (h{n}.f0 + l{n}.count() + {q('score_of')}(t{n})) {MASK};",
+        ]
+    if kind == "marker_bound":
+        return [
+            f"    let k{n}: [i32; 2] = {q('keep')}([value, x]);",
+            f"    let c{n}: {q('Cell')}<{q('Cell')}<i32>> = {q('keep')}({q('Cell')} {{ value: {q('Cell')} {{ value: {a} }} }});",
+            f"    value = (k{n}[0] + k{n}[1] + c{n}.value.value) {MASK};",
+        ]
+    if kind == "maybe_method":
+        bit = 1 << (c % 12)
+        return [
+            f"    let m{n}: {q('Maybe')}<{r.name}> = {q('maybe_if')}(",
+            f"        (value & {bit}) != 0,",
+            f"        {record_literal(q, r, 'value', str(a), 'x')},",
+            "    );",
+            f"    let r{n}: {r.name} = m{n}.or_value({record_literal(q, r, str(b), 'x', str(a))});",
+            f"    if (m{n}.is_just()) {{",
+            f"        value = (r{n}.f0 + r{n}.f1 + 1) {MASK};",
+            "    } else {",
+            f"        value = (r{n}.f0 + r{n}.f1) {MASK};",
+            "    }",
+        ]
+    if kind == "stack_push":
+        return [
+            f"    let s{n}: {q('Stack')}<i32> = {q('Stack')} {{ items: [value, x, 0, 0], len: 2 }};",
+            f"    let t{n}: {q('Stack')}<i32> = s{n}.pushed((value + {a}) {MASK});",
+            f"    value = (t{n}.top() + t{n}.size() + s{n}.size()) {MASK};",
+        ]
+    if kind == "score_i32":
+        return [f"    value = ({q('total')}(value, x) + {a}) {MASK};"]
+    if kind == "twice_box":
+        return [
+            f"    let b{n}: {q('Box')}<{q('Box')}<{r.name}>> = {q('twice_box')}(",
+            f"        {record_literal(q, r, 'value', str(a), 'x')},",
+            "    );",
+            f"    value = (b{n}.value.value.f0 + b{n}.value.value.f1) {MASK};",
+        ]
+    if kind == "pair_methods":
+        return [
+            f"    let p{n}: {q('Pair')}<{r.name}, i32> = {q('Pair')} {{",
+            f"        first: {record_literal(q, r, 'value', str(a), 'x')},",
+            f"        second: (x + {b}) {MASK},",
+            "    };",
+            f"    let q{n}: {q('Pair')}<i32, {r.name}> = p{n}.swapped();",
+            f"    let r{n}: {r.name} = p{n}.left();",
+            f"    value = (q{n}.left() + r{n}.f1 + q{n}.second.f0) {MASK};",
         ]
     if kind == "twice_bound":
         return [
@@ -988,6 +1152,9 @@ def statistics(sources: dict[str, str], workload: Workload) -> dict[str, object]
         "type_applications": len(TYPE_APP.findall(code)),
         "type_applications_per_kloc": round(len(TYPE_APP.findall(code)) / kloc, 1),
         "distinct_concrete_type_applications": len(instantiations),
+        "generic_body_specializations": len({
+            name for leaf in workload.leaves for step in leaf.steps for name in step_specializations(step)
+        }),
         "step_kinds": {kind: sum(1 for leaf in workload.leaves for step in leaf.steps if step.kind == kind)
                        for kind in sorted(used_kinds(workload))},
     }
@@ -1008,9 +1175,9 @@ def kinds_for(backlog: bool, without: list[str] | None = None) -> dict[str, tupl
     return kinds
 
 
-def largest_workload_that_fits(seed: int, target_bytes: int, kinds) -> int:
+def largest_workload_that_fits(seed: int, target_bytes: int, kinds, type_pool: int | None = None) -> int:
     def size(leaf_count: int) -> int:
-        return len(render_single_file(build_workload(seed, leaf_count, kinds)).encode())
+        return len(render_single_file(build_workload(seed, leaf_count, kinds, type_pool=type_pool)).encode())
 
     low, high = 1, 2
     while size(high) <= target_bytes:
@@ -1047,6 +1214,8 @@ def main() -> int:
     parser.add_argument("--leaves", type=int, help="force the number of leaf functions")
     parser.add_argument("--backlog", action="store_true",
                         help="also emit steps that need features in tests/fixtures/generics_backlog")
+    parser.add_argument("--type-pool", type=int, metavar="N",
+                        help="use only the first N record types as type arguments (fewer specializations)")
     parser.add_argument("--without", action="append", default=[], metavar="KIND",
                         help="leave out a step kind (repeatable)")
     parser.add_argument("--probes", action="store_true",
@@ -1060,13 +1229,15 @@ def main() -> int:
     if args.probes:
         write_probes(args.out, args.seed, kinds)
         return 0
-    leaf_count = args.leaves or largest_workload_that_fits(args.seed, args.target_bytes, kinds)
+    pool = args.type_pool
+    leaf_count = args.leaves or largest_workload_that_fits(args.seed, args.target_bytes, kinds, pool)
     if args.layout == "project" and not args.leaves:
         # Qualified paths make the project larger than the single file; scale
         # the leaf count so the project's total size is close to the target.
-        size = sum(len(text.encode()) for text in render_project(build_workload(args.seed, leaf_count, kinds)).values())
+        project = render_project(build_workload(args.seed, leaf_count, kinds, type_pool=pool))
+        size = sum(len(text.encode()) for text in project.values())
         leaf_count = max(1, leaf_count * args.target_bytes // size)
-    workload = build_workload(args.seed, leaf_count, kinds)
+    workload = build_workload(args.seed, leaf_count, kinds, type_pool=pool)
     args.out.mkdir(parents=True, exist_ok=True)
     if args.layout == "single-file":
         target = None if args.leaves or args.matrix_probe else args.target_bytes
@@ -1087,6 +1258,7 @@ def main() -> int:
         "seed": args.seed,
         "backlog": args.backlog,
         "without": sorted(args.without),
+        "type_pool": args.type_pool,
         "entry": entry,
         "source_root": source_root,
         "expected_stdout": expected_stdout(workload),
