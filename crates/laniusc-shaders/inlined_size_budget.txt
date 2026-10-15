@@ -16,8 +16,6 @@
 74920 type_checker/type/instances/02d_materialize_applications
 71627 type_checker/calls/03e1_expand_application_fields
 69762 type_checker/dependencies/14a_materialize_alias_targets
-66830 type_checker/program_evidence/entries/59_admit_implementation_proofs
-63720 type_checker/program_evidence/entries/54_admit_substitutions
 61826 type_checker/dependencies/08_validate_call_args
 60908 type_checker/methods/07_resolve_table
 58882 tests/typed_constant_identity_inference

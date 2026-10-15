@@ -10,7 +10,6 @@ import type_checker.program_evidence.proof_store_abi;
 import type_checker.program_evidence.proof_term_graph;
 import type_checker.program_evidence.proof_term_normalization;
 import type_checker.program_evidence.proof_goal_admission;
-import type_checker.program_evidence.proof_substitution_admission;
 import type_checker.program_evidence.proof_goal_equality;
 import type_checker.program_evidence.replay_validation;
 import type_checker.program_evidence.owned_implementation_graph;
@@ -35,92 +34,10 @@ public EvidenceStatus pps_fixed_predicate_roots(uint predicate, uint goal, uint 
 
 // Proof8: kind, conclusion Goal, caller Context, impl/assumption source,
 // substitution, first ProofEdge, child count, class(1 concrete/2 symbolic).
-// Substitution4: implementation, first Binding, count, conclusion Goal.
-// Binding8: substitution backlink, exact parameter atom, term tag/payload;
-// owned projection-node span(first,count), two reserved zero words.
 // ProofEdge4: parent proof, exact prerequisite predicate, child proof, zero.
-public EvidenceStatus pps_admit_implementation_proof(uint proof, OwnedConstraintLimits limits)
-{
-    uint4 low; uint4 high; uint admitted_proofs;
-    if (!pps_count(PPS_PROOFS, admitted_proofs)) return pev_invalid(1u, proof, PPS_PROOFS);
-    bool read = proof < admitted_proofs ? pps_read8(PPS_PROOFS, proof, low, high) :
-        pps_read_pending8(PPS_PROOFS, proof, low, high);
-    if (!read || low.x != 1u || (high.w != 1u && high.w != 2u))
-        return pev_invalid(68u, proof, PEV_INVALID);
-    uint goals; uint substitutions;
-    if (!pps_building() || !pps_count(PPS_GOALS, goals) || low.y >= goals ||
-        !pps_count(PPS_SUBSTITUTIONS, substitutions) || high.x >= substitutions)
-        return pev_invalid(68u, proof, low.y);
-    // Substitution admission is a prior stage. Rechecking it here fixes the
-    // complete head match used for every prerequisite; no child may infer new
-    // implementation bindings after that head has been accepted.
-    uint4 substitution;
-    if (!pps_read4(PPS_SUBSTITUTIONS, high.x, 0u, substitution) ||
-        substitution.x != low.w || substitution.w != low.y ||
-        !pps_span(PPS_BINDINGS, substitution.y, substitution.z))
-        return pev_invalid(68u, proof, high.x);
-    // pps_admit_substitution(high.x, low.z, limits) as its walk (unit 0), then
-    // the fixed prerequisite checks (units 1..high.z). The fixed checks unify
-    // through the walk's call site, so the kernel expands one unification.
-    PpsSubstitutionWalk walk; PpsSubstitutionCall call;
-    pps_substitution_walk_begin(high.x, low.z, limits, walk, call);
-    EvidenceStatus result = pev_ok(); bool closed = false;
-    bool concrete = false;
-    uint4 edges = uint4(0u); uint4 implementation_prerequisites = uint4(0u);
-    uint4 edge = uint4(0u); uint4 child_extra = uint4(0u);
-    uint unit = 0u;
-    [loop]
-    for (;;)
-    {
-        EvidenceStatus status;
-        if (unit == 0u)
-        {
-            status = pps_substitution_feed(walk, call, result, closed);
-            if (status.state != PEV_VALID) return status;
-            if (call.kind == PPS_CALL_DONE)
-            {
-                concrete = walk.concrete;
-                uint accepted_edges;
-                if (!pps_descriptor(PPS_PROOF_EDGES, edges, accepted_edges))
-                    return pev_invalid(68u, proof, PPS_PROOF_EDGES);
-                if (!pev_read4(9u, low.w, 8u, implementation_prerequisites) ||
-                    high.z != implementation_prerequisites.y || (high.z == 0u && high.y != 0u) ||
-                    high.y > edges.y || high.z > edges.y - high.y) return pev_invalid(68u, proof, low.w);
-                unit = 1u;
-            }
-        }
-        else
-        {
-            if (result.state != PEV_VALID) return result;
-            if (walk.state.status.state != OWNED_CONSTRAINT_MATCHED)
-                return pev_owned_constraint_status(walk.state.status, edge.y);
-            concrete = concrete && child_extra.w == 1u;
-            unit++;
-        }
-        if (unit != 0u)
-        {
-            if (unit > high.z) break;
-            uint4 child;
-            uint edge_row = high.y + unit - 1u;
-            bool edge_read = edge_row < edges.w ? pps_read4(PPS_PROOF_EDGES, edge_row, 0u, edge) :
-                pps_read_pending4(PPS_PROOF_EDGES, edge_row, 0u, edge);
-            if (!edge_read ||
-                edge.x != proof || edge.y != implementation_prerequisites.x + unit - 1u || edge.w != 0u ||
-                edge.z >= proof || edge.z >= admitted_proofs || !pps_read8(PPS_PROOFS, edge.z, child, child_extra) ||
-                child.z != low.z || (child_extra.w != 1u && child_extra.w != 2u))
-                return pev_invalid(68u, proof, edge_row);
-            // No optimistic cycles: only a previously admitted children-first row
-            // can support this proof, independently of unresolved Work graph edges.
-            status = pps_fixed_predicate_roots(edge.y, child.y, walk.state.owners.x, call.match);
-            if (status.state != PEV_VALID) return status;
-            call.kind = PPS_CALL_ROOTS;
-        }
-        result = pps_substitution_call(walk, call, closed);
-    }
-    if (high.w != (concrete ? 1u : 2u)) return pev_invalid(68u, proof, high.w);
-    return pev_ok();
-}
-
+// An implementation proof is admitted by the substitution walk
+// (proof_substitution_walk.slang).
+//
 // Assumption leaves retain the authority of their caller context. An original
 // hypothesis stays symbolic even when its particular goal contains no rigid
 // parameters. Replay hypotheses require a prior accepted concrete proof.

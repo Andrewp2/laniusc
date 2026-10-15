@@ -524,7 +524,15 @@ impl GpuProgramEvidence {
                 #[cfg(test)]
                 typed_constant_fault_tests::inject_pending_substitution_fault(self, packet, layout, &progress)?;
                 let mut commands = encoder();
-                record(&mut commands, 54, work)?;
+                solver.record_substitutions(
+                    &self.device,
+                    &mut commands,
+                    work,
+                    &self.storage,
+                    &packet.input,
+                    &packet.output,
+                    resources,
+                )?;
                 solver.record_binding_rows(
                     &self.device,
                     &mut commands,
@@ -562,7 +570,15 @@ impl GpuProgramEvidence {
                 #[cfg(test)]
                 batch_tests::inject_pending_proof_fault(self, packet, layout, &progress)?;
                 let mut commands = encoder();
-                record(&mut commands, 59, queue)?;
+                solver.record_implementation_proofs(
+                    &self.device,
+                    &mut commands,
+                    queue,
+                    &self.storage,
+                    &packet.input,
+                    &packet.output,
+                    resources,
+                )?;
                 // Both proof kinds inspect the frozen pending wave before
                 // any proof or edge prefix gains admitted authority.
                 solver.record_assumption_proofs(

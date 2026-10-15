@@ -115,7 +115,7 @@ impl CatalogKernels {
 /// memory. Program evidence on canonical type IDs (plan P7) deletes them.
 pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
 /// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/thread_scratch.slang.
-pub(super) const THREAD_SCRATCH_CELLS: u32 = 1802;
+pub(super) const THREAD_SCRATCH_CELLS: u32 = 1808;
 
 /// Each dispatch has immutable parameters. A separate compute pass is a WGPU
 /// synchronization boundary; no following phase can observe a partially built
@@ -525,6 +525,14 @@ impl BatchKernels {
 /// proof_frontier_selection.slang.
 const SELECTION_PHASE: u32 = 53;
 const GENERIC_SELECTION_PHASE: u32 = 65;
+/// PPS_WALK_PHASE_WORK, PPS_WALK_PHASE_PROOFS and
+/// PPS_WALK_PHASE_PREREQUISITES in proof_substitution_walk.slang.
+const SUBSTITUTION_PHASE: u32 = 54;
+const IMPLEMENTATION_PROOF_PHASE: u32 = 59;
+const PREREQUISITE_PHASE: u32 = 66;
+const WALK_GOALS: &str = "type_checker/program_evidence/entries/54_walk_substitution_goals";
+const WALK_ROOTS: &str = "type_checker/program_evidence/entries/54_walk_substitution_roots";
+const WALK_BINDINGS: &str = "type_checker/program_evidence/entries/54_walk_substitution_bindings";
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
@@ -607,11 +615,11 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/53_select_work",
         256,
     ),
-    (
-        54,
-        "type_checker/program_evidence/entries/54_admit_substitutions",
-        256,
-    ),
+    // Substitution walk (phases 54, 59 and 66): see
+    // ProofKernels::record_substitutions.
+    (54, WALK_GOALS, 256),
+    (54, WALK_ROOTS, 256),
+    (54, WALK_BINDINGS, 256),
     (
         54,
         "type_checker/program_evidence/entries/54_admit_binding_rows",
@@ -635,11 +643,6 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         58,
         "type_checker/program_evidence/entries/58_emit_ready_proofs",
-        256,
-    ),
-    (
-        59,
-        "type_checker/program_evidence/entries/59_admit_implementation_proofs",
         256,
     ),
     (
@@ -723,7 +726,10 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        ensure!(phase != SELECTION_PHASE, "work selection records through record_selection");
+        ensure!(
+            !matches!(phase, SELECTION_PHASE | SUBSTITUTION_PHASE | IMPLEMENTATION_PROOF_PHASE),
+            "proof stage {phase} records through its own recorder"
+        );
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
@@ -734,9 +740,7 @@ impl ProofKernels {
     /// most THREAD_SCRATCH_SLOTS work rows, so no kernel inlines more than
     /// one search: exact implementation match, caller assumption search,
     /// generic implementation match (the first kernel again, as phase 65),
-    /// then the finish. Each phase hands its outcome to the next in the
-    /// row's thread-scratch slot (proof_frontier_selection.slang), so the
-    /// four dispatches of one chunk must run before the next chunk's.
+    /// then the finish (proof_frontier_selection.slang).
     pub fn record_selection(
         &self,
         device: &wgpu::Device,
@@ -747,24 +751,88 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        let index = |key: &str| {
-            PROOF_KEYS
-                .iter()
-                .position(|(_, entry, _)| *entry == key)
-                .expect("work selection kernels are required proof kernels")
-        };
-        let matcher = index("type_checker/program_evidence/entries/53_select_implementations");
+        let implementations = "type_checker/program_evidence/entries/53_select_implementations";
         let steps = [
-            (matcher, SELECTION_PHASE),
-            (index("type_checker/program_evidence/entries/53_select_assumptions"), SELECTION_PHASE),
-            (matcher, GENERIC_SELECTION_PHASE),
-            (index("type_checker/program_evidence/entries/53_select_work"), SELECTION_PHASE),
+            (implementations, SELECTION_PHASE),
+            ("type_checker/program_evidence/entries/53_select_assumptions", SELECTION_PHASE),
+            (implementations, GENERIC_SELECTION_PHASE),
+            ("type_checker/program_evidence/entries/53_select_work", SELECTION_PHASE),
         ];
+        self.record_chunked(device, encoder, &steps, span, catalog, input, output, proof)
+    }
+    /// INTERIM (P7): substitution admission walks each selected work's
+    /// substitution as three dispatches per chunk of at most
+    /// THREAD_SCRATCH_SLOTS work rows: up to the head match, the head's root
+    /// unification, then the bindings (proof_substitution_walk.slang).
+    pub fn record_substitutions(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        let steps = [
+            (WALK_GOALS, SUBSTITUTION_PHASE),
+            (WALK_ROOTS, SUBSTITUTION_PHASE),
+            (WALK_BINDINGS, SUBSTITUTION_PHASE),
+        ];
+        self.record_chunked(device, encoder, &steps, span, catalog, input, output, proof)
+    }
+    /// INTERIM (P7): implementation proof admission over ready proof events:
+    /// the same three walk dispatches per chunk as record_substitutions, then
+    /// the root unification kernel again (phase 66) for the proof's fixed
+    /// prerequisite checks.
+    pub fn record_implementation_proofs(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        let steps = [
+            (WALK_GOALS, IMPLEMENTATION_PROOF_PHASE),
+            (WALK_ROOTS, IMPLEMENTATION_PROOF_PHASE),
+            (WALK_BINDINGS, IMPLEMENTATION_PROOF_PHASE),
+            (WALK_ROOTS, PREREQUISITE_PHASE),
+        ];
+        self.record_chunked(device, encoder, &steps, span, catalog, input, output, proof)
+    }
+    /// A proof stage split over several dispatches per chunk of at most
+    /// THREAD_SCRATCH_SLOTS rows. Each step hands its rows' progress on to
+    /// the next in the row's thread-scratch slot (proof_scratch_handoff.slang),
+    /// so all steps of one chunk run before the next chunk's.
+    fn record_chunked(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        steps: &[(&str, u32)],
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<()> {
+        let steps = steps
+            .iter()
+            .map(|&(key, phase)| {
+                PROOF_KEYS
+                    .iter()
+                    .position(|(_, entry, _)| *entry == key)
+                    .map(|index| (index, phase))
+                    .ok_or_else(|| anyhow::anyhow!("unregistered proof kernel {key}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let mut done = 0u32;
         while done < span.count {
             let count = (span.count - done).min(THREAD_SCRATCH_SLOTS);
             let chunk = Span::new(span.first.checked_add(done).expect("checked span"), count)?;
-            for (index, phase) in steps {
+            for &(index, phase) in &steps {
                 record_phase_with_proof(device, encoder, &self.passes[index], phase, chunk,
                     PROOF_KEYS[index].2, catalog, input, output, Some(proof))?;
             }

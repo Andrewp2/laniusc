@@ -10,7 +10,7 @@ use super::{
 /// u32 words of a thread-scratch table holding `slots` slots: whole groups of
 /// THREAD_SCRATCH_GROUP slots of THREAD_SCRATCH_CELLS uint4 cells.
 pub(super) fn thread_scratch_words(slots: usize) -> usize {
-    slots.div_ceil(32) * 32 * 1802 * 4
+    slots.div_ceil(32) * 32 * 1808 * 4
 }
 
 fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]> {
