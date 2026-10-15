@@ -1115,6 +1115,8 @@ fn main() -> i32 {
         .expect("a fresh layout job for the same accepted array");
     assert_eq!(again[0].words(), 3);
     assert_eq!(values[0].words(), 3, "later jobs preserve the earlier owned result");
+    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
+    crate::compiler::write_debug_dispatch_capture();
 }
 
 #[test]
@@ -1166,6 +1168,8 @@ fn main() -> i32 { return inspect<Gap<i32, 3>>(); }
         native_layout_source(&packet, expected[0].0)).unwrap();
     assert_eq!(native_layout_semantic_shape(actual.clone()),
         native_layout_semantic_shape(expected[0].1.clone()));
+    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
+    crate::compiler::write_debug_dispatch_capture();
 }
 
 #[test]
@@ -1253,6 +1257,8 @@ fn main() -> i32 { return inspect<Cell<[i32; 3]>>(); }
     assert_eq!(valid[0].words(), 3);
     assert_eq!(native_layout_source(&packet, reference), provenance);
     assert!(!packet.poisoned);
+    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
+    crate::compiler::write_debug_dispatch_capture();
 }
 
 #[test]
