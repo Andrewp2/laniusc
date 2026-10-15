@@ -44,7 +44,6 @@
 76934 type_checker/methods/07_resolve_table
 76057 type_checker/program_evidence/entries/42_normalize_prerequisite
 75203 tests/typed_constant_identity_requests
-74997 type_checker/calls/03k1_project_literal_contexts
 74248 tests/typed_constant_identity_inference
 73796 type_checker/dependencies/08_validate_call_args
 73677 type_checker/program_evidence/entries/41_normalize_original
