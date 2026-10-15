@@ -2017,9 +2017,31 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
             if hir_items.body_specialization.is_some() {
-                for (required_feature, operation) in
-                    &bind_groups.semantic_projection.body_specialization
+                let projection = &bind_groups.semantic_projection;
+                for (index, (required_feature, operation)) in
+                    projection.body_specialization.iter().enumerate()
                 {
+                    if index == projection.body_canonical_split {
+                        // The body passes from here on read the IDs of the
+                        // specialized rows.
+                        record_canonical_types(
+                            device,
+                            queue,
+                            encoder,
+                            &projection.canonical_types,
+                            CanonicalStage::Body,
+                            &self.canonical_counts_readback,
+                            &self.canonical_validation_readback,
+                            canonical_scale,
+                        )?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.canonical.body.done");
+                        }
+                        bind_groups.calls.substitution.record_body_start(encoder)?;
+                        if let Some(timer) = timer.as_deref_mut() {
+                            timer.stamp(encoder, "typecheck.substitution.body_start.done");
+                        }
+                    }
                     if *required_feature != 0 && parser_feature_flags & required_feature == 0 {
                         continue;
                     }

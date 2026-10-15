@@ -352,7 +352,7 @@ result.
     one readback per stage).
   - Empty indirect rounds dispatch zero workgroups.
 
-### Stages: dependency pages, early and late
+### Stages: dependency pages, early, body and late
 
 Each job interns into one table, so an ID stays valid for the whole job.
 
@@ -395,14 +395,21 @@ Each job interns into one table, so an ID stays valid for the whole job.
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
+- **Body** (`03_rearm`, then rounds). A job with body specialization
+  records it right after `body_specialization.bindings`, then restarts the
+  substitution state (`substitution.body.clear`, `substitution.body.seed`),
+  so the body passes after it read the IDs of the specialized rows. It
+  costs those jobs one readback when its rounds fit one batch; other jobs
+  record nothing new.
 - **Body replay re-interns.** A replay job (`body_specialization_inputs`
   has a type or constant argument) rewrites rows and constants after the
   early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
-  `[i32; 2]` in place. Its late `03_rearm` therefore re-arms every
+  `[i32; 2]` in place. Its body and late `03_rearm` therefore re-arm every
   candidate. A candidate adopts an equal published record or takes a new
   one, so unchanged rows keep their IDs, and the early records stay valid
-  for the references that still name them. A consumer recorded between the replay and the
-  late stage would read early IDs of rewritten rows; none exists yet.
+  for the references that still name them. The substitution restart drops
+  the rows the job-start seed recorded for rewritten candidates
+  (`ct_row_of`); generated rows are stable, so the seed finds them again.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a
   false or missed merge (and the bridge self-check as a mismatch).
@@ -427,11 +434,11 @@ IDs 1..17, and empty rows are `CT_NONE`, so neither takes a record.
 
 Worst-case bounds:
 
-- **Records:** 32 + 2 × (candidates + dependency nodes) + 4 × constant rows
-  + the substitution producers' records (`substitution_canonical_extra`).
+- **Records:** 32 + 3 × candidates + 2 × dependency nodes + 6 × constant
+  rows + the substitution producers' records (`substitution_canonical_extra`).
   - A candidate or node allocates at most once per stage it is re-armed in:
-    the early stage, and the late stage again after a body replay.
-  - Count classes add at most 4 records per constant row.
+    the early stage, and the body and late stages again after a body replay.
+  - Count classes add at most 6 records per constant row.
   - A lost race wastes its record. When the lanes of one wave intern the
     same new key, all of them miss and all of them allocate. The losers'
     records stay stored, but no slot or row references them, as with an
@@ -439,7 +446,8 @@ Worst-case bounds:
     key, which the per-attempt bound already counts.
 - **Slots:** the next power of two at or above 2 × records.
 - **Arguments:** the checked argument storage, plus 2 words per row and 1
-  word per projection, twice (a replay builds every candidate's key again),
+  word per projection, three times (a replay builds every candidate's key
+  in its body and late stages),
   plus 2 words per dependency node (a signature tree has fewer edges than
   nodes), plus the substitution producers' words.
 - **Frontier:** two lists of max(candidates, largest page's nodes).

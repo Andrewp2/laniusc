@@ -21,6 +21,10 @@ pub(super) const SUBSTITUTION_CLEAR_PASS: &str = "type_check.substitution.clear"
 pub(super) const SUBSTITUTION_CLEAR_KERNEL: &str = "type_checker/substitution/00_clear";
 pub(super) const SUBSTITUTION_SEED_PASS: &str = "type_check.substitution.seed";
 pub(super) const SUBSTITUTION_SEED_KERNEL: &str = "type_checker/substitution/01_seed_rows";
+/// A body specialization restarts the substitution state after its
+/// canonical stage: the replay rewrote rows the job-start seed recorded.
+pub(super) const SUBSTITUTION_BODY_CLEAR_PASS: &str = "type_check.substitution.body.clear";
+pub(super) const SUBSTITUTION_BODY_SEED_PASS: &str = "type_check.substitution.body.seed";
 /// Call environments, republished each inference round before the argument
 /// contexts consume them.
 pub(super) const SUBSTITUTION_CALL_ENVS_PASS: &str = "type_check.substitution.call_envs";
@@ -167,6 +171,28 @@ pub(super) fn register_substitution_seed(
     Ok(())
 }
 
+/// Registers the body restart (clear, then seed), after the body canonical
+/// stage.
+pub(super) fn register_substitution_body_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+) -> Result<(), String> {
+    for (name, kernel) in [
+        (SUBSTITUTION_BODY_CLEAR_PASS, SUBSTITUTION_CLEAR_KERNEL),
+        (SUBSTITUTION_BODY_SEED_PASS, SUBSTITUTION_SEED_KERNEL),
+    ] {
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Types,
+            kernels,
+            kernel,
+            &[],
+        )?;
+    }
+    Ok(())
+}
+
 /// Registers the realization of the imported alias targets, after
 /// dependencies/14a. `realize_bindings` resolve the row arena's write-only
 /// layout words and the alias targets.
@@ -309,6 +335,8 @@ impl FieldClosureOperations {
 pub(in crate::type_checker) struct SubstitutionOperations {
     clear: ComputeOperation,
     seed: ComputeOperation,
+    body_clear: ComputeInvocation,
+    body_seed: ComputeInvocation,
     alias_realize: ComputeOperation,
     alias_realize_final: ComputeOperation,
 }
@@ -334,9 +362,13 @@ impl SubstitutionOperations {
             ComputeOperation::direct(device, graph, resources, name, &passes.kernel(kernel), elements)
         };
         let alias_targets = words("imported_type_alias_target")? / 2;
+        let clear = direct(SUBSTITUTION_CLEAR_PASS, SUBSTITUTION_CLEAR_KERNEL, clear_elements)?;
+        let seed = direct(SUBSTITUTION_SEED_PASS, SUBSTITUTION_SEED_KERNEL, candidates)?;
         Ok(Self {
-            clear: direct(SUBSTITUTION_CLEAR_PASS, SUBSTITUTION_CLEAR_KERNEL, clear_elements)?,
-            seed: direct(SUBSTITUTION_SEED_PASS, SUBSTITUTION_SEED_KERNEL, candidates)?,
+            body_clear: clear.invocation(graph, SUBSTITUTION_BODY_CLEAR_PASS)?,
+            body_seed: seed.invocation(graph, SUBSTITUTION_BODY_SEED_PASS)?,
+            clear,
+            seed,
             alias_realize: direct(
                 ALIAS_TARGETS_REALIZE_PASS,
                 ALIAS_TARGETS_REALIZE_KERNEL,
@@ -369,6 +401,15 @@ impl SubstitutionOperations {
             self.alias_realize.record(encoder)?;
         }
         self.alias_realize_final.record(encoder)
+    }
+
+    /// Records the clear and the seed again; after the body canonical stage.
+    pub(in crate::type_checker) fn record_body_start(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<()> {
+        self.clear.record_invocation(encoder, &self.body_clear)?;
+        self.seed.record_invocation(encoder, &self.body_seed)
     }
 
     /// Records the clear and the seed; after the early canonical stage.

@@ -23,6 +23,7 @@ pub(super) const CANONICAL_ROUND_ARGS_KERNEL: &str = "type_checker/canonical/02_
 /// The early and late stages re-arm empty and unknown candidates and keep
 /// the table (the dependency pages fill it first).
 pub(super) const CANONICAL_EARLY_REARM_PASS: &str = "type_check.canonical.rearm";
+pub(super) const CANONICAL_BODY_REARM_PASS: &str = "type_check.canonical.body.rearm";
 pub(super) const CANONICAL_REARM_PASS: &str = "type_check.canonical.late.rearm";
 pub(super) const CANONICAL_REARM_KERNEL: &str = "type_checker/canonical/03_rearm";
 /// Dependency signature types (tag 5) are interned per page while the page
@@ -60,6 +61,15 @@ pub(super) const CANONICAL_EARLY_ROUNDS: CanonicalRoundPasses = CanonicalRoundPa
     round_args: "type_check.canonical.round_args",
     round: "type_check.canonical.round",
     counts_readback: "type_check.canonical.counts.readback",
+};
+
+/// Interns a body specialization's rows and constants after its bindings,
+/// ahead of the body passes that read their IDs.
+pub(super) const CANONICAL_BODY_ROUNDS: CanonicalRoundPasses = CanonicalRoundPasses {
+    round0: "type_check.canonical.body.round0",
+    round_args: "type_check.canonical.body.round_args",
+    round: "type_check.canonical.body.round",
+    counts_readback: "type_check.canonical.body.counts.readback",
 };
 
 /// Interns what later producers added (generated and body applications,
@@ -276,12 +286,12 @@ fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<Resource
 /// instance rows, constant atoms and constant projections, and dependency
 /// nodes. None owns a record: a key the table lacks takes one, so a
 /// candidate or node takes at most one per stage that interns it, and a body
-/// replay interns every candidate a second time. Count classes add at most
-/// one record per constant candidate or node, and once more on a replay.
-/// Arguments are bounded by the checked argument storage plus an
-/// element/length pair per row, one child per projection and two per
-/// dependency node (signature trees have fewer edges than nodes), twice for
-/// a replay. A frontier list holds the pending candidates of one round, or
+/// replay interns every candidate twice more (its body and late stages).
+/// Count classes add at most one record per constant candidate or node, and
+/// twice more on a replay. Arguments are bounded by the checked argument
+/// storage plus an element/length pair per row, one child per projection and
+/// two per dependency node (signature trees have fewer edges than nodes),
+/// three times for a replay. A frontier list holds the pending candidates of one round, or
 /// the nodes of one page. Those worst-case bounds are what the tables hold
 /// at `CANONICAL_MAX_SCALE`, where an overflow means a broken invariant
 /// rather than a large input. A job starts at scale 1, with
@@ -311,7 +321,8 @@ pub(super) fn register_canonical_passes(
     // 1/CANONICAL_MAX_SCALE of their worst-case bounds, and reach the bounds
     // at the largest retry scale. The debug shrink divides them too, so a
     // shrunken job still succeeds once the scale covers its use.
-    let record_bound = 2 * (candidates + dependency_rows) + 4 * constant_rows + extra_records;
+    let record_bound =
+        3 * candidates + 2 * dependency_rows + 6 * constant_rows + extra_records;
     let records = 32
         + (canonical_scaled_capacity(record_bound, CANONICAL_MIN_RECORDS, scale) >> shrink).max(1);
     let candidate_argument_bytes = token_rows * 16
@@ -320,7 +331,7 @@ pub(super) fn register_canonical_passes(
         + type_rows * 8
         + constant_rows * 8;
     let argument_words = canonical_scaled_capacity(
-        (2 * candidate_argument_bytes + dependency_rows * 8) / 4 + extra_argument_words,
+        (3 * candidate_argument_bytes + dependency_rows * 8) / 4 + extra_argument_words,
         CANONICAL_MIN_ARGUMENT_WORDS,
         scale,
     );
@@ -423,6 +434,24 @@ pub(super) fn register_canonical_early_passes(
         &[],
     )?;
     register_rounds(graph, kernels, &CANONICAL_EARLY_ROUNDS, CANONICAL_INTERN_KERNEL, &[])
+}
+
+/// Registers the body stage: re-arm (every candidate on a replay) and intern
+/// the specialized rows, after the body bindings and ahead of the body
+/// passes that read their IDs.
+pub(super) fn register_canonical_body_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+) -> Result<(), String> {
+    graph.add_kernel_pass_by_name(
+        CANONICAL_BODY_REARM_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        CANONICAL_REARM_KERNEL,
+        &[],
+    )?;
+    register_rounds(graph, kernels, &CANONICAL_BODY_ROUNDS, CANONICAL_INTERN_KERNEL, &[])
 }
 
 /// Round 0, then batches of frontier rounds repeated until no candidate is

@@ -475,6 +475,10 @@ pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
     "type_checker/type/instances/00g_specialize_checked_references";
+/// The body canonical stage and the substitution restart follow this body
+/// specialization pass: the body passes after it read the specialized
+/// rows' IDs.
+pub(super) const BODY_CANONICAL_AFTER_PASS: &str = "type_check.body_specialization.bindings";
 // Accepted value facts and application edges share one lexical substitution.
 // Keep function/parameter signature columns symbolic: sibling calls have their
 // own accepted environments, even when they target the body being replayed.
@@ -6145,6 +6149,8 @@ fn build_graph(
     )?;
     // Call checking retains the symbolic signature. Only the native body
     // environment is rebound here, after all call and return validation.
+    // The body canonical stage and substitution restart follow the bindings
+    // (BODY_CANONICAL_AFTER_PASS).
     graph.add_kernel_pass_by_name(
         "type_check.body_specialization.graph",
         CompilerPhase::TypeCheck,
@@ -6315,6 +6321,10 @@ fn build_graph(
                 &[]
             },
         )?;
+        if name == BODY_CANONICAL_AFTER_PASS {
+            super::canonical_passes::register_canonical_body_passes(&mut graph, kernels)?;
+            super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
+        }
     }
     graph.add_kernel_pass_by_name(
         SEMANTIC_CALLS_PROJECT_PASS,
