@@ -14,6 +14,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
+mod kernel_keys;
 mod reflection_names;
 mod spirv_size;
 
@@ -59,6 +60,19 @@ fn main() -> Result<()> {
         collect_slang_sources(&shader_root).context("walk workspace shaders/ for .slang files")?;
     sources.sort();
     let runtime_shader_keys = collect_runtime_shader_keys(&compiler_source_root)?;
+    let unbuilt = kernel_keys::keys_without_entry_point(
+        runtime_shader_keys.iter().map(String::as_str),
+        |key| {
+            let path = shader_root.join(format!("{key}.slang"));
+            if path.is_file() { fs::read_to_string(path).ok() } else { None }
+        },
+    );
+    if !unbuilt.is_empty() {
+        return Err(anyhow!(
+            "the compiler names kernel(s) whose shader file has no entry point, so the build would not compile them: {}; give each file its own [shader(\"compute\")] main (an #include of another kernel does not count)",
+            unbuilt.join(", ")
+        ));
+    }
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
@@ -1570,5 +1584,5 @@ fn collect_slang_sources(root: &Path) -> io::Result<Vec<PathBuf>> {
 /// We detect `[shader("...")]` anywhere in the file.
 fn has_entrypoint(path: &Path) -> io::Result<bool> {
     let text = fs::read_to_string(path)?;
-    Ok(text.contains("[shader(\"") || text.contains("[shader('") || text.contains("[shader("))
+    Ok(kernel_keys::has_entry_point_text(&text))
 }
