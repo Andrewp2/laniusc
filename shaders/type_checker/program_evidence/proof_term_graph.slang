@@ -74,10 +74,14 @@ public bool pps_term_child(uint4 low, uint4 high, uint slot,
         return low.w <= 32u && slot < low.w &&
             pps_span(PPS_TERM_EDGES, low.z, low.w) && pps_read2(PPS_TERM_EDGES, low.z + slot, 0u, reference);
     }
-    if (low.x == 5u && slot == 0u)
-    { domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = high.xy; return pps_constant_reference(reference); }
-    if (low.x == 2u && slot == 1u)
-    { domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = high.zw; return pps_constant_reference(reference); }
+    // A projection's operand (kind 5, slot 0) and an array's length (kind 2,
+    // slot 1) share one constant reference check.
+    if ((low.x == 5u && slot == 0u) || (low.x == 2u && slot == 1u))
+    {
+        domain = PEV_ADMITTED_DOMAIN_CONSTANT;
+        reference = low.x == 5u ? high.xy : high.zw;
+        return pps_constant_reference(reference);
+    }
     if (low.x >= 2u && low.x <= 4u && slot == 0u)
     { reference = high.xy; return pps_type_reference(reference); }
     return false;

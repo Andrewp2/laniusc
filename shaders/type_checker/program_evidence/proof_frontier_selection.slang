@@ -128,41 +128,53 @@ public EvidenceStatus pps_write_substitution(uint implementation, uint goal, uin
     uint visible_owner; bool require_closed;
     if (!pev_context_goal_scope(context, visible_owner, require_closed))
         return pev_invalid(68u, implementation, context);
-    uint bindings;
-    EvidenceStatus status = pps_reserve(PPS_SUBSTITUTIONS, 1u, implementation, substitution);
-    if (status.state != PEV_VALID) return status;
-    status = pps_reserve(PPS_BINDINGS, span.y, implementation, bindings);
-    if (status.state != PEV_VALID) return status;
+    uint bindings = 0u;
     uint previous = PEV_INVALID;
+    // Unit 0 reserves the substitution row, unit 1 the binding span, and unit
+    // 2 + i writes binding i after reserving its nodes: one reservation site.
     [loop]
-    for (uint i = 0u; i < span.y; i++)
+    for (uint unit = 0u; unit < span.y + 2u; unit++)
     {
+        uint table = unit == 0u ? PPS_SUBSTITUTIONS : PPS_BINDINGS;
+        uint count = unit == 0u ? 1u : span.y; uint subject = implementation;
+        uint i = unit - 2u;
         uint atom = PEV_INVALID; uint domain = PEV_INVALID;
-        [loop]
-        for (uint j = 0u; j < span.y; j++)
+        OwnedConstraintBindingRequest request = (OwnedConstraintBindingRequest)0;
+        if (unit >= 2u)
         {
-            uint4 parameter;
-            if (!pev_read4(3u, span.x + j, 0u, parameter) || parameter.x != head.y || parameter.w > 1u)
-                return pev_invalid(68u, implementation, span.x + j);
-            if ((i == 0u || parameter.y > previous) && parameter.y < atom)
-            { atom = parameter.y; domain = parameter.w; }
+            [loop]
+            for (uint j = 0u; j < span.y; j++)
+            {
+                uint4 parameter;
+                if (!pev_read4(3u, span.x + j, 0u, parameter) || parameter.x != head.y || parameter.w > 1u)
+                    return pev_invalid(68u, implementation, span.x + j);
+                if ((i == 0u || parameter.y > previous) && parameter.y < atom)
+                { atom = parameter.y; domain = parameter.w; }
+            }
+            uint index;
+            if (atom == PEV_INVALID || CatalogImplementationPatternGraph.owned_parameter(
+                head.y, atom, domain == 1u, index) != OWNED_PARAMETER_BINDABLE)
+                return pev_invalid(68u, implementation, atom);
+            if (!owned_constraint_binding<CatalogImplementationPatternGraph, SolverProofTermGraph>(
+                state, domain == 1u, index, request))
+                return state.status.state == OWNED_CONSTRAINT_MATCHED
+                    ? pev_invalid(68u, implementation, PEV_INVALID)
+                    : pev_owned_constraint_status(state.status, implementation);
+            table = PPS_TERM_NODES; count = request.target_count; subject = atom;
         }
-        uint index; OwnedConstraintBindingRequest request;
-        if (atom == PEV_INVALID || CatalogImplementationPatternGraph.owned_parameter(
-            head.y, atom, domain == 1u, index) != OWNED_PARAMETER_BINDABLE)
-            return pev_invalid(68u, implementation, atom);
-        if (!owned_constraint_binding<CatalogImplementationPatternGraph, SolverProofTermGraph>(
-            state, domain == 1u, index, request))
-            return state.status.state == OWNED_CONSTRAINT_MATCHED
-                ? pev_invalid(68u, implementation, PEV_INVALID)
-                : pev_owned_constraint_status(state.status, implementation);
-        uint first_node = 0u;
-        if (request.target_count != 0u)
+        EvidenceStatus status;
+        uint first = 0u;
+        if (unit < 2u || count != 0u)
         {
-            status = pps_reserve(PPS_TERM_NODES, request.target_count, atom, first_node);
+            status = pps_reserve(table, count, subject, first);
             if (status.state != PEV_VALID) return status;
         }
-        uint4 allocation = uint4(first_node, request.target_count, 0u, 0u);
+        if (unit < 2u)
+        {
+            if (unit == 0u) substitution = first; else bindings = first;
+            continue;
+        }
+        uint4 allocation = uint4(first, request.target_count, 0u, 0u);
         uint2 value; bool closed;
         status = pps_materialize_binding_request<SolverProofTermSink>(request, atom,
             visible_owner, require_closed, allocation, value, closed);
@@ -184,6 +196,7 @@ public EvidenceStatus pps_select_work(uint work)
     if (key.z != PPS_WORK_NEW || key.w != work) return pev_invalid(70u, work, key.z);
     uint implementation = PEV_INVALID; OwnedConstraintState state;
     EvidenceStatus status = pev_ok();
+    uint event = 0u;
     // Keep one matcher call site while preserving exact implementation,
     // caller assumption, then generic implementation selection priority.
     [loop]
@@ -199,19 +212,25 @@ public EvidenceStatus pps_select_work(uint work)
         {
             key.z = PPS_WORK_READY;
             selected = uint4(PEV_INVALID, assumption, 0u, 0u);
-            if (!pps_work_write(work, key, selected, completion, source)) return pev_invalid(1u, work, PPS_WORK);
-            return pps_enqueue(work, PPS_EVENT_READY);
+            event = PPS_EVENT_READY;
+            break;
         }
     }
-    if (implementation == PEV_INVALID)
+    if (event == 0u && implementation == PEV_INVALID)
     {
-        key.z = PPS_WORK_MISSING;
-        if (!pps_write4(PPS_WORK, work, 0u, key)) return pev_invalid(1u, work, PPS_WORK);
-        return pps_enqueue(work, PPS_EVENT_FAILED);
+        key.z = PPS_WORK_MISSING; event = PPS_EVENT_FAILED;
     }
-    uint substitution;
-    status = pps_write_substitution(implementation, key.y, key.x, state, substitution);
-    if (status.state != PEV_VALID) return status;
-    key.z = PPS_WORK_SELECTED; selected = uint4(implementation, substitution, 0u, 0u);
-    return pps_work_write(work, key, selected, completion, source) ? pev_ok() : pev_invalid(1u, work, PPS_WORK);
+    if (event == 0u)
+    {
+        uint substitution;
+        status = pps_write_substitution(implementation, key.y, key.x, state, substitution);
+        if (status.state != PEV_VALID) return status;
+        key.z = PPS_WORK_SELECTED; selected = uint4(implementation, substitution, 0u, 0u);
+    }
+    // One work write and one enqueue site for the ready, missing and
+    // selected outcomes (a missing work rewrites only its key).
+    bool written = event == PPS_EVENT_FAILED ? pps_write4(PPS_WORK, work, 0u, key) :
+        pps_work_write(work, key, selected, completion, source);
+    if (!written) return pev_invalid(1u, work, PPS_WORK);
+    return event == 0u ? pev_ok() : pps_enqueue(work, event);
 }
