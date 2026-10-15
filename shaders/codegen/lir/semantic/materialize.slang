@@ -87,6 +87,7 @@ StructuredBuffer<uint2> semantic_argument_value_layout;
 StructuredBuffer<uint> semantic_argument_mode_by_hir;
 StructuredBuffer<uint> semantic_lir_count;
 StructuredBuffer<uint> semantic_lir_offset;
+StructuredBuffer<uint> semantic_lir_value_row_by_hir;
 StructuredBuffer<uint> semantic_execution_rank;
 StructuredBuffer<uint> compact_expr_parent;
 StructuredBuffer<uint> semantic_place_original_count;
@@ -245,13 +246,13 @@ uint lir_for_hir_original(uint node, uint hir_count)
         ? first + semantic_place_original_count[node] - 1u : first;
 }
 
+// The row carrying a HIR node's value: lir.semantic.count publishes its
+// position within the node's rows (semantic_lir_value_row_by_hir).
 uint lir_for_hir(uint node, uint hir_count)
 {
     if (node == LIR_INVALID || node >= hir_count) return LIR_INVALID;
-    uint extra = projection_adjustment_rows(node, hir_count);
-    if (extra == LIR_INVALID) return LIR_INVALID;
-    return extra != 0u ? semantic_lir_offset[node] + semantic_place_original_count[node] + extra - 1u
-        : lir_for_hir_original(node, hir_count);
+    uint value_row = semantic_lir_value_row_by_hir[node];
+    return value_row != LIR_INVALID ? semantic_lir_offset[node] + value_row : LIR_INVALID;
 }
 
 uint lir_for_value_hir(uint node, uint hir_count)
@@ -934,7 +935,6 @@ struct SemanticLirRow
 {
     SemanticLirCore core;
     SemanticLirOperands operands;
-    SemanticLirSchedule schedule;
     uint layout_word_offset;
 };
 
@@ -968,9 +968,6 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         snapshot.operands.a = first_row + source_row;
         snapshot.operands.b = LIR_INVALID;
         snapshot.operands.c = 0u;
-        snapshot.schedule = semantic_schedule(node, source_row, local_count,
-            hir_count, hir, links, payload);
-        snapshot.schedule.execution_tie += 1u;
         snapshot.layout_word_offset = LIR_INVALID;
         if (capture.y == 4u)
         {
@@ -1856,8 +1853,6 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     SemanticLirRow result;
     result.core = core;
     result.operands = operands;
-    result.schedule = semantic_schedule(
-        node, local_row, local_count, hir_count, hir, links, payload);
     result.layout_word_offset = layout_word_offset;
     return result;
 }
@@ -1932,7 +1927,6 @@ SemanticLirRow place_empty_row(uint node, uint local_row, uint hir_count)
     result.operands.a = LIR_INVALID;
     result.operands.b = LIR_INVALID;
     result.operands.c = LIR_INVALID;
-    result.schedule = place_semantic_schedule(node, local_row, hir_count);
     result.layout_word_offset = LIR_INVALID;
     return result;
 }
@@ -1960,13 +1954,15 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (local_row >= original)
     {
         SemanticLirRow result = place_empty_row(node, local_row, hir_count);
+        // The first appended row adjusts the node's original value row.
+        uint adjusted = local_row == original
+            ? lir_for_hir_original(node, hir_count) : result.operands.result - 1u;
         if (encoded_call == 0u)
         {
             uint extra = projection_adjustment_rows(node, hir_count);
             uint load = local_row - original;
             place_set_op(result.core, SEMANTIC_LIR_OP_PLACE_LOAD);
-            result.operands.a = load == 0u ? lir_for_hir_original(node, hir_count)
-                : result.operands.result - 1u;
+            result.operands.a = adjusted;
             uint tag; uint payload;
             projection_adjusted_ref(node, load + 1u, tag, payload);
             place_set_type(result.core, tag, payload, hir_count);
@@ -1981,8 +1977,7 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         bool final_load = value && adjustment_row + 1u == call.receiver_deref_count;
         bool final_copy = value && adjustment_row == call.receiver_deref_count;
         place_set_op(result.core, final_copy ? SEMANTIC_LIR_OP_AGGREGATE_COPY : SEMANTIC_LIR_OP_PLACE_LOAD);
-        result.operands.a = adjustment_row == 0u ? lir_for_hir_original(node, hir_count)
-            : result.operands.result - 1u;
+        result.operands.a = adjusted;
         if (final_load || final_copy)
         {
             place_set_type(result.core, call.receiver_matched_ref_tag,
@@ -1999,7 +1994,6 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
 
     SemanticLirRow result = materialize_original_semantic_lir_row(node, local_row, hir_count);
     result.operands.result = semantic_lir_offset[node] + local_row;
-    result.schedule = place_semantic_schedule(node, local_row, hir_count);
     uint op = semantic_lir_op(result.core);
     if (encoded_call != 0u)
     {

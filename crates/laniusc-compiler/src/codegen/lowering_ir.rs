@@ -1925,6 +1925,13 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    // Which of a HIR node's rows carries its value (count publishes it,
+    // scatter resolves operands with it).
+    let semantic_value_row_by_hir = graph.add_resource(workspace(
+        "lir.semantic.value_row_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let semantic_counts = graph.add_resource(workspace(
         "lir.semantic.count_by_hir",
         ResourceDomain::HirNodes,
@@ -3045,6 +3052,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_aggregate_hir_by_name_token", semantic_aggregate_hir_by_name_token),
             PassAccess::read("semantic_struct_word_count_by_hir", semantic_struct_word_count_by_hir),
             PassAccess::write("semantic_place_original_count", semantic_place_original_count),
+            PassAccess::write("semantic_lir_value_row_by_hir", semantic_value_row_by_hir),
 
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
@@ -3319,6 +3327,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_argument_mode_by_hir", checked_argument_modes),
             PassAccess::read("semantic_lir_count", semantic_counts),
             PassAccess::read("semantic_lir_offset", semantic_offsets),
+            PassAccess::read("semantic_lir_value_row_by_hir", semantic_value_row_by_hir),
             PassAccess::read("semantic_lir_total", semantic_total),
             PassAccess::read("semantic_execution_rank", execution_rank_a),
             PassAccess::write("semantic_lir_schedule", semantic_schedule),

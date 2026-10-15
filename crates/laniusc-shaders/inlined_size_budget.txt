@@ -40,7 +40,6 @@
 88672 type_checker/program_evidence/entries/44_validate_prerequisite_normalization
 87482 type_checker/program_evidence/entries/43_validate_original_normalization
 84179 type_checker/calls/03c_validate_array_results
-83411 codegen/lir/semantic/scatter
 78384 type_checker/program_evidence/entries/46_hash_normalized_goals
 76934 type_checker/methods/07_resolve_table
 76057 type_checker/program_evidence/entries/42_normalize_prerequisite
