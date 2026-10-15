@@ -637,6 +637,22 @@ The per-root expansion that used it (type/instances/02d and
 `expand_materialized_instance.slang`) is gone: the field closure over
 canonical IDs (`ct_expand.slang`) replaced it on the source and body paths.
 
+Field types under a receiver are substituted by canonical ID as well.
+`ct_scoped_reference` (`substitution/ct_scoped.slang`) takes the field's
+declared ID, substitutes it under the receiver application's ID, and
+realizes the result as a checked row (`ct_realize`). It replaces the scoped
+hash, equality and index walkers of `checked_scoped_reference` in
+type/instances/03, 04a3 and 04b. Readers that need only a type's shape do
+not realize anything:
+- 03k1 substitutes a struct-literal field context with `ct_subst` and reads
+  the array element by ID;
+- 05b compares element types with `checked_types_equal_ids`.
+
+Each reader calls `ct_intern_checked` from one site, in a loop over its
+operands, because every call site inlines the whole interner. The scoped
+hash index (type/instances/02b, 02c) stays for the walkers' remaining
+consumers.
+
 ### Constant claims: typed and count identity
 
 Call inference collects claims for each constant parameter slot

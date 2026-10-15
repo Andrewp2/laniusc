@@ -49,7 +49,6 @@
 55111 type_checker/program_evidence/entries/18_reduce_calls
 54718 type_checker/program_evidence/entries/02_05_admit_nodes
 53133 type_checker/predicates/01_collect_impls
-51727 type_checker/type/instances/05b_array_literal_return_refs
 51540 tests/owned_type_constraints_coverage
 49216 tests/canonical_type_constraint_boundary
 48620 type_checker/modules/10j_consume_value_enum_units

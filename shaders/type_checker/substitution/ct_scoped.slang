@@ -62,16 +62,23 @@ public bool ct_scoped_reference(uint tag, uint payload, uint context, uint token
         failure = 0u;
         return true;
     }
+    // The term's ID, then the environment's, from one interning site.
     uint row_spare = CT_NONE;
-    uint term = ct_intern_checked<CtMutableRows>(3u, payload, row_spare);
-    if (!ct_is_resolved(term)) return false;
-    if (ct_closed(term))
+    uint term = CT_UNKNOWN; uint environment = CT_UNKNOWN;
+    [loop]
+    for (uint operand = 0u; operand < 2u; operand++)
     {
-        result_tag = 3u; result_payload = payload;
-        failure = 0u;
-        return true;
+        uint id = ct_intern_checked<CtMutableRows>(3u, operand == 0u ? payload : context, row_spare);
+        if (operand == 1u) { environment = id; break; }
+        term = id;
+        if (!ct_is_resolved(term)) return false;
+        if (ct_closed(term))
+        {
+            result_tag = 3u; result_payload = payload;
+            failure = 0u;
+            return true;
+        }
     }
-    uint environment = ct_intern_checked<CtMutableRows>(3u, context, row_spare);
     if (!ct_is_record(environment) || ct_kind(environment) != CT_KIND_NAMED) return false;
     CtSpare spare = ct_spare_none();
     uint id = ct_subst(SourceSlots(), environment, term, true, spare);
