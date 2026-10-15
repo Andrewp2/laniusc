@@ -185,6 +185,20 @@ class ExpectationTests(unittest.TestCase):
         self.assertEqual((rejected.kind, rejected.error_code), ("compile_error", "LNC0007"))
         self.assertEqual((expectations["unowned"].kind, expectations["unowned"].source), ("run", "default"))
 
+    def test_an_expect_line_sets_an_exit_status_or_a_rejection_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            fixtures = repo / "tests/fixtures/stdlib_foundation"
+            fixtures.mkdir(parents=True)
+            (fixtures / "exits.lani").write_text("// expect: 122\nfn main() -> i32 { return 122; }\n")
+            (fixtures / "rejects.lani").write_text("// expect: LNC0006\nfn main() -> i32 { return true; }\n")
+            expectations = {e.path.stem: e for e in load_expectations(repo)}
+
+        exits, rejects = expectations["exits"], expectations["rejects"]
+        self.assertEqual((exits.kind, exits.exit_code, exits.source), ("run", 122, "expect-comment"))
+        self.assertEqual((rejects.kind, rejects.exit_code, rejects.error_code, rejects.source),
+                         ("compile_error", None, "LNC0006", "expect-comment"))
+
 
 if __name__ == "__main__":
     unittest.main()

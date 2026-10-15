@@ -11,7 +11,8 @@ status.signal(), stdout, diagnostic.code, expect_err, ...).  Values it cannot
 evaluate become unknown instead of guesses.  A `laniusc check|build FIXTURE`
 command is a compile too: the test's `status.success()` and stderr `LNC` checks
 are its outcome.  Unreferenced fixtures fall back to
-"run, exit 0" (generics probes: exit 42); a `// expect: N` first line overrides.
+"run, exit 0" (generics probes: exit 42).  A first line `// expect: N` overrides
+that with "run, exit N", and `// expect: LNC0006` with "rejected with LNC0006".
 
 usage: tools/fixture_expectations.py [--json] [--summary]
 """
@@ -29,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FOUNDATION = "tests/fixtures/stdlib_foundation"
 GENERICS = ("tests/fixtures/generics_matrix", "tests/fixtures/generics_backlog")
-EXPECT_RE = re.compile(r"//\s*expect:\s*(-?\d+)")
+EXPECT_RE = re.compile(r"//\s*expect:\s*(?:(-?\d+)|(LNC\d{4}))")
 LNC_RE = re.compile(r"LNC\d{4}$")
 LNC_ANY = re.compile(r"LNC\d{4}")
 CLI_COMPILES = ("check", "build")
@@ -1136,7 +1137,11 @@ def load_expectations(repo_root: Path = ROOT, *, with_report: bool = False):
                             "default" + (":name-reject" if reject else ":generics" if generics else "")
                             + (" (tests only compile modified copies)" if path.resolve() in modified else
                                f" (unresolved refs: {', '.join(refs[:3])})" if refs else ""))
-        if override and e.kind != "module":
+        if override and e.kind != "module" and override.group(2):
+            e.kind, e.exit_code, e.signal, e.stdout = "compile_error", None, None, None
+            e.error_code = override.group(2)
+            e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
+        elif override and e.kind != "module":
             e.kind, e.exit_code, e.signal = "run", int(override.group(1)), None
             e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
         result.append(e)

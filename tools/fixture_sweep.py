@@ -15,7 +15,8 @@ compiled ELF also goes through tools/x86_jump_check.py: a jmp/jcc that leaves it
 function fails a fixture that otherwise passed (FAIL-JUMP). Suites:
 stdlib_foundation (tests/fixtures/stdlib_foundation, expectations parsed from the
 Rust tests by tools/fixture_expectations.py), generics_matrix and generics_backlog
-(exit 42 unless the first line is `// expect: N`). Results go to
+(exit 42). In every suite a first line `// expect: N` sets the expected exit status
+and `// expect: LNCdddd` expects a rejection with that code. Results go to
 DIR/results-shard-I-of-N.json; `report` merges every shard file in DIR and prints
 pass/fail counts grouped by status and diagnostic code, with the largest failure
 groups and an example location for each.
