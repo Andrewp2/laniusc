@@ -369,13 +369,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         candidate.state == METHOD_CANDIDATE_UNIQUE &&
         candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
         candidate.local_index == call_fn_index[token];
-    // The routed generic callee owns the call's context; rows written for
-    // other candidates hold no binding.
-    if (call != INVALID && (written != 0u || (routed && selected_generic)))
+    // The routed callee owns the call's context: a generic one its bindings,
+    // a nongeneric one none (the trait's arguments bound the required
+    // member's parameters, methods/07a). Rows written for other candidates
+    // hold no binding.
+    if (call != INVALID && (written != 0u || routed))
     {
-        call_context_arg_mask[call] = routed && selected_generic
-            ? published : call_context_arg_mask[call] & ~written;
-        if (routed && selected_generic) call_context_owner_by_token[token] = call;
+        call_context_arg_mask[call] = routed
+            ? (selected_generic ? published : 0u) : call_context_arg_mask[call] & ~written;
+        if (routed && selected_generic)
+        {
+            call_context_owner_by_token[token] = call;
+            if (aliases.x < gParams.n_tokens) call_context_owner_by_token[aliases.x] = call;
+            if (aliases.y < gParams.n_tokens) call_context_owner_by_token[aliases.y] = call;
+        }
     }
     if (matches != 1u || (selected_generic && published == 0u))
     {
