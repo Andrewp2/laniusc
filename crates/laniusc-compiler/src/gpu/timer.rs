@@ -425,6 +425,29 @@ pub(crate) fn stamp_job_session_pass_begin(encoder: &mut wgpu::CommandEncoder, l
     });
 }
 
+/// One GPU timestamp observed at a known host instant: the trace places every
+/// timer's spans of the current job through it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GpuClockCalibration {
+    pub(crate) host: std::time::Instant,
+    pub(crate) ticks: u64,
+}
+
+static GPU_CLOCK_CALIBRATION: Mutex<Option<GpuClockCalibration>> = Mutex::new(None);
+
+/// The active job's GPU clock calibration, when a traced job session set one.
+pub(crate) fn gpu_clock_calibration() -> Option<GpuClockCalibration> {
+    *GPU_CLOCK_CALIBRATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn set_gpu_clock_calibration(calibration: Option<GpuClockCalibration>) {
+    *GPU_CLOCK_CALIBRATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = calibration;
+}
+
 /// Times the GPU operations of one compiler job that no phase timer records,
 /// such as program evidence and the x86 link, so a profiled job stamps every
 /// dispatch it records. Phase timers nest inside it.
@@ -455,12 +478,28 @@ impl GpuJobTimingSession {
             label: Some("gpu.job_timing.begin"),
         });
         timer.stamp(&mut encoder, "gpu.job_timing.begin");
+        // A traced job reads its first stamp back right away: the GPU is idle
+        // between jobs, so the stamp ran just after this submit returned, and
+        // that pairing places every later timestamp of the job. Phase timers'
+        // own anchors are wrong whenever their first stamp ran in an earlier
+        // partial submit than the one they anchor to.
+        let calibrate = crate::gpu::trace::enabled();
+        if calibrate {
+            timer.resolve(&mut encoder);
+        }
         let gpu_anchor = crate::gpu::passes_core::submit_with_progress(
             queue,
             "gpu.job_timing.begin",
             encoder.finish(),
         )
         .gpu_anchor;
+        set_gpu_clock_calibration(None);
+        if calibrate && let Some(stamps) = timer.try_read(device) {
+            set_gpu_clock_calibration(Some(GpuClockCalibration {
+                host: gpu_anchor,
+                ticks: stamps[0].ticks,
+            }));
+        }
         let capture = Some(timer.capture_operations());
         Some(Self {
             timer,
@@ -476,6 +515,7 @@ impl GpuJobTimingSession {
     pub fn finish(mut self, device: &wgpu::Device, queue: &wgpu::Queue, record: bool) {
         self.capture = None;
         if !record {
+            set_gpu_clock_calibration(None);
             return;
         }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -490,6 +530,7 @@ impl GpuJobTimingSession {
                 self.gpu_anchor,
             );
         }
+        set_gpu_clock_calibration(None);
     }
 }
 
