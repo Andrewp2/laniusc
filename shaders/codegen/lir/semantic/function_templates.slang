@@ -18,6 +18,8 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirRange> compact_generic_param_ranges;
+StructuredBuffer<uint> compact_method_count;
+StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
@@ -115,6 +117,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // request authorizes one concrete generic body, not those siblings.
         InterlockedAnd(semantic_function_flag[row], 0u);
     }
+    if (row < min(compact_method_count[0u], count))
+    {
+        // A trait's own member is a contract over `Self`, not a definition:
+        // bound-member calls are routed to implementation members in replay.
+        HirMethodCore method = compact_method_cores[row];
+        if (method.impl_node == INVALID && method.node < count)
+            InterlockedAnd(semantic_function_flag[method.node], 0u);
+    }
     if (row < count && compact_hir_core[row].kind == 19u &&
         semantic_calls_by_hir[row].intrinsic_tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS &&
         unclosed_type_layout(row, count))
@@ -128,8 +138,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < count && compact_hir_core[row].kind == 19u)
     {
         CheckedCallArtifact call = semantic_calls_by_hir[row];
+        // A receiver passed as a lexical parameter (a call through `P: Trait`)
+        // also has no layout or routed callee before replay closes it.
         bool adjusted_receiver = call.receiver_adjustment_kind != 0u ||
-            call.receiver_deref_count != 0u;
+            call.receiver_deref_count != 0u ||
+            call.receiver_parameter_ref_tag == TYPE_REF_GENERIC_PARAM;
         if (adjusted_receiver)
         {
             uint tag = call.receiver_parameter_ref_tag;
