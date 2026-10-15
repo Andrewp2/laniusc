@@ -28,47 +28,51 @@ public bool pev_work_counts(out uint rows, out uint buckets)
     rows = max(atoms, implementations);
     return pev_bucket_count(rows, buckets);
 }
+// Output widths: tables6,8,11 have4 words, tables7,9,12 one word, the other
+// tables below PEV_OUTPUT_TABLES eight; arena0 (catalog) holds tables
+// 0,1,6,7,11,12 and arena1 (output) the rest. Readers are straight-line.
+[ForceInline]
 public uint pev_output_width(uint table)
 {
-    if (table >= PEV_OUTPUT_TABLES) return 0u;
-    if (table == 6u || table == 8u || table == 11u) return 4u;
-    if (table == 7u || table == 9u || table == 12u) return 1u;
-    return 8u;
+    uint bit = 1u << (table & 31u);
+    return select(table < PEV_OUTPUT_TABLES,
+        select((bit & 0x940u) != 0u, 4u, select((bit & 0x1280u) != 0u, 1u, 8u)), 0u);
 }
 public bool pev_output_descriptor(uint table, out EvidenceOutputTable desc)
 {
     desc = (EvidenceOutputTable)0;
-    if (table >= PEV_OUTPUT_TABLES) return false;
     // The descriptor has a fixed ABI location. Validate its physical/logical
     // batch extent before reading it, independent of protocol admission.
     uint batch_words; uint batch_stride;
     program_evidence_batch.GetDimensions(batch_words, batch_stride);
     uint logical_batch = program_evidence_params.batch_word_count;
-    if (logical_batch < PEV_BATCH_FIXED_WORDS || logical_batch > batch_words) return false;
+    if (!((table < PEV_OUTPUT_TABLES) & (logical_batch >= PEV_BATCH_FIXED_WORDS) &
+        (logical_batch <= batch_words))) return false;
     uint start = PEV_OUTPUT_DIRECTORY_WORD + table * 5u;
-    desc.arena = program_evidence_batch[start];
-    desc.offset = program_evidence_batch[start + 1u];
-    desc.count = program_evidence_batch[start + 2u];
-    desc.capacity = program_evidence_batch[start + 3u];
-    desc.width = program_evidence_batch[start + 4u];
-    uint expected_arena = (table == 0u || table == 1u || table == 6u || table == 7u ||
-        table == 11u || table == 12u) ? 0u : 1u;
-    if (desc.arena != expected_arena || desc.width != pev_output_width(table) ||
-        desc.count > desc.capacity || (desc.capacity == 0u && desc.offset != 0u)) return false;
-    uint physical = desc.arena == 0u ? program_evidence_params.catalog_word_count :
-        program_evidence_params.output_word_count;
-    uint actual; uint stride;
-    if (desc.arena == 0u) program_evidence_catalog.GetDimensions(actual, stride);
-    else program_evidence_output.GetDimensions(actual, stride);
-    if (physical > actual) return false;
-    return pev_word_span(desc.offset, desc.capacity, desc.width, physical);
+    EvidenceOutputTable read = {
+        program_evidence_batch[start], program_evidence_batch[start + 1u],
+        program_evidence_batch[start + 2u], program_evidence_batch[start + 3u],
+        program_evidence_batch[start + 4u] };
+    desc = read;
+    uint expected_arena = select(((0x18C3u >> table) & 1u) != 0u, 0u, 1u);
+    uint actual_catalog; uint actual_output; uint stride;
+    program_evidence_catalog.GetDimensions(actual_catalog, stride);
+    program_evidence_output.GetDimensions(actual_output, stride);
+    bool catalog = read.arena == 0u;
+    uint physical = select(catalog, program_evidence_params.catalog_word_count,
+        program_evidence_params.output_word_count);
+    uint actual = select(catalog, actual_catalog, actual_output);
+    return (read.arena == expected_arena) & (read.width == pev_output_width(table)) &
+        (read.count <= read.capacity) & ((read.capacity != 0u) | (read.offset == 0u)) &
+        (physical <= actual) & pev_word_span(read.offset, read.capacity, read.width, physical);
 }
 public bool pev_output_span_address(uint table, uint row, uint field, uint fields,
     out uint arena, out uint address)
 {
     arena = PEV_INVALID; address = PEV_INVALID; EvidenceOutputTable desc;
-    if (!pev_output_descriptor(table, desc) || row >= desc.count || fields == 0u ||
-        field >= desc.width || fields > desc.width - field) return false;
+    bool known = pev_output_descriptor(table, desc);
+    if (!(known & (row < desc.count) & (fields != 0u) & (field < desc.width) &
+        (fields <= desc.width - field))) return false;
     arena = desc.arena; address = desc.offset + row * desc.width + field; return true;
 }
 [ForceInline]

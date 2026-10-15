@@ -57,22 +57,25 @@ public struct EvidenceTable
     public uint batch_count; public uint batch_capacity; public uint width;
 }
 
+// Fixed row widths, one nibble per table (low nibble first): tables0-7
+// 4,8,9,4,4,8,2,2; tables8-15 8,12,6,5,4,8,6,8; tables16-17 4,8; else 0.
+// Readers are inlined hundreds of times per kernel, so every reader below is
+// a straight-line select/mask computation with one guarded early return.
+[ForceInline]
 public uint pev_expected_width(uint table)
 {
-    switch (table)
-    {
-    case 0u: return 4u; case 1u: return 8u; case 2u: return 9u;
-    case 3u: return 4u; case 4u: return 4u; case 5u: return 8u;
-    case 6u: return 2u; case 7u: return 2u; case 8u: return 8u;
-    case 9u: return 12u; case 10u: return 6u; case 11u: return 5u;
-    case 12u: return 4u; case 13u: return 8u; case 14u: return 6u;
-    case 15u: return 8u; case 16u: return 4u; case 17u: return 8u;
-    default: return 0u;
-    }
+    uint packed = select(table < 8u, 0x22844984u, select(table < 16u, 0x868456C8u, 0x00000084u));
+    return select(table < PEV_TABLES, (packed >> ((table & 7u) * 4u)) & 15u, 0u);
 }
+// Division by a selected nonzero width never changes a result whose width
+// term is false; it only keeps the expression free of a branch.
+[ForceInline]
+public uint pev_rows_in(uint offset, uint words, uint width)
+{ return (words - offset) / select(width == 0u, 1u, width); }
+[ForceInline]
 public bool pev_word_span(uint offset, uint rows, uint width, uint words)
 {
-    return width != 0u && offset <= words && rows <= (words - offset) / width;
+    return (width != 0u) & (offset <= words) & (rows <= pev_rows_in(offset, words, width));
 }
 
 // This small fixed header check is safe even when the logical lengths are bad.
@@ -102,7 +105,6 @@ public bool pev_header_is_valid()
 public bool pev_descriptor(uint table, out EvidenceTable desc)
 {
     desc = (EvidenceTable)0;
-    if (table >= PEV_TABLES) return false;
     // Protocol identity is checked by initialization/work/publication gates.
     // This reader independently proves physical safety; no cached admission or
     // capacity value substitutes for logical row membership.
@@ -111,31 +113,26 @@ public bool pev_descriptor(uint table, out EvidenceTable desc)
     program_evidence_batch.GetDimensions(actual_batch, stride);
     uint catalog_words = program_evidence_params.catalog_word_count;
     uint batch_words = program_evidence_params.batch_word_count;
-    if (catalog_words < 4u || batch_words < PEV_BATCH_FIXED_WORDS ||
-        catalog_words > actual_catalog || batch_words > actual_batch) return false;
+    if (!((table < PEV_TABLES) & (catalog_words >= 4u) & (batch_words >= PEV_BATCH_FIXED_WORDS) &
+        (catalog_words <= actual_catalog) & (batch_words <= actual_batch))) return false;
     // table < PEV_TABLES and the fixed header bound prove all six words.
     uint start = PEV_DIRECTORY_WORD + table * 6u;
-    desc.catalog_offset = program_evidence_batch[start];
-    desc.catalog_count = program_evidence_batch[start + 1u];
-    desc.batch_offset = program_evidence_batch[start + 2u];
-    desc.batch_count = program_evidence_batch[start + 3u];
-    desc.batch_capacity = program_evidence_batch[start + 4u];
-    desc.width = program_evidence_batch[start + 5u];
-    if (desc.width != pev_expected_width(table) ||
-        desc.batch_count > desc.batch_capacity ||
-        desc.batch_count == PEV_INVALID ||
-        desc.catalog_count > PEV_INVALID - 1u - desc.batch_count ||
-        (desc.catalog_count == 0u && desc.catalog_offset != 0u) ||
-        (desc.batch_capacity == 0u && desc.batch_offset != 0u) ||
-        !pev_word_span(desc.catalog_offset, desc.catalog_count, desc.width,
-            program_evidence_params.catalog_word_count) ||
-        !pev_word_span(desc.batch_offset, desc.batch_capacity, desc.width,
-            program_evidence_params.batch_word_count)) return false;
-    bool catalog_only = table == 0u || table == 2u || table == 3u || table == 4u ||
-        table == 8u || table == 9u || table == 10u;
+    EvidenceTable read = {
+        program_evidence_batch[start], program_evidence_batch[start + 1u],
+        program_evidence_batch[start + 2u], program_evidence_batch[start + 3u],
+        program_evidence_batch[start + 4u], program_evidence_batch[start + 5u] };
+    desc = read;
+    // Tables 0,2,3,4,8,9,10 are catalog-only; tables from 11 are batch-only.
+    bool catalog_only = ((0x71Du >> (table & 31u)) & 1u) != 0u;
     bool batch_only = table >= 11u;
-    return (!catalog_only || desc.batch_capacity == 0u) &&
-        (!batch_only || desc.catalog_count == 0u);
+    return (read.width == pev_expected_width(table)) &
+        (read.batch_count <= read.batch_capacity) & (read.batch_count != PEV_INVALID) &
+        (read.catalog_count <= PEV_INVALID - 1u - read.batch_count) &
+        ((read.catalog_count != 0u) | (read.catalog_offset == 0u)) &
+        ((read.batch_capacity != 0u) | (read.batch_offset == 0u)) &
+        pev_word_span(read.catalog_offset, read.catalog_count, read.width, catalog_words) &
+        pev_word_span(read.batch_offset, read.batch_capacity, read.width, batch_words) &
+        (!catalog_only | (read.batch_capacity == 0u)) & (!batch_only | (read.catalog_count == 0u));
 }
 
 // This is a safe directory projection, not descriptor admission. Initialization
@@ -147,15 +144,15 @@ public bool pev_input_table_rows(uint table, out uint directory,
     out uint catalog_count, out uint batch_count)
 {
     directory = PEV_INVALID; catalog_count = 0u; batch_count = 0u;
-    if (table >= PEV_TABLES) return false;
     uint actual_batch; uint stride;
     program_evidence_batch.GetDimensions(actual_batch, stride);
     uint batch_words = program_evidence_params.batch_word_count;
-    if (batch_words < PEV_BATCH_FIXED_WORDS || batch_words > actual_batch) return false;
+    if (!((table < PEV_TABLES) & (batch_words >= PEV_BATCH_FIXED_WORDS) &
+        (batch_words <= actual_batch))) return false;
     uint start = PEV_DIRECTORY_WORD + table * 6u;
     uint prefix = program_evidence_batch[start + 1u];
     uint suffix = program_evidence_batch[start + 3u];
-    if (suffix == PEV_INVALID || prefix > PEV_INVALID - 1u - suffix) return false;
+    if (!((suffix != PEV_INVALID) & (prefix <= PEV_INVALID - 1u - suffix))) return false;
     directory = start; catalog_count = prefix; batch_count = suffix;
     return true;
 }
@@ -170,40 +167,41 @@ public bool pev_table_count(uint table, out uint count)
 public bool pev_row_span(uint table, uint first, uint count)
 {
     uint total;
-    return pev_table_count(table, total) && first <= total && count <= total - first;
+    bool known = pev_table_count(table, total);
+    return known & (first <= total) & (count <= total - first);
 }
 // Independent address safety does not require re-admitting unrelated rows or
 // the other arena's full table capacity. The fixed ABI width and exact logical
 // prefix/suffix select one row, whose entire extent must fit in the logical and
 // actual selected buffer before any address multiplication or addition.
+// The directory guard is the only branch: it makes the fixed directory reads
+// safe; every remaining condition is pure and combined without short-circuit.
 public bool pev_read_address(uint table, uint row, uint first_field, uint fields,
     out uint arena, out uint address)
 {
     arena = PEV_INVALID; address = PEV_INVALID;
-    uint directory; uint catalog_count; uint batch_count;
-    if (!pev_input_table_rows(table, directory, catalog_count, batch_count)) return false;
+    uint actual_catalog; uint actual_batch; uint stride;
+    program_evidence_catalog.GetDimensions(actual_catalog, stride);
+    program_evidence_batch.GetDimensions(actual_batch, stride);
+    uint batch_words = program_evidence_params.batch_word_count;
+    if (!((table < PEV_TABLES) & (batch_words >= PEV_BATCH_FIXED_WORDS) &
+        (batch_words <= actual_batch))) return false;
+    uint start = PEV_DIRECTORY_WORD + table * 6u;
+    uint catalog_count = program_evidence_batch[start + 1u];
+    uint batch_count = program_evidence_batch[start + 3u];
     uint width = pev_expected_width(table);
-    if (fields == 0u || first_field >= width || fields > width - first_field) return false;
-    uint selected_arena; uint offset; uint local; uint words; uint actual; uint stride;
-    if (row < catalog_count)
-    {
-        selected_arena = 0u; local = row;
-        offset = program_evidence_batch[directory];
-        words = program_evidence_params.catalog_word_count;
-        program_evidence_catalog.GetDimensions(actual, stride);
-    }
-    else
-    {
-        selected_arena = 1u; local = row - catalog_count;
-        if (local >= batch_count) return false;
-        offset = program_evidence_batch[directory + 2u];
-        words = program_evidence_params.batch_word_count;
-        program_evidence_batch.GetDimensions(actual, stride);
-    }
+    bool in_catalog = row < catalog_count;
+    uint local = select(in_catalog, row, row - catalog_count);
+    uint offset = program_evidence_batch[start + select(in_catalog, 0u, 2u)];
+    uint words = select(in_catalog, program_evidence_params.catalog_word_count, batch_words);
+    uint actual = select(in_catalog, actual_catalog, actual_batch);
     // width is nonzero for every admitted table ID. Division avoids overflow
     // even for arbitrary malformed offsets/counts, without trusting capacity.
-    if (words > actual || offset > words || local >= (words - offset) / width) return false;
-    arena = selected_arena; address = offset + local * width + first_field;
+    if (!((batch_count != PEV_INVALID) & (catalog_count <= PEV_INVALID - 1u - batch_count) &
+        (fields != 0u) & (first_field < width) & (fields <= width - first_field) &
+        (in_catalog | (local < batch_count)) & (words <= actual) & (offset <= words) &
+        (local < pev_rows_in(offset, words, width)))) return false;
+    arena = select(in_catalog, 0u, 1u); address = offset + local * width + first_field;
     return true;
 }
 public bool pev_word(uint table, uint row, uint field, out uint value)
