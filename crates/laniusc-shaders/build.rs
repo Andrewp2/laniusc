@@ -262,7 +262,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "tests/typed_constant_identity_array_constraints"
             | "tests/typed_constant_identity_claim_merge"
             | "tests/typed_constant_identity_claim_priority"
-            | "tests/canonical_type_constraint_boundary"
             | "tests/canonical_type_identity_boundary"
             | "tests/constant_claim_publication"
             | "tests/parameter_scoped_type_graph"
