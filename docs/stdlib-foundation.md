@@ -313,7 +313,7 @@ require further compiler work.
 | `core::slice_bool` all 35 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check reads, writes, fill, swap, overlapping and disjoint-range copies, rotation, compaction, insertion and removal, prefix, suffix, and subsequence search, false-before-true comparison, binary bounds and search, partitioning, true counts, `any` and `all`, empty and invalid lengths, and an overclaimed physical length that traps. Sorting and binary search check all 32 five-element Boolean sequences. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
 | `core::slice_char` all 35 public character-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check access, mutation, overlap-safe and disjoint-range copying, rotation, compaction, insertion, extrema, partitioning, prefix and subsequence matching, equality, Unicode scalar ordering, sorting, bounds, binary search, empty and invalid lengths, and non-ASCII values. They assert the scalar values of two-, three-, and four-byte UTF-8 character literals, including two literals with the same leading byte. Sorting checks all 243 five-element sequences over `{'a', 'z', 'é'}`. An overclaimed physical length traps. The character inventory sample combines it with `core::char`, `core::range`, `core::range_char`, and `core::number_i32`. |
 | `core::slice_f32` all 36 public floating-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check finite, infinite, and NaN values, IEEE equality and signed zero, left-to-right sums, overlap-safe and disjoint-range copying, rotation, compaction, insertion, prefix and subsequence matching, finite extrema and lexicographic comparison, checked partitioning, invalid bounds, and native trapping on an overclaimed physical length. Finite-only heapsort, extrema, and partitioning check all 243 five-element sequences over `{-1, 0, 1}`; binary bounds and searches cover duplicates, missing values, signed zero, and invalid input. The floating window sample combines it with `core::f32`, `core::range_f32`, and `OptionF32`. |
-| `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
+| `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. A `[u8]` raw view over string data or packed i32 storage reads and writes single bytes; see dependency 16. |
 | `core::mem::typed_slice_from_raw_parts<T>` | Executable on x86_64 Linux for tested caller-backed `i32`, `u32`, and record slices | The imported runtime fixture checks access, mutation, aliasing, an empty view, and three element types. Separate imported fixtures check that a negative length traps with SIGILL and indexing at the length exits 101. The caller must provide storage in the target's layout, keep it alive, and supply a valid aligned pointer; the constructor cannot validate physical backing. The `u32` and record cases use separately allocated native element slots, not a reinterpretation of a packed `i32` array. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for tested scalar and string instantiations on the resident native path | Runtime fixture exercises each helper and both selector branches for `i32`, high-bit `u32`, Unicode `char`, and finite `f32`, plus `identity<bool>`. The new actual-root fixture executes every helper for bool, i32, u32, f32, char, and str, including both selector branches, NaN, negative zero, empty strings, and forwarding through another function. Record body specialization remains unavailable and deferred; dependency 62 records the earlier miscompile, while dependency 92 records the scalar repair. |
 | `core::mem` capability metadata, all 10 public functions | Executable on x86_64 Linux | The native metadata fixture calls every function and checks runtime-free value helpers and the unavailable raw-memory host API against `core::runtime`. The unavailable host API is distinct from the four executable compiler-provided intrinsics above. `tests/stdlib_mem_execution.rs` requires a runtime call for all 19 source-defined public functions across its fixtures. |
@@ -2508,17 +2508,20 @@ also fixes the imported struct-return relocation path described below.
     `text.len()` on a `str` value. `laniusc check --stdlib-root stdlib` reports
     `LNC0027`: no method matches this receiver. A borrowed UTF-8 string
     module needs executable length metadata to bound every read.
-16. **Byte access to borrowed string storage.**
+16. **Resolved: byte access to borrowed string storage.**
    `tests/fixtures/stdlib_foundation/repro_u8_string_slice.lani` takes
    `core::mem::string_data_ptr("Az")`, constructs a two-byte `[u8]` view,
-   and returns `bytes[1]`. Native emission succeeds, but the ELF exits 245
-   instead of the ASCII value 122 for `z`. Thus even with a caller-supplied
-   length, byte iteration cannot be claimed executable from this pointer and
-   view combination. A second reproduction,
-   `repro_u8_array_raw_slice.lani`, constructs a raw byte view over an i32
-   stack array containing known little-endian bytes; native execution exits 1
-   because `bytes[2]` is not the expected value 65. Both minimal reproductions
-   are recorded here for the GPU compiler work.
+   and returns `bytes[1]`. It exited 245, later 195, instead of 122 for `z`:
+   a raw `[u8]` view used the descending native stride `-8` and eight-byte
+   loads, so it read outside its backing. A raw u8 view now steps `+1`, and
+   x86 index loads and stores of a runtime `[u8]` view move one byte when the
+   view's stride is `+1` (docs/array-view-storage-decision.md). The fixture
+   exits 122. `x86_u8_raw_views_step_one_byte` reads string bytes, reads and
+   writes the bytes of an i32 array through a byte view, and checks that a
+   native `[u8; N]` passed as `[u8]` keeps its word layout. The second
+   reproduction, `repro_u8_array_raw_slice.lani`, still stops at compile with
+   `LNC0006`: its placeholder `slice_from_raw_parts` body `return [];` fails
+   to check. The byte view it builds over an i32 array now reads correctly.
 17. **Resolved: integer-to-character conversion.**
     The GPU type checker now accepts `i32` and `u32` values in `char` contexts
     across returns, calls, locals, fields, and enum payloads. Both original
