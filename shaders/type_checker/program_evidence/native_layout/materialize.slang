@@ -93,8 +93,12 @@ public EvidenceStatus plm_expand_nominal(uint node, out uint first_root, out uin
 
 // Expand only by-value edges. Nominal operand graphs retain full semantics,
 // but descriptor referents do not contribute to native value layout.
-public EvidenceStatus plm_expand_value_graph(uint2 root)
+// root_words is the root's value width, evaluated at the same site as every
+// cached node width (a node root's width is that cached width); the caller
+// checks it for a non-node root.
+public EvidenceStatus plm_expand_value_graph(uint2 root, out uint root_words)
 {
+    root_words = PEV_INVALID;
     uint2 references[PEV_DEPTH_LIMIT];
     uint next[PEV_DEPTH_LIMIT]; uint count[PEV_DEPTH_LIMIT]; uint roots[PEV_DEPTH_LIMIT];
     bool nominal[PEV_DEPTH_LIMIT];
@@ -136,16 +140,20 @@ public EvidenceStatus plm_expand_value_graph(uint2 root)
         }
         if (next[depth] == count[depth])
         {
-            if (current.x == 3u)
+            if (current.x == 3u || depth == 0u)
             {
                 // Postorder publication makes every by-value child a complete
                 // GPU-computed leaf before its parent is evaluated. Thus the
                 // shared evaluator does not repeatedly walk the expanded tree.
                 uint words = concrete_value_words<MaterializedNativeValueLayout>(current.x, current.y);
-                if (words == PEV_INVALID) return pev_limit(182u, current.y, PEV_INVALID, PEV_INVALID - 1u);
-                uint address;
-                if (!plm_address(4u, current.y, 3u, 1u, false, address)) return pev_invalid(171u, 4u, current.y);
-                program_evidence_native_layout_work[address] = words;
+                if (current.x == 3u)
+                {
+                    if (words == PEV_INVALID) return pev_limit(182u, current.y, PEV_INVALID, PEV_INVALID - 1u);
+                    uint address;
+                    if (!plm_address(4u, current.y, 3u, 1u, false, address)) return pev_invalid(171u, 4u, current.y);
+                    program_evidence_native_layout_work[address] = words;
+                }
+                if (depth == 0u) root_words = words;
             }
             if (depth == 0u) return pev_ok();
             depth--; continue;
@@ -246,9 +254,9 @@ public EvidenceStatus plm_materialize(uint2 source)
     // expansions are private layout work and are not added to the returned type.
     program_evidence_native_layout_work[19u] = plm_used(0u);
     program_evidence_native_layout_work[20u] = plm_used(1u);
-    status = plm_expand_value_graph(root);
+    uint words;
+    status = plm_expand_value_graph(root, words);
     if (status.state != PEV_VALID) return status;
-    uint words = concrete_value_words<MaterializedNativeValueLayout>(root.x, root.y);
     if (words == PEV_INVALID) return pev_limit(182u, source.y, PEV_INVALID, PEV_INVALID - 1u);
     // Width belongs to this exact immutable source reference and proof arena.
     // Result and receipt become observable only after the dispatch barrier.

@@ -23,15 +23,18 @@ public interface IProofNormalizationBindings
     static bool replacement(uint environment, uint parameter, bool constant,
         out uint2 reference);
 }
+// mode is the reservation's sink_mode: a sink with several emission passes
+// (write, then check what was written) selects the pass from it.
 public interface IProofNormalizationSink
 {
-    static bool begin_node(uint row, uint4 low, uint4 high);
-    static bool set_child(uint row, uint ordinal, uint2 reference);
+    static bool begin_node(uint mode, uint row, uint4 low, uint4 high);
+    static bool set_child(uint mode, uint row, uint ordinal, uint2 reference);
 }
 public struct ProofNormalizationReservation
 {
     public uint first_node; public uint node_count;
     public uint first_edge; public uint edge_count;
+    public uint sink_mode;
 }
 public struct ProofNormalizationCounts
 {
@@ -286,7 +289,7 @@ public EvidenceStatus pev_normalize_proof_root<
             // Finalized: the next iteration completes it in its parent.
             node_low[depth].x = 0u;
         }
-        if (begin && !Sink.begin_node(begin_row, begin_low, uint4(0u, 0u, 0u, 0u)))
+        if (begin && !Sink.begin_node(reservation.sink_mode, begin_row, begin_low, uint4(0u, 0u, 0u, 0u)))
             return pev_invalid(1u, input.y, begin_row);
         bool pop = complete && !finalize;
         if (pop)
@@ -314,7 +317,7 @@ public EvidenceStatus pev_normalize_proof_root<
             link = emit && node_low[parent].x != 5u;
             link_row = output_nodes[parent]; link_ordinal = ordinal; link_reference = output_refs[depth];
         }
-        if (link && !Sink.set_child(link_row, link_ordinal, link_reference))
+        if (link && !Sink.set_child(reservation.sink_mode, link_row, link_ordinal, link_reference))
             return pev_invalid(1u, input.y, link_row);
         if (pop) { depth--; continue; }
         if (complete) continue;

@@ -118,9 +118,9 @@ public struct SolverProofTermGraph : IParameterScopedTypeGraph,
 }
 public struct SolverProofTermSink : IProofNormalizationSink
 {
-    public static bool begin_node(uint row, uint4 low, uint4 high)
+    public static bool begin_node(uint mode, uint row, uint4 low, uint4 high)
     { return pps_write8(PPS_TERM_NODES, row, low, high); }
-    public static bool set_child(uint row, uint slot, uint2 reference)
+    public static bool set_child(uint mode, uint row, uint slot, uint2 reference)
     {
         // This row is reserved but deliberately not yet readable through the
         // admitted graph adapter. Only its unique emitter may fill children.

@@ -34,14 +34,14 @@ public struct OwnedBindingCheckSink : IProofNormalizationSink
             ? pps_read8(PPS_TERM_NODES, row, low, high)
             : pps_read_pending8(PPS_TERM_NODES, row, low, high));
     }
-    public static bool begin_node(uint row, uint4 expected, uint4 unused)
+    public static bool begin_node(uint mode, uint row, uint4 expected, uint4 unused)
     {
         uint4 low; uint4 high;
         if (!read(row, low, high) || any(low != expected)) return false;
         return low.x == 6u ? all(high == uint4(0u, 0u, 0u, 0u)) :
             low.x == 5u && all(high.zw == uint2(0u, 0u));
     }
-    public static bool set_child(uint row, uint ordinal, uint2 expected)
+    public static bool set_child(uint mode, uint row, uint ordinal, uint2 expected)
     {
         uint4 low; uint4 high;
         return ordinal == 0u && read(row, low, high) && low.x == 5u && all(high.xy == expected);
@@ -92,14 +92,14 @@ public EvidenceStatus pps_materialize_binding_request<Sink : IProofNormalization
             uint count; uint3 fitted;
             if (!constant_value_to_count(value, count) || !constant_value_from_count(count, target, fitted))
                 return pev_invalid(66u, parameter, target);
-            if (!Sink.begin_node(row, uint4(6u, fitted), uint4(0u, 0u, 0u, 0u)))
+            if (!Sink.begin_node(0u, row, uint4(6u, fitted), uint4(0u, 0u, 0u, 0u)))
                 return pev_invalid(68u, parameter, row);
             value = fitted; normalized = uint2(0x80000001u, row);
         }
         else
         {
-            if (!Sink.begin_node(row, uint4(5u, target, 0u, 0u), uint4(0u, 0u, 0u, 0u)) ||
-                !Sink.set_child(row, 0u, normalized)) return pev_invalid(68u, parameter, row);
+            if (!Sink.begin_node(0u, row, uint4(5u, target, 0u, 0u), uint4(0u, 0u, 0u, 0u)) ||
+                !Sink.set_child(0u, row, 0u, normalized)) return pev_invalid(68u, parameter, row);
             normalized = uint2(0x80000003u, row);
         }
         scalar = target;

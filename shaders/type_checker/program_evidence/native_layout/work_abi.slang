@@ -64,6 +64,17 @@ public bool plm_read4(uint table, uint row, uint field, bool pending, out uint4 
         program_evidence_native_layout_work[address + 2u], program_evidence_native_layout_work[address + 3u]);
     return true;
 }
+// One address check for a complete eight-word row (fields 0..7).
+public bool plm_read8(uint table, uint row, bool pending, out uint4 low, out uint4 high)
+{
+    low = uint4(PEV_INVALID, PEV_INVALID, PEV_INVALID, PEV_INVALID); high = low; uint address;
+    if (!plm_address(table, row, 0u, 8u, pending, address)) return false;
+    low = uint4(program_evidence_native_layout_work[address], program_evidence_native_layout_work[address + 1u],
+        program_evidence_native_layout_work[address + 2u], program_evidence_native_layout_work[address + 3u]);
+    high = uint4(program_evidence_native_layout_work[address + 4u], program_evidence_native_layout_work[address + 5u],
+        program_evidence_native_layout_work[address + 6u], program_evidence_native_layout_work[address + 7u]);
+    return true;
+}
 public bool plm_write2(uint table, uint row, uint field, uint2 value)
 {
     uint address;
