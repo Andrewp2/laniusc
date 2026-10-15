@@ -55,14 +55,18 @@ stops in four ways:
 
 - **Converged.** The round changed nothing. The final passes then run with
   inference closed.
-- **Error recorded.** The check fails whatever later rounds would infer, and an
-  unresolved callee or type can keep producers changing forever. The loop stops
-  at the first round with an error and the remaining passes run as usual. The
-  check then reports the status words from the moment inference stopped,
-  because the later passes ran on facts inference never finished, and their
-  errors can be consequences of the stop. So a program with several errors
-  reports the smallest-token error recorded by the round in which the first
-  error appeared.
+- **Error recorded.** The check fails whatever later rounds would infer, but
+  the final passes report the root error only once inference has finished:
+  missing-fact errors (an unknown type, an unresolved call) wait for it, while
+  their consequences can be recorded earlier. So inference continues for up to
+  `CALL_INFERENCE_ERROR_ROUNDS` (16) rounds after the first recorded error.
+  - If it converges within them, the check reports as usual: the
+    smallest-token error after the final passes.
+  - Otherwise the loop stops, which ends an inference that an error keeps from
+    converging. The remaining passes run as usual, but the check reports the
+    status words of the round that stopped it, because the later passes ran on
+    facts inference never finished, and their errors can be consequences of the
+    stop.
 - **Depth limit.** This is a language limit, like Rust's `recursion_limit`.
   - Inference may take at most `CALL_INFERENCE_DEPTH_LIMIT` (1024) rounds. A
     chain of dependent calls usually resolves one link per round, so a longer
@@ -81,7 +85,10 @@ canonical ID are one value. Two producers can publish the same application as
 different checked rows: the nested-literal pass its indexed field row, and the
 canonical context path the realized row of the ID. Comparing rows there instead
 of IDs counted a change every round (`calls/03k3_project_record_contexts`, the
-same rule as `calls/03e_materialize_return_types`).
+same rule as `calls/03e_materialize_return_types`). Identical reference words
+are also one value when a structural comparison cannot walk them, such as an
+array element whose type name is unresolved: `calls/03i_materialize_array_literals`
+republished such a literal, allocating a row, every round.
 
 ## Semantic replay identity, widths, and original recipes (2026-10-11)
 

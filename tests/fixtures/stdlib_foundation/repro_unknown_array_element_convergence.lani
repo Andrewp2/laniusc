@@ -1,0 +1,23 @@
+// The array literal's element type name is unresolved, so its element
+// reference comes from the annotation and the structural type comparison
+// cannot walk it. Call inference republished the literal, allocating a
+// checked row and counting a change, every round and never ended; it must
+// converge and report the unknown type.
+fn swap<T>(values: [T], i: i32, j: i32) {
+    let t: T = values[i];
+    values[i] = values[j];
+    values[j] = t;
+}
+fn get<T>(values: [T], index: i32) -> T {
+    return values[index];
+}
+fn main() -> i32 {
+    let value: i32 = 7;
+    let a: [Missing; 2] = [
+        Missing { f0: value, f1: 3274 },
+        Missing { f0: 1, f1: 2908 },
+    ];
+    swap(a, 0, 1);
+    let r: Missing = get(a, 0);
+    return (r.f0 * 2 + r.f1) & 4095;
+}
