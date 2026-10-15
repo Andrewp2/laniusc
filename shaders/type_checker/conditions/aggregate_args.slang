@@ -9,7 +9,8 @@
 import hir_records;
 import status;
 import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.checked_type_identity;
+import type_checker.checked_slots;
 import type_checker.calls.claim_lookup;
 
 struct Params
@@ -175,10 +176,8 @@ bool substituted_generic_matches(
         }
     }
     if (accepted != INVALID)
-        return scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-            expected_tag, expected_payload, INVALID,
-            call_generic_claim_ref_tag[accepted], call_generic_claim_ref_payload[accepted],
-            INVALID, checked_type_capacity(), gParams.n_tokens);
+        return checked_types_equal(CheckedSlots(), expected_tag, expected_payload,
+            call_generic_claim_ref_tag[accepted], call_generic_claim_ref_payload[accepted], true);
 
     // Keep the existing annotation-only scalar inference when no argument
     // supplies the result parameter. Structural inference needs a claim.
@@ -222,12 +221,10 @@ void validate_compare_row(uint row)
         ScopedCheckedTypeGraph.argument(expected_instance, ordinal, expected_tag, expected_payload) &&
         ScopedCheckedTypeGraph.argument(actual_instance, ordinal, actual_tag, actual_payload);
     // Normalization and body replay produce types without source HIR subtrees.
-    // Compare their complete checked graphs, including lexical identities and
-    // constant lengths, using the same relation as ordinary applications.
-    bool matches = have_refs && scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-        expected_tag, expected_payload, INVALID,
-        actual_tag, actual_payload, INVALID,
-        checked_type_capacity(), gParams.n_tokens);
+    // Their canonical IDs carry lexical identities and constant lengths, as
+    // for ordinary applications.
+    bool matches = have_refs &&
+        checked_types_equal(CheckedSlots(), expected_tag, expected_payload, actual_tag, actual_payload, true);
     if (have_refs && !matches)
         matches = substituted_generic_matches(
             request_node, expected_tag, expected_payload, actual_tag, actual_payload);

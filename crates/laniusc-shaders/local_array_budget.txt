@@ -59,7 +59,6 @@
 2048 type_checker/calls/03j_validate_array_literals
 2048 type_checker/calls/03k1_project_literal_contexts
 2048 type_checker/canonical/90_validate
-2048 type_checker/conditions/aggregate_args
 2048 type_checker/methods/08_finalize_candidates
 2048 type_checker/methods/09_route_bound_members
 2048 type_checker/modules/10j_consume_value_enum_units
