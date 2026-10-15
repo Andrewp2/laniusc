@@ -2,6 +2,8 @@
 // Accepted expression/field references take precedence over declaration hints.
 // Scalar codes are used only for scalar expressions and never reconstruct a
 // compound type or a generic binding.
+// The including kernel defines ARGUMENT_TYPE_GRAPH (the graph it reads type
+// rows through) and parameter_type_capacity().
 import type_checker.argument_context;
 #include "argument_result_reference.slang"
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -130,7 +132,6 @@ uint direct_node_type_no_nested_call(uint node)
     if (compact_hir_core[node].kind == HIR_INDEX_EXPR)
     {
         uint tag; uint payload;
-#ifdef ARGUMENT_TYPE_GRAPH
         // The including kernel reads the type rows through its own graph.
         if (checked_named_index_reference<ARGUMENT_TYPE_GRAPH>(node, active_hir_node_count(), gParams.n_tokens,
             compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
@@ -139,16 +140,6 @@ uint direct_node_type_no_nested_call(uint node)
                 compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
                 parameter_type_capacity(), tag, payload))
             return leaf_type_code_for_ref(tag, payload);
-#else
-        if (checked_named_index_reference(node, active_hir_node_count(), gParams.n_tokens,
-            compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
-            decl_type_ref_payload, type_instance_kind, type_instance_elem_ref_tag,
-            type_instance_elem_ref_payload, tag, payload) ||
-            checked_member_index_reference(node, active_hir_node_count(), gParams.n_tokens,
-                compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
-                type_instance_kind, type_instance_elem_ref_tag, type_instance_elem_ref_payload, tag, payload))
-            return leaf_type_code_for_ref(tag, payload);
-#endif
         return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
     }
     if (compact_hir_core[node].kind == HIR_MATCH_EXPR)
@@ -297,22 +288,12 @@ bool arg_decl_type_ref(uint arg_node, out uint tag, out uint payload)
             if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
         }
     }
-#ifdef ARGUMENT_TYPE_GRAPH
     if (checked_named_index_reference<ARGUMENT_TYPE_GRAPH>(arg_node, active_hir_node_count(), gParams.n_tokens,
         compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
         decl_type_ref_payload, parameter_type_capacity(), tag, payload) ||
         checked_member_index_reference<ARGUMENT_TYPE_GRAPH>(arg_node, active_hir_node_count(), gParams.n_tokens,
             compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
             parameter_type_capacity(), tag, payload)) return true;
-#else
-    if (checked_named_index_reference(arg_node, active_hir_node_count(), gParams.n_tokens,
-        compact_hir_core, compact_hir_payload, visible_decl, decl_type_ref_tag,
-        decl_type_ref_payload, type_instance_kind, type_instance_elem_ref_tag,
-        type_instance_elem_ref_payload, tag, payload) ||
-        checked_member_index_reference(arg_node, active_hir_node_count(), gParams.n_tokens,
-            compact_hir_core, compact_hir_payload, member_result_ref_tag, member_result_ref_payload,
-            type_instance_kind, type_instance_elem_ref_tag, type_instance_elem_ref_payload, tag, payload)) return true;
-#endif
     uint token = direct_name_expr_token(arg_node);
     return read_decl_type_ref(token, tag, payload);
 }
