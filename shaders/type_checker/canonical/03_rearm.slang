@@ -8,7 +8,9 @@
 // that the early stage interned, so its late stage re-arms every candidate.
 // A candidate owns no record (ct_intern_key), so a rewritten candidate takes
 // a new record and the records of its earlier key stay valid for the
-// references that still name them.
+// references that still name them. The early stage does the same when
+// imported alias targets interned candidates ahead of it
+// (CT_COUNT_EARLY_REARM): alias normalization rewrote those rows.
 import type_checker.canonical.canonical_api;
 
 // Header (argument count, ...); [705].x is the constant binding count. A
@@ -25,8 +27,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint state = ct_candidate_state(i);
         bool replay = body_specialization_inputs[0u].x != 0u || body_specialization_inputs[705u].x != 0u;
+        bool rearm_interned = replay || ct_counts[CT_COUNT_EARLY_REARM] != 0u;
         bool interned = ct_is_resolved(state);
-        if (state == CT_NONE || state == CT_UNKNOWN || (replay && interned))
+        if (state == CT_NONE || state == CT_UNKNOWN || (rearm_interned && interned))
         {
             uint rows = ct_row_capacity();
             uint atoms = ct_atom_capacity();

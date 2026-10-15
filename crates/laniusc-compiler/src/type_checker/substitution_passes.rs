@@ -30,8 +30,8 @@ pub(super) const SUBSTITUTION_CALL_ENVS_KERNEL: &str =
 pub(super) const SUBSTITUTION_COUNT_WORDS: u64 = 8;
 /// Imported alias targets (dependencies/14a) are realized after the last
 /// dependency page: dispatches that leave a busy target for the next one,
-/// then one that reports it. The candidates 14a interned ahead of the early
-/// canonical stage are re-armed afterwards.
+/// then one that reports it. The early canonical stage re-arms the
+/// candidates 14a interned (`CT_COUNT_EARLY_REARM`).
 pub(super) const ALIAS_TARGETS_REALIZE_PASS: &str = "type_check.substitution.alias_targets.realize";
 pub(super) const ALIAS_TARGETS_REALIZE_KERNEL: &str =
     "type_checker/substitution/08_realize_alias_targets";
@@ -39,8 +39,6 @@ pub(super) const ALIAS_TARGETS_REALIZE_FINAL_PASS: &str =
     "type_check.substitution.alias_targets.realize_final";
 pub(super) const ALIAS_TARGETS_REALIZE_FINAL_KERNEL: &str =
     "type_checker/substitution/08a_realize_alias_targets_final";
-pub(super) const EARLY_REARM_PASS: &str = "type_check.substitution.rearm_early";
-pub(super) const EARLY_REARM_KERNEL: &str = "type_checker/substitution/09_rearm_early_candidates";
 /// Realization dispatches ahead of the reporting one.
 const ALIAS_TARGET_RETRIES: usize = 2;
 
@@ -169,9 +167,9 @@ pub(super) fn register_substitution_seed(
     Ok(())
 }
 
-/// Registers the realization of the imported alias targets and the early
-/// re-arm, after dependencies/14a. `realize_bindings` resolve the row
-/// arena's write-only layout words and the alias targets.
+/// Registers the realization of the imported alias targets, after
+/// dependencies/14a. `realize_bindings` resolve the row arena's write-only
+/// layout words and the alias targets.
 pub(super) fn register_alias_target_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
@@ -190,14 +188,6 @@ pub(super) fn register_alias_target_passes(
             realize_bindings,
         )?;
     }
-    graph.add_kernel_pass_by_name(
-        EARLY_REARM_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Types,
-        kernels,
-        EARLY_REARM_KERNEL,
-        &[],
-    )?;
     Ok(())
 }
 
@@ -321,7 +311,6 @@ pub(in crate::type_checker) struct SubstitutionOperations {
     seed: ComputeOperation,
     alias_realize: ComputeOperation,
     alias_realize_final: ComputeOperation,
-    rearm_early: ComputeOperation,
 }
 
 impl SubstitutionOperations {
@@ -358,7 +347,6 @@ impl SubstitutionOperations {
                 ALIAS_TARGETS_REALIZE_FINAL_KERNEL,
                 alias_targets,
             )?,
-            rearm_early: direct(EARLY_REARM_PASS, EARLY_REARM_KERNEL, candidates)?,
         })
     }
 
@@ -371,8 +359,8 @@ impl SubstitutionOperations {
         self.clear.record(encoder)
     }
 
-    /// Records the realization of the imported alias targets and the early
-    /// re-arm; after the last dependency page's alias targets.
+    /// Records the realization of the imported alias targets; after the last
+    /// dependency page's alias targets.
     pub(in crate::type_checker) fn record_alias_targets(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -380,8 +368,7 @@ impl SubstitutionOperations {
         for _ in 0..ALIAS_TARGET_RETRIES {
             self.alias_realize.record(encoder)?;
         }
-        self.alias_realize_final.record(encoder)?;
-        self.rearm_early.record(encoder)
+        self.alias_realize_final.record(encoder)
     }
 
     /// Records the clear and the seed; after the early canonical stage.

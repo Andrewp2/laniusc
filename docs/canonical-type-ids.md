@@ -373,16 +373,17 @@ Each job interns into one table, so an ID stays valid for the whole job.
   signature node (`canonical_type_roots`); function types (7) are
   `CT_UNKNOWN`, as rows have no function kind. An imported row and the
   signature node it came from therefore share one ID.
-- **Imported alias targets** (dependencies/14a, substitution/08, 09). A
-  job with dependency pages clears the substitution state right after the
+- **Imported alias targets** (dependencies/14a, substitution/08). A job
+  with dependency pages clears the substitution state right after the
   canonical clear. On each page, 14a interns every imported alias use's leaf
-  row on demand and substitutes the alias signature under it
-  (`ct_subst`), publishing `(0, ID)`. After the last page, 08 realizes the
-  targets as rows (twice with retry, then 08a reports a busy row), and 09
-  sets every resolved candidate back to `CT_PENDING` when 14a interned
-  anything, because alias normalization rewrites those rows before the
-  early stage. An unchanged key adopts its existing record at the early
-  stage. The post-early substitution clear drops the rows 08 recorded.
+  row on demand and substitutes the alias signature under it (`ct_subst`),
+  publishing a pending target ID. After the last page, 08 realizes the
+  targets as rows (twice with retry, then 08a reports a busy row). Alias
+  normalization then rewrites rows 14a interned, so 14a sets
+  `CT_COUNT_EARLY_REARM` and the early `03_rearm` re-arms every interned
+  candidate, as a body replay's late one does; round 0 of `01_intern` clears
+  the flag. An unchanged key adopts its existing record. The post-early
+  substitution clear drops the rows 08 recorded.
 - **Early** (`03_rearm`, then rounds). It is recorded unconditionally after
   the declaration refs (`type_instances.decl_refs_for_bindings`) and before
   `type_instances.index_closed_applications`. It interns the source rows and

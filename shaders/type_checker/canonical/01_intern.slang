@@ -25,6 +25,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint candidate;
     if (round == 0u)
     {
+        // The early 03_rearm has read the flag; the late one must not.
+        if (i == 0u) ct_counts[CT_COUNT_EARLY_REARM] = 0u;
         if (i >= count) return;
         // Constants first, then rows from the last: within one dispatch the
         // leaves then tend to publish before the rows that read them.

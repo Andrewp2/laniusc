@@ -1047,8 +1047,7 @@ impl GpuTypeChecker {
                 } else {
                     materialize_alias_targets(encoder)?;
                 }
-                // Every page has contributed its targets: realize them, then
-                // re-arm the candidates they interned for the early stage.
+                // Every page has contributed its targets: realize them.
                 bind_groups.calls.substitution.record_alias_targets(encoder)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.substitution.alias_targets.done");

@@ -30,9 +30,6 @@ public globallycoherent RWStructuredBuffer<uint4> ct_subst_memo;
 public globallycoherent RWStructuredBuffer<uint> ct_subst_counts;
 
 public static const uint CT_SUBST_COUNT_OVERFLOW = 0u;  // CT_SUBST_OVERFLOW_* bits
-// Nonzero: candidates were interned ahead of the early canonical stage
-// (dependencies/14a); 09_rearm_early_candidates re-arms them.
-public static const uint CT_SUBST_COUNT_EARLY_INTERNED = 1u;
 public static const uint CT_SUBST_COUNT_WORDS = 8u;
 public static const uint CT_SUBST_OVERFLOW_MEMO = 1u;
 public static const uint CT_SUBST_OVERFLOW_WORK = 2u;

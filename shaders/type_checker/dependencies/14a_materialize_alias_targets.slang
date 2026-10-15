@@ -5,10 +5,10 @@
 // application is the environment, so an alias keeps its own environment.
 //
 // Each page contributes the targets of its own declarations, published as
-// (0, ID) until substitution/08 realizes them as checked rows after the last
-// page; a later normalization then follows nested alias targets without
+// (ALIAS_TARGET_PENDING, ID) until substitution/08 realizes them as checked
+// rows after the last page; a later normalization then follows nested alias targets without
 // depending on dependency page order. Normalization rewrites rows interned
-// here, so 09_rearm_early_candidates re-arms them for the early stage.
+// here, so the early stage re-arms them (CT_COUNT_EARLY_REARM).
 import dependency_interface;
 import status;
 import type_checker.checked_type_graph;
@@ -35,6 +35,9 @@ RWStructuredBuffer<uint2> imported_type_alias_target;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+// The tag of a target that substitution/08 has not realized yet; no reader
+// runs in between, and 08a leaves none behind.
+static const uint ALIAS_TARGET_PENDING = 0xfffffffeu;
 // Failure details: the leaf has no canonical ID, the signature has none,
 // or the substitution has none.
 static const uint FAILURE_LEAF = 0x41490011u;
@@ -63,9 +66,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint root = signature < types ? canonical_type_roots[signature] : INVALID;
     uint pattern = root < types ? ct_dependency_state(root) : CT_UNKNOWN;
     if (!ct_is_resolved(pattern)) { record_min_token_error(status, leaf, 6u, FAILURE_SIGNATURE); return; }
-    // Candidates this lane publishes are re-armed before the early stage.
-    if (ct_subst_counts[CT_SUBST_COUNT_EARLY_INTERNED] == 0u)
-        InterlockedOr(ct_subst_counts[CT_SUBST_COUNT_EARLY_INTERNED], 1u);
+    // The early stage re-arms the candidates this lane publishes.
+    if (ct_counts[CT_COUNT_EARLY_REARM] == 0u) InterlockedOr(ct_counts[CT_COUNT_EARLY_REARM], 1u);
     uint row_spare = CT_NONE;
     uint application = ct_intern_checked<CtCheckedRows>(3u, leaf, row_spare);
     if (!ct_is_record(application) || ct_kind(application) != CT_KIND_NAMED)
@@ -74,5 +76,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint target = ct_subst(CheckedSourceSlots(), application, pattern, true, spare);
     if (!ct_is_resolved(target) || ct_is_constant(target))
     { record_min_token_error(status, leaf, 6u, FAILURE_TARGET); return; }
-    imported_type_alias_target[leaf] = uint2(0u, target);
+    imported_type_alias_target[leaf] = uint2(ALIAS_TARGET_PENDING, target);
 }
