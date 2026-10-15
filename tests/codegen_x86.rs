@@ -11731,3 +11731,56 @@ fn main() -> i32 {
         42,
     );
 }
+
+#[test]
+fn x86_const_generic_parameter_casts_in_a_free_function() {
+    assert_source_exit(
+        "const_generic_parameter_cast_free_fn",
+        r#"
+fn length<const N: usize>(values: [i32; N]) -> i32 {
+    return N as i32;
+}
+fn main() -> i32 {
+    let values: [i32; 4] = [7, -2, 9, 4];
+    return length(values) * 10 + 2;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_const_generic_parameter_casts_in_a_method() {
+    assert_source_exit(
+        "const_generic_parameter_cast_method",
+        r#"
+struct Buf<T, const N: usize> { items: [T; N] }
+impl<T, const N: usize> Buf<T, N> {
+    fn cap(&self) -> i32 { return N as i32; }
+}
+fn main() -> i32 {
+    let b: Buf<i32, 3> = Buf { items: [1, 2, 3] };
+    return b.cap() + 39;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
+fn x86_char_literals_cast_to_integers() {
+    assert_source_exit(
+        "char_literal_casts",
+        r#"
+fn main() -> i32 {
+    if (('Z' as u8) != 90) { return 1; }
+    if (('A' as i32) + 1 != 66) { return 2; }
+    let letter: char = 'B';
+    if (letter != 'B') { return 3; }
+    if (('Ω' as u32) != 937) { return 4; }
+    return 42;
+}
+"#,
+        42,
+    );
+}

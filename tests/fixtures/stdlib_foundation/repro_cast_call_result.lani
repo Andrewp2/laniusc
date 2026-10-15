@@ -1,3 +1,4 @@
+// expect: 7
 module app::main;
 
 fn number() -> u32 {

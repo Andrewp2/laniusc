@@ -71,10 +71,17 @@ and records the checked source type. x86_64 emits a dedicated conversion
 sequence. The wasm backend does not support `CONVERT` yet. It stops with the
 generic `LNC0057` lowering error, not a dedicated diagnostic.
 
-A char literal has no semantic scalar type of its own, so `'Z' as u8` type
-checks but x86_64 rejects it with `LNC0017` (unsupported LIR opcode 3). Cast a
-char local or parameter instead. The fix is a `HIR_EXPR_CHAR` case in
-`expression_types/00_init.slang`'s `direct_result_type`.
+A char literal is always a `char`: `expression_types/00_init.slang` types it
+directly, so `'Z' as u8` lowers with a known source type. Integer and float
+literals still take their type from context.
+
+A const generic parameter used as a value, such as `N as i32` in
+`fn length<const N: usize>`, reads its scalar type from the checked constant.
+The type checker writes it to `semantic_expr_scalar_type_by_hir` in the packed
+form every other row uses: the scalar id in the high bits (`SCALAR_TYPE_SHIFT`)
+and all link bits set. Lowering decodes the high bits. Before 2026-10-15 the id
+was written unpacked, so it decoded as unknown and x86_64 rejected the cast
+with `LNC0017`.
 
 ## Call inference termination (2026-10-15)
 
