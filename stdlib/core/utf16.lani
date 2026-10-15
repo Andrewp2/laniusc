@@ -90,15 +90,15 @@ pub fn write_scalar(units: [u16], capacity: i32, offset: i32,
         return Utf16Write { status: STATUS_SHORT, next: offset };
     }
     if (needed == 1) {
-        let unit: u16 = scalar;
+        let unit: u16 = scalar as u16;
         units[offset] = unit;
         return Utf16Write { status: STATUS_OK, next: offset + 1 };
     }
     let adjusted: u32 = scalar - 65536;
     let high: u32 = 55296 + adjusted / 1024;
     let low: u32 = 56320 + adjusted % 1024;
-    let high_unit: u16 = high;
-    let low_unit: u16 = low;
+    let high_unit: u16 = high as u16;
+    let low_unit: u16 = low as u16;
     units[offset] = high_unit;
     units[offset + 1] = low_unit;
     return Utf16Write { status: STATUS_OK, next: offset + 2 };
@@ -116,7 +116,7 @@ pub fn decode_next(units: [u16], len: i32, offset: i32) -> Utf16Decode {
         return Utf16Decode { status: STATUS_MALFORMED, scalar: 0, next: offset };
     }
     if (!is_high_surrogate(first)) {
-        let scalar: u32 = first;
+        let scalar: u32 = first as u32;
         return Utf16Decode { status: STATUS_OK, scalar: scalar, next: offset + 1 };
     }
     if (offset + 1 >= len) {
@@ -126,8 +126,8 @@ pub fn decode_next(units: [u16], len: i32, offset: i32) -> Utf16Decode {
     if (!is_low_surrogate(second)) {
         return Utf16Decode { status: STATUS_MALFORMED, scalar: 0, next: offset };
     }
-    let high: u32 = first;
-    let low: u32 = second;
+    let high: u32 = first as u32;
+    let low: u32 = second as u32;
     let scalar: u32 = 65536 + (high - 55296) * 1024 + (low - 56320);
     return Utf16Decode { status: STATUS_OK, scalar: scalar, next: offset + 2 };
 }

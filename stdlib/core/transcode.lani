@@ -43,7 +43,7 @@ fn utf8_scalar_at(bytes: [u8], offset: i32, width: i32) -> u32 {
     if (width > 1) { second = bytes[offset + 1]; }
     if (width > 2) { third = bytes[offset + 2]; }
     if (width > 3) { fourth = bytes[offset + 3]; }
-    let count: u32 = width;
+    let count: u32 = width as u32;
     return core::utf8::decode_or(first, second, third, fourth,
         count, 4294967295);
 }
@@ -64,7 +64,7 @@ pub fn utf8_to_utf16(source: [u8], source_len: i32,
     let needed: i32 = 0;
     while (offset < source_len) {
         let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         let scalar: u32 = utf8_scalar_at(source, offset, width);
         let units: i32 = core::utf16::encoded_len_or(scalar, -1);
         if (units < 0) { return failure(core::utf16::STATUS_MALFORMED); }
@@ -78,7 +78,7 @@ pub fn utf8_to_utf16(source: [u8], source_len: i32,
     let written: i32 = 0;
     while (offset < source_len) {
         let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         let scalar: u32 = utf8_scalar_at(source, offset, width);
         let result: core::utf16::Utf16Write =
             core::utf16::write_scalar(destination, capacity, written, scalar);
@@ -110,7 +110,7 @@ pub fn utf16_to_utf8(source: [u16], source_len: i32,
             core::utf16::decode_next(source, source_len, offset);
         let scalar: u32 = core::utf16::decode_scalar_or(decoded, 4294967295);
         let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         if (width == 0) { return failure(core::utf16::STATUS_MALFORMED); }
         if (width > capacity - needed) {
             return failure(core::utf16::STATUS_SHORT);
@@ -181,7 +181,7 @@ fn utf8_to_utf16_bytes(source: [u8], source_len: i32,
     let needed: i32 = 0;
     while (offset < source_len) {
         let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         let scalar: u32 = utf8_scalar_at(source, offset, width);
         let bytes: i32 = core::utf16_bytes::byte_len_for_scalar_or(scalar, -1);
         if (bytes < 0) { return failure(core::utf16::STATUS_MALFORMED); }
@@ -195,7 +195,7 @@ fn utf8_to_utf16_bytes(source: [u8], source_len: i32,
     let written: i32 = 0;
     while (offset < source_len) {
         let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         let scalar: u32 = utf8_scalar_at(source, offset, width);
         let result: core::utf16_bytes::Utf16ByteWrite =
             write_utf16_byte_scalar(destination, capacity, written, scalar,
@@ -227,7 +227,7 @@ fn utf16_bytes_to_utf8(source: [u8], source_len: i32,
             read_utf16_byte_scalar(source, source_len, offset, big_endian);
         let scalar: u32 = core::utf16_bytes::decode_scalar_or(decoded, 4294967295);
         let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
-        let width: i32 = width_u32;
+        let width: i32 = width_u32 as i32;
         if (width == 0) { return failure(core::utf16::STATUS_MALFORMED); }
         if (width > capacity - needed) {
             return failure(core::utf16::STATUS_SHORT);

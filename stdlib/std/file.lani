@@ -72,7 +72,7 @@ pub fn read_exact_into_buffer(path: str, buffer: ptr, len: usize) -> bool {
             complete = false;
             break;
         }
-        let advanced: usize = count;
+        let advanced: usize = count as usize;
         if (advanced>remaining) {
             complete = false;
             break;
@@ -111,7 +111,7 @@ pub fn read_to_end_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32 {
             complete = true;
             break;
         }
-        let advanced: usize = count;
+        let advanced: usize = count as usize;
         if (advanced>remaining) {
             valid = false;
             break;
@@ -127,7 +127,7 @@ pub fn read_to_end_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32 {
     if (!valid || !complete || closed<0) {
         return -1;
     }
-    let count: i32 = received;
+    let count: i32 = received as i32;
     return count;
 }
 // Write all len bytes to an open file handle, retrying short writes. A valid
@@ -146,7 +146,7 @@ pub fn write_all_bytes(handle: i32, buffer: ptr, len: usize) -> bool {
         if (written <= 0) {
             return false;
         }
-        let advanced: usize = written;
+        let advanced: usize = written as usize;
         if (advanced>remaining) {
             return false;
         }
@@ -180,7 +180,7 @@ fn copy_open_files(input: i32, output: i32, buffer: ptr, capacity: usize) -> boo
         if (received == 0) {
             return true;
         }
-        let count: usize = received;
+        let count: usize = received as usize;
         if (count>capacity || !write_all_bytes(output, buffer, count)) {
             return false;
         }
@@ -234,7 +234,7 @@ pub fn copy_file_to_stdout_with_buffer(path: str, buffer: ptr, capacity: usize) 
         if (received == 0) {
             break;
         }
-        let count: usize = received;
+        let count: usize = received as usize;
         if (count>capacity || !std::io_checked::write_all_stdout(buffer, count)) {
             copied = false;
             break;
@@ -266,7 +266,7 @@ pub fn copy_stdin_to_file_with_buffer(path: str, buffer: ptr, capacity: usize) -
         if (received == 0) {
             break;
         }
-        let count: usize = received;
+        let count: usize = received as usize;
         if (count>capacity || !write_all_bytes(output, buffer, count)) {
             copied = false;
             break;
@@ -337,7 +337,7 @@ pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32 {
             }
             started = true;
             digits = true;
-            let ascii: u8 = byte;
+            let ascii: u8 = byte as u8;
             let limit: u32 = 2147483647;
             if (negative) {
                 limit = 2147483648;
@@ -360,10 +360,10 @@ pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32 {
         if (magnitude == 2147483648) {
             return -2147483648;
         }
-        let positive: i32 = magnitude;
+        let positive: i32 = magnitude as i32;
         return -positive;
     }
-    let positive: i32 = magnitude;
+    let positive: i32 = magnitude as i32;
     return positive;
 }
 
@@ -425,7 +425,7 @@ pub fn read_u32_decimal_or(path: str, max_bytes: u32, fallback: u32) -> u32 {
             }
             started = true;
             digits = true;
-            let ascii: u8 = byte;
+            let ascii: u8 = byte as u8;
             let limit: u32 = 4294967295;
             if (!core::decimal::can_append_ascii_digit_u32(value, ascii, limit)) {
                 valid = false;
@@ -496,7 +496,7 @@ pub fn read_wide_u64_decimal_or(
             started = true;
             digits = true;
             let digit_i32: i32 = byte - 48;
-            let digit: u32 = digit_i32;
+            let digit: u32 = digit_i32 as u32;
             let order: i32 = core::wide_u64::compare(value, threshold);
             if (order > 0 || (order == 0 && digit > 5)) {
                 valid = false;
@@ -559,7 +559,7 @@ pub fn read_wide_i64_decimal_or(
             started = true;
             digits = true;
             let digit_i32: i32 = byte - 48;
-            let digit: u32 = digit_i32;
+            let digit: u32 = digit_i32 as u32;
             let last_digit: u32 = 7;
             if (negative) { last_digit = 8; }
             let order: i32 = core::wide_u64::compare(magnitude, threshold);
