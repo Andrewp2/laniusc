@@ -16,6 +16,9 @@ StructuredBuffer<uint> semantic_value_id;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_tag;
+StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> type_instance_kind;
 RWStructuredBuffer<uint> semantic_local_flag;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -81,10 +84,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             (core.kind == HIR_STMT && payload.a == HIR_STMT_FOR);
         bool match_result = core.kind == HIR_MATCH_EXPR;
         bool match_binding = match_payload_binding(hir);
-        // A call whose `&self` receiver is not a place owns the receiver's
-        // stored copy.
+        // A call whose `&self` receiver is not a place, or a field of one,
+        // owns the stored copy.
+        uint holder;
         bool receiver_temporary = core.kind == HIR_CALL_EXPR &&
-            receiver_temporary_token(hir, semantic_calls_by_hir[hir], hir_count) < gParams.n_tokens;
+            receiver_temporary_token(hir, semantic_calls_by_hir[hir], hir_count, holder) < gParams.n_tokens;
         semantic_local_flag[hir] = match_result ? 3u
             : source_local || match_binding || receiver_temporary ||
                 semantic_lir_is_short_circuit(core, payload)

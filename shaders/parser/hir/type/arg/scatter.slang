@@ -47,6 +47,11 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
+// A type, a literal, or a signed literal (`-5`, `+0.0`), as in the canonical
+// type-argument passes.
+bool argument_value_kind(uint kind)
+{ return kind == HIR_TYPE || kind == 23u || kind == 17u; }
+
 bool valid_type_arg_owner(uint node)
 {
     return valid_node(node) &&
@@ -64,8 +69,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint node = linear_thread_id(dtid);
-    if (node >= gHirType.n || !valid_node(node) ||
-        (hir_kind[node] != HIR_TYPE && hir_kind[node] != 23u))
+    if (node >= gHirType.n || !valid_node(node) || !argument_value_kind(hir_kind[node]))
         return;
 
     uint seed = hir_type_arg_owner_a[node];
@@ -86,6 +90,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint previous = hir_type_arg_previous[node];
     atomic_u32_min(hir_type_arg_start, owner, node);
     atomic_u32_max(hir_type_arg_count, owner, ordinal + 1u);
-    if (valid_node(previous) && (hir_kind[previous] == HIR_TYPE || hir_kind[previous] == 23u))
+    if (valid_node(previous) && argument_value_kind(hir_kind[previous]))
         hir_type_arg_next[previous] = node;
 }

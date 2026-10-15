@@ -1,3 +1,5 @@
+// expect: 7
+// main returns values[0].
 module app::main;
 fn first<const N: usize>(values: [i32; N]) -> i32 {
     return values[0];

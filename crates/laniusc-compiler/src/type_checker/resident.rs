@@ -329,7 +329,7 @@ impl GpuTypeChecker {
         let body_specialization_inputs = storage_ro_from_u32s(
             device,
             "type_check.body_specialization_inputs",
-            &[0; generic_body::BODY_BATCH_WORDS],
+            &vec![0; generic_body::BODY_BATCH_WORDS],
         );
         // An absent interface still has a valid, immutable zero-count page.
         // It must never alias workspace columns written by the same shader.
@@ -2279,6 +2279,12 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.expression_types.done");
             }
             bind_groups.semantic_projection.artifact.record(encoder)?;
+            if hir_items.semantic_interface_required {
+                // Byte spans of generic bodies for instance-copy replay; reads
+                // the native symbols the artifact projection just published.
+                bind_groups.semantic_projection.owner_spans_clear.record(encoder);
+                bind_groups.semantic_projection.owner_spans.record(encoder)?;
+            }
             bind_groups
                 .semantic_projection
                 .local_const_literals

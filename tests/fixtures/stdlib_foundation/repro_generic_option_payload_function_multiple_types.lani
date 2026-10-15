@@ -1,3 +1,5 @@
+// stdlib-root: repro_generic_option_payload_function_root
+// expect: 0
 // One imported definition must preserve distinct scalar and record layouts.
 module app::main;
 import core::maybe_payload;

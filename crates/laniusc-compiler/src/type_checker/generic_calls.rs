@@ -180,6 +180,8 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "semantic_type_ref_payload_by_hir",
     "semantic_function_native_symbol_by_hir",
     "semantic_predicate_subject_parameter_token_by_hir",
+    "retained_owner_span_count",
+    "retained_owner_spans",
 ];
 
 /// These facts are produced by the separate interface-export graph. The
@@ -1478,7 +1480,9 @@ impl CheckedTypeReadback {
         metadata: &[u32],
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
+        owner_aliases: &BTreeMap<u32, u32>,
     ) -> Result<Self> {
+        let template_hir = |hir: u32| owner_aliases.get(&hir).copied().unwrap_or(hir);
         let owner_words = Self::owner_metadata_words(interface_exported);
         ensure!(
             parameters.len() % 4 == 0
@@ -1500,7 +1504,8 @@ impl CheckedTypeReadback {
             let core = &row[..4];
             let public = row[6];
             let scope_owner = if interface_exported { row[7] } else { INVALID };
-            let template_owner = template_binders.get(&hir).copied();
+            // An instance copy's owner takes its template's immutable binder.
+            let template_owner = template_binders.get(&template_hir(hir)).copied();
             ensure!(
                 interface_exported || template_owner.is_some(),
                 "replayed generic owner {hir} has no immutable template identity"
@@ -1588,7 +1593,7 @@ impl CheckedTypeReadback {
             };
             if !interface_exported {
                 let template = template_binders
-                    .get(&row[0])
+                    .get(&template_hir(row[0]))
                     .and_then(|owner| {
                         owner.parameters.iter().find(|parameter| {
                             parameter.identity.domain == domain
@@ -1697,6 +1702,7 @@ pub(super) fn read_unit_facts(
     semantic: &OwnedGpuSemanticArtifact,
     interface_exported: bool,
     template_contracts: Option<&CheckedUnitContracts>,
+    instance_copies: Option<&super::CheckedBodySpecializationBatch>,
 ) -> Result<CheckedUnitFacts> {
     // Ordinary object-only jobs do not publish a definition contract snapshot.
     // Body replay is explicit and supplies the immutable template instead.
@@ -1865,6 +1871,12 @@ pub(super) fn read_unit_facts(
     if let Some(pair) = call_spans.windows(2).find(|pair| pair[0].0 == pair[1].0) {
         return Err(anyhow!("retained call {} has duplicate source records", pair[0].0));
     }
+    // An instance-copy replay publishes only its copies' calls (rows at or
+    // past the first copy row); the template's own calls were admitted with
+    // the template, so their facts are not read again.
+    if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row()) {
+        call_spans.retain(|&(call, _)| call >= first);
+    }
     let call_ids = call_spans.iter().map(|&(call, _)| call).collect::<Vec<_>>();
     let calls_with_claims = sorted_unique(
         (0..claim_count)
@@ -1904,6 +1916,12 @@ pub(super) fn read_unit_facts(
         callable_hirs.last() != Some(&INVALID),
         "retained callable declaration has no HIR"
     );
+    // The owners of an instance-copy replay's copies take their template's
+    // immutable identity.
+    let owner_aliases = instance_copies
+        .map(|batch| batch.instance_owner_aliases(&callable_hirs, &method_impls))
+        .transpose()?
+        .unwrap_or_default();
     let parameter_owners = sorted_unique(
         parameters
             .chunks_exact(4)
@@ -2042,6 +2060,7 @@ pub(super) fn read_unit_facts(
         &metadata[parameter_metadata_start..nominal_metadata_start],
         interface_exported,
         template_contracts,
+        &owner_aliases,
     )?;
     types.read_nominal_metadata(
         &nominal_headers,
@@ -2090,6 +2109,8 @@ pub(super) fn read_unit_facts(
                 .enclosing_owner = enclosing;
         }
     }
+    // A replay's owners already carry their (or, for an instance copy, their
+    // template's) immutable enclosing owner from from_parameter_metadata.
     if interface_exported {
         // The nearest-generic map intentionally skips nongeneric binders.
         // Method scope instead has an exact lexical impl parent, already
@@ -2729,6 +2750,7 @@ impl super::GpuTypeChecker {
         queue: &wgpu::Queue,
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
+        instance_copies: Option<&super::CheckedBodySpecializationBatch>,
     ) -> Result<CheckedUnitFacts> {
         let semantic = self
             .semantic_artifact()
@@ -2740,6 +2762,7 @@ impl super::GpuTypeChecker {
             &semantic,
             interface_exported,
             template_contracts,
+            instance_copies,
         )
     }
 }
@@ -3385,8 +3408,9 @@ mod tests {
             vec![0], vec![INVALID], vec![INVALID], vec![0], vec![2], vec![10],
             vec![INVALID], vec![0], vec![INVALID], vec![SCALAR_U64], vec![0], vec![INVALID],
         ];
+        let none = BTreeMap::new();
         let original = CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), true, None).unwrap();
+            &parameters, &[7], &metadata.concat(), true, None, &none).unwrap();
         assert_eq!(original.parameters[&10].constant_scalar, None);
         assert_eq!(original.parameters[&11].constant_scalar, Some(SCALAR_U64));
         let contracts = CheckedUnitContracts {
@@ -3394,14 +3418,83 @@ mod tests {
         };
         metadata.remove(3); // Replay inherits the immutable template's public scope.
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), false, Some(&contracts)).is_ok());
+            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_ok());
+        // An instance copy at row 20 of template owner 7 takes 7's binder.
+        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
+        assert!(CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[20], &metadata.concat(), false, Some(&contracts), &none).is_err(),
+            "a copied owner without its template has no immutable identity");
+        let aliases = BTreeMap::from([(20, 7)]);
+        let copy = CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[20], &metadata.concat(), false, Some(&contracts), &aliases).unwrap();
+        assert_eq!(copy.owners[&20].binder, original.owners[&7].binder);
+        assert_eq!(copy.parameters[&31], original.parameters[&11]);
         metadata[12][0] = SCALAR_I64;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), false, Some(&contracts)).is_err(),
+            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_err(),
             "same binder and slot cannot silently change scalar");
         metadata[12][0] = SCALAR_UNIT;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), false, Some(&contracts)).is_err());
+            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_err());
+    }
+
+    /// An instance copy of a method inside an impl: both copied owners take
+    /// their template's binder, and the copied method its template's
+    /// enclosing owner (an index into the template's owner table), through
+    /// the aliases alone.
+    #[test]
+    fn instance_copy_owners_take_their_templates_enclosing_owner() {
+        use crate::primitive_types::*;
+        // Owner rows: core (kind, parent, start token, end token), parameter
+        // range, public identity, and on export the generic scope owner.
+        let owner = |kind: u32, parent: u32, token: u32, range: [u32; 2], exported: bool| {
+            let mut row = vec![kind, parent, token, token + 40, range[0], range[1], INVALID];
+            if exported {
+                row.push(INVALID);
+            }
+            row
+        };
+        let parameter_rows = [
+            [0, INVALID, INVALID, 0, 2, 10],
+            [INVALID, 0, INVALID, SCALAR_U64, 0, INVALID],
+        ]
+        .concat();
+        // Template: impl 5 (no parameters) encloses method 7 (parameters 10, 11).
+        let parameters = [7, 10, 1, INVALID, 7, 11, 2, 15];
+        let exported = [
+            owner(HIR_NODE_IMPL, INVALID, 30, [0, 0], true),
+            owner(HIR_NODE_FN, 5, 41, [0, 2], true),
+            parameter_rows.clone(),
+        ]
+        .concat();
+        let none = BTreeMap::new();
+        let template = CheckedTypeReadback::from_parameter_metadata(
+            &parameters, &[5, 7], &exported, true, None, &none).unwrap();
+        let impl_index = template.owner_index(5).unwrap();
+        let mut binders = vec![template.owners[&5].clone(), template.owners[&7].clone()];
+        binders[1].enclosing_owner = Some(impl_index);
+        let contracts = CheckedUnitContracts { binders, ..CheckedUnitContracts::default() };
+
+        // Replay: impl copy 18 encloses method copy 20 (parameters 30, 31).
+        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
+        let replay = [
+            owner(HIR_NODE_IMPL, INVALID, 130, [0, 0], false),
+            owner(HIR_NODE_FN, 18, 141, [0, 2], false),
+            parameter_rows,
+        ]
+        .concat();
+        let aliases = BTreeMap::from([(18, 5), (20, 7)]);
+        let copy = CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[18, 20], &replay, false, Some(&contracts), &aliases).unwrap();
+        assert_eq!(copy.owners[&18].binder, template.owners[&5].binder);
+        assert_eq!(copy.owners[&20].binder, template.owners[&7].binder);
+        assert_eq!(copy.owners[&20].enclosing_owner, Some(impl_index));
+        assert_eq!(copy.owners[&18].enclosing_owner, None);
+        assert_eq!(copy.parameters[&31], template.parameters[&11]);
+        // Without the impl's alias, the copied impl has no immutable identity.
+        let method_only = BTreeMap::from([(20, 7)]);
+        assert!(CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[18, 20], &replay, false, Some(&contracts), &method_only).is_err());
     }
 
 }

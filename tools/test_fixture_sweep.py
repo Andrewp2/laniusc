@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 
 from fixture_expectations import load_expectations
-from fixture_sweep import (apply_known_gap, check_jumps, failure_group, load_known_gaps, render_diff,
-                           render_report, render_stdlib_diff, run_elf)
+from fixture_sweep import (apply_known_gap, check_jumps, failure_group, guessed, load_known_gaps, outcome,
+                           render_diff, render_report, render_stdlib_diff, run_elf)
 from x86_jump_check import jumps_leaving_function
 
 
@@ -200,6 +200,81 @@ class ExpectationTests(unittest.TestCase):
         self.assertEqual((rejects.kind, rejects.exit_code, rejects.error_code, rejects.source),
                          ("compile_error", None, "LNC0006", "expect-comment"))
 
+    def test_leading_comment_directives_set_signal_rejection_and_stdlib_root(self):
+        main = "fn main() -> i32 { return 0; }\n"
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            fixtures = repo / "tests/fixtures/stdlib_foundation"
+            (fixtures / "rooted_root/core").mkdir(parents=True)
+            sources = {
+                "traps": "// A failed assert traps.\n// expect: signal 4\n" + main,
+                "rejects_any": "// expect: reject\n" + main,
+                "rejects_code": "// expect-error: LNC0072\n" + main,
+                "rooted": "// Imports a module of its own root.\n// stdlib-root: rooted_root\n// expect: 3\n" + main,
+                "root_only": "// stdlib-root: rooted_root\n" + main,
+                "late": main + "// expect: 9\n",
+            }
+            for name, text in sources.items():
+                (fixtures / f"{name}.lani").write_text(text)
+            expectations = {e.path.stem: e for e in load_expectations(repo)}
+            root = (fixtures / "rooted_root").resolve()
+            (fixtures / "typo.lani").write_text("// expect: exit 3\n" + main)
+            with self.assertRaises(ValueError):
+                load_expectations(repo)
+            (fixtures / "typo.lani").write_text("// expect: 3\n// expect: 4\n" + main)
+            with self.assertRaises(ValueError):
+                load_expectations(repo)
+
+        def outcome(name):
+            e = expectations[name]
+            return e.kind, e.exit_code, e.signal, e.error_code, e.stdlib_root, e.source
+
+        self.assertEqual(outcome("traps"), ("run", None, 4, None, None, "expect-comment"))
+        self.assertEqual(outcome("rejects_any"), ("compile_error", None, None, None, None, "expect-comment"))
+        self.assertEqual(outcome("rejects_code"), ("compile_error", None, None, "LNC0072", None, "expect-comment"))
+        self.assertEqual(outcome("rooted"), ("run", 3, None, None, root, "expect-comment"))
+        # A root alone sets up the compile; the exit 0 it is judged against is still a guess.
+        self.assertEqual(outcome("root_only"), ("run", 0, None, None, root, "default"))
+        self.assertEqual(outcome("late"), ("run", 0, None, None, None, "default"))
+
+
+class GuessedExpectationTests(unittest.TestCase):
+    GUESS = {"source": "default"}
+
+    def test_a_failure_against_a_guessed_expectation_is_marked_apart(self):
+        guess = result("guess", "FAIL-EXIT", detail="got exit 7, want exit 0", expected=self.GUESS)
+        real = result("real", "FAIL-EXIT", detail="got exit 7, want exit 0", expected={"source": "expect-comment"})
+        probe = result("probe", "FAIL-EXIT", detail="got exit 7, want exit 42",
+                       expected={"source": "default:generics"})
+        passing = result("passing", "PASS", expected=self.GUESS)
+        results = {r["name"]: r for r in (guess, real, probe, passing)}
+        document = {"laniusc": "laniusc", "shard": "1/1", "wall_s": 1.0, "results": list(results.values())}
+
+        text = "\n".join(render_report(results, [(None, document)]))
+
+        self.assertEqual([guessed(r) for r in (guess, real, probe, passing)], [True, False, False, False])
+        self.assertIn("| suite | fixtures | pass | compiled only | skipped | known gap | fail | fail† |", text)
+        self.assertIn("| stdlib_foundation | 4 | 1 | 0 | 0 | 0 | 2 | 1 |", text)
+        self.assertIn("fail†: the fixture failed an expectation that is a guess", text)
+        self.assertIn("| wrong exit status | 3 | 1 | `guess`† |", text)
+        self.assertIn("1 of the 3 failures (†) are fixtures that no Rust test compiles", text)
+        self.assertIn("  - e.g. `guess`† ", text)
+        self.assertIn("  - also: real\n", text)
+        self.assertIn("  - e.g. `probe` ", text)
+
+    def test_a_diff_keeps_guessed_failures_in_their_own_group(self):
+        base = {"guess": result("guess", "FAIL-EXIT", expected=self.GUESS),
+                "fixed": result("fixed", "FAIL-EXIT", expected=self.GUESS)}
+        new = {"guess": result("guess", "FAIL-EXIT", expected={"source": "expect-comment"}),
+               "fixed": result("fixed", "PASS", expected=self.GUESS)}
+
+        text = "\n".join(render_diff(base, new, documents("aaaa"), documents("bbbb")))
+
+        self.assertEqual(outcome(base["guess"]), "wrong exit status †")
+        self.assertIn("### wrong exit status † -> ok (1)", text)
+        self.assertIn("### wrong exit status † -> wrong exit status (1)", text)
+        self.assertIn("| wrong exit status † | 2 | 0 | -2 |", text)
+
 
 class KnownGapTests(unittest.TestCase):
     GAP = {"failure": "LNC0006", "owner": "TBD", "reason": "`!=` on str is unsupported"}
@@ -232,8 +307,10 @@ class KnownGapTests(unittest.TestCase):
         self.assertIn("## Known gaps (1)", text)
         self.assertIn("| `gap` | TBD | FAIL-COMPILE LNC0006 | `!=` on str is unsupported |", text)
         self.assertIn("remove them from `tests/fixtures/known_gaps.txt`: `closed`.", text)
-        self.assertIn("| wrong exit status | 1 | `failing` |", text)
+        self.assertIn("| wrong exit status | 1 | 0 | `failing` |", text)
         self.assertNotIn("| compile error LNC0006 |", text)
+        self.assertNotIn("`failing`†", text)
+        self.assertNotIn("fail†: the fixture", text)
 
     def test_the_gap_file_names_fixture_failure_owner_and_reason(self):
         with tempfile.TemporaryDirectory() as directory:

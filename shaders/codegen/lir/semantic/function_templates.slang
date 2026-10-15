@@ -14,11 +14,13 @@ bool valid_instance(uint instance)
 
 // replay_function: the first selected callable HIR plus one (0 outside
 // replay); a batched replay lists its other selected callables, each HIR
-// plus one, in replay_extra (replay_extra_count of them).
+// plus one, in replay_extra (replay_extra_count of them). An instance-copy
+// replay sets replay_copy_start to its first copy row plus one: every
+// function from that row on is a selected copy, every earlier one is not.
 struct Params
 {
     uint n_hir_nodes; uint param_capacity; uint n_tokens; uint replay_function;
-    uint replay_extra_count; uint pad0; uint pad1; uint pad2;
+    uint replay_extra_count; uint replay_copy_start; uint pad1; uint pad2;
     uint4 replay_extra[16];
 };
 ConstantBuffer<Params> gParams;
@@ -74,6 +76,7 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
 bool replay_selects_function(uint row, uint replay)
 {
+    if (gParams.replay_copy_start != 0u) return row >= gParams.replay_copy_start - 1u;
     if (row == replay - 1u) return true;
     uint extra = min(gParams.replay_extra_count, 64u);
     for (uint index = 0u; index < extra; index++)

@@ -31,6 +31,7 @@ use super::{
     proof_store::{PROOF_STORE_FIXED_WORDS, PROOF_STORE_TABLES},
 };
 use crate::gpu::{
+    buffers::LaniusBuffer,
     passes_core,
     readback::{PagedReadback, ReadbackRegion},
 };
@@ -138,7 +139,13 @@ pub(super) struct GpuPacket {
     arena_id: Option<u64>,
     completed_serial: u32,
     completed_suffix_counts: [u32; TABLE_COUNT],
+    /// Batch-arena word offset of each input table after the last accepted
+    /// submission; see ensure_retained_inputs_unchanged.
+    completed_input_offsets: [u32; TABLE_COUNT],
     poisoned: bool,
+    /// Test-only: the next submission also re-uploads this retained input row.
+    #[cfg(test)]
+    retained_input_rewrite: std::cell::Cell<Option<(usize, u32)>>,
     #[cfg(test)]
     proof_admission_fault: std::cell::RefCell<Option<batch_tests::ProofAdmissionFault>>,
     #[cfg(test)]
@@ -281,7 +288,10 @@ impl GpuProgramEvidence {
             arena_id: None,
             completed_serial: 0,
             completed_suffix_counts: [0; TABLE_COUNT],
+            completed_input_offsets: [0; TABLE_COUNT],
             poisoned: false,
+            #[cfg(test)]
+            retained_input_rewrite: std::cell::Cell::new(None),
             #[cfg(test)]
             proof_admission_fault: std::cell::RefCell::new(None),
             #[cfg(test)]
@@ -330,6 +340,7 @@ impl GpuProgramEvidence {
             )?,
             layout.region(&self.storage, &packet.output, 10, Span::new(0, 1)?)?,
         ];
+        SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
         let raw = self.readback.read_regions(
             &self.device,
             &self.queue,
@@ -430,6 +441,9 @@ impl GpuProgramEvidence {
             resources,
         )?;
         record(&mut commands, 48, plan.obligations)?;
+        if self.solver_waves(packet)? {
+            return self.run_solver_waves(packet, layout, plan, submission, resources, commands);
+        }
         let mut progress = self.submit_proof_progress(packet, layout, submission, commands)?;
         if !progress.is_building() {
             return Ok(Some(progress));
@@ -501,7 +515,15 @@ impl GpuProgramEvidence {
                 // Only requirements whose children just normalized may link.
                 // A prior already-notified representative is handled on GPU.
                 record(&mut commands, 57, requirements)?;
-                record(&mut commands, 53, work)?;
+                solver.record_selection(
+                    &self.device,
+                    &mut commands,
+                    work,
+                    &self.storage,
+                    &packet.input,
+                    &packet.output,
+                    resources,
+                )?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {
                     return Ok(Some(progress));
@@ -510,7 +532,15 @@ impl GpuProgramEvidence {
                 #[cfg(test)]
                 typed_constant_fault_tests::inject_pending_substitution_fault(self, packet, layout, &progress)?;
                 let mut commands = encoder();
-                record(&mut commands, 54, work)?;
+                solver.record_substitutions(
+                    &self.device,
+                    &mut commands,
+                    work,
+                    &self.storage,
+                    &packet.input,
+                    &packet.output,
+                    resources,
+                )?;
                 solver.record_binding_rows(
                     &self.device,
                     &mut commands,
@@ -548,7 +578,15 @@ impl GpuProgramEvidence {
                 #[cfg(test)]
                 batch_tests::inject_pending_proof_fault(self, packet, layout, &progress)?;
                 let mut commands = encoder();
-                record(&mut commands, 59, queue)?;
+                solver.record_implementation_proofs(
+                    &self.device,
+                    &mut commands,
+                    queue,
+                    &self.storage,
+                    &packet.input,
+                    &packet.output,
+                    resources,
+                )?;
                 // Both proof kinds inspect the frozen pending wave before
                 // any proof or edge prefix gains admitted authority.
                 solver.record_assumption_proofs(
@@ -607,6 +645,241 @@ impl GpuProgramEvidence {
         Ok(None)
     }
 
+    /// LANIUS_PEV_SOLVER_WAVES=1 replaces the stepped loop with GPU-planned
+    /// rounds, unless a dispatch capture is selected (the CPU replay tool
+    /// reads ordinary parameter blocks) or a test fault hook needs a host
+    /// boundary between steps.
+    fn solver_waves(&self, packet: &GpuPacket) -> Result<bool> {
+        if !crate::gpu::env::env_bool_truthy("LANIUS_PEV_SOLVER_WAVES", false)
+            || std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_some()
+        {
+            return Ok(false);
+        }
+        #[cfg(test)]
+        if packet.constant_admission_fault.borrow().is_some()
+            || packet.proof_admission_fault.borrow().is_some()
+        {
+            return Ok(false);
+        }
+        let _ = packet;
+        self.proof_kernels.as_ref().expect("loaded proof kernels").waves_supported()
+    }
+
+    /// The loop of run_solver_attempt with many rounds recorded per submit.
+    /// The GPU planner takes each decision the host took from a counter
+    /// readback (proof_solver_wave.slang), so the host reads back only when
+    /// the recorded rounds run out, a span outgrows its recorded chunk steps,
+    /// or the solver stops.
+    fn run_solver_waves(
+        &self,
+        packet: &GpuPacket,
+        layout: &OutputLayout,
+        plan: &BatchPlan,
+        submission: &Submission,
+        resources: kernels::ProofResources<'_>,
+        mut commands: wgpu::CommandEncoder,
+    ) -> Result<Option<proof::ProofProgress>> {
+        use kernels::{WavePoint, wave};
+        let batch = self.batch_kernels.as_ref().expect("loaded batch kernels");
+        let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
+        let encoder = || {
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("program_evidence.proof_wave"),
+                })
+        };
+        let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false);
+        let state = kernels::wave_state(&self.device, &self.storage)?;
+        let chunks = |rows: u32| {
+            rows.div_ceil(kernels::THREAD_SCRATCH_SLOTS)
+                .max(1)
+                .checked_next_power_of_two()
+                .unwrap_or(kernels::WAVE_MAX_CHUNKS)
+                .min(kernels::WAVE_MAX_CHUNKS)
+        };
+        let template = |points: &[WavePoint], chunks: u32| {
+            solver.wave_template(&self.device, points, chunks, &state, &self.storage,
+                &packet.input, &packet.output, resources)
+        };
+        // The first work and the first round span every source obligation.
+        let opening_chunks = chunks(plan.obligations.count);
+        let first = template(&[WavePoint::FirstWork], opening_chunks)?;
+        let opening = if opening_chunks > 1 {
+            Some(template(&WavePoint::ROUND, opening_chunks)?)
+        } else {
+            None
+        };
+        // Later rounds record one chunk step per span. A longer span stops the
+        // rounds at its point, and the rest of that round is recorded again
+        // with enough chunk steps.
+        let mut regular = if opening.is_none() {
+            Some(template(&WavePoint::ROUND, 1)?)
+        } else {
+            None
+        };
+        // Most solves finish in their first round, so the first submit records
+        // only the opening round; each later submit records twice the rounds
+        // of the one before, up to 64.
+        let mut first_due = true;
+        let mut partial: Option<kernels::WaveTemplate> = None;
+        let mut opening_due = true;
+        let mut rounds = 0u32;
+        let mut submits = 0u32;
+        loop {
+            if rounds != 0 && regular.is_none() {
+                regular = Some(template(&WavePoint::ROUND, 1)?);
+            }
+            let dispatches = {
+                let mut recorded: Vec<&kernels::WaveTemplate> = Vec::new();
+                if first_due {
+                    recorded.push(&first);
+                }
+                recorded.extend(partial.as_ref());
+                if opening_due {
+                    recorded.push(opening.as_ref().or(regular.as_ref()).expect("opening round template"));
+                }
+                if let Some(regular) = regular.as_ref() {
+                    recorded.extend(std::iter::repeat_n(regular, rounds as usize));
+                }
+                solver.record_waves(&mut commands, &recorded);
+                recorded.iter().map(|template| template.dispatches).sum::<usize>()
+            };
+            passes_core::flush_deferred_compute(&mut commands);
+            self.queue.submit(Some(commands.finish()));
+            submits += 1;
+            let (progress, words) = self.wave_progress(packet, layout, submission, &state)?;
+            if debug {
+                eprintln!(
+                    "[lanius-pev] solver wave submit {submits}: stop={} detail={} rounds={} \
+                     overflow_point={} overflow_rows={} recorded_dispatches={dispatches}",
+                    words[wave::STOP],
+                    words[wave::FAULT_DETAIL],
+                    words[wave::ROUNDS],
+                    words[wave::OVERFLOW_POINT],
+                    words[wave::OVERFLOW_ROWS],
+                );
+            }
+            if words[wave::STOP] == wave::FAULT {
+                return Err(anyhow!(match words[wave::FAULT_DETAIL] {
+                    wave::FAULT_IDENTITY => "solver progress belongs to another physical submission",
+                    wave::FAULT_LAYOUT => "solver progress exceeds reserved physical storage",
+                    wave::FAULT_RECEIPT => "solver progress has a stale or malformed batch receipt",
+                    wave::FAULT_CURSOR => "solver work cursor moved beyond admitted rows",
+                    wave::FAULT_REQUIREMENTS => {
+                        "solver reached quiescence with an unlinked requirement suffix"
+                    }
+                    _ => "solver wave planner reported an unknown fault",
+                }));
+            }
+            if !progress.is_building() {
+                return Ok(Some(progress));
+            }
+            commands = encoder();
+            first_due = false;
+            match words[wave::STOP] {
+                wave::DONE => {
+                    ensure!(
+                        words[wave::WORK_CURSOR] == progress.admitted[proof::WORK]
+                            && words[wave::QUEUE_CURSOR] == progress.admitted[proof::QUEUE]
+                            && words[wave::REQUIREMENT_CURSOR] == progress.admitted[9],
+                        "solver wave finished before quiescence"
+                    );
+                    // The GPU classifies unresolved finite cycles and missing
+                    // leaves and checks every source obligation before the
+                    // native publication gate.
+                    solver.record(
+                        &self.device,
+                        &mut commands,
+                        64,
+                        Span::new(0, progress.admitted[13])?,
+                        &self.storage,
+                        &packet.input,
+                        &packet.output,
+                        resources,
+                    )?;
+                    batch.record_after_solver(
+                        &self.device,
+                        &mut commands,
+                        plan,
+                        &self.storage,
+                        &packet.input,
+                        &packet.output,
+                        resources,
+                    )?;
+                    passes_core::flush_deferred_compute(&mut commands);
+                    self.queue.submit(Some(commands.finish()));
+                    return Ok(None);
+                }
+                wave::OVERFLOW => {
+                    let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
+                        .ok_or_else(|| anyhow!("solver wave overflowed at an unknown point"))?;
+                    let resumed = template(point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    // The point plans again from the same counters. The
+                    // opening round follows a resumed first work.
+                    state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
+                    if debug {
+                        eprintln!(
+                            "[lanius-pev] solver wave resumes at {point:?} with {} chunk steps",
+                            resumed.chunks
+                        );
+                    }
+                    partial = Some(resumed);
+                    opening_due = point == WavePoint::FirstWork;
+                }
+                wave::RUNNING => {
+                    partial = None;
+                    opening_due = false;
+                    rounds = if rounds == 0 { 2 } else { (rounds * 2).min(64) };
+                }
+                wave::STOPPED => {
+                    return Err(anyhow!("solver wave stopped while the batch and store are building"));
+                }
+                stop => return Err(anyhow!("solver wave reported an unknown state {stop}")),
+            }
+        }
+    }
+
+    fn wave_progress(
+        &self,
+        packet: &GpuPacket,
+        layout: &OutputLayout,
+        submission: &Submission,
+        state: &LaniusBuffer<u32>,
+    ) -> Result<(proof::ProofProgress, Vec<u32>)> {
+        let regions = [
+            ReadbackRegion::from_buffer(
+                &packet.proof.buffer,
+                0,
+                arena::byte_len(PROOF_STORE_FIXED_WORDS)?,
+                "proof progress directory",
+            )?,
+            layout.region(&self.storage, &packet.output, 10, Span::new(0, 1)?)?,
+            ReadbackRegion::from_buffer(
+                state,
+                0,
+                arena::byte_len(kernels::wave::READ_WORDS)?,
+                "solver wave state",
+            )?,
+        ];
+        SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
+        let raw = self.readback.read_regions(
+            &self.device,
+            &self.queue,
+            &regions,
+            "program proof wave progress",
+        )?;
+        let header = words(&raw[0])?;
+        let receipt = one_status(&raw[1])?;
+        let state = words(&raw[2])?;
+        let progress = proof::ProofProgress::from_owned_readback(
+            packet.packet.proof_store.layout(),
+            submission,
+            header,
+            receipt,
+        )?;
+        Ok((progress, state))
+    }
+
     /// Gate before body reuse/specialization and after each replay's fresh calls.
     /// A valid catalog does not bypass batch checking, including an empty delta.
     pub fn check(&mut self, packet: &mut GpuPacket) -> Result<Vec<ValidatedEvidence>> {
@@ -658,6 +931,14 @@ impl GpuProgramEvidence {
             packet.completed_suffix_counts,
             &submission,
         )?;
+        #[cfg(test)]
+        let submission = batch_tests::rewrite_retained_input(packet, &layout, submission)?;
+        ensure_retained_inputs_unchanged(
+            &layout,
+            packet.completed_suffix_counts,
+            packet.completed_input_offsets,
+            &submission.plan,
+        )?;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -683,7 +964,15 @@ impl GpuProgramEvidence {
             submission.obligation_span.count,
         )?;
         let mut retry = false;
+        // LANIUS_DEBUG_SOLVER_WAVES=1 prints each solve's wall time and
+        // counter readbacks, and each capacity retry.
+        let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false);
+        let solve_started = std::time::Instant::now();
+        SOLVER_READBACKS.with(|count| count.set(0));
+        let mut attempts = 0u32;
         loop {
+            attempts += 1;
+            let attempt_started = std::time::Instant::now();
             let Some(stopped) =
                 self.run_solver_attempt(packet, &layout, &plan, &submission, capacities, retry)?
             else {
@@ -692,8 +981,30 @@ impl GpuProgramEvidence {
             let Some(grown) = stopped.capacity_retry(packet.packet.proof_store.layout())? else {
                 break;
             };
+            if debug {
+                let table = stopped.receipt[2] as usize;
+                eprintln!(
+                    "[lanius-pev] capacity retry {attempts}: table={table} capacity={} required={} \
+                     grown={} obligations={} reserved={:?} admitted={:?} attempt={:.3}ms",
+                    packet.packet.proof_store.layout().slices[table].capacity,
+                    stopped.receipt[4],
+                    grown[table],
+                    submission.obligation_span.count,
+                    stopped.reserved,
+                    stopped.admitted,
+                    attempt_started.elapsed().as_secs_f64() * 1000.0,
+                );
+            }
             capacities = grown;
             retry = true;
+        }
+        if debug {
+            eprintln!(
+                "[lanius-pev] solve: {} attempts={attempts} readbacks={} wall={:.3}ms",
+                if self.solver_waves(packet)? { "waves" } else { "stepped" },
+                SOLVER_READBACKS.with(|count| count.get()),
+                solve_started.elapsed().as_secs_f64() * 1000.0,
+            );
         }
 
         // Exact arena association comes from these private owned buffers, not a
@@ -760,6 +1071,7 @@ impl GpuProgramEvidence {
         // accept_submission appends returned Evidence17 to the host packet.
         // Those rows were NOT inputs to this dispatch; admit them next time.
         packet.completed_suffix_counts = layout.input_suffix_counts;
+        packet.completed_input_offsets = layout.input_offsets;
         packet.poisoned = false;
         Ok(accepted)
     }
@@ -770,6 +1082,8 @@ impl GpuProgramEvidence {
 pub(super) struct OutputLayout {
     slices: [Slice; OUTPUT_COUNT],
     input_suffix_counts: [u32; TABLE_COUNT],
+    input_offsets: [u32; TABLE_COUNT],
+    input_capacities: [u32; TABLE_COUNT],
 }
 impl OutputLayout {
     fn from_submission(catalog: &FrozenCatalog, submission: &Submission) -> Result<Self> {
@@ -798,6 +1112,8 @@ impl OutputLayout {
         );
         let catalog_words = u32_len(catalog.words.len(), "catalog words")?;
         let mut counts = [0; TABLE_COUNT];
+        let mut offsets = [0; TABLE_COUNT];
+        let mut capacities = [0; TABLE_COUNT];
         for table in 0..TABLE_COUNT {
             let first = DIRECTORY_WORD as usize + table * 6;
             let row = &header[first..first + 6];
@@ -814,6 +1130,8 @@ impl OutputLayout {
                 "batch table exceeds arena allocation"
             );
             counts[table] = row[3];
+            offsets[table] = row[2];
+            capacities[table] = row[4];
         }
         let index_rows = catalog.slices[1].count.max(catalog.slices[9].count);
         let expected = [
@@ -872,6 +1190,8 @@ impl OutputLayout {
         Ok(Self {
             slices,
             input_suffix_counts: counts,
+            input_offsets: offsets,
+            input_capacities: capacities,
         })
     }
 
@@ -1026,6 +1346,11 @@ fn catalog_bootstrap(catalog: &FrozenCatalog) -> Result<(Vec<u32>, Vec<u32>)> {
     );
     Ok((header, vec![INVALID, 0, 0, INVALID, INVALID, 0, 0, 0, 0]))
 }
+thread_local! {
+    /// Solver counter readbacks of the current check (debug output only).
+    static SOLVER_READBACKS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 fn words(bytes: &[u8]) -> Result<Vec<u32>> {
     ensure!(bytes.len() % 4 == 0, "partial GPU proof directory word");
     Ok(bytes
@@ -1186,6 +1511,65 @@ impl BatchPlan {
             assumption_index,
         })
     }
+}
+/// Retained input rows never change for the life of a packet. Later stages
+/// trust what earlier submissions admitted and indexed: the caller-assumption
+/// index (output tables 8 and 9) is rebuilt only when its bucket count changes,
+/// and proof work selection and assumption-proof admission compare against its
+/// hashes without admitting the predicate again. So a submission may only move
+/// a table's retained rows unchanged (one relocation copy from the accepted
+/// offset) and append rows after them, into input table regions that overlap
+/// neither each other nor the fixed header.
+fn ensure_retained_inputs_unchanged(
+    layout: &OutputLayout,
+    prior_counts: [u32; TABLE_COUNT],
+    prior_offsets: [u32; TABLE_COUNT],
+    plan: &UploadPlan,
+) -> Result<()> {
+    let mut regions = Vec::new();
+    for table in BATCH_INPUT_TABLES {
+        let capacity = mul(layout.input_capacities[table], WIDTHS[table], "input table capacity")?;
+        if capacity != 0 {
+            let offset = layout.input_offsets[table];
+            regions.push((offset, add(offset, capacity, "input table end")?));
+        }
+    }
+    regions.sort_unstable();
+    ensure!(
+        regions.first().is_none_or(|first| first.0 >= BATCH_FIXED_WORDS)
+            && regions.windows(2).all(|pair| pair[0].1 <= pair[1].0),
+        "batch input tables overlap each other or the header"
+    );
+    let mut moved = 0;
+    for table in BATCH_INPUT_TABLES {
+        let retained = mul(prior_counts[table], WIDTHS[table], "retained input words")?;
+        if retained == 0 || layout.input_offsets[table] == prior_offsets[table] {
+            continue;
+        }
+        ensure!(
+            plan.copies.iter().any(|copy| copy.from_word == prior_offsets[table]
+                && copy.to_word == layout.input_offsets[table]
+                && copy.word_count == retained),
+            "retained input table {table} moved without its rows"
+        );
+        moved += 1;
+    }
+    ensure!(
+        plan.copies.iter().filter(|copy| copy.word_count != 0).count() == moved,
+        "an input copy is not the relocation of a retained table"
+    );
+    for write in plan.writes.iter().filter(|write| write.first_word != 0) {
+        let end = add(write.first_word, u32::try_from(write.words.len())?, "input write end")?;
+        let mut appends = false;
+        for table in BATCH_INPUT_TABLES {
+            let offset = layout.input_offsets[table];
+            let first = add(offset, mul(prior_counts[table], WIDTHS[table], "retained rows")?, "suffix")?;
+            let last = add(offset, mul(layout.input_suffix_counts[table], WIDTHS[table], "rows")?, "end")?;
+            appends |= write.first_word >= first && end <= last;
+        }
+        ensure!(appends, "submission rewrites retained input rows or writes outside a new suffix");
+    }
+    Ok(())
 }
 fn ensure_same_span(actual: Span, expected: Span, what: &str) -> Result<()> {
     ensure!(

@@ -3,6 +3,7 @@
 // every matching root still receives structural equality with exact rigid atoms.
 import type_checker.program_evidence.abi;
 import type_checker.program_evidence.admitted_rows;
+import type_checker.program_evidence.catalog_io;
 import type_checker.program_evidence.packed_graph;
 import type_checker.program_evidence.goal_operations;
 import type_checker.program_evidence.proof_store_abi;
@@ -42,6 +43,31 @@ public EvidenceStatus pps_predicate_equals_goal(uint predicate, uint environment
     uint required_hash;
     EvidenceStatus status = pev_admit_and_hash_goal(required, require_closed, required_hash);
     if (status.state != PEV_VALID) return status;
+    return pps_required_equals_goal(predicate, environment, required, required_hash, goal,
+        require_closed, equal);
+}
+// A caller assumption's predicate (input table 14 row `assumption`) against a
+// goal. Kernel 15 admitted and hashed this predicate in the same scope and
+// closure into the assumption index row, and an indexed row never changes for
+// the rest of the batch lifecycle (see
+// docs/compiler-implementation-evidence-plan.md, "Program graph and context
+// contracts"), so the index hash stands in for a second admission.
+public EvidenceStatus pps_assumption_equals_goal(uint assumption, uint predicate,
+    uint environment, uint visible_owner, uint goal, bool require_closed, out bool equal)
+{
+    equal = false;
+    EvidenceGoal required; uint4 index;
+    if (!pev_predicate_goal(predicate, environment, visible_owner, required))
+        return pev_invalid(1u, predicate, goal);
+    if (!pev_output_read4(8u, assumption, 0u, index) || index.z != assumption || index.w != 1u)
+        return pev_invalid(70u, goal, assumption);
+    return pps_required_equals_goal(predicate, environment, required, index.x, goal,
+        require_closed, equal);
+}
+EvidenceStatus pps_required_equals_goal(uint predicate, uint environment, EvidenceGoal required,
+    uint required_hash, uint goal, bool require_closed, out bool equal)
+{
+    equal = false;
     uint4 low; uint4 high;
     if (!pps_read8(PPS_GOALS, goal, low, high) || high.x > 32u || high.z > 1u || high.w != 0u ||
         (high.x == 0u && low.w != 0u) || !pps_span(PPS_TERM_ROOTS, low.w, high.x))

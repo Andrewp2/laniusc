@@ -1,3 +1,5 @@
+// stdlib-root: repro_aggregate_root
+// expect: 0
 // Constructing a public struct from an imported module is rejected by native
 // lowering before any collection code can run.
 module app::main;
