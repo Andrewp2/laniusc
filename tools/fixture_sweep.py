@@ -483,7 +483,15 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
         groups[failure_group(result)].append(result)
     lines = ["# Fixture sweep", ""]
     first = documents[0][1]
-    lines.append(f"Compiler: `{first['laniusc']}` {json.dumps(first.get('laniusc_version', {}))}")
+    versions = {json.dumps(document.get("laniusc_version", {}), sort_keys=True) for _, document in documents}
+    lines.append(f"Compiler: `{first['laniusc']}` {json.dumps(first.get('laniusc_version', {}))}"
+                 + ("" if len(versions) == 1 else f" (WARNING: shards ran {len(versions)} different builds)"))
+    lines.append("")
+    lines.append("Each fixture is compiled by one resident daemon (`laniusc daemon --stdio`), run, and "
+                 "judged against the outcome its Rust tests assert (tools/fixture_expectations.py). "
+                 "Reproduce with `tools/fixture_sweep.py run --laniusc BIN --shard I/N --resume` per "
+                 "shard, `tools/fixture_sweep.py stdlib --each`, then `tools/fixture_sweep.py report`.")
+    lines.append("")
     shard_times = ", ".join(
         f"{document['shard']} ({document['wall_s']} s"
         + ("" if document.get("complete", True) else
