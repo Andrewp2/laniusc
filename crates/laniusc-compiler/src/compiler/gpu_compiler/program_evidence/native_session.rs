@@ -246,10 +246,13 @@ impl<'session> ValidatedReplayRequest<'session> {
             .packet_mut()?
             .append_replay_unit_calls(unit, self.selected_owner_hir, self.context)?;
         self.session.check()?;
-        self.session.packet.packet_mut()?.admitted_unit_calls(
+        let packet = self.session.packet.packet_mut()?;
+        let mut calls = packet.admitted_unit_calls(
             self.target_snapshot,
             Some((self.selected_owner_hir, self.context)),
-        )
+        )?;
+        calls.extend(packet.admitted_context_calls(self.target_snapshot, self.context)?);
+        Ok(calls)
     }
 }
 
@@ -258,6 +261,11 @@ impl<'session> ValidatedReplayRequest<'session> {
 /// other generic bodies remain templates. Ordinary local helpers remain in
 /// text because direct calls use already emitted relative displacements.
 /// Check that native publication boundary before discarding scratch facts.
+///
+/// Every template call keeps its owner. The replay may add generic calls: a
+/// bound-member call whose now-concrete receiver selects a generic impl
+/// method (methods/09). The selected body keeps them; in another generic
+/// body they are dropped with that body's other scratch facts.
 pub(super) fn normalize_omitted_template_calls(
     catalog: &FrozenCatalog,
     target_snapshot: u32,
@@ -273,7 +281,7 @@ pub(super) fn normalize_omitted_template_calls(
         "replay emission does not retain frozen definition provenance"
     );
     let owners = accepted_call_owners(unit)?;
-    ensure!(owners == frozen.call_owner_by_hir,
+    ensure!(frozen.call_owner_by_hir.iter().all(|(call, owner)| owners.get(call) == Some(owner)),
         "replay emission changed the complete source occurrence inventory");
     let mut omitted_hirs = BTreeSet::new();
     let mut omitted_symbols = BTreeSet::new();
@@ -338,16 +346,32 @@ pub(super) fn normalize_omitted_template_calls(
     }
     let originals: BTreeMap<_, _> = frozen.original_calls.iter()
         .map(|call| (call.call_hir, call)).collect();
-    let mut published = unit.generic_calls.to_vec();
-    for call in &mut published {
-        if omitted_hirs.contains(&owners[&call.call_hir]) {
-            *call = (*originals.get(&call.call_hir).ok_or_else(||
-                anyhow!("omitted template has no original checked call"))?).clone();
+    let mut published = Vec::with_capacity(unit.generic_calls.len());
+    let mut dropped = BTreeSet::new();
+    for call in unit.generic_calls.iter() {
+        let owner = owners[&call.call_hir];
+        if !frozen.call_owner_by_hir.contains_key(&call.call_hir) {
+            if owner == selected_owner_hir {
+                published.push(call.clone());
+            } else {
+                ensure!(omitted_hirs.contains(&owner),
+                    "replay added a generic call outside the selected body");
+                dropped.insert(call.call_hir);
+            }
+        } else if omitted_hirs.contains(&owner) {
+            published.push((*originals.get(&call.call_hir).ok_or_else(||
+                anyhow!("omitted template has no original checked call"))?).clone());
+        } else {
+            published.push(call.clone());
         }
     }
     // Selected body facts remain fresh. Ordinary helper facts still pass
     // the packet's exact comparison against their admitted originals.
     unit.generic_calls = published.into();
+    if !dropped.is_empty() {
+        unit.checked_call_owners = unit.checked_call_owners.iter()
+            .filter(|owner| !dropped.contains(&owner.call_hir)).copied().collect();
+    }
     Ok(())
 }
 
