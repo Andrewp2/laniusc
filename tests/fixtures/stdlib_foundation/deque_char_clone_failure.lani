@@ -4,23 +4,23 @@ import std::deque_char;
 fn main() -> i32 {
     let value: std::deque_char::DequeChar = std::deque_char::try_with_capacity(3);
     if (std::deque_char::capacity(value) != 3) { return 5; }
-    value = std::deque_char::try_push_back(value, 7);
-    value = std::deque_char::try_push_back(value, 8);
-    value = std::deque_char::try_push_back(value, 9);
+    value = std::deque_char::try_push_back(value, '⑦');
+    value = std::deque_char::try_push_back(value, '⑧');
+    value = std::deque_char::try_push_back(value, '\t');
     value = std::deque_char::try_pop_front(value);
-    value = std::deque_char::try_push_back(value, 10);
+    value = std::deque_char::try_push_back(value, '\n');
     let copy: std::deque_char::DequeChar = std::deque_char::try_clone(value);
     let intact: bool = std::deque_char::len(value) == 3 &&
-        std::deque_char::at_or(value, 0, 0) == 8 &&
-        std::deque_char::at_or(value, 1, 0) == 9 &&
-        std::deque_char::at_or(value, 2, 0) == 10;
+        std::deque_char::at_or(value, 0, '\0') == '⑧' &&
+        std::deque_char::at_or(value, 1, '\0') == '\t' &&
+        std::deque_char::at_or(value, 2, '\0') == '\n';
     let failure: bool = intact && std::deque_char::len(copy) == 0 &&
         std::deque_char::capacity(copy) == 0;
     let success: bool = intact && std::deque_char::len(copy) == 3 &&
         std::deque_char::capacity(copy) == 3 &&
-        std::deque_char::at_or(copy, 0, 0) == 8 &&
-        std::deque_char::at_or(copy, 1, 0) == 9 &&
-        std::deque_char::at_or(copy, 2, 0) == 10;
+        std::deque_char::at_or(copy, 0, '\0') == '⑧' &&
+        std::deque_char::at_or(copy, 1, '\0') == '\t' &&
+        std::deque_char::at_or(copy, 2, '\0') == '\n';
     std::deque_char::destroy(copy);
     std::deque_char::destroy(value);
     if (failure) { return 0; }

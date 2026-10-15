@@ -261,6 +261,11 @@ pub(super) const GENERIC_PARAM_EMPTY_PASS: &str = "type_check.generic_params.emp
 pub(super) const CONDITIONS_AGGREGATE_ARGS_FINAL_PASS: &str =
     "type_check.conditions.aggregate_args.final";
 pub(super) const SEMANTIC_CALLS_PROJECT_PASS: &str = "type_check.semantic_artifact.calls";
+pub(super) const SEMANTIC_ARTIFACT_OWNER_SPANS_PASS: &str = "type_check.semantic_artifact.owner_spans";
+pub(super) const SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS: &str =
+    "type_check.semantic_artifact.owner_spans.clear";
+pub(super) const BODY_SPECIALIZATION_RESOLVE_COPIES_PASS: &str =
+    "type_check.body_specialization.resolve_copies";
 pub(super) const RETAINED_CALLABLE_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -2912,7 +2917,7 @@ fn build_graph(
         } else {
             0
         };
-    let type_rows = token_rows + generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows;
+    let type_rows = token_rows + generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows;
     let type_lookup_rows = if application_types_required {
         type_rows
     } else {
@@ -2952,6 +2957,10 @@ fn build_graph(
         _retained_callable_local_prefix as "retained_callable_local_prefix" in HirNodes => hir_rows * 4;
         _retained_callable_block_sum as "retained_callable_block_sum" in HirNodes => hir_rows.div_ceil(256) * 4;
         _retained_callable_block_prefix as "retained_callable_block_prefix" in HirNodes => hir_rows.div_ceil(256) * 4;
+        // Instance-copy spans: one 44-byte record per 16 HIR rows is far more
+        // than the generic bodies of any unit; the host refuses an overflow.
+        _retained_owner_span_count as "retained_owner_span_count" in Calls => 4;
+        _retained_owner_spans as "retained_owner_spans" in Calls => (hir_rows.div_ceil(16) * 44).max(64 * 44);
     });
     graph.add_storage(
         "body_specialization_inputs",
@@ -3388,8 +3397,8 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _type_instance_arg_row_ref_tag as "type_instance_arg_row_ref_tag" in Types => hir_rows * 4;
         _type_instance_arg_row_ref_payload as "type_instance_arg_row_ref_payload" in Types => hir_rows * 4;
-        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
-        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows) * 128;
     });
     graph_resources!(graph, Output {
         struct_init_field_ordinal_by_row in Declarations => hir_rows * 4;
@@ -3921,6 +3930,7 @@ fn build_graph(
         _method_hir_dispatch_args as "method_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _method_compact_dispatch_args as "method_compact_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _method_token_hir_dispatch_args as "method_token_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _method_lookup_dispatch_args as "method_lookup_dispatch_args" in DispatchArguments [StorageIndirect] => METHOD_LOOKUP_DISPATCH_ARGS_BYTES;
         _predicate_token_dispatch_args as "predicate_token_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _predicate_hir_dispatch_args as "predicate_hir_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _predicate_compact_dispatch_args as "predicate_compact_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
@@ -4577,7 +4587,7 @@ fn build_graph(
             hir_rows,
             type_rows,
             constant_rows,
-            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
+            extra_argument_rows: generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows,
             dependency_rows: u64::from(dependency_capacity.constant_type_rows),
             dependency_page_rows: dependency_type_rows,
             scale: canonical_scale,
@@ -5439,6 +5449,7 @@ fn build_graph(
     CALLS_ARGUMENT_MATCH_MODULE_CONSUME.register_kernel(&mut graph, kernels)?;
     CALLS_APPLY_MODULE_ARGUMENTS.register_kernel(&mut graph, kernels)?;
     VALUE_CALL_LEAF_MIRROR_AFTER_ROW_ARGS.register_kernel(&mut graph, kernels)?;
+    METHODS_ARM_LOOKUP_SWEEPS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS_LOOKUP.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES.register_kernel(&mut graph, kernels)?;
@@ -5465,7 +5476,7 @@ fn build_graph(
             "declaration_field_count" => dependency_declaration_field_count: Read,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_LOOKUP.name, "hir_active_dispatch_args")?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_LOOKUP.name, METHOD_LOOKUP_DISPATCH_ARGS)?;
     METHODS_FINALIZE_CANDIDATES.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
@@ -5478,7 +5489,7 @@ fn build_graph(
             "declaration_field_count" => dependency_declaration_field_count: Read,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_LOOKUP.name, "hir_active_dispatch_args")?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_LOOKUP.name, METHOD_LOOKUP_DISPATCH_ARGS)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name,
         CompilerPhase::TypeCheck,
@@ -5489,11 +5500,12 @@ fn build_graph(
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name, "hir_active_dispatch_args")?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name, METHOD_LOOKUP_DISPATCH_ARGS)?;
+    METHODS_GATE_LOOKUP_SWEEP.register_kernel(&mut graph, kernels)?;
     graph.repeat_pass_range(
         8,
         METHODS_MARK_CALL_KEYS_LOOKUP.name,
-        DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name,
+        METHODS_GATE_LOOKUP_SWEEP.name,
     )?;
     CALLS_RESULT_INSTANCE_PROJECT.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_METHOD_RESULT_INITIALIZE.register_kernel(&mut graph, kernels)?;
@@ -6205,6 +6217,20 @@ fn build_graph(
     // environment is rebound here, after all call and return validation.
     // The body canonical stage and substitution restart follow the bindings
     // (BODY_CANONICAL_AFTER_PASS).
+    // An instance-copy replay first resolves each copy entry's target.
+    let body_specialization_inputs = graph
+        .resource_id("body_specialization_inputs")
+        .expect("body specialization packet");
+    graph.add_kernel_pass_by_name(
+        BODY_SPECIALIZATION_RESOLVE_COPIES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/00d2_resolve_body_copies",
+        reflected_bindings![
+            "body_specialization_inputs" => body_specialization_inputs: ReadWrite,
+        ],
+    )?;
     graph.add_kernel_pass_by_name(
         "type_check.body_specialization.graph",
         CompilerPhase::TypeCheck,
@@ -6530,6 +6556,28 @@ fn build_graph(
             "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Write,
             "semantic_type_external_unit_id_by_hir" => semantic_type_external_unit_id_by_hir: Write,
             "semantic_type_external_local_index_by_hir" => semantic_type_external_local_index_by_hir: Write,
+        ],
+    )?;
+    graph.add_pass(PassDesc {
+        name: SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Calls,
+        accesses: vec![PassAccess::write("retained_owner_span_count", _retained_owner_span_count)],
+    })?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_ARTIFACT_OWNER_SPANS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/04_owner_spans",
+        reflected_bindings![
+            "retained_owner_span_count" => _retained_owner_span_count: ReadWrite,
+            "retained_owner_spans" => _retained_owner_spans: Write,
+            "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Read,
+            "semantic_type_ref_tag_by_hir" => semantic_type_ref_tag_by_hir: Read,
+            "semantic_type_ref_payload_by_hir" => semantic_type_ref_payload_by_hir: Read,
+            "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Read,
+            "type_instance_decl_token" => _type_instance_decl_token: Read,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -7854,6 +7902,50 @@ mod tests {
                     "method transaction requires {} before {}", pair[0], pair[1]);
             }
         }
+        // The preliminary lookup sweeps dispatch from the gated grids; the
+        // other transactions keep the ordinary method grids.
+        let indirect_resource = |name: &str| {
+            let pass = graph.pass(graph.pass_id(name).unwrap()).unwrap();
+            let access = pass
+                .accesses
+                .iter()
+                .find(|access| access.binding == INDIRECT_DISPATCH_BINDING)
+                .unwrap_or_else(|| panic!("{name} dispatches indirectly"));
+            graph.resource(access.resource).unwrap().name
+        };
+        let lookup_sweep = [
+            METHODS_MARK_CALL_KEYS_LOOKUP.name, METHODS_MARK_CALL_RETURN_KEYS.name,
+            METHODS_RESET_CANDIDATES.name, METHODS_RESOLVE_TABLE.name,
+            METHODS_OFFER_BOUND_MEMBERS.name, DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+            METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
+            DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name,
+        ];
+        for name in lookup_sweep {
+            assert_eq!(indirect_resource(name), METHOD_LOOKUP_DISPATCH_ARGS, "{name}");
+        }
+        for name in [
+            METHODS_MARK_CALL_KEYS.name, METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name,
+            METHODS_RESET_CANDIDATES_DIRECT.name, METHODS_FINALIZE_CANDIDATES_INFERENCE.name,
+            METHODS_RESOLVE_TABLE_INFERENCE.name, DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
+        ] {
+            assert_ne!(indirect_resource(name), METHOD_LOOKUP_DISPATCH_ARGS, "{name}");
+        }
+        let arm = graph.pass_id(METHODS_ARM_LOOKUP_SWEEPS.name).unwrap();
+        let gate = graph.pass_id(METHODS_GATE_LOOKUP_SWEEP.name).unwrap();
+        let first_sweep_pass = graph.pass_id(METHODS_MARK_CALL_KEYS_LOOKUP.name).unwrap();
+        assert!(arm < first_sweep_pass);
+        assert!(graph.pass_id(DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name).unwrap() < gate);
+        let sweep_region = graph
+            .repeated_regions()
+            .iter()
+            .find(|region| region.first_pass == first_sweep_pass)
+            .expect("lookup sweep repeated region");
+        assert_eq!(sweep_region.iterations, 8);
+        assert_eq!(
+            sweep_region.first_pass.index() + sweep_region.pass_count as usize,
+            gate.index() + 1,
+            "each lookup sweep ends with its gate",
+        );
         assert!(graph.pass_id(DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name).unwrap()
             < graph.pass_id(CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE.name).unwrap());
         assert!(graph.pass_id(CALLS_APPLY_FINAL_ARGUMENTS.name).unwrap()

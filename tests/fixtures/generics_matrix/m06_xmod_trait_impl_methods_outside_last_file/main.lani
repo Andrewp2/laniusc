@@ -1,0 +1,8 @@
+module app::main;
+
+import gen::area;
+import gen::lib;
+
+fn main() -> i32 {
+    return gen::area::evaluate() + gen::lib::evaluate();
+}

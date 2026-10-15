@@ -2,9 +2,12 @@ import constant_value;
 import primitive_types;
 import status;
 
-// A single producer recreates the retained checked graph in a private arena.
-// Its IDs follow the entire source-token capacity, so declaration-side rows
-// and lexical references are immutable and cannot collide with replay nodes.
+// Recreates the retained checked graph in a private arena, one lane per
+// reserved row: lane i < BODY_GRAPH_NODES owns graph node i (its type-instance
+// row and its constant atom), lane BODY_GRAPH_NODES + s owns entry 0's direct
+// constant slot s. Node IDs follow the entire source-token capacity, so
+// declaration-side rows and lexical references are immutable and cannot
+// collide with replay nodes. The host dispatches BODY_ATOM_RESERVE_ROWS lanes.
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint4> body_specialization_inputs;
@@ -36,29 +39,33 @@ RWStructuredBuffer<uint> external_type_local_index;
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    if (any(dtid != uint3(0u, 0u, 0u))) return;
+    uint lane = dtid.x;
+    if (dtid.y != 0u || dtid.z != 0u || lane >= BODY_ATOM_RESERVE_ROWS) return;
     static const uint INVALID = 0xffffffffu;
-    uint count = min(body_specialization_inputs[0u].z, 64u);
-    uint constant_count = min(body_specialization_inputs[705u].x, 32u);
+    uint count = body_graph_node_count();
+    uint constant_count = min(body_specialization_inputs[705u].x, BODY_CONSTANT_SLOTS);
     if (count == 0u && constant_count == 0u) return;
     uint atom_base = body_constant_atom_base();
     if (atom_base == INVALID)
-    { record_min_token_error(status, 0u, 6u, 0x474e0008u); return; }
-    for (uint row = 0u; row < 96u; row++)
-        checked_constant_atoms[atom_base + row] = uint4(0u, 0u, 0u, 0u);
-    for (uint slot = 0u; slot < constant_count; slot++)
+    { if (lane == 0u) record_min_token_error(status, 0u, 6u, 0x474e0008u); return; }
+    checked_constant_atoms[atom_base + lane] = uint4(0u, 0u, 0u, 0u);
+    if (lane >= BODY_GRAPH_NODES)
     {
+        uint slot = lane - BODY_GRAPH_NODES;
+        if (slot >= constant_count) return;
         uint4 binding = body_specialization_inputs[706u + slot];
         if (binding.x != slot || !constant_value_is_valid(binding.yzw))
         { record_min_token_error(status, 0u, 6u, 0x474e0008u); return; }
-        checked_constant_atoms[atom_base + 64u + slot] = uint4(binding.yzw, 0u);
+        checked_constant_atoms[atom_base + lane] = uint4(binding.yzw, 0u);
+        return;
     }
+    uint ordinal = lane;
+    if (ordinal >= count) return;
     uint source_capacity; uint stride;
     type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-    for (uint ordinal = 0u; ordinal < count; ordinal++)
     {
-        uint4 node = body_specialization_inputs[65u + ordinal * 2u];
-        uint4 identity = body_specialization_inputs[66u + ordinal * 2u];
+        uint4 node = body_graph_node(ordinal);
+        uint4 identity = body_graph_identity(ordinal);
         uint instance = source_capacity + ordinal;
         if (node.x == 10u)
         {
@@ -75,16 +82,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? identity.w & 0x1fffffffu : INVALID;
         type_instance_arg_count[instance] = node.x == 9u ? node.z : 0u;
         type_instance_arg_start[instance] = node.x == 9u
-            ? source_capacity * 4u + ordinal * 32u : INVALID;
+            ? source_capacity * 4u + ordinal * BODY_NODE_ARGUMENTS : INVALID;
         type_instance_arg_row_start[instance] = INVALID;
         uint type_prefix = 0u; uint domain_flags = 0u; uint constant_positions = 0u; bool saw_constant = false;
         if (node.x == 9u)
         {
-            for (uint slot = 0u; slot < node.z; slot++)
+            uint arity = min(node.z, BODY_NODE_ARGUMENTS);
+            for (uint slot = 0u; slot < arity; slot++)
             {
-                uint edge = node.y + slot;
-                uint4 packed = body_specialization_inputs[193u + edge / 4u];
-                uint child = packed[edge % 4u];
+                uint child = body_graph_edge(node.y + slot);
                 uint start = type_instance_arg_start[instance];
                 uint tag; uint payload;
                 body_type_graph_reference(child, source_capacity, tag, payload);

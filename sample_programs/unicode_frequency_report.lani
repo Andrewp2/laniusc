@@ -3,6 +3,7 @@
 // Return 2 for malformed UTF-8, 3 for input failure, 4 for allocation or
 // capacity failure, 5 for output failure, and 6 for a count overflow.
 module app::main;
+import core::char;
 import std::io_byte;
 import std::io_decimal;
 import std::io_utf8;
@@ -21,7 +22,8 @@ fn main() -> i32 {
             std::map_char_u32::destroy(counts);
             return 3;
         }
-        let scalar: char = code;
+        // The reader returns only scalar values below its sentinels.
+        let scalar: char = core::char::from_u32_or(code, '\0');
         if (std::map_char_u32::contains_key(counts, scalar)) {
             let prior: u32 = std::map_char_u32::get_or(counts, scalar, 0);
             if (prior == 4294967295) {
@@ -44,7 +46,7 @@ fn main() -> i32 {
     let index: i32 = 0;
     while (index < std::map_char_u32::len(counts)) {
         let scalar: char = std::map_char_u32::key_at_or(counts, index, '\0');
-        let code: u32 = scalar;
+        let code: u32 = scalar as u32;
         let count: u32 = std::map_char_u32::value_at_or(counts, index, 0);
         if (!std::io_utf8::write_stdout_scalar(code) ||
             !std::io_byte::write_stdout_byte(58) ||

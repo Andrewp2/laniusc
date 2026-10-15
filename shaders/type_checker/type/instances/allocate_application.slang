@@ -1,3 +1,5 @@
+#include "body_graph_layout.slang"
+
 // Reserve a private checked node. Its owner publishes kind after all children
 // are complete; later dispatches are the publication boundary for other lanes.
 uint allocate_application(uint declaration, uint arguments, uint length_kind,
@@ -6,14 +8,14 @@ uint allocate_application(uint declaration, uint arguments, uint length_kind,
     uint ordinal = atomic_u32_add(type_application_count, 0u, 1u);
     uint source_capacity; uint stride;
     type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-    uint base = source_capacity + 64u;
+    uint base = source_capacity + BODY_GRAPH_NODES;
     if (base > mutable_type_capacity() || ordinal >= mutable_type_capacity() - base)
         return INVALID;
     uint target = base + ordinal;
     type_instance_kind[target] = 0u;
     type_instance_decl_token[target] = declaration;
     type_instance_arg_count[target] = arguments;
-    type_instance_arg_start[target] = source_capacity * 4u + 64u * 32u + ordinal * 32u;
+    type_instance_arg_start[target] = source_capacity * 4u + BODY_GRAPH_NODES * BODY_NODE_ARGUMENTS + ordinal * 32u;
     type_instance_arg_row_start[target] = INVALID;
     type_instance_elem_ref_tag[target] = 0u;
     type_instance_elem_ref_payload[target] = INVALID;

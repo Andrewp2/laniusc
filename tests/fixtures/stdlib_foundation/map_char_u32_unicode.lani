@@ -3,23 +3,24 @@ import std::map_char_u32;
 
 fn main() -> i32 {
     let max_code: u32 = 4294967295;
-    let non_scalar: char = max_code;
+    // The largest scalar value, U+10FFFF.
+    let maximum: char = '􏿿';
     let fallback: char = '?';
     let readings: std::map_char_u32::MapCharU32 = std::map_char_u32::new();
     readings = std::map_char_u32::try_insert(readings, '\0', 0);
     readings = std::map_char_u32::try_insert(readings, 'Ω', 3);
     readings = std::map_char_u32::try_insert(readings, '😀', max_code);
-    readings = std::map_char_u32::try_insert(readings, non_scalar, 7);
+    readings = std::map_char_u32::try_insert(readings, maximum, 7);
     readings = std::map_char_u32::try_insert(readings, 'Ω', 99);
     if (std::map_char_u32::len(readings) != 4 ||
         std::map_char_u32::get_or(readings, '\0', 8) != 0 ||
         std::map_char_u32::get_or(readings, 'Ω', 8) != 3 ||
         std::map_char_u32::get_or(readings, '😀', 8) != max_code ||
-        std::map_char_u32::get_or(readings, non_scalar, 8) != 7 ||
+        std::map_char_u32::get_or(readings, maximum, 8) != 7 ||
         std::map_char_u32::get_or(readings, '中', 8) != 8 ||
         std::map_char_u32::key_at_or(readings, 0, fallback) != '\0' ||
         std::map_char_u32::key_at_or(readings, 2, fallback) != '😀' ||
-        std::map_char_u32::key_at_or(readings, 3, fallback) != non_scalar ||
+        std::map_char_u32::key_at_or(readings, 3, fallback) != maximum ||
         std::map_char_u32::value_at_or(readings, 2, 8) != max_code) { return 1; }
     let copy: std::map_char_u32::MapCharU32 = std::map_char_u32::try_clone(readings);
     if (std::map_char_u32::len(copy) != 4 ||
@@ -33,7 +34,7 @@ fn main() -> i32 {
         !std::map_char_u32::contains_key(readings, '\0')) { return 3; }
     copy = std::map_char_u32::try_shrink_to_fit(copy);
     if (std::map_char_u32::capacity(copy) != 3 ||
-        std::map_char_u32::get_or(copy, non_scalar, 8) != 7) { return 4; }
+        std::map_char_u32::get_or(copy, maximum, 8) != 7) { return 4; }
     std::map_char_u32::destroy(copy);
     std::map_char_u32::destroy(readings);
     return 0;

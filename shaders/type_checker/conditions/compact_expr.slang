@@ -154,9 +154,18 @@ bool equality_binary(uint form)
     return form == HIR_EXPR_EQ || form == HIR_EXPR_NE;
 }
 
+bool ordering_binary(uint form)
+{
+    return form == HIR_EXPR_LT || form == HIR_EXPR_GT ||
+           form == HIR_EXPR_LE || form == HIR_EXPR_GE;
+}
+
 bool binary_operand_ok(uint form, uint ty)
 {
     if (integer_binary(form)) return integer_operand_ok(ty);
+    // Chars order by code point (unsigned, as the backends compare them);
+    // they take no arithmetic.
+    if (ordering_binary(form) && ty == TY_CHAR) return true;
     if (numeric_binary(form)) return numeric_operand_ok(ty);
     if (equality_binary(form)) return equality_operand_ok(ty);
     return true;
@@ -200,15 +209,18 @@ void validate_binary(uint node, HirPayload payload)
     if (equality_binary(form) &&
         (left_ty == TY_POINTER || right_ty == TY_POINTER))
     {
-        record_mismatch(left_ty == TY_POINTER ? payload.c : payload.b, form);
+        bool left_pointer = left_ty == TY_POINTER;
+        record_mismatch(left_pointer ? payload.c : payload.b,
+            TY_POINTER * 256u + (left_pointer ? right_ty : left_ty));
         return;
     }
+    // The detail is the rejected operand's type (no expected type).
     if (!binary_operand_ok(form, left_ty))
     {
-        record_mismatch(payload.b, form);
+        record_mismatch(payload.b, left_ty);
         return;
     }
-    if (!binary_operand_ok(form, right_ty)) { record_mismatch(payload.c, form); return; }
+    if (!binary_operand_ok(form, right_ty)) { record_mismatch(payload.c, right_ty); return; }
     // Integer widths and signedness are checked type identity. Only an
     // unsuffixed literal can take the opposite operand's type via context.
     bool shift = form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;

@@ -5,18 +5,18 @@ fn main() -> i32 {
     let value: std::map_char_u32::MapCharU32 =
         std::map_char_u32::try_reserve(std::map_char_u32::new(), 3);
     if (std::map_char_u32::capacity(value) != 3) { return 2; }
-    value = std::map_char_u32::try_insert(value, 2147483648, 41);
+    value = std::map_char_u32::try_insert(value, '󰀀', 41);
     if (std::map_char_u32::len(value) != 1) { return 3; }
     value = std::map_char_u32::try_shrink_to_fit(value);
     if (std::map_char_u32::len(value) == 1 &&
         std::map_char_u32::capacity(value) == 3 &&
-        std::map_char_u32::get_or(value, 2147483648, 0) == 41) {
+        std::map_char_u32::get_or(value, '󰀀', 0) == 41) {
         std::map_char_u32::destroy(value);
         return 0;
     }
     if (std::map_char_u32::len(value) == 1 &&
         std::map_char_u32::capacity(value) == 1 &&
-        std::map_char_u32::get_or(value, 2147483648, 0) == 41) {
+        std::map_char_u32::get_or(value, '󰀀', 0) == 41) {
         std::map_char_u32::destroy(value);
         return 4;
     }

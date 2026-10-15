@@ -1,4 +1,5 @@
 import hir_records;
+import type_checker.calls.intrinsic_result;
 
 struct Params
 {
@@ -33,18 +34,6 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
-static const uint TY_UNKNOWN = 0u;
-static const uint TY_VOID = 1u;
-static const uint TY_I32 = 3u;
-static const uint TY_POINTER = 8u;
-static const uint TY_ARRAY_BASE = 128u;
-
-static const uint INTRINSIC_NONE = 0u;
-static const uint INTRINSIC_I32_ARRAY_DATA_PTR = 3u;
-static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
-static const uint INTRINSIC_I32_SLICE_DATA_PTR = 5u;
-static const uint INTRINSIC_STRING_DATA_PTR = 6u;
-static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 static const uint LANGUAGE_SYMBOL_COUNT = 72u;
 
 uint linear_thread_id(uint3 dtid)
@@ -155,14 +144,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     call_intrinsic_tag[callee_token] = intrinsic_tag;
-    call_return_type[callee_token] =
-        (intrinsic_tag == INTRINSIC_I32_ARRAY_DATA_PTR ||
-         intrinsic_tag == INTRINSIC_I32_SLICE_DATA_PTR ||
-         intrinsic_tag == INTRINSIC_STRING_DATA_PTR) ? TY_POINTER :
-        intrinsic_tag == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ?
-            TY_ARRAY_BASE + TY_I32 :
-        intrinsic_tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS ?
-            TY_UNKNOWN : TY_VOID;
+    call_return_type[callee_token] = intrinsic_result_type(intrinsic_tag);
     call_return_type_token[callee_token] = INVALID;
 
     // Qualified callees keep both a path leaf and a canonical expression

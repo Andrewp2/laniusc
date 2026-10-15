@@ -39,9 +39,30 @@ bool body_target_selects_owner(uint target, uint owner)
 // The first entry whose selected scope contains `owner`, or INVALID. Entries
 // that share an enclosing owner bind its parameters identically, so any of
 // them supplies the same environment for that owner's parameters.
+//
+// Instance copies (up to BODY_MAX_ENTRIES): 00d2 resolves every entry to
+// 0x80000000 | its copy's function row, and those rows increase with the
+// entry. A copy's owners (its function and its copied impl) lie after the
+// previous copy's function, so the only candidate is the first entry whose
+// function row is at or past `owner`. Original replays (at most 64 entries)
+// search linearly.
 uint body_specialization_entry_for_owner(uint owner)
 {
     uint count = body_entry_count();
+    if (count != 0u && body_entry_copy_byte(0u) != 0xffffffffu)
+    {
+        if (owner < body_copy_first_row()) return 0xffffffffu;
+        uint low = 0u;
+        uint high = count;
+        while (low < high)
+        {
+            uint middle = (low + high) / 2u;
+            if ((body_entry_header(middle).y & 0x7fffffffu) < owner) low = middle + 1u;
+            else high = middle;
+        }
+        return low < count && body_target_selects_owner(body_entry_header(low).y, owner)
+            ? low : 0xffffffffu;
+    }
     for (uint entry = 0u; entry < count; entry++)
         if (body_target_selects_owner(body_entry_header(entry).y, owner)) return entry;
     return 0xffffffffu;
