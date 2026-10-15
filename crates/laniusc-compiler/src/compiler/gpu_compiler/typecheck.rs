@@ -939,11 +939,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         } else {
             Default::default()
         };
+        finish_timer.stamp("unit_facts");
         let body_native_layouts = object_request
             .and_then(LoweringObjectRequest::body_specialization)
             .map(|specialization| self.type_checker.retained_body_native_layouts(device, queue, specialization))
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
+        finish_timer.stamp("body_native_layouts");
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
             body_native_layouts,
             semantic_interface,
@@ -1203,6 +1205,25 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         dependency_pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
     ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
+        self.check_source_pack_unit_with_dependency_pages(
+            library_id, unit_id, sources, None, dependency_pages,
+        )
+        .await
+    }
+
+    /// Type-checks one unit of a dependency-ordered source pack against its
+    /// dependencies' interface pages and exports its own interface. Source
+    /// paths, when given, label its diagnostics.
+    pub(in crate::compiler) async fn check_source_pack_unit_with_dependency_pages<
+        S: AsRef<str>,
+    >(
+        &self,
+        library_id: u32,
+        unit_id: u32,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+        dependency_pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
+    ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
         validate_in_memory_source_pack_fits_codegen_unit(
             "semantic interface source pack with dependency pages",
             sources,
@@ -1210,7 +1231,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         )?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
-            None,
+            source_paths,
             Some(library_id),
             unit_id,
             DependencyInterfacePages::Paged(dependency_pages),

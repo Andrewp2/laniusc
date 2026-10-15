@@ -1,0 +1,6 @@
+trait Area { fn area(self) -> i32; }
+struct Pair<A, B> { left: A, right: B }
+impl Area for i32 { fn area(self) -> i32 { return self; } }
+impl<T> Area for Pair<T, T> where T: Area { fn area(self) -> i32 { return self.left.area() + self.right.area(); } }
+fn total<T>(a: T) -> i32 where T: Area { return a.area(); }
+fn main() -> i32 { return total(Pair { left: 40, right: 2 }); }

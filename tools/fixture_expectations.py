@@ -8,8 +8,18 @@ function: local helper functions and macro_rules! are inlined with their
 arguments, `for` loops over literal tables are unrolled, and every compile
 call opens a record that later runs and asserts attach to (status.code(),
 status.signal(), stdout, diagnostic.code, expect_err, ...).  Values it cannot
-evaluate become unknown instead of guesses.  Unreferenced fixtures fall back to
-"run, exit 0" (generics probes: exit 42); a `// expect: N` first line overrides.
+evaluate become unknown instead of guesses.  A `laniusc check|build FIXTURE`
+command is a compile too: the test's `status.success()` and stderr `LNC` checks
+are its outcome.  Unreferenced fixtures fall back to
+"run, exit 0" (generics probes: exit 42); those are guesses.  Directives in the
+fixture's leading `//` comment lines replace the expectation:
+
+  // expect: N              run, exit status N
+  // expect: signal N       run, killed by signal N (4 = SIGILL, the trap)
+  // expect: LNC0006        rejected with that diagnostic code
+  // expect: reject         rejected with any code
+  // expect-error: LNC0006  the same as `// expect: LNC0006` (`// expect-error:` alone: any code)
+  // stdlib-root: DIR       compile with --stdlib-root DIR, relative to the fixture's directory
 
 usage: tools/fixture_expectations.py [--json] [--summary]
 """
@@ -27,8 +37,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FOUNDATION = "tests/fixtures/stdlib_foundation"
 GENERICS = ("tests/fixtures/generics_matrix", "tests/fixtures/generics_backlog")
-EXPECT_RE = re.compile(r"//\s*expect:\s*(-?\d+)")
+DIRECTIVE_RE = re.compile(r"//\s*(expect|expect-error|stdlib-root):\s*(.*?)\s*$")
 LNC_RE = re.compile(r"LNC\d{4}$")
+LNC_ANY = re.compile(r"LNC\d{4}")
+CLI_COMPILES = ("check", "build")
 
 
 @dataclass
@@ -42,6 +54,51 @@ class Expectation:
     stdlib_root: Path | None   # None = repo stdlib/
     harness: list[str]         # needs a plain run cannot reproduce
     source: str                # provenance
+
+
+def read_directives(path: Path) -> dict[str, str]:
+    """`// expect:`, `// expect-error:` and `// stdlib-root:` lines in the leading comment block."""
+    found = {}
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line.startswith("//"):
+            break
+        match = DIRECTIVE_RE.match(line)
+        if match is None:
+            continue
+        name, value = match.groups()
+        if name == "expect-error":
+            name, value = "expect", value or "reject"
+        if name in found:
+            raise ValueError(f"{path}:{number}: a second `// {name}:` line")
+        found[name] = value
+    return found
+
+
+def apply_directives(e: Expectation, directives: dict[str, str]) -> Expectation:
+    """Replace the tests' or the default expectation with the fixture's own directives."""
+    expect, root = directives.get("expect"), directives.get("stdlib-root")
+    if e.kind == "module" or (expect is None and root is None):
+        return e
+    if root is not None:
+        e.stdlib_root = (e.path.parent / root).resolve()
+        if not e.stdlib_root.is_dir():
+            raise ValueError(f"{e.path}: `// stdlib-root: {root}` is not a directory")
+    if expect is None:
+        return e
+    exit_code = re.fullmatch(r"-?\d+", expect)
+    signal = re.fullmatch(r"signal\s+(\d+)", expect)
+    code = re.fullmatch(r"(?:error\s+)?(LNC\d{4})", expect)
+    if exit_code or signal:
+        e.kind, e.error_code = "run", None
+        e.exit_code, e.signal = (int(expect), None) if exit_code else (None, int(signal.group(1)))
+    elif code or expect in ("reject", "error"):
+        e.kind, e.exit_code, e.signal, e.stdout = "compile_error", None, None, None
+        e.error_code = code.group(1) if code else None
+    else:
+        raise ValueError(f"{e.path}: `// expect: {expect}`: want N, `signal N`, LNCdddd or `reject`")
+    e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
+    return e
 
 
 # ---------------------------------------------------------------- tokenizer
@@ -746,6 +803,10 @@ class Interp:
             flags, injected, rec = set(), False, None
             if name.endswith("with_args") and len(args) > 3 and isinstance(args[3], (list, tuple)) and args[3]:
                 flags.add("args")
+            cli = next((a.ref["cli_rec"] for a in args if isinstance(a, W) and a.tag == "cmd"
+                        and a.ref.get("cli_rec") is not None), None)
+            if cli is not None:
+                return W("cli", cli)
             for a in args:
                 if isinstance(a, W) and a.tag == "cmd":
                     flags |= a.ref["flags"]
@@ -803,8 +864,22 @@ class Interp:
                 if name in ("code", "signal", "success") else UNK
         if tag == "stdout":
             return W("empty", v.ref) if name == "is_empty" else (v if name in IDENTITY_METHODS | {"as_bytes"} else UNK)
+        if tag == "cli_status":
+            return W("cli_success", v.ref) if name == "success" else UNK
+        if tag == "cli_text":
+            if name == "contains" and args and isinstance(args[0], str):
+                code = LNC_ANY.search(args[0])
+                if code:
+                    v.ref.code = v.ref.code or code.group()
+                return UNK
+            return v if name in IDENTITY_METHODS else UNK
         if tag == "cmd":
             spec = v.ref
+            if name in ("arg", "args") and not spec["wrapper"]:
+                listed = name == "args" and args and isinstance(args[0], (list, tuple))
+                self.cli_args(spec, args[0] if listed else args[:1])
+            if name in ("output", "status", "spawn") and spec.get("cli_rec") is not None:
+                return W("cli", spec["cli_rec"])
             if name in ("arg", "args") and not spec["wrapper"]:
                 spec["flags"].add("args")
             elif name == "current_dir":
@@ -863,7 +938,24 @@ class Interp:
             return self.compile(name, args)
         return UNK
 
+    def cli_args(self, spec, values):
+        """`laniusc check|build FIXTURE ...` compiles FIXTURE; the command's exit status and
+        stderr are the compile's outcome, not a run of the program."""
+        for value in values:
+            spec["argc"] = spec.get("argc", 0) + 1
+            if spec["argc"] == 1 and isinstance(value, str) and value in CLI_COMPILES:
+                spec["cli"] = str(value)
+            elif spec.get("cli") and spec.get("cli_rec") is None and isinstance(value, PathV) \
+                    and not value.text and value.path.suffix == ".lani":
+                rec = Record([value], "check" if spec["cli"] == "check" else "build", None, "cli", self.test)
+                self.records.append(rec)
+                self.cur = rec
+                spec["cli_rec"] = rec
+
     def field(self, v, name):
+        if isinstance(v, W) and v.tag == "cli":
+            return W("cli_status", v.ref) if name == "status" else \
+                W("cli_text", v.ref) if name in ("stderr", "stdout") else UNK
         if isinstance(v, W) and v.tag == "run":
             return W(name, v.ref) if name in ("status", "stdout") else UNK
         if isinstance(v, W) and v.tag == "err":
@@ -924,6 +1016,10 @@ class Interp:
                 v.ref.stdout = b""
             elif isinstance(v, W) and v.tag == "success" and v.ref.exit is MISSING:
                 v.ref.exit = 0
+            elif isinstance(v, W) and v.tag == "cli_success":
+                v.ref.outcome = v.ref.outcome or "ok"
+            elif isinstance(v, W) and v.tag == "not" and isinstance(v.ref, W) and v.ref.tag == "cli_success":
+                v.ref.ref.outcome = "err"
 
     def eq(self, a, b):
         if isinstance(a, (tuple, list)) and isinstance(b, (tuple, list)) and len(a) == len(b):
@@ -1076,8 +1172,6 @@ def load_expectations(repo_root: Path = ROOT, *, with_report: bool = False):
     for path in fixture_paths(repo_root):
         rel = str(path.relative_to(repo_root))
         generics = rel.startswith(GENERICS)
-        first = path.read_text().split("\n", 1)[0]
-        override = EXPECT_RE.match(first.strip())
         if not has_main(path):
             e = Expectation(path, "module", None, None, None, None, None, [], "no fn main")
         elif path.resolve() in by_path:
@@ -1093,10 +1187,7 @@ def load_expectations(repo_root: Path = ROOT, *, with_report: bool = False):
                             "default" + (":name-reject" if reject else ":generics" if generics else "")
                             + (" (tests only compile modified copies)" if path.resolve() in modified else
                                f" (unresolved refs: {', '.join(refs[:3])})" if refs else ""))
-        if override and e.kind != "module":
-            e.kind, e.exit_code, e.signal = "run", int(override.group(1)), None
-            e.source = "expect-comment" + ("" if e.source.startswith("default") else f"; tests: {e.source}")
-        result.append(e)
+        result.append(apply_directives(e, read_directives(path)))
     if with_report:
         return result, {"conflicts": conflicts, "errors": errors}
     return result
