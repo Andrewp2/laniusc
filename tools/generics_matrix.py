@@ -10,6 +10,7 @@ kills only the daemon, not the desktop session.
 """
 import argparse
 import json
+import os
 import queue
 import threading
 import pathlib
@@ -28,12 +29,16 @@ parser.add_argument("--probes", default=str(ROOT / "tests/fixtures/generics_matr
 parser.add_argument("--out", default=str(ROOT / "target/generics_matrix"))
 parser.add_argument("--memory-max", default="6G")
 parser.add_argument("--timeout", type=float, default=120.0, help="seconds per compile")
-parser.add_argument("--hang-seconds", type=float, default=100.0,
+parser.add_argument("--hang-seconds", type=float, default=15.0,
                     help="restart the daemon after a failed compile that took this long (GPU hang)")
+parser.add_argument("--readback-timeout-ms", default="20000",
+                    help="GPU readback timeout for the daemon; warm probes finish in seconds, so a hang fails fast")
+parser.add_argument("--skip", action="append", default=[], help="skip probes whose name contains this (repeatable)")
 parser.add_argument("pattern", nargs="?", default="")
 args = parser.parse_args()
 
-probes = sorted(p for p in pathlib.Path(args.probes).glob("*.lani") if args.pattern in p.name)
+probes = sorted(p for p in pathlib.Path(args.probes).glob("*.lani")
+                if args.pattern in p.name and not any(skip in p.name for skip in args.skip))
 out_dir = pathlib.Path(args.out)
 out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -48,7 +53,8 @@ class Daemon:
     """One resident compiler; restarted after a job exceeds the timeout."""
 
     def __init__(self):
-        self.process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        env = dict(os.environ, LANIUS_READBACK_TIMEOUT_MS=args.readback_timeout_ms)
+        self.process = subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=open(stderr_path, "a"), text=True, bufsize=1)
         self.lines = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
