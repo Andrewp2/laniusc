@@ -649,6 +649,17 @@ fn x86_jump_check_rejects_a_jump_into_another_function() {
         "{:?}",
         check.problems
     );
+    // je 0x400087 lands on the function's own entry: the program would loop.
+    let check = common::x86_jumps::check_x86_64_jumps(&jump_check_program(-8))
+        .unwrap()
+        .expect("an x86-64 executable");
+    assert_eq!(check.problems.len(), 1, "{:?}", check.problems);
+    assert!(
+        check.problems[0]
+            .contains("at 0x400089 jumps back to its function's entry [0x400087, 0x400095)"),
+        "{:?}",
+        check.problems
+    );
     // je 0x400090 lands inside the mov at 0x40008f.
     let check = common::x86_jumps::check_x86_64_jumps(&jump_check_program(1))
         .unwrap()

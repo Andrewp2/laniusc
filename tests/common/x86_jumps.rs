@@ -15,7 +15,10 @@
 //! Function starts are the entry point, every direct call target and every
 //! prologue. Each reachable jmp or jcc must land inside
 //! [its function's start, the next function's start), on an instruction
-//! start. Each direct call must land on an instruction start in the code.
+//! start, and not on the function's start itself: laniusc never branches
+//! back to a function's entry, but a stale target in the first function can
+//! resolve there. Each direct call must land on an instruction start in the
+//! code.
 //! A function reached only through an indirect call and without a prologue
 //! is not checked.
 
@@ -346,6 +349,14 @@ pub fn check_x86_64_jumps(elf: &[u8]) -> Result<Option<JumpCheck>, String> {
         if target < low || target >= high {
             problems.push(format!(
                 "`{}` at {address:#x} leaves its function [{low:#x}, {high:#x})",
+                instruction.text
+            ));
+        } else if target == low {
+            // laniusc never branches back to a function's entry. A stale
+            // target in a frameless function that comes first in the code
+            // resolves to its own entry, and the program loops forever.
+            problems.push(format!(
+                "`{}` at {address:#x} jumps back to its function's entry [{low:#x}, {high:#x})",
                 instruction.text
             ));
         }
