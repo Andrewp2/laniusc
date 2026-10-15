@@ -1,7 +1,9 @@
 import hir_records;
 
 // Project compact implemented-method rows into token-keyed lookup metadata.
-// Trait declarations have no impl node and do not provide callable bodies.
+// Required trait members have no impl node and no callable body: they publish
+// signature metadata for bound-member calls (07a_offer_bound_members) but no
+// method row, so they never enter the receiver lookup or key validation.
 
 struct Params
 {
@@ -55,7 +57,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirMethodSignature signature = compact_method_signatures[row];
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     uint flags = signature.metadata >> 16u;
-    if (core.node >= hir_count || core.impl_node >= hir_count)
+    bool required_member = core.impl_node == INVALID;
+    if (core.node >= hir_count || (!required_member && core.impl_node >= hir_count))
         return;
 
     // Method metadata shares the canonical declaration-name token domain with
@@ -65,7 +68,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(fn_token))
         return;
 
-    method_decl_method_row[fn_token] = row;
+    if (!required_member) method_decl_method_row[fn_token] = row;
     method_decl_name_token[fn_token] = core.name_token;
     method_decl_param_offset[fn_token] = signature.first_param_token;
     method_decl_receiver_mode[fn_token] = signature.receiver_mode;
