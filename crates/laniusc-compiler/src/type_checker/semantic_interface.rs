@@ -23,6 +23,26 @@ struct ActiveHirDomain<'a> {
     dispatch_args: &'a LaniusBuffer<u32>,
 }
 
+/// Consecutive host trace spans over the phases of one recording.
+struct HostPhaseSpans {
+    start: std::time::Instant,
+}
+
+impl HostPhaseSpans {
+    fn start() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+        }
+    }
+
+    /// Records the span since the previous phase ended and starts the next.
+    fn end(&mut self, name: &str) {
+        let now = std::time::Instant::now();
+        crate::gpu::trace::record_host_span("host.semantic_interface", name, self.start, now);
+        self.start = now;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn graph_prefix_scan(
     device: &wgpu::Device,
@@ -400,6 +420,7 @@ impl GpuTypeChecker {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::SemanticInterface);
         }
+        let mut host_phase = HostPhaseSpans::start();
         let name_capacity = inputs.name_capacity;
         let module_capacity = inputs.module_capacity;
         let decl_storage_capacity = inputs.declaration_capacity;
@@ -547,6 +568,7 @@ impl GpuTypeChecker {
             &[0, u32::MAX, u32::MAX, u32::MAX],
             wgpu::BufferUsages::STORAGE,
         );
+        host_phase.end("semantic_interface.host.name_scans");
         let type_topology = self.record_semantic_interface_type_topology(
             device,
             queue,
@@ -728,6 +750,7 @@ impl GpuTypeChecker {
             "interface_counts",
             &counts,
         )?;
+        host_phase.end("semantic_interface.host.identity_build");
         clear_name_ref.record(encoder);
         clear_name_bytes.record(encoder);
         clear_counts.record(encoder);
@@ -739,6 +762,7 @@ impl GpuTypeChecker {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "semantic_interface.identity");
         }
+        host_phase.end("semantic_interface.host.identity_record");
 
         let artifact_capacity = semantic_interface_artifact_capacity(
             module_capacity,
@@ -914,6 +938,7 @@ impl GpuTypeChecker {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "semantic_interface.artifact");
         }
+        host_phase.end("semantic_interface.host.artifact");
         Ok(RecordedSemanticInterface {
             expected_library_id: library_id,
             expected_unit_id: unit_id,
@@ -956,6 +981,7 @@ impl GpuTypeChecker {
         typecheck_graph: &compiler_graph::TypeCheckCompilerGraph,
         timer: &mut Option<&mut GpuTimer>,
     ) -> Result<RecordedSemanticInterfaceTypeTopology> {
+        let mut host_phase = HostPhaseSpans::start();
         let hir_storage_capacity = hir.compact_hir_capacity;
         let decl_capacity = inputs.declaration_capacity.min(token_capacity).max(1);
         // Canonical HIR assigns every durable row a unique token/file anchor;
@@ -1694,6 +1720,7 @@ impl GpuTypeChecker {
                 &member_written,
             )?,
         ];
+        host_phase.end("semantic_interface.host.topology_build");
         for clear in &clears {
             clear.record(encoder);
         }
@@ -1778,6 +1805,7 @@ impl GpuTypeChecker {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "semantic_interface.topology.members");
         }
+        host_phase.end("semantic_interface.host.topology_record");
 
         Ok(RecordedSemanticInterfaceTypeTopology {
             type_capacity: type_capacity as usize,
