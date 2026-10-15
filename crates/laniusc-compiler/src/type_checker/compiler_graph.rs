@@ -539,6 +539,18 @@ pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str)] = &
         "call_generic_claim_ref_tag",
         "call_generic_claim_ref_payload",
     ),
+    // Per-call receiver facts: bound-member routing and native receiver
+    // passing need the selected body's concrete receiver, not `P`.
+    (
+        "type_check.body_specialization.method_receivers",
+        "method_call_receiver_ref_tag",
+        "method_call_receiver_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.method_parameters",
+        "method_call_parameter_ref_tag",
+        "method_call_parameter_ref_payload",
+    ),
     (
         "type_check.body_specialization.explicit_bindings",
         "call_explicit_binding_tag",
@@ -6265,6 +6277,11 @@ fn build_graph(
             "type_check.body_specialization.predicates",
             "type_checker/predicates/03_validate_body_obligations",
             ResourceDomain::HirNodes,
+        ),
+        (
+            "type_check.body_specialization.bound_members",
+            "type_checker/methods/09_route_bound_members",
+            ResourceDomain::Tokens,
         ),
     ] {
         graph.add_kernel_pass_by_name(

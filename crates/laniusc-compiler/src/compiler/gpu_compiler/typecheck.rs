@@ -3798,6 +3798,7 @@ fn call_mismatch_diagnostic(
     const CALL_MISMATCH_EXPLICIT_ARGUMENT_REFERENCE: u32 = 0xffffff0b;
     const CALL_MISMATCH_AMBIGUOUS_METHOD: u32 = 0xffffff0c;
     const CALL_MISMATCH_INVALID_METHOD_RECEIVER: u32 = 0xffffff0d;
+    const CALL_MISMATCH_UNROUTED_BOUND_MEMBER: u32 = 0xffffff0e;
     let (label, note) = match detail {
         CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
             "method return type is not supported for generic method dispatch here",
@@ -3846,6 +3847,10 @@ fn call_mismatch_diagnostic(
         CALL_MISMATCH_INVALID_METHOD_RECEIVER => (
             "method receiver has no valid checked type adjustment",
             "the receiver needs a complete type graph within the supported 64-level traversal limit",
+        ),
+        CALL_MISMATCH_UNROUTED_BOUND_MEMBER => (
+            "this trait member call has no concrete implementation member to route to",
+            "the receiver's implementation must be a non-generic local impl of the bounding trait; routing through generic or imported implementations is not supported yet",
         ),
         CALL_MISMATCH_DUPLICATE_METHOD => (
             "duplicate inherent methods have equivalent receiver patterns",
