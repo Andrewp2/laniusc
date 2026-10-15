@@ -6,7 +6,7 @@
 //! are witnesses, not prerequisites for semantic seeding; GPU layout admission
 //! must complete before a replayed native body can be published.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -374,21 +374,22 @@ impl CheckedBodySpecializationBatch {
     /// replay that checks this batch's copies.
     ///
     /// `callables` are the replay unit's function rows (free functions and
-    /// methods), `method_impls` its (method, impl) rows. A copy is exactly
+    /// methods, sorted and unique), `method_impls` its (method, impl) rows. A copy is exactly
     /// one function (and one impl for a method), appended after the
     /// template in entry order, so the k-th callable row at or past the
     /// first copy row is entry k's copy. Template rows keep their own
     /// identity.
     pub(crate) fn instance_owner_aliases(
         &self,
-        callables: &BTreeSet<u32>,
+        callables: &[u32],
         method_impls: &[(u32, u32)],
     ) -> Result<BTreeMap<u32, u32>> {
         let mut aliases = BTreeMap::new();
         if self.copy_first_row == 0 {
             return Ok(aliases);
         }
-        let copies = callables.range(self.copy_first_row..).copied().collect::<Vec<_>>();
+        ensure!(callables.windows(2).all(|pair| pair[0] < pair[1]), "replay callable rows are not sorted");
+        let copies = &callables[callables.partition_point(|&row| row < self.copy_first_row)..];
         ensure!(copies.len() == self.copy_owners.len(),
             "replay checked {} instance-copy callables for {} copies", copies.len(), self.copy_owners.len());
         let impls = method_impls.iter().copied().collect::<BTreeMap<_, _>>();
@@ -1659,12 +1660,13 @@ mod tests {
         // Template: free function 3, method 9 of impl 8. Copies start at row 40:
         // free copy at 41, then impl copy 50 holding method copy 52.
         batch.set_instance_copies(40, vec![(3, None), (9, Some(8))]).unwrap();
-        let callables = BTreeSet::from([3, 9, 12, 41, 52]);
+        let callables = [3, 9, 12, 41, 52];
         let methods = [(9, 8), (52, 50)];
         let aliases = batch.instance_owner_aliases(&callables, &methods).unwrap();
         assert_eq!(aliases, BTreeMap::from([(41, 3), (50, 8), (52, 9)]));
         // A missing copy, or a method copy checked as a free function, fails.
-        assert!(batch.instance_owner_aliases(&BTreeSet::from([3, 41]), &methods).is_err());
+        assert!(batch.instance_owner_aliases(&[3, 41], &methods).is_err());
+        assert!(batch.instance_owner_aliases(&[3, 41, 9, 52], &methods).is_err(), "unsorted rows");
         assert!(batch.instance_owner_aliases(&callables, &[(9, 8)]).is_err());
         // Batches without copies alias nothing.
         let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar], vec![])).unwrap();

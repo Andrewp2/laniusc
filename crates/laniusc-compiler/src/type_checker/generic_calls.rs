@@ -1916,7 +1916,7 @@ pub(super) fn read_unit_facts(
     // The owners of an instance-copy replay's copies take their template's
     // immutable identity.
     let owner_aliases = instance_copies
-        .map(|batch| batch.instance_owner_aliases(&callable_hirs, &method_impls))
+        .map(|batch| batch.instance_owner_aliases(&callable_hirs.iter().copied().collect::<Vec<_>>(), &method_impls))
         .transpose()?
         .unwrap_or_default();
     let parameter_owners = parameters

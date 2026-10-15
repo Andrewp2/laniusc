@@ -1,11 +1,10 @@
 trait Size { fn size(self) -> usize; }
 struct Buf<T, const N: usize> { data: [T; N] }
 impl<T, const N: usize> Size for Buf<T, N> { fn size(self) -> usize { return N; } }
-fn measure<S>(s: S) -> usize where S: Size { return s.size(); }
 fn main() -> i32 {
     let a: Buf<i32, 3> = Buf<i32, 3> { data: [1, 2, 3] };
     let b: Buf<i32, 5> = Buf<i32, 5> { data: [1, 2, 3, 4, 5] };
     let c: Buf<bool, 2> = Buf<bool, 2> { data: [true, false] };
-    if (measure(a) != 3 || measure(b) != 5 || measure(c) != 2) { return 1; }
+    if (a.size() != 3 || b.size() != 5 || c.size() != 2) { return 1; }
     return a.data[2] + b.data[4] + 34;
 }

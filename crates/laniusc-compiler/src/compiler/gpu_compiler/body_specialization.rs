@@ -482,28 +482,41 @@ impl ReplayRun {
         scope: &ReplayScope,
         entry: CheckedBodySpecialization,
     ) -> anyhow::Result<bool> {
-        if self.scopes.iter().any(|other| other.snapshot != scope.snapshot
-            || (!self.copies && other.selected_owner_hir == scope.selected_owner_hir))
-        {
-            return Ok(false);
-        }
-        let mut batch = self.batch.clone();
-        if !batch.try_push(entry)? {
-            return Ok(false);
-        }
-        let added = batch.entries().len() - 1;
-        // Copies own their enclosing impls too; nothing is shared.
-        for (index, other) in self.scopes.iter().enumerate().filter(|_| !self.copies) {
-            for (owner, parameters) in &scope.owners {
-                if !other.owners.iter().any(|(shared, _)| shared == owner) { continue; }
-                if !parameters.iter().all(|&(slot, domain)|
-                    batch.binds_identically(index, added, slot, domain))
-                {
-                    return Ok(false);
+        if self.copies {
+            // Copies own their enclosing impls too, so nothing is shared and
+            // only the snapshot must agree (every scope has the first one's).
+            // `try_push` leaves the batch unchanged when the entry does not
+            // fit, so a run of thousands of copies never clones its batch.
+            if self.scopes.first().is_some_and(|first| first.snapshot != scope.snapshot)
+                || !self.batch.try_push(entry)?
+            {
+                return Ok(false);
+            }
+        } else {
+            if self.scopes.iter().any(|other| other.snapshot != scope.snapshot
+                || other.selected_owner_hir == scope.selected_owner_hir)
+            {
+                return Ok(false);
+            }
+            // An original-scope run is small (MAX_ORIGINAL_REPLAY_ENTRIES);
+            // a trial copy undoes a push whose shared owners bind differently.
+            let mut batch = self.batch.clone();
+            if !batch.try_push(entry)? {
+                return Ok(false);
+            }
+            let added = batch.entries().len() - 1;
+            for (index, other) in self.scopes.iter().enumerate() {
+                for (owner, parameters) in &scope.owners {
+                    if !other.owners.iter().any(|(shared, _)| shared == owner) { continue; }
+                    if !parameters.iter().all(|&(slot, domain)|
+                        batch.binds_identically(index, added, slot, domain))
+                    {
+                        return Ok(false);
+                    }
                 }
             }
+            self.batch = batch;
         }
-        self.batch = batch;
         self.keys.push(key.to_vec());
         self.scopes.push(scope.clone());
         Ok(true)
@@ -873,6 +886,37 @@ mod tests {
                 .collect(),
             constants: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_copy_run_takes_every_copy_of_one_body_in_place() {
+        let entry = |byte: u32, scalar: u32| CheckedBodySpecialization {
+            target_symbol: crate::type_checker::BODY_COPY_TARGET | byte,
+            source_unit: [0, 0],
+            arguments: vec![CheckedGenericArgument { slot: 0, ty: CheckedGenericType::Scalar(scalar) }],
+            constants: Vec::new(),
+        };
+        let scope = |snapshot: u32| ReplayScope { snapshot, selected_owner_hir: 9, owners: vec![(4, vec![(0, 0)])] };
+        let run = |copies: bool| ReplayRun {
+            keys: vec![vec![0]],
+            scopes: vec![scope(1)],
+            batch: gpu_type_checker::CheckedBodySpecializationBatch::single(entry(100, 3)).unwrap(),
+            solo: false,
+            copies,
+        };
+        let mut copies = run(true);
+        // Other environments of the same lexical body join a copy run.
+        for (index, scalar) in [4u32, 5, 6].into_iter().enumerate() {
+            assert!(copies.try_add(&[index as u8 + 1], &scope(1), entry(200 + index as u32, scalar)).unwrap());
+        }
+        assert_eq!((copies.batch.entries().len(), copies.keys.len(), copies.scopes.len()), (4, 4, 4));
+        // Another template snapshot does not, and leaves the run unchanged.
+        assert!(!copies.try_add(&[9], &scope(2), entry(300, 7)).unwrap());
+        assert_eq!((copies.batch.entries().len(), copies.keys.len(), copies.scopes.len()), (4, 4, 4));
+        // An original-scope run never selects one lexical body twice.
+        let mut original = run(false);
+        assert!(!original.try_add(&[1], &scope(1), entry(200, 4)).unwrap());
+        assert_eq!(original.batch.entries().len(), 1);
     }
 
     #[test]
