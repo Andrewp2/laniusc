@@ -72,15 +72,71 @@ public bool scoped_constant_reference<Graph : IParameterScopedTypeGraph>(
 
 // Typed identity (count_identity false) or count identity (true). The walker
 // below calls this once per visited node so it is expanded at one site only.
+// The result of inspecting both references (scoped_constant_reference) and
+// comparing their descriptors (constant_reference_descriptors_equal): left
+// inspection (phase 0), right inspection (1), then the lockstep identity walk
+// (2), with one step call site per graph. Every identity step follows at most
+// one substitution, as constant_identity_step does.
 public bool scoped_constant_refs_or_counts_equal<
     LeftGraph : IParameterScopedTypeGraph, RightGraph : IParameterScopedTypeGraph>(
     uint3 left, uint3 right, uint tokens, bool count_identity)
 {
-    ConstantReferenceDescriptor a; ConstantReferenceDescriptor b;
-    return scoped_constant_reference<LeftGraph>(left, tokens, a) &&
-        scoped_constant_reference<RightGraph>(right, tokens, b) &&
-        constant_reference_descriptors_equal<LeftGraph, ScopedConstantEnvironment<LeftGraph>,
-            RightGraph, ScopedConstantEnvironment<RightGraph>>(a, b, tokens, count_identity);
+    ConstantInspection a = constant_inspection_begin(left);
+    ConstantInspection b = constant_inspection_begin(right);
+    uint phase = 0u; uint walked = 0u;
+    uint3 walk_a = left; uint3 walk_b = right; uint3 next_a = left; uint3 next_b = right;
+    bool followed_a = false; bool followed_b = false; bool done_a = false; bool done_b = false;
+    uint step_a = 0u; uint step_b = 0u; uint scalar_a = 0u; uint scalar_b = 0u;
+    // Each inspection takes at most two passes of steps, and each identity
+    // step at most two loop iterations.
+    [loop]
+    for (uint guard = 0u; guard < 8u * CONSTANT_REFERENCE_WORK_LIMIT; guard++)
+    {
+        if (phase != 1u && !done_a)
+        {
+            uint3 next; uint scalar; uint3 value;
+            uint step = constant_reference_step<LeftGraph, ScopedConstantEnvironment<LeftGraph>>(
+                phase == 0u ? a.reference : walk_a, tokens, next, scalar, value);
+            if (phase == 0u)
+            {
+                constant_inspection_feed(a, step, next, scalar, value);
+                if (a.result == CONSTANT_INSPECTION_REJECTED) return false;
+                if (a.result == CONSTANT_INSPECTION_ACCEPTED) phase = 1u;
+                continue;
+            }
+            if (step == 4u && !followed_a) { walk_a = next; followed_a = true; }
+            else { done_a = true; step_a = step; scalar_a = scalar; next_a = next; }
+        }
+        if (phase != 0u && !done_b)
+        {
+            uint3 next; uint scalar; uint3 value;
+            uint step = constant_reference_step<RightGraph, ScopedConstantEnvironment<RightGraph>>(
+                phase == 1u ? b.reference : walk_b, tokens, next, scalar, value);
+            if (phase == 1u)
+            {
+                constant_inspection_feed(b, step, next, scalar, value);
+                if (b.result == CONSTANT_INSPECTION_REJECTED) return false;
+                if (b.result == CONSTANT_INSPECTION_ACCEPTED)
+                {
+                    uint prelude = constant_descriptors_equal_prelude(a.descriptor, b.descriptor, count_identity);
+                    if (prelude != CONSTANT_IDENTITY_WALK) return prelude == 1u;
+                    phase = 2u; walk_a = a.descriptor.root; walk_b = b.descriptor.root;
+                }
+                continue;
+            }
+            if (step == 4u && !followed_b) { walk_b = next; followed_b = true; }
+            else { done_b = true; step_b = step; scalar_b = scalar; next_b = next; }
+        }
+        if (!done_a || !done_b) continue;
+        if (step_a != step_b || scalar_a != scalar_b) return false;
+        if (step_a == 2u) return walk_a.y == walk_b.y;
+        if (step_a != 3u) return false;
+        walk_a = next_a; walk_b = next_b;
+        done_a = false; done_b = false; followed_a = false; followed_b = false;
+        walked++;
+        if (walked == CONSTANT_REFERENCE_WORK_LIMIT) return false;
+    }
+    return false;
 }
 
 [ForceInline]
@@ -101,14 +157,51 @@ public bool scoped_constant_counts_equal<
 
 // Typed (count_identity false) or count identity hash. Walkers call this
 // once per visited node so it is expanded at one site only.
+// Inspection (scoped_constant_reference), then the descriptor hash
+// (constant_reference_descriptor_hash) whose identity walk shares the one
+// step call site.
 public bool scoped_constant_ref_or_count_hash<Graph : IParameterScopedTypeGraph>(
     uint3 reference, uint tokens, bool count_identity, out uint result)
 {
     result = 0u;
-    ConstantReferenceDescriptor descriptor;
-    return scoped_constant_reference<Graph>(reference, tokens, descriptor) &&
-        constant_reference_descriptor_hash<Graph, ScopedConstantEnvironment<Graph>>(
-            descriptor, tokens, count_identity, result);
+    ConstantInspection inspection = constant_inspection_begin(reference);
+    bool walking = false; bool followed = false; uint3 walk = reference;
+    uint walked = 0u; uint hash = 0u;
+    [loop]
+    for (uint guard = 0u; guard < 6u * CONSTANT_REFERENCE_WORK_LIMIT; guard++)
+    {
+        uint3 next; uint scalar; uint3 value;
+        uint step = constant_reference_step<Graph, ScopedConstantEnvironment<Graph>>(
+            walking ? walk : inspection.reference, tokens, next, scalar, value);
+        if (!walking)
+        {
+            constant_inspection_feed(inspection, step, next, scalar, value);
+            if (inspection.result == CONSTANT_INSPECTION_RUNNING) continue;
+            if (inspection.result != CONSTANT_INSPECTION_ACCEPTED) return false;
+            uint prelude = constant_descriptor_hash_prelude(inspection.descriptor, count_identity, hash);
+            if (prelude != CONSTANT_IDENTITY_WALK)
+            {
+                if (prelude == 1u) result = hash;
+                return prelude == 1u;
+            }
+            walking = true; walk = inspection.descriptor.root;
+            continue;
+        }
+        // One identity step of constant_reference_descriptor_hash.
+        if (step == 4u && !followed) { walk = next; followed = true; continue; }
+        followed = false;
+        hash = constant_identity_hash_mix(hash, step);
+        hash = constant_identity_hash_mix(hash, scalar);
+        if (step == 2u)
+        {
+            result = constant_identity_hash_mix(hash, walk.y);
+            return true;
+        }
+        if (step != 3u) return false;
+        walk = next; walked++;
+        if (walked == CONSTANT_REFERENCE_WORK_LIMIT) return false;
+    }
+    return false;
 }
 
 [ForceInline]
