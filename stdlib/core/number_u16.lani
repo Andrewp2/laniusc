@@ -29,13 +29,13 @@ pub fn clamp_or(value: u16, low: u16, high: u16, fallback: u16) -> u16 {
     return value;
 }
 pub fn saturating_add(left: u16, right: u16) -> u16 {
-    let a: u32 = left;
-    let b: u32 = right;
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
     let sum: u32 = a + b;
     if (sum>65535) {
         return MAX;
     }
-    let narrowed: u16 = sum;
+    let narrowed: u16 = sum as u16;
     return narrowed;
 }
 pub fn saturating_sub(left: u16, right: u16) -> u16 {
@@ -45,34 +45,34 @@ pub fn saturating_sub(left: u16, right: u16) -> u16 {
     return left - right;
 }
 pub fn saturating_mul(left: u16, right: u16) -> u16 {
-    let a: u32 = left;
-    let b: u32 = right;
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
     let product: u32 = a * b;
     if (product>65535) {
         return MAX;
     }
-    let narrowed: u16 = product;
+    let narrowed: u16 = product as u16;
     return narrowed;
 }
 pub fn wrapping_add(left: u16, right: u16) -> u16 {
-    let a: u32 = left;
-    let b: u32 = right;
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
     let reduced: u32 =(a + b) % 65536;
-    let narrowed: u16 = reduced;
+    let narrowed: u16 = reduced as u16;
     return narrowed;
 }
 pub fn wrapping_sub(left: u16, right: u16) -> u16 {
-    let a: u32 = left;
-    let b: u32 = right;
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
     let reduced: u32 =(a + 65536 - b) % 65536;
-    let narrowed: u16 = reduced;
+    let narrowed: u16 = reduced as u16;
     return narrowed;
 }
 pub fn wrapping_mul(left: u16, right: u16) -> u16 {
-    let a: u32 = left;
-    let b: u32 = right;
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
     let reduced: u32 =(a * b) % 65536;
-    let narrowed: u16 = reduced;
+    let narrowed: u16 = reduced as u16;
     return narrowed;
 }
 pub fn abs_diff(left: u16, right: u16) -> u16 {
@@ -97,20 +97,20 @@ pub fn lcm_or(left: u16, right: u16, fallback: u16) -> u16 {
     if (left == 0 || right == 0) {
         return 0;
     }
-    let a: u32 = left;
-    let b: u32 = right;
-    let divisor: u32 = gcd(left, right);
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
+    let divisor: u32 = gcd(left, right) as u32;
     let product: u32 =(a / divisor) * b;
     if (product>65535) {
         return fallback;
     }
-    let narrowed: u16 = product;
+    let narrowed: u16 = product as u16;
     return narrowed;
 }
 // Defines 0^0 as one. An unrepresentable power returns fallback.
 pub fn pow_or(base: u16, exponent: u32, fallback: u16) -> u16 {
     let result: u32 = 1;
-    let factor: u32 = base;
+    let factor: u32 = base as u32;
     let remaining: u32 = exponent;
     while (remaining>0) {
         if (remaining % 2 != 0) {
@@ -129,7 +129,7 @@ pub fn pow_or(base: u16, exponent: u32, fallback: u16) -> u16 {
             factor = square;
         }
     }
-    let narrowed: u16 = result;
+    let narrowed: u16 = result as u16;
     return narrowed;
 }
 pub fn is_zero(value: u16) -> bool {
@@ -193,8 +193,8 @@ pub fn align_up_or(value: u16, alignment: u16, fallback: u16) -> u16 {
     if (alignment == 0) {
         return fallback;
     }
-    let wide_value: u32 = value;
-    let wide_alignment: u32 = alignment;
+    let wide_value: u32 = value as u32;
+    let wide_alignment: u32 = alignment as u32;
     let remainder: u32 = wide_value % wide_alignment;
     if (remainder == 0) {
         return value;
@@ -203,7 +203,7 @@ pub fn align_up_or(value: u16, alignment: u16, fallback: u16) -> u16 {
     if (aligned>65535) {
         return fallback;
     }
-    let narrowed: u16 = aligned;
+    let narrowed: u16 = aligned as u16;
     return narrowed;
 }
 // Alignment zero returns fallback.

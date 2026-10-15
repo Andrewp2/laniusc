@@ -42,9 +42,17 @@ static const uint CT_SUBST_WORK_LIMIT = 1024u;
 static const uint CT_SUBST_DEPTH_LIMIT = 64u;
 static const uint CT_SUBST_PROBE_LIMIT = 64u;
 
+// The canonical overflow bit of a full memo. The host reads ct_counts after
+// every canonical batch; the late stage runs after every substitution
+// producer, so a full memo abandons the job and records it again with a
+// larger memo (canonical_passes.rs, CANONICAL_RETRY_OVERFLOW_BITS).
+public static const uint CT_OVERFLOW_SUBST_MEMO = 16u;
+
 public void ct_subst_flag(uint bits)
 {
     InterlockedOr(ct_subst_counts[CT_SUBST_COUNT_OVERFLOW], bits);
+    if ((bits & CT_SUBST_OVERFLOW_MEMO) != 0u)
+        InterlockedOr(ct_counts[CT_COUNT_OVERFLOW], CT_OVERFLOW_SUBST_MEMO);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +172,9 @@ uint subst_build<S : ICtSlots>(S slots, uint env, uint node, bool intern, inout 
         if (status != CT_KEY_BUILT) return status;
         return ct_spare_publish(key, key.extra, intern, spare);
     }
-    if (kind < CT_KIND_NAMED || kind > CT_KIND_REF) return CT_UNKNOWN;
+    // An environment keeps its masks and substitutes its bindings, so a
+    // call site's environment composes with its caller's.
+    if ((kind < CT_KIND_NAMED || kind > CT_KIND_REF) && kind != CT_KIND_ENV) return CT_UNKNOWN;
     key = ct_key_begin(kind, arity, ct_type_slots(node), ct_words(node));
     if (!ct_spare_reserve(spare, key)) return CT_UNKNOWN;
     for (uint index = 0u; index < arity; index++)

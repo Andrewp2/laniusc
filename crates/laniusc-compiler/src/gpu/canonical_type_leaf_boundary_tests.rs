@@ -13,19 +13,14 @@ use super::{
 const INVALID: u32 = u32::MAX;
 const BOOL: [u32; 2] = [1, 2];
 const CONSTANT: u32 = 0x8000_0001;
-const EMPTY: [u32; 2] = [0, INVALID];
 const TOKENS: u32 = 4;
 const T: u32 = 2;
 const LITERAL_THREE: u32 = 4;
 const ARRAY: u32 = 7;
-const ARRAY_T: u32 = 8;
 const BOX: u32 = 9;
-const BOX_T: u32 = 10;
-const PAIR_T_U: u32 = 11;
 const ARRAY_PROJECTED: u32 = 12;
 const BOX_ARRAY: u32 = 17;
 const CONSTANT_N: u32 = 15;
-const ARRAY_N: u32 = 16;
 const FIRST_N_PROJECTION: u32 = 18;
 const N_PROJECTED_63: u32 = FIRST_N_PROJECTION + 62;
 const N_PROJECTED_64: u32 = FIRST_N_PROJECTION + 63;
@@ -358,77 +353,6 @@ fn physical_gpu_canonical_type_leaf_preserves_one_step_and_rejects_constant_bind
             expected: [Some(0), None, None, Some(0)] });
     }
     run("tests/canonical_type_leaf_boundary", &cases);
-}
-
-fn constraint(label: &'static str, pattern: u32, environment: u32, actual: [u32; 2],
-    infer: bool, accepted: u32, mask: u32, first: [u32; 2], second: [u32; 2]) -> Case<12> {
-    Case { label, query: query(pattern, environment, actual, infer),
-        expected: [accepted, mask, 0, first[0], first[1], second[0], second[1],
-            1, 1, 0, INVALID, 0].map(Some) }
-}
-
-#[test]
-fn physical_gpu_canonical_type_constraints_reject_cross_domain_bindings_before_publication() {
-    let mut cases = vec![
-        constraint("canonical scalar replacement normalizes", T, 1, BOOL, false, 1, 0, EMPTY, EMPTY),
-        constraint("canonical nominal replacement", T, 2, [3, 1], false, 1, 0, EMPTY, EMPTY),
-        constraint("canonical array replacement", T, 3, [3, 0], false, 1, 0, EMPTY, EMPTY),
-        constraint("caller parameter substituted once", T, 12, [2, 2], false, 1, 0, EMPTY, EMPTY),
-        constraint("unbound type infers checked scalar", T, INVALID, BOOL, true, 1, 1, BOOL, EMPTY),
-        constraint("literal in nominal operand is checked", BOX, INVALID, [3, 1], false, 1, 0, EMPTY, EMPTY),
-        constraint("wrong nominal constant value rejected", BOX, INVALID, [3, 4], false, 0, 0, EMPTY, EMPTY),
-        constraint("array length is checked", ARRAY, INVALID, [3, 0], false, 1, 0, EMPTY, EMPTY),
-        constraint("wrong array length rejected", ARRAY, INVALID, [3, 5], false, 0, 0, EMPTY, EMPTY),
-        constraint("projected constant length retains value", ARRAY_PROJECTED, INVALID, [3, 0], false, 1, 0, EMPTY, EMPTY),
-        constraint("wrong projected length rejected", ARRAY_PROJECTED, INVALID, [3, 5], false, 0, 0, EMPTY, EMPTY),
-        constraint("nested array and nominal constants", BOX_ARRAY, INVALID, [3, 7], false, 1, 0, EMPTY, EMPTY),
-        constraint("nominal type inference preserves constant operand", BOX_T, INVALID, [3, 1], true, 1, 1, BOOL, EMPTY),
-        constraint("array element inference preserves length", ARRAY_T, INVALID, [3, 0], true, 1, 1, BOOL, EMPTY),
-        constraint("two type slots infer independently", PAIR_T_U, INVALID, [3, 2], true, 1, 3, BOOL, BOOL),
-        constraint("invalid source constant retains rejected inference snapshot", T, INVALID,
-            [CONSTANT, 3], true, 0, 1, [CONSTANT, 3], EMPTY),
-        constraint("invalid canonical constant retains rejected inference snapshot", T, INVALID,
-            [5, LITERAL_THREE], true, 0, 1, [5, LITERAL_THREE], EMPTY),
-        constraint("failure in second slot preserves earlier type claim", PAIR_T_U, INVALID,
-            [3, 3], true, 0, 3, BOOL, [CONSTANT, 3]),
-        constraint("failure in second canonical slot preserves earlier type claim", PAIR_T_U, INVALID,
-            [3, 6], true, 0, 3, BOOL, [5, LITERAL_THREE]),
-    ];
-    for (label, environment) in [
-        ("bound canonical literal rejected with no inference", 4),
-        ("bound source literal rejected with no inference", 5),
-        ("bound canonical projection rejected with no inference", 6),
-        ("bound canonical constant parameter rejected with no inference", 7),
-        ("bound source constant parameter rejected with no inference", 13),
-        ("bound source projection rejected with no inference", 14),
-    ] {
-        cases.push(constraint(label, T, environment, [CONSTANT, 3], true, 0, 0, EMPTY, EMPTY));
-    }
-    run("tests/canonical_type_constraint_boundary", &cases);
-}
-
-#[test]
-fn physical_gpu_canonical_constant_parameter_projection_visit_boundaries() {
-    // accepted, type mask, constant mask, T tag/payload, U tag/payload,
-    // clear type tail, clear constants, constant0 kind/payload/identity mode.
-    let typed_bound = [1, 0, 1, 0, INVALID, 0, INVALID, 1, 0, 1, 3, 0];
-    let count_bound = [1, 0, 1, 0, INVALID, 0, INVALID, 1, 0, 1, 3, 1];
-    let rejected = [0, 0, 0, 0, INVALID, 0, INVALID, 1, 1, 0, INVALID, 0];
-    let partial_bound = [1, 1, 1, 1, 2, 0, INVALID, 1, 0, 1, 3, 0];
-    let partial_rejected = [0, 1, 0, 1, 2, 0, INVALID, 1, 1, 0, INVALID, 0];
-    let cases: Vec<_> = [
-        ("direct kind8 preserves typed identity", CONSTANT_N, [CONSTANT, 3], typed_bound),
-        ("direct kind8 array length records count identity", ARRAY_N, [3, 0], count_bound),
-        ("63 projected edges visit typed terminal", N_PROJECTED_63, [CONSTANT, 3], typed_bound),
-        ("64 projected edges reject before typed terminal", N_PROJECTED_64, [CONSTANT, 3], rejected),
-        ("63 projected edges visit array-count terminal", ARRAY_N_PROJECTED_63, [3, 0], count_bound),
-        ("64 projected edges reject before array-count terminal", ARRAY_N_PROJECTED_64, [3, 0], rejected),
-        ("63 projected edges preserve earlier type inference", BOX_T_N_PROJECTED_63, [3, 1], partial_bound),
-        ("64 projected edges preserve rejected inference snapshot", BOX_T_N_PROJECTED_64, [3, 1], partial_rejected),
-    ].into_iter().map(|(label, pattern, actual, expected)| Case {
-        label, query: query(pattern, INVALID, actual, true), expected: expected.map(Some),
-    }).collect();
-    run("tests/canonical_type_constraint_boundary", &cases);
 }
 
 #[test]

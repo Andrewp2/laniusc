@@ -1,19 +1,19 @@
 // Allocation-free operations on the 32-bit representation of a u32.
 module core::bits;
 fn widen_byte(value: u8) -> u32 {
-    let widened: u32 = value;
+    let widened: u32 = value as u32;
     return widened;
 }
 fn narrow_byte(value: u32) -> u8 {
-    let narrowed: u8 = value;
+    let narrowed: u8 = value as u8;
     return narrowed;
 }
 fn widen_half(value: u16) -> u32 {
-    let widened: u32 = value;
+    let widened: u32 = value as u32;
     return widened;
 }
 fn narrow_half(value: u32) -> u16 {
-    let narrowed: u16 = value;
+    let narrowed: u16 = value as u16;
     return narrowed;
 }
 pub fn count_ones_u32(value: u32) -> u32 {
@@ -228,50 +228,50 @@ pub fn bit_at_or_u16(value: u16, index: u32, fallback: bool) -> bool {
 
 // Signed operations inspect the full 32-bit representation of the i32 value.
 pub fn count_ones_i32(value: i32) -> u32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     return count_ones_u32(bits);
 }
 pub fn count_zeros_i32(value: i32) -> u32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     return count_zeros_u32(bits);
 }
 pub fn leading_zeros_i32(value: i32) -> u32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     return leading_zeros_u32(bits);
 }
 pub fn trailing_zeros_i32(value: i32) -> u32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     return trailing_zeros_u32(bits);
 }
 pub fn has_single_bit_i32(value: i32) -> bool {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     return has_single_bit_u32(bits);
 }
 pub fn rotate_left_i32(value: i32, amount: u32) -> i32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     let rotated: u32 = rotate_left_u32(bits, amount);
-    let result: i32 = rotated;
+    let result: i32 = rotated as i32;
     return result;
 }
 pub fn rotate_right_i32(value: i32, amount: u32) -> i32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     let rotated: u32 = rotate_right_u32(bits, amount);
-    let result: i32 = rotated;
+    let result: i32 = rotated as i32;
     return result;
 }
 pub fn reverse_bits_i32(value: i32) -> i32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     let reversed: u32 = reverse_bits_u32(bits);
-    let result: i32 = reversed;
+    let result: i32 = reversed as i32;
     return result;
 }
 pub fn swap_bytes_i32(value: i32) -> i32 {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     let swapped: u32 = swap_bytes_u32(bits);
-    let result: i32 = swapped;
+    let result: i32 = swapped as i32;
     return result;
 }
 pub fn bit_at_or_i32(value: i32, index: u32, fallback: bool) -> bool {
-    let bits: u32 = value;
+    let bits: u32 = value as u32;
     return bit_at_or_u32(bits, index, fallback);
 }

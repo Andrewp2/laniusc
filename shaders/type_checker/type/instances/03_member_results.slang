@@ -1,7 +1,7 @@
 import semantic_interface_layout;
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
+import type_checker.mutable_checked_type_graph;
 import type_checker.checked_index_reference;
+import type_checker.substitution.ct_scoped;
 // HIR member field result projection.
 //
 // The preceding member-receiver pass records the initial receiver type for
@@ -123,7 +123,7 @@ uint scalar_struct_decl_token(uint payload)
 
 uint receiver_decl_token(uint tag, uint payload)
 {
-    if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity())
+    if (tag == TYPE_REF_INSTANCE && payload < mutable_type_capacity())
     {
         uint decl_token = type_instance_decl_token[payload];
         return valid_token(decl_token) ? decl_token : INVALID;
@@ -226,9 +226,8 @@ void publish_member_field_chain_for_root(uint member_node)
             // Index lookup follows reference layers in the carried receiver,
             // without replacing the source value's complete reference type.
             uint instance;
-            if (!checked_index_container(receiver_tag, receiver_payload,
-                type_instance_kind, type_instance_elem_ref_tag,
-                type_instance_elem_ref_payload, instance)) return;
+            if (!checked_index_container<MutableCheckedTypeGraph>(receiver_tag, receiver_payload,
+                mutable_type_capacity(), instance)) return;
             receiver_tag = type_instance_elem_ref_tag[instance];
             receiver_payload = type_instance_elem_ref_payload[instance];
             member_node = member_next_node[member_node];
@@ -252,14 +251,14 @@ void publish_member_field_chain_for_root(uint member_node)
         // Member selection automatically dereferences references. The value
         // still carries its reference type; only lookup uses the referent.
         for (uint depth = 0u; depth < 64u && receiver_tag == TYPE_REF_INSTANCE &&
-             receiver_payload < checked_type_capacity() &&
+             receiver_payload < mutable_type_capacity() &&
              type_instance_kind[receiver_payload] == 4u; depth++)
         {
             uint referent = receiver_payload;
             receiver_tag = type_instance_elem_ref_tag[referent];
             receiver_payload = type_instance_elem_ref_payload[referent];
         }
-        uint context_instance = receiver_tag == TYPE_REF_INSTANCE && (receiver_payload < checked_type_capacity())
+        uint context_instance = receiver_tag == TYPE_REF_INSTANCE && (receiver_payload < mutable_type_capacity())
             ? receiver_payload
             : INVALID;
         uint tag = TYPE_REF_INVALID; uint payload = INVALID;
@@ -283,7 +282,7 @@ void publish_member_field_chain_for_root(uint member_node)
                 if (!valid_token(payload)) return;
                 uint slot = type_generic_param_slot_by_token[payload];
                 if (slot == INVALID || context_instance == INVALID ||
-                    !ScopedCheckedTypeGraph.environment_argument(context_instance, slot, tag, payload)) return;
+                    !MutableCheckedTypeGraph.environment_argument(context_instance, slot, tag, payload)) return;
                 already_projected = true;
             }
             ordinal = ordinal_for_field_row(struct_node, field_row);
@@ -307,10 +306,14 @@ void publish_member_field_chain_for_root(uint member_node)
 
         if (tag == TYPE_REF_INVALID || payload == INVALID) return;
 
-        if (tag == TYPE_REF_INSTANCE && !checked_scoped_reference(
-            tag, payload, already_projected ? INVALID : context_instance, gParams.n_tokens, tag, payload))
+        // A field type written in the receiver declaration's scope is
+        // substituted under the receiver application (canonical IDs).
+        uint failure = 0u;
+        if (tag == TYPE_REF_INSTANCE && !ct_scoped_reference(
+            tag, payload, already_projected ? INVALID : context_instance, gParams.n_tokens,
+            tag, payload, failure))
         {
-            record_min_token_error(status, member_token, 3u, 0u);
+            record_min_token_error(status, member_token, 3u, failure);
             return;
         }
 

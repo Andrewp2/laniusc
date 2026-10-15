@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+"""Compile and run every stdlib/generics fixture through one warm daemon.
+
+usage:
+  tools/fixture_sweep.py run [--laniusc PATH] [--shard I/N] [--resume] [--suite NAME]...
+                             [--pattern TEXT] [--out DIR] [--timeout S] [--memory-max SIZE]
+  tools/fixture_sweep.py report [--out DIR] [--write FILE.md]
+  tools/fixture_sweep.py stdlib [--laniusc PATH] [--each] [--out DIR]
+  tools/fixture_sweep.py list [--suite NAME]...
+
+`run` compiles each fixture with the resident daemon (like tools/generics_matrix.py),
+runs the ELF, and compares the result with the fixture's expectation. Suites:
+stdlib_foundation (tests/fixtures/stdlib_foundation, expectations parsed from the
+Rust tests by tools/fixture_expectations.py), generics_matrix and generics_backlog
+(exit 42 unless the first line is `// expect: N`). Results go to
+DIR/results-shard-I-of-N.json; `report` merges every shard file in DIR and prints
+pass/fail counts grouped by status and diagnostic code, with the largest failure
+groups and an example location for each.
+
+`stdlib` runs `laniusc check` on an entry that imports every stdlib module; with
+--each it also compiles one entry per module through the daemon, so every
+failing module is listed (a single check stops at the first error).
+
+Every mode touches the GPU: run it through
+target/claude-work/bin/heavy, and split `run` with --shard so that each
+hold stays under ten minutes (about 1.5 s per fixture on a warm daemon).
+"""
+
+from __future__ import annotations
+
+import argparse
+import atexit
+import collections
+import json
+import os
+import pathlib
+import queue
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+STDLIB = ROOT / "stdlib"
+DEFAULT_OUT = ROOT / "target" / "fixture_sweep"
+SUITES = ("stdlib_foundation", "generics_matrix", "generics_backlog")
+
+
+# ---------------------------------------------------------------------------
+# Daemon
+
+
+class Daemon:
+    """One resident compiler under a memory-capped scope of its own."""
+
+    started = 0
+    live: list["Daemon"] = []
+
+    def __init__(self, laniusc: str, memory_max: str, readback_timeout_ms: str, stderr_path: pathlib.Path):
+        env = dict(os.environ, LANIUS_READBACK_TIMEOUT_MS=readback_timeout_ms)
+        argv = [laniusc, "daemon", "--stdio", "--backend", "x86_64", "--stdlib-root", str(STDLIB)]
+        self.unit = None
+        if shutil.which("systemd-run"):
+            Daemon.started += 1
+            self.unit = f"lanius-sweep-{os.getpid()}-{Daemon.started}.scope"
+            argv = ["systemd-run", "--user", "--scope", "-q", f"--unit={self.unit}",
+                    "-p", f"MemoryMax={memory_max}", "-p", "MemorySwapMax=0"] + argv
+        self.stderr_path = stderr_path
+        self.process = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=open(stderr_path, "a"), text=True, bufsize=1)
+        Daemon.live.append(self)
+        self.lines: queue.Queue = queue.Queue()
+        threading.Thread(target=self._read, daemon=True).start()
+        self.ready = self._next(None, 900)
+
+    def _read(self):
+        for line in self.process.stdout:
+            self.lines.put(line)
+        self.lines.put(None)
+
+    def _next(self, request_id, timeout):
+        deadline = time.time() + timeout
+        while True:
+            try:
+                line = self.lines.get(timeout=max(0.0, deadline - time.time()))
+            except queue.Empty:
+                raise TimeoutError
+            if line is None:
+                raise RuntimeError(f"daemon exited; see {self.stderr_path}")
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if request_id is None or msg.get("id") == request_id:
+                return msg
+
+    def request(self, obj: dict, timeout: float) -> dict:
+        self.process.stdin.write(json.dumps(obj) + "\n")
+        self.process.stdin.flush()
+        return self._next(obj["id"], timeout)
+
+    def kill(self):
+        if self.process.poll() is None:
+            try:
+                self.request({"id": "shutdown", "command": "shutdown"}, 20)
+                self.process.wait(timeout=20)
+            except (TimeoutError, RuntimeError, subprocess.TimeoutExpired, BrokenPipeError):
+                pass
+        self.process.kill()
+        self.process.wait()
+        if self.unit:
+            subprocess.run(["systemctl", "--user", "stop", self.unit], stderr=subprocess.DEVNULL)
+        if self in Daemon.live:
+            Daemon.live.remove(self)
+
+
+def kill_live_daemons(*_):
+    for daemon in list(Daemon.live):
+        daemon.kill()
+
+
+atexit.register(kill_live_daemons)
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+signal.signal(signal.SIGHUP, lambda *_: sys.exit(129))
+
+
+# ---------------------------------------------------------------------------
+# Cases
+
+
+def suite_of(path: pathlib.Path) -> str:
+    for suite in SUITES:
+        if f"/{suite}/" in str(path):
+            return suite
+    return "other"
+
+
+def relative(path: pathlib.Path) -> str:
+    try:
+        return str(path.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def load_cases(suites: list[str], pattern: str) -> list:
+    from fixture_expectations import load_expectations
+
+    cases = [
+        expectation
+        for expectation in load_expectations(ROOT)
+        if expectation.kind != "module"
+        and suite_of(expectation.path) in suites
+        and pattern in relative(expectation.path)
+    ]
+    return sorted(cases, key=lambda expectation: relative(expectation.path))
+
+
+def describe_expectation(expectation) -> dict:
+    return {
+        "kind": expectation.kind,
+        "exit_code": expectation.exit_code,
+        "signal": expectation.signal,
+        "stdout": None if expectation.stdout is None else expectation.stdout.decode("utf-8", "replace")[:300],
+        "error_code": expectation.error_code,
+        "harness": list(expectation.harness),
+        "source": expectation.source,
+    }
+
+
+def diagnostic_fields(response: dict) -> dict:
+    diagnostic = response.get("diagnostic") or {}
+    label = diagnostic.get("primary_label") or {}
+    location = None
+    if label.get("path"):
+        location = f"{relative(pathlib.Path(label['path']))}:{label.get('line')}:{label.get('column')}"
+    message = diagnostic.get("message") or response.get("protocol_error") or response.get("error") or ""
+    return {
+        "code": diagnostic.get("code"),
+        "title": diagnostic.get("title"),
+        "message": str(message)[:500],
+        "location": location,
+        "source_line": (label.get("source_line") or "").strip()[:200] or None,
+    }
+
+
+def run_elf(elf: pathlib.Path) -> dict:
+    elf.chmod(0o755)
+    try:
+        completed = subprocess.run([str(elf)], capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return {"timeout": True}
+    code = completed.returncode
+    return {
+        "exit_code": code if code >= 0 else None,
+        "signal": -code if code < 0 else None,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+    }
+
+
+def judge_run(expectation, run: dict) -> tuple[str, str]:
+    if run.get("timeout"):
+        return "FAIL-RUN-TIMEOUT", "program ran longer than 10 s"
+    if expectation.signal is not None:
+        if run["signal"] != expectation.signal:
+            return "FAIL-EXIT", f"got exit {run['exit_code']} signal {run['signal']}, want signal {expectation.signal}"
+    elif expectation.exit_code is not None and run["exit_code"] != expectation.exit_code:
+        signal_text = f" signal {run['signal']}" if run["signal"] else ""
+        return "FAIL-EXIT", f"got exit {run['exit_code']}{signal_text}, want exit {expectation.exit_code}"
+    if expectation.stdout is not None and run["stdout"] != expectation.stdout:
+        return "FAIL-STDOUT", (
+            f"stdout {run['stdout'][:120]!r} != expected {expectation.stdout[:120]!r}"
+        )
+    return "PASS", ""
+
+
+def sweep(args) -> int:
+    suites = args.suite or list(SUITES)
+    cases = load_cases(suites, args.pattern)
+    index, count = parse_shard(args.shard)
+    cases = [case for position, case in enumerate(cases) if position % count == index - 1]
+    out = pathlib.Path(args.out)
+    elf_dir = out / "elf"
+    elf_dir.mkdir(parents=True, exist_ok=True)
+    result_path = out / f"results-shard-{index}-of-{count}.json"
+    stderr_path = out / f"daemon-shard-{index}-of-{count}.stderr"
+    results = []
+    previous_wall = 0.0
+    if args.resume and result_path.exists():
+        previous = json.loads(result_path.read_text())
+        results = previous["results"]
+        previous_wall = previous.get("wall_s", 0.0)
+    done = {result["name"] for result in results}
+    todo = [(number, case) for number, case in enumerate(cases) if relative(case.path) not in done]
+    print(f"fixture_sweep: {len(cases)} fixtures in shard {index}/{count}"
+          + (f", {len(todo)} not yet run" if args.resume else ""), flush=True)
+
+    started_all = time.time()
+    version = laniusc_version(args.laniusc)
+
+    def write(complete: bool):
+        document = {
+            "schema": "lanius.fixture-sweep.v1",
+            "laniusc": args.laniusc,
+            "laniusc_version": version,
+            "shard": f"{index}/{count}",
+            "suites": suites,
+            "pattern": args.pattern,
+            "cases_in_shard": len(cases),
+            "complete": complete,
+            "wall_s": round(previous_wall + time.time() - started_all, 1),
+            "daemon_ready": daemon.ready,
+            "results": results,
+        }
+        temporary = result_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document, indent=1) + "\n")
+        temporary.replace(result_path)
+
+    if not todo:
+        print("fixture_sweep: nothing left to run in this shard")
+        return 0
+    daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
+    print(f"fixture_sweep: daemon ready in {time.time() - started_all:.1f} s: "
+          f"{json.dumps(daemon.ready)[:300]}", flush=True)
+    for position, (number, expectation) in enumerate(todo):
+        name = relative(expectation.path)
+        elf = elf_dir / (re.sub(r"[^\w.-]", "_", name) + ".elf")
+        elf.unlink(missing_ok=True)
+        stdlib_root = expectation.stdlib_root or STDLIB
+        started = time.time()
+        record = {"name": name, "suite": suite_of(expectation.path), "expected": describe_expectation(expectation)}
+        try:
+            response = daemon.request({
+                "id": f"fixture-{number}", "command": "compile", "emit": "x86_64",
+                "input": str(expectation.path), "output": str(elf), "stdlib_root": str(stdlib_root),
+            }, args.timeout)
+        except (TimeoutError, RuntimeError) as error:
+            daemon.kill()
+            daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
+            status = "FAIL-COMPILE-TIMEOUT" if isinstance(error, TimeoutError) else "FAIL-DAEMON-EXIT"
+            record.update(status=status, detail=str(error)[:300])
+        else:
+            elapsed = time.time() - started
+            compiled = response.get("ok") is True and elf.exists()
+            if not compiled:
+                fields = diagnostic_fields(response)
+                record.update(fields)
+                if expectation.kind == "compile_error":
+                    if expectation.error_code and fields["code"] != expectation.error_code:
+                        record.update(status="FAIL-WRONG-CODE",
+                                      detail=f"got {fields['code']}, want {expectation.error_code}")
+                    else:
+                        record.update(status="PASS", detail="rejected as expected")
+                else:
+                    record.update(status="FAIL-COMPILE", detail=fields["message"])
+                # A failure after a readback timeout means the GPU hung; the
+                # next job would only queue behind it, so start a fresh daemon.
+                if elapsed > args.hang_seconds:
+                    record["hang_suspected"] = True
+                    daemon.kill()
+                    daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
+            elif expectation.kind == "compile_error":
+                record.update(status="FAIL-ACCEPTED", detail=f"compiled; want {expectation.error_code or 'an error'}")
+            elif expectation.kind == "check_only":
+                record.update(status="PASS", detail="compiled (check-only fixture)")
+            elif expectation.harness and any(need != "multiple-expectations" for need in expectation.harness):
+                record.update(status="COMPILED-ONLY", detail="needs " + ",".join(expectation.harness))
+            else:
+                run = run_elf(elf)
+                status, detail = judge_run(expectation, run)
+                record.update(status=status, detail=detail)
+                if not run.get("timeout"):
+                    record["actual"] = {
+                        "exit_code": run["exit_code"], "signal": run["signal"],
+                        "stdout": run["stdout"].decode("utf-8", "replace")[:300],
+                        "stderr": run["stderr"].decode("utf-8", "replace")[:300],
+                    }
+            record["compile_s"] = round(elapsed, 3)
+        record["elapsed_s"] = round(time.time() - started, 3)
+        results.append(record)
+        line = f"{record['status']:22} {record['elapsed_s']:6.1f}s  {name}"
+        if record["status"] not in ("PASS", "COMPILED-ONLY"):
+            line += f"\n    {record.get('code') or ''} {record.get('location') or ''} {record.get('detail', '')[:200]}"
+        print(line, flush=True)
+        # Written after every fixture, so a hold that is cut short keeps its
+        # results and `--resume` continues where it stopped.
+        write(complete=len(results) == len(cases))
+        if args.budget_seconds and time.time() - started_all > args.budget_seconds:
+            print(f"fixture_sweep: stopping after {args.budget_seconds} s budget; "
+                  f"{len(todo) - position - 1} fixtures not run (continue with --resume)", flush=True)
+            break
+    daemon.kill()
+    write(complete=len(results) == len(cases))
+    passed = sum(1 for result in results if result["status"] in ("PASS", "COMPILED-ONLY"))
+    print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled; wrote {relative(result_path)}")
+    return 0 if passed == len(results) else 1
+
+
+def parse_shard(text: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d+)/(\d+)", text)
+    if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
+        raise SystemExit(f"--shard must be I/N with 1 <= I <= N, got {text!r}")
+    return int(match.group(1)), int(match.group(2))
+
+
+def laniusc_version(laniusc: str) -> dict:
+    try:
+        text = subprocess.run([laniusc, "--version"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    fields = dict(line.split(": ", 1) for line in text.splitlines() if ": " in line)
+    return {key: fields.get(key) for key in ("shader-artifact-digest", "shader-artifact-count", "build-profile")}
+
+
+# ---------------------------------------------------------------------------
+# Report
+
+
+def failure_group(result: dict) -> str:
+    status = result["status"]
+    if status == "FAIL-COMPILE":
+        return f"compile error {result.get('code') or '(no code)'}"
+    if status == "FAIL-WRONG-CODE":
+        return f"wrong diagnostic {result.get('code') or '(no code)'}"
+    return {
+        "FAIL-COMPILE-TIMEOUT": "compile timeout (GPU hang)",
+        "FAIL-DAEMON-EXIT": "daemon exited",
+        "FAIL-ACCEPTED": "invalid program accepted",
+        "FAIL-EXIT": "wrong exit status",
+        "FAIL-STDOUT": "wrong stdout",
+        "FAIL-RUN-TIMEOUT": "program timeout",
+    }.get(status, status)
+
+
+def normalized_message(message: str) -> str:
+    message = re.sub(r"`[^`]*`", "`_`", message or "")
+    message = re.sub(r"\b\d+\b", "N", message)
+    return message[:160]
+
+
+def report(args) -> int:
+    out = pathlib.Path(args.out)
+    shards = sorted(out.glob("results-shard-*.json"))
+    if not shards:
+        raise SystemExit(f"no shard results in {out}")
+    results: dict[str, dict] = {}
+    documents = []
+    for path in shards:
+        document = json.loads(path.read_text())
+        documents.append((path, document))
+        for result in document["results"]:
+            results[result["name"]] = result
+    lines = render_report(results, documents)
+    text = "\n".join(lines) + "\n"
+    print(text)
+    if args.write:
+        pathlib.Path(args.write).write_text(text)
+        print(f"wrote {args.write}")
+    return 0
+
+
+def render_report(results: dict[str, dict], documents) -> list[str]:
+    by_suite = collections.defaultdict(collections.Counter)
+    for result in results.values():
+        by_suite[result["suite"]][result["status"]] += 1
+    failures = [result for result in results.values() if result["status"] not in ("PASS", "COMPILED-ONLY")]
+    groups = collections.defaultdict(list)
+    for result in failures:
+        groups[failure_group(result)].append(result)
+    lines = ["# Fixture sweep", ""]
+    first = documents[0][1]
+    lines.append(f"Compiler: `{first['laniusc']}` {json.dumps(first.get('laniusc_version', {}))}")
+    shard_times = ", ".join(
+        f"{document['shard']} ({document['wall_s']} s"
+        + ("" if document.get("complete", True) else
+           f", INCOMPLETE: {document['cases_in_shard'] - len(document['results'])} not run")
+        + ")"
+        for _, document in documents)
+    lines.append(f"Shards: {shard_times}")
+    lines.append("")
+    lines.append("| suite | fixtures | pass | compiled only | fail |")
+    lines.append("| --- | ---: | ---: | ---: | ---: |")
+    for suite, counts in sorted(by_suite.items()):
+        total = sum(counts.values())
+        failed = total - counts["PASS"] - counts["COMPILED-ONLY"]
+        lines.append(f"| {suite} | {total} | {counts['PASS']} | {counts['COMPILED-ONLY']} | {failed} |")
+    lines.append("")
+    lines.append("## Failures by group")
+    lines.append("")
+    lines.append("| group | count | example | location |")
+    lines.append("| --- | ---: | --- | --- |")
+    for group, members in sorted(groups.items(), key=lambda item: -len(item[1])):
+        example = members[0]
+        lines.append(f"| {group} | {len(members)} | `{example['name']}` | {example.get('location') or ''} |")
+    lines.append("")
+    for group, members in sorted(groups.items(), key=lambda item: -len(item[1])):
+        lines.append(f"### {group} ({len(members)})")
+        lines.append("")
+        messages = collections.defaultdict(list)
+        for member in members:
+            if member["status"] == "FAIL-EXIT":
+                key = member.get("detail") or ""  # keep the exit codes: 101 is a trap, 1 an error
+            elif member["status"] == "FAIL-STDOUT":
+                key = "stdout differs"
+            else:
+                key = normalized_message(member.get("message") or member.get("detail") or "")
+            messages[key].append(member)
+        for message, same in sorted(messages.items(), key=lambda item: -len(item[1])):
+            example = same[0]
+            lines.append(f"- {len(same)} x {message or '(no message)'}")
+            lines.append(f"  - e.g. `{example['name']}` {example.get('location') or ''}"
+                         + (f": `{example['source_line']}`" if example.get("source_line") else "")
+                         + (f" ({example.get('detail', '')[:160]})" if example.get('detail') and example['status'] != 'FAIL-COMPILE' else ""))
+            others = ", ".join(member["name"].rsplit("/", 1)[-1] for member in same[1:8])
+            if others:
+                lines.append(f"  - also: {others}{' ...' if len(same) > 8 else ''}")
+        lines.append("")
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# Stdlib check
+
+
+def stdlib_modules() -> list[tuple[str, pathlib.Path]]:
+    modules = []
+    for path in sorted(STDLIB.rglob("*.lani")):
+        match = re.search(r"^\s*module\s+([\w:]+)\s*;", path.read_text(), re.M)
+        if match:
+            modules.append((match.group(1), path))
+    return modules
+
+
+def stdlib_check(args) -> int:
+    out = pathlib.Path(args.out) / "stdlib"
+    out.mkdir(parents=True, exist_ok=True)
+    modules = stdlib_modules()
+    legacy = [relative(path) for path in sorted(STDLIB.rglob("*.lani"))
+              if path not in {module_path for _, module_path in modules}]
+    entry = out / "stdlib_all.lani"
+    entry.write_text("".join(f"import {name};\n" for name, _ in modules)
+                     + "\nfn main() -> i32 {\n    return 0;\n}\n")
+    print(f"fixture_sweep: laniusc check over {len(modules)} stdlib modules "
+          f"(not modules, skipped: {', '.join(legacy) or 'none'})", flush=True)
+    command = [args.laniusc, "check", "--diagnostic-format", "json", "--stdlib-root", str(STDLIB), str(entry)]
+    started = time.time()
+    try:
+        completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=args.timeout,
+                                   env=dict(os.environ, LANIUS_READBACK_TIMEOUT_MS=args.readback_timeout_ms))
+        status = "PASS" if completed.returncode == 0 else f"FAIL (exit {completed.returncode})"
+        output = (completed.stdout + completed.stderr).strip()
+    except subprocess.TimeoutExpired:
+        status, output = "FAIL (timeout)", ""
+    print(f"laniusc check: {status} in {time.time() - started:.1f} s")
+    if output:
+        print(output[:3000])
+    summary = {"modules": len(modules), "legacy_files": legacy, "check_status": status, "check_output": output[:20000]}
+    if args.each:
+        summary["modules_checked"] = check_each_module(args, modules, out)
+    (out / "stdlib_check.json").write_text(json.dumps(summary, indent=1) + "\n")
+    print(f"wrote {relative(out / 'stdlib_check.json')}")
+    return 0 if status == "PASS" else 1
+
+
+def check_each_module(args, modules, out: pathlib.Path) -> list[dict]:
+    daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, out / "daemon.stderr")
+    results = []
+    for number, (name, path) in enumerate(modules):
+        entry = out / f"import_{name.replace('::', '_')}.lani"
+        entry.write_text(f"import {name};\n\nfn main() -> i32 {{\n    return 0;\n}}\n")
+        elf = out / f"import_{name.replace('::', '_')}.elf"
+        started = time.time()
+        try:
+            response = daemon.request({"id": f"module-{number}", "command": "compile", "emit": "x86_64",
+                                       "input": str(entry), "output": str(elf), "stdlib_root": str(STDLIB)},
+                                      args.timeout)
+            record = {"module": name, "path": relative(path), "ok": response.get("ok") is True}
+            if not record["ok"]:
+                record.update(diagnostic_fields(response))
+        except (TimeoutError, RuntimeError) as error:
+            daemon.kill()
+            daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, out / "daemon.stderr")
+            record = {"module": name, "path": relative(path), "ok": False, "message": f"{type(error).__name__}"}
+        record["elapsed_s"] = round(time.time() - started, 2)
+        results.append(record)
+        mark = "ok  " if record["ok"] else "FAIL"
+        print(f"{mark} {record['elapsed_s']:6.1f}s {name}"
+              + ("" if record["ok"] else f"\n    {record.get('code')} {record.get('location')} {record.get('message', '')[:200]}"),
+              flush=True)
+    daemon.kill()
+    failed = [record for record in results if not record["ok"]]
+    print(f"\n{len(results) - len(failed)}/{len(results)} stdlib modules compile on their own")
+    return results
+
+
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="action", required=True)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--laniusc", default=str(ROOT / "target/release/laniusc"))
+    common.add_argument("--out", default=str(DEFAULT_OUT))
+    common.add_argument("--memory-max", default="8G")
+    common.add_argument("--timeout", type=float, default=120.0, help="seconds per compile")
+    common.add_argument("--readback-timeout-ms", default="20000",
+                        help="GPU readback timeout for the daemon, so a hang fails fast")
+    run = sub.add_parser("run", parents=[common], help="compile and run fixtures")
+    run.add_argument("--shard", default="1/1", help="run every Nth fixture starting at I (I/N)")
+    run.add_argument("--suite", action="append", choices=SUITES)
+    run.add_argument("--pattern", default="", help="only fixtures whose path contains this")
+    run.add_argument("--hang-seconds", type=float, default=15.0,
+                     help="restart the daemon after a failed compile that took this long")
+    run.add_argument("--budget-seconds", type=float, default=540.0,
+                     help="stop the shard after this long (keeps a GPU hold under 10 minutes); 0 = no limit")
+    run.add_argument("--resume", action="store_true",
+                     help="keep this shard's earlier results and run only the fixtures it has not reached")
+    rep = sub.add_parser("report", help="merge shard results and summarize")
+    rep.add_argument("--out", default=str(DEFAULT_OUT))
+    rep.add_argument("--write", help="also write the summary to this markdown file")
+    std = sub.add_parser("stdlib", parents=[common], help="laniusc check over the whole stdlib")
+    std.add_argument("--each", action="store_true", help="also compile one importing entry per module")
+    lst = sub.add_parser("list", help="print the fixtures and expectations without running anything")
+    lst.add_argument("--suite", action="append", choices=SUITES)
+    lst.add_argument("--pattern", default="")
+    args = parser.parse_args()
+    if args.action == "run":
+        return sweep(args)
+    if args.action == "report":
+        return report(args)
+    if args.action == "stdlib":
+        return stdlib_check(args)
+    cases = load_cases(args.suite or list(SUITES), args.pattern)
+    for case in cases:
+        print(f"{relative(case.path)}: {json.dumps(describe_expectation(case))}")
+    print(f"{len(cases)} fixtures; by kind: {dict(collections.Counter(case.kind for case in cases))}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

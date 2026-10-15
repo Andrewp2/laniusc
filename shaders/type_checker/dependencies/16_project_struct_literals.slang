@@ -5,9 +5,10 @@ import dependency_interface;
 import hir_records;
 import gpu_index;
 import status;
-import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
-import type_checker.concrete_type_equality;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
 import type_checker.dependencies.record_fields;
 
 struct Params { uint type_count; uint declaration_count; uint member_count; uint path_capacity; uint token_capacity; };
@@ -63,12 +64,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         record_min_token_error(status, constructor, 3u, 0u); return;
     }
     // Explicit constructor arguments remain a checked constraint. A matching
-    // nominal declaration does not authorize replacing different arguments.
-    if (type_expr_ref_tag[constructor] == 3u &&
-        checked_instance_is_closed(type_expr_ref_payload[constructor]) &&
-        !concrete_type_refs_equal<ScopedCheckedTypeGraph>(3u, instance,
-            3u, type_expr_ref_payload[constructor], checked_type_capacity()))
-    { record_min_token_error(status, constructor, 3u, 0u); return; }
+    // nominal declaration does not authorize replacing different arguments:
+    // a closed constructor type must have the context's canonical ID.
+    uint written = type_expr_ref_tag[constructor] == 3u
+        ? ct_ref(3u, type_expr_ref_payload[constructor]) : CT_NONE;
+    if (ct_closed(written))
+    {
+        uint spare = CT_NONE;
+        if (ct_intern_checked<CtCheckedRows>(3u, instance, spare) != written)
+        { record_min_token_error(status, constructor, 3u, 0u); return; }
+    }
     uint start = dependency_declaration_word(decl * 14u + 8u);
     uint count = dependency_declaration_word(decl * 14u + 9u);
     if (start > dependency_member_count() || count > dependency_member_count() - start) return;

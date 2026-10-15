@@ -100,9 +100,21 @@ impl AggregateComparisonOperation {
 /// Late expression typing and compact semantic-artifact projection.
 pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) body_specialization: Vec<(u32, ComputeOperation)>,
+    /// The body canonical stage runs ahead of `body_specialization[i]` for
+    /// this `i` (right after the bindings): the operations from there on
+    /// read the IDs of the specialized rows.
+    pub(in crate::type_checker) body_canonical_split: usize,
+    /// The body field closure (in place of type/instances/02d) runs ahead of
+    /// `body_specialization[i]` for this `i` (right after the body
+    /// application index).
+    pub(in crate::type_checker) body_field_closure: substitution_passes::FieldClosureOperations,
+    pub(in crate::type_checker) body_field_closure_at: usize,
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
+    /// The rows of the IDs the late canonical stage added.
+    pub(in crate::type_checker) late_row_seed: ComputeOperation,
+    pub(in crate::type_checker) native_word_memo_clear: crate::gpu::operations::ClearBuffersOperation,
     pub(in crate::type_checker) generic_native_words: ComputeOperation,
     pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
@@ -172,6 +184,8 @@ impl SemanticProjectionOperations {
                 ),
             ],
         )?;
+        let body_canonical_split = std::cell::Cell::new(0usize);
+        let body_field_closure_at = std::cell::Cell::new(0usize);
         Ok(Self {
             body_specialization: [
                 (
@@ -211,16 +225,12 @@ impl SemanticProjectionOperations {
                     "type_checker/type/instances/02c_index_closed_applications",
                 ),
                 (
-                    "type_check.body_specialization.materialize_applications",
-                    "type_checker/type/instances/02d_materialize_applications",
-                ),
-                (
                     "type_check.body_specialization.index_generated_applications",
                     "type_checker/type/instances/02c_index_closed_applications",
                 ),
                 (
                     "type_check.body_specialization.imported_fields",
-                    "type_checker/type/instances/02e_project_imported_fields",
+                    compiler_graph::IMPORTED_FIELDS_KERNEL,
                 ),
                 (
                     "type_check.body_specialization.member_receivers",
@@ -255,6 +265,10 @@ impl SemanticProjectionOperations {
                     "type_checker/type/instances/05b_array_literal_return_refs",
                 ),
                 (
+                    compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
+                    canonical_passes::CANONICAL_REARM_KERNEL,
+                ),
+                (
                     "type_check.body_specialization.payloads",
                     "type_checker/modules/10m2_type_match_payloads",
                 ),
@@ -284,7 +298,14 @@ impl SemanticProjectionOperations {
                         }),
                 )
             })
-            .map(|(name, kernel)| {
+            .enumerate()
+            .map(|(index, (name, kernel))| {
+                if name == compiler_graph::BODY_CANONICAL_AFTER_PASS {
+                    body_canonical_split.set(index + 1);
+                }
+                if name == compiler_graph::BODY_FIELD_CLOSURE_AFTER_PASS {
+                    body_field_closure_at.set(index + 1);
+                }
                 // These relations are initialized only for the corresponding
                 // parser feature. A reused workspace can contain unrelated
                 // scratch in their slots when the feature is absent.
@@ -307,11 +328,19 @@ impl SemanticProjectionOperations {
                     let tags: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, tag_column)?;
                     u32::try_from(tags.byte_size / 4)?
+                } else if name == compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
+                    let words = |name| -> Result<u32> {
+                        Ok(u32::try_from(
+                            typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
+                        )?)
+                    };
+                    words("canonical_row")? + words("canonical_atom")? + words("canonical_projection")?
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
                     u32::try_from(instances.byte_size / 4)?
                 } else if kernel.starts_with("type_checker/type/instances/02")
+                    || kernel == compiler_graph::IMPORTED_FIELDS_KERNEL
                     || kernel.ends_with("03b_member_substitute")
                     || kernel.ends_with("04b_struct_init_substitute")
                 {
@@ -332,6 +361,16 @@ impl SemanticProjectionOperations {
                 .map(|operation| (required_feature, operation))
             })
             .collect::<Result<_>>()?,
+            body_canonical_split: body_canonical_split.get(),
+            body_field_closure: substitution_passes::FieldClosureOperations::new(
+                device,
+                graph,
+                resources,
+                passes,
+                &substitution_passes::BODY_FIELD_CLOSURE,
+                &typed_buffer_from_resources(resources, "token_active_dispatch_args")?,
+            )?,
+            body_field_closure_at: body_field_closure_at.get(),
             retained_callables: CompactionOperation::indirect(
                 device,
                 graph,
@@ -349,6 +388,32 @@ impl SemanticProjectionOperations {
                 "type_checker/semantic/artifact/00c_generic_call_results",
             )?,
             canonical_types: CanonicalTypeOperations::new(device, graph, resources, passes)?,
+            late_row_seed: {
+                let words = |name| -> Result<u32> {
+                    Ok(u32::try_from(
+                        typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
+                    )?)
+                };
+                ComputeOperation::direct(
+                    device,
+                    graph,
+                    resources,
+                    compiler_graph::SUBSTITUTION_LATE_SEED_PASS,
+                    &passes.kernel(substitution_passes::SUBSTITUTION_SEED_KERNEL),
+                    words("canonical_row")?
+                        + words("canonical_atom")?
+                        + words("canonical_projection")?,
+                )?
+            },
+            native_word_memo_clear: {
+                let memo: LaniusBuffer<u32> =
+                    typed_buffer_from_resources(resources, "type_native_word_memo")?;
+                crate::gpu::operations::ClearBuffersOperation::new(
+                    graph,
+                    compiler_graph::SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS,
+                    &[("type_native_word_memo", (&memo).into())],
+                )?
+            },
             generic_native_words: ComputeOperation::direct(
                 device,
                 graph,
@@ -417,12 +482,13 @@ impl SemanticProjectionOperations {
 
 /// Hash-consed canonical type identities (docs/canonical-type-ids.md).
 ///
-/// Three stages share one table, cleared ahead of the dependency pages. The
+/// Four stages share one table, cleared ahead of the dependency pages. The
 /// dependency stage interns the resident page's signature types, once per
 /// page; the early stage interns the declared rows and constants ahead of
-/// the closed application index; the late stage interns what later
-/// producers added. The early and late stages first re-arm the candidates
-/// that are still empty or unknown. Each stage records round 0, then
+/// the closed application index; the body stage interns a body
+/// specialization's rows after its bindings; the late stage interns what
+/// later producers added. The early, body and late stages first re-arm the
+/// candidates that are still empty or unknown. Each stage records round 0, then
 /// batches of frontier rounds (indirect dispatches sized on the GPU); every
 /// batch ends with a copy of the interning counters, and the host records
 /// another batch only while candidates are pending, so the number of rounds
@@ -439,6 +505,11 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     late_round: ComputeInvocation,
     late_counts_readback: crate::gpu::operations::CopyBufferOperation,
     early_rearm: ComputeInvocation,
+    body_rearm: ComputeInvocation,
+    body_round0: ComputeInvocation,
+    body_round_args: ComputeInvocation,
+    body_round: ComputeInvocation,
+    body_counts_readback: crate::gpu::operations::CopyBufferOperation,
     dependency_begin: ComputeOperation,
     dependency_round0: ComputeOperation,
     dependency_round_args: ComputeInvocation,
@@ -446,9 +517,8 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     dependency_counts_readback: crate::gpu::operations::CopyBufferOperation,
     validate: Vec<ComputeOperation>,
     validation_readback: Option<crate::gpu::operations::CopyBufferOperation>,
-    /// Records (`ct_head` rows), argument words (`ct_args`), and the first
-    /// dynamic record (`ct_dynamic_base`: after the fixed records of every
-    /// candidate and dependency node).
+    /// Records (`ct_head` rows), argument words (`ct_args`), and the
+    /// entries of one frontier list (half of `canonical_frontier`).
     capacity: [u32; 3],
 }
 
@@ -457,6 +527,7 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
 pub(in crate::type_checker) enum CanonicalStage {
     Dependency,
     Early,
+    Body,
     Late,
 }
 
@@ -465,6 +536,7 @@ impl CanonicalStage {
         match self {
             Self::Dependency => "dependency",
             Self::Early => "early",
+            Self::Body => "body",
             Self::Late => "late",
         }
     }
@@ -530,6 +602,12 @@ impl CanonicalTypeOperations {
         let late_round = round.invocation(graph, late.round)?;
         let late_counts_readback = counts_copy(late.counts_readback)?;
         let early_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_PASS)?;
+        let body = &canonical_passes::CANONICAL_BODY_ROUNDS;
+        let body_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_BODY_REARM_PASS)?;
+        let body_round0 = round0.invocation(graph, body.round0)?;
+        let body_round_args = round_args.invocation(graph, body.round_args)?;
+        let body_round = round.invocation(graph, body.round)?;
+        let body_counts_readback = counts_copy(body.counts_readback)?;
         let dependency = &canonical_passes::CANONICAL_DEPENDENCY_ROUNDS;
         // Round 0 covers the largest page; lanes past the page's nodes exit.
         let page_rows = words("dependency_canonical_type_roots_a")?;
@@ -576,7 +654,8 @@ impl CanonicalTypeOperations {
                     words("ct_slot")?
                         .max(candidates)
                         .max(dependency_rows)
-                        .max(words("canonical_crosscheck_links")?),
+                        .max(words("canonical_crosscheck_links")?)
+                        .max(words("canonical_crosscheck_owner")?),
                 )?,
                 direct(
                     canonical_passes::CANONICAL_CROSSCHECK_BUCKETS_PASS,
@@ -604,6 +683,11 @@ impl CanonicalTypeOperations {
             late_round,
             late_counts_readback,
             early_rearm,
+            body_rearm,
+            body_round0,
+            body_round_args,
+            body_round,
+            body_counts_readback,
             dependency_begin,
             dependency_round0,
             dependency_round_args,
@@ -614,12 +698,12 @@ impl CanonicalTypeOperations {
             capacity: [
                 words("ct_head")? / 4,
                 words("ct_args")?,
-                32 + candidates + words("canonical_dependency_type")?,
+                words("canonical_frontier")? / 2,
             ],
         })
     }
 
-    /// Records, argument words and the first dynamic record of the canonical
+    /// Records, argument words and frontier list entries of the canonical
     /// table.
     pub(in crate::type_checker) fn capacity(&self) -> [u32; 3] {
         self.capacity
@@ -635,6 +719,10 @@ impl CanonicalTypeOperations {
                 self.round.record(encoder)?;
                 self.round_args.record(encoder)
             }
+            CanonicalStage::Body => {
+                self.round.record_invocation(encoder, &self.body_round)?;
+                self.round_args.record_invocation(encoder, &self.body_round_args)
+            }
             CanonicalStage::Late => {
                 self.round.record_invocation(encoder, &self.late_round)?;
                 self.round_args.record_invocation(encoder, &self.late_round_args)
@@ -646,6 +734,7 @@ impl CanonicalTypeOperations {
         match stage {
             CanonicalStage::Dependency => self.dependency_counts_readback.record(encoder),
             CanonicalStage::Early => self.counts_readback.record(encoder),
+            CanonicalStage::Body => self.body_counts_readback.record(encoder),
             CanonicalStage::Late => self.late_counts_readback.record(encoder),
         }
     }
@@ -672,6 +761,11 @@ impl CanonicalTypeOperations {
                 self.rearm.record_invocation(encoder, &self.early_rearm)?;
                 self.round0.record(encoder)?;
                 self.round_args.record(encoder)?;
+            }
+            CanonicalStage::Body => {
+                self.rearm.record_invocation(encoder, &self.body_rearm)?;
+                self.round0.record_invocation(encoder, &self.body_round0)?;
+                self.round_args.record_invocation(encoder, &self.body_round_args)?;
             }
             CanonicalStage::Late => {
                 self.rearm.record(encoder)?;

@@ -15,13 +15,29 @@ pub(crate) fn print_timer_trace(
         .unwrap_or(MINIMUM_TIME_TO_NOT_ELIDE_MS);
     let print_enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
         || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false);
+    // A timer's first stamp can run in an earlier submission than the one
+    // that produced `gpu_anchor` (typecheck readbacks submit partial
+    // encoders), so place spans through the job's clock calibration when
+    // there is one instead of assuming the first stamp ran at the anchor.
+    let calibration =
+        crate::gpu::timer::gpu_clock_calibration().filter(|cal| stamps[0].ticks >= cal.ticks);
+    let tick_ms = |ticks: u64| ticks as f64 * period_ns as f64 / 1_000_000.0;
     let mut last = stamps[0].ticks;
     let mut total = 0.0f64;
     for sample in stamps.iter().skip(1) {
         let label = &sample.label;
         let value = sample.ticks;
-        let dt_ms = value.saturating_sub(last) as f64 * period_ns as f64 / 1_000_000.0;
-        let start_ms = total;
+        let dt_ms = tick_ms(value.saturating_sub(last));
+        let (gpu_anchor, start_ms) = match calibration {
+            Some(cal) if last < cal.ticks || value < cal.ticks => {
+                // A stamp that never executed: nothing to place.
+                total += dt_ms;
+                last = value;
+                continue;
+            }
+            Some(cal) => (cal.host, tick_ms(last - cal.ticks)),
+            None => (gpu_anchor, total),
+        };
         total += dt_ms;
         let submission_gap = is_submission_begin(label);
         if print_enabled && dt_ms >= min_ms {

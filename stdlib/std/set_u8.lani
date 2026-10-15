@@ -7,9 +7,9 @@ module std::set_u8;
 import core::bits;
 
 fn mask(item: u8) -> u32 {
-    let code: i32 = item;
+    let code: i32 = item as i32;
     let one: u32 = 1;
-    let shift: u32 = code % 32;
+    let shift: u32 = (code % 32) as u32;
     return one << shift;
 }
 
@@ -18,7 +18,7 @@ pub fn len(words: [u32]) -> i32 {
     let index: i32 = 0;
     while (index < 8) {
         let count: u32 = core::bits::count_ones_u32(words[index]);
-        total += count;
+        total += count as i32;
         index += 1;
     }
     return total;
@@ -43,7 +43,7 @@ pub fn is_full(words: [u32]) -> bool {
 }
 
 pub fn contains(words: [u32], item: u8) -> bool {
-    let code: i32 = item;
+    let code: i32 = item as i32;
     return (words[code / 32] & mask(item)) != 0;
 }
 
@@ -53,7 +53,7 @@ pub fn at_or(words: [u32], ordinal: i32, fallback: u8) -> u8 {
     let code: i32 = 0;
     let seen: i32 = 0;
     while (code < 256) {
-        let item: u8 = code;
+        let item: u8 = code as u8;
         if (contains(words, item)) {
             if (seen == ordinal) { return item; }
             seen += 1;
@@ -65,7 +65,7 @@ pub fn at_or(words: [u32], ordinal: i32, fallback: u8) -> u8 {
 
 // Return true only when membership changed. A duplicate is left unchanged.
 pub fn insert(words: [u32], item: u8) -> bool {
-    let code: i32 = item;
+    let code: i32 = item as i32;
     let index: i32 = code / 32;
     let bit: u32 = mask(item);
     let old: u32 = words[index];
@@ -76,7 +76,7 @@ pub fn insert(words: [u32], item: u8) -> bool {
 
 // Return true only when a present member was removed.
 pub fn remove(words: [u32], item: u8) -> bool {
-    let code: i32 = item;
+    let code: i32 = item as i32;
     let index: i32 = code / 32;
     let bit: u32 = mask(item);
     let old: u32 = words[index];

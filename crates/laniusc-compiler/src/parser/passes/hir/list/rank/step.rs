@@ -182,6 +182,17 @@ impl ParserBuffers {
         )
     }
 
+    pub fn path_segment_rank_buffers(&self) -> ListRankBuffers<'_> {
+        ListRankBuffers::new(
+            &self.hir_path_segment_owner_a,
+            &self.hir_path_segment_link_a,
+            &self.hir_path_segment_rank_a,
+            &self.hir_path_segment_owner_b,
+            &self.hir_path_segment_link_b,
+            &self.hir_path_segment_rank_b,
+        )
+    }
+
     pub fn call_argument_rank_buffers(&self) -> ListRankBuffers<'_> {
         ListRankBuffers::new(
             &self.hir_call_arg_owner_a,

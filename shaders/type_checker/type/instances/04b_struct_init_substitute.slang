@@ -1,13 +1,12 @@
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
 // Substitute generic struct-literal field refs through contextual instances.
 //
 // The preceding HIR pass publishes declaration-side field refs and context
-// instance tokens. This pass is token-indexed and consumes only type-instance
-// argument arrays to materialize concrete expected field types.
-
+// instance tokens. This pass is token-indexed: each field's declared type is
+// substituted under its context application over canonical IDs and realized
+// as a checked row (ct_scoped.slang).
+import type_checker.mutable_checked_type_graph;
+import type_checker.substitution.ct_scoped;
 import status;
-import type_checker.concrete_type_closure;
 
 struct Params
 {
@@ -49,51 +48,6 @@ bool valid_token(uint i)
     return i != INVALID && i < gParams.n_tokens;
 }
 
-uint arg_ref_index(uint instance_i, uint slot)
-{
-    uint start = type_instance_arg_start[instance_i];
-    return start == INVALID ? INVALID : start + slot;
-}
-
-uint arg_row_ref_index(uint instance_i, uint slot)
-{
-    uint start = type_instance_arg_row_start[instance_i];
-    uint ref_i = start == INVALID ? INVALID : start + slot;
-    return ref_i != INVALID && ref_i < type_instance_arg_row_count_out[0u]
-        ? ref_i
-        : INVALID;
-}
-
-bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!(instance_i < checked_type_capacity()) || slot >= type_instance_arg_count[instance_i])
-        return false;
-
-    uint row_i = arg_row_ref_index(instance_i, slot);
-    if (row_i != INVALID)
-    {
-        tag = type_instance_arg_row_ref_tag[row_i];
-        payload = type_instance_arg_row_ref_payload[row_i];
-        if (tag != TYPE_REF_INVALID)
-            return true;
-    }
-
-    uint ref_i = arg_ref_index(instance_i, slot);
-    if (ref_i == INVALID)
-        return false;
-
-    tag = type_instance_arg_ref_tag[ref_i];
-    payload = type_instance_arg_ref_payload[ref_i];
-    return tag != TYPE_REF_INVALID;
-}
-
-bool instance_ref_needs_leaf_rows(uint instance_i)
-{
-    return !checked_instance_is_closed(instance_i);
-}
-
 uint type_ref_to_type_code(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
@@ -113,10 +67,13 @@ void publish_visible_field_type(uint field_token)
     uint tag = struct_init_field_expected_ref_tag[field_token];
     uint payload = struct_init_field_expected_ref_payload[field_token];
     uint instance_i = struct_init_field_expected_context_instance[field_token];
-    if ((tag == TYPE_REF_GENERIC_PARAM || tag == TYPE_REF_INSTANCE) && !checked_scoped_reference(
-        tag, payload, instance_i, gParams.n_tokens, tag, payload))
+    uint failure;
+    if ((tag == TYPE_REF_GENERIC_PARAM || tag == TYPE_REF_INSTANCE) && !ct_scoped_reference(
+        tag, payload, instance_i, gParams.n_tokens, tag, payload, failure))
     {
-        record_min_token_error(status, field_token, ERR_ASSIGN_MISMATCH, 0u);
+        // A busy row was another lane's to write; it is reported as a
+        // mismatch too, as a missing row was.
+        record_min_token_error(status, field_token, ERR_ASSIGN_MISMATCH, failure);
         return;
     }
 

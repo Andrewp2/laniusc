@@ -16,7 +16,7 @@ fn write_digits(handle: i32, value: core::wide_i64::WideI64, uppercase: bool) ->
         } else {
             digit = core::hex_wide_i64::byte_at_lower_or(value, position, 0);
         }
-        let byte: i32 = digit;
+        let byte: i32 = digit as i32;
         let written: i32 = std::io::write_byte(handle, byte);
         if (written<0) {
             return written;
@@ -26,7 +26,7 @@ fn write_digits(handle: i32, value: core::wide_i64::WideI64, uppercase: bool) ->
         }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 // Success returns the character count. Negative host errors pass through; a
 // short write returns -1. Failure can leave a visible prefix.

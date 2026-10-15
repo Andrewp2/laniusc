@@ -12,11 +12,20 @@ public static const uint PLR_BUILDING = 0x80000001u;
 public static const uint PLR_BUSY = 0x80000000u;
 public RWStructuredBuffer<uint> program_evidence_native_recipes;
 
+// The binding covers the retained allocation; the dispatch parameters carry
+// the logical extent. A logical extent beyond the allocation reads as empty.
+public uint plr_logical_words()
+{
+    uint physical; uint stride;
+    program_evidence_native_recipes.GetDimensions(physical, stride);
+    uint logical = program_evidence_params.recipe_word_count;
+    return select(logical <= physical, logical, 0u);
+}
+
 public bool plr_table(uint table, out uint offset, out uint count, out uint width)
 {
     offset = PEV_INVALID; count = 0u; width = 0u;
-    uint actual; uint stride;
-    program_evidence_native_recipes.GetDimensions(actual, stride);
+    uint actual = plr_logical_words();
     if (table >= 4u || actual < PLR_HEADER_WORDS) return false;
     uint logical = program_evidence_native_recipes[5u];
     if (logical < PLR_HEADER_WORDS || logical > actual) return false;
@@ -55,8 +64,7 @@ public bool plr_read_group(uint group, out uint3 value)
 }
 public bool plr_header_is_valid()
 {
-    uint actual; uint stride;
-    program_evidence_native_recipes.GetDimensions(actual, stride);
+    uint actual = plr_logical_words();
     if (actual < PLR_HEADER_WORDS || !pev_catalog_is_valid()) return false;
     if (program_evidence_native_recipes[0u] != PLR_MAGIC ||
         program_evidence_native_recipes[1u] != PLR_VERSION ||

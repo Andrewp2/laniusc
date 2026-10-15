@@ -12,6 +12,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint local = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint row;
     if (!pev_catalog_admission_row(8u, local, row)) return;
-    EvidenceStatus status = pev_admit_catalog_predicate(row);
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = pev_admit_catalog_predicate(row);
     pev_catalog_failure(status);
 }

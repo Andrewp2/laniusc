@@ -29,7 +29,7 @@ uint active_count() {
 bool path_segment(uint production) {
     return production == PROD_PATH_IDENT || production == PROD_PATH_IDENT_ARGS ||
            production == PROD_TYPE_PATH_IDENT || production == PROD_BOUND_TYPE_PATH_IDENT ||
-           production == PROD_ARRAY_LENGTH_PATH_IDENT;
+           production == PROD_ARRAY_LENGTH_PATH_IDENT || production == PROD_CAST_TYPE_PATH_IDENT;
 }
 uint file_for_raw(uint raw) {
     uint token = raw < gCanonical.raw_capacity ? hir_token_pos[raw] : INVALID;

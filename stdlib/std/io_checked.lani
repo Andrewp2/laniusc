@@ -19,7 +19,7 @@ pub fn read_exact_stdin(buffer: ptr, len: usize) -> bool {
         if (count <= 0) {
             return false;
         }
-        let advanced: usize = count;
+        let advanced: usize = count as usize;
         if (advanced>remaining) {
             return false;
         }
@@ -47,10 +47,10 @@ pub fn read_to_end_stdin_into_buffer(buffer: ptr, capacity: usize) -> i32 {
             return -1;
         }
         if (count == 0) {
-            let complete: i32 = received;
+            let complete: i32 = received as i32;
             return complete;
         }
-        let advanced: usize = count;
+        let advanced: usize = count as usize;
         if (advanced>remaining) {
             return -1;
         }
@@ -61,7 +61,7 @@ pub fn read_to_end_stdin_into_buffer(buffer: ptr, capacity: usize) -> i32 {
     if (std::io::read_stdin(probe_ptr, 1) != 0) {
         return -1;
     }
-    let complete: i32 = received;
+    let complete: i32 = received as i32;
     return complete;
 }
 
@@ -82,7 +82,7 @@ fn write_all(buffer: ptr, len: usize, to_stderr: bool) -> bool {
         if (count <= 0) {
             return false;
         }
-        let advanced: usize = count;
+        let advanced: usize = count as usize;
         if (advanced>remaining) {
             return false;
         }
@@ -119,7 +119,7 @@ pub fn copy_stdin_to_stdout_with_buffer(buffer: ptr, capacity: usize) -> bool {
         if (received == 0) {
             return true;
         }
-        let count: usize = received;
+        let count: usize = received as usize;
         if (count>capacity || !write_all_stdout(buffer, count)) {
             return false;
         }

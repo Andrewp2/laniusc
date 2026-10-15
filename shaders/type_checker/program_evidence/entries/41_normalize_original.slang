@@ -16,5 +16,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     if (!pps_count(PPS_WORK, count))
     { pev_batch_failure(pev_invalid(1u, PPS_WORK, PEV_INVALID)); return; }
     if (!pev_dispatch_row(local, count, row)) return;
-    pev_batch_failure(pps_normalize_original_work(row));
+    EvidenceStatus status;
+    if (pev_bind_scratch(local, row, status)) status = pps_normalize_original_work(row);
+    pev_batch_failure(status);
 }

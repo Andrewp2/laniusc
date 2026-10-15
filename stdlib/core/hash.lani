@@ -16,7 +16,7 @@ pub trait Hash<T> {
 
 pub impl Hash<i32> for i32 {
     pub fn hash(value: i32) -> u32 {
-        return value;
+        return value as u32;
     }
 }
 
@@ -45,27 +45,27 @@ pub fn hash_char(value: char) -> u32 { return char::hash(value); }
 // Narrow integer trait keys collide with the corresponding 32-bit key, so
 // these entry points widen explicitly and return the 32-bit bit pattern.
 pub fn hash_i8(value: i8) -> u32 {
-    let widened: i32 = value;
+    let widened: i32 = value as i32;
     return widened as u32;
 }
 
 pub fn hash_i16(value: i16) -> u32 {
-    let widened: i32 = value;
+    let widened: i32 = value as i32;
     return widened as u32;
 }
 
 pub fn hash_u8(value: u8) -> u32 {
-    let widened: u32 = value;
+    let widened: u32 = value as u32;
     return widened;
 }
 
 pub fn hash_u16(value: u16) -> u32 {
-    let widened: u32 = value;
+    let widened: u32 = value as u32;
     return widened;
 }
 
 pub fn fnv1a_step(state: u32, value: u8) -> u32 {
-    let byte: u32 = value;
+    let byte: u32 = value as u32;
     return core::number_u32::wrapping_mul(state ^ byte, FNV1A_PRIME);
 }
 

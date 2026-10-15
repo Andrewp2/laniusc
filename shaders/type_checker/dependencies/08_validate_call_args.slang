@@ -1,7 +1,10 @@
 import type_checker.constant_atoms_identity;
-// Validate dependency-call roots through complete checked type graphs and the
-// accepted callable environment, including the root array-to-slice borrowing
-// conversion. Portable constant children do not align with source HIR ordinals.
+// Validate dependency-call arguments over canonical IDs. The parameter's
+// declared type under the call's accepted environment (call_env.slang, the
+// value environment) must be the argument's checked type, by ID. A declared
+// slice root also accepts an array of the same element (the root
+// array-to-slice borrowing conversion); nested elements and constants stay
+// exact. Portable constant children do not align with source HIR ordinals.
 
 import dependency_interface;
 import type_checker.dependencies.method_receiver;
@@ -10,10 +13,13 @@ import gpu_index;
 import hir_expr_semantics;
 import primitive_types;
 import type_checker.generic_result_type_origin;
-import type_checker.calls.checked_call_type_graph;
 import type_checker.checked_type_graph;
 import type_checker.concrete_type_closure;
-import type_checker.dependencies.canonical_field_types;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
+import type_checker.substitution.ct_subst;
+import type_checker.substitution.call_env;
 import status;
 
 struct Params
@@ -48,6 +54,7 @@ StructuredBuffer<uint> call_generic_return_arg_node;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> canonical_type_roots;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -154,6 +161,43 @@ bool stable_nominal_matches(
            dependency_type_word(expected_base + 8u) == dependency_type_word(actual_base + 8u);
 }
 
+// Imported patterns bind only their declaration's slot leaves, which carry
+// their own slots; a local parameter token has no slot here.
+struct DependencySlots : ICtSlots
+{
+    uint type_slot(uint token) { return CT_SLOT_NONE; }
+    uint const_slot(uint token) { return CT_SLOT_NONE; }
+    uint const_scalar(uint token) { return 0u; }
+}
+
+// The canonical type of dependency node `t` of the resident page (its alias
+// root's), or CT_UNKNOWN.
+uint dependency_type_id(uint t)
+{
+    uint count = dependency_type_count();
+    uint root = t < count ? canonical_type_roots[t] : INVALID;
+    uint base = dependency_constant_type_span_base();
+    uint capacity = ct_dependency_capacity();
+    if (root >= count || base > capacity || root >= capacity - base) return CT_UNKNOWN;
+    return canonical_dependency_type[base + root];
+}
+
+// Whether checked row `row` is `pattern` under `environment`. A slice
+// pattern with `slice_root` accepts an array of the same element.
+bool argument_matches(uint pattern, uint environment, uint row, bool slice_root)
+{
+    uint spare = CT_NONE;
+    uint actual = ct_intern_checked<CtCheckedRows>(TYPE_REF_INSTANCE, row, spare);
+    if (!ct_is_resolved(actual) || !ct_is_resolved(pattern)) return false;
+    bool coerce = slice_root && ct_kind(pattern) == CT_KIND_SLICE && ct_kind(actual) == CT_KIND_ARRAY;
+    DependencySlots slots;
+    CtSpare lookup = ct_spare_none();
+    // Lookup only: a substituted type that equals the actual one is interned.
+    uint expected = ct_subst<DependencySlots>(slots, environment,
+        coerce ? ct_arg(pattern, 0u) : pattern, false, lookup);
+    return ct_is_resolved(expected) && expected == (coerce ? ct_arg(actual, 0u) : actual);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -205,16 +249,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint expected_type_i = canonical_type_roots[expected_type];
     uint expected_base = expected_type_i * TYPE_WORDS;
     uint expected_kind = dependency_type_word(expected_base);
+    // The declared type and the accepted callable environment: receiver and
+    // method-owned parameters already compose into it.
+    uint pattern = dependency_type_id(expected_type);
+    uint environment = ct_call_env(callee).x;
     // Retain the passing mode of the bound parameter before this page expires.
     // A declaration-side T can denote a slice; copying its source array here
     // would sever the borrowed alias even though call checking accepted it.
-    uint passing_kind = expected_kind;
-    uint2 bound = uint2(TYPE_REF_EXTERNAL_CANONICAL, expected_type_i);
-    if (canonical_field_leaf<ScopedCheckedCallTypeGraph>(0x80000000u | callee, bound) &&
-        bound.x == TYPE_REF_INSTANCE && bound.y < checked_type_capacity())
-        passing_kind = type_instance_kind[bound.y] + 2u;
-    semantic_argument_mode_by_hir[arg.value] =
-        passing_kind == 6u ? 3u : passing_kind == 5u ? 2u : 1u;
+    uint mode = expected_kind == 6u ? 3u : expected_kind == INTERFACE_TYPE_SLICE ? 2u : 1u;
+    if (ct_is_param(pattern))
+    {
+        DependencySlots slots;
+        uint kind = ct_kind(ct_subst_param(slots, environment, pattern));
+        mode = kind == CT_KIND_REF ? 3u : kind == CT_KIND_SLICE ? 2u : 1u;
+    }
+    semantic_argument_mode_by_hir[arg.value] = mode;
 
     // Imported function generics participate in the shared compact call-row
     // claim pipeline. This late structural validator must not second-guess the
@@ -290,12 +339,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
              expected_kind == INTERFACE_TYPE_DECLARATION) &&
             actual_payload < checked_type_capacity())
         {
-            // Receiver and method-owned parameters already compose into the
-            // checked call environment. A receiver instance alone omits the
-            // method's own type and constant slots.
-            uint environment = 0x80000000u | callee;
-            if (!canonical_field_ref_matches<ScopedCheckedCallTypeGraph>(environment,
-                expected_type_i, actual_payload, checked_type_capacity(), gParams.visible_capacity,
+            // A receiver instance alone would omit the method's own type and
+            // constant slots; the call environment has them.
+            if (!argument_matches(pattern, environment, actual_payload,
                 expected_kind == INTERFACE_TYPE_SLICE))
                 record_min_token_error(status, arg_token < gParams.visible_capacity ? arg_token : callee,
                     ERR_ASSIGN_MISMATCH, HIR_SEM_TY_UNKNOWN);

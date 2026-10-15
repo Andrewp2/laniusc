@@ -8,7 +8,7 @@ use std::{
         Mutex,
         OnceLock,
         Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -18,6 +18,19 @@ use log::warn;
 const PIPELINE_CACHE_FILE_MAGIC: [u8; 8] = *b"LANIUSPC";
 const PIPELINE_CACHE_FILE_VERSION: u32 = 1;
 const PIPELINE_CACHE_HEADER_LEN: usize = 8 + 4 + 4 + 8 + 8 + 8;
+/// While pipelines are being created, check the cache at most this often, so
+/// a killed or timed-out process keeps most of its driver compiles.
+const LAZY_PERSIST_INTERVAL: Duration = Duration::from_secs(10);
+/// Pipelines created since the cache was last checked. Creation time cannot
+/// tell a cache hit from a compile (the driver's own disk cache serves
+/// compiles in a few milliseconds), so a check compares the cache content
+/// with what is on disk instead.
+static PIPELINES_CREATED_SINCE_PERSIST: AtomicU64 = AtomicU64::new(0);
+/// When the cache was last persisted; None before the first persist.
+static LAST_PIPELINE_CACHE_PERSIST: Mutex<Option<Instant>> = Mutex::new(None);
+/// Serializes persists: concurrent writers would share one tmp file.
+static PIPELINE_CACHE_PERSIST_LOCK: Mutex<()> = Mutex::new(());
+static GLOBAL_DEVICE: OnceLock<Result<GpuDevice, GpuDeviceInitializationError>> = OnceLock::new();
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
     instance: wgpu::Instance,
@@ -118,6 +131,13 @@ impl GpuDevice {
 
     /// Persists the current wgpu pipeline cache to disk when supported.
     pub fn persist_pipeline_cache(&self) {
+        let _persist = PIPELINE_CACHE_PERSIST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        PIPELINES_CREATED_SINCE_PERSIST.store(0, Ordering::Release);
+        if let Ok(mut last) = LAST_PIPELINE_CACHE_PERSIST.lock() {
+            *last = Some(Instant::now());
+        }
         let timer = PipelineCachePersistTimer::new();
         let force_persist =
             crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false);
@@ -428,6 +448,15 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
     let device = Arc::new(device);
     let pipeline_cache = pipeline_cache.map(Arc::new);
     let pipeline_cache_dirty = Arc::new(AtomicBool::new(pipeline_cache_should_persist));
+    if pipeline_cache_should_persist {
+        // The cache file is missing or invalid: the next check writes it.
+        PIPELINES_CREATED_SINCE_PERSIST.fetch_add(1, Ordering::AcqRel);
+    }
+    // The loaded file counts as the last persist: a few driver compiles are
+    // saved by the persist after their load, not immediately one by one.
+    if let Ok(mut last) = LAST_PIPELINE_CACHE_PERSIST.lock() {
+        *last = Some(Instant::now());
+    }
     register_pipeline_cache(&device, pipeline_cache.as_ref(), &pipeline_cache_dirty);
 
     Ok(GpuDevice {
@@ -546,8 +575,7 @@ pub fn global() -> &'static GpuDevice {
 
 /// Returns the process-global GPU context or its retained initialization error.
 pub fn global_result() -> Result<&'static GpuDevice, &'static GpuDeviceInitializationError> {
-    static CTX: OnceLock<Result<GpuDevice, GpuDeviceInitializationError>> = OnceLock::new();
-    match CTX.get_or_init(GpuDevice::try_new) {
+    match GLOBAL_DEVICE.get_or_init(GpuDevice::try_new) {
         Ok(device) => Ok(device),
         Err(err) => Err(err),
     }
@@ -558,12 +586,98 @@ pub fn persist_pipeline_cache() {
     global().persist_pipeline_cache();
 }
 
-/// Persists the process-global cache when `device` is the process-global device.
-pub fn persist_pipeline_cache_for_device(device: &wgpu::Device) {
-    let global = global();
-    if Arc::as_ptr(&global.device) == device as *const wgpu::Device {
+/// Checks the process-global cache if any pipeline was created since the last
+/// check, and writes it when its content differs from the file. Reading the
+/// data back costs ~90 ms for the full kernel set, so a process that created
+/// nothing skips it. It waits for a background check first, so call it before
+/// the process exits.
+pub fn persist_created_pipelines() {
+    wait_for_background_persist();
+    if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) != 0
+        || crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
+    {
+        persist_pipeline_cache();
+    }
+}
+
+/// `persist_created_pipelines` on a background thread, for callers that must
+/// not wait for the readback: daemon startup and the end of a daemon job.
+pub fn persist_created_pipelines_in_background() {
+    if let Some(Ok(global)) = GLOBAL_DEVICE.get() {
+        spawn_background_persist(global);
+    }
+}
+
+/// `persist_created_pipelines_in_background` when `device` is the
+/// process-global device; for lazy kernel loads inside a job. It never
+/// initializes the global device.
+pub fn persist_created_pipelines_for_device(device: &wgpu::Device) {
+    if let Some(global) = initialized_global_for(device) {
+        spawn_background_persist(global);
+    }
+}
+
+/// Set while a background check runs. Pipelines created after it reset the
+/// counter are counted for the next check.
+static BACKGROUND_PERSIST_RUNNING: AtomicBool = AtomicBool::new(false);
+
+fn spawn_background_persist(global: &'static GpuDevice) {
+    if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) == 0
+        && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
+    {
+        return;
+    }
+    if BACKGROUND_PERSIST_RUNNING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+    let spawned = std::thread::Builder::new()
+        .name("laniusc-pipeline-cache".into())
+        .spawn(move || {
+            global.persist_pipeline_cache();
+            BACKGROUND_PERSIST_RUNNING.store(false, Ordering::Release);
+        });
+    if spawned.is_err() {
+        BACKGROUND_PERSIST_RUNNING.store(false, Ordering::Release);
         global.persist_pipeline_cache();
     }
+}
+
+fn wait_for_background_persist() {
+    while BACKGROUND_PERSIST_RUNNING.load(Ordering::Acquire) {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// Records one compute pipeline creation, and checks the cache in the
+/// background when the last check was more than `LAZY_PERSIST_INTERVAL` ago.
+/// Every creation counts: the driver's disk cache serves compiles in a few
+/// milliseconds, so creation time cannot tell a cache hit from a miss.
+pub(crate) fn note_pipeline_created(device: &wgpu::Device) {
+    PIPELINES_CREATED_SINCE_PERSIST.fetch_add(1, Ordering::AcqRel);
+    let due = LAST_PIPELINE_CACHE_PERSIST
+        .lock()
+        .map(|last| last.is_none_or(|last| last.elapsed() >= LAZY_PERSIST_INTERVAL))
+        .unwrap_or(false);
+    if due && let Some(global) = initialized_global_for(device) {
+        spawn_background_persist(global);
+    }
+}
+
+/// Whether `device` is the initialized process-global device. It never
+/// initializes the global device.
+pub(crate) fn is_global_device(device: &wgpu::Device) -> bool {
+    initialized_global_for(device).is_some()
+}
+
+fn initialized_global_for(device: &wgpu::Device) -> Option<&'static GpuDevice> {
+    // wgpu compares devices by identity, so a cloned handle matches too.
+    GLOBAL_DEVICE
+        .get()
+        .and_then(|global| global.as_ref().ok())
+        .filter(|global| *global.device == *device)
 }
 
 /// Returns the pipeline cache registered for a wgpu device.

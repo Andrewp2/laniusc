@@ -40,39 +40,37 @@ public RWStructuredBuffer<uint> program_evidence_proof_store;
 // Reservation alone authorizes no read. Stage admission advances field3 only
 // after every reserved row has been emitted and checked. Receipt publication
 // advances field4 only after every original obligation succeeds.
+// Every width is a power of two: log2 per table, one nibble each (low nibble
+// first): tables0-7 3,1,1,3,2,3,3,2; tables8-15 4,2,2,0,1,1,3,1; else 0.
+// Readers below are straight-line selects with one guarded early return.
+[ForceInline]
 public uint pps_width(uint table)
 {
-    switch (table)
-    {
-    case 0u: return 8u; case 1u: return 2u; case 2u: return 2u;
-    case 3u: return 8u; case 4u: return 4u; case 5u: return 8u;
-    case 6u: return 8u; case 7u: return 4u; case 8u: return 16u;
-    case 9u: return 4u; case 10u: return 4u; case 11u: return 1u;
-    case 12u: return 2u; case 13u: return 2u; case 14u: return 8u;
-    case 15u: return 2u; default: return 0u;
-    }
+    uint shift = (select(table < 8u, 0x23323113u, 0x13110224u) >> ((table & 7u) * 4u)) & 15u;
+    return select(table < PPS_TABLES, 1u << shift, 0u);
 }
+[ForceInline]
 public bool pps_physical_header()
 {
     uint actual; uint stride;
     program_evidence_proof_store.GetDimensions(actual, stride);
-    return proof_store_params.word_count >= PPS_FIXED_WORDS &&
-        proof_store_params.word_count <= actual;
+    return (proof_store_params.word_count >= PPS_FIXED_WORDS) &
+        (proof_store_params.word_count <= actual);
 }
 public bool pps_identity_is_valid()
 {
-    if (!pps_physical_header() || proof_store_params.reserved != 0u ||
-        proof_store_params.serial == 0u || proof_store_params.serial == PEV_INVALID) return false;
-    return program_evidence_proof_store[0u] == PPS_MAGIC &&
-        program_evidence_proof_store[1u] == PPS_VERSION &&
-        program_evidence_proof_store[2u] == proof_store_params.epoch_low &&
-        program_evidence_proof_store[3u] == proof_store_params.epoch_high &&
-        program_evidence_proof_store[4u] == proof_store_params.arena_low &&
-        program_evidence_proof_store[5u] == proof_store_params.arena_high &&
-        program_evidence_proof_store[6u] == proof_store_params.serial &&
-        program_evidence_proof_store[8u] == PPS_TABLES &&
-        program_evidence_proof_store[9u] == PPS_DIRECTORY &&
-        program_evidence_proof_store[11u] == 0u;
+    if (!(pps_physical_header() & (proof_store_params.reserved == 0u) &
+        (proof_store_params.serial != 0u) & (proof_store_params.serial != PEV_INVALID))) return false;
+    return (program_evidence_proof_store[0u] == PPS_MAGIC) &
+        (program_evidence_proof_store[1u] == PPS_VERSION) &
+        (program_evidence_proof_store[2u] == proof_store_params.epoch_low) &
+        (program_evidence_proof_store[3u] == proof_store_params.epoch_high) &
+        (program_evidence_proof_store[4u] == proof_store_params.arena_low) &
+        (program_evidence_proof_store[5u] == proof_store_params.arena_high) &
+        (program_evidence_proof_store[6u] == proof_store_params.serial) &
+        (program_evidence_proof_store[8u] == PPS_TABLES) &
+        (program_evidence_proof_store[9u] == PPS_DIRECTORY) &
+        (program_evidence_proof_store[11u] == 0u);
 }
 public bool pps_building()
 {
@@ -81,19 +79,20 @@ public bool pps_building()
 public bool pps_descriptor(uint table, out uint4 span, out uint accepted)
 {
     span = uint4(0u, 0u, 0u, 0u); accepted = 0u;
-    if (table >= PPS_TABLES || !pps_physical_header()) return false;
+    if (!((table < PPS_TABLES) & pps_physical_header())) return false;
     uint directory = PPS_DIRECTORY + table * 6u;
-    span = uint4(program_evidence_proof_store[directory],
+    uint4 read = uint4(program_evidence_proof_store[directory],
         program_evidence_proof_store[directory + 1u],
         program_evidence_proof_store[directory + 2u],
         program_evidence_proof_store[directory + 3u]);
-    accepted = program_evidence_proof_store[directory + 4u];
+    uint read_accepted = program_evidence_proof_store[directory + 4u];
+    span = read; accepted = read_accepted;
     uint width = pps_width(table);
-    return program_evidence_proof_store[directory + 5u] == width &&
-        span.y != PEV_INVALID && accepted <= span.w && span.w <= span.y && span.y <= span.z &&
-        (table < PPS_PERSISTENT_TABLES || accepted == 0u) &&
-        (span.z == 0u ? span.x == 0u : span.x >= PPS_FIXED_WORDS) &&
-        pev_word_span(span.x, span.z, width, proof_store_params.word_count);
+    return (program_evidence_proof_store[directory + 5u] == width) &
+        (read.y != PEV_INVALID) & (read_accepted <= read.w) & (read.w <= read.y) & (read.y <= read.z) &
+        ((table < PPS_PERSISTENT_TABLES) | (read_accepted == 0u)) &
+        select(read.z == 0u, read.x == 0u, read.x >= PPS_FIXED_WORDS) &
+        pev_word_span(read.x, read.z, width, proof_store_params.word_count);
 }
 // init is the only complete directory/overlap admission. Future reservation
 // phases may change logical counts, never offsets/capacities/widths. Growth is
@@ -120,17 +119,18 @@ public EvidenceStatus pps_admit_layout()
 public bool pps_count(uint table, out uint count)
 {
     count = 0u;
-    if (table >= PPS_TABLES || !pps_physical_header()) return false;
+    if (!((table < PPS_TABLES) & pps_physical_header())) return false;
     uint directory = PPS_DIRECTORY + table * 6u;
     uint admitted = program_evidence_proof_store[directory + 3u];
     uint logical = program_evidence_proof_store[directory + 1u];
-    if (logical == PEV_INVALID || admitted > logical) return false;
+    if (!((logical != PEV_INVALID) & (admitted <= logical))) return false;
     count = admitted; return true;
 }
 public bool pps_span(uint table, uint first, uint count)
 {
     uint rows;
-    return pps_count(table, rows) && first <= rows && count <= rows - first;
+    bool known = pps_count(table, rows);
+    return known & (first <= rows) & (count <= rows - first);
 }
 // Safe projection after layout admission. For readers, the admitted count is
 // authority. Writers may address reserved rows only after a disjoint GPU count
@@ -139,20 +139,21 @@ public bool pps_address(uint table, uint row, uint field, uint fields, bool writ
     out uint address)
 {
     address = PEV_INVALID;
-    if (table >= PPS_TABLES || !pps_physical_header()) return false;
+    // The directory guard makes the six fixed directory reads safe.
+    if (!((table < PPS_TABLES) & pps_physical_header())) return false;
     uint width = pps_width(table);
-    if (fields == 0u || field >= width || fields > width - field) return false;
     uint directory = PPS_DIRECTORY + table * 6u;
     uint offset = program_evidence_proof_store[directory];
     uint logical = program_evidence_proof_store[directory + 1u];
     uint capacity = program_evidence_proof_store[directory + 2u];
     uint admitted = program_evidence_proof_store[directory + 3u];
     uint accepted = program_evidence_proof_store[directory + 4u];
-    if (logical == PEV_INVALID || logical > capacity || admitted > logical || accepted > admitted ||
-        row >= (write ? logical : admitted) ||
-        (write && table < PPS_PERSISTENT_TABLES && row < admitted) ||
-        offset > proof_store_params.word_count ||
-        row >= (proof_store_params.word_count - offset) / width) return false;
+    uint words = proof_store_params.word_count;
+    if (!((fields != 0u) & (field < width) & (fields <= width - field) &
+        (logical != PEV_INVALID) & (logical <= capacity) & (admitted <= logical) &
+        (accepted <= admitted) & (row < select(write, logical, admitted)) &
+        !(write & (table < PPS_PERSISTENT_TABLES) & (row < admitted)) &
+        (offset <= words) & (row < pev_rows_in(offset, words, width)))) return false;
     address = offset + row * width + field;
     return true;
 }

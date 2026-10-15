@@ -23,6 +23,12 @@ pub(super) const MAX_BODY_TYPE_EDGES: usize = MAX_BODY_TYPE_NODES * MAX_BODY_TYP
 pub(super) const BODY_CONSTANT_START: usize = BODY_TYPE_EDGE_START * 4 + MAX_BODY_TYPE_EDGES;
 pub(super) const BODY_SPECIALIZATION_WORDS: usize =
     BODY_CONSTANT_START + 4 + MAX_BODY_TYPE_ARGUMENTS * 4;
+/// Bodies one replay can specialize together (see CheckedBodySpecializationBatch).
+pub(crate) const MAX_BODY_ENTRIES: usize = 64;
+pub(super) const BODY_ENTRY_TABLE_START: usize = BODY_SPECIALIZATION_WORDS / 4;
+pub(super) const BODY_ENTRY_ROWS: usize = 1 + 2 * MAX_BODY_TYPE_ARGUMENTS;
+pub(super) const BODY_BATCH_WORDS: usize =
+    BODY_SPECIALIZATION_WORDS + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS * 4;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecialization {
@@ -141,6 +147,15 @@ impl CheckedBodySpecialization {
     /// Serialize an exact closed graph. `u32::MAX` in a compound node's width
     /// column means that native layout remains to be computed by the GPU.
     pub(crate) fn packet(&self) -> Result<[u32; BODY_SPECIALIZATION_WORDS]> {
+        let (nodes, edges, roots) = self.graph()?;
+        let mut words = [0; BODY_SPECIALIZATION_WORDS];
+        write_legacy_entry(&mut words, self, &roots);
+        write_graph(&mut words, self.source_unit, &nodes, &edges);
+        Ok(words)
+    }
+
+    /// The closed checked graph in postorder and each type slot's root.
+    fn graph(&self) -> Result<(Vec<[u32; 8]>, Vec<u32>, Vec<u32>)> {
         ensure!(
             self.target_symbol != u32::MAX,
             "body specialization target is invalid"
@@ -151,50 +166,209 @@ impl CheckedBodySpecialization {
                 && self.constants.len() <= MAX_BODY_TYPE_ARGUMENTS,
             "body specialization requires a nonempty environment with at most {MAX_BODY_TYPE_ARGUMENTS} arguments in each parameter domain"
         );
-        let mut words = [0; BODY_SPECIALIZATION_WORDS];
-        let mut nodes = Vec::new();
-        let mut edges = Vec::new();
-        words[0] = self.arguments.len() as u32;
-        words[1] = self.target_symbol;
-        words[BODY_CONSTANT_START] = self.constants.len() as u32;
         for (slot, argument) in self.constants.iter().enumerate() {
             ensure!(
                 argument.slot == slot as u32 && argument.value.literal().is_some(),
                 "body specialization has an incomplete constant environment"
             );
-            let row = BODY_CONSTANT_START + 4 + slot * 4;
-            words[row] = argument.slot;
-            words[row + 1..row + 4].copy_from_slice(&argument.value.literal()
-                .expect("validated literal constant").words());
         }
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        let mut roots = Vec::with_capacity(self.arguments.len());
         for (slot, argument) in self.arguments.iter().enumerate() {
             ensure!(
                 argument.slot == slot as u32,
                 "body specialization has an incomplete slot sequence"
             );
-            let row = (slot * 2 + 1) * 4;
-            words[row] = argument.slot;
-            let root = append_checked_node(&argument.ty, &mut nodes, &mut edges)?;
-            words[row + 1] = 10; // private checked graph root
-            words[row + 2] = root;
+            roots.push(append_checked_node(&argument.ty, &mut nodes, &mut edges)?);
         }
-        words[2] = nodes.len() as u32;
-        words[3] = edges.len() as u32;
-        for (index, node) in nodes.iter().enumerate() {
-            let start = (BODY_TYPE_GRAPH_START + index * 2) * 4;
-            words[start..start + 8].copy_from_slice(node);
-            // A declaration identity is stable within this exact source unit.
-            // An instance row is not: replay may have rebound its arguments.
-            // Preserve only the declaration, alongside all structural children.
-            if node[0] == 9 && node[4..6] == self.source_unit {
-                words[start + 7] = node[7];
-            } else {
-                words[start + 7] = u32::MAX;
+        Ok((nodes, edges, roots))
+    }
+}
+
+/// Entry 0 of every packet: header, type-slot roots and constant rows.
+fn write_legacy_entry(words: &mut [u32], entry: &CheckedBodySpecialization, roots: &[u32]) {
+    words[0] = entry.arguments.len() as u32;
+    words[1] = entry.target_symbol;
+    words[BODY_CONSTANT_START] = entry.constants.len() as u32;
+    for (slot, argument) in entry.constants.iter().enumerate() {
+        let row = BODY_CONSTANT_START + 4 + slot * 4;
+        words[row] = argument.slot;
+        words[row + 1..row + 4].copy_from_slice(&argument.value.literal()
+            .expect("validated literal constant").words());
+    }
+    for (slot, &root) in roots.iter().enumerate() {
+        let row = (slot * 2 + 1) * 4;
+        words[row] = slot as u32;
+        words[row + 1] = 10; // private checked graph root
+        words[row + 2] = root;
+    }
+}
+
+fn write_graph(words: &mut [u32], source_unit: [u32; 2], nodes: &[[u32; 8]], edges: &[u32]) {
+    words[2] = nodes.len() as u32;
+    words[3] = edges.len() as u32;
+    for (index, node) in nodes.iter().enumerate() {
+        let start = (BODY_TYPE_GRAPH_START + index * 2) * 4;
+        words[start..start + 8].copy_from_slice(node);
+        // A declaration identity is stable within this exact source unit.
+        // An instance row is not: replay may have rebound its arguments.
+        // Preserve only the declaration, alongside all structural children.
+        if node[0] == 9 && node[4..6] == source_unit {
+            words[start + 7] = node[7];
+        } else {
+            words[start + 7] = u32::MAX;
+        }
+    }
+    let edge_start = BODY_TYPE_EDGE_START * 4;
+    words[edge_start..edge_start + edges.len()].copy_from_slice(edges);
+}
+
+/// Up to 64 bodies of one source unit replayed by one frontend run. Every
+/// entry selects a different lexical scope; entries whose scopes share an
+/// enclosing owner must bind that owner's parameters identically (the caller
+/// checks this). The entries share one deduplicated seed graph, so seed rows,
+/// native seed layouts and their validation are the same as for one entry.
+///
+/// Packet layout (uint4 rows): entry 0 keeps the single-entry layout. Row
+/// 705.y counts the extra entries. Extra entry `e` (1-based) occupies the 65
+/// rows from `738 + (e - 1) * 65`: a header (argument count, target symbol,
+/// 0, constant count), one row per type slot (slot, 10, root, 0) and one row
+/// per constant slot (slot, 10, constant node, 0). An extra entry's constant
+/// value is a kind-10 node of the shared graph.
+#[derive(Clone, Debug)]
+pub(crate) struct CheckedBodySpecializationBatch {
+    entries: Vec<CheckedBodySpecialization>,
+    nodes: Vec<[u32; 8]>,
+    edges: Vec<u32>,
+    /// Per entry: the shared root of each type slot.
+    roots: Vec<Vec<u32>>,
+    /// Per entry: the shared kind-10 node of each constant slot (empty for
+    /// entry 0, whose constants use the single-entry rows).
+    constant_nodes: Vec<Vec<u32>>,
+    /// Per entry: its single-entry graph node ordinal -> shared ordinal.
+    shared_by_local: Vec<Vec<u32>>,
+}
+
+impl CheckedBodySpecializationBatch {
+    pub(crate) fn single(entry: CheckedBodySpecialization) -> Result<Self> {
+        let mut batch = Self {
+            entries: Vec::new(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            roots: Vec::new(),
+            constant_nodes: Vec::new(),
+            shared_by_local: Vec::new(),
+        };
+        ensure!(batch.try_push(entry)?, "one body specialization exceeds the packet capacity");
+        Ok(batch)
+    }
+
+    pub(crate) fn entries(&self) -> &[CheckedBodySpecialization] {
+        &self.entries
+    }
+
+    /// Whether entries `a` and `b` bind one parameter slot to the same
+    /// checked type (domain 0, compared as shared graph roots) or constant
+    /// value (domain 1). A slot either entry lacks never binds identically.
+    pub(crate) fn binds_identically(&self, a: usize, b: usize, slot: u32, domain: u32) -> bool {
+        let slot = slot as usize;
+        match domain {
+            0 => matches!((self.roots[a].get(slot), self.roots[b].get(slot)),
+                (Some(left), Some(right)) if left == right),
+            1 => match (self.entries[a].constants.get(slot), self.entries[b].constants.get(slot)) {
+                (Some(left), Some(right)) => left.value.literal().map(|value| value.words())
+                    == right.value.literal().map(|value| value.words()),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// Add one entry if the shared graph has room for it. Returns false and
+    /// leaves the batch unchanged when it does not fit; an entry that is
+    /// invalid on its own, or that belongs to another unit, is an error.
+    pub(crate) fn try_push(&mut self, entry: CheckedBodySpecialization) -> Result<bool> {
+        let (local_nodes, local_edges, local_roots) = entry.graph()?;
+        if let Some(first) = self.entries.first() {
+            ensure!(first.source_unit == entry.source_unit,
+                "batched body specializations belong to different source units");
+        }
+        if self.entries.len() >= MAX_BODY_ENTRIES {
+            return Ok(false);
+        }
+        let mut nodes = self.nodes.clone();
+        let mut edges = self.edges.clone();
+        let mut shared = Vec::with_capacity(local_nodes.len());
+        let rebased = local_nodes.iter().try_for_each(|node| {
+            let mut copy = *node;
+            let mut children = Vec::new();
+            match node[0] {
+                2 | 3 | 4 => copy[1] = shared[node[1] as usize],
+                9 => children.extend(local_edges[node[1] as usize..(node[1] + node[2]) as usize]
+                    .iter().map(|&child| shared[child as usize])),
+                _ => {}
+            }
+            shared.push(intern_checked_node(copy, &children, &mut nodes, &mut edges)?);
+            Ok::<(), anyhow::Error>(())
+        });
+        let mut constants = Vec::new();
+        let rebased = rebased.and_then(|()| {
+            if self.entries.is_empty() { return Ok(()); }
+            for argument in &entry.constants {
+                let [scalar, lo, hi] = argument.value.literal()
+                    .expect("validated literal constant").words();
+                constants.push(intern_checked_node(
+                    [10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut nodes, &mut edges)?);
+            }
+            Ok(())
+        });
+        if rebased.is_err() {
+            return Ok(false);
+        }
+        self.roots.push(local_roots.iter().map(|&root| shared[root as usize]).collect());
+        self.nodes = nodes;
+        self.edges = edges;
+        self.constant_nodes.push(constants);
+        self.shared_by_local.push(shared);
+        self.entries.push(entry);
+        Ok(true)
+    }
+
+    /// The uploaded words: exactly the single-entry packet for one entry.
+    pub(crate) fn packet(&self) -> Result<Vec<u32>> {
+        ensure!(!self.entries.is_empty(), "empty body specialization batch");
+        let extra = self.entries.len() - 1;
+        let mut words = vec![0; BODY_SPECIALIZATION_WORDS + extra * BODY_ENTRY_ROWS * 4];
+        write_legacy_entry(&mut words, &self.entries[0], &self.roots[0]);
+        write_graph(&mut words, self.entries[0].source_unit, &self.nodes, &self.edges);
+        words[BODY_CONSTANT_START + 1] = extra as u32;
+        for index in 1..self.entries.len() {
+            let entry = &self.entries[index];
+            let base = (BODY_ENTRY_TABLE_START + (index - 1) * BODY_ENTRY_ROWS) * 4;
+            words[base] = entry.arguments.len() as u32;
+            words[base + 1] = entry.target_symbol;
+            words[base + 3] = entry.constants.len() as u32;
+            for (slot, &root) in self.roots[index].iter().enumerate() {
+                let row = base + (1 + slot) * 4;
+                words[row..row + 3].copy_from_slice(&[slot as u32, 10, root]);
+            }
+            for (slot, &node) in self.constant_nodes[index].iter().enumerate() {
+                let row = base + (1 + MAX_BODY_TYPE_ARGUMENTS + slot) * 4;
+                words[row..row + 3].copy_from_slice(&[slot as u32, 10, node]);
             }
         }
-        let edge_start = BODY_TYPE_EDGE_START * 4;
-        words[edge_start..edge_start + edges.len()].copy_from_slice(&edges);
         Ok(words)
+    }
+
+    /// Per entry, the admitted layouts of its scheduling environment from
+    /// the GPU's completed shared seed-node widths.
+    fn admitted_layouts(&self, native: &[u32]) -> Result<Vec<Vec<u32>>> {
+        ensure!(native.len() == self.nodes.len(), "native seed layout count differs from its graph");
+        self.entries.iter().zip(&self.shared_by_local).map(|(entry, shared)| {
+            let local = shared.iter().map(|&ordinal| native[ordinal as usize]).collect::<Vec<_>>();
+            entry.admitted_layouts(&local)
+        }).collect()
     }
 }
 
@@ -206,11 +380,10 @@ impl super::GpuTypeChecker {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        specialization: &CheckedBodySpecialization,
-    ) -> Result<Vec<u32>> {
+        specialization: &CheckedBodySpecializationBatch,
+    ) -> Result<Vec<Vec<u32>>> {
         use crate::gpu::readback::{PagedReadback, ReadbackRegion};
-        let packet = specialization.packet()?;
-        let count = packet[2] as usize;
+        let count = specialization.nodes.len();
         if count == 0 { return specialization.admitted_layouts(&[]); }
         let semantic = self.semantic_artifact()
             .ok_or_else(|| anyhow::anyhow!("body layout has no retained semantic artifact"))?;
@@ -1030,4 +1203,143 @@ mod tests {
         assert!(packet(vec![array(projection)]).is_err());
     }
 
+    fn entry(target: u32, types: Vec<CheckedGenericType>, constants: Vec<u32>) -> CheckedBodySpecialization {
+        CheckedBodySpecialization {
+            target_symbol: target,
+            source_unit: [7, 3],
+            arguments: types.into_iter().enumerate()
+                .map(|(slot, ty)| CheckedGenericArgument { slot: slot as u32, ty }).collect(),
+            constants: constants.into_iter().enumerate()
+                .map(|(slot, value)| CheckedGenericConstant::literal(slot as u32, value)).collect(),
+        }
+    }
+
+    fn array_of(element: CheckedGenericType, length: u32, words: Option<u32>) -> CheckedGenericType {
+        CheckedGenericType::Array {
+            element: Box::new(element),
+            length: CheckedGenericConstantValue::count_literal(length),
+            words,
+        }
+    }
+
+    #[test]
+    fn single_entry_batch_uploads_the_exact_single_entry_packet() {
+        let local = CheckedGenericType::Nominal {
+            identity: CheckedNominalIdentity::SourceLocal { unit: [7, 3], declaration_token: 12 },
+            local_replay: Some(0x2000_000c),
+            arguments: vec![CheckedGenericApplicationArgument::Constant(
+                CheckedGenericConstantValue::count_literal(4))],
+            words: None,
+        };
+        for specialization in [
+            entry(5, vec![CheckedGenericType::Scalar(3)], vec![]),
+            entry(0x8000_0021, vec![nominal(vec![CheckedGenericType::Scalar(2)]), local], vec![9, 0]),
+            entry(5, vec![], vec![1]),
+            entry(5, vec![array_of(CheckedGenericType::Scalar(3), 2, Some(2)),
+                CheckedGenericType::Slice(Box::new(CheckedGenericType::Scalar(3)))], vec![]),
+        ] {
+            let batch = CheckedBodySpecializationBatch::single(specialization.clone()).unwrap();
+            assert_eq!(batch.packet().unwrap(), specialization.packet().unwrap().to_vec());
+            let words = specialization.packet().unwrap();
+            let native = (0..words[2] as usize).map(|index| {
+                let width = words[(BODY_TYPE_GRAPH_START + index * 2) * 4 + 3];
+                if width == u32::MAX { 7 } else { width }
+            }).collect::<Vec<_>>();
+            assert_eq!(native.len(), batch.nodes.len());
+            let layouts = batch.admitted_layouts(&native).unwrap();
+            assert_eq!(layouts, vec![specialization.admitted_layouts(&native).unwrap()]);
+        }
+    }
+
+    #[test]
+    fn batched_entries_share_one_graph_and_keep_their_own_slots() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let boxed = nominal(vec![scalar.clone()]);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(4, vec![boxed.clone(), scalar.clone()], vec![2])).unwrap();
+        let before = batch.nodes.len();
+        assert!(batch.try_push(entry(9, vec![scalar.clone(), array_of(boxed.clone(), 3, None)], vec![5, 2])).unwrap());
+        let words = batch.packet().unwrap();
+        assert_eq!(words.len(), BODY_SPECIALIZATION_WORDS + BODY_ENTRY_ROWS * 4);
+        // Shared graph: scalar, Box<scalar>, then the new array node and the
+        // two constants of the extra entry (2 and 5).
+        assert_eq!(before, 2);
+        assert_eq!(words[2] as usize, batch.nodes.len());
+        assert_eq!(words[BODY_CONSTANT_START], 1, "entry 0 keeps its single-entry constant rows");
+        assert_eq!(words[BODY_CONSTANT_START + 1], 1, "one extra entry");
+        let base = BODY_ENTRY_TABLE_START * 4;
+        assert_eq!(&words[base..base + 4], &[2, 9, 0, 2]);
+        let root = |slot: usize| words[base + (1 + slot) * 4 + 2] as usize;
+        assert_eq!(&words[base + 4..base + 6], &[0, 10]);
+        assert_eq!(root(0), batch.roots[0][1] as usize, "the shared scalar node");
+        let array = (BODY_TYPE_GRAPH_START + root(1) * 2) * 4;
+        assert_eq!(words[array], 2);
+        assert_eq!(words[array + 1], batch.roots[0][0], "array element is the shared Box node");
+        assert_eq!(words[array + 2], 3);
+        for (slot, value) in [(0usize, 5u32), (1, 2)] {
+            let row = base + (1 + MAX_BODY_TYPE_ARGUMENTS + slot) * 4;
+            assert_eq!(&words[row..row + 2], &[slot as u32, 10]);
+            let node = (BODY_TYPE_GRAPH_START + words[row + 2] as usize * 2) * 4;
+            assert_eq!(words[node], 10);
+            assert_eq!(words[node + 2], value, "constant value lives in the kind-10 node");
+        }
+        // Per-entry layouts follow each entry's own single-entry graph order.
+        let mut native = vec![1; batch.nodes.len()];
+        native[root(1)] = 6;
+        native[batch.roots[0][0] as usize] = 2;
+        let layouts = batch.admitted_layouts(&native).unwrap();
+        assert_eq!(layouts.len(), 2);
+        let second = entry(9, vec![scalar.clone(), array_of(boxed.clone(), 3, None)], vec![5, 2]);
+        let (_, edges, roots) = second.graph().unwrap();
+        assert!(edges.len() <= batch.edges.len());
+        let mut local = vec![0; batch.shared_by_local[1].len()];
+        for (index, &shared) in batch.shared_by_local[1].iter().enumerate() { local[index] = native[shared as usize]; }
+        assert_eq!(layouts[1], second.admitted_layouts(&local).unwrap());
+        assert_eq!(roots.len(), 2);
+        assert!(!batch.binds_identically(0, 1, 0, 0), "Box<T> and T differ in type slot 0");
+        assert!(!batch.binds_identically(0, 1, 0, 1), "constants 2 and 5 differ in slot 0");
+    }
+
+    #[test]
+    fn batched_bindings_compare_types_by_shared_root_and_constants_by_value() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(4, vec![array_of(scalar.clone(), 2, None), scalar.clone()], vec![2])).unwrap();
+        // The same array with a known width witness is the same checked type.
+        assert!(batch.try_push(entry(9, vec![array_of(scalar.clone(), 2, Some(2)), nominal(vec![])], vec![2, 5])).unwrap());
+        assert!(batch.binds_identically(0, 1, 0, 0));
+        assert!(!batch.binds_identically(0, 1, 1, 0));
+        assert!(batch.binds_identically(0, 1, 0, 1));
+        assert!(!batch.binds_identically(0, 1, 1, 1), "entry 0 has no constant slot 1");
+        assert!(!batch.binds_identically(0, 1, 7, 0), "absent slots never match");
+        // Entry 1's known width 2 for the shared array rejects a GPU width of 3.
+        let mut native = vec![0; batch.nodes.len()];
+        native[batch.roots[0][0] as usize] = 3;
+        assert!(batch.admitted_layouts(&native).is_err());
+    }
+
+    #[test]
+    fn a_full_batch_rejects_an_entry_without_changing() {
+        let arrays = |lengths: std::ops::Range<u32>| lengths
+            .map(|length| array_of(CheckedGenericType::Scalar(3), length, None)).collect::<Vec<_>>();
+        let mut batch = CheckedBodySpecializationBatch::single(entry(1, arrays(1..31), vec![])).unwrap();
+        assert!(batch.try_push(entry(2, arrays(31..61), vec![])).unwrap());
+        assert_eq!(batch.nodes.len(), 61);
+        let before = batch.packet().unwrap();
+        assert!(!batch.try_push(entry(3, arrays(61..91), vec![])).unwrap(), "64 shared nodes");
+        assert!(!batch.try_push(entry(3, vec![], vec![1, 2, 3, 4])).unwrap(), "constants are nodes too");
+        assert_eq!(batch.packet().unwrap(), before);
+        assert_eq!(batch.entries().len(), 2);
+        assert!(batch.try_push(entry(3, arrays(1..3), vec![7, 8])).unwrap(), "reused nodes need no room");
+
+        let mut many = CheckedBodySpecializationBatch::single(entry(0, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap();
+        for target in 1..MAX_BODY_ENTRIES as u32 {
+            assert!(many.try_push(entry(target, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap());
+        }
+        assert!(!many.try_push(entry(99, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap());
+        assert_eq!(many.packet().unwrap().len(), BODY_BATCH_WORDS);
+        let mut foreign = entry(5, vec![CheckedGenericType::Scalar(3)], vec![]);
+        foreign.source_unit = [7, 4];
+        assert!(batch.try_push(foreign).is_err(), "one batch replays one source unit");
+    }
 }

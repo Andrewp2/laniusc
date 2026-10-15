@@ -1,9 +1,9 @@
 // Interning candidates of a type-check job: checked instance rows, constant
-// atoms and constant projections, each with a fixed record slot. A candidate
-// is interned once all of its children have canonical references; one
-// candidate is a few dozen loads and one ct_intern, with no local arrays.
-// A re-interned job (CT_COUNT_REINTERN) looks each key up first and moves a
-// rewritten candidate whose fixed record is published to a dynamic record.
+// atoms and constant projections. A candidate is interned once all of its
+// children have canonical references; one candidate is a few dozen loads and
+// one ct_intern_key, with no local arrays. A candidate owns no record: only a
+// key the table lacks takes one, so a re-interned candidate (a body replay)
+// never touches the record of its earlier key.
 //
 // The builders read instance rows through an ICtRowReader, and this module
 // imports no type graph: the checked graph and the mutable graph declare the
@@ -208,8 +208,8 @@ uint build_constant<R : ICtRowReader>(uint candidate, bool final, out CtKey key)
 // projections): CT_KEY_BUILT with `key` (ct_extra facts in key.extra), or the
 // candidate's final reference without a key. CT_PENDING means a child is not
 // interned yet. Callers outside this stage intern the key through
-// ct_intern_spare, never into the candidate's fixed record. Each call site
-// expands both builders, so call it once per kernel.
+// ct_intern_spare or ct_intern_key. Each call site expands both builders, so
+// call it once per kernel.
 public uint canonical_build_candidate_key<R : ICtRowReader>(uint candidate, bool final, out CtKey key)
 {
     if (candidate < ct_row_capacity()) return build_row<R>(candidate, final, key);
@@ -222,16 +222,5 @@ public uint canonical_intern_candidate<R : ICtRowReader>(uint candidate, bool fi
     CtKey key;
     uint status = canonical_build_candidate_key<R>(candidate, final, key);
     if (status != CT_KEY_BUILT) return status;
-    uint record = ct_candidate_record(candidate);
-    if (ct_counts[CT_COUNT_REINTERN] != 0u)
-    {
-        // The fixed record may hold this candidate's earlier key, which
-        // other references still name.
-        uint found = ct_lookup(key);
-        if (found != CT_NONE) return found;
-        if (ct_is_published(record)) record = ct_alloc_record();
-        if (record == CT_UNKNOWN) return CT_UNKNOWN;
-    }
-    ct_key_store(key, record, key.extra);
-    return ct_intern(record, key);
+    return ct_intern_key(key);
 }
