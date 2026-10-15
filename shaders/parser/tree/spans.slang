@@ -9,6 +9,11 @@
 // subtree end for node i is the first prefix position p > i where
 // E[p] >= E[i] + 1, found by climbing the per-block maximum heaps and the
 // block maximum tree (blocked_search_tree.slang).
+//
+// Each node also counts its subtree's end in tree_depth_close_count (zeroed by
+// tree/parent_parallel): tree/depth/block_max turns those counts into depths.
+// File roots count their unadjusted prefix end, so the counts describe the
+// prefix tree exactly.
 
 import segment_tree;
 import blocked_search_tree;
@@ -34,6 +39,7 @@ StructuredBuffer<int> prefix_local_max;
 RWStructuredBuffer<uint> first_child;
 RWStructuredBuffer<uint> next_sibling;
 RWStructuredBuffer<uint> subtree_end;
+RWStructuredBuffer<uint> tree_depth_close_count;
 
 static const uint INVALID = 0xFFFFFFFFu;
 static const uint WG_SIZE = 256u;
@@ -89,8 +95,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint arity = prod_arity[node_kind[i]];
     first_child[i] = (arity > 0u && i + 1u < n) ? i + 1u : INVALID;
 
-    uint end = node_kind[i] == PROD_FILE ? file_root_subtree_end(i, n) : find_subtree_end(i, n);
+    bool file_root = node_kind[i] == PROD_FILE;
+    uint prefix_end = find_subtree_end(i, n);
+    uint end = file_root ? file_root_subtree_end(i, n) : prefix_end;
     subtree_end[i] = end;
+    if (prefix_end < n)
+        InterlockedAdd(tree_depth_close_count[prefix_end], 1u);
 
     next_sibling[i] = (end < n && parent[end] == parent[i]) ? end : INVALID;
 }

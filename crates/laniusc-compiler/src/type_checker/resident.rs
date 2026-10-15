@@ -1164,6 +1164,7 @@ impl GpuTypeChecker {
                 &self.canonical_validation_readback,
                 canonical_scale,
             )?;
+            bind_groups.calls.substitution.record_job_start(encoder)?;
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
             }

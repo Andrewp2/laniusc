@@ -69,6 +69,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreeSpansPass {
             ("first_child".into(), b.first_child.as_entire_binding()),
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             ("subtree_end".into(), b.subtree_end.as_entire_binding()),
+            (
+                "tree_depth_close_count".into(),
+                b.tree_depth_close_count.as_entire_binding(),
+            ),
         ])
     }
 }

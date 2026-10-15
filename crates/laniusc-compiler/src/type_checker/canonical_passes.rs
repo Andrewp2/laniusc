@@ -241,6 +241,11 @@ pub(super) struct CanonicalCapacity {
     /// Capacity scale of the records and argument words: 1, doubled by each
     /// overflow retry of the job (`canonical_retry_scale`).
     pub scale: u32,
+    /// Dynamic records and argument words of the substitution producers
+    /// (`substitution_passes::substitution_canonical_extra`), part of the
+    /// scaled bounds.
+    pub extra_records: u64,
+    pub extra_argument_words: u64,
 }
 
 fn storage(
@@ -282,7 +287,7 @@ pub(super) fn register_canonical_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     capacity: CanonicalCapacity,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let CanonicalCapacity {
         token_rows,
         hir_rows,
@@ -292,6 +297,8 @@ pub(super) fn register_canonical_passes(
         dependency_rows,
         dependency_page_rows,
         scale,
+        extra_records,
+        extra_argument_words,
     } = capacity;
     let candidates = type_rows + 2 * constant_rows;
     let shrink = canonical_capacity_shrink();
@@ -301,8 +308,11 @@ pub(super) fn register_canonical_passes(
     // The debug shrink divides only what a retry grows, so a shrunken job
     // still succeeds once the scale covers its use.
     let fixed = 32 + candidates + dependency_rows.max(1);
-    let dynamic = canonical_scaled_capacity(candidates + 4 * constant_rows + dependency_rows,
-        CANONICAL_MIN_DYNAMIC_RECORDS, scale);
+    let dynamic = canonical_scaled_capacity(
+        candidates + 4 * constant_rows + dependency_rows + extra_records,
+        CANONICAL_MIN_DYNAMIC_RECORDS,
+        scale,
+    );
     let records = fixed + (dynamic >> shrink).max(1);
     let candidate_argument_bytes = token_rows * 16
         + extra_argument_rows * 128
@@ -310,7 +320,7 @@ pub(super) fn register_canonical_passes(
         + type_rows * 8
         + constant_rows * 8;
     let argument_words = canonical_scaled_capacity(
-        (2 * candidate_argument_bytes + dependency_rows * 8) / 4,
+        (2 * candidate_argument_bytes + dependency_rows * 8) / 4 + extra_argument_words,
         CANONICAL_MIN_ARGUMENT_WORDS,
         scale,
     );
@@ -356,7 +366,7 @@ pub(super) fn register_canonical_passes(
         kernels,
         CANONICAL_CLEAR_KERNEL,
     )?;
-    Ok(())
+    Ok(records)
 }
 
 /// Registers the per-page dependency interning, after the dependency
