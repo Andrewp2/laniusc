@@ -26,6 +26,14 @@ const LAZY_PERSIST_INTERVAL: Duration = Duration::from_secs(10);
 /// compiles in a few milliseconds), so a check compares the cache content
 /// with what is on disk instead.
 static PIPELINES_CREATED_SINCE_PERSIST: AtomicU64 = AtomicU64::new(0);
+/// A seed file larger than this is not copied and the kernel set starts
+/// fresh: every seeded set's file carries its seed's pipelines forward, so a
+/// chain of shader edits would otherwise grow the files without bound. NVIDIA's
+/// pipeline cache also stops taking new pipelines near 100 MB: a set seeded
+/// from a 100,290,126-byte file compiled ~110 s of misses and saved the same
+/// 100,290,126 bytes, so every start compiled them again. One kernel set is
+/// ~57 MB, so this leaves room for a whole set's misses.
+const PIPELINE_CACHE_SEED_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// When the cache was last persisted; None before the first persist.
 static LAST_PIPELINE_CACHE_PERSIST: Mutex<Option<Instant>> = Mutex::new(None);
 /// Serializes persists: concurrent writers would share one tmp file.
@@ -131,6 +139,10 @@ impl GpuDevice {
 
     /// Persists the current wgpu pipeline cache to disk when supported.
     pub fn persist_pipeline_cache(&self) {
+        // No file to keep: another driver cache serves the pipelines.
+        if self.pipeline_cache_path.is_none() {
+            return;
+        }
         let _persist = PIPELINE_CACHE_PERSIST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -409,7 +421,11 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
             required_features |= wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
         }
     }
-    let pipeline_cache_supported = adapter_features.contains(wgpu::Features::PIPELINE_CACHE);
+    if adapter_info.vendor != NVIDIA_VENDOR_ID {
+        NAMED_DRIVER_SHARD_UNDECIDED.store(false, Ordering::Release);
+    }
+    let pipeline_cache_supported = adapter_features.contains(wgpu::Features::PIPELINE_CACHE)
+        && !driver_shader_cache_serves_pipelines(adapter_info.vendor);
     if pipeline_cache_supported {
         required_features |= wgpu::Features::PIPELINE_CACHE;
     }
@@ -434,21 +450,15 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
     });
 
     let timers_supported = adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY);
-    let (
-        pipeline_cache,
-        pipeline_cache_path,
-        pipeline_cache_identity_hash,
-        pipeline_cache_should_persist,
-        pipeline_cache_persisted_hash,
-    ) = if pipeline_cache_supported {
+    let loaded = if pipeline_cache_supported {
         create_pipeline_cache(&device, &adapter_info)
     } else {
-        (None, None, None, false, None)
+        LoadedPipelineCache::default()
     };
     let device = Arc::new(device);
-    let pipeline_cache = pipeline_cache.map(Arc::new);
-    let pipeline_cache_dirty = Arc::new(AtomicBool::new(pipeline_cache_should_persist));
-    if pipeline_cache_should_persist {
+    let pipeline_cache = loaded.cache.map(Arc::new);
+    let pipeline_cache_dirty = Arc::new(AtomicBool::new(loaded.should_persist));
+    if loaded.should_persist {
         // The cache file is missing or invalid: the next check writes it.
         PIPELINES_CREATED_SINCE_PERSIST.fetch_add(1, Ordering::AcqRel);
     }
@@ -465,10 +475,10 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
         queue: Arc::new(queue),
         timers_supported,
         pipeline_cache: Mutex::new(pipeline_cache),
-        pipeline_cache_path,
-        pipeline_cache_identity_hash,
+        pipeline_cache_path: loaded.path,
+        pipeline_cache_identity_hash: loaded.identity_hash,
         pipeline_cache_dirty,
-        pipeline_cache_persisted_hash: Mutex::new(pipeline_cache_persisted_hash),
+        pipeline_cache_persisted_hash: Mutex::new(loaded.persisted_hash),
     })
 }
 
@@ -592,6 +602,7 @@ pub fn persist_pipeline_cache() {
 /// nothing skips it. It waits for a background check first, so call it before
 /// the process exits.
 pub fn persist_created_pipelines() {
+    check_named_driver_shard();
     wait_for_background_persist();
     if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) != 0
         || crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
@@ -603,6 +614,7 @@ pub fn persist_created_pipelines() {
 /// `persist_created_pipelines` on a background thread, for callers that must
 /// not wait for the readback: daemon startup and the end of a daemon job.
 pub fn persist_created_pipelines_in_background() {
+    check_named_driver_shard();
     if let Some(Ok(global)) = GLOBAL_DEVICE.get() {
         spawn_background_persist(global);
     }
@@ -622,6 +634,9 @@ pub fn persist_created_pipelines_for_device(device: &wgpu::Device) {
 static BACKGROUND_PERSIST_RUNNING: AtomicBool = AtomicBool::new(false);
 
 fn spawn_background_persist(global: &'static GpuDevice) {
+    if global.pipeline_cache_path.is_none() {
+        return;
+    }
     if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) == 0
         && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
     {
@@ -746,87 +761,333 @@ fn pipeline_cache_registry() -> &'static Mutex<HashMap<usize, RegisteredPipeline
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Where the pipeline cache files live: `LANIUS_PIPELINE_CACHE_DIR`, else
+/// `target/wgpu-pipeline-cache`.
+fn pipeline_cache_dir() -> PathBuf {
+    crate::gpu::env::env_path(
+        "LANIUS_PIPELINE_CACHE_DIR",
+        PathBuf::from("target").join("wgpu-pipeline-cache"),
+    )
+}
+
+const NVIDIA_VENDOR_ID: u32 = 0x10de;
+/// The variables of NVIDIA's own shader disk cache (Linux driver).
+const NVIDIA_SHADER_CACHE_VARS: [&str; 4] = [
+    "__GL_SHADER_DISK_CACHE",
+    "__GL_SHADER_DISK_CACHE_PATH",
+    "__GL_SHADER_DISK_CACHE_SIZE",
+    "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP",
+];
+/// Large enough for many kernel sets; with cleanup skipped it is never pruned.
+const NVIDIA_SHADER_CACHE_BYTES: &str = "12884901888";
+/// Names the driver's cache shard. Without it the driver keys a shard by the
+/// executable's path: a byte-identical laniusc at a new path recompiled all
+/// 854 pipelines (263 s), and every worktree's test binary started cold. With
+/// it the shard is `<name><n>.bin` (n counts concurrent processes), so every
+/// laniusc binary, test binary and pin shares one shard: a test binary at a
+/// new path started in 1.0 s. The variable is undocumented (it is in the
+/// 615.71 driver's strings), so `check_named_driver_shard` verifies it.
+const NVIDIA_SHADER_CACHE_APP_NAME_VAR: &str = "__GL_SHADER_DISK_CACHE_APP_NAME";
+const NVIDIA_SHADER_CACHE_APP_NAME: &str = "laniusc";
+/// Next to the pipeline cache files: the driver version that ignored the app
+/// name. Starts on that driver use the pipeline cache files instead.
+const APP_NAME_IGNORED_MARKER: &str = "nvidia-app-name-ignored";
+
+/// Recorded before main when this process named its driver shard and the
+/// driver cache is on: where the shards are, and when the process started.
+struct NamedDriverShard {
+    glcache: PathBuf,
+    marker: PathBuf,
+    started: SystemTime,
+}
+
+static NAMED_DRIVER_SHARD: OnceLock<NamedDriverShard> = OnceLock::new();
+/// Cleared once `check_named_driver_shard` decided, or on a non-NVIDIA device.
+static NAMED_DRIVER_SHARD_UNDECIDED: AtomicBool = AtomicBool::new(false);
+
+/// Runs `configure_driver_shader_cache` before `main` in every binary that
+/// links the compiler (the CLI, test binaries, tools), while the process has
+/// its only thread: environment writes would race with other threads later.
+#[cfg(target_os = "linux")]
+#[used]
+#[unsafe(link_section = ".init_array")]
+static CONFIGURE_DRIVER_SHADER_CACHE_BEFORE_MAIN: extern "C" fn() = {
+    extern "C" fn configure() {
+        // SAFETY: .init_array functions run before main, on the only thread.
+        unsafe { configure_driver_shader_cache() }
+    }
+    configure
+};
+
+/// Sets up NVIDIA's shader disk cache for this process, leaving every variable
+/// the user set alone:
+/// - names the cache shard `laniusc` (`NVIDIA_SHADER_CACHE_APP_NAME_VAR`);
+/// - unless the user configured the cache (any of its four variables), puts it
+///   next to the pipeline cache files. The driver's default, ~/.cache/nvidia,
+///   is shared by every application and capped at 1 GiB; once full it evicts,
+///   and a 1.6 s start took 236 s.
+/// - on a driver that ignored the shard name before, turns the driver cache
+///   off instead, so the pipeline cache files (keyed by kernel set, not by
+///   executable) serve pipelines.
+///
+/// wgpu loads the Vulkan loader, and the loader the driver, only when the
+/// instance is created, so these variables reach the driver.
+///
+/// # Safety
+///
+/// It sets process environment variables, so no other thread may run (or read
+/// the environment) concurrently.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+unsafe fn configure_driver_shader_cache() {
+    let started = SystemTime::now();
+    let names_shard = std::env::var_os(NVIDIA_SHADER_CACHE_APP_NAME_VAR).is_none();
+    if names_shard {
+        // SAFETY: the caller guarantees no other thread runs yet.
+        unsafe { std::env::set_var(NVIDIA_SHADER_CACHE_APP_NAME_VAR, NVIDIA_SHADER_CACHE_APP_NAME) };
+    }
+    let pipeline_dir = pipeline_cache_dir();
+    let pipeline_dir = std::path::absolute(&pipeline_dir).unwrap_or(pipeline_dir);
+    let marker = pipeline_dir.join(APP_NAME_IGNORED_MARKER);
+    let user_configured = NVIDIA_SHADER_CACHE_VARS
+        .iter()
+        .any(|name| std::env::var_os(name).is_some());
+    if !user_configured {
+        let dir = pipeline_dir.join("nvidia");
+        // The driver disables its cache rather than create a missing directory.
+        if let Err(err) = fs::create_dir_all(&dir) {
+            warn!("keeping the default NVIDIA shader cache: cannot create {}: {err}", dir.display());
+            return;
+        }
+        let path = dir.into_os_string();
+        let ignored = names_shard && driver_ignores_app_name(&marker);
+        let values: [&std::ffi::OsStr; 4] = [
+            if ignored { "0" } else { "1" }.as_ref(),
+            &path,
+            NVIDIA_SHADER_CACHE_BYTES.as_ref(),
+            "1".as_ref(),
+        ];
+        for (name, value) in NVIDIA_SHADER_CACHE_VARS.iter().zip(values) {
+            // SAFETY: the caller guarantees no other thread runs yet.
+            unsafe { std::env::set_var(name, value) };
+        }
+    }
+    let cache_on = std::env::var_os(NVIDIA_SHADER_CACHE_VARS[0]).is_none_or(|value| value != "0");
+    if names_shard && cache_on && let Some(dir) = driver_shader_cache_dir() {
+        let shard = NamedDriverShard {
+            glcache: dir.join("GLCache"),
+            marker,
+            started,
+        };
+        if NAMED_DRIVER_SHARD.set(shard).is_ok() {
+            NAMED_DRIVER_SHARD_UNDECIDED.store(true, Ordering::Release);
+        }
+    }
+}
+
+/// The driver's cache directory: `__GL_SHADER_DISK_CACHE_PATH`, else
+/// `$XDG_CACHE_HOME/nvidia`, else `$HOME/.cache/nvidia`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn driver_shader_cache_dir() -> Option<PathBuf> {
+    let var = |name| std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from);
+    var(NVIDIA_SHADER_CACHE_VARS[1])
+        .or_else(|| var("XDG_CACHE_HOME").map(|dir| dir.join("nvidia")))
+        .or_else(|| var("HOME").map(|dir| dir.join(".cache").join("nvidia")))
+}
+
+/// The loaded NVIDIA kernel module's version, e.g. `615.71.09`.
+fn nvidia_driver_version() -> Option<String> {
+    let version = fs::read_to_string("/sys/module/nvidia/version").ok()?;
+    let version = version.trim();
+    (!version.is_empty()).then(|| version.to_string())
+}
+
+/// Whether `marker` records the running driver as one that ignored the app name.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn driver_ignores_app_name(marker: &std::path::Path) -> bool {
+    let Ok(recorded) = fs::read_to_string(marker) else {
+        return false;
+    };
+    nvidia_driver_version().is_some_and(|version| recorded.trim() == version)
+}
+
+/// What the driver cache directory says about the shard name.
+#[derive(Debug, PartialEq, Eq)]
+enum ShardNaming {
+    /// The driver wrote no shard since the process started.
+    Unknown,
+    /// A shard directory written since the start holds a `<name><n>` shard.
+    Honored,
+    /// The driver wrote shards since the start, none of them named.
+    Ignored,
+}
+
+/// Looks for `<app_name><digits>.toc` in each `GLCache/<driver>/<device>/`
+/// directory that holds a shard index written at or after `started`.
+fn classify_shard_naming(glcache: &std::path::Path, app_name: &str, started: SystemTime) -> ShardNaming {
+    let named = |name: &str| {
+        name.strip_suffix(".toc")
+            .and_then(|stem| stem.strip_prefix(app_name))
+            .is_some_and(|index| !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()))
+    };
+    let mut naming = ShardNaming::Unknown;
+    let Ok(drivers) = fs::read_dir(glcache) else {
+        return naming;
+    };
+    for device_dir in drivers
+        .flatten()
+        .filter_map(|driver| fs::read_dir(driver.path()).ok())
+        .flat_map(|devices| devices.flatten())
+    {
+        let Ok(files) = fs::read_dir(device_dir.path()) else {
+            continue;
+        };
+        let (mut recent, mut has_named) = (false, false);
+        for file in files.flatten() {
+            let name = file.file_name();
+            let Some(name) = name.to_str().filter(|name| name.ends_with(".toc")) else {
+                continue;
+            };
+            has_named |= named(name);
+            recent |= file
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .is_ok_and(|modified| modified >= started);
+        }
+        match (recent, has_named) {
+            (true, true) => return ShardNaming::Honored,
+            (true, false) => naming = ShardNaming::Ignored,
+            _ => {}
+        }
+    }
+    naming
+}
+
+/// Verifies once per process, after pipelines were created, that the driver
+/// named this process's cache shard. When it did not, records the driver
+/// version so later starts use the pipeline cache files; when it did, clears
+/// a record a previous driver left.
+fn check_named_driver_shard() {
+    if !NAMED_DRIVER_SHARD_UNDECIDED.load(Ordering::Acquire) {
+        return;
+    }
+    let Some(shard) = NAMED_DRIVER_SHARD.get() else {
+        return;
+    };
+    match classify_shard_naming(&shard.glcache, NVIDIA_SHADER_CACHE_APP_NAME, shard.started) {
+        ShardNaming::Unknown => {}
+        ShardNaming::Honored => {
+            NAMED_DRIVER_SHARD_UNDECIDED.store(false, Ordering::Release);
+            if shard.marker.exists() {
+                remove_pipeline_cache_file(&shard.marker, "app name honored");
+            }
+        }
+        ShardNaming::Ignored => {
+            NAMED_DRIVER_SHARD_UNDECIDED.store(false, Ordering::Release);
+            let Some(version) = nvidia_driver_version() else {
+                return;
+            };
+            warn!(
+                "the NVIDIA driver ignored {NVIDIA_SHADER_CACHE_APP_NAME_VAR}; later starts use the pipeline cache files"
+            );
+            if let Some(dir) = shard.marker.parent()
+                && let Err(err) = fs::create_dir_all(dir).and_then(|()| fs::write(&shard.marker, version))
+            {
+                warn!("cannot record {}: {err}", shard.marker.display());
+            }
+        }
+    }
+}
+
+/// Whether NVIDIA's own shader disk cache serves pipelines (on unless
+/// `__GL_SHADER_DISK_CACHE=0`). With it on, the driver neither used a loaded
+/// pipeline cache nor added new pipelines to it: a 57 MB file gave a 236 s
+/// start on a cold driver cache, yet the same file started in 3.9 s with the
+/// driver cache off. Loading and checking the file then only costs ~85 ms a
+/// start, so the pipeline cache file is kept for other drivers and for a
+/// disabled driver cache.
+fn driver_shader_cache_serves_pipelines(vendor: u32) -> bool {
+    vendor == NVIDIA_VENDOR_ID
+        && std::env::var_os(NVIDIA_SHADER_CACHE_VARS[0]).is_none_or(|value| value != "0")
+}
+
+/// The pipeline cache loaded at device creation, with what persisting it needs.
+#[derive(Default)]
+struct LoadedPipelineCache {
+    cache: Option<wgpu::PipelineCache>,
+    path: Option<PathBuf>,
+    identity_hash: Option<u64>,
+    should_persist: bool,
+    persisted_hash: Option<u64>,
+}
+
 fn create_pipeline_cache(
     device: &wgpu::Device,
     adapter_info: &wgpu::AdapterInfo,
-) -> (
-    Option<wgpu::PipelineCache>,
-    Option<PathBuf>,
-    Option<u64>,
-    bool,
-    Option<u64>,
-) {
+) -> LoadedPipelineCache {
     let timer = PipelineCachePersistTimer::new();
     let total_start = Instant::now();
     let Some(adapter_key) = wgpu::util::pipeline_cache_key(adapter_info) else {
         timer.span_prefixed("create", "unsupported_key", total_start, Instant::now());
-        return (None, None, None, false, None);
+        return LoadedPipelineCache::default();
     };
     let start = Instant::now();
-    let cache_dir = crate::gpu::env::env_path(
-        "LANIUS_PIPELINE_CACHE_DIR",
-        PathBuf::from("target").join("wgpu-pipeline-cache"),
+    let cache_dir = pipeline_cache_dir();
+    let key = PipelineCacheKey::new(
+        &adapter_key,
+        option_env!("LANIUS_WGPU_VERSION").unwrap_or("unknown"),
+        &crate::shader_artifacts::digest(),
     );
-    let (filename, identity_hash) = pipeline_cache_filename(&adapter_key);
-    let cache_path = cache_dir.join(filename);
+    let cache_path = cache_dir.join(&key.filename);
     timer.span_prefixed("create", "path", start, Instant::now());
     let start = Instant::now();
-    prune_pipeline_cache_dir(&cache_dir, &cache_path, &adapter_key);
+    let others = prune_pipeline_cache_dir(&cache_dir, &cache_path, &adapter_key);
     timer.span_prefixed("create", "prune", start, Instant::now());
-    let start = Instant::now();
     let mut should_persist = false;
-    let cache_file_data = match fs::read(&cache_path) {
-        Ok(file_data) => {
-            let end = Instant::now();
-            timer.span_prefixed("create", "read", start, end);
-            timer.bytes_prefixed(
-                "size",
-                "pipeline_cache.create.input_file_bytes",
-                end,
-                file_data.len(),
-            );
-            Some(file_data)
+    let mut persisted_hash = None;
+    let mut file = match read_pipeline_cache_file(&cache_path, key.identity_hash, "", &timer) {
+        Ok(Some(file)) => {
+            persisted_hash = Some(pipeline_cache_file_data_hash(&file));
+            Some(file)
         }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            timer.span_prefixed("create", "read.missing", start, Instant::now());
+        Ok(None) => {
             should_persist = true;
             None
         }
-        Err(err) => {
-            timer.span_prefixed("create", "read.failed", start, Instant::now());
-            warn!(
-                "failed to read pipeline cache {}: {err}",
-                cache_path.display()
-            );
+        Err(_) => {
+            remove_pipeline_cache_file(&cache_path, "invalid");
             should_persist = true;
             None
         }
     };
-    let mut persisted_hash = None;
-    let cache_data = cache_file_data.as_deref().and_then(|file_data| {
-        let start = Instant::now();
-        match decode_pipeline_cache_file(file_data, identity_hash) {
-            Ok(data) => {
-                let end = Instant::now();
-                timer.span_prefixed("create", "decode", start, end);
-                timer.bytes_prefixed(
-                    "size",
-                    "pipeline_cache.create.input_cache_bytes",
-                    end,
-                    data.len(),
-                );
-                persisted_hash = Some(stable_hash_u64(data));
-                Some(data)
+    if file.is_none() {
+        // This kernel set has no file yet: start from the most recently
+        // written set's file, so pipelines the shader edit left unchanged
+        // stay cache hits.
+        let seed_max_bytes = crate::gpu::env::env_u64(
+            "LANIUS_PIPELINE_CACHE_SEED_MAX_BYTES",
+            PIPELINE_CACHE_SEED_MAX_BYTES,
+        );
+        let now = Instant::now();
+        match choose_pipeline_cache_seed(&others, &key, seed_max_bytes) {
+            PipelineCacheSeed::None => timer.span_prefixed("create", "seed.none", now, now),
+            PipelineCacheSeed::TooLarge(seed) => {
+                timer.span_prefixed("create", "seed.too_large", now, now);
+                timer.bytes_prefixed("size", "pipeline_cache.create.seed_file_bytes", now, seed.len as usize);
             }
-            Err(err) => {
-                timer.span_prefixed("create", "decode.invalid", start, Instant::now());
-                warn!("discarding pipeline cache {}: {err}", cache_path.display());
-                remove_pipeline_cache_file(&cache_path, "invalid");
-                should_persist = true;
-                None
+            PipelineCacheSeed::Use(seed) => {
+                match read_pipeline_cache_file(&seed.path, key.identity_hash, "seed.", &timer) {
+                    Ok(Some(seed_file)) => file = Some(seed_file),
+                    Ok(None) => {}
+                    Err(_) => remove_pipeline_cache_file(&seed.path, "invalid"),
+                }
             }
         }
-    });
+    }
+    // An empty blob holds no pipelines; give the driver no data at all.
+    let cache_data = file
+        .as_deref()
+        .map(|file| &file[PIPELINE_CACHE_HEADER_LEN..])
+        .filter(|data| !data.is_empty());
     let start = Instant::now();
     let cache = unsafe {
         device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
@@ -841,32 +1102,143 @@ fn create_pipeline_cache(
     let end = Instant::now();
     timer.span_prefixed("create", "wgpu_create", start, end);
     timer.span_prefixed("create", "total", total_start, end);
-    (
-        Some(cache),
-        Some(cache_path),
-        Some(identity_hash),
+    LoadedPipelineCache {
+        cache: Some(cache),
+        path: Some(cache_path),
+        identity_hash: Some(key.identity_hash),
         should_persist,
         persisted_hash,
-    )
+    }
 }
 
-fn pipeline_cache_filename(adapter_key: &str) -> (String, u64) {
-    let wgpu_version = option_env!("LANIUS_WGPU_VERSION").unwrap_or("unknown");
-    // A wgpu pipeline cache is a keyed collection, not a single precompiled
-    // shader bundle. Unchanged pipelines remain reusable when one shader or
-    // the compiler build changes, while new pipeline descriptors miss and are
-    // compiled normally. Key the file only by the opaque-cache compatibility
-    // boundary instead of invalidating every pipeline on every shader edit.
-    let identity = format!("adapter={adapter_key};wgpu={wgpu_version};format=1");
-    let identity_hash = stable_hash_u64(identity.as_bytes());
-    let identity_digest = format!("{identity_hash:016x}");
-    let filename = format!(
-        "{}_laniusc-pipelines-v1_wgpu-{}_key-{}",
-        adapter_key,
-        sanitize_cache_key_component(wgpu_version),
-        identity_digest,
+/// Reads and validates one cache file. `Ok(None)` when it is missing or
+/// unreadable; the returned bytes include the header.
+fn read_pipeline_cache_file(
+    path: &std::path::Path,
+    identity_hash: u64,
+    stage_prefix: &str,
+    timer: &PipelineCachePersistTimer,
+) -> Result<Option<Vec<u8>>, PipelineCacheFileError> {
+    let start = Instant::now();
+    let file = match fs::read(path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let stage = format!("{stage_prefix}read.missing");
+            timer.span_prefixed("create", &stage, start, Instant::now());
+            return Ok(None);
+        }
+        Err(err) => {
+            let stage = format!("{stage_prefix}read.failed");
+            timer.span_prefixed("create", &stage, start, Instant::now());
+            warn!("failed to read pipeline cache {}: {err}", path.display());
+            return Ok(None);
+        }
+    };
+    let end = Instant::now();
+    timer.span_prefixed("create", &format!("{stage_prefix}read"), start, end);
+    timer.bytes_prefixed(
+        "size",
+        &format!("pipeline_cache.create.{stage_prefix}input_file_bytes"),
+        end,
+        file.len(),
     );
-    (filename, identity_hash)
+    let start = Instant::now();
+    match decode_pipeline_cache_file(&file, identity_hash) {
+        Ok(_) => {
+            timer.span_prefixed("create", &format!("{stage_prefix}decode"), start, Instant::now());
+            Ok(Some(file))
+        }
+        Err(err) => {
+            let stage = format!("{stage_prefix}decode.invalid");
+            timer.span_prefixed("create", &stage, start, Instant::now());
+            warn!("discarding pipeline cache {}: {err}", path.display());
+            Err(err)
+        }
+    }
+}
+
+/// The data hash recorded in a validated cache file's header.
+fn pipeline_cache_file_data_hash(file: &[u8]) -> u64 {
+    u64::from_le_bytes(file[32..40].try_into().expect("u64 data hash bytes"))
+}
+
+/// Names one kernel set's pipeline-cache file. Every file for one adapter and
+/// wgpu version shares `prefix` and the header identity hash, so a kernel set
+/// without a file of its own can seed from another set's.
+///
+/// A wgpu pipeline cache is a keyed collection, not one precompiled bundle:
+/// a seeded cache keeps every unchanged pipeline a hit after a shader edit.
+/// One file per kernel set keeps each file to about one set's pipelines, and
+/// pruning bounds the directory, where a single shared file collected every
+/// set any agent ever built.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PipelineCacheKey {
+    prefix: String,
+    filename: String,
+    identity_hash: u64,
+}
+
+impl PipelineCacheKey {
+    fn new(adapter_key: &str, wgpu_version: &str, kernel_set_digest: &str) -> Self {
+        let identity = format!("adapter={adapter_key};wgpu={wgpu_version};format=1");
+        let identity_hash = stable_hash_u64(identity.as_bytes());
+        let prefix = format!(
+            "{}_laniusc-pipelines-v1_wgpu-{}_key-{identity_hash:016x}",
+            adapter_key,
+            sanitize_cache_key_component(wgpu_version),
+        );
+        let kernel_set: String = sanitize_cache_key_component(kernel_set_digest)
+            .chars()
+            .take(16)
+            .collect();
+        let filename = format!("{prefix}_set-{kernel_set}");
+        Self {
+            prefix,
+            filename,
+            identity_hash,
+        }
+    }
+
+    /// Whether `name` is another kernel set's file that this kernel set can
+    /// seed from. The single shared file older builds wrote is not: it holds
+    /// every set they ran and is full (see `PIPELINE_CACHE_SEED_MAX_BYTES`).
+    fn can_seed_from(&self, name: &str) -> bool {
+        name != self.filename
+            && name
+                .strip_prefix(self.prefix.as_str())
+                .is_some_and(|rest| rest.starts_with("_set-") && !rest.ends_with(".tmp"))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PipelineCacheSeed<'a> {
+    None,
+    Use(&'a PipelineCacheDirEntry),
+    TooLarge(&'a PipelineCacheDirEntry),
+}
+
+/// The most recently written file this kernel set can seed from. One over
+/// `max_bytes` starts the set fresh instead (see
+/// `PIPELINE_CACHE_SEED_MAX_BYTES`).
+fn choose_pipeline_cache_seed<'a>(
+    entries: &'a [PipelineCacheDirEntry],
+    key: &PipelineCacheKey,
+    max_bytes: u64,
+) -> PipelineCacheSeed<'a> {
+    let newest = entries
+        .iter()
+        .filter(|entry| key.can_seed_from(&entry.name))
+        .max_by(|left, right| {
+            left.modified
+                .cmp(&right.modified)
+                .then_with(|| left.len.cmp(&right.len))
+                .then_with(|| left.name.cmp(&right.name))
+        });
+    match newest {
+        None => PipelineCacheSeed::None,
+        Some(entry) if entry.len > max_bytes => PipelineCacheSeed::TooLarge(entry),
+        Some(entry) => PipelineCacheSeed::Use(entry),
+    }
 }
 
 fn sanitize_cache_key_component(value: &str) -> String {
@@ -1016,25 +1388,16 @@ fn stable_hash_u64(bytes: &[u8]) -> u64 {
     hash
 }
 
+/// Lists the adapter's other cache files, prunes them to the budget, and
+/// returns the ones kept (seed candidates).
 fn prune_pipeline_cache_dir(
     cache_dir: &std::path::Path,
     current_path: &std::path::Path,
     adapter_key: &str,
-) {
-    if !crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_CACHE_PRUNE", true) {
-        return;
-    }
-    let max_files = crate::gpu::env::env_u64("LANIUS_PIPELINE_CACHE_MAX_FILES", 8) as usize;
-    let max_bytes = crate::gpu::env::env_u64(
-        "LANIUS_PIPELINE_CACHE_MAX_BYTES",
-        256u64.saturating_mul(1024).saturating_mul(1024),
-    );
-    let max_age_days = crate::gpu::env::env_u64("LANIUS_PIPELINE_CACHE_MAX_AGE_DAYS", 30);
+) -> Vec<PipelineCacheDirEntry> {
     let Ok(read_dir) = fs::read_dir(cache_dir) else {
-        return;
+        return Vec::new();
     };
-    let now = SystemTime::now();
-    let max_age = Duration::from_secs(max_age_days.saturating_mul(24 * 60 * 60));
     let mut entries = Vec::new();
     for entry in read_dir.flatten() {
         let path = entry.path();
@@ -1047,47 +1410,92 @@ fn prune_pipeline_cache_dir(
         if !name.starts_with(adapter_key) {
             continue;
         }
+        let name = name.to_string();
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
         if !metadata.is_file() {
             continue;
         }
-        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let len = metadata.len();
-        if now.duration_since(modified).is_ok_and(|age| age > max_age) {
-            remove_pipeline_cache_file(&path, "age");
-            continue;
-        }
-        entries.push(PipelineCachePruneEntry {
+        entries.push(PipelineCacheDirEntry {
             path,
-            len,
-            modified,
+            name,
+            len: metadata.len(),
+            modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
         });
     }
+    if !crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_CACHE_PRUNE", true) {
+        return entries;
+    }
+    let budget = PipelineCacheBudget {
+        max_files: crate::gpu::env::env_u64("LANIUS_PIPELINE_CACHE_MAX_FILES", 6) as usize,
+        max_bytes: crate::gpu::env::env_u64(
+            "LANIUS_PIPELINE_CACHE_MAX_BYTES",
+            768u64.saturating_mul(1024).saturating_mul(1024),
+        ),
+        max_age: Duration::from_secs(
+            crate::gpu::env::env_u64("LANIUS_PIPELINE_CACHE_MAX_AGE_DAYS", 30)
+                .saturating_mul(24 * 60 * 60),
+        ),
+    };
+    let (kept, removed) = plan_pipeline_cache_prune(entries, &budget, SystemTime::now());
+    for (entry, reason) in removed {
+        remove_pipeline_cache_file(&entry.path, reason);
+    }
+    kept
+}
+
+struct PipelineCacheBudget {
+    /// Files kept per adapter, counting the current kernel set's file.
+    max_files: usize,
+    /// Bytes kept in the other kernel sets' files.
+    max_bytes: u64,
+    max_age: Duration,
+}
+
+/// Splits the other kernel sets' files into kept and removed (with the
+/// reason): the newest are kept while they fit the budget.
+fn plan_pipeline_cache_prune(
+    mut entries: Vec<PipelineCacheDirEntry>,
+    budget: &PipelineCacheBudget,
+    now: SystemTime,
+) -> (
+    Vec<PipelineCacheDirEntry>,
+    Vec<(PipelineCacheDirEntry, &'static str)>,
+) {
     entries.sort_by(|left, right| {
         right
             .modified
             .cmp(&left.modified)
             .then_with(|| right.len.cmp(&left.len))
-            .then_with(|| right.path.cmp(&left.path))
+            .then_with(|| right.name.cmp(&left.name))
     });
-    let mut kept_files = 0usize;
+    let max_others = budget.max_files.saturating_sub(1);
+    let mut kept = Vec::new();
+    let mut removed = Vec::new();
     let mut kept_bytes = 0u64;
     for entry in entries {
-        let exceeds_files = kept_files >= max_files;
-        let exceeds_bytes = kept_bytes.saturating_add(entry.len) > max_bytes;
-        if exceeds_files || exceeds_bytes {
-            remove_pipeline_cache_file(&entry.path, "budget");
+        if now
+            .duration_since(entry.modified)
+            .is_ok_and(|age| age > budget.max_age)
+        {
+            removed.push((entry, "age"));
             continue;
         }
-        kept_files = kept_files.saturating_add(1);
+        if kept.len() >= max_others || kept_bytes.saturating_add(entry.len) > budget.max_bytes {
+            removed.push((entry, "budget"));
+            continue;
+        }
         kept_bytes = kept_bytes.saturating_add(entry.len);
+        kept.push(entry);
     }
+    (kept, removed)
 }
 
-struct PipelineCachePruneEntry {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PipelineCacheDirEntry {
     path: PathBuf,
+    name: String,
     len: u64,
     modified: SystemTime,
 }
@@ -1104,6 +1512,41 @@ fn remove_pipeline_cache_file(path: &std::path::Path, reason: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A shard directory `GLCache/<driver>/<device>/` with `.toc` files
+    /// modified `age_secs` before `now`.
+    fn shard_dir(root: &std::path::Path, device: &str, files: &[(&str, u64)], now: SystemTime) {
+        let dir = root.join("GLCache").join("driver").join(device);
+        fs::create_dir_all(&dir).unwrap();
+        for &(name, age_secs) in files {
+            let file = File::create(dir.join(name)).unwrap();
+            file.set_modified(now - Duration::from_secs(age_secs)).unwrap();
+        }
+    }
+
+    #[test]
+    fn named_driver_shards_are_classified_by_shards_written_since_start() {
+        let root = std::env::temp_dir().join(format!("laniusc-shard-naming-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let now = SystemTime::now();
+        let started = now - Duration::from_secs(60);
+        let glcache = root.join("GLCache");
+        let classify = || classify_shard_naming(&glcache, "laniusc", started);
+
+        assert_eq!(classify(), ShardNaming::Unknown, "no cache directory yet");
+        // A stale named shard and a stale hashed one: nothing written since start.
+        shard_dir(&root, "a", &[("laniusc0.toc", 600), ("0123456789abcdef.toc", 600)], now);
+        assert_eq!(classify(), ShardNaming::Unknown);
+        // The driver wrote only a hashed shard: it ignored the name, even with
+        // an old named shard (from another driver) elsewhere.
+        shard_dir(&root, "b", &[("fedcba9876543210.toc", 1), ("laniusc.toc", 1)], now);
+        assert_eq!(classify(), ShardNaming::Ignored);
+        // A shard directory written since start that holds a named shard,
+        // whichever file the write touched.
+        shard_dir(&root, "c", &[("laniusc12.toc", 600), ("00ff00ff00ff00ff.toc", 1)], now);
+        assert_eq!(classify(), ShardNaming::Honored);
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn profiling_labels_enable_debug_names_without_enabling_validation() {
@@ -1203,5 +1646,105 @@ mod tests {
         assert!(take_pipeline_cache_dirty(&dirty, true));
         assert!(!dirty.load(Ordering::Acquire));
         assert!(take_pipeline_cache_dirty(&dirty, true));
+    }
+
+    fn cache_entry(name: &str, len: u64, age_secs: u64) -> PipelineCacheDirEntry {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+        PipelineCacheDirEntry {
+            path: PathBuf::from("cache").join(name),
+            name: name.to_string(),
+            len,
+            modified: now - Duration::from_secs(age_secs),
+        }
+    }
+
+    #[test]
+    fn pipeline_cache_files_are_keyed_by_kernel_set() {
+        let a = PipelineCacheKey::new("nv_1234", "29.0.1", "0123456789abcdef0123");
+        let b = PipelineCacheKey::new("nv_1234", "29.0.1", "fedcba9876543210ffff");
+        let other_wgpu = PipelineCacheKey::new("nv_1234", "30.0.0", "0123456789abcdef0123");
+
+        assert_ne!(a.filename, b.filename);
+        assert!(a.filename.ends_with("_set-0123456789abcdef"));
+        assert_eq!(a.prefix, b.prefix);
+        assert_eq!(a.identity_hash, b.identity_hash);
+        assert_ne!(a.identity_hash, other_wgpu.identity_hash);
+
+        assert!(a.can_seed_from(&b.filename));
+        assert!(!a.can_seed_from(&a.prefix), "the full shared file older builds wrote");
+        assert!(!a.can_seed_from(&a.filename));
+        assert!(!a.can_seed_from(&format!("{}.tmp", b.filename)));
+        assert!(!a.can_seed_from(&format!("{}.tmp", a.prefix)));
+        assert!(!a.can_seed_from(&other_wgpu.filename));
+    }
+
+    #[test]
+    fn pipeline_cache_seeds_from_the_newest_compatible_file() {
+        let key = PipelineCacheKey::new("nv_1234", "29.0.1", "aaaaaaaaaaaaaaaa");
+        let older = PipelineCacheKey::new("nv_1234", "29.0.1", "bbbbbbbbbbbbbbbb");
+        let newer = PipelineCacheKey::new("nv_1234", "29.0.1", "cccccccccccccccc");
+        let other_wgpu = PipelineCacheKey::new("nv_1234", "30.0.0", "dddddddddddddddd");
+        let entries = vec![
+            cache_entry(&older.filename, 60, 300),
+            cache_entry(&newer.filename, 70, 200),
+            cache_entry(&format!("{}.tmp", key.prefix), 10, 1),
+            cache_entry(&other_wgpu.filename, 10, 1),
+        ];
+
+        assert_eq!(
+            choose_pipeline_cache_seed(&entries, &key, 100),
+            PipelineCacheSeed::Use(&entries[1])
+        );
+        assert_eq!(
+            choose_pipeline_cache_seed(&entries, &key, 65),
+            PipelineCacheSeed::TooLarge(&entries[1]),
+            "a seed over the limit starts fresh instead of falling back"
+        );
+        assert_eq!(
+            choose_pipeline_cache_seed(&entries[2..], &key, 100),
+            PipelineCacheSeed::None
+        );
+    }
+
+    #[test]
+    fn pipeline_cache_prune_keeps_the_newest_files() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+        let budget = PipelineCacheBudget {
+            max_files: 6,
+            max_bytes: 1000,
+            max_age: Duration::from_secs(10_000),
+        };
+        let entries: Vec<_> = (0..8)
+            .map(|age| cache_entry(&format!("set-{age}"), 10, age * 100))
+            .collect();
+
+        let (kept, removed) = plan_pipeline_cache_prune(entries, &budget, now);
+
+        // Five others plus the current kernel set's file make six.
+        let kept: Vec<_> = kept.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(kept, ["set-0", "set-1", "set-2", "set-3", "set-4"]);
+        let removed: Vec<_> = removed
+            .iter()
+            .map(|(entry, reason)| (entry.name.as_str(), *reason))
+            .collect();
+        assert_eq!(
+            removed,
+            [("set-5", "budget"), ("set-6", "budget"), ("set-7", "budget")]
+        );
+
+        let entries = vec![
+            cache_entry("new", 600, 1),
+            cache_entry("big", 600, 2),
+            cache_entry("small", 300, 3),
+            cache_entry("stale", 1, 20_000),
+        ];
+        let (kept, removed) = plan_pipeline_cache_prune(entries, &budget, now);
+        let kept: Vec<_> = kept.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(kept, ["new", "small"]);
+        let removed: Vec<_> = removed
+            .iter()
+            .map(|(entry, reason)| (entry.name.as_str(), *reason))
+            .collect();
+        assert_eq!(removed, [("big", "budget"), ("stale", "age")]);
     }
 }
