@@ -112,3 +112,8 @@ mod generated {
 #[path = "../spirv_size.rs"]
 #[allow(dead_code)]
 mod spirv_size;
+
+// The binding-name check runs in build.rs; compile it here so its tests run.
+#[cfg(test)]
+#[path = "../reflection_names.rs"]
+mod reflection_names;

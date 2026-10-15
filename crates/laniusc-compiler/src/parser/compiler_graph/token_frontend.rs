@@ -509,6 +509,26 @@ pub(super) fn register_schedule(
         MIN_TREE_BUILD,
         MIN_TREE_BUILD,
     )?;
+    // Delimiter ownership is published once per token as soon as the raw
+    // match depths and their search trees exist; the pairing and semantic
+    // classification passes read it instead of searching.
+    pass(
+        graph,
+        ENCLOSING_OPENS,
+        &passes.tokens_delimiter_match_03_enclosing_opens,
+        &[
+            (
+                "token_enclosing_open",
+                "token_enclosing_open",
+                Some(AccessMode::Write),
+            ),
+            (
+                "token_angle_close",
+                "token_angle_close",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
     pass(
         graph,
         "parser.tokens.delimiters.owner_local",
@@ -661,25 +681,8 @@ pub(super) fn register_schedule(
         CompilerPhase::Parse,
         &[("token_feature_flags", "token_feature_flags")],
     )?;
-    // Delimiter ownership and each raw `<`'s own role are published once per
-    // token; semantic classification reads them instead of searching.
-    pass(
-        graph,
-        ENCLOSING_OPENS,
-        &passes.tokens_delimiter_match_03_enclosing_opens,
-        &[
-            (
-                "token_enclosing_open",
-                "token_enclosing_open",
-                Some(AccessMode::Write),
-            ),
-            (
-                "token_angle_close",
-                "token_angle_close",
-                Some(AccessMode::Write),
-            ),
-        ],
-    )?;
+    // Each raw `<`'s own role is published once per token; semantic
+    // classification reads it instead of searching.
     pass(
         graph,
         ANGLE_KINDS,

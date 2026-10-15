@@ -1,5 +1,3 @@
-import fixed.stack;
-
 public interface IRangeSearchTree<T>
 {
     static uint n_blocks();
@@ -34,10 +32,8 @@ public struct RangeSearchI32AtLeast : IRangeSearchPredicate<int, int>
     }
 }
 
-static const int RANGE_SEARCH_TREE_SEARCH_STACK = 64;
-// Local helper budgets: callers must bound tree frames by the fixed stack and
-// row scans by one published row block before using these loops.
-static const uint RANGE_SEARCH_TREE_POP_BUDGET = 256u;
+// Local helper budget: callers must bound row scans by one published row
+// block before using these loops.
 static const uint RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET = 256u;
 static const uint RANGE_SEARCH_TREE_INVALID = 0xffffffffu;
 
@@ -53,22 +49,16 @@ public uint range_search_leaf_base_for_block_count(uint block_count)
     return value + 1u;
 }
 
-public struct RangeSearchTreeFrame
-{
-    uint node;
-    uint l;
-    uint r;
-}
-
-[ForceInline]
-public RangeSearchTreeFrame range_search_tree_frame(uint node, uint l, uint r)
-{
-    RangeSearchTreeFrame frame;
-    frame.node = node;
-    frame.l = l;
-    frame.r = r;
-    return frame;
-}
+// The block searches below walk the implicit heap (root 1, children 2v and
+// 2v + 1, block b's leaf at leaf_base + b, leaf_base a power of two) without
+// a stack. A walk visits the maximal heap nodes inside the queried block
+// range in search order, enters a node only when its aggregate may match,
+// and when a node fails moves to the next node in that order: up through the
+// ancestors it is the last child of, then across to the adjacent sibling.
+// Each node is tracked with its first block `l` and width `w`. Nodes that
+// only partly overlap the range are entered without an aggregate test, and
+// a leaf must pass both its aggregate and its leaf value, which is the same
+// rule the previous depth-first stack search applied.
 
 public bool range_search_tree_first_block_at_or_after<
     TValue,
@@ -82,67 +72,54 @@ public bool range_search_tree_first_block_at_or_after<
     block = RANGE_SEARCH_TREE_INVALID;
     uint n = TTree.n_blocks();
     uint leaf_base = TTree.leaf_base();
-    if (lo_block >= n || leaf_base == 0u)
+    if (lo_block >= n || leaf_base == 0u || lo_block >= leaf_base)
         return false;
 
-    RangeSearchTreeFrame stack[RANGE_SEARCH_TREE_SEARCH_STACK];
-    uint sp = 0u;
-
-    if (!fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-            sp,
-            stack,
-            range_search_tree_frame(1u, 0u, leaf_base)))
-        return false;
-
-    for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
+    // The largest node whose first block is lo_block.
+    uint v = leaf_base + lo_block;
+    uint l = lo_block;
+    uint w = 1u;
+    while (v > 1u && (v & 1u) == 0u)
     {
-        if (fixed_stack_empty(sp))
+        v >>= 1u;
+        w <<= 1u;
+    }
+
+    for (;;)
+    {
+        // Later nodes start further right, so none of them holds a block.
+        if (l >= n)
             return false;
 
-        RangeSearchTreeFrame frame;
-        if (!fixed_stack_pop<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                frame,
-                range_search_tree_frame(RANGE_SEARCH_TREE_INVALID, 0u, 0u)))
-            return false;
-        uint node = frame.node;
-        uint l = frame.l;
-        uint r = frame.r;
-
-        if (r <= lo_block || l >= n)
-            continue;
-
-        bool fully_in_range = l >= lo_block;
-        if (fully_in_range && !TPredicate.aggregate_may_match(TTree.tree_value(node), query))
-            continue;
-
-        if (r - l == 1u)
+        bool enter = TPredicate.aggregate_may_match(TTree.tree_value(v), query);
+        if (enter && w == 1u)
         {
-            if (l >= lo_block && l < n && TPredicate.leaf_matches(TTree.leaf_value(l), query))
+            if (TPredicate.leaf_matches(TTree.leaf_value(l), query))
             {
                 block = l;
                 return true;
             }
+            enter = false;
+        }
+        if (enter)
+        {
+            v <<= 1u;
+            w >>= 1u;
             continue;
         }
 
-        if (sp + 2u > uint(RANGE_SEARCH_TREE_SEARCH_STACK))
-            return false;
-
-        uint mid = (l + r) >> 1u;
-
-        if (!fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                range_search_tree_frame(node * 2u + 1u, mid, r)) ||
-            !fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                range_search_tree_frame(node * 2u, l, mid)))
-            return false;
+        // Next node to the right: climb while v is a right child.
+        while ((v & 1u) != 0u)
+        {
+            if (v == 1u)
+                return false;
+            v >>= 1u;
+            l -= w;
+            w <<= 1u;
+        }
+        v += 1u;
+        l += w;
     }
-
     return false;
 }
 
@@ -161,64 +138,50 @@ public bool range_search_tree_last_block_before<
     if (hi_block == 0u || n == 0u || leaf_base == 0u)
         return false;
 
-    RangeSearchTreeFrame stack[RANGE_SEARCH_TREE_SEARCH_STACK];
-    uint sp = 0u;
-
-    if (!fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-            sp,
-            stack,
-            range_search_tree_frame(1u, 0u, leaf_base)))
-        return false;
-
-    for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
+    // The largest node whose last block is hi - 1.
+    uint hi = min(hi_block, leaf_base);
+    uint v = leaf_base + hi - 1u;
+    uint l = hi - 1u;
+    uint w = 1u;
+    while (v > 1u && (v & 1u) != 0u)
     {
-        if (fixed_stack_empty(sp))
-            return false;
+        v >>= 1u;
+        l -= w;
+        w <<= 1u;
+    }
 
-        RangeSearchTreeFrame frame;
-        if (!fixed_stack_pop<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                frame,
-                range_search_tree_frame(RANGE_SEARCH_TREE_INVALID, 0u, 0u)))
-            return false;
-        uint node = frame.node;
-        uint l = frame.l;
-        uint r = frame.r;
-
-        if (l >= hi_block || l >= n)
-            continue;
-
-        bool fully_in_range = r <= hi_block;
-        if (fully_in_range && !TPredicate.aggregate_may_match(TTree.tree_value(node), query))
-            continue;
-
-        if (r - l == 1u)
+    for (;;)
+    {
+        // Nodes starting at or past n hold no block; skip them.
+        bool enter = l < n && TPredicate.aggregate_may_match(TTree.tree_value(v), query);
+        if (enter && w == 1u)
         {
-            if (l < hi_block && l < n && TPredicate.leaf_matches(TTree.leaf_value(l), query))
+            if (TPredicate.leaf_matches(TTree.leaf_value(l), query))
             {
                 block = l;
                 return true;
             }
+            enter = false;
+        }
+        if (enter)
+        {
+            v = v * 2u + 1u;
+            w >>= 1u;
+            l += w;
             continue;
         }
 
-        if (sp + 2u > uint(RANGE_SEARCH_TREE_SEARCH_STACK))
+        // Next node to the left: climb while v is a left child.
+        while ((v & 1u) == 0u)
+        {
+            v >>= 1u;
+            w <<= 1u;
+        }
+        if (v == 1u)
             return false;
-
-        uint mid = (l + r) >> 1u;
-
-        if (!fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                range_search_tree_frame(node * 2u, l, mid)) ||
-            !fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                range_search_tree_frame(node * 2u + 1u, mid, r)))
-            return false;
+        v -= 1u;
+        l -= w;
     }
-
     return false;
 }
 
@@ -238,69 +201,58 @@ public bool range_search_tree_last_block_between<
     if (hi_block <= lo_block || n == 0u || leaf_base == 0u)
         return false;
 
-    uint capped_hi = min(hi_block, n);
+    uint capped_hi = min(min(hi_block, n), leaf_base);
     if (capped_hi <= lo_block)
         return false;
 
-    RangeSearchTreeFrame stack[RANGE_SEARCH_TREE_SEARCH_STACK];
-    uint sp = 0u;
-
-    if (!fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-            sp,
-            stack,
-            range_search_tree_frame(1u, 0u, leaf_base)))
-        return false;
-
-    for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
+    // The largest node whose last block is capped_hi - 1.
+    uint v = leaf_base + capped_hi - 1u;
+    uint l = capped_hi - 1u;
+    uint w = 1u;
+    while (v > 1u && (v & 1u) != 0u)
     {
-        if (fixed_stack_empty(sp))
+        v >>= 1u;
+        l -= w;
+        w <<= 1u;
+    }
+
+    for (;;)
+    {
+        // Every later node ends at or before this one's first block.
+        if (l + w <= lo_block)
             return false;
 
-        RangeSearchTreeFrame frame;
-        if (!fixed_stack_pop<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                frame,
-                range_search_tree_frame(RANGE_SEARCH_TREE_INVALID, 0u, 0u)))
-            return false;
-        uint node = frame.node;
-        uint l = frame.l;
-        uint r = frame.r;
-
-        if (r <= lo_block || l >= capped_hi || l >= n)
-            continue;
-
-        bool fully_in_range = l >= lo_block && r <= capped_hi;
-        if (fully_in_range && !TPredicate.aggregate_may_match(TTree.tree_value(node), query))
-            continue;
-
-        if (r - l == 1u)
+        // A node that straddles lo_block is entered without a test; it is
+        // never a leaf, because a leaf that ends after lo_block starts there.
+        bool enter = l < lo_block || TPredicate.aggregate_may_match(TTree.tree_value(v), query);
+        if (enter && w == 1u)
         {
-            if (l >= lo_block && l < capped_hi && l < n &&
-                TPredicate.leaf_matches(TTree.leaf_value(l), query))
+            if (TPredicate.leaf_matches(TTree.leaf_value(l), query))
             {
                 block = l;
                 return true;
             }
+            enter = false;
+        }
+        if (enter)
+        {
+            v = v * 2u + 1u;
+            w >>= 1u;
+            l += w;
             continue;
         }
 
-        if (sp + 2u > uint(RANGE_SEARCH_TREE_SEARCH_STACK))
+        // Next node to the left: climb while v is a left child.
+        while ((v & 1u) == 0u)
+        {
+            v >>= 1u;
+            w <<= 1u;
+        }
+        if (v == 1u)
             return false;
-
-        uint mid = (l + r) >> 1u;
-
-        if (!fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                range_search_tree_frame(node * 2u, l, mid)) ||
-            !fixed_stack_push<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
-                sp,
-                stack,
-                range_search_tree_frame(node * 2u + 1u, mid, r)))
-            return false;
+        v -= 1u;
+        l -= w;
     }
-
     return false;
 }
 

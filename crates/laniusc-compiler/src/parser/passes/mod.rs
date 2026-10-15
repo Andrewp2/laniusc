@@ -257,7 +257,6 @@ pub struct ParserPasses {
     pub tree_active_dispatch_args: tree::active_dispatch_args::TreeActiveDispatchArgsPass,
     pub tree_parent: tree::parent::TreeParentPass,
     pub tree_spans: tree::spans::TreeSpansPass,
-    pub tree_depth_traverse: tree::depth::traverse::TreeDepthTraversePass,
     pub tree_depth_block_max: tree::depth::block_max::TreeDepthBlockMaxPass,
     pub tree_depth_schedule: tree::depth::schedule::TreeDepthSchedulePass,
     pub tree_prev_sibling_clear: tree::prev::sibling::clear::TreePrevSiblingClearPass,
@@ -471,7 +470,6 @@ impl ParserPasses {
             tree_active_dispatch_args:
                 tree::active_dispatch_args::TreeActiveDispatchArgsPass::new(device)?,
             tree_spans: tree::spans::TreeSpansPass::new(device)?,
-            tree_depth_traverse: tree::depth::traverse::TreeDepthTraversePass::new(device)?,
             tree_depth_block_max: tree::depth::block_max::TreeDepthBlockMaxPass::new(device)?,
             tree_depth_schedule: tree::depth::schedule::TreeDepthSchedulePass::new(device)?,
             tree_prev_sibling_clear: tree::prev::sibling::clear::TreePrevSiblingClearPass::new(
