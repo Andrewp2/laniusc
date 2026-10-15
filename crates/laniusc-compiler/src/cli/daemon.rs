@@ -567,10 +567,9 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
         })
         .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
     }
-    // Write the cache only if the driver compiled something: with a warm
-    // cache every pipeline above is a hit, and reading the unchanged data
-    // back cost ~90 ms of startup. Jobs persist any later lazy compiles.
-    device::persist_compiled_pipelines();
+    // Compare the cache with its file off the startup path: reading the data
+    // back costs ~90 ms even when every pipeline above was a hit.
+    device::persist_created_pipelines_in_background();
     let startup_ms = startup.elapsed().as_secs_f64() * 1000.0;
 
     match &options.transport {
@@ -936,12 +935,12 @@ async fn run_session(
             }
         }
         write_response(&mut output, &response)?;
-        // A daemon killed later keeps pipelines this job compiled lazily.
-        device::persist_compiled_pipelines();
+        // A daemon killed later keeps pipelines this job created lazily.
+        device::persist_created_pipelines_in_background();
         reaper.arm();
     }
     crate::gpu::trace::flush();
-    device::persist_compiled_pipelines();
+    device::persist_created_pipelines();
     Ok(())
 }
 

@@ -107,7 +107,7 @@ impl GpuProgramEvidence {
         );
         if self.layout_kernel.is_none() {
             self.layout_kernel = Some(kernels::NativeLayoutKernel::load(&self.device)?);
-            crate::gpu::device::persist_compiled_pipelines_for_device(&self.device);
+            crate::gpu::device::persist_created_pipelines_for_device(&self.device);
         }
         let kernel = self.layout_kernel.as_ref().expect("loaded layout kernel");
         let plans = sources

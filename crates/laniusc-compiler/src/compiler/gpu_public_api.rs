@@ -218,7 +218,7 @@ pub(super) fn global_gpu_compiler_for(
         .get_or_init(|| {
             let compiler = pollster::block_on(GpuCompiler::new_with_backends(backends));
             if compiler.is_ok() {
-                device::persist_compiled_pipelines();
+                device::persist_created_pipelines();
             }
             compiler
         })

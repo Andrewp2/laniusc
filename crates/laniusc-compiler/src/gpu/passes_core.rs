@@ -1654,10 +1654,7 @@ pub fn pipeline_from_spirv_and_bgls(
     PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
     crate::gpu::device::mark_pipeline_cache_dirty(device);
     let compute_pipeline_end = Instant::now();
-    crate::gpu::device::note_pipeline_created(
-        device,
-        compute_pipeline_end.duration_since(compute_pipeline_start),
-    );
+    crate::gpu::device::note_pipeline_created(device);
     trace_pipeline(label, "compute_pipeline.done");
     trace_pipeline_timing(
         label,
