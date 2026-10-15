@@ -9561,6 +9561,47 @@ fn main() -> i32 {
 "#, stdlib.0.path(), b"", 42);
 }
 
+fn nominal_fixed_stdlib() -> ReceiverTestStdlib {
+    let stdlib = ReceiverTestStdlib::new();
+    std::fs::write(stdlib.0.path().join("core/nominal_fixed.lani"), r#"
+module core::nominal_fixed;
+pub struct Buffer<T, const N: usize> { values: [T; N] }
+pub fn make(seed: i32) -> Buffer<i32, 3> { return Buffer<i32, 3> { values: [seed, 1, 1] }; }
+pub fn first<T, const N: usize>(b: Buffer<T, N>) -> T { return b.values[0]; }
+"#).expect("nominal fixed module");
+    stdlib
+}
+
+#[test]
+fn nominal_constant_arguments_cross_imported_concrete_signatures() {
+    // The dependency interface carries `make`'s `Buffer<i32, 3>` with its
+    // constant identity, so the importer rebuilds the same nominal type.
+    let stdlib = nominal_fixed_stdlib();
+    execute_with_stdlib("imported concrete constant arguments", r#"
+import core::nominal_fixed;
+fn main() -> i32 {
+    let b: core::nominal_fixed::Buffer<i32, 3> = core::nominal_fixed::make(40);
+    return core::nominal_fixed::first(b) + b.values[1] + b.values[2];
+}
+"#, stdlib.0.path(), b"", 42);
+    let entry = common::TempArtifact::new("generic_types", "imported constant argument mismatch", Some("lani"));
+    entry.write_str(r#"
+import core::nominal_fixed;
+fn main() -> i32 {
+    let b: core::nominal_fixed::Buffer<i32, 4> = core::nominal_fixed::make(40);
+    return b.values[0];
+}
+"#);
+    let path = entry.path().to_path_buf();
+    let root = stdlib.0.path().to_path_buf();
+    let error = common::run_gpu_codegen_with_timeout("imported constant argument mismatch", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &root))
+    })
+    .expect_err("Buffer<i32, 3> must not convert to Buffer<i32, 4>");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+}
+
 #[test]
 fn nominal_constant_arguments_execute_thirty_two_interleaved_operands() {
     let header = (0..16).map(|i| format!("const N{i}: usize, T{i}")).collect::<Vec<_>>().join(", ");

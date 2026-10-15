@@ -2497,6 +2497,26 @@ fn finish_source_pack_unit(
         .iter()
         .map(|owner| owner.call_hir)
         .collect::<std::collections::BTreeSet<_>>();
+    if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false) {
+        // Call environments of the unit, for sizing the canonical
+        // environment and substitution tables: distinct (target, type
+        // arguments, constant arguments) bindings over the retained calls.
+        let environments = artifacts
+            .generic_calls
+            .iter()
+            .map(|call| format!("{:?}{:?}{:?}", call.target, call.arguments, call.constants))
+            .collect::<std::collections::HashSet<_>>();
+        eprintln!(
+            "[typecheck.canonical.environments] generic_calls={} distinct_environments={} bound_slots={}",
+            artifacts.generic_calls.len(),
+            environments.len(),
+            artifacts
+                .generic_calls
+                .iter()
+                .map(|call| call.arguments.len() + call.constants.len())
+                .sum::<usize>(),
+        );
+    }
     if call_ids.len() != artifacts.generic_calls.len()
         || owner_ids.len() != artifacts.checked_call_owners.len()
         || call_ids != owner_ids

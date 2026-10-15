@@ -187,6 +187,7 @@ fn record_canonical_types(
     stage: CanonicalStage,
     counts_readback: &LaniusBuffer<u32>,
     validation_readback: &LaniusBuffer<u32>,
+    canonical_scale: u32,
 ) -> Result<()> {
     canonical.record_first_batch(encoder, stage)?;
     let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
@@ -196,14 +197,29 @@ fn record_canonical_types(
             submit_and_read_u32s(device, queue, encoder, counts_readback, "type_check.canonical")?;
         let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
+        let [record_capacity, argument_capacity, dynamic_base] = canonical.capacity();
         if trace || overflow != 0 {
             eprintln!(
-                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={} args={} overflow={overflow:#x}",
+                "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} dynamic={}/{} args={}/{argument_capacity} overflow={overflow:#x} scale={canonical_scale}",
                 stage.label(),
                 counts[canonical_passes::CANONICAL_COUNT_ROUND],
                 counts[0],
+                counts[0].saturating_sub(dynamic_base),
+                record_capacity.saturating_sub(dynamic_base),
                 counts[1],
             );
+        }
+        // Overflow bits stay set until the next job's clear, so the first
+        // batch that reports one abandons the job: its candidates already
+        // turned UNKNOWN and no later stage can repair them.
+        if overflow & canonical_passes::CANONICAL_RETRY_OVERFLOW_BITS != 0 {
+            return Err(anyhow::Error::new(canonical_passes::CanonicalCapacityOverflow {
+                bits: overflow,
+                stage: stage.label(),
+                scale: canonical_scale,
+                records: [counts[0], record_capacity],
+                args: [counts[1], argument_capacity],
+            }));
         }
         if pending == 0 || batch + 1 == batches {
             break;
@@ -305,6 +321,7 @@ impl GpuTypeChecker {
             canonical_counts_readback,
             canonical_validation_readback,
             preflight_graph,
+            canonical_scale: std::sync::atomic::AtomicU32::new(1),
             resident_workspace: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
@@ -369,26 +386,48 @@ impl GpuTypeChecker {
         hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
-        timer: Option<&mut crate::gpu::timer::GpuTimer>,
-        release_workspace_consumers: impl FnOnce(),
+        mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
+        mut release_workspace_consumers: impl FnMut(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
-        self.record_resident_token_buffer_with_hir_impl_on_gpu(
-            device,
-            queue,
-            encoder,
-            source_len,
-            source_file_capacity,
-            token_capacity,
-            token_buf,
-            token_count_buf,
-            token_file_id_buf,
-            source_buf,
-            hir_node_capacity,
-            hir_items,
-            dependency_pages,
-            timer,
-            release_workspace_consumers,
-        )
+        // A canonical stage that runs out of table capacity abandons the job
+        // (docs/canonical-type-ids.md, "Capacities and overflow"). The job is
+        // recorded again from the start on a workspace with twice the
+        // canonical scale. Its inputs are the retained lexer, parser and
+        // dependency buffers, which type checking only reads; the work the
+        // abandoned attempt submitted wrote only the replaced workspace.
+        loop {
+            let result = self.record_resident_token_buffer_with_hir_impl_on_gpu(
+                device,
+                queue,
+                encoder,
+                source_len,
+                source_file_capacity,
+                token_capacity,
+                token_buf,
+                token_count_buf,
+                token_file_id_buf,
+                source_buf,
+                hir_node_capacity,
+                hir_items,
+                dependency_pages,
+                timer.as_deref_mut(),
+                &mut release_workspace_consumers,
+            );
+            let Err(GpuTypeCheckError::Gpu(error)) = &result else {
+                return result;
+            };
+            let Some(overflow) = error.downcast_ref::<canonical_passes::CanonicalCapacityOverflow>()
+            else {
+                return result;
+            };
+            let Some(scale) = canonical_passes::canonical_retry_scale(overflow.scale, overflow.bits)
+            else {
+                return result;
+            };
+            eprintln!("[typecheck.canonical] {overflow}; recording the job again at scale {scale}");
+            self.canonical_scale
+                .fetch_max(scale, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Ensures that the resident type-check graph and its physical workspace
@@ -412,7 +451,7 @@ impl GpuTypeChecker {
         hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
-        release_workspace_consumers: impl FnOnce(),
+        release_workspace_consumers: impl FnMut(),
     ) -> Result<(), GpuTypeCheckError> {
         let dependency_interfaces = dependency_pages.map(GpuDependencyInterfacePages::state);
         self.ensure_resident_workspace(
@@ -446,7 +485,7 @@ impl GpuTypeChecker {
         hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
-        release_workspace_consumers: impl FnOnce(),
+        mut release_workspace_consumers: impl FnMut(),
     ) -> Result<bool, GpuTypeCheckError> {
         let input_buffers = [
             token_buf.buffer,
@@ -482,6 +521,7 @@ impl GpuTypeChecker {
             call_arg_row_capacity: hir_items.call_arg_row_capacity.max(1),
             parser_feature_flags: hir_items.parser_feature_flags,
             semantic_interface_required: hir_items.semantic_interface_required,
+            canonical_scale: self.canonical_scale.load(std::sync::atomic::Ordering::Relaxed),
             input_fingerprint: buffer_fingerprint(&fingerprint_buffers),
         }
         .bucketed();
@@ -607,7 +647,7 @@ impl GpuTypeChecker {
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_pages: Option<&GpuDependencyInterfacePages>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
-        release_workspace_consumers: impl FnOnce(),
+        release_workspace_consumers: impl FnMut(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         // Packed expression facts reserve the low 27-bit all-ones link as
         // absent. Reject capacity overflow before creating or packing rows.
@@ -716,6 +756,7 @@ impl GpuTypeChecker {
                     hir_items.semantic_interface_required,
                 )?);
             let module_path = &bind_groups.module_path;
+            let canonical_scale = bind_groups.cache_key.canonical_scale;
             let pattern_pages = DependencyPatternReplay {
                 device,
                 queue,
@@ -909,6 +950,7 @@ impl GpuTypeChecker {
                         CanonicalStage::Dependency,
                         &self.canonical_counts_readback,
                         &self.canonical_validation_readback,
+                        canonical_scale,
                     )
                 };
                 let record_projection = |encoder: &mut wgpu::CommandEncoder| {
@@ -1110,6 +1152,7 @@ impl GpuTypeChecker {
                 CanonicalStage::Early,
                 &self.canonical_counts_readback,
                 &self.canonical_validation_readback,
+                canonical_scale,
             )?;
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
                 index.record(encoder)?;
@@ -1972,6 +2015,7 @@ impl GpuTypeChecker {
                 CanonicalStage::Late,
                 &self.canonical_counts_readback,
                 &self.canonical_validation_readback,
+                canonical_scale,
             )?;
             bind_groups
                 .semantic_projection

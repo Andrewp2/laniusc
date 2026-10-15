@@ -88,40 +88,45 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint start = interface_type_reverse_prefix[row];
     if (start >= gParams.hir_capacity || count > gParams.hir_capacity - start)
         { checked_export_fail(root, 2u); return; }
-    uint2 refs[EXPORT_DEPTH_LIMIT];
-    uint next[EXPORT_DEPTH_LIMIT]; uint children[EXPORT_DEPTH_LIMIT]; uint edge_start[EXPORT_DEPTH_LIMIT];
+    // Three words per level (checked_types.slang, export_level).
+    uint payload[EXPORT_DEPTH_LIMIT]; uint level[EXPORT_DEPTH_LIMIT]; uint edge_start[EXPORT_DEPTH_LIMIT];
     uint depth = 0u; uint emitted = 0u;
     uint edge_cursor = interface_type_edge_prefix[row];
     uint edge_end = edge_cursor + count - 1u;
-    refs[0u] = checked_export_root(root); next[0u] = INVALID;
+    uint2 top = checked_export_root(root);
+    payload[0u] = top.y; level[0u] = export_level(top);
     for (;;)
     {
-        if (next[depth] == INVALID)
+        uint2 ref = export_level_ref(level[depth], payload[depth]);
+        if (export_level_next(level[depth]) == EXPORT_UNVISITED)
         {
-            uint kind = checked_export_kind(refs[depth], children[depth]);
-            if (kind == 0u || emitted >= count || edge_cursor > edge_end || children[depth] > edge_end - edge_cursor)
+            uint children;
+            uint kind = checked_export_kind(ref, children);
+            if (kind == 0u || emitted >= count || edge_cursor > edge_end || children > edge_end - edge_cursor)
                 { checked_export_fail(root, 3u); return; }
             uint index = start + count - 1u - emitted++;
             if (depth != 0u)
             {
-                uint edge = edge_start[depth - 1u] + next[depth - 1u] - 1u;
+                uint edge = edge_start[depth - 1u] + export_level_next(level[depth - 1u]) - 1u;
                 interface_type_edges[edge] = index;
                 interface_type_edge_written[edge] = 1u;
             }
-            edge_start[depth] = edge_cursor; edge_cursor += children[depth];
-            if (!emit_type(root, index, refs[depth], kind, edge_start[depth], children[depth]))
+            edge_start[depth] = edge_cursor; edge_cursor += children;
+            if (!emit_type(root, index, ref, kind, edge_start[depth], children))
                 { checked_export_fail(root, 4u); return; }
-            next[depth] = 0u;
+            level[depth] = export_level_visit(level[depth], children);
         }
-        if (next[depth] == children[depth])
+        uint next = export_level_next(level[depth]);
+        if (next == export_level_children(level[depth]))
         {
             if (depth == 0u) break;
             depth--; continue;
         }
         uint2 child;
-        if (depth + 1u == EXPORT_DEPTH_LIMIT || !checked_export_child(refs[depth], next[depth]++, child))
+        level[depth] = export_level_advance(level[depth]);
+        if (depth + 1u == EXPORT_DEPTH_LIMIT || !checked_export_child(ref, next, child))
             { checked_export_fail(root, 5u); return; }
-        depth++; refs[depth] = child; next[depth] = INVALID;
+        depth++; payload[depth] = child.y; level[depth] = export_level(child);
     }
     if (emitted != count || edge_cursor != edge_end) checked_export_fail(root, 6u);
 }
