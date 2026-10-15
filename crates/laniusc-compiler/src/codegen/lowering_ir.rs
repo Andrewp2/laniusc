@@ -2475,6 +2475,8 @@ fn build_lowering_compiler_graph(
             PassAccess::read("semantic_calls_by_hir", checked_calls),
             PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_generic_param_ranges", hir_generic_param_ranges),
+            PassAccess::read("compact_method_count", hir_method_count),
+            PassAccess::read("compact_method_cores", hir_method_cores),
             PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_fn_return_type", hir_fn_return_type),
             PassAccess::read("compact_param_count", hir_param_count),

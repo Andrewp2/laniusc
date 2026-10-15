@@ -201,6 +201,7 @@ pub(in crate::type_checker) struct MethodBindGroups {
     pub(in crate::type_checker) mark_call_return_keys: ComputeOperation,
     pub(in crate::type_checker) reset_candidates: ComputeOperation,
     pub(in crate::type_checker) resolve_table: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members: ComputeOperation,
     pub(in crate::type_checker) finalize_candidates: ComputeOperation,
     pub(in crate::type_checker) resolve: ComputeOperation,
 }
