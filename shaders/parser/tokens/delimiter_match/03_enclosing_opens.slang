@@ -12,7 +12,12 @@
 //
 // token_angle_close[t] is, for a raw `<`, the first later row whose angle
 // match depth is at most the opener's: the closer that ends its list.
+//
+// Each search climbs the per-block minimum heaps from 01_depth_blocks and the
+// block minimum tree from 02_build_min_tree, so it reads O(log distance) rows
+// instead of scanning blocks (blocked_search_tree.slang).
 
+import blocked_search_tree;
 import segment_tree;
 
 struct Params
@@ -42,17 +47,15 @@ StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<int> depth_angle_inblock;
 StructuredBuffer<int> block_prefix_angle;
 StructuredBuffer<int> brace_match_depth;
-StructuredBuffer<int> brace_match_block_min;
 StructuredBuffer<int> brace_match_min_tree;
 StructuredBuffer<int> paren_match_depth;
-StructuredBuffer<int> paren_match_block_min;
 StructuredBuffer<int> paren_match_min_tree;
 StructuredBuffer<int> bracket_match_depth;
-StructuredBuffer<int> bracket_match_block_min;
 StructuredBuffer<int> bracket_match_min_tree;
 StructuredBuffer<int> angle_match_depth;
-StructuredBuffer<int> angle_match_block_min;
 StructuredBuffer<int> angle_match_min_tree;
+// Local minimum heaps of every 256-row block, all four classes per node.
+StructuredBuffer<int4> delimiter_match_local_min;
 
 RWStructuredBuffer<uint4> token_enclosing_open;
 RWStructuredBuffer<uint> token_angle_close;
@@ -63,14 +66,9 @@ static const int INF = 2147483647;
 static const uint TK_LT = 12u;
 static const uint TK_SHR = 44u;
 
-uint depth_search_n_blocks()
-{
-    return gParams.match_tree_n_blocks == 0u ? 1u : gParams.match_tree_n_blocks;
-}
-
 uint depth_search_leaf_base()
 {
-    uint n_blocks = depth_search_n_blocks();
+    uint n_blocks = gParams.match_tree_n_blocks == 0u ? 1u : gParams.match_tree_n_blocks;
     uint base = gParams.match_tree_leaf_base > 0u
         ? gParams.match_tree_leaf_base - 1u
         : max(n_blocks, 1u) - 1u;
@@ -82,64 +80,46 @@ uint depth_search_leaf_base()
     return base + 1u;
 }
 
-public struct BraceDepthTree : IRangeSearchTree<int>
+[ForceInline]
+int4 local_min(uint block, uint node)
 {
-    public static uint n_blocks() { return depth_search_n_blocks(); }
-    public static uint leaf_base() { return depth_search_leaf_base(); }
-    public static int leaf_value(uint block) { return brace_match_block_min[block]; }
-    public static int tree_value(uint node) { return brace_match_min_tree[node]; }
+    return delimiter_match_local_min[block * WG_SIZE + node];
 }
 
-public struct ParenDepthTree : IRangeSearchTree<int>
+public struct ParenDepthTree : IBlockedSearchTree<int>
 {
-    public static uint n_blocks() { return depth_search_n_blocks(); }
-    public static uint leaf_base() { return depth_search_leaf_base(); }
-    public static int leaf_value(uint block) { return paren_match_block_min[block]; }
-    public static int tree_value(uint node) { return paren_match_min_tree[node]; }
-}
-
-public struct BracketDepthTree : IRangeSearchTree<int>
-{
-    public static uint n_blocks() { return depth_search_n_blocks(); }
-    public static uint leaf_base() { return depth_search_leaf_base(); }
-    public static int leaf_value(uint block) { return bracket_match_block_min[block]; }
-    public static int tree_value(uint node) { return bracket_match_min_tree[node]; }
-}
-
-public struct AngleDepthTree : IRangeSearchTree<int>
-{
-    public static uint n_blocks() { return depth_search_n_blocks(); }
-    public static uint leaf_base() { return depth_search_leaf_base(); }
-    public static int leaf_value(uint block) { return angle_match_block_min[block]; }
-    public static int tree_value(uint node) { return angle_match_min_tree[node]; }
-}
-
-public struct BraceDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline] public static uint item_count() { return gParams.token_capacity; }
-    [ForceInline] public static uint block_size() { return WG_SIZE; }
-    [ForceInline] public static int row_value(uint row) { return brace_match_depth[row]; }
-}
-
-public struct ParenDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline] public static uint item_count() { return gParams.token_capacity; }
-    [ForceInline] public static uint block_size() { return WG_SIZE; }
+    [ForceInline] public static uint row_count() { return gParams.token_capacity; }
     [ForceInline] public static int row_value(uint row) { return paren_match_depth[row]; }
+    [ForceInline] public static int local_node(uint block, uint node) { return local_min(block, node).x; }
+    [ForceInline] public static uint block_leaf_base() { return depth_search_leaf_base(); }
+    [ForceInline] public static int block_node(uint node) { return paren_match_min_tree[node]; }
 }
 
-public struct BracketDepthRows : IRangeSearchRows<int>
+public struct BraceDepthTree : IBlockedSearchTree<int>
 {
-    [ForceInline] public static uint item_count() { return gParams.token_capacity; }
-    [ForceInline] public static uint block_size() { return WG_SIZE; }
+    [ForceInline] public static uint row_count() { return gParams.token_capacity; }
+    [ForceInline] public static int row_value(uint row) { return brace_match_depth[row]; }
+    [ForceInline] public static int local_node(uint block, uint node) { return local_min(block, node).y; }
+    [ForceInline] public static uint block_leaf_base() { return depth_search_leaf_base(); }
+    [ForceInline] public static int block_node(uint node) { return brace_match_min_tree[node]; }
+}
+
+public struct BracketDepthTree : IBlockedSearchTree<int>
+{
+    [ForceInline] public static uint row_count() { return gParams.token_capacity; }
     [ForceInline] public static int row_value(uint row) { return bracket_match_depth[row]; }
+    [ForceInline] public static int local_node(uint block, uint node) { return local_min(block, node).z; }
+    [ForceInline] public static uint block_leaf_base() { return depth_search_leaf_base(); }
+    [ForceInline] public static int block_node(uint node) { return bracket_match_min_tree[node]; }
 }
 
-public struct AngleDepthRows : IRangeSearchRows<int>
+public struct AngleDepthTree : IBlockedSearchTree<int>
 {
-    [ForceInline] public static uint item_count() { return gParams.token_capacity; }
-    [ForceInline] public static uint block_size() { return WG_SIZE; }
+    [ForceInline] public static uint row_count() { return gParams.token_capacity; }
     [ForceInline] public static int row_value(uint row) { return angle_match_depth[row]; }
+    [ForceInline] public static int local_node(uint block, uint node) { return local_min(block, node).w; }
+    [ForceInline] public static uint block_leaf_base() { return depth_search_leaf_base(); }
+    [ForceInline] public static int block_node(uint node) { return angle_match_min_tree[node]; }
 }
 
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
@@ -170,28 +150,17 @@ void main(uint3 tid: SV_DispatchThreadID)
             block_prefix_angle[block_i] + depth_angle_inblock[token_i]) -
             int4(1, 1, 1, kind == TK_SHR ? 2 : 1);
 
-        // A failed search leaves its index INVALID.
-        uint found;
-        range_search_tree_last_index_before<int, int, ParenDepthTree, ParenDepthRows, DepthAtMost>(
-            token_i, query.x, found);
-        open.x = found;
-        range_search_tree_last_index_before<int, int, BraceDepthTree, BraceDepthRows, DepthAtMost>(
-            token_i, query.y, found);
-        open.y = found;
-        range_search_tree_last_index_before<int, int, BracketDepthTree, BracketDepthRows, DepthAtMost>(
-            token_i, query.z, found);
-        open.z = found;
-        range_search_tree_last_index_before<int, int, AngleDepthTree, AngleDepthRows, DepthAtMost>(
-            token_i, query.w, found);
-        open.w = found;
+        // A failed search returns INVALID.
+        open.x = blocked_search_last_before<int, int, ParenDepthTree, DepthAtMost>(token_i, query.x);
+        open.y = blocked_search_last_before<int, int, BraceDepthTree, DepthAtMost>(token_i, query.y);
+        open.z = blocked_search_last_before<int, int, BracketDepthTree, DepthAtMost>(token_i, query.z);
+        open.w = blocked_search_last_before<int, int, AngleDepthTree, DepthAtMost>(token_i, query.w);
 
         int open_depth = angle_match_depth[token_i];
         if (kind == TK_LT && open_depth != INF)
-        {
-            range_search_tree_first_index_at_or_after<int, int, AngleDepthTree, AngleDepthRows, DepthAtMost>(
-                token_i + 1u, open_depth, found);
-            close = found;
-        }
+            close = blocked_search_first_at_or_after<int, int, AngleDepthTree, DepthAtMost>(
+                token_i + 1u,
+                open_depth);
     }
     token_enclosing_open[token_i] = open;
     token_angle_close[token_i] = close;

@@ -96,15 +96,16 @@ fn run() -> Result<()> {
         entries: &entries,
     });
 
-    let mut encoder = device.create_command_encoder(&Default::default());
-    {
+    // `REPLAY_GROUPS_X=n` dispatches only the first n workgroups.
+    let groups_x = env::var("REPLAY_GROUPS_X").ok().and_then(|v| v.parse().ok()).unwrap_or(groups[0]);
+    let record_dispatch = |encoder: &mut wgpu::CommandEncoder| {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
-        // `REPLAY_GROUPS_X=n` dispatches only the first n workgroups.
-        let x = std::env::var("REPLAY_GROUPS_X").ok().and_then(|v| v.parse().ok()).unwrap_or(groups[0]);
-        pass.dispatch_workgroups(x, groups[1].max(1), groups[2].max(1));
-    }
+        pass.dispatch_workgroups(groups_x, groups[1].max(1), groups[2].max(1));
+    };
+    let mut encoder = device.create_command_encoder(&Default::default());
+    record_dispatch(&mut encoder);
     let mut staging = Vec::new();
     for (_, name, buffer, bytes) in &buffers {
         let target = device.create_buffer(&wgpu::BufferDescriptor {
@@ -131,12 +132,30 @@ fn run() -> Result<()> {
             fs::write(out.join(format!("{index:03}_{name}.bin")), data)?;
         }
     }
+    let dispatch_ms = dispatched.elapsed().as_secs_f64() * 1000.0;
+    drop(staging);
+    // `REPLAY_TIMED=n` then times n more dispatches, each submitted alone and
+    // waited for, so the time excludes the readback copies above. They run on
+    // the first dispatch's outputs; the digests above are unaffected.
+    let timed = env::var("REPLAY_TIMED").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+    let mut kernel_ms = Vec::with_capacity(timed);
+    for _ in 0..timed {
+        let mut encoder = device.create_command_encoder(&Default::default());
+        record_dispatch(&mut encoder);
+        let started = Instant::now();
+        gpu.queue.submit(Some(encoder.finish()));
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|err| anyhow!("timed dispatch did not finish: {err}"))?;
+        kernel_ms.push(started.elapsed().as_secs_f64() * 1000.0);
+    }
     println!(
         "{}",
         serde_json::json!({
             "pipeline_create_ms": pipeline_ms,
-            "dispatch_ms": dispatched.elapsed().as_secs_f64() * 1000.0,
-            "groups": groups,
+            "dispatch_ms": dispatch_ms,
+            "kernel_ms": kernel_ms,
+            "groups": [groups_x, groups[1], groups[2]],
             "digests": results,
         })
     );
