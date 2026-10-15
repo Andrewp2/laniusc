@@ -4,7 +4,6 @@ import type_checker.program_evidence.catalog_io;
 import type_checker.program_evidence.proof_store_abi;
 import type_checker.program_evidence.proof_work;
 import type_checker.program_evidence.proof_frontier_selection;
-import type_checker.program_evidence.proof_substitution_admission;
 import type_checker.owned_type_constraint_contract;
 
 public EvidenceStatus pps_initialize_obligation(uint obligation)
@@ -25,15 +24,6 @@ public EvidenceStatus pps_initialize_obligation(uint obligation)
         !pps_write2(PPS_ROOT_LINKS, link, 0u, uint2(obligation, work)))
         return pev_invalid(1u, obligation, work);
     return pev_ok();
-}
-
-public EvidenceStatus pps_admit_selected_work(uint work)
-{
-    uint4 key; uint4 selected; uint4 completion; uint4 source;
-    if (!pps_work_read(work, key, selected, completion, source)) return pev_invalid(1u, work, PPS_WORK);
-    if (key.z != PPS_WORK_SELECTED) return pev_ok();
-    OwnedConstraintState match_state; bool concrete;
-    return pps_admit_substitution(selected.y, key.x, pps_matching_limits(), match_state, concrete);
 }
 
 // Run only after the whole substitution/binding wave was jointly admitted.
