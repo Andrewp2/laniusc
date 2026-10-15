@@ -22,7 +22,11 @@ Layout
 * `project`: `lanius/main.lani` plus `lanius/src/gen/lib.lani` (the library)
   and one module per area under `lanius/src/gen/`, compiled with
   `--source-root lanius/src`. Library items are reached through qualified
-  paths (`gen::lib::Box<T>`), as stdlib items are.
+  paths (`gen::lib::Box<T>`), as stdlib items are. Area modules implement the
+  library's traits for their records (`pub impl gen::lib::Score for Rec`), as
+  user code implements stdlib traits; the compiler rejects that today (LNC0007
+  on the trait path, see tests/fixtures/generics_backlog/README.md), so the
+  project presets fail until cross-module trait impls work.
 
 Mix and calibration
 -------------------
