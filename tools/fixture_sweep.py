@@ -412,12 +412,11 @@ IMPLICIT_SCALAR_RE = re.compile(rf"^let\s+\w+\s*:\s*{SCALAR}\s*=\s*[\w.]+\s*;$")
 
 
 def scalar_conversion(result: dict) -> str | None:
-    if result.get("code") != "LNC0006":
-        return None
+    """Name the scalar conversion on the failing line, so `as` casts group apart."""
     line = result.get("source_line") or ""
     if AS_CAST_RE.search(line):
         return "scalar conversion: `as` cast"
-    if IMPLICIT_SCALAR_RE.match(line):
+    if result.get("code") == "LNC0006" and IMPLICIT_SCALAR_RE.match(line):
         return "scalar conversion: implicit (let with scalar annotation)"
     return None
 
@@ -427,7 +426,7 @@ def failure_group(result: dict) -> str:
     if status == "FAIL-COMPILE":
         conversion = scalar_conversion(result)
         if conversion:
-            return f"compile error LNC0006, {conversion}"
+            return f"compile error {result.get('code') or '(no code)'}, {conversion}"
         if "readback did not complete" in (result.get("stage_detail") or ""):
             return f"compile error {result.get('code') or '(no code)'}, GPU hang (readback timeout)"
         return f"compile error {result.get('code') or '(no code)'}"
@@ -516,6 +515,17 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
         example = members[0]
         lines.append(f"| {group} | {len(members)} | `{example['name']}` | {example.get('location') or ''} |")
     lines.append("")
+    # Generics matrix fixtures all exit 42 by convention; other unreferenced fixtures are a guess.
+    guessed = sorted(result["name"] for result in failures
+                     if result["expected"].get("source", "").startswith("default")
+                     and not result["expected"]["source"].startswith("default:generics"))
+    if guessed:
+        lines.append(f"{len(guessed)} of the {len(failures)} failures are fixtures that no Rust test "
+                     "compiles, so their expected outcome is a guess: a `reject*` name must fail to "
+                     "compile, anything else must run with the stdlib root and exit 0. Some need a setup "
+                     "the sweep does not know, such as a test-specific stdlib root: "
+                     + ", ".join(name.rsplit("/", 1)[-1] for name in guessed) + ".")
+        lines.append("")
     for group, members in sorted(groups.items(), key=lambda item: -len(item[1])):
         lines.append(f"### {group} ({len(members)})")
         lines.append("")
