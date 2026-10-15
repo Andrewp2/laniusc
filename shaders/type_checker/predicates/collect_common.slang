@@ -964,8 +964,21 @@ uint record_impl_head_parameters(uint owner, uint expr_node,
                 else if (kind == 2u || kind == 3u || kind == 4u)
                 {
                     counts[depth] = 1u;
-                    if (kind == 2u && PredicateDeclarationGraph.metadata(reference.y, 5u) == 2u &&
-                        !record_impl_parameter(owner, PredicateDeclarationGraph.metadata(reference.y, 6u), true, used))
+                    uint2 length = uint2(PredicateDeclarationGraph.metadata(reference.y, 5u),
+                        PredicateDeclarationGraph.metadata(reference.y, 6u));
+                    // Array producers keep a symbolic length (a bare constant
+                    // parameter) under a U32 count projection: the parameter
+                    // still occurs in the head through the projection operand.
+                    for (uint step = 0u; kind == 2u && length.x == 3u; step++)
+                    {
+                        uint scalar; uint2 operand;
+                        if (step == DEPTH_LIMIT) return PREDICATE_STATUS_IMPL_HEAD_WORK_LIMIT;
+                        if (!PredicateDeclarationGraph.constant_projection(length.y, scalar, operand))
+                            return PREDICATE_STATUS_INVALID_IMPL_ARG;
+                        length = operand;
+                    }
+                    if (kind == 2u && length.x == 2u &&
+                        !record_impl_parameter(owner, length.y, true, used))
                         return PREDICATE_STATUS_INVALID_IMPL_ARG;
                 }
                 else return PREDICATE_STATUS_INVALID_IMPL_ARG;
@@ -1013,12 +1026,11 @@ uint validate_trait_impl_parameter_coverage(uint owner, uint subject, uint trait
     }
     uint2 used = uint2(0u, 0u);
     uint visits = 0u;
-    uint status = record_impl_head_parameters(owner, subject, used, visits);
-    if (status != PREDICATE_STATUS_OK) return status;
-    for (uint ordinal = 0u; ordinal < argument_count; ordinal++)
+    // Subject first, then the ordered trait arguments, through one walk site.
+    for (uint ordinal = 0u; ordinal <= argument_count; ordinal++)
     {
-        status = record_impl_head_parameters(owner,
-            predicate_argument_node(trait_root, ordinal), used, visits);
+        uint node = ordinal == 0u ? subject : predicate_argument_node(trait_root, ordinal - 1u);
+        uint status = record_impl_head_parameters(owner, node, used, visits);
         if (status != PREDICATE_STATUS_OK) return status;
     }
     return all(used == declared) ? PREDICATE_STATUS_OK : PREDICATE_STATUS_UNCONSTRAINED_IMPL_PARAMETER;
