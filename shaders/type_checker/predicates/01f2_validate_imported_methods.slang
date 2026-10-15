@@ -6,6 +6,7 @@
 import semantic_interface_layout;
 import dependency_interface;
 import type_checker.dependencies.canonical_field_types;
+import type_checker.dependencies.canonical_field_stackless;
 import byte_packing;
 
 struct NameSpan { uint start; uint len; uint kind; uint token_index; };
@@ -68,7 +69,7 @@ bool signature_matches(uint expected, uint actual_hir, uint owner, bool implicit
         if (!implicit_void || valid_hir(actual_hir)) return false;
         actual = uint2(TYPE_REF_SCALAR, 1u);
     }
-    return canonical_type_reference_matches<TraitMethodContractGraph>(owner,
+    return canonical_type_reference_matches_stackless<TraitMethodContractGraph>(owner,
         expected, actual, checked_type_capacity(), gParams.n_tokens);
 }
 

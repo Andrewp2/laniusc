@@ -32,6 +32,8 @@ import type_checker.predicates.trait_reference;
 
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
 import type_checker.checked_type_graph;
+import type_checker.scoped_type_stackless;
+#include "../scoped_type_path.slang"
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 #endif
 
@@ -411,7 +413,7 @@ bool predicate_type_is_well_formed(uint2 ref)
     // denotes an incomplete application and cannot be accepted as a scalar.
     if (ref.x == TYPE_REF_SCALAR && ref.y >= TY_STRUCT_BASE) return false;
     uint hash;
-    return scoped_type_ref_hash<PredicateDeclarationGraph>(ref.x, ref.y, INVALID,
+    return scoped_type_ref_hash_stackless<PredicateDeclarationGraph>(ref.x, ref.y, INVALID,
         checked_type_capacity(), gParams.n_tokens, hash);
 }
 #endif
@@ -906,7 +908,7 @@ bool impl_type_is_well_formed(uint impl_node, uint expr_node)
     }
     else if (root.x != TYPE_REF_INSTANCE) return false;
     uint hash;
-    return scoped_type_ref_hash<ImplValidationGraph>(root.x, root.y,
+    return scoped_type_ref_hash_stackless<ImplValidationGraph>(root.x, root.y,
         impl_node, checked_type_capacity(), gParams.n_tokens, hash);
 }
 
@@ -924,74 +926,80 @@ bool record_impl_parameter(uint owner, uint reference, bool constant, inout uint
 // This bounded inventory walk records exact owned parameter occurrences in the
 // head only. Bounds never contribute to inferability. Slots are a compact set
 // representation after exact declaration-token/range ownership validation.
+// It keeps only the child slot each level took (scoped_type_path.slang):
+// completing a node replays the path from the root. A replay repeats checks
+// that already passed and records no visits; parameter recording is
+// idempotent.
 uint record_impl_head_parameters(uint owner, uint expr_node,
     inout uint2 used, inout uint visits)
 {
     static const uint DEPTH_LIMIT = 64u;
     static const uint VISIT_LIMIT = 65536u;
-    uint2 refs[DEPTH_LIMIT];
-    uint next[DEPTH_LIMIT];
-    uint counts[DEPTH_LIMIT];
+    SCOPED_TYPE_PATH(path);
     uint depth = 0u;
-    refs[0u] = predicate_type_reference(expr_node);
-    next[0u] = INVALID;
+    uint resume = INVALID;
+    uint2 root = predicate_type_reference(expr_node);
+    uint2 reference = root;
     for (;;)
     {
-        uint2 reference = refs[depth];
-        if (next[depth] == INVALID)
+        if (resume == INVALID && ++visits > VISIT_LIMIT) return PREDICATE_STATUS_IMPL_HEAD_WORK_LIMIT;
+        uint count = 0u;
+        if (reference.x == TYPE_REF_GENERIC_PARAM)
         {
-            if (++visits > VISIT_LIMIT) return PREDICATE_STATUS_IMPL_HEAD_WORK_LIMIT;
-            next[depth] = 0u;
-            counts[depth] = 0u;
-            if (reference.x == TYPE_REF_GENERIC_PARAM)
-            {
-                if (!record_impl_parameter(owner, reference.y, false, used))
-                    return PREDICATE_STATUS_INVALID_IMPL_ARG;
-            }
-            else if (application_argument_is_constant(reference.x))
-            {
-                uint kind = reference.x & ~APPLICATION_CONSTANT_ARGUMENT;
-                if (kind == 2u && !record_impl_parameter(owner, reference.y, true, used))
-                    return PREDICATE_STATUS_INVALID_IMPL_ARG;
-                if (kind != 1u && kind != 2u) return PREDICATE_STATUS_INVALID_IMPL_ARG;
-            }
-            else if (reference.x == TYPE_REF_INSTANCE)
-            {
-                if (reference.y >= checked_type_capacity()) return PREDICATE_STATUS_INVALID_IMPL_ARG;
-                uint kind = PredicateDeclarationGraph.metadata(reference.y, 0u);
-                if (kind == 1u)
-                    counts[depth] = PredicateDeclarationGraph.metadata(reference.y, 2u);
-                else if (kind == 2u || kind == 3u || kind == 4u)
-                {
-                    counts[depth] = 1u;
-                    uint2 length = uint2(PredicateDeclarationGraph.metadata(reference.y, 5u),
-                        PredicateDeclarationGraph.metadata(reference.y, 6u));
-                    // Array producers keep a symbolic length (a bare constant
-                    // parameter) under a U32 count projection: the parameter
-                    // still occurs in the head through the projection operand.
-                    for (uint step = 0u; kind == 2u && length.x == 3u; step++)
-                    {
-                        uint scalar; uint2 operand;
-                        if (step == DEPTH_LIMIT) return PREDICATE_STATUS_IMPL_HEAD_WORK_LIMIT;
-                        if (!PredicateDeclarationGraph.constant_projection(length.y, scalar, operand))
-                            return PREDICATE_STATUS_INVALID_IMPL_ARG;
-                        length = operand;
-                    }
-                    if (kind == 2u && length.x == 2u &&
-                        !record_impl_parameter(owner, length.y, true, used))
-                        return PREDICATE_STATUS_INVALID_IMPL_ARG;
-                }
-                else return PREDICATE_STATUS_INVALID_IMPL_ARG;
-            }
-            else if (reference.x != TYPE_REF_SCALAR) return PREDICATE_STATUS_INVALID_IMPL_ARG;
+            if (!record_impl_parameter(owner, reference.y, false, used))
+                return PREDICATE_STATUS_INVALID_IMPL_ARG;
         }
-        if (next[depth] == counts[depth])
+        else if (application_argument_is_constant(reference.x))
+        {
+            uint kind = reference.x & ~APPLICATION_CONSTANT_ARGUMENT;
+            if (kind == 2u && !record_impl_parameter(owner, reference.y, true, used))
+                return PREDICATE_STATUS_INVALID_IMPL_ARG;
+            if (kind != 1u && kind != 2u) return PREDICATE_STATUS_INVALID_IMPL_ARG;
+        }
+        else if (reference.x == TYPE_REF_INSTANCE)
+        {
+            if (reference.y >= checked_type_capacity()) return PREDICATE_STATUS_INVALID_IMPL_ARG;
+            uint kind = PredicateDeclarationGraph.metadata(reference.y, 0u);
+            if (kind == 1u)
+            {
+                count = PredicateDeclarationGraph.metadata(reference.y, 2u);
+                // ImplValidationGraph already rejected wider applications;
+                // the path holds at most 32 children per level.
+                if (count > NOMINAL_APPLICATION_ARGUMENT_LIMIT) return PREDICATE_STATUS_INVALID_IMPL_ARG;
+            }
+            else if (kind == 2u || kind == 3u || kind == 4u)
+            {
+                count = 1u;
+                uint2 length = uint2(PredicateDeclarationGraph.metadata(reference.y, 5u),
+                    PredicateDeclarationGraph.metadata(reference.y, 6u));
+                // Array producers keep a symbolic length (a bare constant
+                // parameter) under a U32 count projection: the parameter
+                // still occurs in the head through the projection operand.
+                for (uint step = 0u; kind == 2u && length.x == 3u; step++)
+                {
+                    uint scalar; uint2 operand;
+                    if (step == DEPTH_LIMIT) return PREDICATE_STATUS_IMPL_HEAD_WORK_LIMIT;
+                    if (!PredicateDeclarationGraph.constant_projection(length.y, scalar, operand))
+                        return PREDICATE_STATUS_INVALID_IMPL_ARG;
+                    length = operand;
+                }
+                if (kind == 2u && length.x == 2u &&
+                    !record_impl_parameter(owner, length.y, true, used))
+                    return PREDICATE_STATUS_INVALID_IMPL_ARG;
+            }
+            else return PREDICATE_STATUS_INVALID_IMPL_ARG;
+        }
+        else if (reference.x != TYPE_REF_SCALAR) return PREDICATE_STATUS_INVALID_IMPL_ARG;
+        uint slot = select(resume == INVALID, 0u, SCOPED_TYPE_PATH_SLOT(path, depth));
+        bool resumed = depth == resume;
+        slot += uint(resumed);
+        resume = select(resumed, INVALID, resume);
+        if (slot == count)
         {
             if (depth == 0u) return PREDICATE_STATUS_OK;
-            depth--;
+            resume = depth - 1u; depth = 0u; reference = root;
             continue;
         }
-        uint slot = next[depth]++;
         uint2 child;
         if (PredicateDeclarationGraph.metadata(reference.y, 0u) == 1u)
         {
@@ -1001,9 +1009,9 @@ uint record_impl_head_parameters(uint owner, uint expr_node,
         else child = uint2(PredicateDeclarationGraph.metadata(reference.y, 3u),
             PredicateDeclarationGraph.metadata(reference.y, 4u));
         if (depth + 1u == DEPTH_LIMIT) return PREDICATE_STATUS_IMPL_HEAD_WORK_LIMIT;
+        SCOPED_TYPE_PATH_SET(path, depth, slot);
         depth++;
-        refs[depth] = child;
-        next[depth] = INVALID;
+        reference = child;
     }
 }
 
