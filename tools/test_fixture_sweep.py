@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from fixture_expectations import load_expectations
-from fixture_sweep import check_jumps, failure_group, render_diff, render_stdlib_diff, run_elf
+from fixture_sweep import (apply_known_gap, check_jumps, failure_group, load_known_gaps, render_diff,
+                           render_report, render_stdlib_diff, run_elf)
 from x86_jump_check import jumps_leaving_function
 
 
@@ -198,6 +199,56 @@ class ExpectationTests(unittest.TestCase):
         self.assertEqual((exits.kind, exits.exit_code, exits.source), ("run", 122, "expect-comment"))
         self.assertEqual((rejects.kind, rejects.exit_code, rejects.error_code, rejects.source),
                          ("compile_error", None, "LNC0006", "expect-comment"))
+
+
+class KnownGapTests(unittest.TestCase):
+    GAP = {"failure": "LNC0006", "owner": "TBD", "reason": "`!=` on str is unsupported"}
+
+    def test_a_listed_fixture_is_a_known_gap_only_while_it_fails_as_recorded(self):
+        gaps = {"gap": self.GAP}
+        recorded = result("gap", "FAIL-COMPILE", code="LNC0006")
+        different = result("gap", "FAIL-COMPILE", code="LNC0017")
+        passing = result("gap", "PASS")
+        unlisted = result("other", "FAIL-COMPILE", code="LNC0006")
+        for record in (recorded, different, passing, unlisted):
+            apply_known_gap(record, gaps)
+
+        self.assertEqual((recorded["status"], recorded["gap_status"]), ("KNOWN-GAP", "FAIL-COMPILE"))
+        self.assertEqual(different["status"], "FAIL-COMPILE")
+        self.assertEqual(passing["status"], "GAP-CLOSED")
+        self.assertEqual(unlisted["status"], "FAIL-COMPILE")
+        self.assertNotIn("known_gap", unlisted)
+
+    def test_the_report_lists_known_gaps_apart_from_failures(self):
+        gap = result("gap", "KNOWN-GAP", code="LNC0006", gap_status="FAIL-COMPILE", known_gap=self.GAP)
+        closed = result("closed", "GAP-CLOSED", known_gap=self.GAP)
+        failing = result("failing", "FAIL-EXIT", detail="got exit 1, want exit 0")
+        results = {r["name"]: r for r in (gap, closed, failing)}
+        document = {"laniusc": "laniusc", "shard": "1/1", "wall_s": 1.0, "results": list(results.values())}
+
+        text = "\n".join(render_report(results, [(None, document)]))
+
+        self.assertIn("| stdlib_foundation | 3 | 1 | 0 | 0 | 1 | 1 |", text)
+        self.assertIn("## Known gaps (1)", text)
+        self.assertIn("| `gap` | TBD | FAIL-COMPILE LNC0006 | `!=` on str is unsupported |", text)
+        self.assertIn("remove them from `tests/fixtures/known_gaps.txt`: `closed`.", text)
+        self.assertIn("| wrong exit status | 1 | `failing` |", text)
+        self.assertNotIn("| compile error LNC0006 |", text)
+
+    def test_the_gap_file_names_fixture_failure_owner_and_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tests/fixtures/stdlib_foundation").mkdir(parents=True)
+            (root / "tests/fixtures/stdlib_foundation/gap.lani").write_text("fn main() -> i32 { return 42; }\n")
+            (root / "tests/fixtures/known_gaps.txt").write_text(
+                "# fixture failure owner reason\n\n"
+                "tests/fixtures/stdlib_foundation/gap.lani  LNC0006  TBD  `!=` on str is unsupported\n")
+            gaps = load_known_gaps(root)
+            (root / "tests/fixtures/known_gaps.txt").write_text("tests/fixtures/missing.lani any TBD gone\n")
+            with self.assertRaises(SystemExit):
+                load_known_gaps(root)
+
+        self.assertEqual(gaps, {"tests/fixtures/stdlib_foundation/gap.lani": self.GAP})
 
 
 if __name__ == "__main__":
