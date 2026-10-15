@@ -176,18 +176,17 @@ a lane only reads records whose publication it has already observed.
 
 Allocation stays bounded:
 
-- **Candidates use fixed records.** Candidate `c` owns record `32 + c`, and
-  dependency node `i` (job-wide) owns record `32 + candidates + i`, so rows,
-  atoms, projections and dependency nodes never allocate. The one exception
-  is a re-interned candidate after a body replay (see Stages): its fixed
-  record may already hold its earlier key, so a new key takes a dynamic
+- **Only a new key takes a record.** No candidate or dependency node owns a
+  record. `ct_intern_key` probes the table, adopts an equal published
+  record, and allocates (`ct_alloc_record`) and stores a record only when it
+  reaches an empty slot. Count classes (`cc_intern_count`) and other small
+  keys do the same through `ct_intern_small`. A re-interned candidate after
+  a body replay (see Stages) therefore never touches its earlier key's
   record.
-- **Dynamic records come from small keys.** Count classes (`cc_intern_count`)
-  and other small keys use `ct_intern_small`. It looks the key up first and
-  stores a record only on a miss.
-- **Losers keep their record.** A lane that loses the race keeps its record as
-  a `spare` and reuses it for its next key, so allocation is at most live
-  records plus lanes.
+- **Losers keep their record.** A lane that loses the slot to an equal key
+  keeps its record unpublished. A `spare` lane reuses it for its next key; a
+  candidate lane interns one key, so its record is simply never referenced.
+  Allocation is at most one record per key a lane publishes or loses.
 
 **Gate (week 1).** Two tests in
 `crates/laniusc-compiler/src/gpu/canonical_intern_stress_tests.rs` exercise the
@@ -308,8 +307,7 @@ collides.
 1. **Uniqueness.** Two published records are never key-equal. Equal keys
    always yield the same ID within one job, so identity is `==`.
 2. **Immutability.** A record is complete before its slot CAS, and it is
-   never written again. Only a lane's unpublished spare or its own
-   unpublished fixed record is ever rewritten.
+   never written again. Only a lane's unpublished spare is ever rewritten.
 3. **Children first.** Children are canonical before their parent's key is
    built. `ct_args` holds IDs or parameter leaves, never a sentinel.
 4. **IDs are job-local; `ct_shash` is not.** ID numbering depends on atomic
@@ -389,12 +387,9 @@ Each job interns into one table, so an ID stays valid for the whole job.
   has a type or constant argument) rewrites rows and constants after the
   early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
   `[i32; 2]` in place. Its late `03_rearm` therefore re-arms every
-  candidate and sets `CT_COUNT_REINTERN`. With the flag set, a candidate
-  looks its key up first and adopts an equal record; on a miss it stores
-  into its fixed record only if that record is not published
-  (`ct_is_published`), and otherwise into a dynamic one. Unchanged rows
-  keep their IDs, and the early records stay valid for the references
-  that still name them. A consumer recorded between the replay and the
+  candidate. A candidate adopts an equal published record or takes a new
+  one, so unchanged rows keep their IDs, and the early records stay valid
+  for the references that still name them. A consumer recorded between the replay and the
   late stage would read early IDs of rewritten rows; none exists yet.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a

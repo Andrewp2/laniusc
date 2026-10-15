@@ -447,9 +447,8 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     dependency_counts_readback: crate::gpu::operations::CopyBufferOperation,
     validate: Vec<ComputeOperation>,
     validation_readback: Option<crate::gpu::operations::CopyBufferOperation>,
-    /// Records (`ct_head` rows), argument words (`ct_args`), and the first
-    /// dynamic record (`ct_dynamic_base`: after the fixed records of every
-    /// candidate and dependency node).
+    /// Records (`ct_head` rows), argument words (`ct_args`), and the
+    /// entries of one frontier list (half of `canonical_frontier`).
     capacity: [u32; 3],
 }
 
@@ -615,12 +614,12 @@ impl CanonicalTypeOperations {
             capacity: [
                 words("ct_head")? / 4,
                 words("ct_args")?,
-                32 + candidates + words("canonical_dependency_type")?,
+                words("canonical_frontier")? / 2,
             ],
         })
     }
 
-    /// Records, argument words and the first dynamic record of the canonical
+    /// Records, argument words and frontier list entries of the canonical
     /// table.
     pub(in crate::type_checker) fn capacity(&self) -> [u32; 3] {
         self.capacity

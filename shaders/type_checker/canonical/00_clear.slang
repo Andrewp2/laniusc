@@ -39,7 +39,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < CT_COUNT_WORDS)
     {
         uint value = 0u;
-        if (i == CT_COUNT_NEXT_RECORD) value = ct_dynamic_base();
+        if (i == CT_COUNT_NEXT_RECORD) value = CT_FIRST_RECORD;
         if (i == CT_COUNT_PENDING) value = ct_candidate_count();
         if (i == CT_COUNT_LIBRARY) value = gParams.canonical_library_id;
         if (i == CT_COUNT_UNIT) value = gParams.canonical_unit_id;

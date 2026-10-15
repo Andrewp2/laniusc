@@ -1,7 +1,7 @@
 // Dependency signature types (checked tag 5) interned while their page is
 // resident (docs/canonical-type-ids.md, "Dependency pages"). Node t of the
 // page owns the job-wide index span + t (dependency_constant_type_span_base)
-// and the fixed record ct_dependency_record(span + t). Nodes mirror checked
+// and, like a candidate, no record (ct_intern_key). Nodes mirror checked
 // rows (the interface exports rows node by node, in the rows' operand
 // order), so an imported row and the signature node it was exported from
 // share one key: kinds 3..6 are named, array, slice and reference; 9 and 10
@@ -163,7 +163,5 @@ public uint canonical_intern_dependency(uint t, bool final)
     CtKey key;
     uint status = build_dependency(t, final, key);
     if (status != CT_KEY_BUILT) return status;
-    uint record = ct_dependency_record(index);
-    ct_key_store(key, record, key.extra);
-    return ct_intern(record, key);
+    return ct_intern_key(key);
 }
