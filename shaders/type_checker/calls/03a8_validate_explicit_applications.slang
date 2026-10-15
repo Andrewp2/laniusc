@@ -8,6 +8,7 @@ import type_checker.calls.explicit_application_owner;
 import status;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.contextual_call_environment;
+import type_checker.calls.context_constant_publication;
 import type_checker.checked_type_graph;
 import type_checker.scoped_type_equality;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };
@@ -91,7 +92,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call_context_ref_payload[call * 32u + slot] = bindings[slot].y;
         }
     call_context_arg_mask[call] |= mask;
-    if (!publish_context_constants<ScopedCheckedTypeGraph>(call, constants, constant_mask, gParams.n_tokens))
+    if (!publish_context_constants<ScopedCheckedTypeGraph, DeferredContextConstantAdmission>(call, constants, constant_mask, gParams.n_tokens))
     { record_min_token_error(status, anchor, 6u, 0x474e0001u); return; }
     call_context_owner_by_token[token] = call;
 }

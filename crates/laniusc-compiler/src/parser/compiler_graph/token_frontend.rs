@@ -43,6 +43,9 @@ pub(in crate::parser) const FEATURE_FLAGS_CLEAR: &str = "parser.tokens.feature_f
 pub(in crate::parser) const BRACED_RHS_STATEMENT_KIND_CLEAR: &str =
     "parser.tokens.braced_rhs_statement_kind.clear";
 
+pub(in crate::parser) const ENCLOSING_OPENS: &str = "parser.tokens.enclosing_opens";
+pub(in crate::parser) const ANGLE_KINDS: &str = "parser.tokens_to_angle_kinds.pass";
+
 const MIN_TREE_BUILD: &str = "parser.tokens.delimiter_match.build_min_tree";
 
 pub(super) fn register_resources(
@@ -81,11 +84,23 @@ pub(super) fn register_resources(
         "brace_match_depth",
         "bracket_match_depth",
         "angle_match_depth",
+        "token_angle_close",
+        "token_direct_lt_kind",
     ] {
         let resource = workspace(graph, name, ResourceDomain::Tokens, token_rows * 4)?;
         if capacity.preclassified_token_kinds {
             graph.mark_zero_initialized(resource)?;
         }
+    }
+    // One enclosing-row word per delimiter class (paren, brace, bracket, angle).
+    let enclosing_open = workspace(
+        graph,
+        "token_enclosing_open",
+        ResourceDomain::Tokens,
+        token_rows * 16,
+    )?;
+    if capacity.preclassified_token_kinds {
+        graph.mark_zero_initialized(enclosing_open)?;
     }
 
     for name in [
@@ -629,6 +644,35 @@ pub(super) fn register_schedule(
         FEATURE_FLAGS_CLEAR,
         CompilerPhase::Parse,
         &[("token_feature_flags", "token_feature_flags")],
+    )?;
+    // Delimiter ownership and each raw `<`'s own role are published once per
+    // token; semantic classification reads them instead of searching.
+    pass(
+        graph,
+        ENCLOSING_OPENS,
+        &passes.tokens_delimiter_match_03_enclosing_opens,
+        &[
+            (
+                "token_enclosing_open",
+                "token_enclosing_open",
+                Some(AccessMode::Write),
+            ),
+            (
+                "token_angle_close",
+                "token_angle_close",
+                Some(AccessMode::Write),
+            ),
+        ],
+    )?;
+    pass(
+        graph,
+        ANGLE_KINDS,
+        &passes.tokens_to_angle_kinds,
+        &[(
+            "token_direct_lt_kind",
+            "token_direct_lt_kind",
+            Some(AccessMode::Write),
+        )],
     )?;
     pass(
         graph,

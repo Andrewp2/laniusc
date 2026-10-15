@@ -119,15 +119,6 @@ uint x86_caller_declaration_register(uint ordinal)
     return registers[min(ordinal, 5u)];
 }
 
-uint x86_caller_declaration_ordinal(uint physical_register)
-{
-    if (physical_register == 8u) return 4u;
-    if (physical_register == 9u) return 5u;
-    if (physical_register == 10u) return 2u;
-    if (physical_register == 11u) return 3u;
-    return X86_LOCATION_INVALID;
-}
-
 uint x86_abi_argument_register(uint ordinal)
 {
     static const uint registers[6] = {7u, 6u, 2u, 1u, 8u, 9u};

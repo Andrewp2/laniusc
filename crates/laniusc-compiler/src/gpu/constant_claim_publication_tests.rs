@@ -326,6 +326,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     put("call_const_claim_selected", vec![7; capacity]);
     put("call_const_claim_lookup_head", vec![0; capacity]);
     put("call_const_claim_lookup_next", vec![0; capacity]);
+    put("call_const_env_binding", vec![0; capacity * 4]);
 
     let mut atoms = vec![0; 128 * 4];
     for (row, atom) in [
@@ -378,6 +379,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     put("call_context_constant_kind", kinds);
     put("call_context_constant_payload", payloads);
     put("call_context_constant_identity_mode", modes);
+    put("call_context_constant_valid_mask", vec![0; HIR]);
     put("call_context_arg_mask", vec![0; HIR]);
     put("call_context_ref_tag", vec![0; HIR * 32]);
     put("call_context_ref_payload", vec![INVALID; HIR * 32]);
@@ -399,6 +401,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     put("call_explicit_environment", descriptors);
     put("call_explicit_binding_tag", tags);
     put("call_explicit_binding_payload", payloads);
+    put("call_explicit_constant_valid_mask", vec![0; TOKENS]);
     put("explicit_environment_constant_kind", vec![0; HIR]);
     put("explicit_environment_constant_payload", vec![INVALID; HIR]);
 
@@ -591,8 +594,18 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
         "this regression requires a physical GPU",
     );
     let gpu = device::global();
+    const INDEX: usize = 0;
+    const EXPLICIT_ADMIT: usize = 1;
+    const PUBLISH: usize = 2;
+    const CONTEXT_ADMIT: usize = 3;
+    const VALIDATE: usize = 4;
+    const MIRROR: usize = 5;
+    const PROBE: usize = 6;
     let keys = [
         "type_checker/calls/03a3_build_claim_lookup",
+        "type_checker/calls/03a0b_validate_explicit_constants",
+        "type_checker/calls/03a3b_publish_call_environment",
+        "type_checker/calls/03a4c_admit_context_constants",
         "type_checker/calls/03a5_validate_const_claims",
         "type_checker/calls/03a8_validate_explicit_applications",
         "tests/constant_claim_publication",
@@ -601,10 +614,10 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
         .iter()
         .map(|key| make_pass_data_from_shader_key(&gpu.device, key, "main", key).unwrap())
         .collect();
-    for pass in &passes[..3] {
+    for pass in &passes[..PROBE] {
         assert_eq!(pass.thread_group_size, [256, 1, 1]);
     }
-    assert_eq!(passes[3].thread_group_size, [1, 1, 1]);
+    assert_eq!(passes[PROBE].thread_group_size, [1, 1, 1]);
     for case in cases() {
         assert_eq!(
             case.claims.len(),
@@ -643,7 +656,7 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
                     &gpu.device,
                     pass,
                     &resources,
-                    if index == 0 {
+                    if index == INDEX {
                         &index_params
                     } else {
                         &source_params
@@ -665,12 +678,14 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some(case.name),
             });
-        dispatch(&mut encoder, &passes[0], &groups[0]);
-        dispatch(&mut encoder, &passes[1], &groups[1]);
-        dispatch(&mut encoder, &passes[3], &groups[3]);
+        // Producers' admissions precede every binding reader, as in resident.rs.
+        for stage in [INDEX, EXPLICIT_ADMIT, PUBLISH, CONTEXT_ADMIT, VALIDATE, PROBE] {
+            dispatch(&mut encoder, &passes[stage], &groups[stage]);
+        }
         resources["results"].copy_to(&mut encoder, 0, &readback, 0, 64);
-        dispatch(&mut encoder, &passes[2], &groups[2]);
-        dispatch(&mut encoder, &passes[3], &groups[3]);
+        for stage in [MIRROR, CONTEXT_ADMIT, PROBE] {
+            dispatch(&mut encoder, &passes[stage], &groups[stage]);
+        }
         resources["results"].copy_to(&mut encoder, 0, &readback, 64, 64);
         resources["call_const_claim_selected"].copy_to(
             &mut encoder,

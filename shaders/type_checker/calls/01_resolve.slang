@@ -21,6 +21,7 @@ RWStructuredBuffer<uint> call_explicit_application_status;
 RWStructuredBuffer<uint> call_explicit_application_owner_by_token;
 RWStructuredBuffer<uint> call_explicit_arg_slot;
 RWStructuredBuffer<uint4> call_explicit_environment;
+RWStructuredBuffer<uint> call_explicit_constant_valid_mask;
 RWStructuredBuffer<uint> call_explicit_binding_count;
 RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> backend_call_fn_index;
@@ -132,6 +133,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         call_context_arg_mask[i] = 0u;
         call_context_constant_mask[i] = 0u;
+        call_context_constant_valid_mask[i] = 0u;
         for (uint slot = 0u; slot < 32u; slot++)
         {
             call_context_ref_tag[i * 32u + slot] = 0u;
@@ -147,6 +149,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_explicit_application_status[i] = 0u;
         call_explicit_application_owner_by_token[i] = INVALID;
         call_explicit_environment[i] = uint4(0u, 0u, 0u, 0u);
+        call_explicit_constant_valid_mask[i] = 0u;
         backend_call_fn_index[i] = INVALID;
         call_intrinsic_tag[i] = 0u;
         call_return_type[i] = TY_UNKNOWN;

@@ -114,6 +114,15 @@ pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec = 
     "type_checker/methods/07_resolve_table"
 )
 .with_indirect_dispatch("method_token_dispatch_args");
+// Required members reached through a lexical `P: Trait` bound compete in the
+// same transaction, after local table candidates and before dependency pages.
+pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS: ReflectedComputeSpec =
+    method_pass!(
+        "offer_bound_members",
+        Calls,
+        "type_checker/methods/07a_offer_bound_members"
+    )
+    .with_indirect_dispatch("method_token_dispatch_args");
 pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
     method_pass!("resolve", HirNodes, "type_checker/methods/03/resolve")
         .with_indirect_dispatch("method_token_hir_dispatch_args");
@@ -126,6 +135,8 @@ pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS_INFERENCE: Refle
     METHODS_MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.inference");
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE_INFERENCE: ReflectedComputeSpec =
     METHODS_RESOLVE_TABLE.with_name("type_check.methods.resolve_table.inference");
+pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_INFERENCE: ReflectedComputeSpec =
+    METHODS_OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.inference");
 pub(in crate::type_checker) const METHODS_RESOLVE_INFERENCE: ReflectedComputeSpec =
     METHODS_RESOLVE.with_name("type_check.methods.resolve.inference");
 
@@ -137,6 +148,8 @@ pub(in crate::type_checker) const METHODS_RESET_CANDIDATES_DIRECT: ReflectedComp
     METHODS_RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.direct");
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE_DIRECT: ReflectedComputeSpec =
     METHODS_RESOLVE_TABLE.with_name("type_check.methods.resolve_table.direct");
+pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_DIRECT: ReflectedComputeSpec =
+    METHODS_OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.direct");
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_DIRECT: ReflectedComputeSpec =
     METHODS_FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.direct");
 pub(in crate::type_checker) const METHODS_RESET_CANDIDATES_INFERENCE: ReflectedComputeSpec =

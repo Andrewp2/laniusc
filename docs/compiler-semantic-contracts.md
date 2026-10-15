@@ -1325,7 +1325,8 @@ authorized the slice ABI migration on 2026-10-09. The verified implementation
 uses `(data, length, signed byte stride)` for every slice, including fields and
 generic arguments/results. `native_value_layout.slang` owns its three-word width;
 `storage_layout.slang` constructs fixed-array strides. Index loads, stores, and
-compound copies share `index_address.slang` and preserve logical bounds checks.
+compound copies share the x86 instruction plan's index address calculation and
+preserve logical bounds checks.
 
 Borrowing preserves the original storage and every alias. A descriptor copy
 retains its referent and stride; an owned array copy retains independent storage.

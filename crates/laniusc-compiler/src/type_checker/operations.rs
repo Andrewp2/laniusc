@@ -42,6 +42,7 @@ macro_rules! typecheck_operation {
 
 mod call_argument_matching;
 mod call_claim_index;
+mod call_environment;
 mod call_generic_claim_validation;
 mod calls;
 mod conditions;
@@ -59,6 +60,7 @@ mod visible_decls;
 
 pub(super) use call_argument_matching::*;
 pub(super) use call_claim_index::*;
+pub(super) use call_environment::*;
 pub(super) use call_generic_claim_validation::*;
 pub(super) use calls::*;
 pub(super) use conditions::*;

@@ -1250,6 +1250,19 @@ impl GpuTypeChecker {
                         )?;
                 }
             }
+            // Bound-member method selection reads accepted bounds, their owner
+            // chains and member contracts in every method transaction.
+            predicates.clear_bound_arg_facts.record(encoder)?;
+            predicates.collect_bound_arg_facts.record(encoder)?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.predicates_bound_args.done");
+            }
+            predicates.collect_method_contracts.record(encoder)?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.predicates_method_contracts.done");
+            }
+            predicates.collect.record(encoder)?;
+            predicates.validate_bound_args.record(encoder)?;
             bind_groups.scope_hir.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.scope.done");
@@ -1444,6 +1457,7 @@ impl GpuTypeChecker {
             // explicit and inferred claims before materializing under the winner.
             let regenerate_call_claims = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
                 bind_groups.calls.explicit_application_binding.record(encoder)?;
+                bind_groups.calls.environment_admission.record_explicit(encoder)?;
                 bind_groups
                     .calls
                     .argument_matching
@@ -1464,6 +1478,10 @@ impl GpuTypeChecker {
                 }
                 if aggregates_required {
                     bind_groups.calls.contextual_result_requests.record(encoder)?;
+                    bind_groups.calls.environment_admission.record_context(
+                        encoder,
+                        ContextConstantProducer::ResultRequests,
+                    )?;
                 }
                 if let Some(visibility) = module_path
                     .dependency_visibility
@@ -1531,6 +1549,10 @@ impl GpuTypeChecker {
                         index.record_as(encoder, compiler_graph::CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS)?;
                     }
                     records.contexts.record(encoder)?;
+                    bind_groups.calls.environment_admission.record_context(
+                        encoder,
+                        ContextConstantProducer::RecordContexts,
+                    )?;
                 }
                 for operation in [
                     &bind_groups.calls.materialize_return_types,
@@ -1726,6 +1748,10 @@ impl GpuTypeChecker {
                         .calls
                         .contextual_result_requests
                         .record_as(encoder, CALLS_CONTEXTUAL_RESULTS_FINAL.name)?;
+                    bind_groups.calls.environment_admission.record_context(
+                        encoder,
+                        ContextConstantProducer::FinalResultRequests,
+                    )?;
                 }
                 record_returns(encoder)?;
             } else {
@@ -1854,17 +1880,6 @@ impl GpuTypeChecker {
                     .validate_aggregate_access
                     .record(encoder)?;
             }
-            predicates.clear_bound_arg_facts.record(encoder)?;
-            predicates.collect_bound_arg_facts.record(encoder)?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.predicates_bound_args.done");
-            }
-            predicates.collect_method_contracts.record(encoder)?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.predicates_method_contracts.done");
-            }
-            predicates.collect.record(encoder)?;
-            predicates.validate_bound_args.record(encoder)?;
             predicates.collect_impls.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.predicates_collect.done");
@@ -2034,6 +2049,10 @@ impl GpuTypeChecker {
             }
             host_timer.stamp("aggregate_conditions_control");
             bind_groups.calls.explicit_application_validation.record(encoder)?;
+            bind_groups.calls.environment_admission.record_context(
+                encoder,
+                ContextConstantProducer::ExplicitValidation,
+            )?;
             bind_groups.status_readback.record(encoder);
         }
         host_timer.stamp("status_readback_recorded");

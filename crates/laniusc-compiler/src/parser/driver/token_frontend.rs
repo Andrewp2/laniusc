@@ -24,10 +24,22 @@ pub(super) struct TokensToKindsParams {
     match_tree_leaf_base: u32,
 }
 
+/// Debug aid for `token_kinds_dump`: `LANIUS_DEBUG_TOKEN_KINDS_SYMBOLS_ONLY=1`
+/// stops the token frontend after `parser.tokens_to_kinds`, so the semantic
+/// kinds buffer holds that pass's output for differential checks.
+fn debug_token_kinds_symbols_only() -> bool {
+    static VALUE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| {
+        std::env::var_os("LANIUS_DEBUG_TOKEN_KINDS_SYMBOLS_ONLY").is_some_and(|value| value == "1")
+    })
+}
+
 /// Cached bind groups for token-kind and identifier-kind frontend passes.
 pub(in crate::parser::driver) struct ResidentTokenKindOperations {
     pub(super) input_fingerprint: u64,
     pub(super) tokens_to_kinds_params: LaniusBuffer<TokensToKindsParams>,
+    pub(super) token_enclosing_opens: ComputeOperation,
+    pub(super) tokens_to_angle_kinds: ComputeOperation,
     pub(super) tokens_to_kinds: ComputeOperation,
     pub(super) tokens_to_identifier_kinds: ComputeOperation,
 }
@@ -192,9 +204,19 @@ impl GpuParser {
         );
 
         bind_groups
+            .token_enclosing_opens
+            .record_elements(encoder, token_capacity)?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.enclosing_opens.done");
+        bind_groups
+            .tokens_to_angle_kinds
+            .record_elements(encoder, token_capacity)?;
+        bind_groups
             .tokens_to_kinds
             .record_elements(encoder, token_capacity + 2)?;
         stamp_timer(timer_ref, encoder, "parser.tokens_to_kinds.symbols.done");
+        if debug_token_kinds_symbols_only() {
+            return Ok(());
+        }
 
         self.record_type_path_context_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
 
@@ -1002,6 +1024,33 @@ impl GpuParser {
             },
         );
 
+        // The relation and angle-role passes share the kinds pass's uniform.
+        let token_operation = |name: &'static str,
+                               pass: &crate::gpu::passes_core::PassData|
+         -> Result<ComputeOperation> {
+            let mut resources =
+                bufs.compiler_graph
+                    .token_operation_resources(name, token_buf, token_count_buf)?;
+            resources.buffer("gParams", &tokens_to_kinds_params);
+            bufs.compiler_graph.direct_operation(
+                &self.device,
+                &resources,
+                name,
+                pass,
+                bufs.semantic_token_kinds.count as u32,
+            )
+        };
+        let token_enclosing_opens = token_operation(
+            graph_labels::ENCLOSING_OPENS,
+            &self
+                .passes
+                .token_frontend
+                .tokens_delimiter_match_03_enclosing_opens,
+        )?;
+        let tokens_to_angle_kinds = token_operation(
+            graph_labels::ANGLE_KINDS,
+            &self.passes.token_frontend.tokens_to_angle_kinds,
+        )?;
         let mut tokens_to_kinds_resources = bufs.compiler_graph.token_operation_resources(
             "parser.tokens_to_kinds.pass",
             token_buf,
@@ -1033,6 +1082,8 @@ impl GpuParser {
         Ok(ResidentTokenKindOperations {
             input_fingerprint,
             tokens_to_kinds_params,
+            token_enclosing_opens,
+            tokens_to_angle_kinds,
             tokens_to_kinds,
             tokens_to_identifier_kinds,
         })

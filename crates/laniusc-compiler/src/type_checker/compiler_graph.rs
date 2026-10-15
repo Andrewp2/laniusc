@@ -509,6 +509,18 @@ pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str)] = &
         "call_generic_claim_ref_tag",
         "call_generic_claim_ref_payload",
     ),
+    // Per-call receiver facts: bound-member routing and native receiver
+    // passing need the selected body's concrete receiver, not `P`.
+    (
+        "type_check.body_specialization.method_receivers",
+        "method_call_receiver_ref_tag",
+        "method_call_receiver_ref_payload",
+    ),
+    (
+        "type_check.body_specialization.method_parameters",
+        "method_call_parameter_ref_tag",
+        "method_call_parameter_ref_payload",
+    ),
     (
         "type_check.body_specialization.explicit_bindings",
         "call_explicit_binding_tag",
@@ -3701,6 +3713,7 @@ fn build_graph(
         // written headers contribute their own source tokens. Eight rows per
         // token bound storage without a dense 64-slot table on every token.
         _call_explicit_environment as "call_explicit_environment" in Tokens => token_rows * 16;
+        _call_explicit_constant_valid_mask as "call_explicit_constant_valid_mask" in Tokens => token_rows * 4;
         _call_explicit_binding_tag as "call_explicit_binding_tag" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_payload as "call_explicit_binding_payload" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 4;
@@ -3945,6 +3958,7 @@ fn build_graph(
         _call_context_constant_kind as "call_context_constant_kind" in Calls => context_call_rows * 32 * 4;
         _call_context_constant_payload as "call_context_constant_payload" in Calls => context_call_rows * 32 * 4;
         _call_context_constant_identity_mode as "call_context_constant_identity_mode" in Calls => context_call_rows * 32 * 4;
+        _call_context_constant_valid_mask as "call_context_constant_valid_mask" in Calls => context_call_rows * 4;
         _argument_expected_ref_tag as "argument_expected_ref_tag" in Calls => hir_rows * 4;
         _argument_expected_ref_payload as "argument_expected_ref_payload" in Calls => hir_rows * 4;
         _literal_context_type_by_hir as "literal_context_type_by_hir" in Calls => hir_rows * 4;
@@ -3964,6 +3978,7 @@ fn build_graph(
         _call_const_claim_arg_row as "call_const_claim_arg_row" in CallArguments => claim_rows * 4;
         _call_const_claim_lookup_head as "call_const_claim_lookup_head" in CallArguments => claim_rows * 4;
         _call_const_claim_lookup_next as "call_const_claim_lookup_next" in CallArguments => claim_rows * 4;
+        _call_const_env_binding as "call_const_env_binding" in CallArguments => claim_rows * 16;
         const_claim_index_dispatch_args as "call_const_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
@@ -5203,6 +5218,78 @@ fn build_graph(
         "type_checker/type/instances/03b_member_substitute",
         &[],
     )?;
+    // Bound predicates, their owner chains and member contracts are needed by
+    // bound-member method selection (07a), so they are published before the
+    // first method transaction. Impl indexing and obligations stay late.
+    let predicate_clear_overrides = reflected_bindings![
+        "predicate_trait_impl_trait_type_node" => predicate_trait_impl_trait_type_node: Write,
+        "predicate_owner_node" => predicate_owner_node: Write,
+        "predicate_subject_token" => predicate_subject_token: Write,
+        "predicate_bound_token" => predicate_bound_token: Write,
+        "predicate_bound_reference" => predicate_bound_reference: Write,
+        "predicate_bound_arg_count" => predicate_bound_arg_count: Write,
+        "predicate_bound_first_arg_token" => predicate_bound_first_arg_token: Write,
+        "predicate_bound_second_arg_token" => predicate_bound_second_arg_token: Write,
+        "predicate_status" => predicate_status: Write,
+        "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
+        "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
+        "predicate_method_validation_status" => predicate_method_validation_status: Write,
+        "predicate_method_validation_required_symbol" => predicate_method_validation_required_symbol: Write,
+        "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
+        "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
+        "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
+        "predicate_impl_lookup_head" => predicate_impl_lookup_head: Write,
+    ];
+    graph.add_kernel_pass_by_name(
+        PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/00_clear_bound_arg_facts",
+        predicate_clear_overrides,
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/00b_collect_bound_arg_facts",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_COLLECT_METHOD_CONTRACTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/00c_collect_method_contracts",
+        reflected_bindings![
+            "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
+            "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
+            "predicate_method_contract_name_id" => predicate_method_contract_name_id: Write,
+            "predicate_method_contract_param_count" => predicate_method_contract_param_count: Write,
+            "predicate_method_contract_return_type_node" => predicate_method_contract_return_type_node: Write,
+            "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
+            "predicate_method_contract_status" => predicate_method_contract_status: Write,
+            "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
+            "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_COLLECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/01_collect",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        PREDICATES_VALIDATE_BOUND_ARGS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/predicates/01a_validate_bound_args",
+        &[],
+    )?;
     graph.add_kernel_pass_by_name(
         SCOPE_HIR_PASS,
         CompilerPhase::TypeCheck,
@@ -5222,6 +5309,7 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS_DIRECT.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_DIRECT.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_DIRECT.register_kernel(&mut graph, kernels)?;
+    METHODS_OFFER_BOUND_MEMBERS_DIRECT.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -5278,6 +5366,7 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE.register_kernel(&mut graph, kernels)?;
+    METHODS_OFFER_BOUND_MEMBERS.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -5374,6 +5463,7 @@ fn build_graph(
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_INFERENCE.register_kernel(&mut graph, kernels)?;
+    METHODS_OFFER_BOUND_MEMBERS_INFERENCE.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -5421,6 +5511,7 @@ fn build_graph(
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name, "hir_active_dispatch_args")?;
     CALLS_EXPLICIT_APPLICATIONS_BIND.register_kernel(&mut graph, kernels)?;
+    CALLS_EXPLICIT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_CONSUME.register_kernel(&mut graph, kernels)?;
     // The recorder collects and indexes provisional claims before publishing
@@ -5471,7 +5562,9 @@ fn build_graph(
     )?;
     CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
+    CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
     CALLS_CONTEXTUAL_RESULT_REQUESTS.register_kernel(&mut graph, kernels)?;
+    CALLS_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS,
         CompilerPhase::TypeCheck,
@@ -5655,6 +5748,7 @@ fn build_graph(
                 reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
             )?;
             graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "hir_active_dispatch_args")?;
+            CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
         }
         if name == CALLS_PROJECT_LITERAL_CONTEXTS_PASS
             && struct_init_passes_required(parser_feature_flags)
@@ -5723,13 +5817,14 @@ fn build_graph(
     // Ordinary and generic calls both use convergence. Keep every relation
     // live across the repeated region, including late method lookup facts.
     CALLS_CONTEXTUAL_RESULTS_FINAL.register_kernel(&mut graph, kernels)?;
+    CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.repeat_pass_range(
         hir_capacity
             .max(1)
             .saturating_mul(CALL_INFERENCE_ROUND_FACTOR)
             .saturating_add(1),
         METHODS_MARK_CALL_KEYS_INFERENCE.name,
-        CALLS_CONTEXTUAL_RESULTS_FINAL.name,
+        CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT.name,
     )?;
     VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -5788,75 +5883,6 @@ fn build_graph(
         &[],
     )?;
     {
-        let predicate_clear_overrides = reflected_bindings![
-            "predicate_trait_impl_trait_type_node" => predicate_trait_impl_trait_type_node: Write,
-            "predicate_owner_node" => predicate_owner_node: Write,
-            "predicate_subject_token" => predicate_subject_token: Write,
-            "predicate_bound_token" => predicate_bound_token: Write,
-            "predicate_bound_reference" => predicate_bound_reference: Write,
-            "predicate_bound_arg_count" => predicate_bound_arg_count: Write,
-            "predicate_bound_first_arg_token" => predicate_bound_first_arg_token: Write,
-            "predicate_bound_second_arg_token" => predicate_bound_second_arg_token: Write,
-            "predicate_status" => predicate_status: Write,
-            "predicate_method_contract_owner_count" => predicate_method_contract_owner_count: Write,
-            "predicate_method_contract_lookup_head" => predicate_method_contract_lookup_head: Write,
-            "predicate_method_validation_status" => predicate_method_validation_status: Write,
-            "predicate_method_validation_required_symbol" => predicate_method_validation_required_symbol: Write,
-            "predicate_method_validation_first_error_row" => predicate_method_validation_first_error_row: Write,
-            "predicate_owner_lookup_head" => predicate_owner_lookup_head: Write,
-            "predicate_owner_lookup_next" => predicate_owner_lookup_next: Write,
-            "predicate_impl_lookup_head" => predicate_impl_lookup_head: Write,
-        ];
-        graph.add_kernel_pass_by_name(
-            PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/00_clear_bound_arg_facts",
-            predicate_clear_overrides,
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/00b_collect_bound_arg_facts",
-            &[],
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_COLLECT_METHOD_CONTRACTS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/00c_collect_method_contracts",
-            reflected_bindings![
-                "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
-                "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
-                "predicate_method_contract_name_id" => predicate_method_contract_name_id: Write,
-                "predicate_method_contract_param_count" => predicate_method_contract_param_count: Write,
-                "predicate_method_contract_return_type_node" => predicate_method_contract_return_type_node: Write,
-                "predicate_method_contract_visibility" => predicate_method_contract_visibility: Write,
-                "predicate_method_contract_status" => predicate_method_contract_status: Write,
-                "predicate_method_contract_param_type_node" => predicate_method_contract_param_type_node: Write,
-                "predicate_method_contract_lookup_next" => predicate_method_contract_lookup_next: Write,
-            ],
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_COLLECT_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/01_collect",
-            &[],
-        )?;
-        graph.add_kernel_pass_by_name(
-            PREDICATES_VALIDATE_BOUND_ARGS_PASS,
-            CompilerPhase::TypeCheck,
-            ResourceDomain::HirNodes,
-            kernels,
-            "type_checker/predicates/01a_validate_bound_args",
-            &[],
-        )?;
         graph.add_kernel_pass_by_name(
             PREDICATES_COLLECT_IMPLS_PASS,
             CompilerPhase::TypeCheck,
@@ -6222,6 +6248,11 @@ fn build_graph(
             "type_checker/predicates/03_validate_body_obligations",
             ResourceDomain::HirNodes,
         ),
+        (
+            "type_check.body_specialization.bound_members",
+            "type_checker/methods/09_route_bound_members",
+            ResourceDomain::Tokens,
+        ),
     ] {
         graph.add_kernel_pass_by_name(
             name,
@@ -6393,6 +6424,7 @@ fn build_graph(
         ],
     )?;
     CALLS_EXPLICIT_APPLICATIONS_VALIDATE.register_kernel(&mut graph, kernels)?;
+    CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.add_buffer_copy_pass(
         STATUS_READBACK_PASS,
         CompilerPhase::TypeCheck,
@@ -7662,15 +7694,18 @@ mod tests {
         assert!(resolve_table.index() < resolve.index());
         for ordered in [
             [METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name, METHODS_RESET_CANDIDATES_DIRECT.name,
-             METHODS_RESOLVE_TABLE_DIRECT.name, DEPENDENCY_METHODS_COLLECT.name,
+             METHODS_RESOLVE_TABLE_DIRECT.name, METHODS_OFFER_BOUND_MEMBERS_DIRECT.name,
+             DEPENDENCY_METHODS_COLLECT.name,
              METHODS_FINALIZE_CANDIDATES_DIRECT.name, DEPENDENCY_METHODS_PROJECT.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER.name],
             [METHODS_MARK_CALL_RETURN_KEYS.name, METHODS_RESET_CANDIDATES.name,
-             METHODS_RESOLVE_TABLE.name, DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+             METHODS_RESOLVE_TABLE.name, METHODS_OFFER_BOUND_MEMBERS.name,
+             DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
              METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name],
             [METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.name, METHODS_RESET_CANDIDATES_INFERENCE.name,
-             METHODS_RESOLVE_TABLE_INFERENCE.name, DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
+             METHODS_RESOLVE_TABLE_INFERENCE.name, METHODS_OFFER_BOUND_MEMBERS_INFERENCE.name,
+             DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
              METHODS_FINALIZE_CANDIDATES_INFERENCE.name, DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name],
         ] {
@@ -7709,6 +7744,7 @@ mod tests {
             METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
             METHODS_RESET_CANDIDATES_INFERENCE,
             METHODS_RESOLVE_TABLE_INFERENCE,
+            METHODS_OFFER_BOUND_MEMBERS_INFERENCE,
             DEPENDENCY_METHODS_COLLECT_INFERENCE,
             METHODS_FINALIZE_CANDIDATES_INFERENCE,
             DEPENDENCY_METHODS_PROJECT_INFERENCE,
@@ -8192,6 +8228,21 @@ mod tests {
             slot(resource("call_const_claim_lookup_next")),
             "simultaneously bound const-claim index rows must not alias",
         );
+        for (producer, admission) in [
+            (CALLS_EXPLICIT_APPLICATIONS_BIND, CALLS_EXPLICIT_CONSTANTS_ADMIT),
+            (CALLS_CONST_CLAIM_INDEX_BUILD, CALLS_CONST_ENVIRONMENT_PUBLISH),
+            (CALLS_CONTEXTUAL_RESULT_REQUESTS, CALLS_CONTEXT_CONSTANTS_ADMIT),
+            (CALLS_CONTEXTUAL_RESULTS_FINAL, CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT),
+            (CALLS_EXPLICIT_APPLICATIONS_VALIDATE, CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT),
+        ] {
+            assert_eq!(
+                graph.pass_id(producer.name).unwrap().index() + 1,
+                graph.pass_id(admission.name).unwrap().index(),
+                "binding readers load {} directly after {}",
+                admission.name,
+                producer.name,
+            );
+        }
         assert_ne!(
             slot(resource("call_arg_row_scan_block_sum")),
             slot(resource("call_arg_row_scan_prefix_a")),

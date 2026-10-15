@@ -10720,10 +10720,47 @@ trait Mark {}
 trait Read<T> { fn read(value: T) -> T where T: Mark; }
 fn main() -> i32 { return 0; }
 "#, "LNC0021");
-    reject_trait_program("abstract receiver still needs proof-directed member routing", r#"
+}
+
+#[test]
+fn generic_bound_member_calls_route_to_local_implementation_members() {
+    // The uncalled body resolves `value.read()` to the required member and
+    // stays a template; it publishes no native definition.
+    execute("uncalled bound-member template", r#"
 trait Read { fn read(&self) -> i32; }
 fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
 fn main() -> i32 { return 0; }
+"#);
+    for (label, source) in [
+        ("by-value member", include_str!("fixtures/generics_matrix/p12_generic_trait_bound.lani")),
+        ("reference member", r#"
+trait Read { fn read(&self) -> i32; }
+struct Cell { v: i32 }
+impl Read for Cell { fn read(&self) -> i32 { return self.v; } }
+fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
+fn main() -> i32 { return via(Cell { v: 42 }); }
+"#),
+        ("scalar implementation", r#"
+trait Twice { fn twice(self) -> i32; }
+impl Twice for i32 { fn twice(self) -> i32 { return self + self; } }
+fn go<T>(x: T) -> i32 where T: Twice { return x.twice(); }
+fn main() -> i32 { return go(21); }
+"#),
+    ] {
+        execute_with_status(label, source, b"", 42);
+    }
+}
+
+#[test]
+fn generic_bound_member_calls_reject_unroutable_implementations() {
+    // A generic implementation needs its own call environment, which the
+    // symbolic selection cannot have produced; it rejects instead of routing.
+    reject_trait_program("generic implementation", r#"
+trait Read { fn read(&self) -> i32; }
+struct Box<U> { v: U, n: i32 }
+impl<U> Read for Box<U> { fn read(&self) -> i32 { return self.n; } }
+fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
+fn main() -> i32 { return via(Box { v: true, n: 0 }); }
 "#, "LNC0027");
 }
 

@@ -8,6 +8,9 @@ public StructuredBuffer<uint> call_explicit_application_owner_by_token;
 public StructuredBuffer<uint4> call_explicit_environment;
 StructuredBuffer<uint> call_explicit_binding_tag;
 StructuredBuffer<uint> call_explicit_binding_payload;
+// Bit per constant slot of each applying owner: its published reference passed
+// the checked constant descriptor when 03a0 wrote the binding row.
+StructuredBuffer<uint> call_explicit_constant_valid_mask;
 StructuredBuffer<uint> explicit_environment_constant_kind;
 StructuredBuffer<uint> explicit_environment_constant_payload;
 
@@ -75,4 +78,19 @@ public bool checked_explicit_environment_constant(uint environment, uint slot,
 {
     return explicit_environment_binding(environment, slot, true, kind, payload) &&
         (kind >= 1u && kind <= 3u) && payload != 0xffffffffu;
+}
+
+// Presence as above, plus the descriptor admission recorded by the producer.
+public bool checked_explicit_environment_constant_evidence(uint environment, uint slot,
+    out uint kind, out uint payload, out bool valid)
+{
+    valid = false;
+    if (!explicit_environment_binding(environment, slot, true, kind, payload) ||
+        kind < 1u || kind > 3u || payload == 0xffffffffu) return false;
+    // A present binding implies the owner lookup above was in range.
+    uint owner = call_explicit_application_owner_by_token[environment & 0x7fffffffu];
+    uint capacity; uint stride;
+    call_explicit_constant_valid_mask.GetDimensions(capacity, stride);
+    valid = owner < capacity && (call_explicit_constant_valid_mask[owner] & (1u << slot)) != 0u;
+    return true;
 }

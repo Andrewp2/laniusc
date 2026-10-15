@@ -11,6 +11,7 @@ import type_checker.calls.mutable_checked_call_types;
 import type_checker.calls.checked_call_environment;
 import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;
+import type_checker.calls.context_constant_publication;
 import type_checker.scoped_type_constraints;
 
 StructuredBuffer<uint> call_fn_index;
@@ -47,15 +48,19 @@ bool publish_receiver_bindings(uint call, uint token, uint2 inferred[32], uint m
             // independently typed conflicting argument remains an error there.
             // Explicit and checked contextual facts already have authority and
             // must each agree, even when both are present for the same slot.
-            uint2 prior;
-            if (checked_explicit_environment_argument(0x80000000u | token, slot, prior.x, prior.y) &&
-                !scoped_type_refs_equal<MutableCheckedTypeGraph>(prior.x, prior.y, INVALID,
+            // Source 0 is explicit, source 1 contextual: one comparison site.
+            [loop]
+            for (uint source = 0u; source < 2u; source++)
+            {
+                uint2 prior; bool present;
+                if (source == 0u)
+                    present = checked_explicit_environment_argument(0x80000000u | token, slot, prior.x, prior.y);
+                else
+                    present = checked_context_environment_argument(0x80000000u | token, slot, prior.x, prior.y);
+                if (present && !scoped_type_refs_equal<MutableCheckedTypeGraph>(prior.x, prior.y, INVALID,
                     inferred[slot].x, inferred[slot].y, INVALID,
                     mutable_type_capacity(), gParams.n_tokens)) return false;
-            if (checked_context_environment_argument(0x80000000u | token, slot, prior.x, prior.y) &&
-                !scoped_type_refs_equal<MutableCheckedTypeGraph>(prior.x, prior.y, INVALID,
-                    inferred[slot].x, inferred[slot].y, INVALID,
-                    mutable_type_capacity(), gParams.n_tokens)) return false;
+            }
         }
     for (uint slot = 0u; slot < 32u; slot++)
         if ((constant_mask & (1u << slot)) != 0u)
@@ -78,7 +83,7 @@ bool publish_receiver_bindings(uint call, uint token, uint2 inferred[32], uint m
             call_context_ref_payload[call * 32u + slot] = inferred[slot].y;
         }
     call_context_arg_mask[call] |= mask;
-    if (!publish_context_constants<MutableCheckedTypeGraph>(call, constants, constant_mask, gParams.n_tokens))
+    if (!publish_context_constants<MutableCheckedTypeGraph, CheckedContextConstantAdmission>(call, constants, constant_mask, gParams.n_tokens))
     { record_min_token_error(status, token, 6u, 0x474e0001u); return false; }
     call_context_owner_by_token[token] = call;
     return true;
@@ -100,105 +105,125 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner = checked_call_application_owner(token);
     uint2 inferred[32]; uint mask;
     InferredConstant constants[32]; uint constant_mask;
-    if (call_dependency_library_id[token] != INVALID)
+    uint environment = 0x80000000u | token;
+    bool library = call_dependency_library_id[token] != INVALID;
+    uint method = INVALID;
+    if (library)
     {
-        uint method = dependency_find_method(call_dependency_library_id[token],
+        method = dependency_find_method(call_dependency_library_id[token],
             call_dependency_unit_id[token], call_dependency_local_index[token]);
         if (method >= dependency_member_count()) return;
-        uint receiver_tag = method_call_receiver_ref_tag[owner];
-        uint receiver = method_call_receiver_ref_payload[owner];
-        if (receiver_tag == 0u || receiver == INVALID ||
-            (receiver_tag == 3u && receiver >= mutable_type_capacity())) return;
-        if (!canonical_type_and_constant_constraints<MutableCheckedCallTypeGraph>(INVALID,
-            dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 10u), receiver_tag, receiver,
-            mutable_type_capacity(), gParams.n_tokens, true, inferred, mask,
-            constants, constant_mask, true))
-        { record_min_token_error(status, token, 3u, 0u); return; }
     }
-    else
+    // Phase 0 binds the receiver to the impl root without an environment.
+    // Phase 1 matches the self parameter under the bindings phase 0 published.
+    // One call site per matcher and publisher keeps one inlined copy of each.
+    [loop]
+    for (uint phase = 0u; phase < 2u; phase++)
     {
-        uint declaration = call_fn_index[token];
-        if (declaration >= gParams.n_tokens || method_decl_receiver_ref_tag[declaration] == 0u ||
-            method_call_receiver_ref_tag[owner] == 0u) return;
-        if (!scoped_type_and_constant_constraints<MutableCheckedCallTypeGraph>(
-            method_decl_receiver_ref_tag[declaration], method_decl_receiver_ref_payload[declaration], INVALID,
-            method_call_receiver_ref_tag[owner], method_call_receiver_ref_payload[owner],
-            mutable_type_capacity(), gParams.n_tokens, inferred, mask, constants, constant_mask, true))
-        { record_min_token_error(status, token, 3u, 0u); return; }
-    }
-    if (!publish_receiver_bindings(call, token, inferred, mask, constants, constant_mask))
-    { record_min_token_error(status, token, 3u, 0u); return; }
-
-    MethodCandidate candidate = method_candidate[owner];
-    if (candidate.state != METHOD_CANDIDATE_UNIQUE || candidate.receiver_mode == 0u) return;
-    uint2 parameter = uint2(method_call_parameter_ref_tag[owner], method_call_parameter_ref_payload[owner]);
-    uint environment = 0x80000000u | token;
-    bool matches = false;
-    if (call_dependency_library_id[token] != INVALID)
-    {
-        uint method = dependency_find_method(call_dependency_library_id[token],
-            call_dependency_unit_id[token], call_dependency_local_index[token]);
-        if (method < dependency_member_count())
+        bool run = false;
+        uint canonical_environment = INVALID; uint first = INVALID;
+        uint2 pattern = uint2(0u, INVALID); uint pattern_environment = INVALID;
+        uint2 actual = uint2(0u, INVALID);
+        if (phase == 0u)
         {
-            uint base = method * SEMANTIC_INTERFACE_MEMBER_WORDS;
-            uint mode = (dependency_member_word(base + 8u) >> 28u) & 3u;
-            uint first = INVALID;
-            uint2 actual = parameter;
-            if (mode == 1u || mode == 2u)
+            if (library)
             {
-                // Portable parameter rows omit syntactic self. Its declared
-                // type is the full impl root, with one wrapper for &self.
-                // Remove exactly that wrapper from the accepted parameter,
-                // retaining any references that are part of the impl root.
-                if (mode == 2u)
-                {
-                    if (actual.x == 3u && actual.y < mutable_type_capacity() &&
-                        type_instance_kind[actual.y] == 4u)
-                        actual = uint2(type_instance_elem_ref_tag[actual.y],
-                            type_instance_elem_ref_payload[actual.y]);
-                    else actual = uint2(0u, INVALID);
-                }
-                first = dependency_member_word(base + 10u);
+                uint receiver_tag = method_call_receiver_ref_tag[owner];
+                uint receiver = method_call_receiver_ref_payload[owner];
+                if (receiver_tag == 0u || receiver == INVALID ||
+                    (receiver_tag == 3u && receiver >= mutable_type_capacity())) return;
+                first = dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 10u);
+                actual = uint2(receiver_tag, receiver);
             }
-            else if (mode == 3u) first = dependency_method_parameter_type(method, 0u);
-            if (first < dependency_type_count() && actual.x != 0u && actual.y != INVALID)
-                matches = canonical_type_and_constant_constraints<MutableCheckedCallTypeGraph>(environment,
-                    first, actual.x, actual.y, mutable_type_capacity(), gParams.n_tokens,
-                    true, inferred, mask, constants, constant_mask, true);
-        }
-    }
-    else
-    {
-        uint declaration = call_fn_index[token];
-        uint2 pattern = uint2(0u, INVALID);
-        if (declaration < gParams.n_tokens)
-        {
-            uint mode = method_decl_receiver_mode[declaration];
-            if (mode == 1u)
+            else
+            {
+                uint declaration = call_fn_index[token];
+                if (declaration >= gParams.n_tokens || method_decl_receiver_ref_tag[declaration] == 0u ||
+                    method_call_receiver_ref_tag[owner] == 0u) return;
                 pattern = uint2(method_decl_receiver_ref_tag[declaration],
                     method_decl_receiver_ref_payload[declaration]);
-            else if (mode == 2u)
-            {
-                // The method metadata producer owns this complete &ImplRoot
-                // graph. The unannotated self parameter row has no written
-                // type and is not an independent signature authority.
-                uint self_decl = method_decl_param_offset[declaration];
-                if (self_decl < gParams.n_tokens) pattern = uint2(3u, self_decl);
+                actual = uint2(method_call_receiver_ref_tag[owner], method_call_receiver_ref_payload[owner]);
             }
-            else if (mode == 3u)
+            run = true;
+        }
+        else
+        {
+            MethodCandidate candidate = method_candidate[owner];
+            if (candidate.state != METHOD_CANDIDATE_UNIQUE || candidate.receiver_mode == 0u) return;
+            uint2 parameter = uint2(method_call_parameter_ref_tag[owner], method_call_parameter_ref_payload[owner]);
+            actual = parameter;
+            if (library)
             {
-                uint first = call_param_row_start[declaration];
-                if (first < call_param_row_count_out[0u])
-                    pattern = uint2(call_param_row_ref_tag[first], call_param_row_ref_payload[first]);
+                uint base = method * SEMANTIC_INTERFACE_MEMBER_WORDS;
+                uint mode = (dependency_member_word(base + 8u) >> 28u) & 3u;
+                if (mode == 1u || mode == 2u)
+                {
+                    // Portable parameter rows omit syntactic self. Its declared
+                    // type is the full impl root, with one wrapper for &self.
+                    // Remove exactly that wrapper from the accepted parameter,
+                    // retaining any references that are part of the impl root.
+                    if (mode == 2u)
+                    {
+                        if (actual.x == 3u && actual.y < mutable_type_capacity() &&
+                            type_instance_kind[actual.y] == 4u)
+                            actual = uint2(type_instance_elem_ref_tag[actual.y],
+                                type_instance_elem_ref_payload[actual.y]);
+                        else actual = uint2(0u, INVALID);
+                    }
+                    first = dependency_member_word(base + 10u);
+                }
+                else if (mode == 3u) first = dependency_method_parameter_type(method, 0u);
+                canonical_environment = environment;
+                run = first < dependency_type_count() && actual.x != 0u && actual.y != INVALID;
+            }
+            else
+            {
+                uint declaration = call_fn_index[token];
+                if (declaration < gParams.n_tokens)
+                {
+                    uint mode = method_decl_receiver_mode[declaration];
+                    if (mode == 1u)
+                        pattern = uint2(method_decl_receiver_ref_tag[declaration],
+                            method_decl_receiver_ref_payload[declaration]);
+                    else if (mode == 2u)
+                    {
+                        // The method metadata producer owns this complete &ImplRoot
+                        // graph. The unannotated self parameter row has no written
+                        // type and is not an independent signature authority.
+                        uint self_decl = method_decl_param_offset[declaration];
+                        if (self_decl < gParams.n_tokens) pattern = uint2(3u, self_decl);
+                    }
+                    else if (mode == 3u)
+                    {
+                        uint first_param = call_param_row_start[declaration];
+                        if (first_param < call_param_row_count_out[0u])
+                            pattern = uint2(call_param_row_ref_tag[first_param],
+                                call_param_row_ref_payload[first_param]);
+                    }
+                }
+                pattern_environment = environment;
+                run = pattern.x != 0u && pattern.y != INVALID;
             }
         }
-        if (pattern.x != 0u && pattern.y != INVALID)
-            matches = scoped_type_and_constant_constraints<MutableCheckedCallTypeGraph>(
-                pattern.x, pattern.y, environment, parameter.x, parameter.y,
-                mutable_type_capacity(), gParams.n_tokens,
-                inferred, mask, constants, constant_mask, true);
+        bool matches = false;
+        if (run)
+        {
+            if (library)
+                matches = canonical_type_and_constant_constraints<MutableCheckedCallTypeGraph>(
+                    canonical_environment, first, actual.x, actual.y, mutable_type_capacity(),
+                    gParams.n_tokens, true, inferred, mask, constants, constant_mask, true);
+            else
+                matches = scoped_type_and_constant_constraints<MutableCheckedCallTypeGraph>(
+                    pattern.x, pattern.y, pattern_environment, actual.x, actual.y,
+                    mutable_type_capacity(), gParams.n_tokens,
+                    inferred, mask, constants, constant_mask, true);
+        }
+        if (matches) matches = publish_receiver_bindings(call, token, inferred, mask, constants, constant_mask);
+        if (phase == 0u)
+        {
+            if (!matches) { record_min_token_error(status, token, 3u, 0u); return; }
+        }
+        else if (!matches && call_inference_state[0u] == 0u)
+            record_min_token_error(status, token, 3u, 0u);
     }
-    if (matches) matches = publish_receiver_bindings(call, token, inferred, mask, constants, constant_mask);
-    if (!matches && call_inference_state[0u] == 0u)
-        record_min_token_error(status, token, 3u, 0u);
 }
