@@ -66,5 +66,4 @@
 45043 type_checker/calls/03j_validate_array_literals
 43376 type_checker/program_evidence/entries/32_17_admit_evidence
 42320 type_checker/calls/03f_infer_return_bindings
-41299 type_checker/modules/10e0l_normalize_type_aliases
 40606 type_checker/calls/03a8_validate_explicit_applications
