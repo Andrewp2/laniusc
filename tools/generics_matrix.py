@@ -9,6 +9,7 @@ The daemon runs under a systemd memory cap so a runaway driver shader compile
 kills only the daemon, not the desktop session.
 """
 import argparse
+import atexit
 import json
 import os
 import queue
@@ -16,6 +17,7 @@ import threading
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -43,19 +45,29 @@ out_dir = pathlib.Path(args.out)
 out_dir.mkdir(parents=True, exist_ok=True)
 
 command = [args.laniusc, "daemon", "--stdio", "--backend", "x86_64", "--stdlib-root", args.stdlib]
-if shutil.which("systemd-run"):
-    command = ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={args.memory_max}",
-               "-p", "MemorySwapMax=0"] + command
+use_scope = shutil.which("systemd-run") is not None
 stderr_path = out_dir / "daemon.stderr"
 
 
 class Daemon:
     """One resident compiler; restarted after a job exceeds the timeout."""
 
+    started = 0
+
     def __init__(self):
         env = dict(os.environ, LANIUS_READBACK_TIMEOUT_MS=args.readback_timeout_ms)
-        self.process = subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        argv = command
+        self.unit = None
+        if use_scope:
+            # A scope of its own, so a runaway driver compile kills only the
+            # daemon; kill() stops the scope so no daemon outlives this script.
+            Daemon.started += 1
+            self.unit = f"lanius-matrix-{os.getpid()}-{Daemon.started}.scope"
+            argv = ["systemd-run", "--user", "--scope", "-q", f"--unit={self.unit}",
+                    "-p", f"MemoryMax={args.memory_max}", "-p", "MemorySwapMax=0"] + command
+        self.process = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=open(stderr_path, "a"), text=True, bufsize=1)
+        live_daemons.append(self)
         self.lines = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
 
@@ -85,6 +97,23 @@ class Daemon:
     def kill(self):
         self.process.kill()
         self.process.wait()
+        if self.unit:
+            subprocess.run(["systemctl", "--user", "stop", self.unit], stderr=subprocess.DEVNULL)
+        if self in live_daemons:
+            live_daemons.remove(self)
+
+
+live_daemons = []
+
+
+def kill_live_daemons(*_):
+    for daemon in list(live_daemons):
+        daemon.kill()
+
+
+atexit.register(kill_live_daemons)
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+signal.signal(signal.SIGHUP, lambda *_: sys.exit(129))
 
 
 def diagnostic(msg):
@@ -134,8 +163,10 @@ for probe in probes:
 
 try:
     daemon.request({"id": "shutdown", "command": "shutdown"}, 30)
-except (TimeoutError, RuntimeError):
-    daemon.kill()
+    daemon.process.wait(timeout=30)
+except (TimeoutError, RuntimeError, subprocess.TimeoutExpired):
+    pass
+daemon.kill()
 passed = sum(1 for result in results if result[1] == "PASS")
 print(f"\n{passed}/{len(results)} passed")
 sys.exit(0 if passed == len(results) else 1)

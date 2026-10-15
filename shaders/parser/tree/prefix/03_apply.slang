@@ -1,6 +1,10 @@
-// Apply scanned block prefixes to local preorder deficits and build block maxima.
+// Apply scanned block prefixes to local preorder deficits and build each
+// block's local maximum heap and block maximum, for the parent and span
+// searches (blocked_search_tree.slang). Rows past the active node count do
+// not count towards either.
 
 import prefix_scan;
+import blocked_search_tree;
 
 struct Params
 {
@@ -19,12 +23,13 @@ StructuredBuffer<int> block_prefix;
 
 RWStructuredBuffer<int> tree_prefix;
 RWStructuredBuffer<int> prefix_block_max;
+RWStructuredBuffer<int> prefix_local_max;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const int NEG_INF = -2147483647;
 
-groupshared int s_max[256];
+groupshared int s_heap[512];
 
 public struct PrefixScanI32Max : IPrefixScanOp<int>
 {
@@ -81,11 +86,12 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         tree_prefix[p] = value;
     }
 
-    int block_max = prefix_scan_inclusive<int, PrefixScanI32Max, 256>(
+    blocked_local_heap_build<int, PrefixScanI32Max>(
         lane,
         (p <= active_n) ? value : NEG_INF,
-        s_max);
+        s_heap);
+    prefix_local_max[block_idx * WG_SIZE + lane] = s_heap[max(lane, 1u)];
 
-    if (lane == WG_SIZE - 1u)
-        prefix_block_max[block_idx] = block_max;
+    if (lane == 0u)
+        prefix_block_max[block_idx] = s_heap[1];
 }

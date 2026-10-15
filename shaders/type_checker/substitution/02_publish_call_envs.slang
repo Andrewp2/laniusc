@@ -15,6 +15,7 @@ import primitive_types;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_constants;
 import type_checker.substitution.ct_checked;
+import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.call_env;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_env;
@@ -126,7 +127,7 @@ struct CallEnvBindings : ICtEnvBindings
     {
         uint tag; uint payload;
         return binding_operand(token, which, item, tag, payload)
-            ? ct_intern_checked(tag, payload, spare) : CT_NONE;
+            ? ct_intern_checked<CtCheckedRows>(tag, payload, spare) : CT_NONE;
     }
 }
 

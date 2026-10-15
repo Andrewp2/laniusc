@@ -917,6 +917,75 @@ fn main() -> i32 { return visible(ANSWER); }
 }
 
 #[test]
+fn semantic_interface_exports_concrete_constant_arguments_on_gpu() {
+    // `3` in `Buffer<i32, 3>` is an expression, not a HIR type node. The
+    // exported topology still carries it, as the typed constant child of the
+    // nominal declaration, so importers rebuild `Buffer<i32, 3>`.
+    let artifact = common::semantic_interface_with_timeout(
+        38,
+        &[
+            r#"module core::fixed;
+pub struct Buffer<T, const N: usize> { values: [T; N] }
+pub fn make(seed: i32) -> Buffer<i32, 3> { return Buffer<i32, 3> { values: [seed, 1, 1] }; }
+"#,
+            r#"module app::main;
+import core::fixed;
+fn main() -> i32 { let b: Buffer<i32, 3> = make(40); return b.values[0]; }
+"#,
+        ],
+    )
+    .expect("GPU semantic-interface export should carry constant arguments");
+    let make = artifact
+        .declarations
+        .iter()
+        .find(|declaration| {
+            semantic_interface_name(
+                &artifact.name_bytes,
+                declaration.name_byte_start,
+                declaration.name_byte_len,
+            ) == "make"
+        })
+        .expect("make is exported");
+    let children = |index: u32| {
+        let ty = artifact.types[index as usize];
+        artifact.type_edges[ty.first_edge as usize..(ty.first_edge + ty.edge_count) as usize]
+            .iter()
+            .map(|edge| edge.type_index)
+            .collect::<Vec<_>>()
+    };
+    let returned = *children(make.signature_type)
+        .last()
+        .expect("signature ends with its return type");
+    assert_eq!(
+        artifact.types[returned as usize].kind,
+        GpuSemanticInterfaceTypeKind::Declaration as u32
+    );
+    let arguments = children(returned)
+        .into_iter()
+        .map(|index| artifact.types[index as usize])
+        .collect::<Vec<_>>();
+    assert_eq!(
+        arguments.iter().map(|ty| ty.kind).collect::<Vec<_>>(),
+        vec![
+            GpuSemanticInterfaceTypeKind::Scalar as u32,
+            GpuSemanticInterfaceTypeKind::ConstValue as u32,
+        ],
+        "Buffer<i32, 3> keeps its type and constant arguments in order"
+    );
+    assert_eq!(
+        (arguments[1].length_lo, arguments[1].length_hi),
+        (3, 0),
+        "the constant argument keeps its value identity"
+    );
+    let encoded = artifact.to_bytes().expect("interface should serialize");
+    assert_eq!(
+        laniusc_compiler::compiler::GpuSemanticInterfaceArtifact::from_bytes(&encoded)
+            .expect("interface should decode"),
+        artifact
+    );
+}
+
+#[test]
 fn semantic_interface_variant_rows_do_not_alias_dense_hir_declarations() {
     // Forty family rows necessarily cover the early dense-HIR id range. The
     // declaration and family domains must remain independent even when their

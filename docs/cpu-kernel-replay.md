@@ -212,7 +212,11 @@ on the main stack.
   ends with "no dispatch captured (0 dispatches ...)".
 - Bindings whose buffer lacks COPY_SRC are skipped with a warning. The replay
   then needs `--zero` for them.
-- The daemon does not write captures; use the one-shot CLI.
+- The daemon does not write captures; use the one-shot CLI. Tests can call
+  `laniusc_compiler::compiler::write_debug_dispatch_capture()` after the
+  compile they want; `tests/common` does so after each dependency-interface
+  type check, so `LANIUS_DEBUG_CAPTURE_PASS` works on `type_checker_modules`
+  tests. The index counts dispatches over the whole test process.
 - slangc 2026.2 (`~/.local/bin/slangc`) is used; override it with
   `LANIUS_CPU_REPLAY_SLANGC`. Its C++ backend lacks atomics other than add, and
   group barriers. `tools/cpu_replay/lanius_cpu_shim.slang` provides them: the
