@@ -45,6 +45,7 @@ static const uint TK_GENERIC_PARAM_IDENT = 155u;
 static const uint TK_WHERE_IDENT = 156u;
 static const uint TK_BOUND_TYPE_IDENT = 174u;
 static const uint TK_PATH_GENERIC_IDENT = 187u;
+static const uint TK_CAST_TYPE_IDENT = 196u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -74,7 +75,8 @@ uint name_kind_for_token(uint kind)
         kind == TK_GENERIC_PARAM_IDENT ||
         kind == TK_WHERE_IDENT ||
         kind == TK_BOUND_TYPE_IDENT ||
-        kind == TK_PATH_GENERIC_IDENT)
+        kind == TK_PATH_GENERIC_IDENT ||
+        kind == TK_CAST_TYPE_IDENT)
         return NAME_KIND_IDENTIFIER;
     return NAME_KIND_NONE;
 }

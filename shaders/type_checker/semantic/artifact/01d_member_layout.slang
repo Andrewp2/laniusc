@@ -7,7 +7,7 @@ import semantic_interface_layout;
 import hir_records;
 import gpu_index;
 import type_checker.dependencies.record_fields;
-import type_checker.checked_scoped_types;
+import type_checker.checked_canonical;
 import type_checker.checked_type_graph;
 import type_checker.local_struct_layout;
 import type_checker.native_nominal_identity;
@@ -75,7 +75,7 @@ bool field_type(uint instance, uint ordinal, out uint tag, out uint payload)
         uint token = type_head_token(field.value);
         if (token >= gParams.n_tokens) return false;
         tag = type_expr_ref_tag[token]; payload = type_expr_ref_payload[token];
-        return checked_scoped_reference(tag, payload, instance, gParams.n_tokens, tag, payload);
+        return canonical_checked_scoped_reference<LateIds>(tag, payload, instance, gParams.n_tokens, tag, payload);
     }
     return imported_record_field_type(instance, ordinal, tag, payload);
 }

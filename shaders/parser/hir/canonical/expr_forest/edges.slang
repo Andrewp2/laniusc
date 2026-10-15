@@ -36,6 +36,7 @@ static const uint HIR_EXPR_NEG = 13u;
 static const uint HIR_EXPR_ADD = 14u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INDEX = 26u;
+static const uint HIR_EXPR_CAST = 36u;
 static const uint HIR_STMT_ASSIGN = 5u;
 static const uint HIR_STMT_FOR = 7u;
 
@@ -90,7 +91,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         HirPayload payload = hir_payload[row];
         if (fixed_arity_expression_kind(core.kind))
         {
-            if (payload.a == HIR_EXPR_NOT || payload.a == HIR_EXPR_NEG)
+            // A cast's second edge is its target type row, not a value.
+            if (payload.a == HIR_EXPR_NOT || payload.a == HIR_EXPR_NEG ||
+                payload.a == HIR_EXPR_CAST)
                 publish_parent(payload.b, row);
             else if (binary_form(payload.a))
             {

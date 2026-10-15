@@ -1,7 +1,7 @@
 import primitive_types;
 import type_checker.checked_array_counts;
 import native_value_layout;
-import type_checker.checked_scoped_types;
+import type_checker.checked_canonical;
 import type_checker.checked_type_graph;
 // Checked native widths for concrete generic values. These facts stay private
 // to body compilation; durable type and object records are unchanged.
@@ -84,11 +84,6 @@ uint type_head_token(uint node)
             return path_segment_token[row];
     }
     return node < active_hir_count() ? compact_hir_core[node].token_start : INVALID;
-}
-
-bool concrete_argument(uint instance, uint slot, out uint tag, out uint payload)
-{
-    return ScopedCheckedTypeGraph.argument(instance, slot, tag, payload);
 }
 
 // Bare nominal references and applied nominal references share declaration
@@ -256,7 +251,7 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
                 return ScopedCheckedTypeGraph.environment_argument(payload, slot, child_tag, child_payload);
             }
             if (child_tag == 3u)
-                return checked_scoped_reference(child_tag, child_payload,
+                return canonical_checked_scoped_reference<LateIds>(child_tag, child_payload,
                     tag == TYPE_REF_INSTANCE ? payload : INVALID, gParams.n_tokens, child_tag, child_payload);
         }
         else
@@ -266,6 +261,167 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
         }
         return child_tag != 0u && child_payload != INVALID;
     }
+}
+
+// The layout words of every checked type node, memoized for the pass: node
+// n < capacity is row n (tag 3) and node capacity + d is local nominal
+// declaration d read through its bare scalar code (tag 1). An entry is 0
+// while unknown, INVALID without a native layout, and otherwise words + 1
+// (a width of exactly 0xfffffffe words has no entry and reads as INVALID).
+// Each lane evaluates its root one level at a time over the entries every
+// lane publishes, so a node's layout is evaluated once, not once per
+// enclosing type, and no lane keeps a stack.
+RWStructuredBuffer<uint> type_native_word_memo;
+static const uint LAYOUT_NODE_NONE = 0xffffffffu;
+static const uint LAYOUT_STEP_DONE = 0xffffffffu;
+// The walker's depth bound: a path of more than 64 nodes has no layout.
+static const uint LAYOUT_DEPTH_LIMIT = 64u;
+// Each descent publishes at least one node.
+static const uint LAYOUT_DESCENT_LIMIT = 1u << 20u;
+
+uint layout_memo_capacity()
+{
+    uint capacity; uint stride;
+    type_native_word_memo.GetDimensions(capacity, stride);
+    return capacity;
+}
+
+// The memo node of checked reference (tag, payload), or LAYOUT_NODE_NONE
+// with its words (a scalar leaf, or INVALID without a layout) in `words`.
+uint layout_node(uint tag, uint payload, out uint words)
+{
+    words = INVALID;
+    uint capacity = checked_type_capacity();
+    uint node = LAYOUT_NODE_NONE;
+    if (tag == TYPE_REF_INSTANCE && payload < capacity) node = payload;
+    else if (tag == TYPE_REF_SCALAR)
+    {
+        if (scalar_is_known(payload))
+        {
+            words = payload == SCALAR_STR ? 2u : 1u;
+            return LAYOUT_NODE_NONE;
+        }
+        // Nominal codes expand through their declaration; an ambiguous code
+        // has none.
+        uint declaration = native_nominal_declaration_token(payload, gParams.n_tokens,
+            active_hir_count(), type_decl_hir_node_by_token, compact_hir_core);
+        if (valid_token(declaration)) node = capacity + declaration;
+    }
+    return node < layout_memo_capacity() ? node : LAYOUT_NODE_NONE;
+}
+
+// The checked reference memo node `node` stands for.
+void layout_node_ref(uint node, out uint tag, out uint payload)
+{
+    uint capacity = checked_type_capacity();
+    tag = TYPE_REF_INSTANCE; payload = node;
+    if (node < capacity) return;
+    uint declaration = node - capacity;
+    uint owner = type_decl_hir_node_by_token[declaration];
+    tag = TYPE_REF_SCALAR;
+    payload = (compact_hir_core[owner].kind == HIR_STRUCT_ITEM ? TY_STRUCT_BASE : TY_ENUM_BASE) + declaration;
+}
+
+void layout_publish(uint node, uint words)
+{
+    type_native_word_memo[node] = words >= INVALID - 1u ? INVALID : words + 1u;
+}
+
+uint layout_entry_words(uint entry)
+{
+    return entry == INVALID ? INVALID : entry - 1u;
+}
+
+// One level of concrete_value_words at memo node `node`. When the words of
+// every child are known it publishes the node's words and returns
+// LAYOUT_STEP_DONE; otherwise it returns the first child still unknown.
+uint layout_step(uint node)
+{
+    uint tag; uint payload;
+    layout_node_ref(node, tag, payload);
+    uint words = CheckedConcreteValueLayout.leaf_words(tag, payload);
+    if (words == INVALID)
+    {
+        uint groups = CheckedConcreteValueLayout.group_count(tag, payload);
+        if (groups == 0u || groups == INVALID)
+        {
+            layout_publish(node, INVALID);
+            return LAYOUT_STEP_DONE;
+        }
+        // Groups sum their payload widths; the value uses the largest group.
+        words = 0u;
+        for (uint group = 0u; group < groups; group++)
+        {
+            uint count = CheckedConcreteValueLayout.payload_count(tag, payload, group);
+            if (count == INVALID) continue;
+            uint total = CheckedConcreteValueLayout.overhead(tag, payload);
+            for (uint ordinal = 0u; ordinal < count; ordinal++)
+            {
+                uint child_tag; uint child_payload;
+                uint child_words = INVALID;
+                uint child = CheckedConcreteValueLayout.payload_ref(tag, payload, group, ordinal,
+                    child_tag, child_payload)
+                    ? layout_node(child_tag, child_payload, child_words) : LAYOUT_NODE_NONE;
+                // A finite concrete type cannot contain itself by value.
+                if (child == node) child_words = INVALID;
+                else if (child != LAYOUT_NODE_NONE)
+                {
+                    uint entry = type_native_word_memo[child];
+                    if (entry == 0u) return child;
+                    child_words = layout_entry_words(entry);
+                }
+                if (child_words == INVALID || total >= INVALID - child_words)
+                {
+                    layout_publish(node, INVALID);
+                    return LAYOUT_STEP_DONE;
+                }
+                total += child_words;
+            }
+            words = max(words, total);
+        }
+    }
+    uint repetitions = CheckedConcreteValueLayout.repetitions(tag, payload);
+    if (repetitions == INVALID || (repetitions != 0u && words > (INVALID - 1u) / repetitions))
+        words = INVALID;
+    else words *= repetitions;
+    layout_publish(node, words);
+    return LAYOUT_STEP_DONE;
+}
+
+// Follows unknown children from `root` and publishes the first node whose
+// children are all known; false when the path is longer than the walker's
+// bound. A path back to the root is a cycle, so the root has no layout.
+bool layout_descend(uint root)
+{
+    uint node = root;
+    for (uint depth = 0u; depth < LAYOUT_DEPTH_LIMIT; depth++)
+    {
+        uint next = layout_step(node);
+        if (next == LAYOUT_STEP_DONE) return true;
+        if (next == root)
+        {
+            layout_publish(root, INVALID);
+            return true;
+        }
+        node = next;
+    }
+    return false;
+}
+
+// The native words of checked reference (tag, payload), as
+// concrete_value_words<CheckedConcreteValueLayout> computes them.
+uint layout_words(uint tag, uint payload)
+{
+    uint words;
+    uint root = layout_node(tag, payload, words);
+    if (root == LAYOUT_NODE_NONE) return words;
+    for (uint descent = 0u; descent < LAYOUT_DESCENT_LIMIT; descent++)
+    {
+        uint entry = type_native_word_memo[root];
+        if (entry != 0u) return layout_entry_words(entry);
+        if (!layout_descend(root)) return INVALID;
+    }
+    return INVALID;
 }
 
 RWStructuredBuffer<uint> type_native_word_count;
@@ -281,8 +437,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint source_capacity; uint stride;
     type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
     uint seed_count = min(body_specialization_inputs[0u].z, 64u);
-    // One traversal site handles source and generated rows. Duplicating this
-    // bounded graph walker also duplicates its GPU pipeline compilation cost.
+    // One evaluation site handles source and generated rows.
     for (uint instance = token; instance < capacity;)
     {
         uint tag = TYPE_REF_INSTANCE;
@@ -321,7 +476,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             { tag = TYPE_REF_SCALAR; payload = anchor & 0x1fffffffu; }
         }
         type_native_scalar_identity[instance] = scalar;
-        type_native_word_count[instance] = concrete_value_words<CheckedConcreteValueLayout>(tag, payload);
+        type_native_word_count[instance] = layout_words(tag, payload);
         // Only active seed rows participate; inactive reserved storage can
         // belong to a previous job. Ordinary jobs retain their existing walk.
         if (instance < source_capacity)

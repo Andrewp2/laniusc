@@ -2050,6 +2050,8 @@ impl GpuTypeChecker {
                 &self.canonical_validation_readback,
                 canonical_scale,
             )?;
+            bind_groups.semantic_projection.late_row_seed.record(encoder)?;
+            bind_groups.semantic_projection.native_word_memo_clear.record(encoder);
             bind_groups
                 .semantic_projection
                 .generic_native_words

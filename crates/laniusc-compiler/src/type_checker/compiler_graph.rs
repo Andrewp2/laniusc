@@ -309,6 +309,15 @@ pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_CLEAR_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.clear";
 pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.project";
+/// A body replay's canonical re-arm (canonical/03_rearm), ahead of the
+/// replayed match passes.
+pub(super) const BODY_SPECIALIZATION_CANONICAL_REARM_PASS: &str =
+    "type_check.body_specialization.canonical_rearm";
+/// The late re-seed of `ct_row_of` (substitution/01_seed_rows), after the
+/// late canonical stage.
+pub(super) const SUBSTITUTION_LATE_SEED_PASS: &str = "type_check.substitution.late_seed";
+pub(super) const SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS: &str =
+    "type_check.semantic_artifact.generic_native_words.clear";
 pub(super) const SEMANTIC_ARRAY_INDEX_REFS_PROJECT_PASS: &str =
     "type_check.semantic_artifact.array_index_refs";
 pub(super) const TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS: &str =
@@ -3066,6 +3075,9 @@ fn build_graph(
         _type_instance_decl_token as "type_instance_decl_token" in Types => type_rows * 4;
         _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => type_rows * 4;
         _type_native_word_count as "type_native_word_count" in Types => type_rows * 4;
+        // 01c_generic_native_words: a layout entry per row and per local
+        // nominal declaration.
+        _type_native_word_memo as "type_native_word_memo" in Types => (type_rows + token_rows) * 4;
         _type_native_scalar_identity as "type_native_scalar_identity" in Types => type_rows * 4;
         _module_file_id as "module_file_id" in Declarations => module_rows * 4;
         _module_path_id as "module_path_id" in Declarations => module_rows * 4;
@@ -6264,6 +6276,13 @@ fn build_graph(
             "type_checker/type/instances/05b_array_literal_return_refs",
             ResourceDomain::HirNodes,
         ),
+        // The replay rewrote rows and constants the early canonical stage
+        // interned: re-arm them, so the match passes intern what they read.
+        (
+            BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
+            super::canonical_passes::CANONICAL_REARM_KERNEL,
+            ResourceDomain::Types,
+        ),
         (
             "type_check.body_specialization.payloads",
             "type_checker/modules/10m2_type_match_payloads",
@@ -6349,6 +6368,22 @@ fn build_graph(
         &[],
     )?;
     super::canonical_passes::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
+    // Rows the inference rounds created are interned only by the late stage;
+    // seed their IDs' rows before the layout and projection passes read them.
+    graph.add_kernel_pass_by_name(
+        SUBSTITUTION_LATE_SEED_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        super::substitution_passes::SUBSTITUTION_SEED_KERNEL,
+        &[],
+    )?;
+    graph.add_pass(PassDesc {
+        name: SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Types,
+        accesses: vec![PassAccess::write("type_native_word_memo", _type_native_word_memo)],
+    })?;
     graph.add_kernel_pass_by_name(
         "type_check.semantic_artifact.generic_native_words",
         CompilerPhase::TypeCheck,

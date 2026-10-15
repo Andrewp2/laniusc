@@ -1438,7 +1438,8 @@ fn is_ident_continue(byte: u8) -> bool {
 fn is_source_root_reserved_module_path_segment(segment: &str) -> bool {
     matches!(
         segment,
-        "break"
+        "as"
+            | "break"
             | "const"
             | "continue"
             | "else"

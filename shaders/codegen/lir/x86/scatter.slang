@@ -1197,10 +1197,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else
         {
+            bool convert = opt_ir_op(source) == SEMANTIC_LIR_OP_CONVERT;
             a = opt_ir_op(source) == SEMANTIC_LIR_OP_LOGICAL_NOT ? X86_LIR_UNARY_NOT_BOOL
+                : convert ? X86_LIR_UNARY_CONVERT
                 : scalar_is_float(source.type_id) ? X86_LIR_UNARY_NEG_FLOAT
                 : X86_LIR_UNARY_NEG_I32;
-            b = args.a; c = 0u;
+            // A conversion's semantic metadata operand is its source's
+            // checked scalar type. Locations never read operand c of UNARY.
+            b = args.a; c = convert ? args.b : 0u;
+            if (convert && !x86_convert_supported(c, source.type_id))
+                flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         }
     }
     else if (op == X86_LIR_OP_RETURN)

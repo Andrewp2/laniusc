@@ -1,8 +1,9 @@
-import type_checker.checked_scoped_types;
+import type_checker.checked_canonical;
+import type_checker.canonical.canonical_candidates;
+import type_checker.canonical.canonical_api;
 import type_checker.checked_type_graph;
 import type_checker.checked_index_reference;
 import type_checker.checked_pattern_path;
-import type_checker.scoped_type_equality;
 import hir_expr_semantics;
 import hir_records;
 import status;
@@ -36,9 +37,7 @@ StructuredBuffer<uint> imported_match_payload_ref_tag;
 StructuredBuffer<uint> imported_match_payload_ref_payload;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> module_value_path_status;
-StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_kind;
-StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
 RWStructuredBuffer<uint> decl_type_ref_tag;
@@ -173,75 +172,22 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
     return tag != TYPE_REF_INVALID;
 }
 
+// The row whose closure the last inference_value_reference left to the
+// caller, or INVALID.
+static uint inference_deferred_closure = 0xffffffffu;
+#define INFERENCE_DEFERRED_CLOSURE 1
 #include "../inference_expression_reference.slang"
 #include "../checked_referent.slang"
 
-bool scrutinee_context_for_match(uint match_node, uint enum_token, out uint instance_i)
+// The checked reference of match `match_node`'s scrutinee, through
+// references.
+bool match_scrutinee(uint match_node, out uint tag, out uint payload)
 {
-    instance_i = INVALID;
-    if (!valid_hir(match_node))
-        return false;
-    uint tag; uint payload;
-    if (!inference_value_reference(compact_hir_payload[match_node].a, tag, payload)) return false;
-    uint reference_depth;
-    if (!checked_referent_reference(tag, payload, reference_depth)) return false;
-    if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity() &&
-        type_instance_kind[payload] == 1u)
-    {
-        instance_i = payload;
-        return type_instance_decl_token[payload] == enum_token;
-    }
-    return tag == TYPE_REF_SCALAR && payload == TY_ENUM_BASE + enum_token;
-}
-
-uint imported_scrutinee_instance(uint match_node)
-{
-    if (!valid_hir(match_node)) return INVALID;
-    uint tag; uint payload;
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (!valid_hir(match_node)) return false;
     uint reference_depth;
     return inference_value_reference(compact_hir_payload[match_node].a, tag, payload) &&
-        checked_referent_reference(tag, payload, reference_depth) &&
-        tag == TYPE_REF_INSTANCE && payload < checked_type_capacity() &&
-        type_instance_kind[payload] == 1u ? payload : INVALID;
-}
-
-bool imported_payload_ref(HirMatchPayload payload_row, HirMatchArm arm,
-                          uint path, out uint tag, out uint ref_payload)
-{
-    tag = TYPE_REF_INVALID;
-    ref_payload = INVALID;
-    if (payload_row.parent_pattern != arm.pattern) return false;
-    if (valid_hir(payload_row.pattern))
-    {
-        uint completed_tag = imported_match_payload_ref_tag[payload_row.pattern];
-        uint completed = imported_match_payload_ref_payload[payload_row.pattern];
-        if ((completed_tag == TYPE_REF_SCALAR && completed != INVALID) ||
-            (completed_tag == TYPE_REF_GENERIC_PARAM && valid_token(completed)) ||
-            (completed_tag == TYPE_REF_INSTANCE && completed < checked_type_capacity()))
-        {
-            tag = completed_tag; ref_payload = completed;
-            return true;
-        }
-    }
-    uint record_base = path * 9u;
-    uint count = resolved_dependency_variant_payload_records[record_base];
-    if (payload_row.ordinal >= count || count > 4u) return false;
-    uint payload_base = record_base + 1u + payload_row.ordinal * 2u;
-    uint projected_tag = resolved_dependency_variant_payload_records[payload_base];
-    uint projected_payload = resolved_dependency_variant_payload_records[payload_base + 1u];
-    if (projected_tag == TYPE_REF_SCALAR)
-    {
-        tag = projected_tag;
-        ref_payload = projected_payload;
-        return projected_payload != INVALID;
-    }
-    if (projected_tag != TYPE_REF_GENERIC_PARAM) return false;
-    uint instance = imported_scrutinee_instance(arm.owner);
-    if (instance >= checked_type_capacity() ||
-        !instance_arg_ref(instance, projected_payload, tag, ref_payload))
-        return false;
-    return (tag == TYPE_REF_SCALAR && ref_payload != INVALID) ||
-        (tag == TYPE_REF_INSTANCE && checked_instance_is_closed(ref_payload));
+        checked_referent_reference(tag, payload, reference_depth);
 }
 
 bool enum_variant_for_arm(
@@ -270,46 +216,60 @@ bool enum_variant_for_arm(
     return valid_token(enum_token) && variant < active_variant_count();
 }
 
-void substituted_ref(uint instance_i, uint type_head, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-    if (!valid_token(type_head))
-        return;
-    tag = type_expr_ref_tag[type_head];
-    payload = type_expr_ref_payload[type_head];
-    if (!checked_scoped_reference(tag, payload, instance_i, gParams.n_tokens, tag, payload))
-    {
-        tag = TYPE_REF_INVALID;
-        payload = INVALID;
-    }
-}
+// How payload_ref completes a declared payload reference.
+static const uint PAYLOAD_DIRECT = 3u;
 
-bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload)
+// The declared reference of a payload binder, how it is completed
+// (CHECKED_RESOLVE_* or PAYLOAD_DIRECT) and whether that reads the
+// scrutinee. An imported variant's generic payload (`scrutinee_slot`) is
+// the scrutinee's argument; a local variant's payload is substituted under
+// the scrutinee's application when it binds the arm's own pattern.
+bool payload_declared_ref(HirMatchPayload payload_row, HirMatchArm arm, out uint tag,
+    out uint ref_payload, out uint mode, out uint scrutinee_slot, out uint enum_token)
 {
-    tag = TYPE_REF_INVALID;
-    ref_payload = INVALID;
-    if (payload_row.arm >= active_arm_count())
-        return false;
-    HirMatchArm arm = compact_match_arms[payload_row.arm];
-    if (!valid_hir(payload_row.parent_pattern))
-        return false;
+    tag = TYPE_REF_INVALID; ref_payload = INVALID;
+    mode = PAYLOAD_DIRECT; scrutinee_slot = INVALID; enum_token = INVALID;
     uint path = path_for_pattern(payload_row.parent_pattern);
     if (valid_path(path) &&
         resolved_dependency_value_metadata[path * 4u] == IMPORTED_PAYLOAD_VARIANT)
-        return imported_payload_ref(payload_row, arm, path, tag, ref_payload);
+    {
+        if (payload_row.parent_pattern != arm.pattern) return false;
+        if (valid_hir(payload_row.pattern))
+        {
+            uint completed_tag = imported_match_payload_ref_tag[payload_row.pattern];
+            uint completed = imported_match_payload_ref_payload[payload_row.pattern];
+            if ((completed_tag == TYPE_REF_SCALAR && completed != INVALID) ||
+                (completed_tag == TYPE_REF_GENERIC_PARAM && valid_token(completed)) ||
+                (completed_tag == TYPE_REF_INSTANCE && completed < checked_type_capacity()))
+            {
+                tag = completed_tag; ref_payload = completed;
+                return true;
+            }
+        }
+        uint record_base = path * 9u;
+        uint count = resolved_dependency_variant_payload_records[record_base];
+        if (payload_row.ordinal >= count || count > 4u) return false;
+        uint payload_base = record_base + 1u + payload_row.ordinal * 2u;
+        uint projected_tag = resolved_dependency_variant_payload_records[payload_base];
+        uint projected_payload = resolved_dependency_variant_payload_records[payload_base + 1u];
+        if (projected_tag == TYPE_REF_SCALAR)
+        {
+            tag = projected_tag;
+            ref_payload = projected_payload;
+            return projected_payload != INVALID;
+        }
+        if (projected_tag != TYPE_REF_GENERIC_PARAM) return false;
+        mode = CHECKED_RESOLVE_CLOSED;
+        scrutinee_slot = projected_payload;
+        return true;
+    }
     uint variant_token;
-    uint enum_token;
     uint variant;
     if (!resolved_enum_variant(
             payload_row.parent_pattern,
             variant_token,
             enum_token,
             variant))
-        return false;
-    uint instance_i = INVALID;
-    if (payload_row.parent_pattern == arm.pattern &&
-        !scrutinee_context_for_match(arm.owner, enum_token, instance_i))
         return false;
     uint count = compact_variant_payload_count[variant];
     uint start = compact_variant_payload_start[variant];
@@ -322,7 +282,73 @@ bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload
         !valid_hir(variant_payload.type_node))
         return false;
     uint type_head = compact_hir_core[variant_payload.type_node].token_start;
-    substituted_ref(instance_i, type_head, tag, ref_payload);
+    if (!valid_token(type_head)) return false;
+    tag = type_expr_ref_tag[type_head];
+    ref_payload = type_expr_ref_payload[type_head];
+    mode = CHECKED_RESOLVE_CHECKED;
+    return true;
+}
+
+bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload)
+{
+    tag = TYPE_REF_INVALID;
+    ref_payload = INVALID;
+    if (payload_row.arm >= active_arm_count())
+        return false;
+    HirMatchArm arm = compact_match_arms[payload_row.arm];
+    if (!valid_hir(payload_row.parent_pattern))
+        return false;
+    uint mode; uint scrutinee_slot; uint enum_token;
+    if (!payload_declared_ref(payload_row, arm, tag, ref_payload, mode, scrutinee_slot, enum_token))
+        return false;
+    if (mode == PAYLOAD_DIRECT) return true;
+    uint context = INVALID;
+    inference_deferred_closure = INVALID;
+    if (mode == CHECKED_RESOLVE_CLOSED || payload_row.parent_pattern == arm.pattern)
+    {
+        // A scrutinee whose closure fails is unknown, and then every use
+        // below fails; the closure is read with the other IDs.
+        uint scrutinee_tag; uint scrutinee;
+        bool known = match_scrutinee(arm.owner, scrutinee_tag, scrutinee);
+        bool application = known && scrutinee_tag == TYPE_REF_INSTANCE &&
+            scrutinee < checked_type_capacity() && type_instance_kind[scrutinee] == 1u;
+        if (mode == CHECKED_RESOLVE_CLOSED)
+        {
+            if (!application || !instance_arg_ref(scrutinee, scrutinee_slot, tag, ref_payload))
+                return false;
+        }
+        else
+        {
+            // The arm's scrutinee is this variant's enum.
+            if (application) context = scrutinee;
+            if (application ? type_instance_decl_token[scrutinee] != enum_token
+                : !(known && scrutinee_tag == TYPE_REF_SCALAR && scrutinee == TY_ENUM_BASE + enum_token))
+                return false;
+        }
+    }
+    // This kernel's one ID site: the scrutinee's deferred closure, the
+    // payload's row and its environment.
+    uint closure = CT_UNKNOWN; uint term = CT_UNKNOWN; uint env = CT_UNKNOWN;
+    bool scoped = checked_resolve_scoped(mode, context);
+    [loop]
+    for (uint step = 0u; step < 3u; step++)
+    {
+        uint row = step == 0u ? inference_deferred_closure
+            : step == 1u ? (tag == TYPE_REF_INSTANCE ? ref_payload : INVALID)
+            : scoped ? context : INVALID;
+        uint id = row < checked_type_capacity() ? OnDemandIds.id(TYPE_REF_INSTANCE, row) : CT_UNKNOWN;
+        if (step == 0u) closure = id;
+        else if (step == 1u) term = id;
+        else env = id;
+    }
+    if (inference_deferred_closure != INVALID && !ct_closed(closure)) return false;
+    if (!canonical_checked_resolve_ids(mode, tag, ref_payload, term, context, env, gParams.n_tokens,
+        tag, ref_payload))
+    {
+        tag = TYPE_REF_INVALID;
+        ref_payload = INVALID;
+        return false;
+    }
     return tag != TYPE_REF_INVALID && ref_payload != INVALID;
 }
 
@@ -364,9 +390,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             record_min_token_error(status, binder_token, ERR_ASSIGN_MISMATCH, 0u);
         return;
     }
-    bool changed = !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-        decl_type_ref_tag[binder_token], decl_type_ref_payload[binder_token], INVALID,
-        tag, ref_payload, INVALID, checked_type_capacity(), gParams.n_tokens);
+    bool changed = !checked_refs_known_equal(
+        decl_type_ref_tag[binder_token], decl_type_ref_payload[binder_token], tag, ref_payload);
     // Every payload occurrence owns its complete type, including `_`: later
     // payload offsets and template closure depend on ignored prefix fields.
     // This occurrence-local root does not introduce a lexical wildcard name.
