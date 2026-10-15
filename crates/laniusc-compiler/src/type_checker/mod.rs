@@ -13,6 +13,7 @@ use std::sync::Mutex;
 mod bind_groups;
 mod bind_models;
 mod bind_support;
+mod canonical_passes;
 mod compiler_graph;
 mod generic_body;
 mod generic_calls;
@@ -348,6 +349,10 @@ pub struct GpuTypeChecker {
     status_readback: LaniusBuffer<u32>,
     call_inference_state: LaniusBuffer<u32>,
     call_inference_readback: LaniusBuffer<u32>,
+    /// Host-visible `ct_counts` after each canonical interning batch.
+    canonical_counts_readback: LaniusBuffer<u32>,
+    /// Debug-only canonical validation counters.
+    canonical_validation_readback: LaniusBuffer<u32>,
     preflight_graph: preflight::TypeCheckPreflightGraph,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,

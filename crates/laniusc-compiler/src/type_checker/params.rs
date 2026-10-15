@@ -22,6 +22,10 @@ pub(in crate::type_checker) struct TypeCheckParams {
     pub(in crate::type_checker) trait_obligation_mode: u32,
     /// Exact callable HIR in the immutable replay template; INVALID in strict mode.
     pub(in crate::type_checker) authorized_replay_callable: u32,
+    /// The job's own (library, unit): the stable identity of its local
+    /// nominal declarations in canonical type keys.
+    pub(in crate::type_checker) canonical_library_id: u32,
+    pub(in crate::type_checker) canonical_unit_id: u32,
 }
 
 /// Uniform for the enclosing-`if` depth prefix-scan passes.

@@ -99,24 +99,30 @@ public bool scoped_constant_counts_equal<
     return scoped_constant_refs_or_counts_equal<LeftGraph, RightGraph>(left, right, tokens, true);
 }
 
+// Typed (count_identity false) or count identity hash. Walkers call this
+// once per visited node so it is expanded at one site only.
+public bool scoped_constant_ref_or_count_hash<Graph : IParameterScopedTypeGraph>(
+    uint3 reference, uint tokens, bool count_identity, out uint result)
+{
+    result = 0u;
+    ConstantReferenceDescriptor descriptor;
+    return scoped_constant_reference<Graph>(reference, tokens, descriptor) &&
+        constant_reference_descriptor_hash<Graph, ScopedConstantEnvironment<Graph>>(
+            descriptor, tokens, count_identity, result);
+}
+
+[ForceInline]
 public bool scoped_constant_ref_hash<Graph : IParameterScopedTypeGraph>(
     uint3 reference, uint tokens, out uint result)
 {
-    result = 0u;
-    ConstantReferenceDescriptor descriptor;
-    return scoped_constant_reference<Graph>(reference, tokens, descriptor) &&
-        constant_reference_descriptor_hash<Graph, ScopedConstantEnvironment<Graph>>(
-            descriptor, tokens, false, result);
+    return scoped_constant_ref_or_count_hash<Graph>(reference, tokens, false, result);
 }
 
+[ForceInline]
 public bool scoped_constant_count_hash<Graph : IParameterScopedTypeGraph>(
     uint3 reference, uint tokens, out uint result)
 {
-    result = 0u;
-    ConstantReferenceDescriptor descriptor;
-    return scoped_constant_reference<Graph>(reference, tokens, descriptor) &&
-        constant_reference_descriptor_hash<Graph, ScopedConstantEnvironment<Graph>>(
-            descriptor, tokens, true, result);
+    return scoped_constant_ref_or_count_hash<Graph>(reference, tokens, true, result);
 }
 
 public bool scoped_type_refs_equal_graphs<

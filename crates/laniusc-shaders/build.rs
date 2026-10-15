@@ -567,9 +567,13 @@ fn shader_noinline_min_instructions() -> Result<u64> {
 
 /// Kernels the harness leaves fully inlined: out of line, their dispatches hang
 /// on NVIDIA depending on the input (01c fully inlined takes ~2 min to create
-/// once, then comes from the pipeline cache).
+/// once, then comes from the pipeline cache). Canonical-ID kernels are small
+/// and run the lock-free interning protocol, which is only validated fully
+/// inlined (docs/canonical-type-ids.md), so the harness never marks them.
 fn noinline_harness_exempt(artifact_key: &str) -> bool {
     matches!(artifact_key, "type_checker/semantic/artifact/01c_generic_native_words")
+        || artifact_key.starts_with("type_checker/canonical/")
+        || artifact_key.starts_with("tests/canonical_intern_")
 }
 
 fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {

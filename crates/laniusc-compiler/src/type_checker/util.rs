@@ -37,6 +37,8 @@ pub(super) fn zeroed_type_check_params_buffer(
         retain_callable_owners: 0,
         trait_obligation_mode: 0,
         authorized_replay_callable: u32::MAX,
+        canonical_library_id: canonical_passes::CANONICAL_NO_LIBRARY,
+        canonical_unit_id: canonical_passes::CANONICAL_NO_LIBRARY,
     });
     let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),

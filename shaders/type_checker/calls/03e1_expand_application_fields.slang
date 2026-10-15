@@ -2,6 +2,7 @@ import type_checker.dependencies.constant_view;
 // Expand accepted call returns and argument contexts after substitution.
 // Field patterns use complete nominal receiver environments in caller scope.
 #include "../type/instances/materialize_application_inputs.slang"
+#define MATERIALIZE_ROOT_CANDIDATES 1
 #include "../type/instances/materialize_application.slang"
 #include "../type/instances/expand_materialized_instance.slang"
 import type_checker.argument_context;
