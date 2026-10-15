@@ -6,7 +6,7 @@ fn main() -> i32 {
     let units: [u16; 2] = [zero, zero];
     let code: u32 = 0;
     while (code <= 65535) {
-        let unit: u16 = code;
+        let unit: u16 = code as u16;
         let surrogate: bool = code >= 55296 && code <= 57343;
         let high_surrogate: bool = code >= 55296 && code <= 56319;
         let low_surrogate: bool = code >= 56320 && code <= 57343;
@@ -51,8 +51,8 @@ fn main() -> i32 {
             let scalar: u32 = 65536 + high * 1024 + low;
             let written: core::utf16::Utf16Write =
                 core::utf16::write_scalar(units, 2, 0, scalar);
-            let expected_high: u16 = 55296 + high;
-            let expected_low: u16 = 56320 + low;
+            let expected_high: u16 = (55296 + high) as u16;
+            let expected_low: u16 = (56320 + low) as u16;
             let decoded: core::utf16::Utf16Decode =
                 core::utf16::decode_next(units, 2, 0);
             if (!core::utf16::write_succeeded(written) ||
