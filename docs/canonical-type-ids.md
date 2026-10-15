@@ -766,6 +766,22 @@ Converted consumers:
   bindings become the argument's claim span, each claim spelled by the row
   `ct_realize` gives its ID (constants as typed constant rows), and a
   constant slot's identity mode is exact unless it has count claims only.
+- `calls/03a_collect_row_args`: each argument's parameter pattern against
+  the argument's type, for the row-argument scan. `ct_pattern_masks` (the
+  shape pass of the pattern against itself) gives the slots the pattern
+  binds; a pattern without an ID is error 6 (0x474e0004), and a resolved
+  pattern whose shape pass fails is error 6 (0x474e0003). A closed pattern
+  that does not match is an assignment mismatch. The legacy four-slot cache
+  `call_generic_slot_type` is still published for slots 0..3 (scalar
+  bindings only), since 03a_apply_row_args, 03b, 03c and 10h2 read it.
+  `calls/argument_pattern_ids.slang` holds the operand-to-ID mapping and the
+  slot adapter that 03a and 03a1 share.
+- `calls/03a4b_contextual_result_requests`: a local call's declared result
+  pattern against its receiving type (field expectations come from
+  `struct_init_field_expected_ct`); the bindings become the call's context
+  through `ct_publish_context` without priors, so constants merge with the
+  context table and are admitted later. Statement lanes only own their
+  comparison rows.
 
 A kernel keeps one `ct_intern_checked` site, one `ct_match` site and one
 publisher site (each site inlines a full copy): the operands it interns and
