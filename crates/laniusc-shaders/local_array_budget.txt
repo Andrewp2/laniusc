@@ -16,9 +16,7 @@
 7268 tests/owned_type_constraints_match
 6540 type_checker/program_evidence/entries/41_normalize_original
 6540 type_checker/program_evidence/entries/42_normalize_prerequisite
-6400 type_checker/calls/03e1_expand_application_fields
 6400 type_checker/calls/03k3_project_record_contexts
-6400 type_checker/calls/03k_project_argument_contexts
 6400 type_checker/type/instances/02d_materialize_applications
 6144 type_checker/program_evidence/entries/43_validate_original_normalization
 6144 type_checker/program_evidence/entries/44_validate_prerequisite_normalization
@@ -26,8 +24,6 @@
 6144 type_checker/program_evidence/entries/59_admit_assumption_proofs
 5888 type_checker/dependencies/08a_validate_call_results
 5888 type_checker/methods/07_resolve_table
-5376 type_checker/calls/03e_materialize_return_types
-5376 type_checker/calls/03k2_materialize_match_payloads
 5376 type_checker/dependencies/14a_materialize_alias_targets
 5120 type_checker/calls/03d_bind_method_receiver_environment
 5120 type_checker/dependencies/15a_collect_methods
@@ -39,7 +35,6 @@
 4352 type_checker/calls/03a_collect_row_args
 4352 type_checker/methods/05_validate_keys
 4096 tests/canonical_type_constraint_boundary
-4096 type_checker/calls/03a0_bind_explicit_applications
 3840 type_checker/semantic/artifact/01c_generic_native_words
 3328 tests/canonical_type_identity_boundary
 3328 type_checker/calls/03a8_validate_explicit_applications
@@ -55,7 +50,6 @@
 2048 type_checker/calls/03f_infer_return_bindings
 2048 type_checker/calls/03g_project_expression_types
 2048 type_checker/calls/03h_project_array_literal_elements
-2048 type_checker/calls/03i_materialize_array_literals
 2048 type_checker/calls/03j_validate_array_literals
 2048 type_checker/calls/03k1_project_literal_contexts
 2048 type_checker/canonical/90_validate
@@ -79,7 +73,6 @@
 2048 type_checker/type/instances/03_member_results
 2048 type_checker/type/instances/03b_member_substitute
 2048 type_checker/type/instances/04b_struct_init_substitute
-2048 type_checker/type/instances/05_array_return_refs
 2048 type_checker/type/instances/05b_array_literal_return_refs
 1792 type_checker/program_evidence/entries/02_08_admit_predicates
 1792 type_checker/program_evidence/entries/15_build_assumption_index
@@ -89,19 +82,18 @@
 1792 type_checker/program_evidence/entries/32_15_admit_calls
 1792 type_checker/program_evidence/native_layout/entries/03_admit_recipe_groups
 1536 type_checker/calls/03a4_validate_generic_claims
-1536 type_checker/dependencies/16_project_struct_literals
-1280 type_checker/interface/type_topology/12_type_records
 1280 type_checker/predicates/01_collect_impls
 1280 type_checker/predicates/01a_validate_bound_args
 1280 type_checker/program_evidence/entries/09_build_implementation_index
 1280 type_checker/type/instances/02c_index_closed_applications
 1024 type_checker/dependencies/14_project_type_instances
-1024 type_checker/interface/type_topology/05_mark_reverse
+768 type_checker/interface/type_topology/12_type_records
 576 tests/typed_constant_identity_requests
 524 tests/typed_constant_identity_claim_priority
 524 tests/typed_constant_identity_inference
 512 codegen/lir/semantic/function_layout_words
 512 tests/typed_constant_identity_array_constraints
+512 type_checker/interface/type_topology/05_mark_reverse
 464 type_checker/program_evidence/entries/55_commit_substitutions
 356 type_checker/program_evidence/entries/45_commit_normalized_terms
 256 tests/proof_span_coverage_probe
