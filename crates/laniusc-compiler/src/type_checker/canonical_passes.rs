@@ -344,6 +344,10 @@ pub(super) fn register_canonical_passes(
     );
     storage(graph, "canonical_frontier", workspace, (frontier_rows >> shrink).max(1) * 8)?;
     storage(graph, "canonical_validation", workspace, CANONICAL_VALIDATION_WORDS as u64 * 4)?;
+    if canonical_validation_enabled() {
+        // The cross-check's representative row per record (89_crosscheck_buckets).
+        storage(graph, "canonical_crosscheck_owner", workspace, records * 4)?;
+    }
     graph.add_resource(ResourceDesc {
         name: "canonical_round_args",
         domain: ResourceDomain::DispatchArguments,
@@ -505,8 +509,11 @@ pub(super) fn register_canonical_late_passes(
                 &[],
             )?;
         }
-        // 88_validate_table clears the bucket heads and links.
-        graph.mark_pass_bindings_initialize(CANONICAL_VALIDATE_PASS, &["canonical_crosscheck_links"])?;
+        // 88_validate_table clears the bucket heads, the links and the owners.
+        graph.mark_pass_bindings_initialize(
+            CANONICAL_VALIDATE_PASS,
+            &["canonical_crosscheck_links", "canonical_crosscheck_owner"],
+        )?;
         let validation = resource(graph, "canonical_validation")?;
         let validation_readback = resource(graph, "canonical_validation_readback")?;
         graph.add_buffer_copy_pass(
