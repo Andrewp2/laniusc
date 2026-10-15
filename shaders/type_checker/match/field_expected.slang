@@ -8,10 +8,11 @@
 //
 // struct_init_field_expected_ct[field token] is the ID while the field has a
 // context instance, CT_NONE while it has none (its reference is already in
-// caller scope) and CT_UNKNOWN when the substitution failed.
+// caller scope) and CT_UNKNOWN when the substitution failed. Readers bind the
+// column read-only; only 01_field_expected_ids declares it writable.
 import type_checker.canonical.canonical_api;
 
-public RWStructuredBuffer<uint> struct_init_field_expected_ct;
+public StructuredBuffer<uint> struct_init_field_expected_ct;
 
 public uint ct_field_expected(uint token)
 {

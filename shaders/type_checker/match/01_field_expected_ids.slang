@@ -12,13 +12,14 @@ import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
-import type_checker.match.field_expected;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> struct_init_field_expected_ref_tag;
 StructuredBuffer<uint> struct_init_field_expected_ref_payload;
 StructuredBuffer<uint> struct_init_field_expected_context_instance;
+// The column readers import read-only from match/field_expected.slang.
+RWStructuredBuffer<uint> struct_init_field_expected_ct;
 
 static const uint INVALID = 0xffffffffu;
 

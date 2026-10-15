@@ -7,8 +7,10 @@
 
 use super::*;
 use crate::gpu::compiler_graph::{
+    AccessMode,
     CompilerGraphBuilder,
     CompilerPhase,
+    ReflectedResourceBinding,
     ResourceClass,
     ResourceDomain,
 };
@@ -39,19 +41,28 @@ pub(super) fn register_match_storage(
 }
 
 /// Registers one field-expectation pass (`name` is one of the pass names
-/// above), right after the struct-literal fields it follows.
+/// above), right after the struct-literal fields it follows. The pass writes
+/// every token of `struct_init_field_expected_ct` without reading it, so it
+/// initializes the column; the graph rows it realizes stay read-write.
 pub(super) fn register_field_expected_ids_pass(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     name: &'static str,
 ) -> Result<(), String> {
+    let column = graph
+        .resource_id("struct_init_field_expected_ct")
+        .ok_or_else(|| format!("{name} needs struct_init_field_expected_ct registered first"))?;
     graph.add_kernel_pass_by_name(
         name,
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
         FIELD_EXPECTED_IDS_KERNEL,
-        &[],
+        &[ReflectedResourceBinding {
+            binding: "struct_init_field_expected_ct",
+            resource: column,
+            mode: Some(AccessMode::Write),
+        }],
     )?;
     graph.add_indirect_dispatch(name, "token_active_dispatch_args")?;
     Ok(())
