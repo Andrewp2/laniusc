@@ -17,7 +17,7 @@ import type_checker.canonical.canonical_dependency;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_checked;
-import type_checker.substitution.checked_source_slots;
+import type_checker.checked_slots;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -73,7 +73,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!ct_is_record(application) || ct_kind(application) != CT_KIND_NAMED)
     { record_min_token_error(status, leaf, 6u, FAILURE_LEAF); return; }
     CtSpare spare = ct_spare_none();
-    uint target = ct_subst(CheckedSourceSlots(), application, pattern, true, spare);
+    uint target = ct_subst(CheckedSlots(), application, pattern, true, spare);
     if (!ct_is_resolved(target) || ct_is_constant(target))
     { record_min_token_error(status, leaf, 6u, FAILURE_TARGET); return; }
     imported_type_alias_target[leaf] = uint2(ALIAS_TARGET_PENDING, target);
