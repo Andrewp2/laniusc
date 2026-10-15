@@ -18,6 +18,7 @@ import dependency_interface;
 import status;
 import type_checker.local_struct_layout;
 import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
 import type_checker.canonical.canonical_mutable_rows;
 import type_checker.canonical.canonical_dependency;
 import type_checker.substitution.ct_spare;
@@ -94,7 +95,7 @@ StructuredBuffer<uint> name_hash_hi;
 StructuredBuffer<uint> struct_field_lookup_state;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> resolved_type_decl;
-StructuredBuffer<uint> decl_name_token;
+// decl_name_token is the canonical candidates binding.
 StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 
