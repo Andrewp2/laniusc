@@ -179,7 +179,7 @@ impl GpuTypeChecker {
             canonical_library_id: canonical_passes::CANONICAL_NO_LIBRARY,
             canonical_unit_id: canonical_passes::CANONICAL_NO_LIBRARY,
         };
-        queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
+        self.params_buf.write(queue, 0, &type_check_params_bytes(&params));
 
         let candidate_counts = self.preflight_graph.candidate_counts()?;
         let mut resources = ResourceMap::new();

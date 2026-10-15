@@ -727,10 +727,10 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.workspace_ready");
             }
-            // Both parameter blocks are logical ranges of the uniform arena:
-            // write through the view's offset, never at the arena's start
-            // (that clobbered gConstantStoragePlan and disabled constant
-            // publication).
+            // Both uniforms are suballocated from the workspace uniform arena.
+            // Writing through the view puts the bytes at its own offset; a raw
+            // `queue.write_buffer(.., 0, ..)` overwrote the arena's first
+            // occupant, the constant storage plan.
             bind_groups.if_depth_params.write(
                 queue,
                 0,
