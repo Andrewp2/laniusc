@@ -43,6 +43,10 @@ static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_PASS_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
+static RECORDED_INDIRECT_DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
+/// Dispatches, indirect dispatches, compute passes and bind groups created at
+/// the previous host-timed submission (see `submit_with_progress`).
+static SUBMITTED_COUNTS: std::sync::Mutex<[u64; 4]> = std::sync::Mutex::new([0; 4]);
 static DEBUG_OPERATION_INDEX: AtomicU64 = AtomicU64::new(0);
 static DEBUG_OPERATION_SKIPPING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -281,6 +285,37 @@ pub(crate) fn recorded_compute_dispatch_count() -> u64 {
 
 pub(crate) fn record_compute_dispatch() {
     RECORDED_COMPUTE_DISPATCH_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Counts an indirect dispatch (on top of `record_compute_dispatch`).
+pub(crate) fn record_indirect_compute_dispatch() {
+    RECORDED_INDIRECT_DISPATCH_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Whether `LANIUS_GPU_COMPILE_HOST_TIMING` asks for host timing lines.
+pub(crate) fn host_timing_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED
+        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false))
+}
+
+/// What was recorded since the previous call, process-wide: dispatches,
+/// indirect dispatches, compute passes and bind groups created. Recording is
+/// sequential, so at a submission this is what the submitted commands hold,
+/// except for work submitted without `submit_with_progress`.
+fn recorded_since_last_submission() -> [u64; 4] {
+    let now = [
+        RECORDED_COMPUTE_DISPATCH_COUNT.load(Ordering::Relaxed),
+        RECORDED_INDIRECT_DISPATCH_COUNT.load(Ordering::Relaxed),
+        RECORDED_COMPUTE_PASS_COUNT.load(Ordering::Relaxed),
+        BIND_GROUP_CREATION_COUNT.load(Ordering::Relaxed),
+    ];
+    let mut last = SUBMITTED_COUNTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let delta = std::array::from_fn(|index| now[index].saturating_sub(last[index]));
+    *last = now;
+    delta
 }
 
 static READBACK_ROUND_TRIPS: AtomicU64 = AtomicU64::new(0);
@@ -1084,6 +1119,7 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     record_compute_dispatch();
+    record_indirect_compute_dispatch();
     if !crate::gpu::passes_core::debug_operation_skipped() {
         compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
     }
@@ -1107,8 +1143,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
         debug_capture_snapshot(encoder);
         return;
     }
-    let host_timing = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
-    let started = host_timing.then(Instant::now);
+    let started = host_timing_enabled().then(Instant::now);
     let command_count = commands.len();
     match commands.iter().position(DeferredComputeCommand::capture) {
         None => record_deferred_commands(encoder, label, &commands),
@@ -1200,6 +1235,7 @@ fn record_deferred_commands(
                     compute.set_bind_group(index as u32, bind_group, offsets);
                 }
                 record_compute_dispatch();
+                record_indirect_compute_dispatch();
                 compute.dispatch_workgroups_indirect(dispatch_args, *dispatch_offset);
                 if let Some(label) = timing_label {
                     crate::gpu::timer::stamp_active_operation_in_pass(&mut compute, label.clone());
@@ -1276,12 +1312,19 @@ pub(crate) fn submit_recorded_prefix(
     let recorded = std::mem::replace(encoder, next);
     let start = Instant::now();
     let commands = recorded.finish();
+    let finished = Instant::now();
     crate::gpu::trace::record_host_span(
         "host.submit",
         &format!("{label}.encoder_finished"),
         start,
-        Instant::now(),
+        finished,
     );
+    if host_timing_enabled() {
+        eprintln!(
+            "[gpu_compile_host_timer] encoder_finish: label={label} finish_ms={:.3}",
+            finished.duration_since(start).as_secs_f64() * 1000.0,
+        );
+    }
     submit_with_optional_validation(
         device,
         queue,
@@ -1810,6 +1853,13 @@ pub(crate) fn submit_with_progress(
     queue.submit(Some(command_buffer));
     let end = Instant::now();
     crate::gpu::trace::record_host_span("host.submit", label, start, end);
+    if host_timing_enabled() {
+        let [dispatches, indirect, passes, bind_groups] = recorded_since_last_submission();
+        eprintln!(
+            "[gpu_compile_host_timer] submit: label={label} dispatches={dispatches} indirect={indirect} passes={passes} bind_groups_created={bind_groups} submit_ms={:.3}",
+            end.duration_since(start).as_secs_f64() * 1000.0,
+        );
+    }
     trace_gpu_progress(&format!("submit.done :: {label}"));
     SubmitTiming { gpu_anchor: end }
 }
@@ -3424,6 +3474,7 @@ impl<'encoder> ComputePassBatch<'encoder> {
         self.pass()
             .set_bind_group(0, Some(bind_group), dynamic_offsets);
         record_compute_dispatch();
+        record_indirect_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
             self.pass()
                 .dispatch_workgroups_indirect(&dispatch_args.buffer, args_offset);
@@ -3511,6 +3562,7 @@ impl<'encoder> ComputePassBatch<'encoder> {
                 .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         record_compute_dispatch();
+        record_indirect_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
             self.pass()
                 .dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
@@ -3678,6 +3730,7 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
                 pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
             }
             record_compute_dispatch();
+            record_indirect_compute_dispatch();
             if !crate::gpu::passes_core::debug_operation_skipped() {
                 pass.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
             }

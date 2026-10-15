@@ -565,6 +565,13 @@ fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
     // Vulkan loader instead (VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation)
     // so it reports through its own log settings.
     flags.remove(wgpu::InstanceFlags::VALIDATION | wgpu::InstanceFlags::GPU_BASED_VALIDATION);
+    // Release builds validate indirect dispatch arguments: wgpu records a
+    // checking dispatch, three barriers and a rebind of every bind group
+    // before each indirect dispatch. `LANIUS_WGPU_INDIRECT_VALIDATION=0`
+    // turns that off, to measure what it costs.
+    if !crate::gpu::env::env_bool_truthy("LANIUS_WGPU_INDIRECT_VALIDATION", true) {
+        flags.remove(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL);
+    }
     flags
 }
 
