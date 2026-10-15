@@ -309,6 +309,10 @@ pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_CLEAR_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.clear";
 pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.project";
+/// A body replay's canonical re-arm (canonical/03_rearm), ahead of the
+/// replayed match passes.
+pub(super) const BODY_SPECIALIZATION_CANONICAL_REARM_PASS: &str =
+    "type_check.body_specialization.canonical_rearm";
 /// The late re-seed of `ct_row_of` (substitution/01_seed_rows), after the
 /// late canonical stage.
 pub(super) const SUBSTITUTION_LATE_SEED_PASS: &str = "type_check.substitution.late_seed";
@@ -6259,6 +6263,13 @@ fn build_graph(
             "type_check.body_specialization.array_literal_refs",
             "type_checker/type/instances/05b_array_literal_return_refs",
             ResourceDomain::HirNodes,
+        ),
+        // The replay rewrote rows and constants the early canonical stage
+        // interned: re-arm them, so the match passes intern what they read.
+        (
+            BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
+            super::canonical_passes::CANONICAL_REARM_KERNEL,
+            ResourceDomain::Types,
         ),
         (
             "type_check.body_specialization.payloads",

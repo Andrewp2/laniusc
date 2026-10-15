@@ -258,6 +258,10 @@ impl SemanticProjectionOperations {
                     "type_checker/type/instances/05b_array_literal_return_refs",
                 ),
                 (
+                    compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
+                    canonical_passes::CANONICAL_REARM_KERNEL,
+                ),
+                (
                     "type_check.body_specialization.payloads",
                     "type_checker/modules/10m2_type_match_payloads",
                 ),
@@ -310,6 +314,13 @@ impl SemanticProjectionOperations {
                     let tags: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, tag_column)?;
                     u32::try_from(tags.byte_size / 4)?
+                } else if name == compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
+                    let words = |name| -> Result<u32> {
+                        Ok(u32::try_from(
+                            typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
+                        )?)
+                    };
+                    words("canonical_row")? + words("canonical_atom")? + words("canonical_projection")?
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;

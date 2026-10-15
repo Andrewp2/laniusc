@@ -49,7 +49,14 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
             if (tag == 0u)
             {
                 uint instance = call_result_instance[root];
+#if defined(INFERENCE_DEFERRED_CLOSURE)
+                // The includer requires this row to be closed (its canonical
+                // ID read at the includer's one ID site), as if this check
+                // had failed otherwise.
+                inference_deferred_closure = instance;
+#else
                 if (!checked_instance_is_closed(instance)) return false;
+#endif
                 tag = 3u; payload = instance;
             }
         }
