@@ -125,7 +125,7 @@ def main():
     baseline = statistics.median(plain) if plain else 0
     for row in rows:
         excess = max(0, row["added_mib"] - baseline)
-        row["per_thread"] = excess * (1 << 20) // args.resident_threads
+        row["per_thread"] = int(excess * (1 << 20) // args.resident_threads)
 
     rows.sort(key=lambda row: (-row["per_thread"], row["kernel"]))
     measured = [row for row in rows if row["created"]]
