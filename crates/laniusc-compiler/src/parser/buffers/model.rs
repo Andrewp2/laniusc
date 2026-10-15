@@ -748,6 +748,10 @@ pub struct ParserBuffers {
     pub hir_semantic_prefix_before_node: LaniusBuffer<u32>,
     pub hir_semantic_dense_node: LaniusBuffer<u32>,
     pub hir_semantic_subtree_end: LaniusBuffer<u32>,
+    /// Semantic-end search heaps (`passes::hir::semantic::parent::end_tree`).
+    pub hir_semantic_end_local_max: LaniusBuffer<u32>,
+    pub hir_semantic_end_blocks: LaniusBuffer<u32>,
+    pub hir_semantic_end_top: LaniusBuffer<u32>,
     pub hir_semantic_parent: LaniusBuffer<u32>,
     pub hir_semantic_first_child: LaniusBuffer<u32>,
     pub hir_semantic_next_sibling: LaniusBuffer<u32>,

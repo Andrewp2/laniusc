@@ -70,6 +70,9 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_CAST = 36u;
+static const uint HIR_EXPR_CHAR = 29u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
@@ -91,6 +94,7 @@ static const uint ERR_LOOP_CONTROL = 7u;
 static const uint ERR_INTEGER_LITERAL_RANGE = 24u;
 static const uint ERR_FLOAT_LITERAL = 25u;
 static const uint ERR_COMPUTED_FLOAT_CONSTANT = 26u;
+static const uint ERR_INVALID_CAST = 27u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [ForceInline]
@@ -246,6 +250,48 @@ void validate_index(uint node, HirPayload payload)
     uint index_ty = scalar_type(payload.c);
     if (!assignable_to_int(index_ty))
         record_mismatch(payload.c, TY_INT * 256u + index_ty);
+}
+
+bool cast_numeric(uint ty) { return scalar_is_integer(ty) || scalar_is_float(ty); }
+
+// `value as T` converts between integer and floating scalars, from bool or
+// char to an integer, and from u8 to char. payload.b is the operand and
+// payload.d the target type's first token, where the type collector publishes
+// its checked reference; the `as` token is just before it. The detail packs
+// (source << 16) | target, with 0 for a type that is not a primitive scalar.
+void validate_cast(uint node, HirPayload payload)
+{
+    uint target_token = payload.d;
+    if (target_token == 0u || target_token >= gParams.n_tokens) return;
+    uint target_tag = type_expr_ref_tag[target_token];
+    // An unresolved target type reports its own error.
+    if (target_tag == 0u) return;
+    uint target = target_tag == TYPE_REF_SCALAR ? type_expr_ref_payload[target_token] : TY_UNKNOWN;
+    uint source = scalar_type(payload.b);
+    // A char literal has no compact scalar type, but it is a char.
+    if (source == TY_UNKNOWN && valid_hir(payload.b) &&
+        compact_hir_payload[payload.b].a == HIR_EXPR_CHAR &&
+        (compact_hir_core[payload.b].kind == HIR_EXPR || compact_hir_core[payload.b].kind == HIR_LITERAL_EXPR))
+        source = TY_CHAR;
+    if (source == TY_UNKNOWN)
+    {
+        if (!valid_hir(payload.b)) return;
+        uint source_tag = semantic_expr_ref_tag_by_hir[payload.b];
+        // An operand with no checked type reports its own error.
+        if (source_tag == 0u) return;
+        source = source_tag == TYPE_REF_SCALAR ? semantic_expr_ref_payload_by_hir[payload.b] : TY_UNKNOWN;
+    }
+    // bool and char convert to any integer and to themselves; only u8
+    // converts to char.
+    bool integer_source = source == TY_BOOL || source == TY_CHAR;
+    if (cast_numeric(target) &&
+        (cast_numeric(source) || (integer_source && scalar_is_integer(target)))) return;
+    if (target == TY_CHAR && source == SCALAR_U8) return;
+    if (integer_source && source == target) return;
+    uint source_code = scalar_is_known(source) ? source : 0u;
+    uint target_code = scalar_is_known(target) ? target : 0u;
+    record_min_token_error(status, target_token - 1u, ERR_INVALID_CAST,
+        (source_code << 16u) | target_code);
 }
 
 // Type-only generic applications need not run expression inference rounds.
@@ -439,7 +485,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     validate_computed_float_constant(node, core, payload);
     validate_direct_range(node, core, payload);
     if (core.kind == HIR_INDEX_EXPR) validate_index(node, payload);
-    if (core.kind == HIR_BINARY_EXPR) validate_binary(node, payload);
+    if (core.kind == HIR_BINARY_EXPR)
+    {
+        if (payload.a == HIR_EXPR_CAST) validate_cast(node, payload);
+        else validate_binary(node, payload);
+    }
     if (core.kind == HIR_IF_STMT ||
         (core.kind == HIR_STMT && payload.a == HIR_STMT_IF))
         record_bool_mismatch(payload.b, scalar_type(payload.b));

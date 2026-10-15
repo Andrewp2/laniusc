@@ -93,6 +93,8 @@ pub const HIR_EXPR_FORM_RANGE_FULL: u32 = 33;
 pub const HIR_EXPR_FORM_RANGE_INCLUSIVE: u32 = 34;
 /// Range-to-inclusive expression.
 pub const HIR_EXPR_FORM_RANGE_TO_INCLUSIVE: u32 = 35;
+/// `value as T` cast; the right edge is the target type row.
+pub const HIR_EXPR_FORM_CAST: u32 = 36;
 
 /// Parser pass that fills expression form and result-node records.
 pub struct HirExprFieldsPass {

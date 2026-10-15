@@ -22,9 +22,8 @@ public struct OriginalWorkNormalizationSource : IWorkNormalizationSource
         bool emit, ProofNormalizationReservation reservation, out uint2 normalized,
         out bool closed, out ProofNormalizationCounts measured)
     {
-        return pev_normalize_proof_root<InputProofNormalizationGraph,
-            InputProofNormalizationGraph, InputProofNormalizationBindings,
-            SolverProofTermSink>(input, environment, owner, domain, emit, reservation,
+        return pev_normalize_proof_root<SameProofNormalizationGraph<InputProofNormalizationGraph>,
+            InputProofNormalizationBindings, SolverProofTermSink>(input, environment, owner, domain, emit, reservation,
                 normalized, closed, measured);
     }
     public static EvidenceStatus validate(uint input_root, uint environment, uint owner, uint domain,
@@ -41,8 +40,8 @@ public struct PrerequisiteWorkNormalizationSource : IWorkNormalizationSource
         bool emit, ProofNormalizationReservation reservation, out uint2 normalized,
         out bool closed, out ProofNormalizationCounts measured)
     {
-        return pev_normalize_proof_root<InputProofNormalizationGraph,
-            SolverProofTermGraph, SolverProofBindings, SolverProofTermSink>(
+        return pev_normalize_proof_root<SplitProofNormalizationGraphs<InputProofNormalizationGraph,
+            SolverProofTermGraph>, SolverProofBindings, SolverProofTermSink>(
                 input, substitution, owner, domain, emit, reservation, normalized, closed, measured);
     }
     public static EvidenceStatus validate(uint input_root, uint substitution, uint owner, uint domain,

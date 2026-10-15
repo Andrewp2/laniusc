@@ -132,7 +132,6 @@ impl GpuX86Linker {
             symbol_partition_graph: Mutex::new(None),
             input_shadows: Mutex::new(HashMap::new()),
         };
-        gpu.persist_pipeline_cache();
         Ok(linker)
     }
 }

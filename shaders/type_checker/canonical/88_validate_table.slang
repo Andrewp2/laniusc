@@ -8,8 +8,10 @@
 import type_checker.canonical.canonical_api;
 
 RWStructuredBuffer<uint> canonical_validation;
-// Bucket chains of the cross-check (canonical_crosscheck.slang), cleared here.
+// Bucket chains and record owners of the cross-check
+// (canonical_crosscheck.slang), cleared here.
 RWStructuredBuffer<uint> canonical_crosscheck_links;
+RWStructuredBuffer<uint> canonical_crosscheck_owner;
 // Generated application rows of the job (allocate_application.slang): the
 // (environment, type) instantiations of the current materialization.
 StructuredBuffer<uint> type_application_count;
@@ -120,6 +122,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint links; uint stride;
     canonical_crosscheck_links.GetDimensions(links, stride);
     if (i < links) canonical_crosscheck_links[i] = 0u;
+    uint owners;
+    canonical_crosscheck_owner.GetDimensions(owners, stride);
+    if (i < owners) canonical_crosscheck_owner[i] = 0xffffffffu;
     if (i == 0u)
     {
         canonical_validation[V_OVERFLOW] = ct_counts[CT_COUNT_OVERFLOW];

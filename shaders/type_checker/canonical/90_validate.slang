@@ -4,16 +4,17 @@
 // canonical bridge graph (rows, or IDs at CT_ROW_BASE) on the right.
 // - bridge mismatch: the old walker rejects a row against its own canonical
 //   ID read through the bridge (canonical_bridge.slang).
-// - false merge: a row whose canonical ID is another row's record, while the
-//   old walker says the two rows differ. A pair whose top-level nominal
-//   spelling differs (declaration token against an imported triple) is the
-//   intended unification of local and imported references and is counted
-//   as a normalized merge instead.
+// - false merge: a row and its representative (the smallest row with the
+//   same canonical ID, 89_crosscheck_buckets), while the old walker says the
+//   two rows differ. A pair whose top-level nominal spelling differs
+//   (declaration token against an imported triple) is the intended
+//   unification of local and imported references and is counted as a
+//   normalized merge instead.
 // - missed merge: two rows of one coarse bucket that the old walker accepts
 //   but that have different canonical IDs.
-// A row whose ID is a record no row owns (a dependency node's) is confirmed
-// against the next row of its bucket chain with the same ID instead of the
-// record's owner, which chains every such row of the bucket.
+// A row whose ID has no representative (a preseeded scalar ID) is confirmed
+// against the next row of its bucket chain with the same ID instead, which
+// chains every such row of the bucket.
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_bridge;
 import type_checker.canonical.canonical_crosscheck;
@@ -61,7 +62,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint buckets = crosscheck_buckets();
     if (row >= rows || buckets == 0u || !crosscheck_row(row)) return;
     uint id = canonical_row[row];
-    uint representative = id >= CT_FIRST_RECORD ? id - CT_FIRST_RECORD : INVALID;
+    uint representative = crosscheck_owner(id);
     uint link = canonical_crosscheck_links[buckets + row];
     bool anchored = representative < rows;
     // Step 0 compares the row with its own ID through the bridge; step 1

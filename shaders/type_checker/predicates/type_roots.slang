@@ -4,6 +4,7 @@ import type_checker.constant_atoms_identity;
 // never used as semantic keys.
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
+import type_checker.scoped_type_stackless;
 import type_checker.checked_type_graph;
 import type_checker.concrete_type_closure;
 
@@ -35,15 +36,16 @@ bool predicate_key_hash<Graph : IScopedTypeGraph>(uint2 subject, uint root,
     uint count, uint context, out uint hash)
 {
     hash = 0u;
-    if (count > 32u || !scoped_type_ref_hash<Graph>(subject.x, subject.y, context,
-        checked_type_capacity(), gParams.n_tokens, hash)) return false;
-    for (uint ordinal = 0u; ordinal < count; ordinal++)
+    if (count > 32u) return false;
+    // The subject, then the ordered arguments, through one walk site.
+    for (uint ordinal = 0u; ordinal <= count; ordinal++)
     {
-        uint2 argument = predicate_type_reference(predicate_argument_node(root, ordinal));
-        uint argument_hash;
-        if (!scoped_type_ref_hash<Graph>(argument.x, argument.y, context,
-            checked_type_capacity(), gParams.n_tokens, argument_hash)) return false;
-        hash = scoped_type_hash_mix(hash, argument_hash);
+        uint2 reference = ordinal == 0u ? subject
+            : predicate_type_reference(predicate_argument_node(root, ordinal - 1u));
+        uint reference_hash;
+        if (!scoped_type_ref_hash_stackless<Graph>(reference.x, reference.y, context,
+            checked_type_capacity(), gParams.n_tokens, reference_hash)) return false;
+        hash = ordinal == 0u ? reference_hash : scoped_type_hash_mix(hash, reference_hash);
     }
     return true;
 }
@@ -51,15 +53,15 @@ bool predicate_key_hash<Graph : IScopedTypeGraph>(uint2 subject, uint root,
 bool predicate_keys_equal<Graph : IScopedTypeGraph>(uint2 left_subject, uint left_root,
     uint left_context, uint2 right_subject, uint right_root, uint right_context, uint count)
 {
-    if (count > 32u || !scoped_type_refs_equal<Graph>(
-        left_subject.x, left_subject.y, left_context,
-        right_subject.x, right_subject.y, right_context,
-        checked_type_capacity(), gParams.n_tokens)) return false;
-    for (uint ordinal = 0u; ordinal < count; ordinal++)
+    if (count > 32u) return false;
+    // The subjects, then the ordered arguments, through one walk site.
+    for (uint ordinal = 0u; ordinal <= count; ordinal++)
     {
-        uint2 left = predicate_type_reference(predicate_argument_node(left_root, ordinal));
-        uint2 right = predicate_type_reference(predicate_argument_node(right_root, ordinal));
-        if (!scoped_type_refs_equal<Graph>(left.x, left.y, left_context,
+        uint2 left = ordinal == 0u ? left_subject
+            : predicate_type_reference(predicate_argument_node(left_root, ordinal - 1u));
+        uint2 right = ordinal == 0u ? right_subject
+            : predicate_type_reference(predicate_argument_node(right_root, ordinal - 1u));
+        if (!scoped_type_refs_equal_stackless<Graph>(left.x, left.y, left_context,
             right.x, right.y, right_context, checked_type_capacity(), gParams.n_tokens))
             return false;
     }

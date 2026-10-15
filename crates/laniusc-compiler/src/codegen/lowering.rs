@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use encase::ShaderType;
 
 #[cfg(test)]
@@ -115,8 +115,28 @@ struct SemanticTemplateParams {
     n_hir_nodes: u32,
     param_capacity: u32,
     n_tokens: u32,
-    /// Zero for an ordinary job; selected lexical callable HIR plus one for replay.
+    /// Zero for an ordinary job; selected lexical callable HIR plus one for
+    /// replay, with bit 31 set to also emit ordinary local helpers.
     replay_function: u32,
+    /// Further selected callables of a batched replay, each HIR plus one.
+    replay_extra_count: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+    replay_extra: [ReplayFunctionRow; REPLAY_EXTRA_ROWS],
+}
+
+/// Batched replays select at most 64 bodies: the first in `replay_function`,
+/// the other 63 in these rows (16-byte uniform array stride).
+const REPLAY_EXTRA_ROWS: usize = 16;
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, ShaderType)]
+struct ReplayFunctionRow {
+    x: u32,
+    y: u32,
+    z: u32,
+    w: u32,
 }
 
 #[repr(C)]
@@ -856,6 +876,7 @@ struct GpuSemanticLoweringOperations {
     function_layout_validate: ComputeOperation,
     function_layout_enum_fields: ComputeOperation,
     function_layout_words: ComputeOperation,
+    function_layout_words_round: ComputeOperation,
     function_scatter: ComputeOperation,
     function_params: ComputeOperation,
     project: ComputeOperation,
@@ -1187,6 +1208,10 @@ impl GpuSemanticLoweringStage {
                 passes.function_layout_words.reflection.as_ref(),
             ),
             (
+                "lir.semantic.functions.layout.words.round",
+                passes.function_layout_words.reflection.as_ref(),
+            ),
+            (
                 "lir.semantic.function_scan.local",
                 passes.scan_local.reflection.as_ref(),
             ),
@@ -1347,6 +1372,11 @@ impl GpuSemanticLoweringStage {
                 param_capacity: capacities.parameters,
                 n_tokens: capacities.tokens,
                 replay_function: 0,
+                replay_extra_count: 0,
+                _pad0: 0,
+                _pad1: 0,
+                _pad2: 0,
+                replay_extra: [ReplayFunctionRow::default(); REPLAY_EXTRA_ROWS],
             },
         );
         let function_params = uniform_from_val(
@@ -1370,6 +1400,30 @@ impl GpuSemanticLoweringStage {
             },
         );
 
+        // function_layout_words.slang root_rows: HIR rows for the first
+        // pass, first field rows for the fixed-point rounds.
+        let words_params = uniform_from_val(
+            device,
+            "lir.semantic.functions.layout.words.params",
+            &SemanticFunctionParams {
+                n_hir_nodes: hir_nodes,
+                param_capacity: capacities.parameters,
+                n_tokens: capacities.tokens,
+                local_capacity: 0,
+            },
+        );
+        let words_round_params = uniform_from_val(
+            device,
+            "lir.semantic.functions.layout.words.round.params",
+            &SemanticFunctionParams {
+                n_hir_nodes: hir_nodes,
+                param_capacity: capacities.parameters,
+                n_tokens: capacities.tokens,
+                local_capacity: 1,
+            },
+        );
+        let layout_dispatch_args = alias("lir.semantic.layout_dispatch_args", 6)?;
+
         let graph_bindings = workspace.bindings(&graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(&graph, &graph_bindings);
@@ -1387,6 +1441,23 @@ impl GpuSemanticLoweringStage {
                     device, &context, &resources, $name, $pass, $params, $elements,
                 )
             };
+        }
+        // Dispatch arguments are byte offsets into layout_dispatch_args:
+        // variant rows at 0, field rows at 12.
+        macro_rules! layout_round {
+            ($name:expr, $pass:expr, $params:expr, $offset:expr $(,)?) => {{
+                let mut resources = resources.clone();
+                resources.buffer("gParams", $params);
+                ComputeOperation::indirect_at(
+                    device,
+                    &context,
+                    &resources,
+                    $name,
+                    $pass,
+                    &layout_dispatch_args,
+                    $offset,
+                )
+            }};
         }
 
         let function_scan = GpuResidentExclusiveScan::new(
@@ -1573,29 +1644,35 @@ impl GpuSemanticLoweringStage {
                 &function_params,
                 hir_nodes.max(capacities.aggregate_elements),
             )?,
-            function_layout_enum_variants: direct_uniform!(
+            function_layout_enum_variants: layout_round!(
                 "lir.semantic.functions.layout.enum_variants",
                 &passes.function_layout_enum_variants,
                 &function_params,
-                hir_nodes,
+                0,
             )?,
-            function_layout_validate: direct_uniform!(
+            function_layout_validate: layout_round!(
                 "lir.semantic.functions.layout.validate",
                 &passes.function_layout_enum_variants,
                 &function_validation_params,
-                hir_nodes,
+                0,
             )?,
-            function_layout_enum_fields: direct_uniform!(
+            function_layout_enum_fields: layout_round!(
                 "lir.semantic.functions.layout.enum_fields",
                 &passes.function_layout_enum_fields,
                 &function_params,
-                capacities.aggregate_elements,
+                12,
             )?,
             function_layout_words: direct_uniform!(
                 "lir.semantic.functions.layout.words",
                 &passes.function_layout_words,
-                &function_params,
+                &words_params,
                 hir_nodes,
+            )?,
+            function_layout_words_round: layout_round!(
+                "lir.semantic.functions.layout.words.round",
+                &passes.function_layout_words,
+                &words_round_params,
+                12,
             )?,
             function_scatter: direct_uniform!(
                 "lir.semantic.functions.scatter",
@@ -1727,15 +1804,40 @@ impl GpuSemanticLoweringStage {
         })
     }
 
-    pub(crate) fn set_replay_function(
+    pub(crate) fn set_replay_functions(
         &self,
         queue: &wgpu::Queue,
-        selected_hir: Option<u32>,
+        selected_hirs: &[u32],
     ) -> Result<()> {
-        let encoded = selected_hir.map_or(Ok(0), |hir| {
-            hir.checked_add(1).context("replay callable HIR cannot be encoded")
-        })?;
-        self.template_params.write(queue, 12, &encoded.to_le_bytes());
+        // A replay object holds only the selected bodies; calls to ordinary
+        // local helpers link against the original object's definitions.
+        // LANIUS_REPLAY_KEEP_LOCAL_HELPERS=1 emits them again (old behavior).
+        const KEEP_LOCAL_HELPERS: u32 = 0x8000_0000;
+        ensure!(selected_hirs.len() <= 1 + REPLAY_EXTRA_ROWS * 4,
+            "a batched replay selects at most {} bodies", 1 + REPLAY_EXTRA_ROWS * 4);
+        let encoded = selected_hirs.iter().map(|&hir| {
+            hir.checked_add(1)
+                .filter(|&value| value < KEEP_LOCAL_HELPERS)
+                .context("replay callable HIR cannot be encoded")
+        }).collect::<Result<Vec<_>>>()?;
+        let first = encoded.first().copied().unwrap_or(0);
+        let first = if first != 0
+            && crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_KEEP_LOCAL_HELPERS", false)
+        {
+            first | KEEP_LOCAL_HELPERS
+        } else {
+            first
+        };
+        let extra = encoded.get(1..).unwrap_or(&[]);
+        let mut bytes = Vec::with_capacity(20 + 12 + extra.len() * 4);
+        bytes.extend_from_slice(&first.to_le_bytes());
+        bytes.extend_from_slice(&(extra.len() as u32).to_le_bytes());
+        // Ordinary and single-entry jobs leave the extra rows unread.
+        if !extra.is_empty() {
+            bytes.extend_from_slice(&[0; 12]);
+            bytes.extend(extra.iter().flat_map(|value| value.to_le_bytes()));
+        }
+        self.template_params.write(queue, 12, &bytes);
         Ok(())
     }
 
@@ -1809,10 +1911,12 @@ impl GpuSemanticLoweringStage {
         // Struct widths that do not depend on enum fields are available to
         // the variant pass; the second walk incorporates enum-valued fields.
         operations.function_layout_words.record(encoder)?;
+        // Each round dispatches over the variant and field rows only, not
+        // every HIR row: 192 dispatches of mostly idle lanes were the cost.
         for _ in 0..AGGREGATE_LAYOUT_ROUNDS {
             operations.function_layout_enum_variants.record(encoder)?;
             operations.function_layout_enum_fields.record(encoder)?;
-            operations.function_layout_words.record(encoder)?;
+            operations.function_layout_words_round.record(encoder)?;
         }
         operations.function_layout_validate.record(encoder)?;
         operations.function_templates.record(encoder)?;

@@ -125,18 +125,43 @@ public bool pev_parameter_row_is_valid(uint row, uint expected_owner)
         param.z < 32u && param.w <= 1u && pev_parameter_is_valid(param.y, param.w == 1u) &&
         pev_word(2u, expected_owner, 0u, binder) && pev_atom(param.y, atom, extra) && atom.y == binder;
 }
+// The owner `steps` parent links (Owner word 3) above `owner`. Callers only
+// re-walk a chain prefix they already read, so every read succeeds. Owner
+// chains re-walk their prefix instead of keeping a per-thread visited list.
+public uint pev_owner_ancestor(uint owner, uint steps)
+{
+    [loop]
+    for (uint step = 0u; step < steps; step++)
+    {
+        uint parent;
+        if (!pev_word(2u, owner, 3u, parent)) return PEV_INVALID;
+        owner = parent;
+    }
+    return owner;
+}
+// True when `owner` is one of the `count` owners from `first` up its chain.
+public bool pev_owner_chain_contains(uint first, uint count, uint owner)
+{
+    [loop]
+    for (uint prior = 0u; prior < count; prior++)
+    {
+        if (first == owner) return true;
+        uint parent;
+        if (!pev_word(2u, first, 3u, parent)) return false;
+        first = parent;
+    }
+    return false;
+}
 public bool pev_parameter_visible(uint atom, uint owner)
 {
     uint4 parameter; uint4 extra;
     if (!pev_atom(atom, parameter, extra) || parameter.x != 5u || parameter.z > 1u ||
         !pev_parameter_is_valid(atom, parameter.z == 1u)) return false;
-    uint visited[64];
+    uint first = owner;
     [loop]
     for (uint depth = 0u; depth < 64u && owner != PEV_INVALID; depth++)
     {
-        [loop]
-        for (uint prior = 0u; prior < depth; prior++) if (visited[prior] == owner) return false;
-        visited[depth] = owner;
+        if (pev_owner_chain_contains(first, depth, owner)) return false;
         uint4 low; uint4 high;
         if (!pev_owner_row_is_valid(owner) || !pev_read8(2u, owner, low, high)) return false;
         if (low.x == parameter.y)
@@ -159,17 +184,14 @@ public bool pev_parameter_visible(uint atom, uint owner)
 public EvidenceStatus pev_admit_owner_chain(uint owner, out uint type_count, out uint constant_count)
 {
     type_count = 0u; constant_count = 0u;
-    uint visited[64]; uint type_mask = 0u; uint constant_mask = 0u;
+    uint type_mask = 0u; uint constant_mask = 0u;
     uint chain_length = 0u;
     uint original = owner;
     [loop]
     for (uint depth = 0u; owner != PEV_INVALID; depth++)
     {
         if (depth == 64u) return pev_limit(6u, original, 65u, 64u);
-        [loop]
-        for (uint prior = 0u; prior < depth; prior++)
-            if (visited[prior] == owner) return pev_invalid(5u, original, owner);
-        visited[depth] = owner;
+        if (pev_owner_chain_contains(original, depth, owner)) return pev_invalid(5u, original, owner);
         chain_length = depth + 1u;
         uint4 low; uint4 high;
         uint declared_count;
@@ -211,7 +233,7 @@ public EvidenceStatus pev_admit_owner_chain(uint owner, out uint type_count, out
     [loop]
     for (uint remaining = chain_length; remaining != 0u; remaining--)
     {
-        uint current = visited[remaining - 1u]; uint4 span;
+        uint current = pev_owner_ancestor(original, remaining - 1u); uint4 span;
         if (!pev_read4(2u, current, 4u, span)) return pev_invalid(1u, original, current);
         [loop]
         for (uint i = 0u; i < span.y; i++)
@@ -309,32 +331,28 @@ public EvidenceStatus pev_admit_environment_header(uint environment, uint expect
 public uint pev_graph_metadata(uint instance, uint field)
 {
     uint4 low; uint4 high;
-    if (!pev_read_admitted_node(instance, low, high)) return PEV_INVALID;
-    if (field == 0u) return low.x;
-    // Existing walker calls this declaration identity. Here it is an exact
-    // interned nominal atom; its identity capacity is the atom table count.
-    // It is neither a HIR/token row nor a forged public nominal triple.
-    if (field == 1u) return low.x == 1u ? low.y : PEV_INVALID;
-    if (field == 2u) return low.x == 1u ? low.w : 0u;
-    if (field == 3u) return high.x;
-    if (field == 4u) return high.y;
-    // Packed graphs implement ITypeIdentityGraph through IParameterScoped.
-    // Their environments use exact owned atoms; nominal domain-slot summaries
-    // are outside that capability. Ordered tagged arguments remain complete.
-    if (field == 5u) return low.x == 2u ? high.z & 0x7fffffffu : PEV_INVALID;
-    if (field == 6u) return low.x == 2u ? high.w : PEV_INVALID;
-    return PEV_INVALID;
+    bool admitted = pev_read_admitted_node(instance, low, high);
+    return select(admitted, pev_node_row_field(low, high, field), PEV_INVALID);
 }
 public bool pev_graph_argument(uint instance, uint slot, out uint tag, out uint payload)
 {
     tag = 0u; payload = PEV_INVALID; uint4 low; uint2 ref;
-    if (!pev_read4(5u, instance, 0u, low) || low.x != 1u || low.w > 32u ||
-        slot >= low.w || !pev_row_span(6u, low.z, low.w) ||
-        !pev_read2(6u, low.z + slot, 0u, ref)) return false;
+    bool read = pev_read4(5u, instance, 0u, low);
+    if (!(read & (low.x == 1u) & (low.w <= 32u) & (slot < low.w))) return false;
+    if (!pev_row_span(6u, low.z, low.w) || !pev_read2(6u, low.z + slot, 0u, ref)) return false;
     tag = ref.x; payload = ref.y; return true;
 }
 
-public struct ProgramEvidenceTypeGraph : IParameterScopedTypeGraph
+// Root admission substitutes a type or a constant parameter at one call site
+// per visited leaf: substitute_parameter(constant) is exactly
+// substitute_constant_parameter (constant) or substitute_type_parameter.
+public interface IPevAdmissionGraph : IParameterScopedTypeGraph
+{
+    static bool substitute_parameter(uint environment, uint reference, bool constant,
+        out uint tag, out uint payload);
+}
+
+public struct ProgramEvidenceTypeGraph : IPevAdmissionGraph
 {
     public static bool constant_value(uint atom, out uint3 value)
     { return pev_constant_atom_value(atom, value); }
@@ -358,6 +376,19 @@ public struct ProgramEvidenceTypeGraph : IParameterScopedTypeGraph
             !pev_admitted_environment_binding(environment, reference, ref) || !pev_admitted_constant_reference_shape(ref)) return false;
         kind = ref.x & 0x7fffffffu; value = ref.y; return true;
     }
+    // A type binding's tag is 1..3, so the constant mask leaves it unchanged.
+    public static bool substitute_parameter(uint environment, uint reference, bool constant,
+        out uint tag, out uint payload)
+    {
+        tag = 0u; payload = PEV_INVALID; uint2 value;
+        if (!pev_admitted_parameter_has_domain(reference, constant) ||
+            !pev_admitted_environment_binding(environment, reference, value)) return false;
+        bool shape;
+        if (constant) shape = pev_admitted_constant_reference_shape(value);
+        else shape = pev_admitted_type_reference_shape(value);
+        if (!shape) return false;
+        tag = value.x & 0x7fffffffu; payload = value.y; return true;
+    }
     public static uint metadata(uint instance, uint field)
     { return pev_graph_metadata(instance, field); }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
@@ -367,7 +398,7 @@ public struct ProgramEvidenceTypeGraph : IParameterScopedTypeGraph
 // Definition-side catalog roots have no substitution environment. This policy
 // makes that capability boundary explicit even when a walk stores contexts in
 // a dynamically indexed stack. Unexpected substitution requests fail closed.
-public struct CatalogProgramEvidenceTypeGraph : IParameterScopedTypeGraph
+public struct CatalogProgramEvidenceTypeGraph : IPevAdmissionGraph
 {
     public static bool constant_value(uint atom, out uint3 value)
     { return pev_constant_atom_value(atom, value); }
@@ -385,6 +416,12 @@ public struct CatalogProgramEvidenceTypeGraph : IParameterScopedTypeGraph
     public static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
     {
         kind = 0u; value = PEV_INVALID;
+        return false;
+    }
+    public static bool substitute_parameter(uint environment, uint reference, bool constant,
+        out uint tag, out uint payload)
+    {
+        tag = 0u; payload = PEV_INVALID;
         return false;
     }
     public static uint metadata(uint instance, uint field)

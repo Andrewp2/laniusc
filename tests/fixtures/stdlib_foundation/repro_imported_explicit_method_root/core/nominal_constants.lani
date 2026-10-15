@@ -1,0 +1,8 @@
+
+module core::nominal_constants;
+pub struct Buffer<const N: usize, T> { values: [T; N] }
+pub fn keep<const N: usize, T>(value: Buffer<N, T>) -> Buffer<N, T> { return value; }
+pub impl<const N: usize, T> Buffer<N, T> {
+    pub fn copied(value: Buffer<N, T>) -> Buffer<N, T> { return keep<N, T>(value); }
+    pub fn width<U, const M: usize>(value: [U; M]) -> usize { return N * 10 + M; }
+}

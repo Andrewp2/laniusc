@@ -4,6 +4,11 @@
 #include "array_literal_context_inputs.slang"
 import primitive_types;
 import type_checker.owned_literal_context;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
+import type_checker.substitution.ct_subst;
+import type_checker.checked_slots;
 StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> compact_const_type;
@@ -132,6 +137,44 @@ bool array_instance(uint instance)
     return valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY;
 }
 
+// A struct-literal field type declared in its literal's scope, substituted
+// under the literal's application `scope` (docs/canonical-type-ids.md), or
+// CT_NONE. Rows written during inference are interned on demand, from one
+// site.
+uint substituted_field_type(uint field, uint scope)
+{
+    uint spare = CT_NONE;
+    uint term = CT_UNKNOWN; uint environment = CT_UNKNOWN;
+    [loop]
+    for (uint operand = 0u; operand < 2u; operand++)
+    {
+        uint id = ct_intern_checked<CtCheckedRows>(TYPE_REF_INSTANCE, operand == 0u ? field : scope, spare);
+        if (operand == 1u) { environment = id; break; }
+        term = id;
+        if (!ct_is_resolved(term)) return CT_NONE;
+        if (ct_closed(term)) return ct_is_record(term) ? term : CT_NONE;
+    }
+    if (!ct_is_record(environment) || ct_kind(environment) != CT_KIND_NAMED) return CT_NONE;
+    CtSpare substitution = ct_spare_none();
+    uint id = ct_subst(CheckedSlots(), environment, term, true, substitution);
+    return ct_is_record(id) ? id : CT_NONE;
+}
+
+// The numeric context of the elements `layers` array levels below canonical
+// array `id` (`fallback` when a level is not an array).
+uint canonical_array_element_context(uint id, uint layers, bool floating, uint fallback)
+{
+    for (uint layer = 0u; layer < layers; layer++)
+    {
+        if (ct_kind(id) != CT_KIND_ARRAY) return fallback;
+        id = ct_arg(id, 0u);
+        if (!ct_is_record(id)) return fallback;
+    }
+    if (ct_kind(id) != CT_KIND_ARRAY) return fallback;
+    uint element = ct_arg(id, 0u);
+    return numeric_context(uint2(element - 1u < SCALAR_USIZE ? 1u : 0u, element), floating);
+}
+
 // Which node the single declared-context read below answers for.
 static const uint QUERY_OPERAND = 0u; // the current operand root
 static const uint QUERY_MATCH = 1u;   // the match whose arm result is the operand
@@ -160,22 +203,36 @@ uint checked_literal_context(uint literal)
     uint mode = QUERY_OPERAND;
     uint array_node = INVALID; uint array_layers = 0u; uint array_depth = 0u;
     uint operand_steps = 0u;
+    // Set when a field context's substitution failed: the same query resumes
+    // after that context.
+    bool after_field = false;
     while (true)
     {
-        if (mode == QUERY_OPERAND)
+        if (mode == QUERY_OPERAND && !after_field)
         {
             if (operand_steps >= active_hir_count()) return peer;
             operand_steps++;
             uint context = const_annotation_context(current, floating);
             if (context != 0u) return context;
         }
-        uint2 reference;
-        bool declared = declared_expression_context<ScopedCheckedTypeGraph>(query,
-            checked_type_capacity(), reference);
+        uint2 reference; uint scope;
+        uint resolved = declared_expression_context_or_field<ScopedCheckedTypeGraph>(query,
+            checked_type_capacity(), after_field, reference, scope);
+        after_field = false;
+        // A field declared in its literal's scope is substituted under the
+        // literal's application by canonical ID.
+        uint field = CT_NONE;
+        if (resolved == DECLARED_CONTEXT_FIELD)
+        {
+            field = substituted_field_type(reference.y, scope);
+            if (field == CT_NONE) { after_field = true; continue; }
+        }
+        bool declared = resolved != DECLARED_CONTEXT_NONE;
         if (mode == QUERY_ARRAY)
         {
-            uint expected = declared && reference.x == TYPE_REF_INSTANCE ? reference.y : INVALID;
-            bool found = array_instance(expected);
+            uint expected = declared && field == CT_NONE && reference.x == TYPE_REF_INSTANCE
+                ? reference.y : INVALID;
+            bool found = field != CT_NONE ? ct_kind(field) == CT_KIND_ARRAY : array_instance(expected);
             if (!found && query != array_node && call_inference_result_tag[query] == TYPE_REF_INSTANCE)
             {
                 expected = call_inference_result_payload[query];
@@ -188,6 +245,8 @@ uint checked_literal_context(uint literal)
                 array_layers++; query = parent;
                 if (++array_depth < 64u) continue;
             }
+            if (field != CT_NONE && ct_kind(field) == CT_KIND_ARRAY)
+                return canonical_array_element_context(field, array_layers, floating, peer);
             for (uint layer = 0u; layer < array_layers; layer++)
             {
                 if (!array_instance(expected) ||
@@ -197,7 +256,8 @@ uint checked_literal_context(uint literal)
             return array_instance(expected) ? numeric_context(uint2(
                 type_instance_elem_ref_tag[expected], type_instance_elem_ref_payload[expected]), floating) : peer;
         }
-        if (declared)
+        // A substituted field is a type row, never a numeric scalar.
+        if (declared && field == CT_NONE)
         {
             uint context = numeric_context(reference, floating);
             if (context != 0u) return context;

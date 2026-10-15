@@ -18,23 +18,24 @@ public bool constraint_node_header<Graph : ITypeIdentityGraph>(
     header = (ConstraintNodeHeader)0;
     header.local_nominal = 0xffffffffu;
     if (node >= node_capacity) return false;
-    header.kind = Graph.metadata(node, 0u);
+    // One metadata call site reads the kind and a nominal's header.
+    TypeNodeFields fields = type_node_fields<Graph>(node, true, TYPE_NODE_NOMINAL_HEADER, 0u);
+    header.kind = fields.kind;
     if (header.kind < 1u || header.kind > 4u) return false;
     header.arity = 1u;
     if (header.kind != 1u) return true;
-    header.local_nominal = Graph.metadata(node, 1u);
+    header.local_nominal = fields.declaration;
     if (header.local_nominal != 0xffffffffu)
     {
         if (header.local_nominal >= identity_capacity) return false;
     }
     else
     {
-        header.external_nominal = uint3(Graph.metadata(node, 7u),
-            Graph.metadata(node, 8u), Graph.metadata(node, 9u));
+        header.external_nominal = fields.identity;
         if (any(header.external_nominal == uint3(0xffffffffu, 0xffffffffu, 0xffffffffu)))
             return false;
     }
-    header.arity = Graph.metadata(node, 2u);
+    header.arity = fields.count;
     return header.arity <= 32u;
 }
 

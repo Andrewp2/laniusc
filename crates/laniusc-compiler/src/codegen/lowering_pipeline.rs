@@ -541,7 +541,7 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
-        selected_replay_hir: Option<u32>,
+        selected_replay_hirs: &[u32],
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
         // Like `record`, time every lowering operation; without this scope
@@ -558,7 +558,7 @@ impl GpuLoweringPipeline {
         // Each object job overwrites its scope, including ordinary/strict jobs.
         // Like the object identity below, this upload belongs to this compiler
         // job's command submission and is not cached by workspace identity.
-        self.semantic.set_replay_function(queue, selected_replay_hir)?;
+        self.semantic.set_replay_functions(queue, selected_replay_hirs)?;
         self.workspace.record_phase_reset(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");

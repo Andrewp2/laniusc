@@ -1,4 +1,10 @@
-// Link every grammar path segment to its semantic HIR owner or predecessor.
+// Seed every tree node's path-segment walk record: a segment under an owned
+// path root takes that owner, a segment in a path tail links to the previous
+// segment with rank 1, and every other node is an empty record.
+//
+// The record is written to both ping-pong buffers. The walk then steps only
+// over compacted segments that have an owner or a link, and a segment whose
+// link reaches an empty record reads the same record from either buffer.
 
 import generated_parse_production_ids;
 
@@ -14,6 +20,9 @@ StructuredBuffer<uint> hir_path_root_owner;
 RWStructuredBuffer<uint> hir_path_segment_owner_a;
 RWStructuredBuffer<uint> hir_path_segment_link_a;
 RWStructuredBuffer<uint> hir_path_segment_rank_a;
+RWStructuredBuffer<uint> hir_path_segment_owner_b;
+RWStructuredBuffer<uint> hir_path_segment_link_b;
+RWStructuredBuffer<uint> hir_path_segment_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint OWNER_NODE_MASK = 0x7fffffffu;
@@ -27,12 +36,13 @@ bool is_path_segment(uint prod)
 {
     return prod == PROD_PATH_IDENT || prod == PROD_PATH_IDENT_ARGS ||
            prod == PROD_TYPE_PATH_IDENT || prod == PROD_BOUND_TYPE_PATH_IDENT ||
-           prod == PROD_ARRAY_LENGTH_PATH_IDENT;
+           prod == PROD_ARRAY_LENGTH_PATH_IDENT || prod == PROD_CAST_TYPE_PATH_IDENT;
 }
 bool is_path_tail(uint prod)
 {
     return prod == PROD_PATH_MORE || prod == PROD_TYPE_PATH_MORE ||
-           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE;
+           prod == PROD_BOUND_TYPE_PATH_MORE || prod == PROD_ARRAY_LENGTH_PATH_MORE ||
+           prod == PROD_CAST_TYPE_PATH_MORE;
 }
 
 [shader("compute")]
@@ -43,28 +53,34 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gHirPath.n)
         return;
 
-    hir_path_segment_link_a[node] = INVALID;
-    if (!valid_node(node) || !is_path_segment(node_kind[node]))
-        return;
-
-    uint container = parent[node];
-    if (!valid_node(container))
-        return;
-
-    uint encoded_owner = hir_path_root_owner[container];
-    if (encoded_owner != 0u)
+    uint owner = INVALID;
+    uint link = INVALID;
+    uint rank = 0u;
+    uint container = valid_node(node) && is_path_segment(node_kind[node])
+        ? parent[node] : INVALID;
+    if (valid_node(container))
     {
-        uint owner = (encoded_owner & OWNER_NODE_MASK) - 1u;
-        hir_path_segment_owner_a[node] = valid_node(owner) ? owner : INVALID;
-        return;
+        uint encoded_owner = hir_path_root_owner[container];
+        if (encoded_owner != 0u)
+        {
+            uint root_owner = (encoded_owner & OWNER_NODE_MASK) - 1u;
+            owner = valid_node(root_owner) ? root_owner : INVALID;
+        }
+        else if (is_path_tail(node_kind[container]))
+        {
+            uint previous = prev_sibling[container];
+            if (valid_node(previous) && is_path_segment(node_kind[previous]))
+            {
+                link = previous;
+                rank = 1u;
+            }
+        }
     }
 
-    if (!is_path_tail(node_kind[container]))
-        return;
-    uint previous = prev_sibling[container];
-    if (valid_node(previous) && is_path_segment(node_kind[previous]))
-    {
-        hir_path_segment_link_a[node] = previous;
-        hir_path_segment_rank_a[node] = 1u;
-    }
+    hir_path_segment_owner_a[node] = owner;
+    hir_path_segment_link_a[node] = link;
+    hir_path_segment_rank_a[node] = rank;
+    hir_path_segment_owner_b[node] = owner;
+    hir_path_segment_link_b[node] = link;
+    hir_path_segment_rank_b[node] = rank;
 }

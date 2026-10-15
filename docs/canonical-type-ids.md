@@ -144,8 +144,9 @@ two differ, this section is authoritative.
 A lane interns a key in one pass, and no lane ever waits for another.
 
 1. **Write the complete record.** This covers the key (`ct_head`, `ct_args`)
-   and the facts (`ct_meta`, `ct_extra`). The record is either the lane's
-   fixed candidate record or a lane-owned *spare*.
+   and the facts (`ct_meta`, `ct_extra`). The record is allocated when the
+   probe first reaches an empty slot (`ct_intern_key`), or it is a lane-owned
+   *spare*.
 2. **Release.** Call `DeviceMemoryBarrier()`.
 3. **Publish.** `InterlockedCompareExchange(ct_slot[s], 0, record)` on the
    first empty slot of the linear probe sequence, which starts at
@@ -176,18 +177,17 @@ a lane only reads records whose publication it has already observed.
 
 Allocation stays bounded:
 
-- **Candidates use fixed records.** Candidate `c` owns record `32 + c`, and
-  dependency node `i` (job-wide) owns record `32 + candidates + i`, so rows,
-  atoms, projections and dependency nodes never allocate. The one exception
-  is a re-interned candidate after a body replay (see Stages): its fixed
-  record may already hold its earlier key, so a new key takes a dynamic
+- **Only a new key takes a record.** No candidate or dependency node owns a
+  record. `ct_intern_key` probes the table, adopts an equal published
+  record, and allocates (`ct_alloc_record`) and stores a record only when it
+  reaches an empty slot. Count classes (`cc_intern_count`) and other small
+  keys do the same through `ct_intern_small`. A re-interned candidate after
+  a body replay (see Stages) therefore never touches its earlier key's
   record.
-- **Dynamic records come from small keys.** Count classes (`cc_intern_count`)
-  and other small keys use `ct_intern_small`. It looks the key up first and
-  stores a record only on a miss.
-- **Losers keep their record.** A lane that loses the race keeps its record as
-  a `spare` and reuses it for its next key, so allocation is at most live
-  records plus lanes.
+- **Losers keep their record.** A lane that loses the slot to an equal key
+  keeps its record unpublished. A `spare` lane reuses it for its next key; a
+  candidate lane interns one key, so its record is simply never referenced.
+  Allocation is at most one record per key a lane publishes or loses.
 
 **Gate (week 1).** Two tests in
 `crates/laniusc-compiler/src/gpu/canonical_intern_stress_tests.rs` exercise the
@@ -308,8 +308,7 @@ collides.
 1. **Uniqueness.** Two published records are never key-equal. Equal keys
    always yield the same ID within one job, so identity is `==`.
 2. **Immutability.** A record is complete before its slot CAS, and it is
-   never written again. Only a lane's unpublished spare or its own
-   unpublished fixed record is ever rewritten.
+   never written again. Only a lane's unpublished spare is ever rewritten.
 3. **Children first.** Children are canonical before their parent's key is
    built. `ct_args` holds IDs or parameter leaves, never a sentinel.
 4. **IDs are job-local; `ct_shash` is not.** ID numbering depends on atomic
@@ -353,7 +352,7 @@ result.
     one readback per stage).
   - Empty indirect rounds dispatch zero workgroups.
 
-### Stages: dependency pages, early and late
+### Stages: dependency pages, early, body and late
 
 Each job interns into one table, so an ID stays valid for the whole job.
 
@@ -374,6 +373,17 @@ Each job interns into one table, so an ID stays valid for the whole job.
   signature node (`canonical_type_roots`); function types (7) are
   `CT_UNKNOWN`, as rows have no function kind. An imported row and the
   signature node it came from therefore share one ID.
+- **Imported alias targets** (dependencies/14a, substitution/08). A job
+  with dependency pages clears the substitution state right after the
+  canonical clear. On each page, 14a interns every imported alias use's leaf
+  row on demand and substitutes the alias signature under it (`ct_subst`),
+  publishing a pending target ID. After the last page, 08 realizes the
+  targets as rows (twice with retry, then 08a reports a busy row). Alias
+  normalization then rewrites rows 14a interned, so 14a sets
+  `CT_COUNT_EARLY_REARM` and the early `03_rearm` re-arms every interned
+  candidate, as a body replay's late one does; round 0 of `01_intern` clears
+  the flag. An unchanged key adopts its existing record. The post-early
+  substitution clear drops the rows 08 recorded.
 - **Early** (`03_rearm`, then rounds). It is recorded unconditionally after
   the declaration refs (`type_instances.decl_refs_for_bindings`) and before
   `type_instances.index_closed_applications`. It interns the source rows and
@@ -385,17 +395,21 @@ Each job interns into one table, so an ID stays valid for the whole job.
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
+- **Body** (`03_rearm`, then rounds). A job with body specialization
+  records it right after `body_specialization.bindings`, then restarts the
+  substitution state (`substitution.body.clear`, `substitution.body.seed`),
+  so the body passes after it read the IDs of the specialized rows. It
+  costs those jobs one readback when its rounds fit one batch; other jobs
+  record nothing new.
 - **Body replay re-interns.** A replay job (`body_specialization_inputs`
   has a type or constant argument) rewrites rows and constants after the
   early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
-  `[i32; 2]` in place. Its late `03_rearm` therefore re-arms every
-  candidate and sets `CT_COUNT_REINTERN`. With the flag set, a candidate
-  looks its key up first and adopts an equal record; on a miss it stores
-  into its fixed record only if that record is not published
-  (`ct_is_published`), and otherwise into a dynamic one. Unchanged rows
-  keep their IDs, and the early records stay valid for the references
-  that still name them. A consumer recorded between the replay and the
-  late stage would read early IDs of rewritten rows; none exists yet.
+  `[i32; 2]` in place. Its body and late `03_rearm` therefore re-arm every
+  candidate. A candidate adopts an equal published record or takes a new
+  one, so unchanged rows keep their IDs, and the early records stay valid
+  for the references that still name them. The substitution restart drops
+  the rows the job-start seed recorded for rewritten candidates
+  (`ct_row_of`); generated rows are stable, so the seed finds them again.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a
   false or missed merge (and the bridge self-check as a mismatch).
@@ -407,135 +421,119 @@ Each job interns into one table, so an ID stays valid for the whole job.
   the canonical passes keeps its workspace from sharing storage with the
   canonical tables.
 - Each page costs one readback when its rounds fit one batch.
-- **Not built yet:** call and nominal environments (`CT_ENV`). These wait
-  for P1's published binding tables (`call_env_type_binding`, `03a3b`).
+- Call environments (`CT_ENV`) are interned by the substitution passes
+  (`shaders/type_checker/substitution/`, `substitution_passes.rs`) once
+  per inference round, after the early stage; they are not candidates.
 
 ### Capacities and overflow
 
+No candidate or dependency node owns a record. A key the table does not hold
+yet takes one at the first empty slot it reaches (`ct_intern_key`), and an
+equal key found while probing is adopted. Scalar rows reuse the preseeded
+IDs 1..17, and empty rows are `CT_NONE`, so neither takes a record.
+
 Worst-case bounds:
 
-- **Fixed records:** 32 + candidates + dependency nodes, one per candidate
-  and per dependency node (`ct_dynamic_base`). Always allocated exactly.
-- **Dynamic records:** candidates + 4 × constant rows + dependency nodes.
-  That is at most one count class per constant candidate or constant node,
-  and the same again for a body replay's re-interning.
+- **Records:** 32 + 3 × candidates + 2 × dependency nodes + 6 × constant
+  rows + the substitution producers' records (`substitution_canonical_extra`).
+  - A candidate or node allocates at most once per stage it is re-armed in:
+    the early stage, and the body and late stages again after a body replay.
+  - Count classes add at most 6 records per constant row.
+  - A lost race wastes its record. When the lanes of one wave intern the
+    same new key, all of them miss and all of them allocate. The losers'
+    records stay stored, but no slot or row references them, as with an
+    unused spare. The waste is bounded by the concurrent attempts on one
+    key, which the per-attempt bound already counts.
 - **Slots:** the next power of two at or above 2 × records.
 - **Arguments:** the checked argument storage, plus 2 words per row and 1
-  word per projection, twice (a replay builds every candidate's key again),
+  word per projection, three times (a replay builds every candidate's key
+  in its body and late stages),
   plus 2 words per dependency node (a signature tree has fewer edges than
-  nodes).
+  nodes), plus the substitution producers' words.
 - **Frontier:** two lists of max(candidates, largest page's nodes).
 
-A job starts at capacity scale 1. The dynamic records and the argument words
-start at 1/64 of their bounds, with floors of 4,096 records and 16,384 words
-(`canonical_scaled_capacity`). An overflow sets a sticky `CT_OVERFLOW_*` bit.
-On a table, record or argument bit, the host abandons the job
-(`CanonicalCapacityOverflow`), doubles the scale (part of the resident cache
-key, and it only grows) and records the job again. At scale 64 the tables
-hold the worst-case bounds, so an overflow there is a broken invariant and
-fails the job. The round-limit bit never retries.
-`LANIUS_DEBUG_CANONICAL_SHRINK=n` divides the dynamic records and argument
-words by 2^n to exercise the retry. `LANIUS_TRACE_CANONICAL=1` prints the use
-per batch.
+A job starts at capacity scale 1. The records, the argument words and the
+frontier lists start at 1/64 of their bounds, with floors of 4,096 records,
+16,384 words and 4,096 frontier rows (`canonical_scaled_capacity`).
 
-Measured use at scale 1, 2026-10-14. No job retried.
+An overflow sets a sticky `CT_OVERFLOW_*` bit:
 
-| job | fixed records | dynamic records | argument words |
+| bit | name | retries |
+|---:|---|---|
+| 1 | `CT_OVERFLOW_TABLE` | yes |
+| 2 | `CT_OVERFLOW_RECORDS` | yes |
+| 4 | `CT_OVERFLOW_ARGS` | yes |
+| 8 | `CT_OVERFLOW_ROUNDS` | no |
+| 16 | `CT_OVERFLOW_SUBST_MEMO` (`substitution/ct_subst.slang`) | yes |
+| 32 | `CT_OVERFLOW_FRONTIER` (a frontier append past the end) | yes |
+
+On a retrying bit (`CANONICAL_RETRY_OVERFLOW_BITS`):
+
+1. The host abandons the job (`CanonicalCapacityOverflow`).
+2. It doubles the scale, which is part of the resident cache key and only
+   grows.
+3. It records the job again.
+
+At scale 64 the tables hold the worst-case bounds, so an overflow there is a
+broken invariant and fails the job.
+
+Debug variables:
+
+- `LANIUS_DEBUG_CANONICAL_SHRINK=n` divides the records, the argument words
+  and the frontier lists by 2^n to exercise the retry. It divides the whole
+  bound, so a large `n` can fail at scale 64 on a valid job. On generics
+  matrix probe p04, `n` = 12 passes after 4 retries and `n` = 14 fails.
+- `LANIUS_TRACE_CANONICAL=1` prints the use per batch. Its `records=` count
+  excludes the 32 preseeded records.
+
+What stays capacity-sized:
+
+- The per-candidate outputs (`canonical_row`, `canonical_atom`,
+  `canonical_projection`), at 4 bytes per row, which consumers index by row.
+- The round-0 dispatch over every candidate. A lane on an empty row returns
+  at once.
+- Shrinking these needs compacted `type_instances` rows.
+
+Measured use at scale 1, 2026-10-15, harness build (late stage, after both
+stages). No job retried.
+
+| job | records | argument words | frontier rows |
 |---|---:|---:|---:|
-| 100-file generated project (29,956 lines), check | 2,130,209 | 27 / 86,538 | 295 / 326,218 |
-| whole stdlib, one check job | 2,375,969 | 48 / 96,522 | 1,759 / 363,850 |
-| generics matrix (30 probes, largest) | 41,249 | 3 / 4,096 | 43 / 16,384 |
+| 100-file generated project (29,956 lines), check | 267 / 133,166 | 375 / 352,842 | 33,284 |
+| whole stdlib, one check job | 932 / 148,526 | 1,823 / 393,546 | 37,124 |
+| generics probe (option results) | 130 / 4,128 | 191 / 16,384 | 4,096 |
 
-With the validator on: the generated project has 197 live records, maximum
-height 2 and 57 type applications. Probe jobs have at most 36 live records,
-height 4 and 6 distinct call environments. The generated project has no
-generic calls. On the generated project, the scale-1 tables take about
-123 MB, against 457 MB for the earlier fixed worst-case sizing. Nearly all of
-it is the fixed region (40 bytes per record, plus its slots). That region is
-sized by row capacity, not by row count. Sizing it from counts needs the
-candidates compacted first.
+Before compaction (2026-10-14), the generated project took 2,130,209 fixed
+plus 86,538 dynamic records, and the stdlib took 2,375,969 plus 96,522.
 
-### Planned: records only for new keys (approved 2026-10-14)
+The `ct_*` tables of the generated project at scale 1:
 
-The fixed region gives every candidate and dependency node a record. On the
-generated project only 197 of its 2.13M records hold a live key. Scalar rows
-reuse the preseeded IDs 1..17 and empty rows are `CT_NONE`, so neither
-needs a record. The plan below compacts record use in the interning step
-itself: only a key that the table does not hold yet takes a record. It adds
-no kernel and no prefix-scan pass.
-
-1. **Intern a candidate.**
-   - Build the candidate's key as now. Its arguments are reserved in
-     `ct_args`.
-   - `ct_lookup(key)`. On a hit, adopt the record and allocate nothing.
-   - On a miss, take a record from `ct_alloc_record`, store the key and
-     `ct_intern` it. As now, the CAS goes into the first empty slot, and an
-     equal occupant found while probing is adopted.
-   - This is `ct_intern_spare` with a spare that ends with the lane.
-     Dependency nodes (`05_intern_dependency`) do the same.
-   - `ct_candidate_record` and `ct_dependency_record` go away, and so does
-     the re-intern special case: every miss takes a fresh record, so no
-     published record is ever overwritten.
-   - `00_clear` starts `CT_COUNT_NEXT_RECORD` at `CT_FIRST_RECORD`.
-2. **Lost races waste records.**
-   - When the lanes of one wave intern the same new key, all of them miss
-     the lookup and all of them allocate. The losers' records stay stored but
-     are in no slot and are never referenced, which is what an unused spare
-     is today.
-   - `validate_slot` walks slots and `validate_candidate` walks candidate
-     states, so neither one sees a wasted record.
-   - Waste is bounded by the concurrent attempts on one key. Use is at most
-     one record per resolved non-scalar attempt.
-3. **Bounds and sizing.**
-   - A candidate or node allocates at most once per stage it is re-armed
-     in: the early stage, plus the late stage after a body replay. Count
-     classes add at most 4 per constant row, as now.
-   - The worst case is 2 × (candidates + dependency nodes) + 4 × constant
-     rows. That equals today's fixed plus dynamic bound, so the largest
-     retry scale still holds every input.
-   - At scale 1 the records take 1/64 of this bound, with the 4,096-record
-     floor (`canonical_scaled_capacity`). A record overflow already retries.
-4. **Frontier.**
-   - Today the two lists are sized from the candidates. They get the same
-     1/64 start and floor.
-   - An append past the end sets a new `CT_OVERFLOW_FRONTIER` bit, which
-     retries like the record bit.
-5. **What stays capacity-sized.**
-   - The per-candidate outputs (`canonical_row`, `canonical_atom`,
-     `canonical_projection`), at 4 bytes per row, which consumers index by
-     row.
-   - The round-0 dispatch over every candidate. A lane on an empty row
-     returns at once.
-   - Shrinking these needs compacted `type_instances` rows, which is out of
-     scope here.
-
-Expected effect on the generated project at scale 1:
-
-| | before | after |
+| | fixed records (2026-10-14) | records only for new keys |
 |---|---:|---:|
-| records | 2.13M fixed + 86.5K dynamic | about 120K (1/64 of the bound) |
-| `ct_head`, `ct_meta`, `ct_extra` | 89 MB | 4.8 MB |
-| `ct_slot` | 34 MB | 1 MB |
-| `ct_args` | 1.3 MB | 1.3 MB (unchanged) |
-| `canonical_frontier` | 17 MB | 0.3 MB |
+| `ct_head`, `ct_meta`, `ct_extra` | 89 MB | 5.3 MB |
+| `ct_slot` | 34 MB | 2.1 MB |
+| `ct_args` | 1.4 MB | 1.4 MB |
+| `canonical_frontier` | 17 MB | 0.27 MB |
+| total | about 141 MB | about 9 MB |
 
-The `ct_*` tables shrink from 123 MB to about 7 MB. The per-row outputs, at
-about 8.5 MB, are then most of what remains.
+The per-row outputs, at about 8.5 MB, are now most of what remains.
 
-**Validation.**
+With the validator on, the generated project, the stdlib and the
+option-results probe match a pinned generics-gpu build from before
+compaction (`tools/pin_laniusc.py`):
 
-- Record IDs depend on atomic order, so the old and new kernels cannot be
-  compared buffer for buffer. The CPU replay compare of captured
-  `01_intern` and `05_intern_dependency` dispatches therefore compares each
-  candidate's `ct_shash` and resolved state between the old and new kernels.
-  Both are ID-free.
-- With `LANIUS_DEBUG_VALIDATE_CANONICAL=1`, run the generated project, the
-  stdlib and the generics matrix. They must show no duplicates, broken
-  chains or unpublished states, and the same live-record and
-  resolved-candidate counts as before. `LANIUS_TRACE_CANONICAL=1` records
-  the new record use.
-- `canonical_type_boundary_intern.slang` and the stress gate start their
-  allocation at `CT_FIRST_RECORD`.
+- the same live records and resolved rows (201 and 295 on the generated
+  project);
+- no false or missed merges, bridge mismatches, duplicates, broken chains,
+  inconsistent facts, or unpublished or pending states.
+
+Every generics matrix probe also shows no false or missed merges and no
+bridge mismatches.
+
+Record IDs depend on atomic order, so the old and new kernels cannot be
+compared buffer for buffer. The CPU replay compare of captured `01_intern`
+dispatches compares each candidate's `ct_shash` and resolved state instead,
+which are ID-free, and finds them equal.
 
 ### Validation
 
@@ -558,15 +556,19 @@ Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
     read through the bridge (`bridge_mismatches`, after the dependency
     counters). Each row's whole bridged tree is compared, since a bridged
     record's operands are bridged too.
-  - **False merge:** a row whose ID is another row's record while
-    `scoped_type_refs_equal` says the rows differ. A top-level difference
+  - **False merge:** a row and its representative, the smallest row with
+    the same ID, while `scoped_type_refs_equal` says the rows differ.
+    `89_crosscheck_buckets` records the representative of each record in
+    `canonical_crosscheck_owner` (one word per record, declared only when
+    validation is on), since a record ID does not name the row that took
+    it. A top-level difference
     between a declaration token and an imported triple is the intended
     local/imported unification, and is counted as `normalized_merges`.
   - **Missed merge:** two rows of one coarse bucket (kind, arity, declaration
     spelling, type-operand IDs; constant operands are left out) that the old
     walker accepts but that have different IDs.
   - **Unknown rows:** rows whose candidate ended as `CT_UNKNOWN`.
-  - A row whose ID is a dependency node's record (no row owns it) is
+  - A row whose ID has no representative (a preseeded scalar ID) is
     confirmed against the next row of its bucket chain with the same ID,
     which chains every such row of the bucket.
 
@@ -636,15 +638,33 @@ identity walker once. Source constants and canonical constants share one
 `materialize_checked_constant` site (through the canonical view's graph),
 array lengths of new rows use the same site, and every lookup (the caller's
 root rows, the checked index, then the lane's new rows) shares one equality
-site per domain. Expansion (`expand_materialized_instance.slang`) passes its
-visited rows as root candidates, so a field equal to a visited row resolves
-to that row and the visited check is an ID comparison. 03e1 went from 474k
-to 90k inlined instructions this way.
+site per domain. 03e1 went from 474k to 90k inlined instructions this way.
+The per-root expansion that used it (type/instances/02d and
+`expand_materialized_instance.slang`) is gone: the field closure over
+canonical IDs (`ct_expand.slang`) replaced it on the source and body paths.
+
+Field types under a receiver are substituted by canonical ID as well.
+`ct_scoped_reference` (`substitution/ct_scoped.slang`) takes the field's
+declared ID, substitutes it under the receiver application's ID, and
+realizes the result as a checked row (`ct_realize`). It replaces the scoped
+hash, equality and index walkers of `checked_scoped_reference` in
+type/instances/03, 04a3 and 04b. Readers that need only a type's shape do
+not realize anything:
+- 03k1 substitutes a struct-literal field context with `ct_subst` and reads
+  the array element by ID;
+- 05b compares element types with `checked_types_equal_ids`.
+
+Each reader calls `ct_intern_checked` from one site, in a loop over its
+operands, because every call site inlines the whole interner. The scoped
+hash index (type/instances/02b, 02c) stays for the walkers' remaining
+consumers.
 
 ### Constant claims: typed and count identity
 
-Call inference collects claims for each constant parameter slot
-(`merge_inferred_constant_claim` in `type_checker/constant_constraints.slang`).
+Call inference collects claims for each constant parameter slot. `ct_match`
+merges them by ID (`SlotClaims` in `match/ct_match.slang`). 03a8 checks an
+explicit constant against a retained claim with
+`checked_constant_claims_compatible` (`calls/constant_claim_identity.slang`).
 A claim is exact (`identity_mode` 0, from a constant argument) or a count
 claim (`identity_mode` 1, from an array length matched against `[T; N]`).
 
@@ -663,10 +683,178 @@ claims of one symbolic count (`N as u8` retargeted to `u64`, then `N: u64`)
 are admitted, then the exact claim `N: u64` is accepted and holds the slot. It used to expect
 the exact claim to be rejected, which disagreed with the code.
 
+### Matching (P4, 2026-10-14)
+
+`shaders/type_checker/match/ct_match.slang` matches a declared pattern
+against an actual type, both as canonical IDs, and binds the pattern's
+parameters so that the pattern under the bindings is the actual. It
+replaced `scoped_type_and_constant_constraints`,
+`canonical_type_and_constant_constraints`, the parameter pattern walk and
+the receiver pattern helpers, which are deleted.
+
+```
+uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
+    uint pattern1, uint actual1, uint prior, uint flags, bool intern,
+    inout CtSpare spare, out uint count_mask)
+```
+
+- **Two roots.** Up to two (pattern, actual) pairs are matched jointly
+  (`pattern1 = CT_NONE` for one), so a typed self parameter and an impl
+  root bind one environment. `prior` (a `CT_ENV`, or `CT_NONE`) binds slots
+  in advance; a pattern slot it binds is checked as an exact claim.
+- **Any number of roots.** `ct_match_roots<S, R : ICtRoots>(slots, inout
+  roots, prior, intern, spare, count_mask)` takes its roots from a provider:
+  `count()`, and `root(i, out pattern, out actual, out slice)` with a slice
+  flag per root (both IDs `CT_NONE`: no root; false fails the match). The
+  claims of all roots merge as one pattern's would. Every pass asks for
+  every root again, so a provider recomputes its roots instead of storing
+  them. `ct_match` is the two-root provider.
+- **Result.** With `intern`, the interned `CT_ENV` of every slot the
+  patterns use (words `(0, type mask, constant mask)`, arguments the bound
+  type slots, then the bound constant slots). Without it, `CT_MATCH_OK`.
+  `CT_MATCH_FAILED` when they do not match, `CT_MATCH_OVERFLOW` when
+  interning failed. `count_mask` is the constant slots that have count claims
+  only.
+- **Slots.** Type and constant parameters have separate slot numbers
+  (`impl<T, const N: usize>`: T is type slot 0, N constant slot 0). A local
+  leaf's slot and declared scalar come from the kernel's own tables through
+  `ICtSlots` (`substitution/ct_spare.slang`). A dependency leaf carries both.
+- **What is visited.** Only open pattern nodes. A closed child is compared
+  by ID; heads are compared as a whole (kind, arity, type slots, words), so
+  named types compare their declarations and casts their targets. A root
+  slice pattern accepts an actual array with `CT_MATCH_SLICE_ROOT0/1`.
+- **Constants.** A named constant operand or a cast operand is an exact
+  claim (the actual typed constant, in the declared scalar). An array
+  length is a count claim (the actual length's count class, which must fit
+  the declared scalar). All claims of a slot share one count class, all
+  exact claims one ID, and an exact claim wins ("Constant claims" above). A
+  slot with count claims only is bound to the count in the declared scalar:
+  a value, the counted parameter itself, or a cast of it, which keeps its
+  pending fit. Every actual array keeps its own fit obligations.
+- **No stack, no lane array.** A shape pass checks heads and closed children
+  and collects the slot masks. Then one pass per bound slot folds that
+  slot's occurrences. Each pass walks the pattern by re-descending from the
+  root along a packed child path (5 bits per level, depth 24). The child
+  selection is a helper that returns the next open child: slangc 2026.2
+  miscompiles a loop that carries a sentinel out of a `break`.
+- **Deviations from the scoped engines.** A cast in a pattern's array length
+  is erased by its count class. A pattern cast does not accept an actual
+  value of the same count. Local and imported spellings of one nominal type
+  are one ID.
+
+`tests/ct_match_cases` (GPU test `physical_gpu_ct_match_cases`, or CPU
+replay of a synthetic capture) checks 25 cases: repeated parameters, shared
+slot numbers, prior bindings, exact over count claims, count classes and
+symbolic casts, the slice coercion, two roots, and that matching the same
+pair twice returns the same environment.
+
+Converted consumers:
+
+- `methods/05_validate_keys`: alpha-equivalent receivers match each other
+  both ways (ID comparison, no interning).
+- `methods/07_resolve_table` and `dependencies/15a_collect_methods`: the
+  receiver against each candidate's receiver pattern, with a typed self
+  parameter as the second root. The receiver is interned once
+  (`ct_intern_checked`), since inference produces it.
+- `calls/03d_bind_method_receiver_environment`: the receiver (phase 0) and
+  the self argument (phase 1, with the phase 0 environment as `prior`)
+  against the method's patterns; the bindings become the call's context.
+- `dependencies/08a_validate_call_results`: the declared result pattern
+  against the receiving type, then an imported canonical result against it
+  under the call's claims.
+- `calls/03k3_project_record_contexts`: a record literal without a
+  receiving type matches its declared field types jointly against its field
+  values (`ct_match_roots`, one root per field, each with the slice
+  coercion), and the bindings become its context. A field whose value has
+  no type yet is no root. A mismatch in the final round matches growing
+  prefixes to report the first conflicting field, as the field-by-field
+  merge did. Field lookup errors are now reported before any field is
+  matched, so a literal with both a lookup error and an earlier mismatch
+  reports the lookup error.
+- `dependencies/08_validate_call_args` substitutes instead of matching: the
+  parameter's declared type under the call's value environment
+  (`call_env_ct`, lookup only) must be the argument's ID; a declared slice
+  root compares elements with an array argument. The passing mode is the
+  bound type's kind. `type_check.match.call_envs.validation` republishes the
+  call environments right before dependency call validation, since the
+  final inference round admits context constants after its own
+  publication.
+- `calls/03a1_emit_generic_claims`: each argument's parameter pattern
+  against the argument's type (slice coercion at the root). A pattern that
+  is a type parameter with an explicit binding is checked against the bound
+  type instead; a bound slice accepts an array of the same element. The
+  bindings become the argument's claim span, each claim spelled by the row
+  `ct_realize` gives its ID (constants as typed constant rows), and a
+  constant slot's identity mode is exact unless it has count claims only.
+- `calls/03a_collect_row_args`: each argument's parameter pattern against
+  the argument's type, for the row-argument scan. `ct_pattern_masks` (the
+  shape pass of the pattern against itself) gives the slots the pattern
+  binds; a pattern without an ID is error 6 (0x474e0004), and a resolved
+  pattern whose shape pass fails is error 6 (0x474e0003). A closed pattern
+  that does not match is an assignment mismatch. The legacy four-slot cache
+  `call_generic_slot_type` is still published for slots 0..3 (scalar
+  bindings only), since 03a_apply_row_args, 03b, 03c and 10h2 read it.
+  `calls/argument_pattern_ids.slang` holds the operand-to-ID mapping and the
+  slot adapter that 03a and 03a1 share.
+- `calls/03a4b_contextual_result_requests`: a local call's declared result
+  pattern against its receiving type (field expectations come from
+  `struct_init_field_expected_ct`); the bindings become the call's context
+  through `ct_publish_context` without priors, so constants merge with the
+  context table and are admitted later. Statement lanes only own their
+  comparison rows.
+
+A kernel keeps one `ct_intern_checked` site, one `ct_match` site and one
+publisher site (each site inlines a full copy): the operands it interns and
+the publisher's requests share one loop.
+
+#### Publishing a match (`match/ct_context_publish.slang`)
+
+`ct_publish_context<C : ICtClaims>(call, token, env, types, constants,
+count_mask, flags, interned, out request)` writes the bindings of `env` in
+the slot masks as call `call`'s context (`call_context_ref_*`,
+`call_context_constant_*`, the masks). Pass 0 checks every slot and gives
+each binding a checked operand, pass 1 writes, so a rejected publication
+writes nothing.
+
+- **Priors.** `CT_PUBLISH_TYPE_PRIORS`: the call's explicit and contextual
+  types must equal the bindings. `CT_PUBLISH_ENV_CONSTANTS`: constants merge
+  with the call environment's binding. The context table's claim of the same
+  identity mode is replaced; a claim of the other mode must be compatible
+  and the exact one is kept ("Constant claims"). `CT_PUBLISH_CLAIMS`: the
+  argument claims (`C`) bind the pattern already, so a claimed type slot is
+  checked, not written, and every constant slot must agree with the call's
+  binding. `CT_PUBLISH_ADMIT` sets the constants' valid bits.
+- **Spelling.** A binding is written as an existing operand of its ID when a
+  prior spells it, else as the row `ct_realize` gives the ID.
+- **No interning inside.** A prior operand without an ID ends the call with
+  `CT_PUBLISH_INTERN` and the operand in `request`. The caller interns it at
+  its own site and calls again with `interned = (operand, ID)`. An operand
+  that does not intern agrees with no binding, so the caller rejects instead.
+  A same-mode context claim only lends its spelling and is never requested.
+- **Outcomes.** `CT_PUBLISHED`, `CT_PUBLISH_REJECTED`, `CT_PUBLISH_BUSY` (a
+  row another lane is writing: retry next round), `CT_PUBLISH_CAPACITY` (the
+  caller records ERR 6, 0x474e0001). Callers own the owner tokens.
+
+#### Struct-literal field expectations (`match/field_expected.slang`)
+
+`struct_init_field_expected_ct[field token]` is the field's expected type in
+caller scope: `ct_subst` of its declaration-side reference under the
+literal's application, with a checked row realized for it. `CT_NONE` when
+the field has no context instance (its reference is already in caller
+scope), `CT_UNKNOWN` when the substitution failed. `match/01_field_expected_ids`
+writes every token after each `04_struct_init_fields` that a reader follows
+(before call inference and in each inference round; `match_passes.rs`).
+Readers take the row with `ct_realized_ref` instead of the scoped hash walk
+of `instance_scoped_reference`; 08a and 03k3 do so by defining
+`CANONICAL_FIELD_EXPECTATION` before including
+`result_expression_context.slang`. A field whose substituted type had no row
+used to give no context; it now gets the realized row.
+
 ### API (frozen for P3–P5)
 
-The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
-not generic, and it imports `primitive_types` only.
+The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It
+imports `primitive_types` only. Its one generic is `ct_lookup_with`, over
+the `ICtKeyArgs` interface.
 
 | group | functions |
 |---|---|
@@ -674,13 +862,26 @@ not generic, and it imports `primitive_types` only.
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
-| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_spare`) |
+| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_intern_key(key)`, `ct_lookup(key)`, `ct_lookup_with(key, args)` and `ct_key_write_args(key, args)` (`ICtKeyArgs`), `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_key`) |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
-| dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`, `ct_dependency_record(index)`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
+| dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
 | bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |
 | constant keys | `canonical_constants.slang`: `ct_build_value(value, key)`, `ct_build_projection(target, child, param_scalar, fold, value, key)` |
 | constant view | `dependencies/constant_view.slang`: `CanonicalConstantGraph<G>`, `CanonicalConstantEnvironment<G>`, `canonical_constant_view_reference`, `canonical_constant_view_ranges` (see Constant view) |
 
 Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
-builder. They intern through `ct_intern_spare` with one lane-owned spare
-record, or through `ct_intern` with a record they own.
+builder. They intern through `ct_intern_key` (a record only for a new
+key), through `ct_intern_spare` with one lane-owned spare record, or through
+`ct_intern` with a record they own.
+
+A producer that often finds its key already published can look it up
+before reserving argument words:
+
+1. Build the key with `ct_key_fold` only.
+2. `ct_lookup_with(key, args)` compares against `args.arg(i)` instead of
+   `ct_args`. A hit costs no argument words.
+3. On a miss (`CT_NONE`), `ct_key_write_args(key, args)` reserves and writes
+   the words, and the key is interned as usual.
+
+`ct_key_reserve_args` before the lookup would leave the words of every hit
+reserved and unused.
