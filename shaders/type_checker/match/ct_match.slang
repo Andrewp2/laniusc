@@ -145,6 +145,28 @@ bool fold_occurrence<S : ICtSlots>(S slots, uint leaf, uint position, uint actua
     return true;
 }
 
+// Whether pattern child `child` (actual `value`) is visited as a node of its
+// own: an open record, or a root slice coerced from an array.
+bool child_is_open(uint child, uint value, bool top, bool slice)
+{
+    if (ct_is_param(child) || !ct_is_record(child)) return false;
+    bool coerce = top && slice && ct_kind(child) == CT_KIND_SLICE && ct_kind(value) == CT_KIND_ARRAY;
+    return coerce || !ct_closed(child);
+}
+
+// The first open child of `node` at or after `from`, or `arity`. Depth 0 is
+// the virtual parent of the root pair.
+uint next_open_child(uint node, uint other, bool top, uint pattern, uint actual, bool slice,
+    uint from, uint arity)
+{
+    for (uint index = from; index < arity; index++)
+    {
+        if (child_is_open(top ? pattern : ct_arg(node, index), top ? actual : ct_arg(other, index), top, slice))
+            return index;
+    }
+    return arity;
+}
+
 // One pass over the root pair (pattern, actual).
 bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, uint item,
     inout uint type_mask, inout uint const_mask, inout SlotClaims claims)
@@ -177,22 +199,14 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
             if (!coerce && any(ct_head[node] != ct_head[other])) return false;
         }
         uint operands = kind == CT_KIND_NAMED ? ct_named_constant_mask(node) : kind == CC_KIND_CAST ? 1u : 0u;
-        uint next = arity;
-        for (uint index = cursor; index < arity; index++)
+        // On entry, fold the parameter children and compare the closed ones;
+        // open children are visited afterwards, in order.
+        for (uint index = 0u; enter && index < arity; index++)
         {
             uint child = top ? pattern : ct_arg(node, index);
             uint value = top ? actual : ct_arg(other, index);
-            bool parameter = ct_is_param(child);
-            bool coerce = top && slice && ct_kind(child) == CT_KIND_SLICE && ct_kind(value) == CT_KIND_ARRAY;
-            if (!parameter && ct_is_record(child) && (coerce || !ct_closed(child)))
-            {
-                // An open child is visited after this node's other children.
-                if (next == arity) next = index;
-                if (!enter) break;
-                continue;
-            }
-            if (!enter) continue;
-            if (parameter)
+            if (child_is_open(child, value, top, slice)) continue;
+            if (ct_is_param(child))
             {
                 uint position = top ? (ct_is_const_param(child) ? POSITION_EXACT : POSITION_TYPE)
                     : kind == CT_KIND_ARRAY && index == 1u ? POSITION_COUNT
@@ -202,6 +216,9 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
             }
             else if (item == 0u && (child != value || !ct_is_resolved(child))) return false;
         }
+        // slangc 2026.2 miscompiles a loop that sets a sentinel and breaks
+        // (AGENT_RULES 23:40), so the next open child comes from a helper.
+        uint next = next_open_child(node, other, top, pattern, actual, slice, cursor, arity);
         if (next < arity)
         {
             if (depth + 1u >= DEPTH_LIMIT) return false;
