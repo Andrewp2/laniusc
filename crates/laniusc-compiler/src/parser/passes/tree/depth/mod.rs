@@ -1,6 +1,4 @@
-/// Per-workgroup raw-tree depth reduction.
+/// Per-workgroup raw-tree depth summaries from subtree close counts.
 pub mod block_max;
 /// Raw-tree-height indirect schedule construction.
 pub mod schedule;
-/// Independent per-node raw-tree depth traversal.
-pub mod traverse;

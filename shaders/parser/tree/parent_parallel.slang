@@ -3,7 +3,8 @@
 // The prefix stage computes E[p] = sum_{k < p}(1 - arity[k]). For node i,
 // the parent is the nearest previous node j with E[j] >= E[i], found by
 // climbing the per-block maximum heaps and the block maximum tree
-// (blocked_search_tree.slang).
+// (blocked_search_tree.slang). It also zeroes the subtree close counts that
+// tree/spans accumulates next.
 
 import segment_tree;
 import blocked_search_tree;
@@ -26,6 +27,7 @@ StructuredBuffer<int> prefix_local_max;
 
 RWStructuredBuffer<uint> node_kind;
 RWStructuredBuffer<uint> parent;
+RWStructuredBuffer<uint> tree_depth_close_count;
 
 static const uint INVALID = 0xFFFFFFFFu;
 static const uint WG_SIZE = 256u;
@@ -70,4 +72,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint kind = emit_stream[i];
     node_kind[i] = kind;
     parent[i] = kind == PROD_FILE ? INVALID : find_parent(i, n);
+    tree_depth_close_count[i] = 0u;
 }
