@@ -312,6 +312,8 @@ pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS: &str =
 /// The late re-seed of `ct_row_of` (substitution/01_seed_rows), after the
 /// late canonical stage.
 pub(super) const SUBSTITUTION_LATE_SEED_PASS: &str = "type_check.substitution.late_seed";
+pub(super) const SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS: &str =
+    "type_check.semantic_artifact.generic_native_words.clear";
 pub(super) const SEMANTIC_ARRAY_INDEX_REFS_PROJECT_PASS: &str =
     "type_check.semantic_artifact.array_index_refs";
 pub(super) const TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS: &str =
@@ -3069,6 +3071,9 @@ fn build_graph(
         _type_instance_decl_token as "type_instance_decl_token" in Types => type_rows * 4;
         _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => type_rows * 4;
         _type_native_word_count as "type_native_word_count" in Types => type_rows * 4;
+        // 01c_generic_native_words: a layout entry per row and per local
+        // nominal declaration.
+        _type_native_word_memo as "type_native_word_memo" in Types => (type_rows + token_rows) * 4;
         _type_native_scalar_identity as "type_native_scalar_identity" in Types => type_rows * 4;
         _module_file_id as "module_file_id" in Declarations => module_rows * 4;
         _module_path_id as "module_path_id" in Declarations => module_rows * 4;
@@ -6350,6 +6355,12 @@ fn build_graph(
         super::substitution_passes::SUBSTITUTION_SEED_KERNEL,
         &[],
     )?;
+    graph.add_pass(PassDesc {
+        name: SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Types,
+        accesses: vec![PassAccess::write("type_native_word_memo", _type_native_word_memo)],
+    })?;
     graph.add_kernel_pass_by_name(
         "type_check.semantic_artifact.generic_native_words",
         CompilerPhase::TypeCheck,

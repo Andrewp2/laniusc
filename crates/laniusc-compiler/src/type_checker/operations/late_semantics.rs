@@ -105,6 +105,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
     /// The rows of the IDs the late canonical stage added.
     pub(in crate::type_checker) late_row_seed: ComputeOperation,
+    pub(in crate::type_checker) native_word_memo_clear: crate::gpu::operations::ClearBuffersOperation,
     pub(in crate::type_checker) generic_native_words: ComputeOperation,
     pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
@@ -367,6 +368,15 @@ impl SemanticProjectionOperations {
                     words("canonical_row")?
                         + words("canonical_atom")?
                         + words("canonical_projection")?,
+                )?
+            },
+            native_word_memo_clear: {
+                let memo: LaniusBuffer<u32> =
+                    typed_buffer_from_resources(resources, "type_native_word_memo")?;
+                crate::gpu::operations::ClearBuffersOperation::new(
+                    graph,
+                    compiler_graph::SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS,
+                    &[("type_native_word_memo", (&memo).into())],
                 )?
             },
             generic_native_words: ComputeOperation::direct(
