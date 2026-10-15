@@ -646,8 +646,9 @@ the exact claim to be rejected, which disagreed with the code.
 
 ### API (frozen for P3–P5)
 
-The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It is
-not generic, and it imports `primitive_types` only.
+The API lives in `shaders/type_checker/canonical/canonical_api.slang`. It
+imports `primitive_types` only. Its one generic is `ct_lookup_with`, over
+the `ICtKeyArgs` interface.
 
 | group | functions |
 |---|---|
@@ -655,7 +656,7 @@ not generic, and it imports `primitive_types` only.
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
-| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_intern_key(key)`, `ct_lookup(key)`, `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_key`) |
+| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_intern_key(key)`, `ct_lookup(key)`, `ct_lookup_with(key, args)` and `ct_key_write_args(key, args)` (`ICtKeyArgs`), `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_key`) |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
 | dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
 | bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |
@@ -666,3 +667,15 @@ Producers in later phases (`ct_subst`, `CT_ENV`) build keys with the key
 builder. They intern through `ct_intern_key` (a record only for a new
 key), through `ct_intern_spare` with one lane-owned spare record, or through
 `ct_intern` with a record they own.
+
+A producer that often finds its key already published can look it up
+before reserving argument words:
+
+1. Build the key with `ct_key_fold` only.
+2. `ct_lookup_with(key, args)` compares against `args.arg(i)` instead of
+   `ct_args`. A hit costs no argument words.
+3. On a miss (`CT_NONE`), `ct_key_write_args(key, args)` reserves and writes
+   the words, and the key is interned as usual.
+
+`ct_key_reserve_args` before the lookup would leave the words of every hit
+reserved and unused.

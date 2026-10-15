@@ -573,6 +573,51 @@ public uint ct_lookup(CtKey key)
     return CT_NONE;
 }
 
+// Arguments of a key built with ct_key_fold only: no argument words are
+// reserved until the key turns out to be new, so a lookup that hits costs no
+// ct_args words. `arg(i)` must return the child that was folded at index i.
+public interface ICtKeyArgs
+{
+    uint arg(uint index);
+}
+
+// Find the published record equal to `key`, whose arguments are `args`
+// (not written to ct_args). CT_NONE on a miss, CT_UNKNOWN when !key.ok.
+public uint ct_lookup_with<A : ICtKeyArgs>(CtKey key, A args)
+{
+    if (!key.ok) return CT_UNKNOWN;
+    uint slots = ct_slot_capacity();
+    uint slot = ct_probe_start(key.shash);
+    uint arity = (key.head.x >> 8u) & 0xffu;
+    for (uint probe = 0u; probe < slots; probe++)
+    {
+        uint value = ct_slot[slot];
+        if (value == 0u) return CT_NONE;
+        // Acquire: the occupant's record was complete before its CAS.
+        DeviceMemoryBarrier();
+        if (value < ct_record_capacity() && all(ct_head[value] == key.head))
+        {
+            uint4 meta = ct_meta[value];
+            bool equal = all(meta.zw == key.shash);
+            for (uint i = 0u; i < arity && equal; i++)
+                equal = ct_args[meta.x + i] == args.arg(i);
+            if (equal) return value;
+        }
+        slot = (slot + 1u) & (slots - 1u);
+    }
+    return CT_NONE;
+}
+
+// Reserve the argument words of a key built with ct_key_fold only and write
+// `args` into them. False (key.ok cleared) on CT_OVERFLOW_ARGS.
+public bool ct_key_write_args<A : ICtKeyArgs>(inout CtKey key, A args)
+{
+    if (!ct_key_reserve_args(key)) return false;
+    uint arity = (key.head.x >> 8u) & 0xffu;
+    for (uint i = 0u; i < arity; i++) ct_args[key.arg_base + i] = args.arg(i);
+    return true;
+}
+
 // Whether `record` is in the table. A published record is never rewritten,
 // so its stored hash leads to its slot.
 public bool ct_is_published(uint record)
