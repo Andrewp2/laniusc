@@ -151,8 +151,184 @@ fn process_memory() -> String {
     parts.join(", ")
 }
 
+/// Device memory in use, in MiB, as reported by `nvidia-smi`.
+fn device_used_mib() -> Option<u64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
+/// Every kernel key under `root` (without `.spv`), sorted, skipping tests and
+/// keeping those that contain `filter`.
+fn kernel_keys(root: &str, filter: Option<&str>) -> Result<Vec<String>> {
+    let mut keys = Vec::new();
+    let mut pending = vec![PathBuf::from(root)];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if let Some(key) = path.to_str().and_then(|p| p.strip_suffix(".spv")) {
+                let key = key.strip_prefix(root).unwrap_or(key).trim_start_matches('/').to_owned();
+                if !key.starts_with("tests/") && filter.is_none_or(|f| key.contains(f)) {
+                    keys.push(key);
+                }
+            }
+        }
+    }
+    keys.sort();
+    Ok(keys)
+}
+
+/// Creates one kernel's `main` (or reflected) compute pipeline on `device`.
+fn probe_pipeline(
+    device: &wgpu::Device,
+    cache: Option<&wgpu::PipelineCache>,
+    root: &str,
+    key: &str,
+) -> Result<Option<wgpu::ComputePipeline>> {
+    let spirv = fs::read(Path::new(root).join(format!("{key}.spv")))?;
+    let reflection =
+        parse_reflection_from_bytes(&fs::read(Path::new(root).join(format!("{key}.reflect.json")))?)
+            .map_err(anyhow::Error::msg)?;
+    let Some(entry) = reflection
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage.as_deref() == Some("compute"))
+    else {
+        return Ok(None);
+    };
+    let layouts = bgls_from_reflection(device, &reflection)?;
+    let layout_refs = layouts.iter().map(Some).collect::<Vec<_>>();
+    // SAFETY: Slang produced this SPIR-V for the selected backend, as in the
+    // compiler's own pipeline creation.
+    let module = unsafe {
+        device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough {
+            label: Some(key),
+            spirv: Some(wgpu::util::make_spirv_raw(&spirv)),
+            ..Default::default()
+        })
+    };
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(key),
+        bind_group_layouts: &layout_refs,
+        immediate_size: 0,
+    });
+    Ok(Some(device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(key),
+        layout: Some(&layout),
+        module: &module,
+        entry_point: Some(entry.name.as_deref().unwrap_or("main")),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache,
+    })))
+}
+
+/// `--memory-probe SHADER_DIR [SUBSTRING]` measures how much device memory
+/// creating each kernel's pipeline adds. The NVIDIA driver sizes one
+/// device-wide local-memory reservation, the largest per-thread local memory
+/// of any created pipeline times the resident threads, at pipeline creation,
+/// and never shrinks it. So each kernel gets a fresh device, which shares the
+/// compiler's driver pipeline cache, and the result is that kernel's own
+/// reservation (plus its code, which is small). With
+/// `REPLAY_PROBE_SHARED_DEVICE=1` every kernel is created on one device
+/// instead, and the jumps show what a resident compiler sees.
+/// `REPLAY_PROBE_ORDER=KEY,KEY,...` creates just those kernels, in that
+/// order, on one device, then submits an empty command buffer and waits for
+/// the device to go idle before a final reading.
+fn memory_probe(root: &str, filter: Option<&str>) -> Result<()> {
+    let order = env::var("REPLAY_PROBE_ORDER").ok();
+    let keys = match &order {
+        Some(list) => list.split(',').map(str::to_owned).collect(),
+        None => kernel_keys(root, filter)?,
+    };
+    let gpu = device::global_result().map_err(|err| anyhow!(err.to_string()))?;
+    let cache_data = device::pipeline_cache_for(&gpu.device).and_then(|cache| cache.get_data());
+    let shared =
+        order.is_some() || env::var("REPLAY_PROBE_SHARED_DEVICE").is_ok_and(|value| value == "1");
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .map_err(|err| anyhow!("no adapter: {err}"))?;
+    let open = || -> Result<(wgpu::Device, wgpu::Queue, Option<wgpu::PipelineCache>)> {
+        let features = wgpu::Features::PASSTHROUGH_SHADERS
+            | (adapter.features() & wgpu::Features::PIPELINE_CACHE);
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("memory_probe"),
+            required_features: features,
+            required_limits: adapter.limits(),
+            // SAFETY: passthrough SPIR-V, as in the compiler's device.
+            experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
+            memory_hints: wgpu::MemoryHints::default(),
+            trace: wgpu::Trace::default(),
+        }))
+        .map_err(|err| anyhow!("request probe device: {err}"))?;
+        let cache = features.contains(wgpu::Features::PIPELINE_CACHE).then(|| unsafe {
+            device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+                label: Some("memory_probe"),
+                data: cache_data.as_deref(),
+                fallback: true,
+            })
+        });
+        Ok((device, queue, cache))
+    };
+    let mut shared_device = if shared { Some(open()?) } else { None };
+    println!(
+        "{}",
+        serde_json::json!({
+            "kernels": keys.len(),
+            "shared_device": shared,
+            "start_mib": device_used_mib(),
+            "cache_bytes": cache_data.as_ref().map(Vec::len),
+        })
+    );
+    for key in keys {
+        let fresh = if shared_device.is_none() { Some(open()?) } else { None };
+        let (device, _, cache) = shared_device.as_ref().or(fresh.as_ref()).expect("a probe device");
+        let before = device_used_mib().unwrap_or(0);
+        let started = Instant::now();
+        let pipeline = probe_pipeline(device, cache.as_ref(), root, &key)?;
+        let create_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let after = device_used_mib().unwrap_or(0);
+        println!(
+            "{}",
+            serde_json::json!({
+                "kernel": key,
+                "created": pipeline.is_some(),
+                "added_mib": after as i64 - before as i64,
+                "used_mib": after,
+                "create_ms": create_ms,
+            })
+        );
+        drop(pipeline);
+        drop(fresh);
+    }
+    if let Some((device, queue, _)) = &shared_device {
+        queue.submit([device.create_command_encoder(&Default::default()).finish()]);
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|err| anyhow!("wait for probe device: {err}"))?;
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        println!("{}", serde_json::json!({ "idle_used_mib": device_used_mib() }));
+    }
+    drop(shared_device.take());
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
+    if args.first().map(String::as_str) == Some("--memory-probe") {
+        let root = args.get(1).ok_or_else(|| anyhow!(USAGE))?;
+        return memory_probe(root, args.get(2).map(String::as_str));
+    }
     let out = match args.iter().position(|arg| arg == "--out") {
         Some(at) => {
             let dir = PathBuf::from(args.get(at + 1).ok_or_else(|| anyhow!(USAGE))?);
