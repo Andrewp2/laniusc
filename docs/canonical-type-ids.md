@@ -245,7 +245,7 @@ The record kinds:
 | `CC_KIND_VALUE` 8 | (scalar, lo, hi) | — | (count or INVALID, count class) |
 | `CC_KIND_CAST` 9 | target scalar | (symbolic child) | (INVALID, count class of child) |
 | `CC_KIND_COUNT` 10 | count | — | (count, NONE) |
-| `CT_KIND_ENV` 16 | owner | type slots, then constant slots | — (reserved for P2 step 3) |
+| `CT_KIND_ENV` 16 | (owner, type mask, constant mask); owner 0 is a call environment | bound type slots in slot order, then bound constant slots (typed IDs) | — (P3 `ct_subst`; a mask hole is an unbound slot) |
 
 A reference is one of three things:
 
@@ -568,7 +568,7 @@ not generic, and it imports `primitive_types` only.
 | read | `ct_kind`, `ct_arity`, `ct_type_slots`, `ct_words`, `ct_arg(id, i)`, `ct_named_decl_token`, `ct_named_constant_mask` |
 | facts | `ct_facts` (height, flags, shash from one read), `ct_height`, `ct_flags`, `ct_shash`, `ct_closed`, `cc_count`, `cc_count_class` |
 | map checked operands | `ct_ref(tag, payload)` (tag 1 scalar, 2 type parameter, 3 row or bridged `CT_ROW_BASE + id`, constant tags), `ct_row_ref(row)`, `ct_constant_ref(kind, payload)` |
-| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record` |
+| build and intern | `ct_key_begin`, `ct_key_reserve_args`, `ct_key_fold`, `ct_key_arg`, `ct_key_store`, `ct_intern(record, key)`, `ct_intern_spare(key, extra, spare)`, `ct_intern_small(kind, arity, words, args, extra, spare)`, `cc_intern_count(count, spare)`, `ct_lookup(key)`, `ct_alloc_record`; `canonical_candidates.slang`: `canonical_build_candidate_key(candidate, final, key)` (intern its key with `ct_intern_spare`) |
 | hash | `ct_hash_mix`, `ct_hash_word`, `CT_HASH_SEED` |
 | dependency nodes | `canonical_dependency_type[span + t]`, `ct_dependency_capacity`, `ct_dependency_record(index)`; `canonical_dependency.slang`: `ct_dependency_index(t)`, `ct_dependency_state(t)` for the resident page |
 | bridge | `canonical_bridge.slang`: `CanonicalBridgeTypeGraph`, `ct_bridge_operand(ref)`, `ct_bridge_metadata(id, field)`, `CT_BRIDGE_TYPE_CAPACITY`; payload `CT_ROW_BASE + id` |

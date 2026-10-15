@@ -180,13 +180,23 @@ uint build_constant(uint candidate, bool final, out CtKey key)
     return ct_build_value(value, key);
 }
 
+// Build the key of one candidate (a checked row, then atoms, then
+// projections): CT_KEY_BUILT with `key` (ct_extra facts in key.extra), or the
+// candidate's final reference without a key. CT_PENDING means a child is not
+// interned yet. Callers outside this stage intern the key through
+// ct_intern_spare, never into the candidate's fixed record. Each call site
+// expands both builders, so call it once per kernel.
+public uint canonical_build_candidate_key(uint candidate, bool final, out CtKey key)
+{
+    if (candidate < ct_row_capacity()) return build_row(candidate, final, key);
+    return build_constant(candidate, final, key);
+}
+
 // Intern one candidate; CT_PENDING means a child is not interned yet.
 public uint canonical_intern_candidate(uint candidate, bool final)
 {
     CtKey key;
-    uint status;
-    if (candidate < ct_row_capacity()) status = build_row(candidate, final, key);
-    else status = build_constant(candidate, final, key);
+    uint status = canonical_build_candidate_key(candidate, final, key);
     if (status != CT_KEY_BUILT) return status;
     uint record = ct_candidate_record(candidate);
     if (ct_counts[CT_COUNT_REINTERN] != 0u)

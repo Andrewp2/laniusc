@@ -45,7 +45,8 @@ public static const uint CT_KIND_REF = 5u;      // args = (element)
 public static const uint CC_KIND_VALUE = 8u;    // w = (scalar, lo, hi)
 public static const uint CC_KIND_CAST = 9u;     // w0 target scalar; args = (symbolic child)
 public static const uint CC_KIND_COUNT = 10u;   // w0 count; the count-identity domain
-public static const uint CT_KIND_ENV = 16u;     // w = owner; args = type slots then constant slots
+public static const uint CT_KIND_ENV = 16u;     // w = (owner, type mask, constant mask);
+                                                // args = bound type slots, then bound constant slots
 
 // Fact flags (ct_meta.y bits 16..31).
 public static const uint CTF_TYPE_PARAM = 1u;   // some leaf is a type parameter
