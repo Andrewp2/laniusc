@@ -1,11 +1,26 @@
-import type_checker.dependencies.constant_view;
-// Imported match payloads materialize complete declaration-side patterns while
-// their dependency page is resident. Only caller-side references survive to
-// match binding; canonical row numbers never cross the page boundary.
-#include "../type/instances/materialize_application_inputs.slang"
+// Imported match payloads: the variant's declared payload type under the
+// scrutinee's nominal environment, substituted over canonical IDs while the
+// dependency page is resident and realized as a caller-side checked row.
+// Canonical row numbers never cross the page boundary.
+import hir_records;
+import status;
+import dependency_interface;
 import type_checker.checked_pattern_path;
-#include "../type/instances/materialize_application.slang"
+import type_checker.mutable_checked_type_graph;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_dependency;
+import type_checker.substitution.ct_subst;
+import type_checker.substitution.ct_rows;
+import type_checker.substitution.ct_realize;
+import type_checker.substitution.source_slots;
 
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> compact_match_payload_row_count;
@@ -19,6 +34,11 @@ StructuredBuffer<uint> call_inference_result_payload;
 RWStructuredBuffer<uint> imported_match_payload_ref_tag;
 RWStructuredBuffer<uint> imported_match_payload_ref_payload;
 RWStructuredBuffer<uint> call_inference_state;
+RWStructuredBuffer<uint> status;
+
+static const uint INVALID = 0xffffffffu;
+
+uint hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 
 #include "../checked_referent.slang"
 
@@ -52,29 +72,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
         external_type_library_id[instance] != dependency_declaration_library_id(parent) ||
         external_type_unit_id[instance] != dependency_declaration_unit_id(parent) ||
         external_type_local_index[instance] != dependency_declaration_local_index(parent)) return;
-    uint signature = canonical_field_root(dependency_declaration_word(variant * 14u + 7u));
-    if (signature == INVALID || dependency_type_word(signature * 9u) != 7u) return;
+    uint types = dependency_type_count();
+    uint signature = dependency_declaration_word(variant * 14u + 7u);
+    signature = signature < types ? canonical_type_roots[signature] : INVALID;
+    if (signature >= types || dependency_type_word(signature * 9u) != 7u) return;
     uint start = dependency_type_word(signature * 9u + 3u);
     uint count = dependency_type_word(signature * 9u + 4u);
     uint edges = dependency_count(5u);
     if (count == 0u || value.ordinal >= count - 1u || start > edges || count > edges - start) return;
-    uint pattern = dependency_type_edge_word(start + value.ordinal);
-    uint prior_tag = imported_match_payload_ref_tag[value.pattern];
-    uint prior = imported_match_payload_ref_payload[value.pattern];
-    if (prior_tag == 3u && canonical_field_ref_matches<MutableCheckedTypeGraph>(instance,
-        pattern, prior, mutable_type_capacity(), gParams.n_tokens)) return;
-    uint created[DEPTH_LIMIT]; uint created_count = 0u; uint failure; uint2 result;
-    if (!materialize<MutableCheckedTypeGraph>(uint3(5u, pattern, instance),
-        created, created_count, result, failure))
+    // The scrutinee's application is the environment: type slot i is its
+    // i-th type operand.
+    uint environment = ct_ref(3u, instance);
+    uint pattern = ct_dependency_state(dependency_type_edge_word(start + value.ordinal));
+    if (!ct_is_record(environment) || !ct_is_resolved(pattern)) return;
+    CtSpare spare = ct_spare_none();
+    uint payload_type = ct_subst(SourceSlots(), environment, pattern, true, spare);
+    uint failure = 0u;
+    uint2 result = uint2(0u, INVALID);
+    if (ct_is_resolved(payload_type)) result = ct_realize(payload_type, failure);
+    else if ((ct_subst_counts[CT_SUBST_COUNT_OVERFLOW] & ~CT_SUBST_OVERFLOW_WORK) != 0u ||
+        ct_counts[CT_COUNT_OVERFLOW] != 0u) failure = CT_REALIZE_CAPACITY;
+    else if (ct_subst_counts[CT_SUBST_COUNT_OVERFLOW] != 0u) failure = CT_REALIZE_LIMIT;
+    if (result.x == 0u)
     {
-        if (failure == 1u || failure == 2u)
+        if (failure == CT_REALIZE_CAPACITY || failure == CT_REALIZE_LIMIT)
             record_min_token_error(status, compact_hir_core[value.pattern].token_start,
                 6u, 0x474e0000u | failure);
+        // Another lane is writing the row: look again next round.
+        if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
         return;
     }
+    uint prior_tag = imported_match_payload_ref_tag[value.pattern];
+    uint prior = imported_match_payload_ref_payload[value.pattern];
+    if (prior_tag == result.x && prior == result.y) return;
     imported_match_payload_ref_tag[value.pattern] = result.x;
     imported_match_payload_ref_payload[value.pattern] = result.y;
-    if (!scoped_type_refs_equal<MutableCheckedTypeGraph>(prior_tag, prior, INVALID,
-        result.x, result.y, INVALID, mutable_type_capacity(), gParams.n_tokens))
+    // Rows are unique per ID; another producer's row compares by its ID.
+    if (ct_ref(prior_tag, prior) != payload_type)
     { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
 }

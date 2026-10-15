@@ -1,17 +1,31 @@
-import type_checker.dependencies.constant_view;
-// Expected argument types are checked caller-side references. Each argument
-// owns one row; imported patterns are consumed only on their declaration page.
-// This relation provides context to expressions without replacing their
+// Expected argument types are checked caller-side references: the declared
+// parameter type under the call's expected environment (call_env.slang),
+// substituted over canonical IDs and realized as a checked row. Each argument
+// owns one row; imported patterns are consumed only on their declaration
+// page. This relation provides context to expressions without replacing their
 // accepted actual types or inferring a type from native storage width.
-#include "../type/instances/materialize_application_inputs.slang"
-import type_checker.calls.mutable_checked_call_types;
-import type_checker.calls.checked_call_environment;
-import type_checker.calls.checked_constant_environment;
+import hir_records;
+import status;
+import dependency_interface;
 import type_checker.argument_context;
-import primitive_types;
-#include "../type/instances/materialize_application.slang"
-#include "array_shape_context.slang"
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_dependency;
+import type_checker.substitution.ct_subst;
+import type_checker.substitution.ct_rows;
+import type_checker.substitution.ct_realize;
+import type_checker.substitution.source_slots;
+import type_checker.substitution.call_env;
 
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_array_element_count;
+StructuredBuffer<uint> compact_array_element_start;
+StructuredBuffer<uint> compact_array_element_row_count;
+StructuredBuffer<HirArrayElement> compact_array_elements;
+StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_row_ordinal;
@@ -22,25 +36,82 @@ StructuredBuffer<uint> call_param_row_ref_payload;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
-StructuredBuffer<uint> call_generic_claim_arg_row;
-StructuredBuffer<uint> call_arg_row_literal_context_mask;
 RWStructuredBuffer<uint> argument_expected_ref_tag;
 RWStructuredBuffer<uint> argument_expected_ref_payload;
 RWStructuredBuffer<uint> call_inference_state;
+RWStructuredBuffer<uint> status;
 
-// Numeric literals can receive context within their category. Named values,
-// Boolean literals, and structural values keep their known types. The owning expression pass
-// supplies provenance without adding HIR bindings to every environment consumer.
-public struct ArgumentContextClaimPriority : ICheckedCallClaimPriority
+static const uint INVALID = 0xffffffffu;
+static const uint DEPTH_LIMIT = 64u;
+static const uint ARRAY_LITERAL = 24u;
+
+uint hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
+
+// The alias root of dependency type node `t` of the resident page.
+uint dependency_root(uint t)
 {
-    public static uint rank(uint row)
+    uint count = dependency_type_count();
+    uint root = t < count ? canonical_type_roots[t] : INVALID;
+    return root < count ? root : INVALID;
+}
+
+// The canonical declared type of the argument's parameter, or CT_UNKNOWN.
+uint parameter_pattern(uint row, uint token, bool dotted)
+{
+    if (call_dependency_library_id[token] == INVALID)
     {
-        uint scalar = call_generic_claim_ref_payload[row];
-        if (call_generic_claim_ref_tag[row] != 1u || (!scalar_is_integer(scalar) && !scalar_is_float(scalar))) return 0u;
-        uint argument = call_generic_claim_arg_row[row];
-        if (argument >= min(call_arg_row_count_out[0u], gParams.n_hir_nodes)) return 0u;
-        return (call_arg_row_literal_context_mask[argument] & (scalar_is_float(scalar) ? 2u : 1u)) != 0u ? 1u : 0u;
+        uint parameter = call_arg_param_row[row];
+        if (parameter >= min(call_param_row_count_out[0u], gParams.n_hir_nodes)) return CT_UNKNOWN;
+        return ct_ref(call_param_row_ref_tag[parameter], call_param_row_ref_payload[parameter]);
     }
+    uint library = call_dependency_library_id[token];
+    uint unit = call_dependency_unit_id[token];
+    uint local = call_dependency_local_index[token];
+    uint ordinal = call_arg_row_ordinal[row];
+    uint type = INVALID;
+    uint declaration = dependency_find_declaration(library, unit, local);
+    if (declaration < dependency_declaration_count())
+    {
+        uint signature = dependency_root(dependency_declaration_word(declaration * 14u + 7u));
+        if (signature == INVALID || dependency_type_word(signature * 9u) != 7u) return CT_UNKNOWN;
+        uint start = dependency_type_word(signature * 9u + 3u);
+        uint count = dependency_type_word(signature * 9u + 4u);
+        uint edges = dependency_count(5u);
+        if (count == 0u || ordinal >= count - 1u || start > edges || count > edges - start) return CT_UNKNOWN;
+        type = dependency_type_edge_word(start + ordinal);
+    }
+    else
+    {
+        uint method = dependency_find_method(library, unit, local);
+        if (method >= dependency_member_count()) return CT_UNKNOWN;
+        type = dependency_method_parameter_type(method, ordinal + (dotted ? 1u : 0u));
+    }
+    return type < dependency_type_count() ? ct_dependency_state(type) : CT_UNKNOWN;
+}
+
+// The array literal `levels` levels inside `literal` (through first
+// elements), or INVALID.
+uint nested_literal(uint literal, uint levels)
+{
+    for (uint level = 0u; level < levels && literal != INVALID; level++)
+    {
+        uint first = compact_array_element_start[literal];
+        literal = compact_array_element_count[literal] != 0u &&
+            first < min(compact_array_element_row_count[0u], gParams.n_hir_nodes)
+            ? argument_context_root(compact_array_elements[first].value, hir_count(),
+                compact_hir_core, compact_hir_payload) : INVALID;
+        if (literal >= hir_count() || compact_hir_core[literal].kind != ARRAY_LITERAL) literal = INVALID;
+    }
+    return literal;
+}
+
+// Capacity and limits have their own diagnostic; a busy row asks for
+// another round.
+void report(uint token, uint failure)
+{
+    if (failure == CT_REALIZE_CAPACITY || failure == CT_REALIZE_LIMIT)
+        record_min_token_error(status, token, 6u, 0x474e0000u | failure);
+    if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
 }
 
 [shader("compute")]
@@ -59,82 +130,50 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint token = dotted ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
     if (token >= gParams.n_tokens) token = compact_hir_core[callee].token_start;
     if (token >= gParams.n_tokens) return;
-    uint tag = 0u; uint payload = INVALID;
-    if (call_dependency_library_id[token] != INVALID)
+    uint pattern = parameter_pattern(row, token, dotted);
+    if (!ct_is_resolved(pattern)) return;
+    // An array literal gives a declared array pattern its own length at each
+    // level it spells: the element pattern is substituted, then wrapped in
+    // arrays of the literal lengths. An empty array gives no evidence below.
+    uint depth = 0u;
+    uint literal = compact_hir_core[node].kind == ARRAY_LITERAL ? node : INVALID;
+    while (literal != INVALID && ct_kind(pattern) == CT_KIND_ARRAY)
     {
-        uint declaration = dependency_find_declaration(call_dependency_library_id[token],
-            call_dependency_unit_id[token], call_dependency_local_index[token]);
-        uint ordinal = call_arg_row_ordinal[row];
-        if (declaration < dependency_declaration_count())
-        {
-            uint signature = canonical_field_root(dependency_declaration_word(declaration * 14u + 7u));
-            if (signature == INVALID || dependency_type_word(signature * 9u) != 7u) return;
-            uint start = dependency_type_word(signature * 9u + 3u);
-            uint count = dependency_type_word(signature * 9u + 4u);
-            uint edges = dependency_count(5u);
-            if (count == 0u || ordinal >= count - 1u || start > edges || count > edges - start) return;
-            payload = dependency_type_edge_word(start + ordinal);
-        }
-        else
-        {
-            uint method = dependency_find_method(call_dependency_library_id[token],
-                call_dependency_unit_id[token], call_dependency_local_index[token]);
-            if (method >= dependency_member_count()) return;
-            payload = dependency_method_parameter_type(method, ordinal + (dotted ? 1u : 0u));
-        }
-        if (payload >= dependency_type_count()) return;
-        tag = 5u;
+        if (depth == DEPTH_LIMIT) { report(token, CT_REALIZE_LIMIT); return; }
+        pattern = ct_arg(pattern, 0u);
+        depth++;
+        literal = nested_literal(literal, 1u);
     }
-    else
+    uint environment = ct_call_env(token).y;
+    if (!ct_closed(pattern) && !ct_is_record(environment)) return;
+    CtSpare spare = ct_spare_none();
+    uint expected = ct_subst(SourceSlots(), environment, pattern, true, spare);
+    for (uint level = depth; level != 0u && ct_is_resolved(expected); level--)
     {
-        uint parameter = call_arg_param_row[row];
-        if (parameter >= min(call_param_row_count_out[0u], gParams.n_hir_nodes)) return;
-        tag = call_param_row_ref_tag[parameter];
-        payload = call_param_row_ref_payload[parameter];
+        uint length = compact_array_element_count[nested_literal(node, level - 1u)];
+        uint count = cc_intern_count(length, spare.record);
+        expected = ct_is_resolved(count)
+            ? ct_intern_small(CT_KIND_ARRAY, 2u, uint3(0u, 0u, 0u), uint2(expected, count),
+                uint2(INVALID, 0u), spare.record)
+            : CT_UNKNOWN;
     }
-    uint environment = 0x80000000u | token;
-    uint prior_tag = argument_expected_ref_tag[node];
-    uint prior = argument_expected_ref_payload[node];
-    if (prior_tag != 0u && ((tag == 5u && prior_tag == 3u &&
-        canonical_field_ref_matches<MutableCheckedExpectedCallTypeGraph<ArgumentContextClaimPriority>>(environment, payload, prior,
-            mutable_type_capacity(), gParams.n_tokens)) ||
-        (tag != 5u && scoped_type_refs_equal<MutableCheckedExpectedCallTypeGraph<ArgumentContextClaimPriority>>(tag, payload, environment,
-            prior_tag, prior, INVALID, mutable_type_capacity(), gParams.n_tokens)))) return;
-    uint created[DEPTH_LIMIT]; uint count = 0u; uint failure; uint2 expected;
-    uint lengths[DEPTH_LIMIT]; uint previous[DEPTH_LIMIT]; uint depth = 0u;
-    uint3 reference = uint3(tag, payload, environment);
-    uint3 leaf; uint shape_failure;
-    bool shaped = compact_hir_core[node].kind == 24u &&
-        prepare_array_shape_context(reference, node, prior_tag == 3u ? prior : INVALID,
-            leaf, lengths, previous, depth, shape_failure);
-    if (compact_hir_core[node].kind == 24u && !shaped && (shape_failure == 1u || shape_failure == 2u))
+    if (!ct_is_resolved(expected))
     {
-        record_min_token_error(status, token, 6u, 0x474e0000u | shape_failure);
+        // Context is optional until bindings become known; ordinary call
+        // validation owns missing bindings. Capacity has its own diagnostic.
+        uint overflow = ct_subst_counts[CT_SUBST_COUNT_OVERFLOW];
+        if ((overflow & (CT_SUBST_OVERFLOW_MEMO | CT_SUBST_OVERFLOW_ROWS | CT_SUBST_OVERFLOW_CONSTANTS)) != 0u ||
+            ct_counts[CT_COUNT_OVERFLOW] != 0u)
+            report(token, CT_REALIZE_CAPACITY);
+        else if ((overflow & CT_SUBST_OVERFLOW_WORK) != 0u) report(token, CT_REALIZE_LIMIT);
         return;
     }
-    if (shaped) reference = leaf;
-    if (!materialize<MutableCheckedExpectedCallTypeGraph<ArgumentContextClaimPriority>>(reference,
-        created, count, expected, failure))
-    {
-        // Context is optional until bindings become known. Capacity failures
-        // have an explicit diagnostic; ordinary call validation owns missing
-        // required bindings and actual argument mismatches.
-        if (failure == 1u || failure == 2u)
-            record_min_token_error(status, token, 6u, 0x474e0000u | failure);
-        return;
-    }
-    if (shaped && !wrap_array_shape_context<MutableCheckedExpectedCallTypeGraph<ArgumentContextClaimPriority>>(
-        depth, lengths, previous, expected, failure))
-    {
-        if (failure == 1u || failure == 2u)
-            record_min_token_error(status, token, 6u, 0x474e0000u | failure);
-        return;
-    }
-    argument_expected_ref_tag[node] = expected.x;
-    argument_expected_ref_payload[node] = expected.y;
-    // Both rows are caller-side materialized references. Change detection
-    // compares their concrete structure without reading the call environment.
-    if (!concrete_type_refs_equal<MutableCheckedTypeGraph>(prior_tag, prior,
-        expected.x, expected.y, mutable_type_capacity()))
-    { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    uint failure;
+    uint2 operand = ct_realize(expected, failure);
+    if (operand.x == 0u) { report(token, failure); return; }
+    // Rows are unique per ID, so equal operands are equal types.
+    if (argument_expected_ref_tag[node] == operand.x && argument_expected_ref_payload[node] == operand.y) return;
+    argument_expected_ref_tag[node] = operand.x;
+    argument_expected_ref_payload[node] = operand.y;
+    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
 }

@@ -224,9 +224,26 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_EXPAND_APPLICATION_FIELDS_PASS,
             "type_checker/calls/03e1_expand_application_fields",
         )?,
-        project_argument_contexts: inference(
-            compiler_graph::CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
-            "type_checker/calls/03k_project_argument_contexts",
+        project_argument_contexts: Some(substitution_passes::ArgumentContextOperations {
+            call_envs: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                substitution_passes::SUBSTITUTION_CALL_ENVS_PASS,
+                &passes.kernel(substitution_passes::SUBSTITUTION_CALL_ENVS_KERNEL),
+                hir_dispatch_args,
+            )?,
+            contexts: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
+                &passes.kernel("type_checker/calls/03k_project_argument_contexts"),
+                hir_dispatch_args,
+            )?,
+        }),
+        substitution: substitution_passes::SubstitutionOperations::new(
+            device, graph, resources, passes,
         )?,
         return_type_index_clear: optional_generic(
             compiler_graph::CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
