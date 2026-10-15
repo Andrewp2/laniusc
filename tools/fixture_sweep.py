@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import collections
+import hashlib
 import json
 import os
 import pathlib
@@ -263,6 +264,7 @@ def sweep(args) -> int:
     stderr_path = out / f"daemon-shard-{index}-of-{count}.stderr"
     results = []
     previous_wall = 0.0
+    previous = {}
     if args.resume and result_path.exists():
         previous = json.loads(result_path.read_text())
         results = previous["results"]
@@ -274,6 +276,12 @@ def sweep(args) -> int:
 
     started_all = time.time()
     version = laniusc_version(args.laniusc)
+    # Shader digests seen when a daemon started (it loads every kernel then) and at the end.
+    digests_seen = list(previous.get("shader_digests_seen", []))
+
+    def start_daemon() -> Daemon:
+        digests_seen.append(shader_digest(args.laniusc))
+        return Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
 
     def write(complete: bool):
         document = {
@@ -287,6 +295,7 @@ def sweep(args) -> int:
             "complete": complete,
             "wall_s": round(previous_wall + time.time() - started_all, 1),
             "daemon_ready": daemon.ready,
+            "shader_digests_seen": sorted(set(filter(None, digests_seen))),
             "results": results,
         }
         temporary = result_path.with_suffix(".tmp")
@@ -296,7 +305,7 @@ def sweep(args) -> int:
     if not todo:
         print("fixture_sweep: nothing left to run in this shard")
         return 0
-    daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
+    daemon = start_daemon()
     print(f"fixture_sweep: daemon ready in {time.time() - started_all:.1f} s: "
           f"{json.dumps(daemon.ready)[:300]}", flush=True)
     for position, (number, expectation) in enumerate(todo):
@@ -321,7 +330,7 @@ def sweep(args) -> int:
             }, args.timeout)
         except (TimeoutError, RuntimeError) as error:
             daemon.kill()
-            daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
+            daemon = start_daemon()
             status = "FAIL-COMPILE-TIMEOUT" if isinstance(error, TimeoutError) else "FAIL-DAEMON-EXIT"
             record.update(status=status, detail=str(error)[:300])
         else:
@@ -346,7 +355,7 @@ def sweep(args) -> int:
                 if elapsed > args.hang_seconds:
                     record["hang_suspected"] = True
                     daemon.kill()
-                    daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, stderr_path)
+                    daemon = start_daemon()
             elif expectation.kind == "compile_error":
                 record.update(status="FAIL-ACCEPTED", detail=f"compiled; want {expectation.error_code or 'an error'}")
             elif expectation.kind == "check_only":
@@ -378,6 +387,7 @@ def sweep(args) -> int:
                   f"{len(todo) - position - 1} fixtures not run (continue with --resume)", flush=True)
             break
     daemon.kill()
+    digests_seen.append(shader_digest(args.laniusc))
     write(complete=len(results) == len(cases))
     passed = sum(1 for result in results if result["status"] in OK_STATUSES)
     print(f"\nfixture_sweep: {passed}/{len(results)} passed or compiled; wrote {relative(result_path)}")
@@ -392,12 +402,32 @@ def parse_shard(text: str) -> tuple[int, int]:
 
 
 def laniusc_version(laniusc: str) -> dict:
+    """The binary's own hash plus the shader digest it reports.
+
+    The compiler loads its kernels at run time from the build's shared artifact
+    directory, so a copied binary can run newer kernels than it was built with:
+    the shader digest is re-read when a daemon starts and at the end of a shard.
+    """
     try:
         text = subprocess.run([laniusc, "--version"], capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired):
         return {}
     fields = dict(line.split(": ", 1) for line in text.splitlines() if ": " in line)
-    return {key: fields.get(key) for key in ("shader-artifact-digest", "shader-artifact-count", "build-profile")}
+    version = {key: fields.get(key) for key in ("shader-artifact-digest", "shader-artifact-count", "build-profile")}
+    try:
+        version["binary-sha256"] = hashlib.sha256(pathlib.Path(laniusc).read_bytes()).hexdigest()[:16]
+    except OSError:
+        pass
+    return version
+
+
+def shader_digest(laniusc: str) -> str | None:
+    try:
+        text = subprocess.run([laniusc, "--version"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.search(r"^shader-artifact-digest: (\S+)", text, re.M)
+    return match.group(1) if match else None
 
 
 # ---------------------------------------------------------------------------
