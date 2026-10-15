@@ -96,7 +96,7 @@ fn std_env_current_dir_read_into_executes_on_x86() {
         let run_dir = common::TempArtifact::new("lcwd", "run", None);
         std::fs::create_dir(run_dir.path()).expect("create current directory fixture");
         let executable = run_dir.path().join("std_env_current_dir_checked");
-        std::fs::write(&executable, &bytes).expect("write current directory ELF");
+        common::x86_jumps::write_x86_64_executable(&executable, &bytes).expect("write current directory ELF");
         let mut permissions = std::fs::metadata(&executable)
             .expect("stat current directory ELF")
             .permissions();

@@ -7,8 +7,12 @@ StructuredBuffer<uint> target_lir_total;
 RWStructuredBuffer<X86LirCore> target_lir_core;
 RWStructuredBuffer<X86LirOperands> target_lir_operands;
 StructuredBuffer<uint> target_semantic_origin;
+StructuredBuffer<uint> target_lir_flags;
 StructuredBuffer<uint> semantic_to_target_start;
 StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
+StructuredBuffer<uint> opt_ir_total;
+StructuredBuffer<uint> x86_position_by_semantic;
+StructuredBuffer<uint> target_lir_offset;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -26,6 +30,31 @@ uint target_value(uint semantic_row, uint total)
     return target_row < total ? target_row : INVALID;
 }
 
+// A branch names its destination by a control row of the semantic schedule.
+// `after` selects the first target row after that control row's own
+// instructions: an IF_BEGIN's false edge skips the ELSE row's jump to the
+// join. A control row in an unreachable block emits no instruction (the
+// ELSE after a then-arm that returns), so scatter never publishes its start.
+// The schedule offsets place it anyway: its instructions begin at its own
+// offset and end at the next position's offset. Inline clones sit at the
+// call site, one instruction per row, and scatter publishes each clone's row.
+uint branch_target(uint semantic_row, uint after, bool inline_clone, uint total)
+{
+    if (inline_clone)
+    {
+        uint start = target_value(semantic_row, total);
+        return start < total && after < total - start ? start + after : INVALID;
+    }
+    uint semantic_count = min(gParams.semantic_capacity, opt_ir_total[0u]);
+    uint position = semantic_row < semantic_count
+        ? x86_position_by_semantic[semantic_row] : INVALID;
+    if (position >= semantic_count) return INVALID;
+    uint target_row = after == 0u ? target_lir_offset[position]
+        : position + 1u < semantic_count ? target_lir_offset[position + 1u]
+        : total;
+    return target_row < total ? target_row : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -38,6 +67,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     X86LirCore core = target_lir_core[page_row];
     X86LirOperands operands = target_lir_operands[page_row];
+    bool inline_clone =
+        (target_lir_flags[page_row] & TARGET_LIR_FLAG_INLINE_CLONE) != 0u;
     if (core.result_or_target != INVALID &&
         core.op != X86_LIR_OP_COMPARE_BRANCH_FALSE &&
         core.op != X86_LIR_OP_SELECT_STORE &&
@@ -120,9 +151,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.a = target_value(operands.a, total);
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
             operands.b = target_value(operands.b, total);
-        uint target = target_value(core.result_or_target, total);
-        core.result_or_target = target < total
-            ? target + operands.c : INVALID;
+        core.result_or_target = branch_target(core.result_or_target,
+            operands.c, inline_clone, total);
         operands.c = 0u;
     }
     else if (core.op == X86_LIR_OP_SELECT_STORE)
@@ -135,8 +165,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (core.op == X86_LIR_OP_BRANCH)
     {
         operands.a = target_value(operands.a, total);
-        uint target = target_value(operands.b, total);
-        operands.b = target < total ? target + operands.c : INVALID;
+        operands.b = branch_target(operands.b, operands.c, inline_clone, total);
         operands.c = 0u;
     }
 
