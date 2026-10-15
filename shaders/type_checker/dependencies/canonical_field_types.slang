@@ -7,7 +7,6 @@ import type_checker.concrete_type_equality;
 import dependency_interface;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
-import type_checker.constant_constraints;
 import type_checker.dependencies.constant_view;
 
 public StructuredBuffer<uint> canonical_type_roots;
