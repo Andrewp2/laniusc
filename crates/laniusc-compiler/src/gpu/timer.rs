@@ -88,6 +88,9 @@ struct GpuTimerRecordingState {
     phase: GpuCompilerPhase,
     timestamps_inside_passes: bool,
     operation_capture_enabled: bool,
+    /// Set for a `GpuJobTimingSession`: it owns operations recorded outside
+    /// every phase timer, and phase timers may nest inside it.
+    job_session: bool,
     stamp_metadata: Vec<(String, GpuCompilerPhase)>,
 }
 
@@ -96,7 +99,9 @@ struct GpuTimerRecordingState {
 /// The guard owns a reference-counted recording handle rather than borrowing
 /// the timer, so compiler phases may continue to change phase metadata while
 /// the scope is active. Nested phase helpers may reuse the same timer, while a
-/// second timer is rejected so one command stream has one timing owner.
+/// second timer is rejected so one command stream has one timing owner. The
+/// one exception is a job timing session, which only owns work that no phase
+/// timer records; a phase timer nested inside it takes over until it ends.
 pub struct GpuOperationCaptureGuard {
     recording: Arc<Mutex<GpuTimerRecordingState>>,
 }
@@ -157,6 +162,7 @@ impl GpuTimer {
                     .features()
                     .contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES),
                 operation_capture_enabled: false,
+                job_session: false,
                 stamp_metadata: vec![],
             })),
         }
@@ -173,8 +179,12 @@ impl GpuTimer {
         ACTIVE_OPERATION_TIMER.with(|active| {
             let mut active = active.borrow_mut();
             if let Some(current) = active.last() {
+                let nested_in_job_session = current
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .job_session;
                 assert!(
-                    Arc::ptr_eq(current, &self.recording),
+                    Arc::ptr_eq(current, &self.recording) || nested_in_job_session,
                     "nested GPU operation timing scopes must use the same timer"
                 );
             }
@@ -347,10 +357,25 @@ pub(crate) fn stamp_active_operation(encoder: &mut wgpu::CommandEncoder, label: 
     ACTIVE_OPERATION_TIMER.with(|active| {
         let recording = active.borrow().last().cloned();
         if let Some(recording) = recording {
+            if job_session_full(&recording, 0) {
+                // The job then fails the timestamp coverage check instead of
+                // panicking the daemon.
+                return;
+            }
             stamp_recording(&recording, encoder, label.into());
             OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
         }
     });
+}
+
+/// Whether `recording` is a job timing session with at most `reserve` free
+/// queries. Sessions span whole jobs, whose dispatch counts grow with the
+/// program, so they stop stamping instead of exhausting their query set.
+fn job_session_full(recording: &Arc<Mutex<GpuTimerRecordingState>>, reserve: u32) -> bool {
+    let recording = recording
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    recording.job_session && recording.next + reserve >= recording.capacity
 }
 
 /// Records one kernel completion while its batched compute pass remains open.
@@ -361,6 +386,9 @@ pub(crate) fn stamp_active_operation_in_pass(
     ACTIVE_OPERATION_TIMER.with(|active| {
         let recording = active.borrow().last().cloned();
         if let Some(recording) = recording {
+            if job_session_full(&recording, 0) {
+                return;
+            }
             assert!(
                 recording
                     .lock()
@@ -373,6 +401,96 @@ pub(crate) fn stamp_active_operation_in_pass(
             OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
         }
     });
+}
+
+/// Marks the start of a compute pass that the job timing session owns. Its
+/// operations are spread over many submissions, so without this boundary the
+/// first kernel of each pass would absorb the host time since the previous
+/// session stamp. The boundary is a submission gap, not an operation stamp.
+pub(crate) fn stamp_job_session_pass_begin(encoder: &mut wgpu::CommandEncoder, label: &str) {
+    ACTIVE_OPERATION_TIMER.with(|active| {
+        let recording = active.borrow().last().cloned();
+        if let Some(recording) = recording {
+            let job_session = recording
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .job_session;
+            // Pass boundaries only refine attribution: keep the last quarter
+            // of the query set for operation stamps.
+            let reserve = COMPILE_QUERY_CAPACITY / 4;
+            if job_session && !job_session_full(&recording, reserve) {
+                stamp_recording(&recording, encoder, format!("{label}.submission.begin"));
+            }
+        }
+    });
+}
+
+/// Times the GPU operations of one compiler job that no phase timer records,
+/// such as program evidence and the x86 link, so a profiled job stamps every
+/// dispatch it records. Phase timers nest inside it.
+pub struct GpuJobTimingSession {
+    timer: GpuTimer,
+    gpu_anchor: std::time::Instant,
+    capture: Option<GpuOperationCaptureGuard>,
+}
+
+impl GpuJobTimingSession {
+    /// Starts a session when compile timing or tracing is requested.
+    pub fn begin(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
+        if !compile_timing_requested() {
+            return None;
+        }
+        let mut timer = GpuTimer::new(
+            device,
+            queue,
+            COMPILE_QUERY_CAPACITY,
+            GpuCompilerPhase::ArtifactEmission,
+        );
+        timer
+            .recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .job_session = true;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("gpu.job_timing.begin"),
+        });
+        timer.stamp(&mut encoder, "gpu.job_timing.begin");
+        let gpu_anchor = crate::gpu::passes_core::submit_with_progress(
+            queue,
+            "gpu.job_timing.begin",
+            encoder.finish(),
+        )
+        .gpu_anchor;
+        let capture = Some(timer.capture_operations());
+        Some(Self {
+            timer,
+            gpu_anchor,
+            capture,
+        })
+    }
+
+    /// Ends the session. When `record` is set, reads its timestamps and adds
+    /// their GPU spans to the trace. Only pass `record` for a job that
+    /// completed: every stamped encoder must have been submitted, because
+    /// resolving a timestamp that was never written waits forever.
+    pub fn finish(mut self, device: &wgpu::Device, queue: &wgpu::Queue, record: bool) {
+        self.capture = None;
+        if !record {
+            return;
+        }
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("gpu.job_timing.resolve"),
+        });
+        self.timer.resolve(&mut encoder);
+        queue.submit(Some(encoder.finish()));
+        if let Some(stamps) = self.timer.try_read(device) {
+            crate::lexer::driver::timing::print_timer_trace(
+                &stamps,
+                self.timer.period_ns(),
+                self.gpu_anchor,
+            );
+        }
+    }
 }
 
 fn stamp_recording(

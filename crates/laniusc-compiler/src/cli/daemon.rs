@@ -791,8 +791,16 @@ async fn run_session(
             |id| format!("daemon.job.{id}"),
         );
         let job_trace_started = Instant::now();
+        // Program evidence and the x86 link record dispatches outside every
+        // phase timer; the session stamps them in profiled jobs.
+        let job_timing =
+            crate::gpu::timer::GpuJobTimingSession::begin(&compiler.gpu().device, &compiler.gpu().queue);
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        if let Some(job_timing) = job_timing {
+            let completed = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+            job_timing.finish(&compiler.gpu().device, &compiler.gpu().queue, completed);
+        }
         crate::gpu::trace::record_host_span(
             "host.daemon",
             &job_trace_name,

@@ -407,6 +407,7 @@ pub(crate) fn begin_counted_compute_pass<'encoder>(
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .record_pass(label);
     }
+    crate::gpu::timer::stamp_job_session_pass_begin(encoder, label);
     encoder.begin_compute_pass(descriptor)
 }
 
