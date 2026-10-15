@@ -612,7 +612,7 @@ def elf_path(elf_dir: pathlib.Path, name: str) -> pathlib.Path:
 
 
 def render_jump_check(results: dict[str, dict], elf_dir: pathlib.Path) -> list[str]:
-    """Static check of every kept ELF (tools/x86_jump_check.py): jumps into other functions."""
+    """Static check of every kept ELF (tools/x86_jump_check.py): jumps into other functions or back to their own entry."""
     from x86_jump_check import describe, jumps_leaving_function
 
     if shutil.which("objdump") is None:
@@ -629,10 +629,10 @@ def render_jump_check(results: dict[str, dict], elf_dir: pathlib.Path) -> list[s
             flagged.append((name, result, jumps))
     if not checked:
         return []
-    lines = ["## Jumps that leave their function", ""]
+    lines = ["## Jumps that leave their function or return to its entry", ""]
     lines.append(f"tools/x86_jump_check.py over the {checked} compiled programs kept in `{relative(elf_dir)}`: "
-                 f"{len(flagged)} contain a jmp/jcc into another function, a miscompile whether or not "
-                 "the run passed.")
+                 f"{len(flagged)} contain a jmp/jcc into another function or to its own function's entry, "
+                 "a miscompile whether or not the run passed.")
     if flagged:
         lines.append("")
         lines.append("| fixture | status | jumps | first |")

@@ -105,6 +105,23 @@ class JumpCheckTests(unittest.TestCase):
 
         self.assertEqual(jumps, [{"at": 0x400080, "op": "je", "target": 0x40008C, "function": 0x400078}])
 
+    def test_reports_a_frameless_leaf_jumping_to_its_own_entry(self):
+        code = bytes.fromhex(
+            "e807000000"    # 0x400078 call 0x400084 (main)
+            "b83c000000"    # 0x40007d mov eax, 60
+            "0f05"          # 0x400082 syscall
+            "85ff"          # 0x400084 main, frameless: test edi, edi
+            "74fc"          # 0x400086 je 0x400084, its own entry
+            "7400"          # 0x400088 je 0x40008a, fine
+            "c3")           # 0x40008a ret
+        with tempfile.TemporaryDirectory() as directory:
+            elf = Path(directory) / "program.elf"
+            elf.write_bytes(bytes(0x78) + code)
+            jumps = jumps_leaving_function(str(elf))
+
+        self.assertEqual(jumps, [{"at": 0x400086, "op": "je", "target": 0x400084, "function": 0x400084,
+                                  "entry": True}])
+
 
 if __name__ == "__main__":
     unittest.main()

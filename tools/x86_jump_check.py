@@ -8,12 +8,18 @@ function is a miscompile even if the program happens to pass. One such bug: the
 conditional jump into an `else` block whose arms all return pointed at another
 function's `ret`, so the program skipped `leave` and returned to address 0.
 
+The same bug in a frameless leaf function (no prologue) sent the jump to the
+function's own first instruction instead, so the program looped forever; a jump to
+its own function's entry is reported too, since the code laniusc emits never
+branches back to an entry.
+
 The ELFs laniusc writes have one LOAD segment at 0x400000 with code from 0x400078
 and no symbols, so this disassembles that segment linearly with objdump and takes
-every `push %rbp; mov %rsp,%rbp` prologue as a function start. A jmp or jcc whose
-target is outside [its function's start, the next function's start) is reported.
-Calls are not checked. Data placed in the code segment can misalign the linear
-disassembly, so treat a report as a lead and confirm it in gdb.
+every `push %rbp; mov %rsp,%rbp` prologue and every call target as a function
+start. A jmp or jcc whose target is outside [its function's start, the next
+function's start), or is its function's start, is reported. Calls are not checked.
+Data placed in the code segment can misalign the linear disassembly, so treat a
+report as a lead and confirm it in gdb.
 
 CPU only: it never runs the program.
 """
@@ -29,8 +35,14 @@ CODE_START = 0x400078
 LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*(\S+)\s*(.*)$")
 
 
+def branch_target(operands: str) -> int | None:
+    match = re.match(r"0x([0-9a-f]+)", operands)
+    return int(match.group(1), 16) if match else None
+
+
 def jumps_leaving_function(elf: str) -> list[dict]:
-    """Every jmp/jcc whose target is outside its function, as {at, op, target, function}."""
+    """Every jmp/jcc whose target is outside its function or is its function's entry, as
+    {at, op, target, function} (plus "entry": True for the second kind)."""
     text = subprocess.run(
         ["objdump", "-D", "-b", "binary", "-m", "i386:x86-64", "--adjust-vma=0x400000",
          f"--start-address={CODE_START:#x}", elf],
@@ -40,25 +52,32 @@ def jumps_leaving_function(elf: str) -> list[dict]:
         match = LINE.match(line)
         if match:
             rows.append((int(match.group(1), 16), match.group(2).strip(), match.group(3), match.group(4)))
-    starts = [address for index, (address, code, _, _) in enumerate(rows)
-              if code == "55" and index + 1 < len(rows) and rows[index + 1][1] == "48 89 e5"]
+    addresses = {address for address, _, _, _ in rows}
+    starts = {address for index, (address, code, _, _) in enumerate(rows)
+              if code == "55" and index + 1 < len(rows) and rows[index + 1][1] == "48 89 e5"}
+    starts |= {target for _, _, mnemonic, operands in rows
+               if mnemonic.startswith("call") and (target := branch_target(operands)) in addresses}
+    starts = sorted(starts)
     found = []
     for address, _, mnemonic, operands in rows:
-        target = re.match(r"0x([0-9a-f]+)", operands) if mnemonic.startswith("j") else None
-        if not target:
+        target = branch_target(operands) if mnemonic.startswith("j") else None
+        if target is None:
             continue
-        target = int(target.group(1), 16)
         index = bisect.bisect_right(starts, address) - 1
         if index < 0:
             continue
         end = starts[index + 1] if index + 1 < len(starts) else 1 << 64
         if not starts[index] <= target < end:
             found.append({"at": address, "op": mnemonic, "target": target, "function": starts[index]})
+        elif target == starts[index]:
+            found.append({"at": address, "op": mnemonic, "target": target, "function": starts[index],
+                          "entry": True})
     return found
 
 
 def describe(jump: dict) -> str:
-    return f"{jump['op']} at {jump['at']:#x} -> {jump['target']:#x} (function at {jump['function']:#x})"
+    where = "its own function's entry" if jump.get("entry") else "outside its function"
+    return f"{jump['op']} at {jump['at']:#x} -> {jump['target']:#x}, {where} (function at {jump['function']:#x})"
 
 
 def main() -> int:
@@ -69,7 +88,7 @@ def main() -> int:
     for elf in sys.argv[1:]:
         jumps = jumps_leaving_function(elf)
         bad += bool(jumps)
-        print(f"{len(jumps):4} jumps leave their function  {elf}"
+        print(f"{len(jumps):4} bad jumps  {elf}"
               + "".join(f"\n       {describe(jump)}" for jump in jumps[:5]))
     return 1 if bad else 0
 
