@@ -10,27 +10,33 @@ import type_checker.program_evidence.proof_term_normalization;
 import type_checker.owned_type_constraint_contract;
 import type_checker.scoped_type_equality;
 
+// Row decoders read their row once and combine pure field tests without
+// short-circuit branches (a failed read leaves an all-INVALID row).
 public bool pps_type_reference(uint2 reference)
 {
     if (reference.y == PEV_INVALID) return false;
     if (reference.x == 1u) return pev_scalar_is_valid(reference.y);
     if (reference.x == 2u) return pev_admitted_parameter_has_domain(reference.y, false);
+    if (reference.x != 3u) return false;
     uint4 low; uint4 high;
-    return reference.x == 3u && pps_read8(PPS_TERM_NODES, reference.y, low, high) && low.x >= 1u && low.x <= 4u;
+    bool read = pps_read8(PPS_TERM_NODES, reference.y, low, high);
+    return read & (low.x >= 1u) & (low.x <= 4u);
 }
 public bool pps_constant_value(uint row, out uint3 value)
 {
     value = uint3(0u, 0u, 0u); uint4 low; uint4 high;
-    if (!pps_read8(PPS_TERM_NODES, row, low, high) || low.x != 6u ||
-        any(high != uint4(0u, 0u, 0u, 0u)) || !constant_value_is_valid(low.yzw)) return false;
+    bool read = pps_read8(PPS_TERM_NODES, row, low, high);
+    if (!(read & (low.x == 6u) & all(high == uint4(0u, 0u, 0u, 0u)) &
+        constant_value_is_valid(low.yzw))) return false;
     value = low.yzw; return true;
 }
 public bool pps_constant_projection(uint row, out uint target, out uint2 child)
 {
     target = 0u; child = uint2(0u, PEV_INVALID); uint4 low; uint4 high;
-    if (!pps_read8(PPS_TERM_NODES, row, low, high) || low.x != 5u || !scalar_is_integer(low.y) ||
-        any(low.zw != uint2(0u, 0u)) || any(high.zw != uint2(0u, 0u)) ||
-        high.x < 0x80000001u || high.x > 0x80000003u || high.y == PEV_INVALID) return false;
+    bool read = pps_read8(PPS_TERM_NODES, row, low, high);
+    if (!(read & (low.x == 5u) & scalar_is_integer(low.y) & all(low.zw == uint2(0u, 0u)) &
+        all(high.zw == uint2(0u, 0u)) & (high.x >= 0x80000001u) & (high.x <= 0x80000003u) &
+        (high.y != PEV_INVALID))) return false;
     target = low.y; child = uint2(high.x & 0x7fffffffu, high.y); return true;
 }
 public bool pps_constant_reference(uint2 reference)
@@ -51,9 +57,12 @@ public uint pps_constant_reference_scalar(uint2 reference)
 }
 public bool pps_read_term_node(uint row, out uint4 low, out uint4 high)
 {
-    if (!pps_read8(PPS_TERM_NODES, row, low, high) || low.x < 1u || low.x > 6u) return false;
-    return low.x != 1u || (low.w <= 32u && (low.w != 0u || low.z == 0u) &&
-        pps_span(PPS_TERM_EDGES, low.z, low.w));
+    uint4 l; uint4 h;
+    bool read = pps_read8(PPS_TERM_NODES, row, l, h);
+    low = l; high = h;
+    if (!(read & (l.x >= 1u) & (l.x <= 6u))) return false;
+    if (l.x != 1u) return true;
+    return (l.w <= 32u) & ((l.w != 0u) | (l.z == 0u)) & pps_span(PPS_TERM_EDGES, l.z, l.w);
 }
 public bool pps_term_child(uint4 low, uint4 high, uint slot,
     out uint2 reference, out uint domain)
@@ -65,10 +74,14 @@ public bool pps_term_child(uint4 low, uint4 high, uint slot,
         return low.w <= 32u && slot < low.w &&
             pps_span(PPS_TERM_EDGES, low.z, low.w) && pps_read2(PPS_TERM_EDGES, low.z + slot, 0u, reference);
     }
-    if (low.x == 5u && slot == 0u)
-    { domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = high.xy; return pps_constant_reference(reference); }
-    if (low.x == 2u && slot == 1u)
-    { domain = PEV_ADMITTED_DOMAIN_CONSTANT; reference = high.zw; return pps_constant_reference(reference); }
+    // A projection's operand (kind 5, slot 0) and an array's length (kind 2,
+    // slot 1) share one constant reference check.
+    if ((low.x == 5u && slot == 0u) || (low.x == 2u && slot == 1u))
+    {
+        domain = PEV_ADMITTED_DOMAIN_CONSTANT;
+        reference = low.x == 5u ? high.xy : high.zw;
+        return pps_constant_reference(reference);
+    }
     if (low.x >= 2u && low.x <= 4u && slot == 0u)
     { reference = high.xy; return pps_type_reference(reference); }
     return false;
@@ -95,15 +108,8 @@ public struct SolverProofTermGraph : IParameterScopedTypeGraph,
     public static uint metadata(uint instance, uint field)
     {
         uint4 low; uint4 high;
-        if (!pps_read_term_node(instance, low, high)) return PEV_INVALID;
-        if (field == 0u) return low.x;
-        if (field == 1u) return low.x == 1u ? low.y : PEV_INVALID;
-        if (field == 2u) return low.x == 1u ? low.w : 0u;
-        if (field == 3u) return high.x;
-        if (field == 4u) return high.y;
-        if (field == 5u) return low.x == 2u ? high.z & 0x7fffffffu : PEV_INVALID;
-        if (field == 6u) return low.x == 2u ? high.w : PEV_INVALID;
-        return PEV_INVALID;
+        bool admitted = pps_read_term_node(instance, low, high);
+        return select(admitted, pev_node_row_field(low, high, field), PEV_INVALID);
     }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
     {
@@ -116,9 +122,9 @@ public struct SolverProofTermGraph : IParameterScopedTypeGraph,
 }
 public struct SolverProofTermSink : IProofNormalizationSink
 {
-    public static bool begin_node(uint row, uint4 low, uint4 high)
+    public static bool begin_node(uint mode, uint row, uint4 low, uint4 high)
     { return pps_write8(PPS_TERM_NODES, row, low, high); }
-    public static bool set_child(uint row, uint slot, uint2 reference)
+    public static bool set_child(uint mode, uint row, uint slot, uint2 reference)
     {
         // This row is reserved but deliberately not yet readable through the
         // admitted graph adapter. Only its unique emitter may fill children.

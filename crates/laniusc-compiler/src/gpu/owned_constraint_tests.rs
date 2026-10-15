@@ -377,6 +377,12 @@ fn physical_gpu_owned_constraints_preserve_matching_overlap_and_fixed_contracts(
     let operations = storage_ro_from_u32s(&gpu.device, "owned_constraints.operations", &operation_words);
     let word_count = CASES.len() * 4;
     let results = storage_rw_for_array::<u32>(&gpu.device, "owned_constraints.results", word_count);
+    // One thread-scratch slot per lane; family passes run in order.
+    let scratch = storage_rw_for_array::<u32>(
+        &gpu.device,
+        "owned_constraints.thread_scratch",
+        super::typed_constant_tests::thread_scratch_words(32),
+    );
     let mut dispatches = Vec::with_capacity(FAMILIES.len());
     for (key, case_ids) in FAMILIES {
         let case_ids = storage_ro_from_u32s(&gpu.device, &format!("{key}.case_ids"), case_ids);
@@ -387,6 +393,7 @@ fn physical_gpu_owned_constraints_preserve_matching_overlap_and_fixed_contracts(
             ("fixture_ranges", ranges.as_entire_binding()),
             ("fixture_ops", operations.as_entire_binding()),
             ("fixture_case_ids", case_ids.as_entire_binding()),
+            ("thread_scratch", scratch.as_entire_binding()),
         ];
         passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
         let group = passes_core::bind_group::create_bind_group_from_bindings(

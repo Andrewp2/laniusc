@@ -77,6 +77,9 @@ fn main()->i32 {if(keep(false)){return 1;}return 0;}
                 }
             }
         }
+        // LANIUS_DEBUG_CAPTURE_PASS only: save the selected dispatch for the
+        // CPU kernel replay (these compiles reach the imported-method checks).
+        write_debug_dispatch_capture();
     });
 }
 

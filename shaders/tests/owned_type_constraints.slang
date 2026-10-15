@@ -4,6 +4,7 @@ import primitive_types;
 // operation method is its only route to production matcher APIs.
 import type_checker.owned_type_constraint_engine;
 import type_checker.owned_type_constraint_contract;
+import thread_scratch;
 
 RWStructuredBuffer<uint4> results;
 StructuredBuffer<uint2> fixture_ranges;
@@ -224,13 +225,13 @@ bool final_invariant(uint id, inout OwnedConstraintState state)
 {
     if (id == 8u)
         return state.bound.x == 1u && state.bound.z == 1u &&
-            all(state.bindings[0u].yz == uint2(1u, 3u)) &&
-            all(state.bindings[64u].yz == uint2(1u, 4u));
+            all(owned_constraint_binding_cell(state.frame, 0u).yz == uint2(1u, 3u)) &&
+            all(owned_constraint_binding_cell(state.frame, 64u).yz == uint2(1u, 4u));
     if (id == 10u)
         return (state.bound.x == 1u && state.bound.z == 0u &&
-            all(state.bindings[0u] == uint4(1u, 2u, 40u, 0u))) ||
+            all(owned_constraint_binding_cell(state.frame, 0u) == uint4(1u, 2u, 40u, 0u))) ||
             (state.bound.x == 0u && state.bound.z == 1u &&
-            all(state.bindings[64u] == uint4(0u, 2u, 20u, 0u)));
+            all(owned_constraint_binding_cell(state.frame, 64u) == uint4(0u, 2u, 20u, 0u)));
     if (id == 11u) return state.bound.x == 1u && state.bound.z == 0u;
     if (id == 15u)
         return state.seen.x == 1u && state.seen.y == 1u &&
@@ -265,7 +266,7 @@ void run_owned_fixture<Operations : IOwnedFixtureOperations>(uint lane)
     uint ranges; uint stride; uint rows;
     fixture_ranges.GetDimensions(ranges, stride);
     fixture_ops.GetDimensions(rows, stride);
-    if (id >= ranges || (rows & 1u) != 0u) return;
+    if (id >= ranges || (rows & 1u) != 0u || thread_scratch_begin(lane) <= lane) return;
     uint2 span = fixture_ranges[id]; uint count = rows / 2u;
     if (span.y == 0u || span.y > FIXTURE_MAX_OPERATIONS ||
         span.x > count || span.y > count - span.x) return;

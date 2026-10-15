@@ -9,7 +9,7 @@ struct OverlapFixtureOperations : IOwnedFixtureOperations
         switch (opcode)
         {
         case OP_BEGIN_OVERLAP:
-            owned_overlap_begin<LeftGraph, RightGraph>(args.x, args.y, 17u, 17u, 128u, budget, state); return true;
+            owned_overlap_begin<LeftGraph, RightGraph>(args.x, args.y, 17u, 17u, 128u, budget, owned_constraint_frame(0u), state); return true;
         case OP_OVERLAP:
             owned_overlap_match<LeftGraph, RightGraph>(args.xy, args.zw, state); return true;
         case OP_FINISH_OVERLAP:

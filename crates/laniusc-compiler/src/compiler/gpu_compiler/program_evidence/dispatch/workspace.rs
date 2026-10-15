@@ -142,6 +142,16 @@ impl WorkspaceLease {
         })
     }
 
+    /// One fixed physical role that every dispatch of the session shares, for
+    /// dispatch-transient tables no dispatch reads from an earlier one. Its
+    /// retained capacity, and so its binding identity, stays stable.
+    pub(super) fn shared(&self, label: &str) -> WorkspaceSlot {
+        WorkspaceSlot {
+            lease: self.clone(),
+            key: label.to_owned(),
+        }
+    }
+
     pub(super) fn initialized(
         &self,
         label: &str,
