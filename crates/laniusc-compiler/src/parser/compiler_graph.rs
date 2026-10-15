@@ -999,6 +999,7 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "tree_prefix"
             | "tree_prefix_block_max"
             | "tree_prefix_block_max_tree"
+            | "tree_prefix_local_max"
             | "tree_depth_status"
             | "hir_literal_status"
             | "tree_depth_block_max"
@@ -1519,6 +1520,11 @@ fn build_graph(
             "tree_prefix_block_max_tree",
             ResourceDomain::RawNodes,
             u64::from(prefix_leaf_base) * 8,
+        ),
+        (
+            "tree_prefix_local_max",
+            ResourceDomain::RawNodes,
+            prefix_blocks * 256 * 4,
         ),
         (
             "prod_arity",
@@ -2508,6 +2514,11 @@ fn build_graph(
                 "tree_prefix_block_max",
                 Some(AccessMode::Write),
             ),
+            (
+                "prefix_local_max",
+                "tree_prefix_local_max",
+                Some(AccessMode::Write),
+            ),
         ],
     )?;
     static_pass(
@@ -2539,8 +2550,8 @@ fn build_graph(
             ("tree_count_status", "partial_parse_status", None),
             ("node_kind", "node_kind", Some(AccessMode::Write)),
             ("parent", "parent", Some(AccessMode::Write)),
-            ("prefix_block_max", "tree_prefix_block_max", None),
             ("prefix_block_max_tree", "tree_prefix_block_max_tree", None),
+            ("prefix_local_max", "tree_prefix_local_max", None),
         ],
     )?;
     indirect(
@@ -2558,8 +2569,8 @@ fn build_graph(
             ("first_child", "first_child", Some(AccessMode::Write)),
             ("next_sibling", "next_sibling", Some(AccessMode::Write)),
             ("subtree_end", "subtree_end", Some(AccessMode::Write)),
-            ("prefix_block_max", "tree_prefix_block_max", None),
             ("prefix_block_max_tree", "tree_prefix_block_max_tree", None),
+            ("prefix_local_max", "tree_prefix_local_max", None),
         ],
     )?;
     indirect(&mut graph, "tree_spans", "tree_active_dispatch_args")?;

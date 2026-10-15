@@ -971,6 +971,7 @@ impl ParserBuffers {
             .expect("parser graph must own tree-prefix block maxima");
         let tree_prefix_block_max_tree_base = next_power_of_two_u32(tree_n_prefix_blocks).max(1);
         let tree_prefix_block_max_tree = graph_buffer!(i32, "tree_prefix_block_max_tree");
+        let tree_prefix_local_max = graph_buffer!(i32, "tree_prefix_local_max");
         let tree_prefix_max_build_steps = make_tree_prefix_max_build_steps(
             device,
             tree_n_prefix_blocks,
@@ -2085,6 +2086,7 @@ impl ParserBuffers {
             tree_prefix,
             tree_prefix_block_max,
             tree_prefix_block_max_tree,
+            tree_prefix_local_max,
             tree_prefix_max_build_steps,
             tree_params,
             tree_span_params,

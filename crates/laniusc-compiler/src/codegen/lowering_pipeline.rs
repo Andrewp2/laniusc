@@ -544,6 +544,10 @@ impl GpuLoweringPipeline {
         selected_replay_hir: Option<u32>,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        // Like `record`, time every lowering operation; without this scope
+        // the semantic, optimizer and count-page kernels have no timestamps
+        // and their time shows up under the first stamped target pass.
+        let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
         }
