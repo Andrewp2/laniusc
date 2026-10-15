@@ -368,7 +368,7 @@ pub struct GpuTypeChecker {
 /// Marker returned when type-check work has been recorded into a command
 /// encoder and must still be submitted/read back by the caller.
 pub struct RecordedTypeCheck {
-    /// The status words with which call inference stopped on an error.
+    /// The status words of the round in which an error ended call inference.
     inference_error: Option<[u32; 4]>,
 }
 
