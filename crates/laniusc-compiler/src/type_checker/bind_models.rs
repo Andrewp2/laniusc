@@ -166,6 +166,8 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) substitution: super::substitution_passes::SubstitutionOperations,
     pub(in crate::type_checker) project_literal_contexts: Option<ComputeOperation>,
     pub(in crate::type_checker) record_literal_inference: Option<RecordLiteralInferenceOperations>,
+    pub(in crate::type_checker) field_expected_ids: super::match_passes::FieldExpectedIdOperations,
+    pub(in crate::type_checker) validation_call_envs: super::match_passes::ValidationCallEnvOperation,
     pub(in crate::type_checker) materialize_match_payloads: Option<ComputeOperation>,
     pub(in crate::type_checker) return_type_source_index: Option<ComputeOperation>,
     pub(in crate::type_checker) return_type_index_clear: Option<ComputeOperation>,

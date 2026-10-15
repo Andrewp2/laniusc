@@ -1260,6 +1260,7 @@ impl GpuTypeChecker {
                         encoder,
                         &bind_groups.semantic_projection.struct_literal_refs_early,
                     )?;
+                bind_groups.calls.field_expected_ids.record_early(encoder)?;
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instance_fields.done");
@@ -1691,6 +1692,7 @@ impl GpuTypeChecker {
                     }
                     records.fields.record(encoder)?;
                     records.references.record(encoder)?;
+                    bind_groups.calls.field_expected_ids.record_inference(encoder)?;
                 }
                 if enums_required || dependency_types_present {
                     module_path.bind_groups.consume_value_enum_units.record_as(
@@ -1966,6 +1968,9 @@ impl GpuTypeChecker {
             bind_groups.returns.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.returns.done");
+            }
+            if module_path.dependency_visibility.is_some() {
+                bind_groups.calls.validation_call_envs.record(encoder)?;
             }
             if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                 record_each_dependency_page(device, queue, encoder, pages, |encoder| {

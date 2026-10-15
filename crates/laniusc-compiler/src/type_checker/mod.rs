@@ -50,6 +50,7 @@ mod operations;
 mod params;
 mod preflight;
 mod record;
+mod match_passes;
 mod resident;
 mod substitution_passes;
 mod semantic_interface;
