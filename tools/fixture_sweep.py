@@ -194,6 +194,32 @@ def diagnostic_fields(response: dict) -> dict:
     }
 
 
+STAGE_DETAIL_RE = re.compile(
+    r"internal compiler phase error.*|GPU [\w -]*rejection.*|GPU type-check detail.*|.*readback did not complete.*")
+
+
+def stage_detail(stderr_path: pathlib.Path, offset: int) -> str | None:
+    """The first internal error line the daemon wrote after `offset`, if any."""
+    try:
+        with open(stderr_path, "rb") as stream:
+            stream.seek(offset)
+            text = stream.read(1 << 20).decode("utf-8", "replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        match = STAGE_DETAIL_RE.search(line)
+        if match:
+            return match.group(0).strip()[:300]
+    return None
+
+
+def stderr_size(path: pathlib.Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 def run_elf(elf: pathlib.Path) -> dict:
     elf.chmod(0o755)
     try:
@@ -287,6 +313,7 @@ def sweep(args) -> int:
             print(f"{'SKIPPED':22} {0.0:6.1f}s  {name}", flush=True)
             write(complete=len(results) == len(cases))
             continue
+        stderr_offset = stderr_size(stderr_path)
         try:
             response = daemon.request({
                 "id": f"fixture-{number}", "command": "compile", "emit": "x86_64",
@@ -303,6 +330,9 @@ def sweep(args) -> int:
             if not compiled:
                 fields = diagnostic_fields(response)
                 record.update(fields)
+                detail = stage_detail(stderr_path, stderr_offset)
+                if detail:
+                    record["stage_detail"] = detail
                 if expectation.kind == "compile_error":
                     if expectation.error_code and fields["code"] != expectation.error_code:
                         record.update(status="FAIL-WRONG-CODE",
@@ -398,6 +428,8 @@ def failure_group(result: dict) -> str:
         conversion = scalar_conversion(result)
         if conversion:
             return f"compile error LNC0006, {conversion}"
+        if "readback did not complete" in (result.get("stage_detail") or ""):
+            return f"compile error {result.get('code') or '(no code)'}, GPU hang (readback timeout)"
         return f"compile error {result.get('code') or '(no code)'}"
     if status == "FAIL-WRONG-CODE":
         return f"wrong diagnostic {result.get('code') or '(no code)'}"
@@ -488,6 +520,8 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
             elif (member.get("location") or "").startswith("stdlib/"):
                 # Many fixtures fail on the same stdlib line; list it once.
                 key = f"at {member['location']}: {normalized_message(member.get('message') or '')}"
+            elif member.get("stage_detail"):
+                key = normalized_message(member["stage_detail"])
             else:
                 key = normalized_message(member.get("message") or member.get("detail") or "")
             messages[key].append(member)
@@ -606,6 +640,7 @@ def check_each_module(args, modules, out: pathlib.Path) -> list[dict]:
         entry.write_text(f"import {name};\n\nfn main() -> i32 {{\n    return 0;\n}}\n")
         elf = out / f"import_{name.replace('::', '_')}.elf"
         started = time.time()
+        stderr_offset = stderr_size(out / "daemon.stderr")
         try:
             response = daemon.request({"id": f"module-{number}", "command": "compile", "emit": "x86_64",
                                        "input": str(entry), "output": str(elf), "stdlib_root": str(STDLIB)},
@@ -613,6 +648,9 @@ def check_each_module(args, modules, out: pathlib.Path) -> list[dict]:
             record = {"module": name, "path": relative(path), "ok": response.get("ok") is True}
             if not record["ok"]:
                 record.update(diagnostic_fields(response))
+                detail = stage_detail(out / "daemon.stderr", stderr_offset)
+                if detail:
+                    record["stage_detail"] = detail
         except (TimeoutError, RuntimeError) as error:
             daemon.kill()
             daemon = Daemon(args.laniusc, args.memory_max, args.readback_timeout_ms, out / "daemon.stderr")
