@@ -3,11 +3,11 @@
 
 usage:
   tools/fixture_sweep.py run [--laniusc PATH] [--shard I/N] [--resume] [--suite NAME]...
-                             [--pattern TEXT] [--out DIR] [--timeout S] [--memory-max SIZE]
+                             [--pattern TEXT]... [--out DIR] [--timeout S] [--memory-max SIZE]
   tools/fixture_sweep.py report [--out DIR] [--write FILE.md]
   tools/fixture_sweep.py diff --base OLD_DIR [--out DIR] [--write FILE.md]
   tools/fixture_sweep.py stdlib [--laniusc PATH] [--each] [--out DIR]
-  tools/fixture_sweep.py list [--suite NAME]...
+  tools/fixture_sweep.py list [--suite NAME]... [--pattern TEXT]...
 
 `run` compiles each fixture with the resident daemon (like tools/generics_matrix.py),
 runs the ELF, and compares the result with the fixture's expectation. Every
@@ -158,7 +158,7 @@ def relative(path: pathlib.Path) -> str:
         return str(path)
 
 
-def load_cases(suites: list[str], pattern: str) -> list:
+def load_cases(suites: list[str], patterns: list[str]) -> list:
     from fixture_expectations import load_expectations
 
     cases = [
@@ -166,7 +166,7 @@ def load_cases(suites: list[str], pattern: str) -> list:
         for expectation in load_expectations(ROOT)
         if expectation.kind != "module"
         and suite_of(expectation.path) in suites
-        and pattern in relative(expectation.path)
+        and (not patterns or any(pattern in relative(expectation.path) for pattern in patterns))
     ]
     return sorted(cases, key=lambda expectation: relative(expectation.path))
 
@@ -909,7 +909,8 @@ def main() -> int:
     run = sub.add_parser("run", parents=[common], help="compile and run fixtures")
     run.add_argument("--shard", default="1/1", help="run every Nth fixture starting at I (I/N)")
     run.add_argument("--suite", action="append", choices=SUITES)
-    run.add_argument("--pattern", default="", help="only fixtures whose path contains this")
+    run.add_argument("--pattern", action="append", default=[],
+                     help="only fixtures whose path contains this (repeatable: any of them)")
     run.add_argument("--hang-seconds", type=float, default=15.0,
                      help="restart the daemon after a failed compile that took this long")
     run.add_argument("--budget-seconds", type=float, default=540.0,
@@ -929,7 +930,7 @@ def main() -> int:
                      help="stop --each after this long (keeps a GPU hold under 10 minutes); 0 = no limit")
     lst = sub.add_parser("list", help="print the fixtures and expectations without running anything")
     lst.add_argument("--suite", action="append", choices=SUITES)
-    lst.add_argument("--pattern", default="")
+    lst.add_argument("--pattern", action="append", default=[])
     for subparser in (run, std, lst):
         subparser.add_argument(
             "--source-root",

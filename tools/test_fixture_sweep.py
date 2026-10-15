@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fixture_expectations import load_expectations
 from fixture_sweep import check_jumps, failure_group, render_diff, render_stdlib_diff, run_elf
 from x86_jump_check import jumps_leaving_function
 
@@ -134,6 +135,55 @@ class JumpCheckTests(unittest.TestCase):
 
         self.assertEqual(jumps, [{"at": 0x400086, "op": "je", "target": 0x400084, "function": 0x400084,
                                   "entry": True}])
+
+
+CLI_TEST = '''
+fn laniusc_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/laniusc")
+}
+
+fn traced_check(fixture: &str) -> (bool, String) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture);
+    let mut command = Command::new(laniusc_bin());
+    command.arg("check").arg(&path).env("LANIUS_TRACE_CALL_INFERENCE", "1");
+    let output = common::command_output_with_timeout(fixture, &mut command);
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (output.status.success(), stderr)
+}
+
+#[test]
+fn accepted() {
+    let fixture = "tests/fixtures/stdlib_foundation/accepted.lani";
+    let (passed, stderr) = traced_check(fixture);
+    assert!(passed, "{fixture} failed to type check:\\n{stderr}");
+}
+
+#[test]
+fn rejected() {
+    let fixture = "tests/fixtures/stdlib_foundation/rejected.lani";
+    let (passed, stderr) = traced_check(fixture);
+    assert!(!passed, "{fixture} type checked:\\n{stderr}");
+    assert!(stderr.contains("error[LNC0007]"), "expected an unknown type error:\\n{stderr}");
+}
+'''
+
+
+class ExpectationTests(unittest.TestCase):
+    def test_a_laniusc_check_command_test_owns_its_fixtures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            fixtures = repo / "tests/fixtures/stdlib_foundation"
+            fixtures.mkdir(parents=True)
+            for name in ("accepted", "rejected", "unowned"):
+                (fixtures / f"{name}.lani").write_text("fn main() -> i32 { return 0; }\n")
+            (repo / "tests/cli_check.rs").write_text(CLI_TEST)
+            expectations = {e.path.stem: e for e in load_expectations(repo)}
+
+        accepted, rejected = expectations["accepted"], expectations["rejected"]
+        self.assertEqual((accepted.kind, accepted.error_code), ("check_only", None))
+        self.assertTrue(accepted.source.startswith("tests/cli_check.rs:"), accepted.source)
+        self.assertEqual((rejected.kind, rejected.error_code), ("compile_error", "LNC0007"))
+        self.assertEqual((expectations["unowned"].kind, expectations["unowned"].source), ("run", "default"))
 
 
 if __name__ == "__main__":
