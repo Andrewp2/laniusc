@@ -972,7 +972,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         device: &wgpu::Device,
         replacement: FrontendWorkspaceReplacement,
     ) {
-        self.type_checker.release_current_resident_workspace();
+        self.type_checker.release_frontend_bound_workspace();
         self.release_typecheck_workspace_consumers();
         if replacement.invalidates_parser_allocation() {
             // Lexer replacement invalidates every parser binding, so the

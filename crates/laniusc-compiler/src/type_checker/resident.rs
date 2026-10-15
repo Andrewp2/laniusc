@@ -315,6 +315,20 @@ impl GpuTypeChecker {
     /// Releases reusable semantic buffers and their bind groups while
     /// retaining the type-check pipelines and fixed status resources.
     pub fn release_current_resident_workspace(&self) {
+        self.release_frontend_bound_workspace();
+        *self
+            .dependency_interface_state
+            .lock()
+            .expect("GpuTypeChecker.dependency_interface_state poisoned") = None;
+    }
+
+    /// Releases the workspace bound to the frontend's allocations but keeps
+    /// the dependency-interface slot. The current job's dependency pages
+    /// already hold that slot, so dropping it here frees nothing. It would
+    /// only make the next job allocate a new slot, which changes the
+    /// type-check input fingerprint and rebuilds the whole resident
+    /// workspace (about 190 ms on the 1 MB daemon job).
+    pub(crate) fn release_frontend_bound_workspace(&self) {
         *self
             .current_semantic_artifact
             .lock()
@@ -323,10 +337,6 @@ impl GpuTypeChecker {
             .resident_workspace
             .lock()
             .expect("GpuTypeChecker.resident_workspace poisoned") = None;
-        *self
-            .dependency_interface_state
-            .lock()
-            .expect("GpuTypeChecker.dependency_interface_state poisoned") = None;
         self.semantic_interface_buffers.clear();
     }
 
