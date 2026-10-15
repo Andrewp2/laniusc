@@ -170,6 +170,10 @@ pub(super) struct CanonicalCapacity {
     /// span total), and the largest page's node count.
     pub dependency_rows: u64,
     pub dependency_page_rows: u64,
+    /// Dynamic records and argument words of the substitution producers
+    /// (`substitution_passes::substitution_canonical_extra`).
+    pub extra_records: u64,
+    pub extra_argument_words: u64,
 }
 
 fn storage(
@@ -201,12 +205,12 @@ fn resource(graph: &CompilerGraphBuilder, name: &'static str) -> Result<Resource
 /// edges than nodes), so an overflow means a broken invariant rather than a
 /// large input. A body replay interns every candidate a second time (one
 /// more key, and a dynamic record when it was rewritten), which doubles the
-/// candidates' records and arguments.
+/// candidates' records and arguments. Returns the record capacity.
 pub(super) fn register_canonical_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     capacity: CanonicalCapacity,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let CanonicalCapacity {
         token_rows,
         hir_rows,
@@ -215,15 +219,17 @@ pub(super) fn register_canonical_passes(
         extra_argument_rows,
         dependency_rows,
         dependency_page_rows,
+        extra_records,
+        extra_argument_words,
     } = capacity;
     let candidates = type_rows + 2 * constant_rows;
-    let records = 32 + 2 * (candidates + 2 * constant_rows) + 2 * dependency_rows;
+    let records = 32 + 2 * (candidates + 2 * constant_rows) + 2 * dependency_rows + extra_records;
     let candidate_argument_bytes = token_rows * 16
         + extra_argument_rows * 128
         + hir_rows * 4
         + type_rows * 8
         + constant_rows * 8;
-    let argument_bytes = 2 * candidate_argument_bytes + dependency_rows * 8;
+    let argument_bytes = 2 * candidate_argument_bytes + dependency_rows * 8 + extra_argument_words * 4;
     let workspace = ResourceClass::Workspace;
     storage(graph, "ct_head", workspace, records * 16)?;
     storage(graph, "ct_meta", workspace, records * 16)?;
@@ -265,7 +271,7 @@ pub(super) fn register_canonical_passes(
         kernels,
         CANONICAL_CLEAR_KERNEL,
     )?;
-    Ok(())
+    Ok(records)
 }
 
 /// Registers the per-page dependency interning, after the dependency
