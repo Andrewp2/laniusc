@@ -521,10 +521,18 @@ def render_report(results: dict[str, dict], documents) -> list[str]:
                  "Reproduce with `tools/fixture_sweep.py run --laniusc BIN --shard I/N --resume` per "
                  "shard, `tools/fixture_sweep.py stdlib --each`, then `tools/fixture_sweep.py report`.")
     lines.append("")
+    def kernel_mix(document) -> str:
+        # Kernels load from disk at daemon start, so a rebuild during a shard mixes builds.
+        seen = set(document.get("shader_digests_seen", []))
+        seen.add(document.get("laniusc_version", {}).get("shader-artifact-digest"))
+        seen.discard(None)
+        return f", MIXED kernels {', '.join(sorted(seen))}" if len(seen) > 1 else ""
+
     shard_times = ", ".join(
         f"{document['shard']} ({document['wall_s']} s"
         + ("" if document.get("complete", True) else
            f", INCOMPLETE: {document['cases_in_shard'] - len(document['results'])} not run")
+        + kernel_mix(document)
         + ")"
         for _, document in documents)
     lines.append(f"Shards: {shard_times}")
