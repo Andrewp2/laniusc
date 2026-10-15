@@ -615,6 +615,7 @@ async fn run_session(
             "resident_set_bytes": resident_set_bytes(),
             "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
             "wgpu_resources": wgpu_resource_metrics(),
+            "gpu_allocator": gpu_allocator_metrics(),
             "compute_pipelines_created": pipeline_creation_count(),
             "recorded_compute_passes": recorded_compute_pass_count(),
             "recorded_compute_dispatches": recorded_compute_dispatch_count(),
@@ -1191,6 +1192,7 @@ async fn compile_request(
         "resident_set_bytes": resident_set_bytes(),
         "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
         "wgpu_resources": wgpu_resource_metrics(),
+        "gpu_allocator": gpu_allocator_metrics(),
     })
 }
 
@@ -1295,6 +1297,39 @@ fn wgpu_resource_metrics() -> Value {
         "command_buffers": registry(stats.command_buffers),
         "compute_pipelines": registry(stats.compute_pipelines),
         "query_sets": registry(stats.query_sets),
+    })
+}
+
+/// With `LANIUS_GPU_ALLOCATOR_REPORT=1`, wgpu's device-memory allocator report:
+/// bytes allocated and reserved in blocks, and the largest allocations summed
+/// by label. It covers every wgpu buffer, including those that are not
+/// `LaniusBuffer`s, but not driver-internal memory such as the local-memory
+/// reservation.
+fn gpu_allocator_metrics() -> Value {
+    if !crate::gpu::env::env_bool_strict("LANIUS_GPU_ALLOCATOR_REPORT", false) {
+        return Value::Null;
+    }
+    let Some(report) = device::global().device.generate_allocator_report() else {
+        return Value::Null;
+    };
+    let mut by_label = std::collections::HashMap::<&str, (u64, u64)>::new();
+    for allocation in &report.allocations {
+        let entry = by_label.entry(allocation.name.as_str()).or_default();
+        entry.0 += 1;
+        entry.1 += allocation.size;
+    }
+    let mut by_label = by_label.into_iter().collect::<Vec<_>>();
+    by_label.sort_by_key(|(_, (_, bytes))| std::cmp::Reverse(*bytes));
+    json!({
+        "allocated_bytes": report.total_allocated_bytes,
+        "reserved_bytes": report.total_reserved_bytes,
+        "blocks": report.blocks.len(),
+        "allocations": report.allocations.len(),
+        "largest_by_label": by_label
+            .iter()
+            .take(60)
+            .map(|(label, (count, bytes))| json!({"label": label, "allocations": count, "bytes": bytes}))
+            .collect::<Vec<_>>(),
     })
 }
 
