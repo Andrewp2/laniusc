@@ -1130,6 +1130,14 @@ async fn compile_request(
         _ => unreachable!("backend support check accepted an unknown target"),
     };
     let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+    // A dispatch selected by `LANIUS_DEBUG_CAPTURE_PASS` and
+    // `LANIUS_DEBUG_CAPTURE_INDEX` counts dispatches across jobs, so a resident
+    // job's dispatch can be captured; it is written after the job recording it.
+    if crate::gpu::dispatch_capture::capture_pass().is_some()
+        && let Ok(gpu) = device::global_result()
+    {
+        crate::gpu::passes_core::debug_write_capture(&gpu.device, &gpu.queue);
+    }
     let unit_cache_after = compiler.compiled_unit_cache_stats();
     let emitted = match emitted {
         Ok(emitted) => emitted,
