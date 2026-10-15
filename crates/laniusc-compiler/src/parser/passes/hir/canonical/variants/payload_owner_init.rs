@@ -58,6 +58,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 "owner_value_a".into(),
                 b.hir_semantic_parent_value_a.as_entire_binding(),
             ),
+            (
+                "owner_link_b".into(),
+                b.hir_semantic_parent_link_b.as_entire_binding(),
+            ),
+            (
+                "owner_value_b".into(),
+                b.hir_semantic_parent_value_b.as_entire_binding(),
+            ),
         ])
     }
 }

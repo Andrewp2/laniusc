@@ -283,7 +283,6 @@ pub struct ParserPasses {
     pub hir_type_path_leaf_scatter: hir::types::path::leaf::scatter::HirTypePathLeafScatterPass,
     pub hir_path_segment_root: hir::path::segment::root::HirPathSegmentRootPass,
     pub hir_path_segment_links: hir::path::segment::links::HirPathSegmentLinksPass,
-    pub hir_path_segment_step: hir::path::segment::step::HirPathSegmentStepPass,
     pub hir_path_segment_scatter: hir::path::segment::scatter::HirPathSegmentScatterPass,
     pub hir_list_rank_prefix_local: hir::list::rank::prefix_local::HirListRankPrefixLocalPass,
     pub hir_list_rank_compact_scatter:
@@ -514,7 +513,6 @@ impl ParserPasses {
             hir_path_segment_links: hir::path::segment::links::HirPathSegmentLinksPass::new(
                 device,
             )?,
-            hir_path_segment_step: hir::path::segment::step::HirPathSegmentStepPass::new(device)?,
             hir_path_segment_scatter: hir::path::segment::scatter::HirPathSegmentScatterPass::new(
                 device,
             )?,
@@ -753,7 +751,41 @@ pub fn record_canonical_variants(
     )?;
     p.hir_canonical_variant_payload_owner_init
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    p.hir_tree_relations.record_canonical_steps(
+    // Only payload types and the variant-field chains above them link to a
+    // parent: compact those rows and walk only them.
+    let invocation = hir::list::rank::ListRankInvocation::VariantPayloadOwners;
+    p.hir_list_rank_prefix_local.record_for_owner_link(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_type_fields_params,
+        &ctx.buffers.hir_semantic_parent_value_a,
+        &ctx.buffers.hir_semantic_parent_link_a,
+        ctx.bg_cache
+            .as_deref_mut()
+            .expect("debug parser requires a bind-group cache"),
+        invocation,
+    )?;
+    p.hir_semantic_prefix_blocks.record_list_rank_scan(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        ctx.bg_cache
+            .as_deref_mut()
+            .expect("debug parser requires a bind-group cache"),
+        invocation,
+    )?;
+    p.hir_list_rank_compact_scatter.record_for_params(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_type_fields_params,
+        ctx.bg_cache
+            .as_deref_mut()
+            .expect("debug parser requires a bind-group cache"),
+        invocation,
+    )?;
+    p.hir_tree_relations.record_canonical_row_steps(
         ctx.device,
         ctx.encoder,
         ctx.buffers,

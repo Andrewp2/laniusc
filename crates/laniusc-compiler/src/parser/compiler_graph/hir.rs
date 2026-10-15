@@ -1263,7 +1263,7 @@ fn register_type_root_owner(
     capacity: ParserGraphCapacity,
     passes: &ParserPasses,
 ) -> Result<(), String> {
-    use crate::parser::passes::hir::types::root::step::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE};
+    use crate::parser::passes::hir::types::root::step::{A_TO_B, B_TO_A};
 
     static_pass(
         graph,
@@ -1275,11 +1275,18 @@ fn register_type_root_owner(
             ("hir_type_arg_owner", "hir_type_arg_owner_a", None),
             ("hir_type_root_link_a", "hir_type_arg_link_a", None),
             ("hir_type_root_owner_a", "hir_type_root_owner", None),
+            ("hir_type_root_link_b", "hir_type_arg_link_b", None),
+            ("hir_type_root_owner_b", "hir_type_arg_owner_b", None),
         ],
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_type_root_owner_init",
-        &["hir_type_root_link_a", "hir_type_root_owner_a"],
+        &[
+            "hir_type_root_link_a",
+            "hir_type_root_owner_a",
+            "hir_type_root_link_b",
+            "hir_type_root_owner_b",
+        ],
     )?;
     indirect(
         graph,
@@ -1287,15 +1294,25 @@ fn register_type_root_owner(
         "tree_active_dispatch_args",
     )?;
 
-    let steps = crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity);
+    register_list_rank_compaction(
+        graph,
+        capacity,
+        passes,
+        ListRankInvocation::TypeRoots,
+        "hir_type_root_owner",
+        "hir_type_arg_link_a",
+    )?;
+    let steps = crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+        capacity.tree_capacity,
+    );
     register_ping_pong_walk(
         graph,
         passes.hir_type_root_owner_step.graph_pass(),
         A_TO_B,
         B_TO_A,
-        A_TO_B_FINAL,
-        FINALIZE,
-        "tree_active_dispatch_args",
+        A_TO_B,
+        A_TO_B,
+        "hir_list_rank_dispatch_args",
         true,
         steps,
         &[("tree_count_status", "partial_parse_status", None)],
@@ -1554,10 +1571,6 @@ fn register_item_paths_and_type_aliases(
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_path_segment_root",
-        &["hir_path_segment_owner_a", "hir_path_segment_rank_a"],
-    )?;
     indirect(graph, "hir_path_segment_root", "tree_active_dispatch_args")?;
     static_pass(
         graph,
@@ -1566,46 +1579,40 @@ fn register_item_paths_and_type_aliases(
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
-    graph.mark_pass_bindings_initialize("hir_path_segment_links", &["hir_path_segment_link_a"])?;
+    graph.mark_pass_bindings_initialize(
+        "hir_path_segment_links",
+        &[
+            "hir_path_segment_owner_a",
+            "hir_path_segment_link_a",
+            "hir_path_segment_rank_a",
+            "hir_path_segment_owner_b",
+            "hir_path_segment_link_b",
+            "hir_path_segment_rank_b",
+        ],
+    )?;
     indirect(graph, "hir_path_segment_links", "tree_active_dispatch_args")?;
 
-    use crate::parser::passes::hir::path::segment::step::{
-        A_TO_B as PATH_A_TO_B,
-        A_TO_B_FINAL as PATH_A_TO_B_FINAL,
-        B_TO_A as PATH_B_TO_A,
-        FINALIZE as PATH_FINALIZE,
-    };
-    register_ping_pong_walk(
+    // Only owned or linked segments change during the walk; the links pass
+    // seeded both ping-pong buffers, so every other node reads identically.
+    register_list_rank_compaction(
         graph,
-        passes.hir_path_segment_step.graph_pass(),
-        PATH_A_TO_B,
-        PATH_B_TO_A,
-        PATH_A_TO_B_FINAL,
-        PATH_FINALIZE,
-        "tree_active_dispatch_args",
-        true,
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
-        &[("tree_count_status", "partial_parse_status", None)],
-        &[
-            PingPongBinding {
-                input_binding: "hir_path_segment_owner_in",
-                output_binding: "hir_path_segment_owner_out",
-                a: "hir_path_segment_owner_a",
-                b: "hir_path_segment_owner_b",
-            },
-            PingPongBinding {
-                input_binding: "hir_path_segment_link_in",
-                output_binding: "hir_path_segment_link_out",
-                a: "hir_path_segment_link_a",
-                b: "hir_path_segment_link_b",
-            },
-            PingPongBinding {
-                input_binding: "hir_path_segment_rank_in",
-                output_binding: "hir_path_segment_rank_out",
-                a: "hir_path_segment_rank_a",
-                b: "hir_path_segment_rank_b",
-            },
-        ],
+        capacity,
+        passes,
+        ListRankInvocation::PathSegments,
+        "hir_path_segment_owner_a",
+        "hir_path_segment_link_a",
+    )?;
+    register_list_rank_propagation(
+        graph,
+        capacity,
+        passes,
+        ListRankInvocation::PathSegments,
+        "hir_path_segment_owner_a",
+        "hir_path_segment_owner_b",
+        "hir_path_segment_link_a",
+        "hir_path_segment_link_b",
+        "hir_path_segment_rank_a",
+        "hir_path_segment_rank_b",
     )?;
     static_pass(
         graph,
@@ -1833,28 +1840,40 @@ fn register_expression_and_statement_fields(
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_binary_spans",
-        &["hir_binary_span_link_a", "hir_binary_span_start_a"],
+        &[
+            "hir_binary_span_link_a",
+            "hir_binary_span_start_a",
+            "hir_binary_span_link_b",
+            "hir_binary_span_start_b",
+        ],
     )?;
-    indirect(graph, "hir_binary_spans", "hir_semantic_dispatch_args")?;
+    indirect(graph, "hir_binary_spans", "tree_active_dispatch_args")?;
 
+    // Only rows whose left chain outlived the seed's local walk change; the
+    // seed filled both ping-pong buffers, so every other row reads alike.
+    register_list_rank_compaction(
+        graph,
+        capacity,
+        passes,
+        ListRankInvocation::BinarySpans,
+        "hir_binary_span_link_a",
+        "hir_binary_span_link_a",
+    )?;
     use crate::parser::passes::hir::binary::span::step::{
         A_TO_B as BINARY_A_TO_B,
-        A_TO_B_FINAL as BINARY_A_TO_B_FINAL,
         B_TO_A as BINARY_B_TO_A,
-        FINALIZE as BINARY_FINALIZE,
+        binary_span_step_capacity,
     };
     register_ping_pong_walk(
         graph,
         passes.hir_binary_span_step.graph_pass(),
         BINARY_A_TO_B,
         BINARY_B_TO_A,
-        BINARY_A_TO_B_FINAL,
-        BINARY_FINALIZE,
-        "hir_semantic_dispatch_args",
+        BINARY_A_TO_B,
+        BINARY_A_TO_B,
+        "hir_list_rank_dispatch_args",
         true,
-        crate::parser::passes::hir::binary::span::step::pointer_jump_steps_for_items(
-            capacity.tree_capacity,
-        ),
+        binary_span_step_capacity(capacity.tree_capacity),
         &[("hir_semantic_count", "hir_semantic_count", None)],
         &[
             PingPongBinding {
@@ -2100,10 +2119,7 @@ fn register_canonical_variants(
 ) -> Result<(), String> {
     use crate::parser::passes::{
         CanonicalConstruct,
-        hir::semantic::parent::step::{
-            CANONICAL_VARIANT_PAYLOAD_OWNER,
-            canonical_relation_step_capacity,
-        },
+        hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER,
     };
 
     clear(
@@ -2207,22 +2223,34 @@ fn register_canonical_variants(
             ("family_flag", "hir_variant_payload_family_flag", None),
             ("owner_link_a", "hir_semantic_parent_link_a", None),
             ("owner_value_a", "hir_semantic_parent_value_a", None),
+            ("owner_link_b", "hir_semantic_parent_link_b", None),
+            ("owner_value_b", "hir_semantic_parent_value_b", None),
         ],
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_canonical_variant_payload_owner_init",
-        &["owner_link_a", "owner_value_a"],
+        &["owner_link_a", "owner_value_a", "owner_link_b", "owner_value_b"],
+    )?;
+    register_list_rank_compaction(
+        graph,
+        capacity,
+        passes,
+        ListRankInvocation::VariantPayloadOwners,
+        "hir_semantic_parent_value_a",
+        "hir_semantic_parent_link_a",
     )?;
     register_ping_pong_walk(
         graph,
-        passes.hir_tree_relations.graph_single_pass(),
+        passes.hir_tree_relations.graph_rows_pass(),
         CANONICAL_VARIANT_PAYLOAD_OWNER.a_to_b,
         CANONICAL_VARIANT_PAYLOAD_OWNER.b_to_a,
         CANONICAL_VARIANT_PAYLOAD_OWNER.a_to_b_final,
         CANONICAL_VARIANT_PAYLOAD_OWNER.finalize,
-        "hir_raw_relation_dispatch_args",
+        "hir_list_rank_dispatch_args",
         true,
-        canonical_relation_step_capacity(capacity.tree_capacity),
+        crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+            capacity.tree_capacity,
+        ),
         &[("tree_count_status", "partial_parse_status", None)],
         &[
             PingPongBinding {

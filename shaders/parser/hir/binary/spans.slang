@@ -2,7 +2,9 @@
 //
 // Binary tail grammar rows start at the operator token. The HIR expression row
 // represents the whole `left op right` expression. This pass seeds a left-edge
-// relation that later pointer-jump steps resolve without in-shader chain walks.
+// relation into both ping-pong buffers; the bounded-walk steps then visit only
+// the compacted rows whose chain outlives the local walk below. Rows past the
+// semantic rows get no link, so the compaction never sees stale records.
 
 struct Params
 {
@@ -22,6 +24,8 @@ StructuredBuffer<uint> hir_token_pos;
 
 RWStructuredBuffer<uint> hir_binary_span_link_a;
 RWStructuredBuffer<uint> hir_binary_span_start_a;
+RWStructuredBuffer<uint> hir_binary_span_link_b;
+RWStructuredBuffer<uint> hir_binary_span_start_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -76,26 +80,37 @@ bool binary_form(uint form)
     return form >= HIR_EXPR_EQ && form <= HIR_EXPR_SHR;
 }
 
+void publish(uint row, uint link, uint start)
+{
+    hir_binary_span_link_a[row] = link;
+    hir_binary_span_start_a[row] = start;
+    hir_binary_span_link_b[row] = link;
+    hir_binary_span_start_b[row] = start;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
-    if (row >= active_semantic_count())
+    if (row >= active_node_count())
         return;
+    if (row >= active_semantic_count())
+    {
+        hir_binary_span_link_a[row] = INVALID;
+        return;
+    }
 
     uint node = hir_semantic_dense_node[row];
-
-    hir_binary_span_link_a[row] = INVALID;
-    hir_binary_span_start_a[row] = valid_node(node) ? hir_token_pos[node] : INVALID;
-
-    if (!valid_node(node) || hir_kind[node] != HIR_BINARY_EXPR)
+    uint start = valid_node(node) ? hir_token_pos[node] : INVALID;
+    if (!valid_node(node) || hir_kind[node] != HIR_BINARY_EXPR ||
+        !binary_form(expr_record(node, HIR_EXPR_RECORD_FORM)))
+    {
+        publish(row, INVALID, start);
         return;
-    if (!binary_form(expr_record(node, HIR_EXPR_RECORD_FORM)))
-        return;
+    }
 
     uint raw_link = expr_record(node, HIR_EXPR_RECORD_LEFT);
-    uint start = hir_binary_span_start_a[row];
     for (uint hop = 0u; hop < LOCAL_LINK_SPAN && valid_node(raw_link) && raw_link != node; ++hop)
     {
         uint linked_start = hir_token_pos[raw_link];
@@ -113,8 +128,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint dense_link = valid_node(raw_link) ? hir_node_dense_id[raw_link] : INVALID;
-    hir_binary_span_link_a[row] = valid_semantic_row(dense_link) && dense_link != row
-        ? dense_link
-        : INVALID;
-    hir_binary_span_start_a[row] = start;
+    publish(
+        row,
+        valid_semantic_row(dense_link) && dense_link != row ? dense_link : INVALID,
+        start);
 }

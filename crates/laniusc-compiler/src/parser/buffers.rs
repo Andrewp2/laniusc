@@ -1420,25 +1420,9 @@ impl ParserBuffers {
             graph_buffer!(u32, "hir_expr_result_root_scratch_node");
         let hir_binary_span_link_a = graph_buffer!(u32, "hir_binary_span_link_a");
         let hir_binary_span_start_a = graph_buffer!(u32, "hir_binary_span_start_a");
-        let binary_span_steps =
-            super::passes::hir::binary::span::step::pointer_jump_steps_for_items(tree_capacity);
-        // Trees covered entirely by the shader's local 32-node walk schedule
-        // no ping-pong pass. In that graph specialization the B resources have
-        // no lifetime (and therefore no physical slot); preserve the uniform
-        // buffer model with aliases that can never be bound alongside A.
-        let hir_binary_span_link_b = if binary_span_steps == 0 {
-            alias_storage_buffer::<u32, u32>(&hir_binary_span_link_a, hir_binary_span_link_a.count)
-        } else {
-            graph_buffer!(u32, "hir_binary_span_link_b")
-        };
-        let hir_binary_span_start_b = if binary_span_steps == 0 {
-            alias_storage_buffer::<u32, u32>(
-                &hir_binary_span_start_a,
-                hir_binary_span_start_a.count,
-            )
-        } else {
-            graph_buffer!(u32, "hir_binary_span_start_b")
-        };
+        // The seed fills both ping-pong buffers, so B always has a lifetime.
+        let hir_binary_span_link_b = graph_buffer!(u32, "hir_binary_span_link_b");
+        let hir_binary_span_start_b = graph_buffer!(u32, "hir_binary_span_start_b");
         let hir_expr_int_value = graph_buffer!(u32, "hir_expr_int_value");
         let hir_expr_float_bits = graph_buffer!(u32, "hir_expr_float_bits");
         let hir_float_workspace = optional_graph_buffer!(u32, "hir_float_workspace",
@@ -1822,12 +1806,6 @@ impl ParserBuffers {
                     partial_parse_status => ll1_status,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::types::root::step::FINALIZE,
-                    tree_bytes;
-                    hir_type_arg_link_b => hir_type_arg_link_a,
-                    hir_type_arg_owner_b => hir_type_root_owner,
-                ),
-                finalizer!(
                     crate::parser::passes::hir::types::alias::owner::step::FINALIZE,
                     tree_bytes;
                     hir_type_alias_owner_link_b => hir_type_alias_owner_link_a,
@@ -1840,22 +1818,9 @@ impl ParserBuffers {
                     hir_type_path_leaf_value_b => hir_type_path_leaf_value_a,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::path::segment::step::FINALIZE,
-                    tree_bytes;
-                    hir_path_segment_owner_b => hir_path_segment_owner_a,
-                    hir_path_segment_link_b => hir_path_segment_link_a,
-                    hir_path_segment_rank_b => hir_path_segment_rank_a,
-                ),
-                finalizer!(
                     crate::parser::passes::hir::expr::result_root_step::FINALIZE,
                     tree_bytes;
                     hir_expr_result_root_scratch_node => hir_expr_result_root_node,
-                ),
-                finalizer!(
-                    crate::parser::passes::hir::binary::span::step::FINALIZE,
-                    tree_bytes;
-                    hir_binary_span_link_b => hir_binary_span_link_a,
-                    hir_binary_span_start_b => hir_binary_span_start_a,
                 ),
                 finalizer!(
                     crate::parser::passes::hir::canonical::expr_forest::root_step::FINALIZE,
@@ -1910,12 +1875,6 @@ impl ParserBuffers {
                     tree_bytes;
                     hir_semantic_parent_link_b => hir_semantic_parent_link_a,
                     hir_semantic_parent_value_b => hir_match_pattern_owner_arm,
-                ),
-                finalizer!(
-                    crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER.finalize,
-                    tree_bytes;
-                    hir_semantic_parent_link_b => hir_semantic_parent_link_a,
-                    hir_semantic_parent_value_b => hir_semantic_parent_value_a,
                 ),
             ],
         )

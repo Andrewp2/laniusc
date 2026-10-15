@@ -13,6 +13,7 @@ use crate::{
 /// Reusable pointer-jump operation over one tree link and one or more payloads.
 pub struct TreeRelationOperation {
     data: PassData,
+    rows_data: PassData,
 }
 
 #[derive(Clone, Copy)]
@@ -29,6 +30,8 @@ pub(in crate::parser) const MATCH_ARM_OWNER: TreeRelationInvocation = TreeRelati
     a_to_b_final: "hir_match_arm_owner_step.a_to_b_final",
     finalize: "hir_match_arm_owner_step.finalize",
 };
+/// Walked over compacted payload-chain rows with an even step count, so its
+/// unpaired final step and finalizer are never recorded.
 pub(in crate::parser) const CANONICAL_VARIANT_PAYLOAD_OWNER: TreeRelationInvocation =
     TreeRelationInvocation {
         a_to_b: "hir_canonical_variant_payload_owner_step.a_to_b",
@@ -44,6 +47,12 @@ impl TreeRelationOperation {
                 "hir_semantic_parent_step",
                 "main",
                 "parser/hir/semantic/parent/step",
+            )?,
+            rows_data: make_pass_data_from_shader_key(
+                device,
+                "hir_semantic_parent_rows_step",
+                "main",
+                "parser/hir/semantic/parent/rows_step",
             )?,
         })
     }
@@ -77,8 +86,10 @@ impl TreeRelationOperation {
         )
     }
 
-    /// Propagates a canonical-family relation through the shared tree slots.
-    pub(in crate::parser) fn record_canonical_steps(
+    /// Propagates a canonical-family relation through the shared tree slots,
+    /// stepping only the rows compacted into `hir_list_rank_node`. The init
+    /// pass must seed every node into both the A and B slots.
+    pub(in crate::parser) fn record_canonical_row_steps(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
@@ -86,16 +97,23 @@ impl TreeRelationOperation {
         invocation: TreeRelationInvocation,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        self.record_steps_for_buffers_after_local_span(
+        self.record_schedule(
             device,
             encoder,
             buffers,
-            &buffers.hir_semantic_parent_link_a,
-            &buffers.hir_semantic_parent_value_a,
-            &buffers.hir_semantic_parent_link_b,
-            &buffers.hir_semantic_parent_value_b,
-            crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
-            &buffers.hir_raw_relation_dispatch_args,
+            &self.rows_data,
+            SINGLE_NAMES,
+            TreeRelationBuffers::new(
+                &buffers.hir_semantic_parent_link_a,
+                &buffers.hir_semantic_parent_link_b,
+                [&buffers.hir_semantic_parent_value_a],
+                [&buffers.hir_semantic_parent_value_b],
+            ),
+            crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+                buffers.tree_capacity,
+            ),
+            &buffers.hir_list_rank_dispatch_args,
+            false,
             invocation,
             cache,
         )
@@ -160,6 +178,16 @@ impl TreeRelationOperation {
                     },
                 ),
             ]);
+            if std::ptr::eq(data, &self.rows_data) {
+                resources.insert(
+                    "hir_list_rank_node".into(),
+                    buffers.hir_list_rank_node.as_entire_binding(),
+                );
+                resources.insert(
+                    "hir_list_rank_count".into(),
+                    buffers.hir_list_rank_count.as_entire_binding(),
+                );
+            }
             let (link_in, values_in, link_out, values_out) = relation.for_step(step);
             resources.insert(names.link_in.into(), link_in.as_entire_binding());
             resources.insert(names.link_out.into(), link_out.as_entire_binding());
@@ -219,6 +247,10 @@ impl TreeRelationOperation {
 
     pub(in crate::parser) fn graph_single_pass(&self) -> &PassData {
         &self.data
+    }
+
+    pub(in crate::parser) fn graph_rows_pass(&self) -> &PassData {
+        &self.rows_data
     }
 }
 
