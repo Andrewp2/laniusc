@@ -3,7 +3,7 @@
 
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use anyhow::{Context, Result};
@@ -199,6 +199,17 @@ pub(crate) struct GpuLoweringPipeline {
 pub(crate) struct GpuLoweringWorkspaceCache {
     target: LoweringTarget,
     current: Mutex<Option<Arc<GpuLoweringPipeline>>>,
+}
+
+/// The split the lowering submits its semantic stage and optimizer with,
+/// unless `LANIUS_SPLIT_LOWERING=0` keeps the whole lowering in its caller's
+/// submission (for timing comparisons). `LANIUS_SPLIT_SUBMISSIONS=0` turns
+/// off every split, this one included.
+fn lowering_split<'a>(device: &'a wgpu::Device, queue: &'a wgpu::Queue) -> Option<SubmissionSplit<'a>> {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    ENABLED
+        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_SPLIT_LOWERING", true))
+        .then_some(SubmissionSplit { device, queue })
 }
 
 fn upstream_storage_signature(upstream: &[TrackedBufferView<'_>]) -> Vec<(u64, u64, u64)> {
@@ -508,7 +519,7 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        let split = SubmissionSplit { device, queue };
+        let split = lowering_split(device, queue);
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -523,20 +534,24 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
         self.semantic
-            .record_timed(encoder, timer.as_deref_mut(), Some(split))?;
-        split.submit_prefix(
-            encoder,
-            "compile.lowering.semantic",
-            "lowering.optimizer.submission.begin",
-            timer.as_deref_mut(),
-        );
+            .record_timed(encoder, timer.as_deref_mut(), split)?;
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.semantic",
+                "lowering.optimizer.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
         self.optimizer.record(encoder, timer.as_deref_mut())?;
-        split.submit_prefix(
-            encoder,
-            "compile.lowering.optimizer",
-            "lowering.target.submission.begin",
-            timer.as_deref_mut(),
-        );
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.optimizer",
+                "lowering.target.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.optimization.identity.done");
             timer.set_phase(self.target.compiler_phase());
@@ -571,7 +586,7 @@ impl GpuLoweringPipeline {
         selected_replay_hirs: &[u32],
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        let split = SubmissionSplit { device, queue };
+        let split = lowering_split(device, queue);
         // Like `record`, time every lowering operation; without this scope
         // the semantic, optimizer and count-page kernels have no timestamps
         // and their time shows up under the first stamped target pass.
@@ -597,20 +612,24 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
         self.semantic
-            .record_timed(encoder, timer.as_deref_mut(), Some(split))?;
-        split.submit_prefix(
-            encoder,
-            "compile.lowering.semantic",
-            "lowering.optimizer.submission.begin",
-            timer.as_deref_mut(),
-        );
+            .record_timed(encoder, timer.as_deref_mut(), split)?;
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.semantic",
+                "lowering.optimizer.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
         self.optimizer.record(encoder, timer.as_deref_mut())?;
-        split.submit_prefix(
-            encoder,
-            "compile.lowering.optimizer",
-            "lowering.target.submission.begin",
-            timer.as_deref_mut(),
-        );
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.optimizer",
+                "lowering.target.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.optimization.identity.done");
             timer.set_phase(self.target.compiler_phase());
