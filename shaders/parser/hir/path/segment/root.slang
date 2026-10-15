@@ -15,8 +15,6 @@ StructuredBuffer<uint> hir_type_value_node;
 StructuredBuffer<uint> hir_item_path_node;
 
 RWStructuredBuffer<uint> hir_path_root_owner;
-RWStructuredBuffer<uint> hir_path_segment_owner_a;
-RWStructuredBuffer<uint> hir_path_segment_rank_a;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -37,12 +35,7 @@ bool valid_node(uint node) { return node != INVALID && node < active_node_count(
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (node >= gHirPath.n)
-        return;
-
-    hir_path_segment_owner_a[node] = INVALID;
-    hir_path_segment_rank_a[node] = 0u;
-    if (!valid_node(node))
+    if (node >= gHirPath.n || !valid_node(node))
         return;
 
     uint kind = hir_kind[node];

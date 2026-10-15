@@ -17,8 +17,8 @@ pub struct MapWideU64WideU64 {
 pub const MAX_ENTRIES: i32 = 134217727;
 
 fn load_at(cells: [i32], offset: i32) -> core::wide_u64::WideU64 {
-    let low: u32 = cells[offset];
-    let high: u32 = cells[offset + 1];
+    let low: u32 = cells[offset] as u32;
+    let high: u32 = cells[offset + 1] as u32;
     return core::wide_u64::from_words(high, low);
 }
 

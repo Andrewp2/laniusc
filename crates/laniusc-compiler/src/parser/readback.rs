@@ -13,6 +13,7 @@ use super::{
             HIR_EXPR_FORM_BIT_AND,
             HIR_EXPR_FORM_BIT_OR,
             HIR_EXPR_FORM_BIT_XOR,
+            HIR_EXPR_FORM_CAST,
             HIR_EXPR_FORM_CHAR,
             HIR_EXPR_FORM_DIV,
             HIR_EXPR_FORM_EQ,

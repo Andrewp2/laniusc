@@ -2,7 +2,8 @@ import hir_records;
 import hir_expr_semantics;
 import type_checker.argument_context;
 import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.checked_canonical;
+import type_checker.canonical.canonical_candidates;
 import type_checker.checked_pattern_use;
 import status;
 
@@ -42,7 +43,6 @@ StructuredBuffer<HirRange> compact_path_type_arg_ranges;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
-StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> compact_variant_count;
@@ -158,6 +158,7 @@ uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes)
 bool valid_hir(uint node) { return node < active_hir_count(); }
 [ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
+#define DECLARED_CONTEXT_CANONICAL OnDemandIds
 #include "../result_expression_context.slang"
 
 bool unit_family_matches(uint2 reference, uint declaration, uint token, bool imported)
@@ -206,9 +207,8 @@ void publish_unit_reference(uint path, uint token, uint declaration, bool import
                 return;
             }
             reference = parent_reference;
-            if (has_receiving && !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-                reference.x, reference.y, INVALID, receiving.x, receiving.y, INVALID,
-                checked_type_capacity(), gParams.n_tokens))
+            if (has_receiving && !checked_refs_equal<OnDemandIds>(
+                reference.x, reference.y, receiving.x, receiving.y, gParams.n_tokens))
             {
                 if (call_inference_state[0u] == 0u) record_min_token_error(status, token, 3u, 0u);
                 return;
@@ -234,9 +234,8 @@ void publish_unit_reference(uint path, uint token, uint declaration, bool import
         if (call_inference_state[0u] == 0u) record_min_token_error(status, token, 3u, 0u);
         return;
     }
-    bool changed = !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-        type_expr_ref_tag[token], type_expr_ref_payload[token], INVALID,
-        reference.x, reference.y, INVALID, checked_type_capacity(), gParams.n_tokens);
+    bool changed = !checked_refs_known_equal(
+        type_expr_ref_tag[token], type_expr_ref_payload[token], reference.x, reference.y);
     type_expr_ref_tag[token] = reference.x;
     type_expr_ref_payload[token] = reference.y;
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }

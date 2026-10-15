@@ -18,8 +18,8 @@ pub fn seconds_or(words:[i32], length: i32, fallback: core::wide_i64::WideI64) -
     if (!can_decode(words, length)) {
         return fallback;
     }
-    let high: u32 = words[1];
-    let low: u32 = words[0];
+    let high: u32 = words[1] as u32;
+    let low: u32 = words[0] as u32;
     return core::wide_i64::from_words(high, low);
 }
 // Invalid timespec data returns fallback. A valid result may equal fallback.
@@ -27,7 +27,7 @@ pub fn nanoseconds_or(words:[i32], length: i32, fallback: u32) -> u32 {
     if (!can_decode(words, length)) {
         return fallback;
     }
-    let nanos: u32 = words[2];
+    let nanos: u32 = words[2] as u32;
     return nanos;
 }
 // Read exactly one 16-byte native timespec into caller storage. False means

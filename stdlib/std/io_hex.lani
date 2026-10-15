@@ -14,7 +14,7 @@ fn write_u32_digits(handle: i32, value: u32, uppercase: bool) -> i32 {
         } else {
             digit = core::hex::byte_at_lower_or_u32(value, position, 0);
         }
-        let byte: i32 = digit;
+        let byte: i32 = digit as i32;
         let written: i32 = std::io::write_byte(handle, byte);
         if (written < 0) {
             return written;
@@ -24,7 +24,7 @@ fn write_u32_digits(handle: i32, value: u32, uppercase: bool) -> i32 {
         }
         position += 1;
     }
-    return length;
+    return length as i32;
 }
 
 // Write the shortest lowercase or uppercase representation. Success returns

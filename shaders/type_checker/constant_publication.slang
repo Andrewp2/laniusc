@@ -1,11 +1,8 @@
 import primitive_types;
 import constant_value;
-import type_checker.concrete_type_equality;
-import type_checker.scoped_type_equality;
-// Producers alone allocate immutable scalar/projection rows. Pure matchers
-// return InferredConstant requests and never publish transient references.
+// Producers alone allocate immutable scalar/projection rows. Matchers never
+// publish transient references.
 import type_checker.constant_atoms;
-import type_checker.constant_constraints;
 
 // x=first dynamic row, y=exclusive logical limit, z=allocated dynamic rows.
 // A dedicated initialization pass owns this header before any producer runs.
@@ -54,28 +51,4 @@ public bool publish_checked_constant_projection_at(uint row, uint target, uint2 
     checked_constant_projections[row] = uint4(target, child, 0u);
     reference = uint2(3u, row);
     return true;
-}
-
-// Repeated inference rounds retain the prior published identity when its
-// complete typed value/recipe agrees. A new row is private until the caller
-// commits the owning claim/environment reference after this function returns.
-public bool publish_inferred_constant<Graph : IParameterScopedTypeGraph>(
-    InferredConstant request, uint tokens, uint2 prior, out uint2 reference)
-{
-    reference = uint2(0u, 0xffffffffu);
-    InferredConstantDescriptor descriptor;
-    if (!inferred_constant_request_descriptor<Graph>(request, tokens, descriptor)) return false;
-    if (request.target_scalar == 0u)
-    {
-        reference = request.reference;
-        return true;
-    }
-    if (prior.x >= 1u && prior.x <= 3u && prior.y != 0xffffffffu &&
-        inferred_constant_matches_reference<Graph>(request, prior, tokens))
-    { reference = prior; return true; }
-    uint row;
-    if (!reserve_checked_constant_row(row)) return false;
-    if (descriptor.source.disposition == CONSTANT_REFERENCE_CONCRETE)
-        return publish_checked_constant_atom_at(row, descriptor.value, reference);
-    return publish_checked_constant_projection_at(row, request.target_scalar, request.reference, reference);
 }

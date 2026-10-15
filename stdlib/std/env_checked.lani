@@ -13,7 +13,7 @@ pub fn var_read_exact_into(key: ptr, key_len: usize, value: ptr, capacity: usize
     if (expected<0) {
         return false;
     }
-    let needed: usize = expected;
+    let needed: usize = expected as usize;
     if (needed>capacity) {
         return false;
     }
@@ -37,7 +37,7 @@ pub fn var_key_read_exact_into(index: i32, buffer: ptr, capacity: usize) -> bool
     if (expected <= 0) {
         return false;
     }
-    let needed: usize = expected;
+    let needed: usize = expected as usize;
     if (needed>capacity || buffer == 0) {
         return false;
     }
@@ -56,7 +56,7 @@ pub fn current_dir_read_into(buffer: ptr, capacity: usize) -> i32 {
     if (received<0) {
         return -1;
     }
-    let count: usize = received;
+    let count: usize = received as usize;
     if (count >= capacity) {
         return -1;
     }

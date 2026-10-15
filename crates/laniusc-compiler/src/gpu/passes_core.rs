@@ -283,6 +283,48 @@ pub(crate) fn record_compute_dispatch() {
     RECORDED_COMPUTE_DISPATCH_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
+static READBACK_ROUND_TRIPS: AtomicU64 = AtomicU64::new(0);
+static READBACK_WAIT_NS: AtomicU64 = AtomicU64::new(0);
+static READBACKS_BY_LABEL: std::sync::LazyLock<std::sync::Mutex<HashMap<String, (u64, u64)>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// Whether `LANIUS_READBACK_BREAKDOWN` asks for per-label readback counts.
+pub(crate) fn readback_breakdown_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_READBACK_BREAKDOWN", false))
+}
+
+/// Process-wide completed readback maps and the host time spent waiting for
+/// them, in nanoseconds. Each one is a host round trip that drains the queue.
+pub(crate) fn readback_round_trips() -> (u64, u64) {
+    (
+        READBACK_ROUND_TRIPS.load(Ordering::Relaxed),
+        READBACK_WAIT_NS.load(Ordering::Relaxed),
+    )
+}
+
+/// Per-label `(round trips, wait ns)`, filled only when the breakdown is enabled.
+pub(crate) fn readback_round_trips_by_label() -> HashMap<String, (u64, u64)> {
+    READBACKS_BY_LABEL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+fn record_readback_round_trip(label: &str, waited: Duration) {
+    let waited = waited.as_nanos() as u64;
+    READBACK_ROUND_TRIPS.fetch_add(1, Ordering::Relaxed);
+    READBACK_WAIT_NS.fetch_add(waited, Ordering::Relaxed);
+    if readback_breakdown_enabled() {
+        let mut labels = READBACKS_BY_LABEL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = labels.entry(label.to_owned()).or_default();
+        entry.0 += 1;
+        entry.1 += waited;
+    }
+}
+
 pub(crate) fn compute_pass_breakdown_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {
@@ -407,6 +449,7 @@ pub(crate) fn begin_counted_compute_pass<'encoder>(
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .record_pass(label);
     }
+    crate::gpu::timer::stamp_job_session_pass_begin(encoder, label);
     encoder.begin_compute_pass(descriptor)
 }
 
@@ -1206,6 +1249,49 @@ pub(crate) fn submit_with_optional_validation(
     timing
 }
 
+/// Submits everything recorded into `encoder` so far and continues in a fresh
+/// encoder. A long recording split this way lets the GPU start on its prefix
+/// while the host records and finishes the rest: `CommandEncoder::finish`
+/// costs several microseconds per dispatch. Commands keep their queue order,
+/// and deferred dispatches are flushed into the prefix first. A
+/// `Queue::write_buffer` issued after the split reaches only commands
+/// recorded after it, so callers split where no earlier command reads a
+/// buffer the rest of the recording writes that way.
+/// `LANIUS_SPLIT_SUBMISSIONS=0` keeps every recording in one submission (for
+/// timing comparisons).
+pub(crate) fn submit_recorded_prefix(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+) {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    flush_deferred_compute(encoder);
+    if !*ENABLED
+        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_SPLIT_SUBMISSIONS", true))
+    {
+        return;
+    }
+    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+    let recorded = std::mem::replace(encoder, next);
+    let start = Instant::now();
+    let commands = recorded.finish();
+    crate::gpu::trace::record_host_span(
+        "host.submit",
+        &format!("{label}.encoder_finished"),
+        start,
+        Instant::now(),
+    );
+    submit_with_optional_validation(
+        device,
+        queue,
+        label,
+        commands,
+        validation_scopes_enabled(),
+        label,
+    );
+}
+
 /// Reflected compute-pipeline data shared by pass wrappers.
 #[derive(Clone)]
 pub struct PassData {
@@ -1611,6 +1697,7 @@ pub fn pipeline_from_spirv_and_bgls(
     PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
     crate::gpu::device::mark_pipeline_cache_dirty(device);
     let compute_pipeline_end = Instant::now();
+    crate::gpu::device::note_pipeline_created(device);
     trace_pipeline(label, "compute_pipeline.done");
     trace_pipeline_timing(
         label,
@@ -1714,7 +1801,9 @@ pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: &s
 /// Polls a device while emitting progress messages for a pending map.
 pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_type: wgpu::PollType) {
     trace_gpu_progress(&format!("poll.start :: {label}"));
+    let started = Instant::now();
     let _ = device.poll(poll_type);
+    record_readback_round_trip(label, started.elapsed());
     trace_gpu_progress(&format!("poll.done :: {label}"));
 }
 
@@ -1797,12 +1886,9 @@ pub(crate) fn finish_readback_map(
             .map_err(|err| anyhow!("{label} readback poll failed: {err}"))?;
         match receiver.try_recv() {
             Ok(Ok(())) => {
-                crate::gpu::trace::record_host_span(
-                    "host.readback",
-                    &label,
-                    started,
-                    Instant::now(),
-                );
+                let done = Instant::now();
+                record_readback_round_trip(&label, done.duration_since(started));
+                crate::gpu::trace::record_host_span("host.readback", &label, started, done);
                 trace_gpu_progress(&format!(
                     "map.done :: {label} elapsed_ms={}",
                     started.elapsed().as_millis()

@@ -2129,7 +2129,8 @@ impl GpuOptimizationStage {
             "lir.opt.reachability.close",
             kernels.kernel("codegen/lir/optimization/structure_reachability_close"),
             &params,
-            32,
+            // The kernel's 32 persistent workgroups of 32 lanes.
+            32 * 32,
         )?;
         let reachability_validate = ComputeOperation::direct_with_uniform(
             device,
@@ -2174,7 +2175,8 @@ impl GpuOptimizationStage {
             "lir.opt.dominators.resolve",
             kernels.kernel("codegen/lir/optimization/structure_dominator_resolve"),
             &params,
-            32,
+            // The kernel's 32 persistent workgroups of 32 lanes.
+            32 * 32,
         )?;
         let dominator_validate = ComputeOperation::direct_with_uniform(
             device,

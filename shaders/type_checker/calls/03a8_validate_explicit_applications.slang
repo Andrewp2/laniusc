@@ -1,4 +1,3 @@
-import type_checker.constant_constraints;
 // Validate immutable explicit bindings after closure, then retain them in the
 // accepted context snapshot used for native specialization (including unused
 // parameters). Their source-owned environment remains independent of context.
@@ -13,7 +12,6 @@ import type_checker.calls.explicit_application_owner;
 import status;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.contextual_call_environment;
-import type_checker.calls.context_constant_publication;
 import type_checker.checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;
@@ -84,20 +82,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 uint prior_mode = call_context_constant_identity_mode[call * 32u + slot];
                 if (pass == 0u)
                 {
+                    // A retained claim must agree with the explicit constant:
+                    // typed identity, or count identity for a count claim.
                     if ((call_context_constant_mask[call] & (1u << slot)) != 0u &&
                         !checked_constant_claims_compatible(prior, prior_mode, reference, 0u, gParams.n_tokens))
                     { record_min_token_error(status, anchor, 3u, 0u); return; }
-                    InferredConstant request = inferred_constant_reference(reference);
-                    if (prior.x != 0u && prior_mode != 0u)
-                    {
-                        InferredConstant retained = inferred_constant_reference(prior);
-                        retained.identity_mode = prior_mode;
-                        if (prior_mode > 1u || !inferred_constant_claims_compatible<ScopedCheckedTypeGraph>(
-                            retained, request, gParams.n_tokens)) constants_published = false;
-                    }
-                    InferredConstantDescriptor admitted;
-                    if (!inferred_constant_request_descriptor<ScopedCheckedTypeGraph>(
-                        request, gParams.n_tokens, admitted)) constants_published = false;
+                    // The explicit constant is published as an exact claim.
+                    if (!checked_constant_claim_admitted(reference, 0u, gParams.n_tokens))
+                        constants_published = false;
                 }
                 else if (constants_published)
                 {

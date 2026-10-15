@@ -264,7 +264,7 @@ pub fn lower_bound(value: VecI16, needle: i16) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_word: i32 = needle;
+    let needle_word: i32 = needle as i32;
     return core::slice::lower_bound_i32(cells, value.length, needle_word);
 }
 
@@ -273,7 +273,7 @@ pub fn upper_bound(value: VecI16, needle: i16) -> i32 {
         return 0;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_word: i32 = needle;
+    let needle_word: i32 = needle as i32;
     return core::slice::upper_bound_i32(cells, value.length, needle_word);
 }
 

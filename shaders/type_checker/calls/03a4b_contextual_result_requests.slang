@@ -1,17 +1,27 @@
-import type_checker.constant_constraints;
-// Match local call returns against their complete receiving context. Each
-// call owns its accepted result constraints. Inference publishes
-// all ordered bindings only after the entire graph has matched.
+// Match local call returns against their complete receiving context over
+// canonical IDs: the callee's declared result pattern against the receiving
+// type (ct_match), and the bindings become the call's context
+// (ct_publish_context; constants merge with the context table and are
+// admitted later). Each call owns its accepted result constraints.
+// Inference publishes all ordered bindings only after the entire graph has
+// matched.
 import hir_records;
 import hir_expr_semantics;
 import gpu_index;
 import status;
-import type_checker.calls.checked_call_type_graph;
-import type_checker.checked_type_graph;
+import type_checker.mutable_checked_type_graph;
 import type_checker.calls.contextual_call_environment;
-import type_checker.calls.context_constant_publication;
-import type_checker.scoped_type_constraints;
 import type_checker.argument_context;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_candidates;
+import type_checker.canonical.canonical_mutable_rows;
+import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_checked;
+import type_checker.substitution.ct_rows;
+import type_checker.substitution.source_slots;
+import type_checker.match.ct_match;
+import type_checker.match.ct_context_publish;
+import type_checker.match.field_expected;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -26,8 +36,6 @@ StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> struct_init_field_expected_ref_tag;
 StructuredBuffer<uint> struct_init_field_expected_ref_payload;
 StructuredBuffer<uint> struct_init_field_expected_context_instance;
-StructuredBuffer<uint> type_instance_lookup_head;
-StructuredBuffer<uint> type_instance_lookup_next;
 StructuredBuffer<uint> compact_array_element_start;
 StructuredBuffer<uint> compact_array_element_count;
 StructuredBuffer<uint> compact_array_element_row_count;
@@ -62,6 +70,8 @@ bool valid_token(uint token) { return token < gParams.n_tokens; }
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
+uint checked_type_capacity() { return mutable_type_capacity(); }
+#define CANONICAL_FIELD_EXPECTATION
 #include "../result_expression_context.slang"
 
 uint callee_token(uint call)
@@ -117,7 +127,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // Receiving fields resolve under their nominal owner's environment. The
     // resulting reference is already in caller scope; only the return-pattern
     // matcher below suppresses provisional bindings of the called function.
-    if (!result_expression_context<ScopedCheckedTypeGraph>(call, checked_type_capacity(), reference)) return;
+    if (!result_expression_context<MutableCheckedTypeGraph>(call, checked_type_capacity(), reference)) return;
     uint tag = reference.x; uint expected = reference.y;
     if (tag == 0u || expected == INVALID || (tag == 3u && expected >= checked_type_capacity())) return;
     if (raw_view)
@@ -129,11 +139,47 @@ void main(uint3 dtid: SV_DispatchThreadID)
             record_min_token_error(status, compact_hir_core[call].token_start, 3u, 0u);
         return;
     }
-    uint2 inferred[32]; uint mask; InferredConstant constants[32]; uint constant_mask;
-    if (!scoped_type_and_constant_constraints<ScopedDeclaredResultTypeGraph>(
-        fn_return_ref_tag[function], fn_return_ref_payload[function], 0x80000000u | callee,
-        tag, expected, checked_type_capacity(), gParams.n_tokens, inferred, mask,
-        constants, constant_mask, true))
+    SourceSlots slots;
+    CtSpare spare = ct_spare_none();
+    uint pattern = CT_UNKNOWN;
+    uint actual = CT_UNKNOWN;
+    uint environment = CT_MATCH_FAILED;
+    uint count_mask = 0u;
+    uint3 interned = uint3(0u, INVALID, CT_NONE);
+    // One interning site serves the result pattern, the receiving type and
+    // each prior operand the publisher asks for.
+    uint2 operand = uint2(fn_return_ref_tag[function], fn_return_ref_payload[function]);
+    uint outcome = CT_PUBLISH_REJECTED;
+    [loop]
+    for (uint work = 0u; work < 2u + CT_PUBLISH_REQUEST_LIMIT; work++)
+    {
+        uint id = ct_intern_checked<CtMutableRows>(operand.x, operand.y, spare.record);
+        if (work == 0u)
+        {
+            pattern = id;
+            operand = uint2(tag, expected);
+            continue;
+        }
+        if (work == 1u)
+        {
+            actual = id;
+            environment = ct_is_resolved(pattern) && ct_is_resolved(actual)
+                ? ct_match<SourceSlots>(slots, pattern, actual, CT_NONE, CT_NONE, CT_NONE, 0u, true,
+                    spare, count_mask)
+                : CT_MATCH_FAILED;
+            // An interning overflow retries the job with larger tables.
+            if (environment == CT_MATCH_OVERFLOW) return;
+            if (!ct_is_record(environment)) break;
+        }
+        // A prior that has no ID agrees with no binding.
+        else if (!ct_is_resolved(id)) { outcome = CT_PUBLISH_REJECTED; break; }
+        else interned = uint3(operand, id);
+        uint3 words = ct_words(environment);
+        outcome = ct_publish_context<CtNoClaims>(call, callee, environment, words.y, words.z,
+            count_mask, 0u, interned, operand);
+        if (outcome != CT_PUBLISH_INTERN) break;
+    }
+    if (!ct_is_record(environment))
     {
         // Parameter contexts can still change while their enclosing call's
         // argument facts settle. A failed provisional comparison publishes
@@ -142,14 +188,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             record_min_token_error(status, compact_hir_core[call].token_start, 3u, 0u);
         return;
     }
-    for (uint slot = 0u; slot < 32u; slot++)
-        if ((mask & (1u << slot)) != 0u)
-        {
-            call_context_ref_tag[call * 32u + slot] = inferred[slot].x;
-            call_context_ref_payload[call * 32u + slot] = inferred[slot].y;
-        }
-    call_context_arg_mask[call] |= mask;
-    if (!publish_context_constants<ScopedDeclaredResultTypeGraph, DeferredContextConstantAdmission>(call, constants, constant_mask, gParams.n_tokens))
+    // A row another lane is writing settles in a later round.
+    if (outcome == CT_PUBLISH_BUSY) return;
+    if (outcome != CT_PUBLISHED)
     { record_min_token_error(status, compact_hir_core[call].token_start, 6u, 0x474e0001u); return; }
     call_context_owner_by_token[callee] = call;
     uint callee_node = compact_hir_payload[call].a;

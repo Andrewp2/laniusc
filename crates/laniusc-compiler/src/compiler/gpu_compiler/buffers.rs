@@ -16,7 +16,7 @@ pub(super) fn with_typecheck_hir_items<'a, R>(
     call_param_row_capacity: u32,
     call_arg_row_capacity: u32,
     semantic_interface_required: bool,
-    body_specialization: Option<&gpu_type_checker::CheckedBodySpecialization>,
+    body_specialization: Option<&gpu_type_checker::CheckedBodySpecializationBatch>,
     frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
     consume: impl FnOnce(GpuTypeCheckHirItemBuffers<'_>) -> R,
 ) -> R {

@@ -84,6 +84,7 @@ static const uint HIR_EXPR_RANGE_TO = 32u;
 static const uint HIR_EXPR_RANGE_FULL = 33u;
 static const uint HIR_EXPR_RANGE_INCLUSIVE = 34u;
 static const uint HIR_EXPR_RANGE_TO_INCLUSIVE = 35u;
+static const uint HIR_EXPR_CAST = 36u;
 
 bool semantic_lir_is_expression(HirCore core)
 {
@@ -252,18 +253,20 @@ uint semantic_lir_op(HirCore core, HirPayload payload)
     if (form == HIR_EXPR_STRING) return SEMANTIC_LIR_OP_CONST_STRING;
     if (form == HIR_EXPR_NOT) return SEMANTIC_LIR_OP_LOGICAL_NOT;
     if (form == HIR_EXPR_NEG) return SEMANTIC_LIR_OP_NEGATE;
-    if (form == HIR_EXPR_ADD) return SEMANTIC_LIR_OP_ADD;
-    if (form == HIR_EXPR_SUB) return SEMANTIC_LIR_OP_SUB;
-    if (form == HIR_EXPR_MUL) return SEMANTIC_LIR_OP_MUL;
-    if (form == HIR_EXPR_DIV) return SEMANTIC_LIR_OP_DIV;
-    if (form == HIR_EXPR_MOD) return SEMANTIC_LIR_OP_REM;
-    if (form == HIR_EXPR_AND) return SEMANTIC_LIR_OP_LOGICAL_AND;
-    if (form == HIR_EXPR_OR) return SEMANTIC_LIR_OP_LOGICAL_OR;
-    if (form == HIR_EXPR_BIT_AND) return SEMANTIC_LIR_OP_BIT_AND;
-    if (form == HIR_EXPR_BIT_OR) return SEMANTIC_LIR_OP_BIT_OR;
-    if (form == HIR_EXPR_BIT_XOR) return SEMANTIC_LIR_OP_BIT_XOR;
-    if (form == HIR_EXPR_SHL) return SEMANTIC_LIR_OP_SHIFT_LEFT;
-    if (form == HIR_EXPR_SHR) return SEMANTIC_LIR_OP_SHIFT_RIGHT;
+    // `value as T`: payload.b is the operand; payload.c is a type row.
+    if (form == HIR_EXPR_CAST) return SEMANTIC_LIR_OP_CONVERT;
+    // Binary forms add (14) through shr (25) map through two packed words of
+    // five-bit `op - ADD` entries, six forms per word. This keeps the shared
+    // opcode switch small in the kernels that inline it several times.
+    // Low word, forms 14-19: add, sub, mul, logical and, logical or, rem.
+    // High word, forms 20-25: div, bit or, bit xor, bit and, shl, shr.
+    uint binary = form - HIR_EXPR_ADD;
+    if (binary < 12u)
+    {
+        uint word = binary < 6u ? 0x09ff0820u : 0x12829cc3u;
+        uint slot = binary < 6u ? binary : binary - 6u;
+        return ((word >> (slot * 5u)) & 31u) + SEMANTIC_LIR_OP_ADD;
+    }
     if (form >= HIR_EXPR_EQ && form <= HIR_EXPR_GE)
         return SEMANTIC_LIR_OP_COMPARE;
     return SEMANTIC_LIR_OP_INVALID;

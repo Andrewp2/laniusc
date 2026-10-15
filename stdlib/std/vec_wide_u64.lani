@@ -204,8 +204,8 @@ pub fn get_or(value: VecWideU64, index: i32, fallback: core::wide_u64::WideU64) 
     }
     let cells:[i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
     let offset: i32 = index * 2;
-    let low: u32 = cells[offset];
-    let high: u32 = cells[offset + 1];
+    let low: u32 = cells[offset] as u32;
+    let high: u32 = cells[offset + 1] as u32;
     return core::wide_u64::from_words(high, low);
 }
 // Mutate one initialized element; invalid indices leave storage unchanged.
@@ -241,8 +241,8 @@ pub fn reverse_in_place(value: VecWideU64) -> i32 {
 pub fn lower_bound(value: VecWideU64, needle: core::wide_u64::WideU64) -> i32 {
     if (value.length == 0) { return 0; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
-    let high_bits: i32 = core::wide_u64::high_word(needle);
-    let low_bits: i32 = core::wide_u64::low_word(needle);
+    let high_bits: i32 = core::wide_u64::high_word(needle) as i32;
+    let low_bits: i32 = core::wide_u64::low_word(needle) as i32;
     return core::wide_word_cells::lower_bound(
         cells, value.length, high_bits, low_bits, false);
 }
@@ -250,8 +250,8 @@ pub fn lower_bound(value: VecWideU64, needle: core::wide_u64::WideU64) -> i32 {
 pub fn upper_bound(value: VecWideU64, needle: core::wide_u64::WideU64) -> i32 {
     if (value.length == 0) { return 0; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
-    let high_bits: i32 = core::wide_u64::high_word(needle);
-    let low_bits: i32 = core::wide_u64::low_word(needle);
+    let high_bits: i32 = core::wide_u64::high_word(needle) as i32;
+    let low_bits: i32 = core::wide_u64::low_word(needle) as i32;
     return core::wide_word_cells::upper_bound(
         cells, value.length, high_bits, low_bits, false);
 }

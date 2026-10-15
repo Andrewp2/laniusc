@@ -42,6 +42,7 @@ static const uint INVALID = 0xffffffffu;
 
 groupshared uint batch_begin;
 groupshared uint batch_count;
+groupshared uint batch_done;
 
 uint function_for_node(uint row)
 {
@@ -167,24 +168,31 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     for (;;)
     {
+        // One lane schedules; every lane takes the same exit and
+        // barrier path, and reads the batch before it can change.
         if (ltid.x == 0u)
+        {
             ssa_work_try_pop_batch(gParams.semantic_capacity, 32u,
                 x86_liveness_work_state, batch_begin, batch_count);
-        GroupMemoryBarrierWithGroupSync();
-        if (batch_count == 0u)
-        {
-            if (ssa_work_quiescent(x86_liveness_work_state)) return;
-            continue;
+            batch_done = batch_count == 0u &&
+                    ssa_work_quiescent(x86_liveness_work_state)
+                ? 1u : 0u;
         }
-        if (ltid.x < batch_count)
+        GroupMemoryBarrierWithGroupSync();
+        uint work_begin = batch_begin;
+        uint work_count = batch_count;
+        bool work_done = batch_done != 0u;
+        GroupMemoryBarrierWithGroupSync();
+        if (work_done) return;
+        if (work_count == 0u) continue;
+        if (ltid.x < work_count)
         {
             uint row = ssa_work_read_published(
-                x86_liveness_work_queue, batch_begin + ltid.x);
+                x86_liveness_work_queue, work_begin + ltid.x);
             if (row < total) admit_dependencies(row, total);
         }
         GroupMemoryBarrierWithGroupSync();
         if (ltid.x == 0u)
-            ssa_work_finish_batch(x86_liveness_work_state, batch_count);
-        GroupMemoryBarrierWithGroupSync();
+            ssa_work_finish_batch(x86_liveness_work_state, work_count);
     }
 }

@@ -7,9 +7,9 @@ import std::map_u8_u32;
 import std::set_i8;
 
 fn code(key: i8) -> u8 {
-    let signed: i32 = key;
+    let signed: i32 = key as i32;
     let shifted: i32 = signed + 128;
-    let byte: u8 = shifted;
+    let byte: u8 = shifted as u8;
     return byte;
 }
 

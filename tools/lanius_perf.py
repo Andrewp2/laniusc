@@ -41,6 +41,14 @@ LANIUS_MODES = ("process_cold", "daemon_cold_workspace", "daemon_warm_workspace"
 DEFAULT_BENCHMARK_SEED = 20260808
 DEFAULT_SAMPLE_COUNT = 20
 CANONICAL_SINGLE_FILE_PRESET = "single-file-1mb"
+GENERIC_SINGLE_FILE_PRESET = "single-file-generic-1mb"
+GENERIC_NARROW_SINGLE_FILE_PRESET = "single-file-generic-narrow-1mb"
+GENERIC_PROJECT_PRESET = "project-generic-1mb"
+GENERIC_NARROW_PROJECT_PRESET = "project-generic-narrow-1mb"
+GENERIC_PROFILE = "generic-stdlib-heavy"
+# Four record types as type arguments: ~160 concrete generic bodies instead of
+# ~2200, under the compiler's current 256-body specialization limit (LNC0017).
+GENERIC_NARROW_PROFILE = "generic-stdlib-heavy-type-pool-4"
 GPU_COMPILER_PHASES = frozenset(
     {
         "lexing",
@@ -67,6 +75,11 @@ class WorkloadSpec:
     file_count: int | None = None
     profile: str | None = None
     primer_seed: int | None = None
+    # "compiler-stress" (tools/generate_compiler_stress.py) or "generic"
+    # (tools/generate_generic_workload.py); layout applies to "generic".
+    generator: str = "compiler-stress"
+    layout: str = "single-file"
+    generator_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -75,6 +88,9 @@ class WorkloadCase:
     input_path: Path
     source_root: Path | None
     facts: dict
+    # The generator's exact expected program output; None when unknown.
+    expected_stdout: str | None = None
+    expected_exit_code: int | None = None
 
 
 CANONICAL_WORKLOAD_PRESETS = {
@@ -86,6 +102,56 @@ CANONICAL_WORKLOAD_PRESETS = {
         target_bytes=1_000_000,
         profile="pareas-common-subset",
         primer_seed=19,
+    ),
+    # The same shape (20 measured seeds, primer seed 19, 1 MB / ~30 KSLOC per
+    # seed) with generics-heavy stdlib-plus-user programs.
+    GENERIC_SINGLE_FILE_PRESET: WorkloadSpec(
+        kind="single_file",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=GENERIC_SINGLE_FILE_PRESET,
+        target_bytes=1_000_000,
+        profile=GENERIC_PROFILE,
+        primer_seed=19,
+        generator="generic",
+    ),
+    # The same programs split into a library module and one module per area,
+    # compiled with --source-root (the daemon's multi-file path).
+    GENERIC_PROJECT_PRESET: WorkloadSpec(
+        kind="typical_project",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=GENERIC_PROJECT_PRESET,
+        target_bytes=1_000_000,
+        profile=GENERIC_PROFILE,
+        primer_seed=19,
+        generator="generic",
+        layout="project",
+    ),
+    # Same mix and size with fewer distinct type arguments, so the programs fit
+    # today's specialization limit and the generic paths can be timed now.
+    GENERIC_NARROW_SINGLE_FILE_PRESET: WorkloadSpec(
+        kind="single_file",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=GENERIC_NARROW_SINGLE_FILE_PRESET,
+        target_bytes=1_000_000,
+        profile=GENERIC_NARROW_PROFILE,
+        primer_seed=19,
+        generator="generic",
+        generator_args=("--type-pool", "4"),
+    ),
+    GENERIC_NARROW_PROJECT_PRESET: WorkloadSpec(
+        kind="typical_project",
+        seeds=tuple(range(20, 40)),
+        sample_count=20,
+        preset=GENERIC_NARROW_PROJECT_PRESET,
+        target_bytes=1_000_000,
+        profile=GENERIC_NARROW_PROFILE,
+        primer_seed=19,
+        generator="generic",
+        layout="project",
+        generator_args=("--type-pool", "4"),
     ),
 }
 
@@ -299,6 +365,8 @@ def custom_workload_warning(spec: WorkloadSpec) -> str | None:
 
 
 def workload_run_id(spec: WorkloadSpec, target: str) -> str:
+    if spec.preset:
+        return f"{spec.preset}-{target}"
     if spec.kind == "single_file":
         assert spec.target_bytes is not None
         identity = spec.preset or (
@@ -345,6 +413,16 @@ def parse_args() -> argparse.Namespace:
     run.add_argument("--skip-profile", action="store_true")
     run.add_argument("--startup-timeout", type=float, default=900.0)
     run.add_argument("--job-timeout", type=float, default=900.0)
+    run.add_argument(
+        "--laniusc",
+        type=Path,
+        help="use this compiler binary instead of building target/release/laniusc",
+    )
+    run.add_argument(
+        "--keep-going",
+        action="store_true",
+        help="record failed compiles in the result instead of aborting the run",
+    )
 
     validate = subparsers.add_parser("validate", help="validate canonical result JSON")
     validate.add_argument("paths", nargs="+", type=Path)
@@ -440,11 +518,14 @@ def run_lanius(args: argparse.Namespace) -> int:
     unknown = set(modes) - set(LANIUS_MODES)
     if not modes or unknown:
         raise ValueError(f"--modes must be a subset of {','.join(LANIUS_MODES)}; unknown={sorted(unknown)}")
-    print("lanius_perf: building the release compiler", flush=True)
-    checked(["cargo", "build", "--release", "--bin", "laniusc"], ROOT)
-    laniusc = ROOT / "target" / "release" / "laniusc"
+    if args.laniusc is not None:
+        laniusc = resolve(args.laniusc)
+    else:
+        print("lanius_perf: building the release compiler", flush=True)
+        checked(["cargo", "build", "--release", "--bin", "laniusc"], ROOT)
+        laniusc = ROOT / "target" / "release" / "laniusc"
     if not laniusc.is_file():
-        raise ValueError(f"release build did not produce the compiler: {laniusc}")
+        raise ValueError(f"compiler binary does not exist: {laniusc}")
 
     run_id, workload, cases, primer_case, generation_commands = prepare_workload(
         spec, args.target
@@ -463,21 +544,39 @@ def run_lanius(args: argparse.Namespace) -> int:
     artifact_dir = ROOT / "target" / "lanius-perf-artifacts" / run_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
+    problems = []
     for mode in modes:
         print(f"lanius_perf: {run_id} {mode} ({len(sample_cases)} samples)", flush=True)
-        measurement = measure_mode(
-            mode,
-            laniusc,
-            version,
-            sample_cases,
-            cases,
-            primer_case,
-            args.target,
-            artifact_dir,
-            facts,
-            args.startup_timeout,
-            args.job_timeout,
-        )
+        try:
+            measurement = measure_mode(
+                mode,
+                laniusc,
+                version,
+                sample_cases,
+                cases,
+                primer_case,
+                args.target,
+                artifact_dir,
+                facts,
+                args.startup_timeout,
+                args.job_timeout,
+                args.keep_going,
+            )
+        except AllSamplesFailed as error:
+            if not args.keep_going:
+                raise
+            # A canonical result needs timed samples; keep the diagnostics instead.
+            failures_path = artifact_dir / f"{mode}-failed-compiles.json"
+            failures_path.write_text(json.dumps(
+                {"run_id": run_id, "mode": mode, "compiler_version": version,
+                 "failed_compiles": error.failures}, indent=1) + "\n")
+            print(f"lanius_perf: {mode}: every sample failed to compile "
+                  f"({len(error.failures)} failures); no timings. Diagnostics: {failures_path}", flush=True)
+            for failure in error.failures[:5]:
+                print(f"lanius_perf:   {json.dumps(failure)[:800]}", flush=True)
+            problems.append(f"{mode}: every sample failed to compile")
+            continue
+        problems.extend(report_validation(mode, measurement))
         if not args.skip_profile and mode in {
             "daemon_cold_workspace",
             "daemon_warm_workspace",
@@ -496,13 +595,115 @@ def run_lanius(args: argparse.Namespace) -> int:
             )
         document["measurements"].append(measurement)
 
+    if not document["measurements"]:
+        print("lanius_perf: INVALID RESULT: " + "; ".join(problems), file=sys.stderr, flush=True)
+        return 1
     write_document(output, document)
     catalog_results(DEFAULT_RESULT_ROOT)
     print(output)
+    if problems:
+        print("lanius_perf: INVALID RESULT: " + "; ".join(problems), file=sys.stderr, flush=True)
+        return 1
     return 0
 
 
+def report_validation(mode: str, measurement: dict) -> list[str]:
+    """Print one line per mode and return what makes its timings untrustworthy."""
+    validation = measurement["validation"]
+    verification = validation.get("output_verification")
+    failed = validation.get("failed_compiles", [])
+    compiler_ms = [
+        sample["compiler_ms"]
+        for sample in measurement["samples"]
+        if isinstance(sample.get("compiler_ms"), (int, float))
+    ]
+    median = sorted(compiler_ms)[len(compiler_ms) // 2] if compiler_ms else None
+    wall_ms = sorted(sample["wall_ms"] for sample in measurement["samples"])
+    line = (
+        f"lanius_perf: {mode}: median compile_ms={median} "
+        f"median wall_ms={wall_ms[len(wall_ms) // 2] if wall_ms else None}"
+    )
+    problems = []
+    if verification is not None:
+        line += f", outputs correct {verification['correct']}/{verification['checked']}"
+        if verification["correct"] != verification["checked"]:
+            problems.append(
+                f"{mode}: {verification['checked'] - verification['correct']} wrong program outputs"
+            )
+    if failed:
+        line += f", failed compiles {len(failed)}"
+        problems.append(f"{mode}: {len(failed)} failed compiles")
+    print(line, flush=True)
+    for failure in [*failed, *(verification or {}).get("failures", [])]:
+        print(f"lanius_perf:   {json.dumps(failure)[:800]}", flush=True)
+    return problems
+
+
+def prepare_generic_workload(spec: WorkloadSpec, target: str):
+    assert spec.target_bytes is not None and spec.profile is not None
+    run_id = workload_run_id(spec, target)
+    root = ROOT / "target" / "lanius-perf-workloads" / run_id
+    generation_commands = []
+    cases = []
+    seeds = [*spec.seeds, *([spec.primer_seed] if spec.primer_seed is not None else [])]
+    for seed in seeds:
+        seed_root = root / f"seed-{seed}"
+        command = [
+            sys.executable,
+            "tools/generate_generic_workload.py",
+            "--out",
+            str(seed_root),
+            "--layout",
+            spec.layout,
+            "--target-bytes",
+            str(spec.target_bytes),
+            "--seed",
+            str(seed),
+            *spec.generator_args,
+        ]
+        checked(command, ROOT)
+        generation_commands.append(command)
+        manifest = json.loads((seed_root / "manifest.json").read_text())
+        input_path = seed_root / manifest["entry"]
+        source_root = seed_root / manifest["source_root"] if manifest["source_root"] else None
+        sources = [input_path, *(source_root.rglob("*.lani") if source_root else [])]
+        cases.append(
+            WorkloadCase(
+                seed,
+                input_path,
+                source_root,
+                source_facts(sources, ROOT),
+                manifest["expected_stdout"],
+                manifest["expected_exit_code"],
+            )
+        )
+    primer_case = cases.pop() if spec.primer_seed is not None else None
+    workload = {
+        "id": run_id,
+        "kind": spec.kind,
+        "classification": (
+            "synthetic generics-heavy stdlib-plus-user program"
+            + (" split into modules" if spec.layout == "project" else "")
+        ),
+        "generator": "tools/generate_generic_workload.py",
+        "preset": spec.preset,
+        "profile": spec.profile,
+        "layout": spec.layout,
+        "generator_args": list(spec.generator_args),
+        "measured_seeds": list(spec.seeds),
+        "primer_seed": spec.primer_seed,
+        "target_source_bytes": spec.target_bytes,
+        "comparison_group": (
+            f"generic-workload/{spec.layout}/{spec.profile}/{spec.target_bytes}/"
+            f"seeds-{','.join(str(seed) for seed in spec.seeds)}"
+        ),
+    }
+    return run_id, workload, cases, primer_case, generation_commands
+
+
 def prepare_workload(spec: WorkloadSpec, target: str):
+    if spec.generator == "generic":
+        return prepare_generic_workload(spec, target)
     if spec.kind == "single_file":
         assert spec.target_bytes is not None and spec.profile is not None
         run_id = workload_run_id(spec, target)
@@ -531,8 +732,16 @@ def prepare_workload(spec: WorkloadSpec, target: str):
             checked(command, ROOT)
             generation_commands.append(command)
             input_path = seed_root / str(spec.target_bytes) / "scaling.lani"
+            source_sets = json.loads((seed_root / "manifest.json").read_text())["source_sets"]
             cases.append(
-                WorkloadCase(seed, input_path, None, source_facts([input_path], ROOT))
+                WorkloadCase(
+                    seed,
+                    input_path,
+                    None,
+                    source_facts([input_path], ROOT),
+                    source_sets[0].get("expected_stdout"),
+                    0,
+                )
             )
         primer_case = None
         if spec.primer_seed is not None:
@@ -730,6 +939,7 @@ def measure_mode(
     facts: dict,
     startup_timeout: float,
     job_timeout: float,
+    keep_going: bool = False,
 ) -> dict:
     daemon_argv = daemon_command(laniusc, target)
     raw_samples: list[dict] = []
@@ -737,6 +947,9 @@ def measure_mode(
     sample_commands = []
     suffix = "wasm" if target == "wasm" else "bin"
     last_output = artifact_dir / f"{mode}-0.{suffix}"
+    # (sample index, case, artifact) of every successful compile, for output checks.
+    sample_outputs: list[tuple[int, WorkloadCase, Path]] = []
+    failed_compiles: list[dict] = []
 
     if mode == "process_cold":
         for index, case in enumerate(sample_cases):
@@ -745,8 +958,15 @@ def measure_mode(
                 laniusc, case.input_path, case.source_root, target, output
             )
             started = time.perf_counter_ns()
-            checked(direct, ROOT)
+            try:
+                checked(direct, ROOT)
+            except RuntimeError as error:
+                if not keep_going:
+                    raise
+                failed_compiles.append(compile_failure(index, case, {"error": str(error)[-2000:]}))
+                continue
             wall_ms = (time.perf_counter_ns() - started) / 1_000_000.0
+            sample_outputs.append((index, case, output))
             raw_samples.append(
                 {
                     "index": index,
@@ -776,9 +996,13 @@ def measure_mode(
             )
             try:
                 wall_ms, response = daemon.request(request, job_timeout)
-                raw_samples.append(
-                    sample_from_response(index, wall_ms, response, case)
-                )
+                if keep_going and response.get("ok") is not True:
+                    failed_compiles.append(compile_failure(index, case, response))
+                else:
+                    raw_samples.append(
+                        sample_from_response(index, wall_ms, response, case)
+                    )
+                    sample_outputs.append((index, case, output))
             finally:
                 daemon.shutdown(job_timeout)
             sample_requests.append(request)
@@ -798,20 +1022,38 @@ def measure_mode(
         daemon = Daemon(daemon_argv, ROOT, {}, startup_timeout, artifact_dir / f"{mode}.stderr")
         ready_samples.append(daemon.ready)
         primer_counts = {}
+        # With --keep-going, a program that fails while priming is recorded
+        # once and not compiled again: its error is deterministic, and failing
+        # 1 MB compiles can take many seconds each.
+        failed_seeds = set()
         try:
             for case in [*capacity_cases, *([primer_case] if primer_case else [])]:
                 primer_output = artifact_dir / f"{mode}-primer-{case.seed}.{suffix}"
-                primer_counts[str(case.seed)] = prime_workspace_until_stable(
-                    daemon,
-                    case.input_path,
-                    case.source_root,
-                    target,
-                    primer_output,
-                    job_timeout,
-                    f"workspace-primer-{case.seed}",
-                )
+                try:
+                    primer_counts[str(case.seed)] = prime_workspace_until_stable(
+                        daemon,
+                        case.input_path,
+                        case.source_root,
+                        target,
+                        primer_output,
+                        job_timeout,
+                        f"workspace-primer-{case.seed}",
+                    )
+                except PrimerCompileFailed as error:
+                    if not keep_going:
+                        raise
+                    failed_seeds.add(case.seed)
+                    sample_index = next(
+                        (index for index, sample in enumerate(sample_cases) if sample.seed == case.seed),
+                        None,
+                    )
+                    failure = compile_failure(-1 if sample_index is None else sample_index, case, error.response)
+                    failure["phase"] = "capacity primer"
+                    failed_compiles.append(failure)
             sample_requests = []
             for index, case in enumerate(sample_cases):
+                if case.seed in failed_seeds:
+                    continue
                 output = artifact_dir / f"{mode}-{index}.{suffix}"
                 _, cleared = daemon.request(
                     {
@@ -826,6 +1068,9 @@ def measure_mode(
                     f"measure-{index}", case.input_path, case.source_root, target, output
                 )
                 wall_ms, response = daemon.request(request, job_timeout)
+                if keep_going and response.get("ok") is not True:
+                    failed_compiles.append(compile_failure(index, case, response))
+                    continue
                 cache = response.get("compiled_unit_cache", {})
                 if (
                     cache.get("hits_during_job", 0) > 0
@@ -841,6 +1086,7 @@ def measure_mode(
                 raw_samples.append(
                     sample_from_response(index, wall_ms, response, case)
                 )
+                sample_outputs.append((index, case, output))
                 sample_requests.append(request)
                 last_output = output
         finally:
@@ -872,6 +1118,20 @@ def measure_mode(
         else "one generated program compiled repeatedly"
     )
 
+    if not raw_samples:
+        raise AllSamplesFailed(mode, failed_compiles)
+    if sample_outputs:
+        last_output = sample_outputs[-1][2]
+    validation = {
+        "compile_exit_status": 0,
+        "artifact_bytes": last_output.stat().st_size,
+    }
+    verification = verify_outputs(sample_outputs, target)
+    if verification is not None:
+        validation["output_verification"] = verification
+    if failed_compiles:
+        validation["failed_compiles"] = failed_compiles
+
     return {
         "id": f"lanius-{target}-{mode}",
         "compiler": {"name": "lanius", "version": version},
@@ -883,11 +1143,73 @@ def measure_mode(
         "samples": raw_samples,
         "summary": summarize(raw_samples, facts),
         "daemon_ready_samples": ready_samples,
-        "validation": {
-            "compile_exit_status": 0,
-            "artifact_bytes": last_output.stat().st_size,
-        },
+        "validation": validation,
     }
+
+
+def compile_failure(index: int, case: WorkloadCase, response: dict) -> dict:
+    """The diagnostic of a failed sample compile, without bulky profiling fields."""
+    kept = {
+        key: value
+        for key, value in response.items()
+        if key in {"id", "ok", "error", "diagnostic", "diagnostics", "compile_ms", "message"}
+    }
+    return {
+        "index": index,
+        "seed": case.seed,
+        "input": str(case.input_path.relative_to(ROOT)),
+        "response": kept,
+    }
+
+
+def verify_outputs(
+    sample_outputs: list[tuple[int, WorkloadCase, Path]], target: str
+) -> dict | None:
+    """Run each emitted program whose generator knows its output and compare."""
+    checks = [
+        item
+        for item in sample_outputs
+        if item[1].expected_stdout is not None or item[1].expected_exit_code is not None
+    ]
+    if not checks or target != "x86_64":
+        return None
+    failures = []
+    for index, case, path in checks:
+        path.chmod(0o755)
+        failure = {"index": index, "seed": case.seed, "artifact": str(path.relative_to(ROOT))}
+        try:
+            completed = subprocess.run([str(path)], capture_output=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            failures.append({**failure, "error": str(error)})
+            continue
+        stdout = completed.stdout.decode("utf-8", "replace")
+        if (
+            case.expected_exit_code is not None and completed.returncode != case.expected_exit_code
+        ) or (case.expected_stdout is not None and stdout != case.expected_stdout):
+            actual_lines = stdout.splitlines()
+            expected_lines = (case.expected_stdout or "").splitlines()
+            differing = next(
+                (
+                    line
+                    for line in range(max(len(actual_lines), len(expected_lines)))
+                    if line >= len(actual_lines)
+                    or line >= len(expected_lines)
+                    or actual_lines[line] != expected_lines[line]
+                ),
+                None,
+            )
+            failures.append(
+                {
+                    **failure,
+                    "exit_code": completed.returncode,
+                    "expected_exit_code": case.expected_exit_code,
+                    "first_differing_stdout_line": differing,
+                    "stdout_head": stdout[:300],
+                    "expected_stdout_head": (case.expected_stdout or "")[:300],
+                    "stderr_head": completed.stderr.decode("utf-8", "replace")[:300],
+                }
+            )
+    return {"checked": len(checks), "correct": len(checks) - len(failures), "failures": failures}
 
 
 def sample_case_fields(case: WorkloadCase) -> dict:
@@ -1139,6 +1461,23 @@ def profile_gpu_memory_timeline(
     }
 
 
+class AllSamplesFailed(RuntimeError):
+    """No sample compiled, so there is no timing to record; `failures` says why."""
+
+    def __init__(self, mode: str, failures: list[dict]):
+        super().__init__(f"{mode}: every sample failed to compile: {json.dumps(failures[:3])[:3000]}")
+        self.mode = mode
+        self.failures = failures
+
+
+class PrimerCompileFailed(RuntimeError):
+    """A capacity primer did not compile; `response` holds the daemon's answer."""
+
+    def __init__(self, response: dict):
+        super().__init__(f"capacity primer failed to compile: {json.dumps(response)[:2000]}")
+        self.response = response
+
+
 def prime_workspace_until_stable(
     daemon: "Daemon",
     input_path: Path,
@@ -1160,6 +1499,8 @@ def prime_workspace_until_stable(
             ),
             timeout,
         )
+        if response.get("ok") is not True:
+            raise PrimerCompileFailed(response)
         created = response.get("resources_created_during_job", {})
         if not any(
             created.get(kind, 0) for kind in ("buffers", "bind_groups", "compute_pipelines")

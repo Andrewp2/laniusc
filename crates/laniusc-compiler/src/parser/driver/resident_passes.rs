@@ -4,6 +4,50 @@ use super::*;
 use crate::parser::passes::hir::list::rank::ListRankInvocation;
 
 impl GpuParser {
+    /// Compacts the rows whose `owner_a` or `link_a` record is valid into
+    /// `hir_list_rank_node`, and publishes `hir_list_rank_dispatch_args`, for
+    /// a bounded walk over those rows only.
+    fn record_walk_compaction<'a, P>(
+        &self,
+        ctx: &mut PassContext<'a, ParserBuffers, DebugOutput>,
+        params: &crate::gpu::buffers::LaniusBuffer<P>,
+        owner_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: ListRankInvocation,
+    ) -> Result<()> {
+        self.passes.hir_list_rank_prefix_local.record_for_owner_link(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            params,
+            owner_a,
+            link_a,
+            ctx.bg_cache
+                .as_deref_mut()
+                .expect("resident parser requires a bind-group cache"),
+            invocation,
+        )?;
+        self.passes.hir_semantic_prefix_blocks.record_list_rank_scan(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            ctx.bg_cache
+                .as_deref_mut()
+                .expect("resident parser requires a bind-group cache"),
+            invocation,
+        )?;
+        self.passes.hir_list_rank_compact_scatter.record_for_params(
+            ctx.device,
+            ctx.encoder,
+            ctx.buffers,
+            params,
+            ctx.bg_cache
+                .as_deref_mut()
+                .expect("resident parser requires a bind-group cache"),
+            invocation,
+        )
+    }
+
     /// Records the resident LL(1) parser pipeline over already-resident token buffers.
     pub(super) fn record_ll1_resident_passes(
         &self,
@@ -186,7 +230,14 @@ impl GpuParser {
                 crate::gpu::passes_core::InputElements::Elements1D(256),
             )?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_depth_schedule");
-            crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
+            // The tree is complete: run it while the host records and
+            // finishes the HIR passes.
+            crate::gpu::passes_core::submit_recorded_prefix(
+                &self.device,
+                &self.queue,
+                ctx.encoder,
+                "compile.parser.tree",
+            );
             self.passes.hir_semantic_prefix_local.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
@@ -223,6 +274,24 @@ impl GpuParser {
                 .hir_semantic_subtree_end
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_subtree_end");
+            self.passes
+                .hir_semantic_end_rows
+                .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_end_rows");
+            self.passes.hir_semantic_end_blocks.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(
+                    crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+                        bufs.tree_n_node_blocks,
+                    ),
+                ),
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_end_blocks");
+            self.passes.hir_semantic_end_top.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(256),
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_end_top");
             self.passes
                 .hir_semantic_parent_traverse
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
@@ -430,11 +499,51 @@ impl GpuParser {
                 self.passes
                     .hir_type_root_owner_init
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                // Type nodes are a small fraction of tree nodes: compact the
+                // owned or linked type nodes and walk only those rows.
+                self.passes
+                    .hir_list_rank_prefix_local
+                    .record_for_owner_link(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_type_fields_params,
+                        &bufs.hir_type_root_owner,
+                        &bufs.hir_type_arg_link_a,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                        ListRankInvocation::TypeRoots,
+                    )?;
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_list_rank_scan(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                        ListRankInvocation::TypeRoots,
+                    )?;
+                self.passes
+                    .hir_list_rank_compact_scatter
+                    .record_for_params(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_type_fields_params,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                        ListRankInvocation::TypeRoots,
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_root_compact");
                 self.passes.hir_type_root_owner_step.record_steps_indirect(
                     ctx.device,
                     ctx.encoder,
                     ctx.buffers,
-                    &bufs.tree_active_dispatch_args,
+                    &bufs.hir_list_rank_dispatch_args,
                     ctx.bg_cache
                         .as_deref_mut()
                         .expect("resident parser requires a bind-group cache"),
@@ -504,14 +613,57 @@ impl GpuParser {
                     .hir_path_segment_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_links");
-                self.passes.hir_path_segment_step.record_steps_indirect(
+                // Path segments are a small fraction of tree nodes: compact
+                // the owned or linked segments and walk only those rows.
+                self.passes
+                    .hir_list_rank_prefix_local
+                    .record_for_owner_link(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_type_fields_params,
+                        &bufs.hir_path_segment_owner_a,
+                        &bufs.hir_path_segment_link_a,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                        ListRankInvocation::PathSegments,
+                    )?;
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_list_rank_scan(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                        ListRankInvocation::PathSegments,
+                    )?;
+                self.passes
+                    .hir_list_rank_compact_scatter
+                    .record_for_params(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_type_fields_params,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                        ListRankInvocation::PathSegments,
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_compact");
+                self.passes.hir_list_rank_step.record(
                     ctx.device,
                     ctx.encoder,
                     ctx.buffers,
-                    &bufs.tree_active_dispatch_args,
+                    &bufs.hir_type_fields_params,
+                    bufs.path_segment_rank_buffers(),
+                    &bufs.hir_list_rank_dispatch_args,
                     ctx.bg_cache
                         .as_deref_mut()
                         .expect("resident parser requires a bind-group cache"),
+                    ListRankInvocation::PathSegments,
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_step");
                 self.passes
@@ -644,13 +796,23 @@ impl GpuParser {
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_result_root_step");
                     self.passes
                         .hir_binary_spans
-                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_binary_spans");
+                    // Left chains rarely outlive the seed's local walk: walk
+                    // only the compacted rows whose chain did.
+                    self.record_walk_compaction(
+                        &mut ctx,
+                        &bufs.hir_expr_fields_params,
+                        &bufs.hir_binary_span_link_a,
+                        &bufs.hir_binary_span_link_a,
+                        ListRankInvocation::BinarySpans,
+                    )?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_binary_span_compact");
                     self.passes.hir_binary_span_step.record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
                         ctx.buffers,
-                        &bufs.hir_semantic_dispatch_args,
+                        &bufs.hir_list_rank_dispatch_args,
                         ctx.bg_cache
                             .as_deref_mut()
                             .expect("resident parser requires a bind-group cache"),
@@ -706,13 +868,23 @@ impl GpuParser {
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_result_root_step");
                     self.passes
                         .hir_binary_spans
-                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_binary_spans");
+                    // Left chains rarely outlive the seed's local walk: walk
+                    // only the compacted rows whose chain did.
+                    self.record_walk_compaction(
+                        &mut ctx,
+                        &bufs.hir_expr_fields_params,
+                        &bufs.hir_binary_span_link_a,
+                        &bufs.hir_binary_span_link_a,
+                        ListRankInvocation::BinarySpans,
+                    )?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_binary_span_compact");
                     self.passes.hir_binary_span_step.record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
                         ctx.buffers,
-                        &bufs.hir_semantic_dispatch_args,
+                        &bufs.hir_list_rank_dispatch_args,
                         ctx.bg_cache
                             .as_deref_mut()
                             .expect("resident parser requires a bind-group cache"),

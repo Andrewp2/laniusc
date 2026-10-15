@@ -1,0 +1,18 @@
+// A literal nested as a field value of a generic literal takes its context
+// from the outer literal's field. The earlier `Box<i32>` annotation seeds the
+// realized row of that application's ID, so the nested-literal pass and the
+// canonical context path publish the same application as different checked
+// rows. Comparing rows instead of canonical IDs counted a change every round
+// and call inference never ended.
+struct Box<T> { value: T }
+struct Pair<A, B> { first: A, second: B }
+fn boxed<T>(value: T) -> Box<T> { return Box { value: value }; }
+fn first_value(x: i32) -> i32 {
+    let b: Box<i32> = boxed(x);
+    return b.value;
+}
+fn main() -> i32 {
+    let value: i32 = first_value(40);
+    let n: Pair<Box<i32>, i32> = Pair { first: Box { value: value }, second: 2 };
+    return n.first.value + n.second;
+}
