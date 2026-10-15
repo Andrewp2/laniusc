@@ -1,6 +1,7 @@
 # Per-kernel fully inlined instruction limits for kernels already above the
 # 40000 default (see check_inlined_size_budget in build.rs). Limits only go
-# down: when a kernel shrinks, lower or delete its line. Never add a kernel.
+# down: when a kernel shrinks, run tools/ratchet_inlined_budget.py after the
+# build (it also lowers local_array_budget.txt). Never add a kernel.
 # Recorded 2026-10-14 from the 7ae8a250 shaders.
 251129 type_checker/calls/03k3_project_record_contexts
 236207 type_checker/dependencies/08a_validate_call_results
@@ -12,7 +13,6 @@
 131997 type_checker/dependencies/15a_collect_methods
 129433 type_checker/calls/03k2_materialize_match_payloads
 129058 type_checker/program_evidence/entries/53_select_work
-128742 type_checker/conditions/compact_aggregate_requests
 125020 type_checker/program_evidence/entries/59_admit_implementation_proofs
 122247 type_checker/methods/05_validate_keys
 105904 type_checker/calls/03e_materialize_return_types
@@ -22,7 +22,6 @@
 90621 type_checker/calls/03e1_expand_application_fields
 88756 type_checker/dependencies/14a_materialize_alias_targets
 85205 type_checker/program_evidence/entries/59_admit_assumption_proofs
-84179 type_checker/calls/03c_validate_array_results
 83411 codegen/lir/semantic/scatter
 78010 tests/owned_type_constraints_fixed
 76934 type_checker/methods/07_resolve_table
@@ -41,14 +40,10 @@
 49216 tests/canonical_type_constraint_boundary
 48620 type_checker/modules/10j_consume_value_enum_units
 48513 type_checker/predicates/02b_validate_obligations
-47605 type_checker/methods/08_finalize_candidates
 46339 type_checker/modules/10m2_type_match_payloads
 45709 tests/owned_type_constraints_match
 45216 tests/typed_constant_identity_claim_priority
-43691 type_checker/calls/03j_validate_array_literals
 42816 type_checker/predicates/01_collect_impls
 41299 type_checker/modules/10e0l_normalize_type_aliases
 41108 type_checker/program_evidence/entries/10_check_coherence
-40968 type_checker/calls/03f_infer_return_bindings
-40606 type_checker/calls/03a8_validate_explicit_applications
 40478 type_checker/predicates/01f2_validate_imported_methods

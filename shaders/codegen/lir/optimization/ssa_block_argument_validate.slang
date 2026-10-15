@@ -29,10 +29,8 @@ StructuredBuffer<uint> opt_ir_predecessor_prefix;
 StructuredBuffer<uint> opt_ir_predecessor_edge_ids;
 StructuredBuffer<uint> opt_ir_reachable;
 StructuredBuffer<uint> opt_ir_ssa_block_argument_prefix;
-StructuredBuffer<uint> opt_ir_ssa_block_argument_total;
 StructuredBuffer<uint> opt_ir_ssa_block_argument_incoming_total;
 StructuredBuffer<uint> opt_ir_ssa_demand_resolutions;
-StructuredBuffer<OptIrBlockArgument> opt_ir_ssa_block_arguments;
 StructuredBuffer<OptIrBlockArgumentIncoming>
     opt_ir_ssa_block_argument_incoming;
 RWStructuredBuffer<LoweringStatus> lowering_status;
@@ -97,8 +95,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint access_total = opt_ir_active_access_total(gParams.access_capacity);
     uint declaration_block_total = opt_ir_active_declaration_block_total(
         gParams.declaration_block_capacity);
-    uint argument_total = min(
-        opt_ir_ssa_block_argument_total[0u], gParams.demand_capacity);
+    uint argument_total = opt_ir_active_ssa_block_argument_total(gParams.demand_capacity);
     uint incoming_total = min(
         opt_ir_ssa_block_argument_incoming_total[0u],
         gParams.incoming_capacity);
@@ -149,7 +146,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (valid)
         {
             OptIrBlockArgument block_argument =
-                opt_ir_ssa_block_arguments[argument];
+                opt_ir_ssa_block_argument(argument);
             incoming_start = block_argument.incoming_start;
             incoming_end = opt_ir_ssa_block_argument_incoming_end(
                 argument, argument_total, incoming_total);
