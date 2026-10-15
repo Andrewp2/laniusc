@@ -1,0 +1,25 @@
+module gen::lib;
+
+trait Weight {
+    fn weight(self) -> i32;
+}
+
+struct Cell<T> {
+    value: T,
+}
+
+impl<T> Weight for Cell<T> {
+    fn weight(self) -> i32 {
+        return 21;
+    }
+}
+
+fn heavy<W>(w: W) -> i32 where W: Weight {
+    return w.weight();
+}
+
+pub fn evaluate() -> i32 {
+    let a: Cell<bool> = Cell { value: true };
+    let b: Cell<i32> = Cell { value: 1 };
+    return heavy(a) + heavy(b) - 21;
+}

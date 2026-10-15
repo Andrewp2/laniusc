@@ -336,7 +336,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint4 constant = project_checked_constant_value(operand_kind, operand_payload, gParams.n_tokens);
         semantic_value_const_by_hir[row] = constant.yz;
-        if (constant.w != 0u) semantic_expr_scalar_type_by_hir[row] = constant.x;
+        if (constant.w != 0u) semantic_expr_scalar_type_by_hir[row] = packed_checked_constant_scalar(constant.x);
         semantic_value_const_present_by_hir[row] = constant.w;
     }
 

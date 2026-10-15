@@ -261,6 +261,11 @@ pub(super) const GENERIC_PARAM_EMPTY_PASS: &str = "type_check.generic_params.emp
 pub(super) const CONDITIONS_AGGREGATE_ARGS_FINAL_PASS: &str =
     "type_check.conditions.aggregate_args.final";
 pub(super) const SEMANTIC_CALLS_PROJECT_PASS: &str = "type_check.semantic_artifact.calls";
+pub(super) const SEMANTIC_ARTIFACT_OWNER_SPANS_PASS: &str = "type_check.semantic_artifact.owner_spans";
+pub(super) const SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS: &str =
+    "type_check.semantic_artifact.owner_spans.clear";
+pub(super) const BODY_SPECIALIZATION_RESOLVE_COPIES_PASS: &str =
+    "type_check.body_specialization.resolve_copies";
 pub(super) const RETAINED_CALLABLE_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -509,6 +514,13 @@ pub(super) const CALL_INFERENCE_REPEAT_WARNING_ROUNDS: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
     "type_checker/type/instances/00g_specialize_checked_references";
+/// The call constants a replay closed: claims and contextual constants that
+/// reach a body parameter through count projections fold to atoms once the
+/// body's constants are installed.
+pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS: &str =
+    "type_check.body_specialization.constant_claims";
+pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL: &str =
+    "type_checker/type/instances/00g2_fold_body_constant_claims";
 /// The body canonical stage and the substitution restart follow this body
 /// specialization pass: the body passes after it read the specialized
 /// rows' IDs.
@@ -2905,7 +2917,7 @@ fn build_graph(
         } else {
             0
         };
-    let type_rows = token_rows + generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows;
+    let type_rows = token_rows + generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows;
     let type_lookup_rows = if application_types_required {
         type_rows
     } else {
@@ -2945,6 +2957,10 @@ fn build_graph(
         _retained_callable_local_prefix as "retained_callable_local_prefix" in HirNodes => hir_rows * 4;
         _retained_callable_block_sum as "retained_callable_block_sum" in HirNodes => hir_rows.div_ceil(256) * 4;
         _retained_callable_block_prefix as "retained_callable_block_prefix" in HirNodes => hir_rows.div_ceil(256) * 4;
+        // Instance-copy spans: one 44-byte record per 16 HIR rows is far more
+        // than the generic bodies of any unit; the host refuses an overflow.
+        _retained_owner_span_count as "retained_owner_span_count" in Calls => 4;
+        _retained_owner_spans as "retained_owner_spans" in Calls => (hir_rows.div_ceil(16) * 44).max(64 * 44);
     });
     graph.add_storage(
         "body_specialization_inputs",
@@ -3381,8 +3397,8 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _type_instance_arg_row_ref_tag as "type_instance_arg_row_ref_tag" in Types => hir_rows * 4;
         _type_instance_arg_row_ref_payload as "type_instance_arg_row_ref_payload" in Types => hir_rows * 4;
-        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
-        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_tag as "type_instance_arg_ref_tag" in Types => token_rows * 16 + (generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows) * 128;
+        _type_instance_arg_ref_payload as "type_instance_arg_ref_payload" in Types => token_rows * 16 + (generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows) * 128;
     });
     graph_resources!(graph, Output {
         struct_init_field_ordinal_by_row in Declarations => hir_rows * 4;
@@ -4570,7 +4586,7 @@ fn build_graph(
             hir_rows,
             type_rows,
             constant_rows,
-            extra_argument_rows: generic_body::MAX_BODY_TYPE_NODES as u64 + generated_type_rows,
+            extra_argument_rows: generic_body::MAX_BODY_GRAPH_NODES as u64 + generated_type_rows,
             dependency_rows: u64::from(dependency_capacity.constant_type_rows),
             dependency_page_rows: dependency_type_rows,
             scale: canonical_scale,
@@ -6198,6 +6214,20 @@ fn build_graph(
     // environment is rebound here, after all call and return validation.
     // The body canonical stage and substitution restart follow the bindings
     // (BODY_CANONICAL_AFTER_PASS).
+    // An instance-copy replay first resolves each copy entry's target.
+    let body_specialization_inputs = graph
+        .resource_id("body_specialization_inputs")
+        .expect("body specialization packet");
+    graph.add_kernel_pass_by_name(
+        BODY_SPECIALIZATION_RESOLVE_COPIES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/00d2_resolve_body_copies",
+        reflected_bindings![
+            "body_specialization_inputs" => body_specialization_inputs: ReadWrite,
+        ],
+    )?;
     graph.add_kernel_pass_by_name(
         "type_check.body_specialization.graph",
         CompilerPhase::TypeCheck,
@@ -6246,6 +6276,11 @@ fn build_graph(
             "type_check.body_specialization.constants",
             "type_checker/type/instances/00g_apply_body_constants",
             ResourceDomain::Types,
+        ),
+        (
+            BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS,
+            BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL,
+            ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.arguments",
@@ -6518,6 +6553,28 @@ fn build_graph(
             "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Write,
             "semantic_type_external_unit_id_by_hir" => semantic_type_external_unit_id_by_hir: Write,
             "semantic_type_external_local_index_by_hir" => semantic_type_external_local_index_by_hir: Write,
+        ],
+    )?;
+    graph.add_pass(PassDesc {
+        name: SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Calls,
+        accesses: vec![PassAccess::write("retained_owner_span_count", _retained_owner_span_count)],
+    })?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_ARTIFACT_OWNER_SPANS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/04_owner_spans",
+        reflected_bindings![
+            "retained_owner_span_count" => _retained_owner_span_count: ReadWrite,
+            "retained_owner_spans" => _retained_owner_spans: Write,
+            "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Read,
+            "semantic_type_ref_tag_by_hir" => semantic_type_ref_tag_by_hir: Read,
+            "semantic_type_ref_payload_by_hir" => semantic_type_ref_payload_by_hir: Read,
+            "semantic_type_external_library_id_by_hir" => semantic_type_external_library_id_by_hir: Read,
+            "type_instance_decl_token" => _type_instance_decl_token: Read,
         ],
     )?;
     graph.add_kernel_pass_by_name(
