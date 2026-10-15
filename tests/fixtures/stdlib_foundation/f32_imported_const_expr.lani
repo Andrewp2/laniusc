@@ -1,3 +1,5 @@
+// expect: LNC0071
+// Computed f32 constants in its root are rejected by design (docs/compiler-generic-types.md).
 module app::main;
 import core::constants;
 

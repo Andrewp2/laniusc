@@ -1,3 +1,5 @@
+// stdlib-root: repro_generic_enum_only_root
+// expect: 0
 module app::main;
 import core::maybe;
 fn main() -> i32 {
