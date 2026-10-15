@@ -51,6 +51,13 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   Point` in app::main), used through the bound in core::set. The compiler
   stops with LNC0057 "compiler execution failed" instead of a diagnostic.
   Blocks user item types in core::set.
+- b13: a generic function returning another generic function's imported
+  `core::option::Option<T>` result, `return get(value);`. LNC0006 "type
+  mismatch" at 5:65, from both `check` and a compile, even with the function
+  uncalled. The same shape with a local enum, or with a plain `T` result,
+  passes. Present on 335e31b8; core::vec's form of it checked clean on
+  b8172cdf. core::vec repeats get's
+  body in first and last until it is fixed; then they should call get again.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.
@@ -58,10 +65,6 @@ Not probes here:
   LNC0006 at the inner call when the program is compiled (P10 group A, owned
   by P4). It blocks the set_char/map_char_u32 allocation-failure fixtures and
   their i32 counterparts.
-- `laniusc check` of a lone module rejects (LNC0006) a generic function that
-  returns another generic function's `Option<T>` result, `return get(value,
-  0);`, although programs calling it compile. core::vec repeats get's body in
-  first and last instead.
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
