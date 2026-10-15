@@ -17,7 +17,7 @@ static const uint PEV_GRAPH_CONSTANT = 0x80000000u;
 
 // Binding values are already in caller scope. Substitute an original owned
 // parameter once and clear its environment, including for node replacements.
-EvidenceStatus pev_admit_reference_leaf<Graph : IParameterScopedTypeGraph>(
+EvidenceStatus pev_admit_reference_leaf<Graph : IPevAdmissionGraph>(
     uint root, uint visible_owner, bool require_closed, inout uint3 reference)
 {
     if (reference.x != 1u && reference.x != 2u && reference.x != 3u &&
@@ -35,25 +35,19 @@ EvidenceStatus pev_admit_reference_leaf<Graph : IParameterScopedTypeGraph>(
             return pev_invalid(4u, root, reference.y);
         if (reference.z != PEV_INVALID)
         {
+            // One substitution call site for both parameter domains.
             uint replacement_tag; uint replacement_payload;
+            if (!Graph.substitute_parameter(
+                reference.z, reference.y, constant, replacement_tag, replacement_payload))
+                return pev_invalid(9u, root, reference.y);
+            if (replacement_tag < 1u || replacement_tag > 3u)
+                return pev_invalid(4u, root, reference.y);
             if (constant)
             {
-                if (!Graph.substitute_constant_parameter(
-                    reference.z, reference.y, replacement_tag, replacement_payload))
-                    return pev_invalid(9u, root, reference.y);
-                if (replacement_tag < 1u || replacement_tag > 3u ||
-                    constant_reference_scalar<Graph>(uint2(replacement_tag, replacement_payload)) !=
+                if (constant_reference_scalar<Graph>(uint2(replacement_tag, replacement_payload)) !=
                         Graph.constant_parameter_scalar(reference.y))
                     return pev_invalid(4u, root, reference.y);
                 replacement_tag |= PEV_GRAPH_CONSTANT;
-            }
-            else
-            {
-                if (!Graph.substitute_type_parameter(
-                    reference.z, reference.y, replacement_tag, replacement_payload))
-                    return pev_invalid(9u, root, reference.y);
-                if (replacement_tag != 1u && replacement_tag != 2u && replacement_tag != 3u)
-                    return pev_invalid(4u, root, reference.y);
             }
             reference = uint3(replacement_tag, replacement_payload, PEV_INVALID);
             if (reference.y == PEV_INVALID)
@@ -78,7 +72,7 @@ EvidenceStatus pev_admit_reference_leaf<Graph : IParameterScopedTypeGraph>(
     return pev_ok();
 }
 
-EvidenceStatus pev_admit_root_with_graph<Graph : IParameterScopedTypeGraph>(
+EvidenceStatus pev_admit_root_with_graph<Graph : IPevAdmissionGraph>(
     uint root, uint environment, uint visible_owner,
     bool require_closed, out uint visits)
 {

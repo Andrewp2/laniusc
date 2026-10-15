@@ -343,7 +343,16 @@ public bool pev_graph_argument(uint instance, uint slot, out uint tag, out uint 
     tag = ref.x; payload = ref.y; return true;
 }
 
-public struct ProgramEvidenceTypeGraph : IParameterScopedTypeGraph
+// Root admission substitutes a type or a constant parameter at one call site
+// per visited leaf: substitute_parameter(constant) is exactly
+// substitute_constant_parameter (constant) or substitute_type_parameter.
+public interface IPevAdmissionGraph : IParameterScopedTypeGraph
+{
+    static bool substitute_parameter(uint environment, uint reference, bool constant,
+        out uint tag, out uint payload);
+}
+
+public struct ProgramEvidenceTypeGraph : IPevAdmissionGraph
 {
     public static bool constant_value(uint atom, out uint3 value)
     { return pev_constant_atom_value(atom, value); }
@@ -367,6 +376,19 @@ public struct ProgramEvidenceTypeGraph : IParameterScopedTypeGraph
             !pev_admitted_environment_binding(environment, reference, ref) || !pev_admitted_constant_reference_shape(ref)) return false;
         kind = ref.x & 0x7fffffffu; value = ref.y; return true;
     }
+    // A type binding's tag is 1..3, so the constant mask leaves it unchanged.
+    public static bool substitute_parameter(uint environment, uint reference, bool constant,
+        out uint tag, out uint payload)
+    {
+        tag = 0u; payload = PEV_INVALID; uint2 value;
+        if (!pev_admitted_parameter_has_domain(reference, constant) ||
+            !pev_admitted_environment_binding(environment, reference, value)) return false;
+        bool shape;
+        if (constant) shape = pev_admitted_constant_reference_shape(value);
+        else shape = pev_admitted_type_reference_shape(value);
+        if (!shape) return false;
+        tag = value.x & 0x7fffffffu; payload = value.y; return true;
+    }
     public static uint metadata(uint instance, uint field)
     { return pev_graph_metadata(instance, field); }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
@@ -376,7 +398,7 @@ public struct ProgramEvidenceTypeGraph : IParameterScopedTypeGraph
 // Definition-side catalog roots have no substitution environment. This policy
 // makes that capability boundary explicit even when a walk stores contexts in
 // a dynamically indexed stack. Unexpected substitution requests fail closed.
-public struct CatalogProgramEvidenceTypeGraph : IParameterScopedTypeGraph
+public struct CatalogProgramEvidenceTypeGraph : IPevAdmissionGraph
 {
     public static bool constant_value(uint atom, out uint3 value)
     { return pev_constant_atom_value(atom, value); }
@@ -394,6 +416,12 @@ public struct CatalogProgramEvidenceTypeGraph : IParameterScopedTypeGraph
     public static bool substitute_constant_parameter(uint environment, uint reference, out uint kind, out uint value)
     {
         kind = 0u; value = PEV_INVALID;
+        return false;
+    }
+    public static bool substitute_parameter(uint environment, uint reference, bool constant,
+        out uint tag, out uint payload)
+    {
+        tag = 0u; payload = PEV_INVALID;
         return false;
     }
     public static uint metadata(uint instance, uint field)
