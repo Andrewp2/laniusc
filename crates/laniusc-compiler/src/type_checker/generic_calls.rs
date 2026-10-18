@@ -781,6 +781,10 @@ pub(crate) fn resolve_generic_requirements(
     dependency_pages: &[Vec<GpuSemanticInterfaceArtifact>],
     impl_bindings: &[BodyImplBinding],
 ) {
+    // A call through a bound on an imported trait targets the trait's
+    // required member, which body specialization routes to the selected
+    // implementation per instance; it has no instance of its own.
+    let mut requirement_calls = BTreeSet::new();
     for call in calls.iter_mut() {
         let (library_id, unit_id, symbol) = match call.target {
             CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
@@ -793,8 +797,20 @@ pub(crate) fn resolve_generic_requirements(
             call.required_constant_parameters = Some(0);
             continue;
         }
-        let requirements = dependency_pages.iter().flatten()
-            .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id)
+        let interface = dependency_pages.iter().flatten()
+            .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id);
+        if let (Some(interface), CheckedGenericTarget::DependencyMethod { method_symbol, .. }) =
+            (interface, call.target)
+        {
+            if interface.members.iter().any(|member| {
+                member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
+                    && member.value_hi == method_symbol
+            }) {
+                requirement_calls.insert(call.call_hir);
+                continue;
+            }
+        }
+        let requirements = interface
             .and_then(|interface| match call.target {
                 CheckedGenericTarget::Dependency { declaration_index, .. } => {
                     let declaration = interface.declarations.get(declaration_index as usize)?;
@@ -815,10 +831,11 @@ pub(crate) fn resolve_generic_requirements(
         call.required_constant_parameters = requirements.map(|counts| counts.1);
     }
     calls.retain(|call| {
-        !call.arguments.is_empty()
-            || !call.constants.is_empty()
-            || call.required_generic_parameters != Some(0)
-            || call.required_constant_parameters != Some(0)
+        !requirement_calls.contains(&call.call_hir)
+            && (!call.arguments.is_empty()
+                || !call.constants.is_empty()
+                || call.required_generic_parameters != Some(0)
+                || call.required_constant_parameters != Some(0))
     });
 }
 

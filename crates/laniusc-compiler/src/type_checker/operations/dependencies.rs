@@ -337,6 +337,23 @@ pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT_LOOKUP: ReflectedCo
 pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT_INFERENCE: ReflectedComputeSpec =
     DEPENDENCY_METHODS_COLLECT.with_name("type_check.dependencies.collect_methods.inference");
 
+/// Required members of imported traits, offered to calls through a bound on
+/// a type parameter while the trait's page is resident.
+pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.dependencies.offer_bound_members",
+        HirNodes,
+        "type_checker/dependencies/15b_offer_bound_members"
+    )
+    .with_indirect_dispatch("hir_active_dispatch_args");
+// The preliminary lookup sweep dispatches from its gated grid (methods/08c).
+pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP: ReflectedComputeSpec =
+    DEPENDENCY_BOUND_MEMBERS_OFFER
+        .with_name("type_check.dependencies.offer_bound_members.lookup")
+        .with_indirect_dispatch(super::methods::METHOD_LOOKUP_DISPATCH_ARGS);
+pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE: ReflectedComputeSpec =
+    DEPENDENCY_BOUND_MEMBERS_OFFER.with_name("type_check.dependencies.offer_bound_members.inference");
+
 pub(in crate::type_checker) const DEPENDENCY_METHODS_PROJECT: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.dependencies.project_methods",
