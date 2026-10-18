@@ -491,6 +491,8 @@ impl GpuCompiler<'_> {
 #[derive(Default)]
 struct ClosureIntake {
     keys: BTreeSet<Vec<u8>>,
+    /// The session's decoded / closed / appended / concrete counts.
+    stages: [usize; 4],
     /// Origins that were already scheduled, had a tag-only definition, or
     /// could not be keyed.
     known: usize,
@@ -506,6 +508,7 @@ impl ClosureIntake {
         specializations: &BTreeMap<Vec<u8>, (Vec<u8>, Vec<u32>)>,
         pending: &mut BTreeMap<Vec<u8>, PendingBody>,
     ) {
+        self.stages = program.instance_closure_stats();
         let mut seen = BTreeSet::new();
         for unit in units {
             let (owner_library, owner_unit) = (unit.interface.library_id, unit.interface.unit_id);
@@ -557,6 +560,7 @@ impl ClosureIntake {
             // found, edges, GPU-skipped edges, dropped; then flags and errors.
             let mut totals = [0u64; 4];
             let (mut flags, mut errors) = (0u32, 0usize);
+            let mut rejects = [0u32; 6];
             for unit in units {
                 let Some(closure) = &unit.instance_closure else { continue };
                 for (total, value) in totals.iter_mut()
@@ -565,11 +569,12 @@ impl ClosureIntake {
                     *total += u64::from(value);
                 }
                 flags |= closure.flags;
+                for (total, value) in rejects.iter_mut().zip(closure.rejects) { *total += value; }
                 errors += usize::from(closure.error.is_some());
             }
             eprintln!(
-                "[specialization] closure found={} edges={} gpu_skipped={} dropped={} flags={flags:#x} errors={errors} scheduled={} known={} skipped={} unused={}",
-                totals[0], totals[1], totals[2], totals[3],
+                "[specialization] closure found={} edges={} gpu_skipped={} dropped={} flags={flags:#x} errors={errors} rejects={rejects:?} decoded/closed/appended/concrete={:?} scheduled={} known={} skipped={} unused={}",
+                totals[0], totals[1], totals[2], totals[3], self.stages,
                 self.keys.len(), self.known, self.skipped, unused.len(),
             );
             for key in &unused {

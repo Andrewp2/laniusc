@@ -716,6 +716,10 @@ pub(crate) struct CheckedInstanceClosure {
     pub skipped: u32,
     /// Exported instances whose arity disagrees with their template call.
     pub dropped: u32,
+    /// Rows the decode skipped (trace only): not exported, depth < 2, no
+    /// argument block, bad shape, arguments past the read table, template
+    /// call not retained.
+    pub rejects: [u32; 6],
     /// Why the readback failed, when it did.
     pub error: Option<String>,
 }
@@ -3051,17 +3055,29 @@ fn read_instance_closure(
     let operand = |index: usize| (refs[index * 2], refs[index * 2 + 1]);
     // (depth, template call position, argument base, type count, arity)
     let mut kept = Vec::new();
+    let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false);
     for row in instances.chunks_exact(8) {
         let &[_, _, depth, _, base, template, status, shape] = row else { unreachable!() };
         let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
-        if status != INSTANCE_CLOSURE_EXPORTED || depth < 2 || base == INVALID
-            || type_count > arity || (base as usize + arity) * 2 > ref_words
-        {
-            continue;
+        let reject = if status != INSTANCE_CLOSURE_EXPORTED { Some(0) }
+            else if depth < 2 { Some(1) }
+            else if base == INVALID { Some(2) }
+            else if type_count > arity { Some(3) }
+            else if (base as usize + arity) * 2 > ref_words { Some(4) }
+            else { None };
+        let position = reject.is_none()
+            .then(|| call_ids.binary_search(&template).ok().filter(|&position| calls[position].is_some()))
+            .flatten();
+        if debug {
+            eprintln!("[instance-closure] row={row:?} ref_words={ref_words} reject={reject:?} template_retained={:?} template_generic={:?}",
+                call_ids.binary_search(&template).is_ok(),
+                call_ids.binary_search(&template).ok().map(|position| calls[position].is_some()));
         }
-        let Some(position) = call_ids.binary_search(&template).ok()
-            .filter(|&position| calls[position].is_some()) else { continue };
-        kept.push((depth, position, base as usize, type_count, arity));
+        match (reject, position) {
+            (Some(reason), _) => closure.rejects[reason] += 1,
+            (None, None) => closure.rejects[5] += 1,
+            (None, Some(position)) => kept.push((depth, position, base as usize, type_count, arity)),
+        }
     }
     let type_roots = kept.iter()
         .flat_map(|&(_, _, base, type_count, _)| (base..base + type_count).map(operand))

@@ -36,8 +36,11 @@ const EXPORT_FINAL_KERNEL: &str = "type_checker/closure/04a_export_final";
 /// Expansion rounds (`IC_LEVELS` in instance_closure.slang): instances up
 /// to depth `INSTANCE_CLOSURE_LEVELS + 1` are found.
 pub(super) const INSTANCE_CLOSURE_LEVELS: usize = 6;
-/// Export dispatches ahead of the final one.
-const EXPORT_RETRIES: usize = 2;
+/// Export dispatches ahead of the final one. A lane that meets a row another
+/// lane is realizing stops for the dispatch (CT_REALIZE_BUSY), so nested
+/// arguments shared along a chain realize about one level per dispatch: one
+/// retry per closure level keeps every found depth exportable.
+const EXPORT_RETRIES: usize = INSTANCE_CLOSURE_LEVELS + 1;
 /// Words of `instance_closure_counts` (`IC_COUNT_WORDS`).
 pub(super) const INSTANCE_CLOSURE_COUNT_WORDS: u64 = 8;
 /// Average argument words per instance the reference table holds.

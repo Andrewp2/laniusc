@@ -6,6 +6,7 @@ StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
 
 static const uint HIR_FN = 3u;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_FILE = 1u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_ITEM = 2u;
@@ -57,13 +58,17 @@ bool closure_body(uint row)
     return compact_hir_payload[row].a == HIR_ITEM_KIND_FN;
 }
 
-// A call of the closure: its callee is a generic local function body. Sets
-// its callee token, the callee's function row and its candidate slot masks
-// (the composed arity, as candidate_masks in 02_publish_call_envs).
+// A call of the closure: a call expression row (the row the retained call
+// facts name) whose callee is a generic local function body. Its callee path
+// row resolves to the same function but is not a call. Sets its callee
+// token, the callee's function row and its candidate slot masks (the
+// composed arity, as candidate_masks in 02_publish_call_envs).
 bool closure_call(uint call, out uint token, out uint callee, out uint2 masks)
 {
     callee = INVALID;
     masks = uint2(0u, 0u);
+    token = INVALID;
+    if (compact_hir_core[call].kind != HIR_CALL_EXPR) return false;
     token = call_token(call);
     if (!valid_token(token) || call_dependency_library_id[token] != INVALID) return false;
     uint target = call_fn_index[token];
