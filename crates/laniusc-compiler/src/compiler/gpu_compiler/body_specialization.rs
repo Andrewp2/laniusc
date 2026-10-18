@@ -246,16 +246,29 @@ impl GpuCompiler<'_> {
             }
             for keys in by_unit.into_values() {
                 let plan_started = std::time::Instant::now();
-                let mut runs = Vec::<ReplayRun>::new();
+                // A body with a retained declaration span replays as a
+                // renamed copy, which shares a run with any other copy.
+                // Polymorphic recursion replays alone, so a failure is its own.
+                // A copy run's entries are in copy rank order (the template's
+                // last file, then continuation files by file), so keys are
+                // sorted by rank, stably: within a rank they stay in key order.
+                let mut ranked = Vec::with_capacity(keys.len());
                 for key in keys {
+                    let body = &pending[&key];
+                    let rank = if instance_copies && !body.recursive {
+                        program.instance_copy_rank(&body.admitted).map_err(native_program_error)?
+                    } else {
+                        None
+                    };
+                    ranked.push((rank, key));
+                }
+                ranked.sort_by_key(|(rank, _)| rank.unwrap_or(0));
+                let mut runs = Vec::<ReplayRun>::new();
+                for (rank, key) in ranked {
                     let body = &pending[&key];
                     let scope = program.replay_scope(&body.admitted).map_err(native_program_error)?;
                     let entry = replay_entry(body.admitted.checked_call(), body.target);
-                    // A body with a retained declaration span replays as a
-                    // renamed copy, which shares a run with any other copy.
-                    // Polymorphic recursion replays alone, so a failure is its own.
-                    let copies = instance_copies && !body.recursive && program
-                        .instance_copy_available(&body.admitted).map_err(native_program_error)?;
+                    let copies = rank.is_some();
                     // A run's impl bindings share one packet table, so a run
                     // closes before it would overflow it.
                     let bindings = program.instance_impl_bindings(&body.admitted)

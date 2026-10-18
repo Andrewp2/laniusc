@@ -391,6 +391,7 @@ impl GpuTypeChecker {
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
             semantic_interface_buffers: CapacityBufferCache::default(),
+            unit_facts_read_plans: Default::default(),
         })
     }
 
@@ -421,6 +422,11 @@ impl GpuTypeChecker {
             .lock()
             .expect("GpuTypeChecker.resident_workspace poisoned") = None;
         self.semantic_interface_buffers.clear();
+        // The plans name this workspace's allocations, which are gone.
+        self.unit_facts_read_plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     pub(crate) fn dependency_interface_pages(
@@ -623,7 +629,8 @@ impl GpuTypeChecker {
                     .expect("GpuTypeChecker.resident_capacity_floor poisoned")
             })
             .map(|previous| previous.grow_to_cover(cache_key))
-            .unwrap_or(cache_key);
+            .unwrap_or_else(|| cache_key.first_allocation())
+            .bucketed();
         let resident_cache_trace =
             crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
         if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
@@ -817,6 +824,19 @@ impl GpuTypeChecker {
             queue,
             (generic_body::BODY_IMPL_BINDING_ROW * 16) as u64,
             &binding_bytes,
+        );
+        // So is the continuation header: only an instance-copy replay maps
+        // files past its template to the modules they continue.
+        let continuations = hir_items
+            .body_specialization
+            .map(CheckedBodySpecializationBatch::continuation_words)
+            .unwrap_or_else(|| generic_body::continuation_words(0, &[]));
+        let continuation_bytes: Vec<u8> =
+            continuations.into_iter().flat_map(u32::to_le_bytes).collect();
+        self.body_specialization_inputs.write(
+            queue,
+            (generic_body::BODY_CONTINUATION_ROW * 16) as u64,
+            &continuation_bytes,
         );
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");

@@ -30,7 +30,7 @@ pub(crate) use checked_contracts::{
     CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
     CheckedPredicateContract,
 };
-pub(crate) use generic_body::{BODY_COPY_TARGET, BodyImplBinding, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES, MAX_BODY_IMPL_BINDINGS, MAX_ORIGINAL_REPLAY_ENTRIES};
+pub(crate) use generic_body::{BODY_COPY_TARGET, BodyImplBinding, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_CONTINUATION_FILES, MAX_BODY_ENTRIES, MAX_BODY_IMPL_BINDINGS, MAX_ORIGINAL_REPLAY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
@@ -375,6 +375,8 @@ pub struct GpuTypeChecker {
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
     dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
     semantic_interface_buffers: CapacityBufferCache,
+    /// Read plans of recent unit-facts runs (no GPU resources).
+    unit_facts_read_plans: Mutex<generic_calls::UnitFactsReadPlans>,
 }
 
 /// Marker returned when type-check work has been recorded into a command
@@ -433,21 +435,43 @@ impl ResidentTypeCheckCacheKey {
         }
     }
 
-    fn grow_to_cover(self, required: Self) -> Self {
+    /// The first workspace for `self`: every job-sized dimension grows from
+    /// nothing, so it gets the same headroom as a replacement.
+    fn first_allocation(self) -> Self {
         Self {
-            source_byte_capacity: self.source_byte_capacity.max(required.source_byte_capacity),
+            source_byte_capacity: 0,
+            token_capacity: 0,
+            module_record_capacity: 0,
+            call_param_row_capacity: 0,
+            call_arg_row_capacity: 0,
+            ..self
+        }
+        .grow_to_cover(self)
+    }
+
+    /// Grows the job-sized dimensions with headroom
+    /// (`grown_resident_capacity`). The HIR capacity is the parser's tree
+    /// capacity, which has its own headroom, and the file count is bucketed
+    /// by 64, so both only take the maximum.
+    fn grow_to_cover(self, required: Self) -> Self {
+        use crate::gpu::buffers::grown_resident_capacity as grown;
+        Self {
+            source_byte_capacity: grown(self.source_byte_capacity, required.source_byte_capacity),
             source_file_capacity: self.source_file_capacity.max(required.source_file_capacity),
-            token_capacity: self.token_capacity.max(required.token_capacity),
+            token_capacity: grown(self.token_capacity, required.token_capacity),
             hir_node_capacity: self.hir_node_capacity.max(required.hir_node_capacity),
-            module_record_capacity: self
-                .module_record_capacity
-                .max(required.module_record_capacity),
-            call_param_row_capacity: self
-                .call_param_row_capacity
-                .max(required.call_param_row_capacity),
-            call_arg_row_capacity: self
-                .call_arg_row_capacity
-                .max(required.call_arg_row_capacity),
+            module_record_capacity: grown(
+                self.module_record_capacity,
+                required.module_record_capacity,
+            ),
+            call_param_row_capacity: grown(
+                self.call_param_row_capacity,
+                required.call_param_row_capacity,
+            ),
+            call_arg_row_capacity: grown(
+                self.call_arg_row_capacity,
+                required.call_arg_row_capacity,
+            ),
             parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
             semantic_interface_required: self.semantic_interface_required
                 || required.semantic_interface_required,
@@ -503,6 +527,30 @@ mod resident_typecheck_cache_key_tests {
         assert_eq!(allocation.input_fingerprint, 22);
         assert!(allocation.covers(key(80, 0b0010, 22)));
         assert!(allocation.covers(key(100, 0b0101, 22)));
+    }
+
+    #[test]
+    fn first_workspace_headroom_covers_the_next_slightly_larger_unit() {
+        // Source bytes and token rows of two units of one stdlib build; the
+        // second crossed the exact 4096 source bucket.
+        let mut first = key(498_711, 0b0101, 11);
+        first.source_byte_capacity = 1_400_000;
+        first.hir_node_capacity = 3_731_456;
+        first.source_file_capacity = 1;
+        let mut second = key(499_339, 0b0101, 11);
+        second.source_byte_capacity = 1_404_000;
+        second.hir_node_capacity = 3_731_456;
+        second.source_file_capacity = 1;
+        assert!(!first.bucketed().covers(second.bucketed()));
+        let allocation = first.bucketed().first_allocation().bucketed();
+        assert!(allocation.covers(second.bucketed()));
+        // The HIR capacity is the parser's, which has its own headroom.
+        assert_eq!(allocation.hir_node_capacity, 3_731_456);
+        // A covered requirement keeps the allocation.
+        let reused = allocation.grow_to_cover(second.bucketed()).bucketed();
+        assert_eq!(reused.source_byte_capacity, allocation.source_byte_capacity);
+        assert_eq!(reused.token_capacity, allocation.token_capacity);
+        assert_eq!(reused.call_arg_row_capacity, allocation.call_arg_row_capacity);
     }
 
     #[test]

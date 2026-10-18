@@ -1316,6 +1316,30 @@ fn imported_generic_bodies_execute_with_caller_selected_implementations() {
 }
 
 #[test]
+fn library_bodies_of_every_module_file_replay_as_copies() {
+    // Every module of this library has generic bodies, so most are not in
+    // the unit's last file. Their copies go to continuation files, which must
+    // still see their module's private items and imports.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/stdlib_compiler_state/multifile-copies/stdlib");
+    execute_with_stdlib("multi-file library copies", r#"
+import core::helpers;
+import core::wrap;
+import core::zlast;
+fn main() -> i32 {
+    if (core::wrap::count(true, 3) != 7) { return 1; }
+    if (core::wrap::count(5, 4) != 9) { return 2; }
+    if (core::wrap::keep(11) != 11) { return 3; }
+    if (core::wrap::keep(false)) { return 4; }
+    if (core::zlast::last(13) != 13) { return 5; }
+    if (core::helpers::first(17, 2) != 17) { return 6; }
+    if (!core::helpers::first(true, false)) { return 7; }
+    return 0;
+}
+"#, &root, b"", 0);
+}
+
+#[test]
 fn caller_selected_bounds_forward_through_nested_bodies_and_existing_bodies() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/stdlib_compiler_state/program-replay/stdlib");

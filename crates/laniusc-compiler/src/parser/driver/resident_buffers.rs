@@ -1,6 +1,10 @@
 use super::{GpuParser, ResidentParserBufferCache, support::table_fingerprint};
 use crate::{
-    gpu::buffers::{collect_resettable_buffers, with_uniform_buffer_arena},
+    gpu::buffers::{
+        collect_resettable_buffers,
+        grown_resident_capacity,
+        with_uniform_buffer_arena,
+    },
     lexer::features::CONSERVATIVE_PARSER_FEATURES,
     parser::{buffers::ParserBuffers, tables::PrecomputedParseTables},
 };
@@ -15,6 +19,14 @@ struct ResidentParserAllocation {
 
 impl ResidentParserAllocation {
     const GRANULARITY: u32 = 4 * 1024;
+    /// No storage yet: growing it to cover a requirement gives the first
+    /// allocation the same headroom as a replacement.
+    const EMPTY: Self = Self {
+        token_capacity: 0,
+        source_capacity: 0,
+        tree_capacity: 0,
+        parser_feature_flags: 0,
+    };
 
     fn capacity_bucket(value: u32) -> u32 {
         value
@@ -42,9 +54,12 @@ impl ResidentParserAllocation {
 
     fn grow_to_cover(self, required: Self) -> Self {
         Self {
-            token_capacity: self.token_capacity.max(required.token_capacity),
-            source_capacity: self.source_capacity.max(required.source_capacity),
-            tree_capacity: self.tree_capacity.max(required.tree_capacity),
+            token_capacity: grown_resident_capacity(self.token_capacity, required.token_capacity),
+            source_capacity: grown_resident_capacity(
+                self.source_capacity,
+                required.source_capacity,
+            ),
+            tree_capacity: grown_resident_capacity(self.tree_capacity, required.tree_capacity),
             // This mask describes allocated optional-family storage, not the
             // current job. ParserBuffers::parser_feature_flags is set to the
             // current job below, after the reusable allocation is selected.
@@ -148,8 +163,8 @@ impl GpuParser {
             parser_feature_flags: cached.parser_feature_flags,
         });
         let allocation = cached_allocation
-            .map(|cached| cached.grow_to_cover(required))
-            .unwrap_or(required)
+            .unwrap_or(ResidentParserAllocation::EMPTY)
+            .grow_to_cover(required)
             .bucketed();
         let needs_allocate = cached_allocation != Some(allocation);
 
@@ -328,7 +343,7 @@ mod tests {
         assert_eq!(
             first.grow_to_cover(next),
             ResidentParserAllocation {
-                token_capacity: 320,
+                token_capacity: 325,
                 source_capacity: 1_000,
                 tree_capacity: 700,
                 parser_feature_flags: 0b1111,
@@ -353,7 +368,7 @@ mod tests {
         assert_eq!(
             first.grow_to_cover(next),
             ResidentParserAllocation {
-                token_capacity: 320,
+                token_capacity: 325,
                 source_capacity: 1_000,
                 tree_capacity: 700,
                 parser_feature_flags: 0b0011,
@@ -376,5 +391,31 @@ mod tests {
             tree_capacity: 26_001_340,
             parser_feature_flags: 0b0010,
         }));
+    }
+
+    #[test]
+    fn first_allocation_headroom_covers_the_next_slightly_larger_unit() {
+        // Two units of one stdlib build: the second has 628 more tokens and
+        // 2515 more tree nodes, which crossed the exact tree bucket and
+        // replaced the parser, type-check and semantic-interface workspaces.
+        let first = ResidentParserAllocation {
+            token_capacity: 498_713,
+            source_capacity: 1_400_832,
+            tree_capacity: 3_730_227,
+            parser_feature_flags: 0b0110,
+        };
+        let second = ResidentParserAllocation {
+            token_capacity: 499_341,
+            source_capacity: 1_404_928,
+            tree_capacity: 3_732_742,
+            parser_feature_flags: 0b0110,
+        };
+        assert!(!first.bucketed().covers(second));
+        let allocation = ResidentParserAllocation::EMPTY
+            .grow_to_cover(first)
+            .bucketed();
+        assert!(allocation.covers(second));
+        // A covered requirement keeps the allocation, so it is not replaced.
+        assert_eq!(allocation.grow_to_cover(second).bucketed(), allocation);
     }
 }
