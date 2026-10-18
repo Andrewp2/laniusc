@@ -34,6 +34,12 @@
 // the required member's symbol (predicates/01f2), and the routed call becomes
 // a local one.
 //
+// An implementation outside this unit has no candidate here. In replay, the
+// instance's program evidence names it (body_impl_bindings.slang): the
+// implementation that proved the bound on the parameter's binding slot, keyed
+// by the required member's symbol and its trait's unit. The call then becomes
+// a dependency call of that implementation's member.
+//
 // One thread per call expression (HIR domain): the call owns the context rows,
 // and its callee member, or the leaf of its callee path `P::member` for a
 // static member, names the method token.
@@ -72,6 +78,11 @@ StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_name_id;
 StructuredBuffer<uint> fn_hir_by_decl_token;
 StructuredBuffer<uint> fn_start_token_by_decl_token;
+StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
+StructuredBuffer<uint> interface_public_decl_index_by_hir;
+StructuredBuffer<uint4> body_specialization_inputs;
+RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
@@ -117,6 +128,10 @@ static const uint BIND_STEP_LIMIT = 256u;
 
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint node) { return node < active_hir_count(); }
+uint active_hir_node_count() { return active_hir_count(); }
+
+#include "../type/instances/body_specialization_owner.slang"
+#include "../type/instances/body_impl_bindings.slang"
 
 // Required members publish signature metadata without a lookup row (02_collect).
 uint required_member_trait(uint target)
@@ -174,6 +189,34 @@ bool implements(uint impl, uint member, uint4 required)
         predicate_method_validation_required_symbol[member] == required.w;
 }
 
+// The implementation member (library, unit, native symbol) outside this unit
+// that the replayed instance's evidence selected for the bound that offered
+// `candidate` (07a, 15b) on its parameter, for call token `token`.
+bool external_target(uint token, uint4 required, MethodCandidate candidate, out uint3 target)
+{
+    target = uint3(INVALID, INVALID, INVALID);
+    if (candidate.matched_ref_tag != TYPE_REF_GENERIC_PARAM) return false;
+    uint tokens; uint stride;
+    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
+    uint parameter = candidate.matched_ref_payload;
+    uint slot = parameter < tokens ? type_generic_param_slot_by_token[parameter] : INVALID;
+    uint encoded = enclosing_fn[token];
+    if (slot == INVALID || encoded == 0u || !valid_hir(encoded - 1u)) return false;
+    uint instance = body_specialization_entry_for_owner(encoded - 1u);
+    if (instance == INVALID) return false;
+    uint symbol = required.w;
+    uint2 trait_unit = required.yz;
+    if (required.x == REQUIRED_LOCAL)
+    {
+        uint member = fn_hir_by_decl_token[call_fn_index[token]];
+        if (!valid_hir(member)) return false;
+        symbol = 0x80000000u | member;
+        trait_unit = uint2(INVALID, INVALID);
+    }
+    return body_impl_binding(instance, slot, symbol, trait_unit, target) &&
+        target.x != INVALID && target.y != INVALID && target.z != INVALID;
+}
+
 // The method token of call expression `call`, or INVALID: its callee member's
 // name, or the leaf of its qualified callee path `P::member` (a path span ends
 // after its leaf), where methods/06 keys an associated call. A path callee is
@@ -224,18 +267,21 @@ void retire_claims(uint call)
     }
 }
 
-// Publish the routed callee at method token `token` or an alias of it.
-void publish_callee(uint token, MethodCandidate candidate, uint selected, uint backend)
+// Publish the routed callee at method token `token` or an alias of it: a
+// local member `selected`, or a dependency member `target` (no local callee).
+// An imported trait's required member was itself a dependency callee.
+void publish_callee(uint token, MethodCandidate candidate, uint selected, uint backend,
+    uint3 target)
 {
     if (token >= gParams.n_tokens) return;
     method_candidate[token] = candidate;
     call_fn_index[token] = selected;
     backend_call_fn_index[token] = backend;
-    // An imported trait's required member was a dependency callee.
-    call_dependency_library_id[token] = INVALID;
-    call_dependency_unit_id[token] = INVALID;
-    call_dependency_local_index[token] = INVALID;
+    call_dependency_library_id[token] = target.x;
+    call_dependency_unit_id[token] = target.y;
+    call_dependency_local_index[token] = target.z;
     call_dependency_host_service[token] = INVALID;
+    call_dependency_generic_requirements[token] = 0u;
 }
 
 // Whether call `call` has context rows (contextual_call_environment.slang).
@@ -457,10 +503,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // The accepted selection and its callee are one fact for call artifacts.
     // An imported trait's member was verified as the candidate above.
     MethodCandidate candidate = method_candidate[token];
-    bool routed = matches == 1u && (!selected_generic || published != 0u) &&
-        candidate.state == METHOD_CANDIDATE_UNIQUE &&
+    bool accepted = candidate.state == METHOD_CANDIDATE_UNIQUE &&
         (required.x == REQUIRED_IMPORTED || (candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
          candidate.local_index == call_fn_index[token]));
+    // With no implementation in this unit, the one the instance's evidence
+    // selected elsewhere.
+    uint3 target = uint3(INVALID, INVALID, INVALID);
+    bool external = matches == 0u && accepted && external_target(token, required, candidate, target);
+    bool routed = accepted && (external || (matches == 1u && (!selected_generic || published != 0u)));
     // The routed callee owns the call's context: a generic one its bindings,
     // a nongeneric one none (the trait's arguments bound the required
     // member's parameters, methods/07a). Rows written for other candidates
@@ -476,24 +526,37 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (aliases.y < gParams.n_tokens) call_context_owner_by_token[aliases.y] = call;
         }
     }
-    if (matches != 1u || (selected_generic && published == 0u))
+    if (!external && (matches != 1u || (selected_generic && published == 0u)))
     {
         record_min_token_error(status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_UNROUTED_BOUND_MEMBER);
         return;
     }
     if (!routed) return;
     retire_claims(node);
-    // The routed member is local to this unit.
-    candidate.callable_kind = METHOD_CALLABLE_LOCAL;
-    candidate.library_id = INVALID;
-    candidate.unit_id = INVALID;
-    candidate.local_index = selected;
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;
-    uint start = fn_start_token_by_decl_token[selected];
-    uint backend = start < gParams.n_tokens ? start : selected;
-    publish_callee(token, candidate, selected, backend);
-    if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend);
+    uint backend = INVALID;
+    if (external)
+    {
+        // The evidence's implementation member, in its own unit.
+        candidate.callable_kind = METHOD_CALLABLE_DEPENDENCY;
+        candidate.library_id = target.x;
+        candidate.unit_id = target.y;
+        candidate.local_index = target.z;
+        selected = INVALID;
+    }
+    else
+    {
+        // The routed member is local to this unit.
+        candidate.callable_kind = METHOD_CALLABLE_LOCAL;
+        candidate.library_id = INVALID;
+        candidate.unit_id = INVALID;
+        candidate.local_index = selected;
+        uint start = fn_start_token_by_decl_token[selected];
+        backend = start < gParams.n_tokens ? start : selected;
+    }
+    publish_callee(token, candidate, selected, backend, target);
+    if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend, target);
     if (aliases.y != token && aliases.y != aliases.x)
-        publish_callee(aliases.y, candidate, selected, backend);
+        publish_callee(aliases.y, candidate, selected, backend, target);
 }
