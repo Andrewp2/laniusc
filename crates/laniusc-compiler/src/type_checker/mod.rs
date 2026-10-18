@@ -365,6 +365,10 @@ pub struct GpuTypeChecker {
     /// job's canonical stage overflows, then kept for later jobs.
     canonical_scale: std::sync::atomic::AtomicU32,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
+    /// Capacities of the last workspace allocated. A release (frontend
+    /// replacement or trim) keeps them, so the replacement covers every
+    /// earlier job's shape rather than only the current one.
+    resident_capacity_floor: Mutex<Option<ResidentTypeCheckCacheKey>>,
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
     dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
     semantic_interface_buffers: CapacityBufferCache,

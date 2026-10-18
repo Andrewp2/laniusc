@@ -694,6 +694,15 @@ impl GpuParser {
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned") = None;
+        self.release_lexer_bindings();
+    }
+
+    /// Drops every cached bind group and operation that binds lexer buffers,
+    /// keeping the parser's own resident allocation. The parser buffers bind
+    /// no lexer buffer, so they survive a lexer replacement; keeping them
+    /// keeps their capacity and feature families too, where releasing them
+    /// would reallocate at the current unit's exact shape.
+    pub fn release_lexer_bindings(&self) {
         self.bg_cache
             .lock()
             .expect("parser.bg_cache poisoned")
@@ -706,6 +715,12 @@ impl GpuParser {
             .lock()
             .expect("parser.token_compute_operations poisoned")
             .clear();
+        // Copies from the lexer's token file ids; it would also keep the
+        // replaced lexer buffer alive until the next fingerprint miss.
+        *self
+            .resident_token_file_id_copy
+            .lock()
+            .expect("parser.resident_token_file_id_copy poisoned") = None;
     }
 
     /// Parses resident token buffers and reads back the debug parse result.
