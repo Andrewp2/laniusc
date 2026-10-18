@@ -26,10 +26,6 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   range_* (6), vec_* (10, sort and search), set_* (8), map_* (8) and deque_*
   (10, contains), 75 modules in all. core::set works around it with its own
   Key trait, so only types implemented in core::set can be set items.
-- b07: a const parameter as a cast operand, `N as i32`. Checks, but x86
-  rejects it with LNC0017 "operation is not implemented by the x86 backend"
-  at 1:59. `let n: usize = N; n as i32` and `(len as usize) == N` work.
-  Blocks no module.
 - b08: a match expression as a match arm value. LNC0016 "syntax error" at
   3:12. A helper function works around it (core::pair::zip). Blocks none.
 - b09: the array repeat expression `[10; 4]`. LNC0016 at 2:30 ("expected `]`
@@ -68,7 +64,8 @@ P10 found (x1..x5) are the directory probes m00..m05. b03 (a generic trait's
 method through `S: Get<T>`, on `Slot<i32>` and `Slot<Rec>`) is p43; the
 static member `T::same(a, b)` through `T: Same<T>` is p44; a self method
 through `T: Conv<i32>` is p45; a const-generic impl's method through
-`S: Size` on `Buf<i32, 3>` is p46.
+`S: Size` on `Buf<i32, 3>` is p46. b07 (a const parameter as a cast operand,
+`N as i32`) is p47.
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with
