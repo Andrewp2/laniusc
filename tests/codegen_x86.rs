@@ -2530,6 +2530,50 @@ fn x86_executes_nominal_struct_enum_payloads() {
     );
 }
 
+// The aggregate layout rounds are a fixed point over enum widths; a program
+// with local enums keeps all of them. Here the widths alternate enum, struct,
+// enum, struct, enum, so the last enum's width settles only in the third round.
+#[test]
+fn x86_lays_out_enums_nested_through_structs_three_deep() {
+    assert_source_exit(
+        "enums nested through structs three deep",
+        r#"
+module app::main;
+
+enum Leaf { Missing, Value(i32) }
+struct Twig { left: Leaf, right: Leaf, weight: i32 }
+enum Branch { Bare, Grown(Twig, i32) }
+struct Limb { branch: Branch, tag: i32 }
+enum Tree { Stump, Full(Limb, Leaf) }
+
+fn leaf(value: Leaf) -> i32 {
+    return match (value) {
+        Value(number) -> number,
+        Missing -> 0,
+    };
+}
+
+fn branch(value: Branch) -> i32 {
+    return match (value) {
+        Grown(twig, extra) -> leaf(twig.left) * 100 + leaf(twig.right) * 10 + twig.weight + extra,
+        Bare -> -1000,
+    };
+}
+
+fn main() -> i32 {
+    let twig: Twig = Twig { left: Value(3), right: Value(4), weight: 5 };
+    let limb: Limb = Limb { branch: Grown(twig, 6), tag: 7 };
+    let tree: Tree = Full(limb, Value(8));
+    return match (tree) {
+        Full(grown, last) -> branch(grown.branch) + grown.tag * 1000 + leaf(last) * 10000 - 87351,
+        Stump -> 1,
+    };
+}
+"#,
+        0,
+    );
+}
+
 #[test]
 fn x86_rejects_recursive_enum_value_layout() {
     let source = include_str!("../verified_compiler/tests/nominal_enum_cycle.lani");
