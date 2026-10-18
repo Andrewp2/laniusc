@@ -18,6 +18,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.source_slots;
+#include "../type/instances/live_type_rows.slang"
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -98,8 +99,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row_spare = CT_NONE;
     CtSpare spare = ct_spare_none();
     bool busy = false;
-    for (uint instance = lane; instance < mutable_type_capacity(); instance += gParams.n_tokens)
+    // The job's live rows (live_type_rows.slang). Rows realized while this
+    // dispatch runs extend them; the count is read again for each row.
+    uint source_rows;
+    type_generic_param_slot_by_token.GetDimensions(source_rows, stride);
+    for (uint index = lane; index < live_type_row_count(gParams.n_tokens, source_rows,
+        mutable_type_capacity(), type_application_count[0u]); index += gParams.n_tokens)
     {
+        uint instance = live_type_row(index, gParams.n_tokens, source_rows);
         if (type_instance_kind[instance] != 1u || type_instance_decl_token[instance] != INVALID ||
             external_type_library_id[instance] == INVALID) continue;
         uint declaration = dependency_find_declaration(external_type_library_id[instance],
