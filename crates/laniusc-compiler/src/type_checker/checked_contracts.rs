@@ -17,6 +17,7 @@ use super::generic_calls::{
     CheckedNominalIdentity,
     CheckedTypeReadback,
     RetainedGenericCallInputs,
+    UnitFactsHostTimer,
     read_type,
 };
 use crate::gpu::readback::{PagedReadback, ReadbackRegion};
@@ -261,6 +262,7 @@ pub(super) fn read_nominal_recipes(
     types: &mut CheckedTypeReadback,
     source: NominalRecipeSourceRows<'_>,
 ) -> Result<Vec<CheckedNominalRecipe>> {
+    let mut timer = UnitFactsHostTimer::nested();
     ensure!(source.fields.len() % 4 == 0 && source.variants.len() % 4 == 0
         && source.payloads.len() % 4 == 0,
         "nominal recipe source rows are truncated");
@@ -351,6 +353,7 @@ pub(super) fn read_nominal_recipes(
         root_hirs.extend(groups.iter().flatten().copied());
         plans.push((types.nominal_identity(token)?, hir, types.owner_index(hir)?, kind, groups));
     }
+    timer.stamp("recipes.plan");
     let mut requests = Vec::with_capacity(root_hirs.len() * 3);
     for &hir in &root_hirs {
         requests.push(("compact_hir_core", hir.checked_mul(4)
@@ -363,10 +366,12 @@ pub(super) fn read_nominal_recipes(
     } else {
         read_scalars(readback, device, queue, inputs, &requests)?
     };
+    timer.stamp("recipes.read");
     ensure!(rows.chunks_exact(3).all(|row| row[0] == TYPE_HIR_KIND),
         "nominal recipe payload is not a checked type root");
     let references = rows.chunks_exact(3).map(|row| (row[1], row[2])).collect::<Vec<_>>();
     types.prefetch_types(readback, device, queue, inputs, &references)?;
+    timer.stamp("recipes.prefetch");
     let mut roots = BTreeMap::new();
     for (&hir, reference) in root_hirs.iter().zip(rows.chunks_exact(3)) {
         let ty = read_type(readback, device, queue, inputs, reference[1], reference[2], types)?;
@@ -374,14 +379,17 @@ pub(super) fn read_nominal_recipes(
             "nominal recipe type root {hir} has no complete semantic identity");
         roots.insert(hir, ty);
     }
-    Ok(plans.into_iter().map(|(identity, source_hir, owner, kind, groups)| {
+    timer.stamp("recipes.types");
+    let recipes: Vec<_> = plans.into_iter().map(|(identity, source_hir, owner, kind, groups)| {
         CheckedNominalRecipe {
             identity, source_hir, owner, kind,
             groups: groups.into_iter().map(|group| {
                 group.into_iter().map(|root| roots[&root].clone()).collect()
             }).collect(),
         }
-    }).collect())
+    }).collect();
+    timer.stamp("recipes.build");
+    Ok(recipes)
 }
 
 fn scalar_regions<'a>(
@@ -505,6 +513,7 @@ pub(super) fn read_contracts(
     if source.predicates.is_empty() {
         return Ok(CheckedUnitContracts::default());
     }
+    let mut timer = UnitFactsHostTimer::nested();
 
     // The usual path shares the generic-call metadata transfer. A planning
     // failure falls back here so earlier owner errors retain precedence.
@@ -570,6 +579,7 @@ pub(super) fn read_contracts(
         }
     }
 
+    timer.stamp("contracts.validate");
     let mut root_requests = Vec::with_capacity(root_hirs.len() * 3);
     for &hir in &root_hirs {
         root_requests.push((
@@ -581,12 +591,14 @@ pub(super) fn read_contracts(
         root_requests.push(("semantic_type_ref_payload_by_hir", hir));
     }
     let root_rows = read_scalars(readback, device, queue, inputs, &root_requests)?;
+    timer.stamp("contracts.root_read");
     let references = root_rows
         .chunks_exact(3)
         .filter(|reference| reference[0] == TYPE_HIR_KIND)
         .map(|reference| (reference[1], reference[2]))
         .collect::<Vec<_>>();
     types.prefetch_types(readback, device, queue, inputs, &references)?;
+    timer.stamp("contracts.root_prefetch");
     let mut roots = BTreeMap::new();
     for (&hir, reference) in root_hirs.iter().zip(root_rows.chunks_exact(3)) {
         ensure!(
@@ -609,6 +621,7 @@ pub(super) fn read_contracts(
         roots.insert(hir, ty);
     }
 
+    timer.stamp("contracts.root_types");
     let mut binding_requests = Vec::new();
     let mut method_rows = Vec::new();
     for (index, method) in source.methods.chunks_exact(4).enumerate() {
@@ -629,6 +642,7 @@ pub(super) fn read_contracts(
         }
     }
     let binding_facts = read_scalars(readback, device, queue, inputs, &binding_requests)?;
+    timer.stamp("contracts.binding_read");
     let mut bindings = BTreeMap::<u32, Vec<CheckedImplementationMethodBinding>>::new();
     let mut required_symbols = BTreeSet::new();
     let mut method_hirs = BTreeSet::new();
@@ -660,6 +674,7 @@ pub(super) fn read_contracts(
             });
     }
 
+    timer.stamp("contracts.bindings");
     let mut result = CheckedUnitContracts::default();
     let mut trait_identities = BTreeMap::new();
     for (index, row) in source.predicates.chunks_exact(4).enumerate() {
@@ -773,5 +788,6 @@ pub(super) fn read_contracts(
         bindings.is_empty(),
         "checked method bindings have no implementation owner"
     );
+    timer.stamp("contracts.predicates");
     Ok(result)
 }

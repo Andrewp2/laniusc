@@ -915,12 +915,14 @@ impl Drop for UnitFactsPlanRecorder<'_> {
         };
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
             eprintln!(
-                "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={}",
+                "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={} exported={} counts={:?}",
                 plan.len(),
                 stats.answered,
                 stats.read,
                 stats.fetched,
                 stats.fetched_words,
+                self.key.interface_exported,
+                self.key.counts,
             );
         }
         self.plans
@@ -932,19 +934,35 @@ impl Drop for UnitFactsPlanRecorder<'_> {
 
 /// Trace spans for the unit snapshot's stages, so the host work between its
 /// readbacks shows up in a profile. Each span includes its stage's readback.
-struct UnitFactsHostTimer(Option<std::time::Instant>);
+pub(super) struct UnitFactsHostTimer {
+    last: Option<std::time::Instant>,
+    prefix: &'static str,
+}
 
 impl UnitFactsHostTimer {
     fn new() -> Self {
-        Self(crate::gpu::trace::enabled().then(std::time::Instant::now))
+        Self::with_prefix("generic_calls.unit_facts")
     }
 
-    fn stamp(&mut self, stage: &str) {
-        if let Some(last) = self.0 {
+    /// Spans inside one stage, named `unit_facts_sub.<step>`, so a profile
+    /// splits a stage without adding stages.
+    pub(super) fn nested() -> Self {
+        Self::with_prefix("unit_facts_sub")
+    }
+
+    fn with_prefix(prefix: &'static str) -> Self {
+        Self {
+            last: crate::gpu::trace::enabled().then(std::time::Instant::now),
+            prefix,
+        }
+    }
+
+    pub(super) fn stamp(&mut self, stage: &str) {
+        if let Some(last) = self.last {
             let now = std::time::Instant::now();
-            let name = format!("generic_calls.unit_facts.{stage}");
+            let name = format!("{}.{stage}", self.prefix);
             crate::gpu::trace::record_host_span("host.compiler", &name, last, now);
-            self.0 = Some(now);
+            self.last = Some(now);
         }
     }
 }
@@ -1325,6 +1343,7 @@ impl CheckedTypeReadback {
         inputs: &RetainedGenericCallInputs,
         roots: &[(u32, u32)],
     ) -> Result<()> {
+        let mut timer = UnitFactsHostTimer::nested();
         let mut frontier = roots.iter().copied().collect::<BTreeSet<_>>();
         let mut visited = BTreeSet::new();
         for _ in 0..MAX_RETAINED_TYPE_DEPTH {
@@ -1374,6 +1393,7 @@ impl CheckedTypeReadback {
                 }
             }
             let instances = instances.into_iter().collect::<Vec<_>>();
+            timer.stamp("prefetch.scan");
             self.read_type_rows(
                 readback,
                 device,
@@ -1382,6 +1402,7 @@ impl CheckedTypeReadback {
                 &instances,
                 &legacy_rows.into_iter().collect::<Vec<_>>(),
             )?;
+            timer.stamp("prefetch.type_rows");
             let mut nominals = Vec::new();
             for &instance in &instances {
                 let values = self.instance_headers[&instance];
@@ -1399,13 +1420,16 @@ impl CheckedTypeReadback {
                     _ => {}
                 }
             }
+            timer.stamp("prefetch.nominals");
             self.read_argument_rows(readback, device, queue, inputs, &nominals, true)?;
             for instance in nominals {
                 if let Some(Some(arguments)) = self.instance_arguments.get(&instance) {
                     next.extend(arguments.iter().copied());
                 }
             }
+            timer.stamp("prefetch.arguments");
             self.prefetch_constants(readback, device, queue, inputs, &constants)?;
+            timer.stamp("prefetch.constants");
             frontier = next;
         }
         Ok(())
@@ -1848,6 +1872,7 @@ pub(super) fn read_unit_facts(
         return Ok(CheckedUnitFacts::default());
     };
     let mut timer = UnitFactsHostTimer::new();
+    let mut sub = UnitFactsHostTimer::nested();
     // This page is physical staging only. Each read copies the current accepted
     // rows while the caller holds the resident pipeline lock; no facts survive
     // here between jobs. Resident workspace trim clears the owning cache.
@@ -2008,7 +2033,9 @@ pub(super) fn read_unit_facts(
         constant_claim_count,
         "GPU-selected constant claims",
     )?);
+    sub.stamp("claims.plan");
     let claims = batch.read(&readback, device, queue, "generic call claims")?;
+    sub.stamp("claims.read");
     let columns = columns.into_iter().map(|range| &claims[range]).collect::<Vec<_>>();
     timer.stamp("claims");
     // The compact producer owns all three columns. Invalid spans must fail
@@ -2328,8 +2355,10 @@ pub(super) fn read_unit_facts(
         // immutable definition graphs just to discard them at that boundary.
         CheckedUnitContracts::default()
     };
+    timer.stamp("contract_facts");
     if interface_exported {
         contracts.binders = types.owners.values().cloned().collect();
+        timer.stamp("binders");
         contracts.nominal_recipes = checked_contracts::read_nominal_recipes(
             &readback, device, queue, inputs, &mut types,
             checked_contracts::NominalRecipeSourceRows {
@@ -2367,6 +2396,7 @@ pub(super) fn read_unit_facts(
     } else {
         Vec::new()
     };
+    sub.stamp("local.tokens");
     let local_names = rows(
         &readback,
         device,
@@ -2398,7 +2428,9 @@ pub(super) fn read_unit_facts(
     let method_row_start =
         batch.rows(inputs.buffer("method_decl_method_row"), &local_names, 1, 1, "local methods")?;
     let name_decl_start = batch.rows(decl_by_name_token, &name_rows, 1, 1, "local declarations")?;
+    sub.stamp("local.names_and_plan");
     let level = batch.read(&readback, device, queue, "generic call rows")?;
+    sub.stamp("local.level_read");
     let local_count = local_tokens.len();
     let local_type_counts = &level[local_count_start..][..local_count];
     let local_constant_counts = &level[local_constant_start..][..local_count];
@@ -2445,7 +2477,9 @@ pub(super) fn read_unit_facts(
     } else {
         Some(batch.rows(decl_hir_node, &candidate_decls, 1, 1, "declaration HIRs")?)
     };
+    sub.stamp("local.fallback_plan");
     let fallback = batch.read(&readback, device, queue, "generic call rows")?;
+    sub.stamp("local.fallback_read");
     let (method_cores, method_signatures) = match method_rows_read {
         None => (
             table_rows(columns[18], &method_ids, 4),
@@ -2498,7 +2532,9 @@ pub(super) fn read_unit_facts(
         batch.rows(constant_counts_by_token, &impl_tokens, 1, 1, "impl constant counts")?;
     let public_start =
         batch.rows(public_decl_by_hir, &candidate_hirs, 1, 1, "public declarations")?;
+    sub.stamp("local.impl_plan");
     let level = batch.read(&readback, device, queue, "generic call rows")?;
+    sub.stamp("local.impl_read");
     let hir_symbols = candidate_hirs
         .iter()
         .copied()
@@ -2800,6 +2836,7 @@ pub(super) fn read_unit_facts(
         claim_call(claim).is_some_and(|call| retained(&calls, call).is_some()))
         .map(|claim| (columns[2][claim], columns[3][claim])).collect::<Vec<_>>();
     types.prefetch_types(&readback, device, queue, inputs, &claim_roots)?;
+    timer.stamp("claim_prefetch");
     for claim in 0..claim_count {
         if columns[0][claim] == INVALID || columns[1][claim] == INVALID {
             continue;
@@ -2861,6 +2898,7 @@ pub(super) fn read_unit_facts(
             });
         let (tag_starts, payload_starts) = (tag_starts?, payload_starts?);
         let rows = batch.read(&readback, device, queue, "checked contextual arguments")?;
+        timer.stamp("context_read");
         for ((&index, &tags), &payloads) in context.iter().zip(&tag_starts).zip(&payload_starts) {
             let mask = context_masks[index];
             let call = calls[index].as_mut().expect("retained contextual call");
