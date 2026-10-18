@@ -84,7 +84,12 @@ impl InstanceSources {
     /// inherent copy must be in the type's module). Bodies of earlier files
     /// copy unless `LANIUS_REPLAY_MULTIFILE_COPIES=0`.
     pub(super) fn copy_rank(template: &[String], span: &CheckedOwnerSpan) -> Option<u32> {
-        copy_rank_with(template, span, multifile_copies_enabled())
+        copy_rank_with(template, span, multifile_copies_enabled()).ok()
+    }
+
+    /// Why `copy_rank` is None, for the specialization trace.
+    pub(super) fn copy_miss(template: &[String], span: &CheckedOwnerSpan) -> Option<&'static str> {
+        copy_rank_with(template, span, multifile_copies_enabled()).err()
     }
 
     /// Copy each span once, in the given order, which must be by
@@ -108,7 +113,7 @@ impl InstanceSources {
         }).ok_or_else(|| anyhow!("template source pack exceeds u32 bytes"))?;
         let last_start = template_len as usize - template.last().expect("nonempty").len();
         let ranks = spans.iter()
-            .map(|span| copy_rank_with(template, span, multifile))
+            .map(|span| copy_rank_with(template, span, multifile).ok())
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow!("an instance copy's body cannot be copied from its template file"))?;
         ensure!(ranks.windows(2).all(|pair| pair[0] <= pair[1]),
@@ -298,7 +303,8 @@ fn strip_instance_names(text: &str) -> String {
 }
 
 /// `copy_rank` with copies of earlier files allowed or not.
-fn copy_rank_with(template: &[String], span: &CheckedOwnerSpan, multifile: bool) -> Option<u32> {
+/// `copy_rank`, or why the body replays in its original scope.
+fn copy_rank_with(template: &[String], span: &CheckedOwnerSpan, multifile: bool) -> Result<u32, &'static str> {
     let first = span.first_byte() as usize;
     let mut file_start = 0usize;
     let mut found = None;
@@ -310,20 +316,21 @@ fn copy_rank_with(template: &[String], span: &CheckedOwnerSpan, multifile: bool)
         }
         file_start = file_end;
     }
-    let (file, file_end) = found?;
+    let (file, file_end) = found.ok_or("span outside the template")?;
     let in_file = |byte: u32| (byte as usize) >= file_start && (byte as usize) < file_end;
-    let local = (span.end_byte as usize) <= file_end
-        && span.enclosing_impl
-            .and_then(|header| header.trait_cut)
-            .is_none_or(|cut| in_file(cut.self_declaration_byte));
-    if !local {
-        None
+    if (span.end_byte as usize) > file_end {
+        Err("body crosses its file")
+    } else if !span.enclosing_impl
+        .and_then(|header| header.trait_cut)
+        .is_none_or(|cut| in_file(cut.self_declaration_byte))
+    {
+        Err("trait-impl self type declared in another file")
     } else if file + 1 == template.len() {
-        Some(0)
+        Ok(0)
     } else if multifile {
-        u32::try_from(file + 1).ok()
+        u32::try_from(file + 1).map_err(|_| "file index exceeds u32")
     } else {
-        None
+        Err("multi-file copies are off")
     }
 }
 
@@ -518,7 +525,7 @@ mod tests {
     #[test]
     fn copy_ranks_follow_the_body_file() {
         let rank = |template: &[String], span: &CheckedOwnerSpan, multifile: bool| {
-            copy_rank_with(template, span, multifile)
+            copy_rank_with(template, span, multifile).ok()
         };
         // The same declarations split over two files: the trait impl in the
         // first, or its self type in the first.
