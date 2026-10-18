@@ -198,6 +198,9 @@ pub(crate) struct GpuLoweringPipeline {
     target: TargetStage,
     status_readback: LaniusBuffer<u8>,
     status_readback_copy: crate::gpu::operations::CopyBufferOperation,
+    /// The job's semantic and target row totals, copied with the status.
+    job_totals_readback: LaniusBuffer<u8>,
+    job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
     phase_reset_plans: Mutex<Vec<(LoweringCapacities, Arc<PhaseResetPlan>)>>,
     /// Words written over the tails a job's phase reset leaves, when
@@ -206,6 +209,30 @@ pub(crate) struct GpuLoweringPipeline {
     /// The capacities the last recorded job could address. Its artifact must
     /// fit them, as it would in a fresh workspace for the job.
     recorded_job: Mutex<LoweringCapacities>,
+}
+
+/// Sets the capacity failure a GPU check against `job` would set for a job
+/// with `semantic_rows` semantic and `target_rows` target rows.
+fn flag_job_totals(
+    status: &mut LoweringStatus,
+    job: LoweringCapacities,
+    semantic_rows: u32,
+    target_rows: u32,
+) {
+    use super::lowering_ir::opcode::{
+        LOWERING_STATUS_SEMANTIC_CAPACITY,
+        LOWERING_STATUS_TARGET_CAPACITY,
+    };
+    for (flag, required, available) in [
+        (LOWERING_STATUS_SEMANTIC_CAPACITY, semantic_rows, job.semantic_instructions),
+        (LOWERING_STATUS_TARGET_CAPACITY, target_rows, job.target_instructions),
+    ] {
+        if required > available {
+            status.flags |= flag;
+            status.required_capacity = status.required_capacity.max(required);
+            status.available_capacity = status.available_capacity.min(available);
+        }
+    }
 }
 
 /// Job phase resets the pipeline keeps, most recent last.
@@ -475,6 +502,10 @@ impl GpuLoweringPipeline {
         hir: GpuSemanticHirInputs<'_>,
         semantic_inputs: GpuSemanticArtifactView<'_>,
     ) -> Result<Self> {
+        let target_total_name = match target {
+            LoweringTarget::X86_64 => "lir.x86.total",
+            LoweringTarget::Wasm => "lir.wasm.total",
+        };
         let graph = lowering_compiler_graph_for_artifact(capacities, target, artifact_kind)
             .map_err(anyhow::Error::msg)?;
         let workspace = CompilerGraphWorkspace::new_with_upstream_storage(
@@ -547,6 +578,40 @@ impl GpuLoweringPipeline {
             0,
             status_bytes as u64,
         )?;
+        let job_totals_readback = readback_bytes(device, "lowering.job_totals.readback", 8, 8);
+        let target_total = workspace
+            .alias::<u32>(
+                &graph,
+                graph
+                    .resource_id(target_total_name)
+                    .with_context(|| format!("lowering graph is missing {target_total_name}"))?,
+                1,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let job_totals_copies = [
+            crate::gpu::operations::CopyBufferOperation::new(
+                &(&graph, &status_allocations),
+                "lowering.semantic_total.readback",
+                "semantic_total",
+                semantic.output().count,
+                0,
+                "job_totals_readback",
+                &job_totals_readback,
+                0,
+                4,
+            )?,
+            crate::gpu::operations::CopyBufferOperation::new(
+                &(&graph, &status_allocations),
+                "lowering.target_total.readback",
+                "target_total",
+                &target_total,
+                0,
+                "job_totals_readback",
+                &job_totals_readback,
+                4,
+                4,
+            )?,
+        ];
         Ok(Self {
             capacities,
             artifact_kind,
@@ -558,6 +623,8 @@ impl GpuLoweringPipeline {
             target,
             status_readback,
             status_readback_copy,
+            job_totals_readback,
+            job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
             phase_reset_poison: Mutex::new(None),
             recorded_job: Mutex::new(capacities),
@@ -699,6 +766,39 @@ impl GpuLoweringPipeline {
         }
     }
 
+    fn record_status_readback(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.status_readback_copy.record(encoder);
+        for copy in &self.job_totals_copies {
+            copy.record(encoder);
+        }
+    }
+
+    /// Flags a job whose semantic or target rows exceed the job's
+    /// capacities, as the GPU checks of a fresh workspace for the job would
+    /// (optimization/project.slang, x86 and Wasm validate.slang). A job at
+    /// this workspace's capacities was checked on the GPU. The job's phase
+    /// reset and x86 clears covered only its capacities, so its rows past
+    /// them could read stale words; `from_frontend_unit` bounds both totals
+    /// by eight rows per HIR row, and this enforces that bound.
+    fn check_job_totals(&self, device: &wgpu::Device, status: &mut LoweringStatus) -> Result<()> {
+        let job = *self
+            .recorded_job
+            .lock()
+            .expect("lowering recorded job poisoned");
+        let slice = self.job_totals_readback.slice(..);
+        map_readback_blocking(device, &slice, "lowering job totals readback")?;
+        let mapped = slice.get_mapped_range();
+        let word =
+            |index: usize| u32::from_le_bytes(mapped[index * 4..index * 4 + 4].try_into().unwrap());
+        let (semantic_rows, target_rows) = (word(0), word(1));
+        drop(mapped);
+        self.job_totals_readback.unmap();
+        if job != self.capacities {
+            flag_job_totals(status, job, semantic_rows, target_rows);
+        }
+        Ok(())
+    }
+
     /// Fails an artifact the job's capacities could not hold, as a fresh
     /// workspace for the job would: its x86 clears and phase reset covered
     /// only those capacities.
@@ -822,7 +922,7 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
         self.record_target_pages(encoder, false, &mut timer, self.smaller_job(job))?;
-        self.status_readback_copy.record(encoder);
+        self.record_status_readback(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::ArtifactEmission);
             timer.stamp(encoder, "artifact.status_readback.done");
@@ -914,7 +1014,7 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
         self.record_target_pages(encoder, true, &mut timer, self.smaller_job(job))?;
-        self.status_readback_copy.record(encoder);
+        self.record_status_readback(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::ArtifactEmission);
             timer.stamp(encoder, "artifact.status_readback.done");
@@ -968,8 +1068,11 @@ impl GpuLoweringPipeline {
                 anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
             }
         }?;
-        self.check_job_artifact_bytes("x86 object text", finished.0.text.len())?;
-        self.check_job_artifact_bytes("x86 object rodata", finished.0.rodata.len())?;
+        // The object's artifact words hold its text and rodata together.
+        self.check_job_artifact_bytes(
+            "x86 object text and rodata",
+            finished.0.text.len() + finished.0.rodata.len(),
+        )?;
         Ok(finished)
     }
 
@@ -979,7 +1082,7 @@ impl GpuLoweringPipeline {
         let mapped = slice.get_mapped_range();
         let word =
             |index: usize| u32::from_le_bytes(mapped[index * 4..index * 4 + 4].try_into().unwrap());
-        let status = LoweringStatus {
+        let mut status = LoweringStatus {
             flags: word(0),
             first_unsupported_hir: word(1),
             first_unsupported_semantic_row: word(2),
@@ -993,6 +1096,7 @@ impl GpuLoweringPipeline {
         };
         drop(mapped);
         self.status_readback.unmap();
+        self.check_job_totals(device, &mut status)?;
         if status.flags != 0 {
             if let Err(error) = self.optimizer.report_failure_trace(device) {
                 eprintln!("[optimization.failure.trace] readback failed: {error:#}");
@@ -1014,6 +1118,35 @@ impl GpuLoweringPipeline {
 mod tests {
     use super::*;
     use crate::gpu::{device, passes_core::pipeline_creation_count};
+
+    #[test]
+    fn job_totals_past_the_jobs_capacities_fail_as_the_gpu_checks_would() {
+        use crate::codegen::lowering_ir::opcode::{
+            LOWERING_STATUS_SEMANTIC_CAPACITY,
+            LOWERING_STATUS_TARGET_CAPACITY,
+        };
+        let job = LoweringCapacities::from_frontend_unit(1000, 100, 100, LoweringTarget::X86_64)
+            .unwrap();
+        let fresh = LoweringStatus {
+            available_capacity: u32::MAX,
+            ..LoweringStatus::default()
+        };
+        let mut within = fresh;
+        flag_job_totals(&mut within, job, job.semantic_instructions, job.target_instructions);
+        assert_eq!(within, fresh);
+
+        let mut semantic = fresh;
+        flag_job_totals(&mut semantic, job, job.semantic_instructions + 1, 0);
+        assert_eq!(semantic.flags, LOWERING_STATUS_SEMANTIC_CAPACITY);
+        assert_eq!(semantic.required_capacity, job.semantic_instructions + 1);
+        assert_eq!(semantic.available_capacity, job.semantic_instructions);
+
+        let mut target = fresh;
+        flag_job_totals(&mut target, job, 0, job.target_instructions + 7);
+        assert_eq!(target.flags, LOWERING_STATUS_TARGET_CAPACITY);
+        assert_eq!(target.required_capacity, job.target_instructions + 7);
+        assert_eq!(target.available_capacity, job.target_instructions);
+    }
 
     #[test]
     fn lowering_workspace_cache_starts_without_job_storage() {

@@ -10461,6 +10461,28 @@ fn lowering_compiler_graph_builder(
         "status_readback",
         lowering_status_readback,
     )?;
+    // The job's semantic and target row totals, read back with the status:
+    // a job lowered in a workspace larger than its own capacities checks
+    // them against those capacities (GpuLoweringPipeline::finish_status).
+    let job_totals_readback = graph.add_storage(
+        "lowering.job_totals_readback",
+        ResourceDomain::ArtifactBytes,
+        ResourceClass::External,
+        LoweringCapacities::bytes::<u32>(2),
+    )?;
+    for (name, source_binding, source) in [
+        ("lowering.semantic_total.readback", "semantic_total", semantic_total),
+        ("lowering.target_total.readback", "target_total", target_total),
+    ] {
+        graph.add_buffer_copy_pass(
+            name,
+            CompilerPhase::Artifact,
+            source_binding,
+            source,
+            "job_totals_readback",
+            job_totals_readback,
+        )?;
+    }
     Ok(graph)
 }
 
