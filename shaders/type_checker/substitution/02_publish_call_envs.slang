@@ -48,14 +48,14 @@ bool valid_token(uint token) { return token < gParams.n_tokens; }
 // The low `count` bits.
 uint low_bits(uint count) { return count == 0u ? 0u : 0xffffffffu >> (32u - min(count, 32u)); }
 
-// The type and constant slots the call's result context binds
-// (contextual_call_environment.slang).
-uint2 context_masks(uint token)
+// The type and constant slots that call `call`'s result context binds
+// (contextual_call_environment.slang), when the call owns its callee token's
+// context.
+uint2 context_masks(uint token, uint call)
 {
     uint capacity; uint stride;
     call_context_owner_by_token.GetDimensions(capacity, stride);
-    if (token >= capacity) return uint2(0u, 0u);
-    uint call = call_context_owner_by_token[token];
+    if (token >= capacity || call_context_owner_by_token[token] != call) return uint2(0u, 0u);
     call_context_arg_mask.GetDimensions(capacity, stride);
     uint types = call < capacity ? call_context_arg_mask[call] : 0u;
     call_context_constant_mask.GetDimensions(capacity, stride);
@@ -70,12 +70,12 @@ uint2 context_masks(uint token)
 // through a bound (methods/07a, dependencies/15b) also has the trait's
 // slots, which its header does not declare: the bound's trait arguments
 // are its context.
-uint2 candidate_masks(uint token)
+uint2 candidate_masks(uint token, uint call)
 {
     if (call_dependency_library_id[token] == INVALID && !valid_token(call_fn_index[token]))
         return uint2(0xffffffffu, 0xffffffffu);
     uint2 counts = required_callable_generic_counts(token);
-    return uint2(low_bits(counts.x), low_bits(counts.y)) | context_masks(token);
+    return uint2(low_bits(counts.x), low_bits(counts.y)) | context_masks(token, call);
 }
 
 // Numeric literals can receive context within their category; named values,
@@ -184,7 +184,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     CallEnvBindings bindings;
     bindings.token = token;
     bindings.spare = CT_NONE;
-    uint2 masks = candidate_masks(token);
+    uint2 masks = candidate_masks(token, call);
     for (uint which = 0u; which < 2u; which++)
     {
         bindings.which = which;
