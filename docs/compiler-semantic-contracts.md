@@ -1,5 +1,56 @@
 # Compiler semantic contracts
 
+## Zero-initialized declarations (2026-10-18)
+
+`let x: T;`, a binding with a type and no initializer, gives `x` storage whose
+every bit is zero. A later assignment replaces that value, so
+`let x: i32; if (c) { x = 1; } return x;` returns 0 when `c` is false. A
+declaration inside a loop is zeroed again on every iteration.
+
+The zero value of each type:
+
+- integers, `isize` and `usize`: 0;
+- `bool`: false; `char`: `'\0'`; `f32` and `f64`: +0.0; `ptr`: null;
+- a fixed array of these, such as `[i32; 1024]`, or a local struct: every word
+  is zero.
+
+A `str`, a reference, a slice or an enum at the top level is rejected as
+unsupported, because its zero bits are not a value or would silently pick the
+first variant. x86 reports LNC0017 at the declaration. Wasm rejects it too,
+but only with its generic LNC0057 (see
+`tests/fixtures/known_gaps_codegen_wasm.txt`). Fields and elements are not
+checked. A struct with a `str` field gets the empty string, with a null data
+pointer; one with a reference field gets a null reference. A struct imported
+from another module is rejected for now.
+
+Lowering:
+
+- `semantic_lir_is_zero_let` (`codegen/lir/semantic/common.slang`) gives the
+  statement two rows at its first token: the zero value, then the
+  `VALUE_SET`. If the declaration's address is taken, the `VALUE_SET` becomes
+  a `PLACE_STORE`.
+- The zero value is a `CONST_*` with zero operands for scalars. For
+  aggregates it is an `AGGREGATE_NEW` with no elements and
+  `SEMANTIC_LIR_AGGREGATE_ZERO` in operand C (`zero_initializer_op` in
+  `materialize.slang`). A type with no zero value still gets a `CONST_I32`
+  producer, so the store keeps a value edge for SSA construction, and both
+  rows carry `SEMANTIC_LIR_FLAG_UNSUPPORTED`.
+- Both targets fail closed on that flag. x86 scatter and Wasm scatter mark
+  every row carrying `SEMANTIC_LIR_FLAG_UNSUPPORTED` or `..._FOR_ITERABLE` as
+  an unsupported target row. Neither lowers a placeholder.
+- x86 lowers the zero aggregate to its address row and one
+  `X86_LIR_OP_AGGREGATE_FILL`. That instruction zeroes the storage slots with
+  `push rdi; lea rdi; mov ecx; xor eax; rep stosq; pop rdi`, covering both the
+  native and the packed `i32` layouts.
+- A declaration store whose source is a zero aggregate fills its own storage
+  instead of copying word by word. Its target rows therefore do not grow with
+  the array length.
+- Wasm allocates the aggregate from its bump heap. That memory is never
+  reused, so it is already zero, and no stores are emitted.
+
+There is no definite-assignment check: a read before any assignment reads
+zero.
+
 ## Borrowed receivers that are not places (2026-10-15)
 
 A `&self` method can be called on a value with no storage of its own, such as

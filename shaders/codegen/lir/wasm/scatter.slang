@@ -73,6 +73,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
     // Host/intrinsic support cannot override an unsupported checked width.
     if (core.type_id == SCALAR_F64) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    // Rows the semantic pass could not lower (an unknown layout, a
+    // declaration type with no zero value, an unsupported iterable) are
+    // rejected as on x86, never lowered from their placeholder operands.
+    if ((core.flags & (SEMANTIC_LIR_FLAG_UNSUPPORTED |
+                       SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE)) != 0u)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     flags |= semantic_function_id_by_hir[
         opt_ir_source_hir[semantic_row]] == WASM_LIR_INVALID
         ? 0u : (1u << 8u);

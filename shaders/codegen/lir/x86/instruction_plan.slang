@@ -611,6 +611,18 @@ void plan_ordinary(X86PlanInput input)
         if (!direct && operands.a != X86_LIR_UNARY_NOT_BOOL) plan_move32(X86_REG, locations.result);
     }
     else if (op == X86_LIR_OP_TRAP) plan_bytes(2u, 0x0b0fu); // ud2
+    else if (op == X86_LIR_OP_AGGREGATE_FILL && operands.c != 0u)
+    {
+        // Slots grow toward lower addresses, so the last of the C slots
+        // starting at this row's own is the lowest address. RDI may hold a
+        // value; RAX and RCX are row scratch, and DF is clear.
+        plan_bytes(1u, 0x57u); // push rdi
+        plan_lea64(7u, x86_location_payload(locations.result) + operands.c - 1u);
+        plan_bytes_word(1u, 0xb9u, operands.c); // mov ecx, words
+        plan_bytes(2u, 0xc031u); // xor eax, eax
+        plan_bytes(3u, 0xab48f3u); // rep stosq
+        plan_bytes(1u, 0x5fu); // pop rdi
+    }
     else if (op == X86_LIR_OP_RETURN || op == X86_LIR_OP_RETURN_VOID)
     {
         if (operands.c != 0u)
