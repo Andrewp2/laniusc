@@ -1225,7 +1225,8 @@ fn main()->i32 { if (keep(false)) { return 1; } return 0; }
                 .expect_err(&format!("{label}: invalid bound must reject before executable output"));
             let diagnostic = error.to_public_diagnostic();
             if label == "direct constant trait operand remains unsupported" {
-                assert_eq!(diagnostic.code, "LNC0016", "{label}: {error:?}");
+                // The impl header `impl Sized<2> for bool` is rejected first.
+                assert_eq!(diagnostic.code, "LNC0021", "{label}: {error:?}");
             } else {
                 assert!(matches!(diagnostic.code.as_str(), "LNC0007" | "LNC0008" | "LNC0021"),
                     "{label}: expected a source contract rejection: {error:?}");

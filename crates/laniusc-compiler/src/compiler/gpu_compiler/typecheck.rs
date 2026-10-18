@@ -3859,7 +3859,7 @@ fn trait_impl_diagnostic(
         ),
         15 => (
             "trait impl header contains an unknown trait argument type",
-            "resolve every trait argument to a complete type pattern using parameters owned by this impl",
+            "resolve every trait argument to a complete type pattern using parameters owned by this impl; constant trait arguments are not supported yet",
         ),
         16 => (
             "generic executable trait methods are not supported here",
