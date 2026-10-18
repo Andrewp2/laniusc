@@ -2,6 +2,12 @@
 //
 // HIR type collection scatters from parser nodes into token-indexed records, so
 // clearing must be a separate pass to avoid clear/write races.
+//
+// The whole-table clears (every type row's kind, the lookup index and the
+// imported field tables) give later passes their invariant: a row without a
+// kind owns nothing (live_type_rows.slang). They stride over one lane per
+// workspace token row, the lanes this pass is dispatched with, so a small job
+// in a workspace retained from a larger one clears it in parallel.
 
 struct Params
 {
@@ -10,6 +16,13 @@ struct Params
     uint n_hir_nodes;
     uint n_source_files;
     uint parser_feature_flags;
+    uint dependency_interfaces_present;
+    uint retain_callable_owners;
+    uint trait_obligation_mode;
+    uint authorized_replay_callable;
+    uint canonical_library_id;
+    uint canonical_unit_id;
+    uint workspace_token_rows;
 };
 
 ConstantBuffer<Params> gParams;
@@ -84,6 +97,7 @@ RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> compact_hir_count;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -105,7 +119,9 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i < gParams.n_hir_nodes)
+    // HIR rows past the job's own are not nodes: no pass reads them as one.
+    // A parser allocation retained from a larger job keeps a larger capacity.
+    if (i < min(gParams.n_hir_nodes, compact_hir_count[0u]))
     {
         // Iteration kinds are retained through inference and final publication.
         semantic_iterable_kind_by_hir[i] = 0u;
@@ -135,6 +151,43 @@ void main(uint3 dtid: SV_DispatchThreadID)
         imported_layout_group_total[0u] = 0u;
     }
 
+    uint lanes = max(gParams.workspace_token_rows, max(gParams.n_tokens, 1u));
+    if (i < lanes)
+    {
+        uint capacity; uint stride;
+        type_instance_lookup_head.GetDimensions(capacity, stride);
+        for (uint bucket = i; bucket < capacity; bucket += lanes)
+            type_instance_lookup_head[bucket] = 0u;
+        type_instance_lookup_next.GetDimensions(capacity, stride);
+        for (uint instance = i; instance < capacity; instance += lanes)
+        {
+            type_instance_lookup_next[instance] = 0u;
+            type_instance_lookup_present[instance] = 0u;
+        }
+        type_instance_kind.GetDimensions(capacity, stride);
+        for (uint instance = i; instance < capacity; instance += lanes)
+            type_instance_kind[instance] = TYPE_INSTANCE_INVALID;
+        imported_field_ref_start.GetDimensions(capacity, stride);
+        for (uint instance = i; instance < capacity; instance += lanes)
+        {
+            imported_field_ref_start[instance] = INVALID;
+            imported_field_ref_count[instance] = 0u;
+            imported_layout_kind[instance] = 0u;
+            imported_layout_group_start[instance] = INVALID;
+            imported_layout_group_count[instance] = 0u;
+        }
+        imported_field_ref_tag.GetDimensions(capacity, stride);
+        for (uint row = i; row < capacity; row += lanes)
+        {
+            imported_field_ref_tag[row] = 0u;
+            imported_field_ref_payload[row] = INVALID;
+            imported_field_name_hash[row] = uint2(0u, 0u);
+        }
+        imported_layout_groups.GetDimensions(capacity, stride);
+        for (uint row = i; row < capacity; row += lanes)
+            imported_layout_groups[row] = uint2(0u, 0u);
+    }
+
     if (i >= gParams.n_tokens)
         return;
 
@@ -142,42 +195,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     imported_type_alias_target.GetDimensions(alias_capacity, alias_stride);
     if (i < alias_capacity) imported_type_alias_target[i] = uint2(0u, INVALID);
 
-    uint lookup_capacity; uint lookup_stride;
-    type_instance_lookup_head.GetDimensions(lookup_capacity, lookup_stride);
-    for (uint bucket = i; bucket < lookup_capacity; bucket += gParams.n_tokens)
-        type_instance_lookup_head[bucket] = 0u;
-    type_instance_lookup_next.GetDimensions(lookup_capacity, lookup_stride);
-    for (uint instance = i; instance < lookup_capacity; instance += gParams.n_tokens)
-    {
-        type_instance_lookup_next[instance] = 0u;
-        type_instance_lookup_present[instance] = 0u;
-    }
-    type_instance_kind.GetDimensions(lookup_capacity, lookup_stride);
-    for (uint instance = gParams.n_tokens + i; instance < lookup_capacity; instance += gParams.n_tokens)
-        type_instance_kind[instance] = TYPE_INSTANCE_INVALID;
-    imported_field_ref_start.GetDimensions(lookup_capacity, lookup_stride);
-    for (uint instance = i; instance < lookup_capacity; instance += gParams.n_tokens)
-    {
-        imported_field_ref_start[instance] = INVALID;
-        imported_field_ref_count[instance] = 0u;
-        imported_layout_kind[instance] = 0u;
-        imported_layout_group_start[instance] = INVALID;
-        imported_layout_group_count[instance] = 0u;
-    }
-    imported_field_ref_tag.GetDimensions(lookup_capacity, lookup_stride);
-    for (uint row = i; row < lookup_capacity; row += gParams.n_tokens)
-    {
-        imported_field_ref_tag[row] = 0u;
-        imported_field_ref_payload[row] = INVALID;
-        imported_field_name_hash[row] = uint2(0u, 0u);
-    }
-    imported_layout_groups.GetDimensions(lookup_capacity, lookup_stride);
-    for (uint row = i; row < lookup_capacity; row += gParams.n_tokens)
-        imported_layout_groups[row] = uint2(0u, 0u);
-
     type_expr_ref_tag[i] = TYPE_REF_INVALID;
     type_expr_ref_payload[i] = INVALID;
-    type_instance_kind[i] = TYPE_INSTANCE_INVALID;
     type_instance_head_token[i] = INVALID;
     type_decl_generic_param_count[i] = 0u;
     type_decl_generic_param_count_by_owner_token[i] = 0u;

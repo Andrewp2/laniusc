@@ -5,7 +5,21 @@ import type_checker.constant_storage_plan;
 import constant_value;
 import gpu_index;
 #include "body_graph_layout.slang"
-struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; uint parser_feature_flags; };
+struct Params
+{
+    uint n_tokens;
+    uint source_len;
+    uint n_hir_nodes;
+    uint n_source_files;
+    uint parser_feature_flags;
+    uint dependency_interfaces_present;
+    uint retain_callable_owners;
+    uint trait_obligation_mode;
+    uint authorized_replay_callable;
+    uint canonical_library_id;
+    uint canonical_unit_id;
+    uint workspace_token_rows;
+};
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> type_const_param_scalar_by_token_out;
 RWStructuredBuffer<uint4> checked_constant_atoms;
@@ -18,7 +32,9 @@ RWStructuredBuffer<uint2> dependency_constant_ref_by_type_out;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint thread = linear_dispatch_thread_id_2d(dtid, 16776960u);
-    uint step = max(gParams.n_tokens, 1u);
+    // One lane per workspace token row, the lanes this pass is dispatched
+    // with: a workspace retained from a larger job keeps its rows.
+    uint step = max(gParams.workspace_token_rows, max(gParams.n_tokens, 1u));
     if (thread >= step) return;
     uint atoms; uint projections; uint maps; uint scalars; uint stride;
     type_const_param_scalar_by_token_out.GetDimensions(scalars, stride);

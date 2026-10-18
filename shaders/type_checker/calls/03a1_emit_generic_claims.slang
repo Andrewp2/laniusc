@@ -169,6 +169,10 @@ static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
+// An ERR_ASSIGN_MISMATCH detail: an argument's array length does not fit
+// the scalar (the low bits) of the constant parameter it binds
+// (gpu_compiler/helpers.rs, ASSIGN_MISMATCH_COUNT_FIT).
+static const uint ASSIGN_MISMATCH_COUNT_FIT = 0x40000000u;
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_GENERIC_CLAIM_CAPACITY = 0xffffff04u;
 static const uint PARAM_CACHE_STRIDE = 4u;
@@ -353,16 +357,20 @@ void emit_argument_claims(uint arg_row)
                 ct_arg(id, 0u) == ct_arg(actual, 0u))
                 actual = id;
         }
+        uint fit_scalar = 0u;
         environment = ct_is_resolved(pattern) && ct_is_resolved(actual)
-            ? ct_match<ClaimSlots>(slots, pattern, actual, CT_NONE, CT_NONE, CT_NONE,
-                CT_MATCH_SLICE_ROOT0, true, spare, count_mask)
+            ? ct_match_fit<ClaimSlots>(slots, pattern, actual, CT_NONE, CT_NONE, CT_NONE,
+                CT_MATCH_SLICE_ROOT0, true, spare, count_mask, fit_scalar)
             : CT_MATCH_FAILED;
         // An interning overflow retries the job with larger tables.
         if (environment == CT_MATCH_OVERFLOW) return;
         if (!ct_is_record(environment))
         {
+            // A length that does not fit its constant parameter's type is
+            // reported as that, with the type.
             uint error_token = call_arg_error_token(node, callee);
-            record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
+            record_error(error_token, ERR_ASSIGN_MISMATCH,
+                fit_scalar != 0u ? ASSIGN_MISMATCH_COUNT_FIT | fit_scalar : 0u);
             // Slot 32 records rejection outside either parameter domain. A
             // return producer preserves this language error on failed closure.
             if (count != 0u)

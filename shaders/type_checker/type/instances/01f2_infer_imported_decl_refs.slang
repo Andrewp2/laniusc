@@ -1,6 +1,10 @@
 // Preserve the nominal result of an imported value in an unannotated let.
 // Dependency canonical rows are page-local, so copy their stable declaration
 // identity as well as the tagged reference before later pages are loaded.
+// Only a nongeneric callee's declared result is the value's type. A generic
+// one is a pattern over the callee's own parameters (`Small<T>`); as a
+// receiving type it would bind those parameters, which no caller-side row can
+// spell. Its let takes the materialized result row (calls/03f) instead.
 
 import hir_records;
 
@@ -10,6 +14,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> decl_imported_type_token;
@@ -92,6 +97,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (valid_hir(stmt.d)) return;
     uint source = initializer_token(stmt.c);
     if (!imported_nominal_token(source)) return;
+    // 07_project_calls publishes the callee's type and constant arity with
+    // its declared result; calls/01 clears the word on every token.
+    if (compact_hir_core[stmt.c].kind == HIR_CALL_EXPR &&
+        call_dependency_generic_requirements[source] != 0u) return;
     decl_type_ref_tag[stmt.b] = TYPE_REF_EXTERNAL_CANONICAL;
     decl_type_ref_payload[stmt.b] = decl_type_ref_payload[source];
     decl_imported_type_token[stmt.b] = source;

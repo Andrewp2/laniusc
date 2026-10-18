@@ -984,6 +984,25 @@ where
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
 }
 
+/// Divisor of the headroom a growing resident capacity gets above its
+/// requirement.
+const RESIDENT_GROWTH_HEADROOM_DIVISOR: u32 = 64;
+
+/// One dimension of a resident allocation that has to cover `required`.
+///
+/// A dimension that already covers it keeps its size. One that grows is sized
+/// 1/64 above the requirement, so the next unit or edit of nearly the same
+/// size reuses the replacement instead of replacing it again, together with
+/// every workspace bound to it. Callers still round the result to their
+/// bucket granularity.
+pub(crate) fn grown_resident_capacity(current: u32, required: u32) -> u32 {
+    if current >= required {
+        current
+    } else {
+        required.saturating_add(required / RESIDENT_GROWTH_HEADROOM_DIVISOR)
+    }
+}
+
 struct CachedCapacityBuffer {
     buffer: LaniusBuffer<u8>,
     usage: wgpu::BufferUsages,
@@ -1439,6 +1458,16 @@ mod tests {
     use super::*;
 
     static ALLOCATION_LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn grown_resident_capacity_keeps_covering_sizes_and_pads_growth() {
+        assert_eq!(grown_resident_capacity(500, 400), 500);
+        assert_eq!(grown_resident_capacity(500, 500), 500);
+        assert_eq!(grown_resident_capacity(0, 6_400), 6_500);
+        assert_eq!(grown_resident_capacity(6_500, 6_501), 6_602);
+        assert_eq!(grown_resident_capacity(0, 63), 63);
+        assert_eq!(grown_resident_capacity(0, u32::MAX), u32::MAX);
+    }
 
     #[test]
     fn allocation_peak_window_starts_at_live_baseline_and_tracks_high_water_mark() {

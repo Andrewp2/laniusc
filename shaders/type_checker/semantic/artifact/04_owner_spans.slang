@@ -47,10 +47,12 @@ static const uint INVALID = 0xffffffffu;
 static const uint OWNER_SPAN_WORDS = 11u;
 static const uint HIR_FN = 3u;
 static const uint HIR_FILE = 1u;
+static const uint HIR_ITEM = 2u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_IMPL_INHERENT = 1u;
 static const uint HIR_IMPL_TRAIT = 2u;
 static const uint HIR_ITEM_KIND_FN = 4u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
 static const uint TYPE_REF_INSTANCE = 3u;
 // An impl header is short; the scan stops at the method's own first token.
 static const uint MAX_HEADER_TOKENS = 4096u;
@@ -88,8 +90,10 @@ bool has_generic_environment(uint row, uint count)
     return false;
 }
 
-// The nearest enclosing impl, or INVALID for a top-level item. A trait or any
-// other container also yields INVALID through `container`.
+// The nearest enclosing impl, or INVALID for a top-level item. A trait or a
+// function also yields INVALID, through `other_container`. The item row of a
+// `pub` wrapper, which declares nothing itself, is not a container: a public
+// top-level function is the wrapper's child.
 uint enclosing_impl(uint row, uint count, out bool other_container)
 {
     other_container = false;
@@ -99,7 +103,11 @@ uint enclosing_impl(uint row, uint count, out bool other_container)
         uint kind = compact_hir_core[node].kind;
         if (kind == HIR_IMPL) return node;
         if (kind == HIR_FILE) return INVALID;
-        if (kind == HIR_FN || kind == 2u) { other_container = true; return INVALID; }
+        if (kind == HIR_FN || (kind == HIR_ITEM && compact_hir_payload[node].a == HIR_ITEM_KIND_TRAIT))
+        {
+            other_container = true;
+            return INVALID;
+        }
         uint parent = compact_hir_core[node].parent;
         if (parent == INVALID || parent >= node) return INVALID;
         node = parent;

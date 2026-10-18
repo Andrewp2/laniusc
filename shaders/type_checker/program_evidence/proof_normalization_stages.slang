@@ -392,6 +392,142 @@ public EvidenceStatus pps_commit_normalized_terms()
     return pev_ok();
 }
 
+// Phase 45 as one 256-lane workgroup. The lanes audit in parallel what
+// pps_commit_normalized_terms audits serially, everything before its
+// preflight. True proves the serial audit succeeds, so lane 0 then runs only
+// the preflight and publication (pps_publish_normalized_terms); false proves
+// nothing, and lane 0 runs the serial stage for its exact result.
+groupshared uint4 pps_group_normalization_spans[5];
+groupshared uint pps_group_normalization_totals[5];
+groupshared uint pps_group_normalization_works;
+// One word per phase: a word read after one barrier is written again only
+// after the next one.
+groupshared uint pps_group_normalization_known;
+groupshared uint pps_group_normalization_failed;
+
+uint pps_normalization_commit_table(uint t)
+{
+    return t == 0u ? PPS_TERM_NODES : t == 1u ? PPS_TERM_EDGES : t == 2u ? PPS_TERM_ROOTS :
+        t == 3u ? PPS_NORMALIZATION_REQUESTS : PPS_GOALS;
+}
+// The serial audit's checks of one Work; adds the Work's rows to the totals.
+bool pps_audit_normalized_work(uint work, inout uint nodes, inout uint edges, inout uint roots,
+    inout uint requests, inout uint goals)
+{
+    uint4 key; uint4 selected; uint4 completion; uint4 source;
+    if (!pps_work_read(work, key, selected, completion, source) ||
+        key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
+        key.z == PPS_WORK_GOAL_VALIDATED) return false;
+    if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) return true;
+    uint4 goal; uint4 extra;
+    if (!pps_normalization_pending_span(PPS_GOALS, key.y, 1u) ||
+        !pps_read_pending8(PPS_GOALS, key.y, goal, extra) || extra.x > 32u ||
+        !pps_normalization_pending_span(PPS_NORMALIZATION_REQUESTS, source.w, extra.x + 1u))
+        return false;
+    bool valid = true;
+    [loop]
+    for (uint ordinal = 0u; ordinal <= extra.x; ordinal++)
+    {
+        uint4 request = uint4(0u, 0u, 0u, 0u); uint4 counts = request;
+        if (valid)
+            valid = pps_read_pending8(PPS_NORMALIZATION_REQUESTS, source.w + ordinal, request, counts) &&
+                request.x == work && request.y == ordinal;
+        if (valid) valid = pps_normalization_add(nodes, counts.x) && pps_normalization_add(edges, counts.z);
+    }
+    return valid && pps_normalization_add(roots, extra.x + 1u) &&
+        pps_normalization_add(requests, extra.x + 1u) && pps_normalization_add(goals, 1u);
+}
+// Adds one lane's total; a sum past 32 bits fails the audit, as it fails the
+// serial count.
+void pps_group_normalization_add(uint t, uint count)
+{
+    uint previous;
+    InterlockedAdd(pps_group_normalization_totals[t], count, previous);
+    if (count > PEV_INVALID - previous) InterlockedOr(pps_group_normalization_failed, 1u);
+}
+
+public bool pps_group_audit_normalized_terms(uint lane)
+{
+    if (lane == 0u)
+    {
+        uint failed = 0u;
+        [loop]
+        for (uint t = 0u; t < 5u; t++)
+        {
+            uint4 span; uint accepted;
+            if (!pps_descriptor(pps_normalization_commit_table(t), span, accepted)) failed = 1u;
+            pps_group_normalization_spans[t] = span;
+            pps_group_normalization_totals[t] = 0u;
+        }
+        uint works;
+        if (!pps_count(PPS_WORK, works)) failed = 1u;
+        pps_group_normalization_works = works;
+        pps_group_normalization_known = failed;
+        pps_group_normalization_failed = 0u;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (pps_group_normalization_known != 0u) return false;
+    uint works = pps_group_normalization_works;
+    uint nodes = 0u; uint edges = 0u; uint roots = 0u; uint requests = 0u; uint goals = 0u;
+    bool valid = true;
+    [loop]
+    for (uint work = lane; work < works && valid; work += PPS_GROUP_LANES)
+        valid = pps_audit_normalized_work(work, nodes, edges, roots, requests, goals);
+    if (!valid) InterlockedOr(pps_group_normalization_failed, 1u);
+    pps_group_normalization_add(0u, nodes);
+    pps_group_normalization_add(1u, edges);
+    pps_group_normalization_add(2u, roots);
+    pps_group_normalization_add(3u, requests);
+    pps_group_normalization_add(4u, goals);
+    GroupMemoryBarrierWithGroupSync();
+    bool audited = pps_group_normalization_failed == 0u;
+    [loop]
+    for (uint t = 0u; t < 5u; t++)
+    {
+        uint4 span = pps_group_normalization_spans[t];
+        audited = audited && pps_group_normalization_totals[t] == span.y - span.w;
+    }
+    // Pending requests own the term rows; Works own the requests and goals.
+    // The audits share one visit charge, as the serial audits share a budget.
+    uint4 owners = pps_group_normalization_spans[3];
+    uint charges = 0u;
+    [loop]
+    for (uint t = 0u; t < 3u && audited; t++)
+    {
+        uint4 span = pps_group_normalization_spans[t];
+        audited = pps_group_check_span_cover<PendingNormalizationRequestSpans>(lane,
+            pps_normalization_commit_table(t), span.w, span.y, owners.w, owners.y, charges);
+    }
+    [loop]
+    for (uint t = 3u; t < 5u && audited; t++)
+    {
+        uint4 span = pps_group_normalization_spans[t];
+        audited = pps_group_check_span_cover<PendingNormalizationWorkSpans>(lane,
+            pps_normalization_commit_table(t), span.w, span.y, 0u, works, charges);
+    }
+    return audited && charges <= PEV_VISIT_LIMIT;
+}
+// pps_commit_normalized_terms after its audit, over the spans the group
+// audit read.
+public EvidenceStatus pps_publish_normalized_terms()
+{
+    if (!pps_building() || !pev_batch_is_building()) return pev_invalid(66u, PPS_TERM_NODES, PEV_INVALID);
+    EvidenceStatus status = pev_ok();
+    [loop]
+    for (uint t = 0u; t < 4u && status.state == PEV_VALID; t++)
+    {
+        uint4 span = pps_group_normalization_spans[t];
+        status = pps_check_validated_prefix(pps_normalization_commit_table(t), span.w, span.y);
+    }
+    [loop]
+    for (uint t = 0u; t < 4u && status.state == PEV_VALID; t++)
+    {
+        uint4 span = pps_group_normalization_spans[t];
+        status = pps_publish_validated_prefix(pps_normalization_commit_table(t), span.w, span.y);
+    }
+    return status;
+}
+
 public EvidenceStatus pps_hash_normalized_goal(uint work)
 {
     uint4 key; uint4 selected; uint4 completion; uint4 source;
@@ -455,4 +591,64 @@ public EvidenceStatus pps_commit_normalized_goals()
             return pev_invalid(1u, work, PPS_WORK);
     }
     return pev_ok();
+}
+
+// Phase 47 as one 256-lane workgroup, matching pps_commit_normalized_goals.
+// The lanes audit the Works in parallel, including that each goal-validated
+// Work's state word is writable. When the audit proves the serial audit
+// succeeds, lane 0 publishes the goal prefix and then every lane marks its
+// Works normalized, the writes the serial stage makes in order. Otherwise
+// lane 0 runs the serial stage for its exact result.
+groupshared uint pps_group_goal_validated;
+groupshared uint pps_group_goal_failed;
+groupshared uint pps_group_goal_published;
+
+// The serial audit's checks of one Work; counts a goal-validated Work.
+bool pps_audit_normalized_goal(uint work, inout uint validated)
+{
+    uint4 key; uint4 selected; uint4 completion; uint4 source; uint address;
+    if (!pps_work_read(work, key, selected, completion, source) ||
+        key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
+        key.z == PPS_WORK_NORMALIZATION_VALIDATED) return false;
+    if (key.z != PPS_WORK_GOAL_VALIDATED) return true;
+    validated++;
+    return pps_normalization_pending_span(PPS_GOALS, key.y, 1u) &&
+        pps_address(PPS_WORK, work, 2u, 1u, true, address);
+}
+
+public void pps_group_commit_normalized_goals(uint lane)
+{
+    uint4 goals; uint accepted; uint works;
+    bool known = pps_descriptor(PPS_GOALS, goals, accepted) && pps_count(PPS_WORK, works);
+    if (lane == 0u) { pps_group_goal_validated = 0u; pps_group_goal_failed = known ? 0u : 1u; }
+    GroupMemoryBarrierWithGroupSync();
+    uint validated = 0u; bool valid = known;
+    [loop]
+    for (uint work = lane; work < works && valid; work += PPS_GROUP_LANES)
+        valid = pps_audit_normalized_goal(work, validated);
+    if (!valid) InterlockedOr(pps_group_goal_failed, 1u);
+    InterlockedAdd(pps_group_goal_validated, validated);
+    GroupMemoryBarrierWithGroupSync();
+    bool audited = pps_group_goal_failed == 0u && pps_group_goal_validated == goals.y - goals.w;
+    if (!audited)
+    {
+        if (lane == 0u) pev_batch_failure(pps_commit_normalized_goals());
+        return;
+    }
+    // The serial stage's publication, then its Work writes.
+    if (lane == 0u)
+    {
+        EvidenceStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
+        pps_group_goal_published = status.state == PEV_VALID ? 1u : 0u;
+        pev_batch_failure(status);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (pps_group_goal_published == 0u) return;
+    [loop]
+    for (uint work = lane; work < works; work += PPS_GROUP_LANES)
+    {
+        uint4 key;
+        if (pps_read4(PPS_WORK, work, 0u, key) && key.z == PPS_WORK_GOAL_VALIDATED)
+            pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_NORMALIZED);
+    }
 }

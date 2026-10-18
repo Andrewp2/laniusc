@@ -564,7 +564,7 @@ impl GpuProgramEvidence {
         )?;
         record(packet, &mut commands, 48, plan.obligations)?;
         if self.solver_waves(packet)? {
-            return self.run_solver_waves(packet, layout, plan, submission, packet.proof_resources(submission), commands);
+            return self.run_solver_waves(packet, layout, plan, submission, commands);
         }
         let mut progress = self.submit_proof_progress(packet, layout, submission, commands)?;
         if !progress.is_building() {
@@ -785,14 +785,14 @@ impl GpuProgramEvidence {
     /// The GPU planner takes each decision the host took from a counter
     /// readback (proof_solver_wave.slang), so the host reads back only when
     /// the recorded rounds run out, a span outgrows its recorded chunk steps,
-    /// or the solver stops.
+    /// the next normalization's counted rows do not fit the proof store, or
+    /// the solver stops.
     fn run_solver_waves(
         &self,
-        packet: &GpuPacket,
+        packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
         submission: &Submission,
-        resources: kernels::ProofResources<'_>,
         mut commands: wgpu::CommandEncoder,
     ) -> Result<Option<proof::ProofProgress>> {
         use kernels::{WavePoint, wave};
@@ -806,6 +806,7 @@ impl GpuProgramEvidence {
         };
         let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false);
         let state = kernels::wave_state(&self.device, &self.storage)?;
+        let demand = kernels::proof_demand(&self.storage)?;
         let chunks = |rows: u32| {
             rows.div_ceil(kernels::THREAD_SCRATCH_SLOTS)
                 .max(1)
@@ -813,15 +814,16 @@ impl GpuProgramEvidence {
                 .unwrap_or(kernels::WAVE_MAX_CHUNKS)
                 .min(kernels::WAVE_MAX_CHUNKS)
         };
-        let template = |points: &[WavePoint], chunks: u32| {
-            solver.wave_template(&self.device, points, chunks, &state, &self.storage,
-                &packet.input, &packet.output, resources)
+        // A template binds the proof arena, so growth builds new ones.
+        let template = |packet: &GpuPacket, points: &[WavePoint], chunks: u32| {
+            solver.wave_template(&self.device, points, chunks, &state, &demand, &self.storage,
+                &packet.input, &packet.output, packet.proof_resources(submission))
         };
         // The first work and the first round span every source obligation.
         let opening_chunks = chunks(plan.obligations.count);
-        let first = template(&[WavePoint::FirstWork], opening_chunks)?;
-        let opening = if opening_chunks > 1 {
-            Some(template(&WavePoint::ROUND, opening_chunks)?)
+        let first = template(packet, &[WavePoint::FirstWork], opening_chunks)?;
+        let mut opening = if opening_chunks > 1 {
+            Some(template(packet, &WavePoint::ROUND, opening_chunks)?)
         } else {
             None
         };
@@ -829,7 +831,7 @@ impl GpuProgramEvidence {
         // rounds at its point, and the rest of that round is recorded again
         // with enough chunk steps.
         let mut regular = if opening.is_none() {
-            Some(template(&WavePoint::ROUND, 1)?)
+            Some(template(packet, &WavePoint::ROUND, 1)?)
         } else {
             None
         };
@@ -843,7 +845,7 @@ impl GpuProgramEvidence {
         let mut submits = 0u32;
         loop {
             if rounds != 0 && regular.is_none() {
-                regular = Some(template(&WavePoint::ROUND, 1)?);
+                regular = Some(template(packet, &WavePoint::ROUND, 1)?);
             }
             let dispatches = {
                 let mut recorded: Vec<&kernels::WaveTemplate> = Vec::new();
@@ -863,7 +865,7 @@ impl GpuProgramEvidence {
             passes_core::flush_deferred_compute(&mut commands);
             self.queue.submit(Some(commands.finish()));
             submits += 1;
-            let (progress, words) = self.wave_progress(packet, layout, submission, &state)?;
+            let (progress, words, demanded) = self.wave_progress(packet, layout, submission, &state, &demand)?;
             if debug {
                 eprintln!(
                     "[lanius-pev] solver wave submit {submits}: stop={} detail={} rounds={} \
@@ -911,7 +913,7 @@ impl GpuProgramEvidence {
                         &self.storage,
                         &packet.input,
                         &packet.output,
-                        resources,
+                        packet.proof_resources(submission),
                     )?;
                     batch.record_after_solver(
                         &self.device,
@@ -920,7 +922,7 @@ impl GpuProgramEvidence {
                         &self.storage,
                         &packet.input,
                         &packet.output,
-                        resources,
+                        packet.proof_resources(submission),
                     )?;
                     passes_core::flush_deferred_compute(&mut commands);
                     self.queue.submit(Some(commands.finish()));
@@ -929,7 +931,7 @@ impl GpuProgramEvidence {
                 wave::OVERFLOW => {
                     let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
                         .ok_or_else(|| anyhow!("solver wave overflowed at an unknown point"))?;
-                    let resumed = template(point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    let resumed = template(packet, point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
                     // The point plans again from the same counters. The
                     // opening round follows a resumed first work.
                     state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
@@ -941,6 +943,30 @@ impl GpuProgramEvidence {
                     }
                     partial = Some(resumed);
                     opening_due = point == WavePoint::FirstWork;
+                }
+                wave::GROW => {
+                    // The stepped loop's in-place growth at the same point;
+                    // a count that growth cannot hold is left to the
+                    // reservation, as there.
+                    ensure!(
+                        words[wave::OVERFLOW_POINT] == WavePoint::Round as u32,
+                        "solver wave grew at a point without a counted admission"
+                    );
+                    self.grow_for_demand(packet, &progress, &demanded)?;
+                    demand.write(&self.queue, 0, &[0u8; PROOF_STORE_TABLES * 4]);
+                    // Every template built so far binds the previous layout.
+                    opening = None;
+                    regular = None;
+                    let resumed = template(packet, WavePoint::Round.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
+                    if debug {
+                        eprintln!(
+                            "[lanius-pev] solver wave grew the proof store; resumes at Round with {} chunk steps",
+                            resumed.chunks
+                        );
+                    }
+                    partial = Some(resumed);
+                    opening_due = false;
                 }
                 wave::RUNNING => {
                     partial = None;
@@ -961,7 +987,8 @@ impl GpuProgramEvidence {
         layout: &OutputLayout,
         submission: &Submission,
         state: &LaniusBuffer<u32>,
-    ) -> Result<(proof::ProofProgress, Vec<u32>)> {
+        demand: &LaniusBuffer<u32>,
+    ) -> Result<(proof::ProofProgress, Vec<u32>, Vec<u32>)> {
         let regions = [
             ReadbackRegion::from_buffer(
                 &packet.proof.buffer,
@@ -976,6 +1003,12 @@ impl GpuProgramEvidence {
                 arena::byte_len(kernels::wave::READ_WORDS)?,
                 "solver wave state",
             )?,
+            ReadbackRegion::from_buffer(
+                demand,
+                0,
+                arena::byte_len(PROOF_STORE_TABLES as u32)?,
+                "proof normalization demand",
+            )?,
         ];
         SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
         let raw = self.readback.read_regions(
@@ -987,13 +1020,14 @@ impl GpuProgramEvidence {
         let header = words(&raw[0])?;
         let receipt = one_status(&raw[1])?;
         let state = words(&raw[2])?;
+        let demand = words(&raw[3])?;
         let progress = proof::ProofProgress::from_owned_readback(
             packet.packet.proof_store.layout(),
             submission,
             header,
             receipt,
         )?;
-        Ok((progress, state))
+        Ok((progress, state, demand))
     }
 
     /// Gate before body reuse/specialization and after each replay's fresh calls.

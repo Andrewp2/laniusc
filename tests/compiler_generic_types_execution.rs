@@ -932,9 +932,11 @@ fn imported_generic_aliases_reject_type_length_and_header_conflicts() {
         ("let value: core::aliases::Fixed<i32, 2> = [19, 23, 7];", "LNC0006"),
         ("let value: core::aliases::Fixed<bool, 2> = [19, 23];", "LNC0006"),
         ("let value: core::aliases::Swap<bool, i32> = core::aliases::Pair { first: false, second: 42 };", "LNC0006"),
-        ("let value: core::aliases::Id<i32, bool> = 42;", "LNC0006"),
-        ("let value: core::aliases::Fixed<i32, bool> = [19, 23];", "LNC0006"),
-        ("let value: core::aliases::Fixed<2, i32> = [19, 23];", "LNC0006"),
+        // A type annotation with the wrong number or kind of operands names
+        // no type, as in any annotation (docs/compiler-generic-types.md).
+        ("let value: core::aliases::Id<i32, bool> = 42;", "LNC0007"),
+        ("let value: core::aliases::Fixed<i32, bool> = [19, 23];", "LNC0007"),
+        ("let value: core::aliases::Fixed<2, i32> = [19, 23];", "LNC0007"),
         ("let value: core::aliases::Id<Unknown> = 42;", "LNC0007"),
         ("let value: core::aliases::Flag<Unknown> = false;", "LNC0007"),
     ] {
@@ -1314,6 +1316,30 @@ fn imported_generic_bodies_execute_with_caller_selected_implementations() {
 }
 
 #[test]
+fn library_bodies_of_every_module_file_replay_as_copies() {
+    // Every module of this library has generic bodies, so most are not in
+    // the unit's last file. Their copies go to continuation files, which must
+    // still see their module's private items and imports.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/stdlib_compiler_state/multifile-copies/stdlib");
+    execute_with_stdlib("multi-file library copies", r#"
+import core::helpers;
+import core::wrap;
+import core::zlast;
+fn main() -> i32 {
+    if (core::wrap::count(true, 3) != 7) { return 1; }
+    if (core::wrap::count(5, 4) != 9) { return 2; }
+    if (core::wrap::keep(11) != 11) { return 3; }
+    if (core::wrap::keep(false)) { return 4; }
+    if (core::zlast::last(13) != 13) { return 5; }
+    if (core::helpers::first(17, 2) != 17) { return 6; }
+    if (!core::helpers::first(true, false)) { return 7; }
+    return 0;
+}
+"#, &root, b"", 0);
+}
+
+#[test]
 fn caller_selected_bounds_forward_through_nested_bodies_and_existing_bodies() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/stdlib_compiler_state/program-replay/stdlib");
@@ -1509,8 +1535,11 @@ fn direct_record_literal_arguments_preserve_generic_body_failure() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib))
     })
     .expect("direct empty literals must supply a complete generic binding");
-    let output =
-        common::run_x86_64_elf_output("literal argument assertion", "generic_types", &bytes);
+    let output = common::run_x86_64_elf_output_expecting_signal(
+        "literal argument assertion",
+        "generic_types",
+        &bytes,
+    );
     assert!(
         !output.status.success(),
         "the empty result cannot erase the body: {output:?}"
@@ -1749,8 +1778,11 @@ fn main() -> i32 {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib))
         })
         .expect("compile ordinary and generic failing bodies");
-        let output =
-            common::run_x86_64_elf_output("empty assertion failure", "generic_types", &bytes);
+        let output = common::run_x86_64_elf_output_expecting_signal(
+            "empty assertion failure",
+            "generic_types",
+            &bytes,
+        );
         assert!(
             !output.status.success(),
             "the empty result cannot skip assert: {output:?}"
@@ -7844,7 +7876,7 @@ impl<T> Boxed<T> {
         return self.length(values) + M;
     }
     pub fn dimensions<const N: usize, const M: u32>(&self, values: [[i32; N]; M]) -> usize {
-        return N * 10 + M;
+        return N * 10 + (M as usize);
     }
 }
 impl Plain {
@@ -8069,6 +8101,24 @@ fn constant_count_identity_and_fit_reject_through_production_calls() {
          fn mixed<const K: u64>(left: [i32; K], right: [i32; K]) -> i32 { return same(left, right); } \
          fn main() -> i32 { return mixed([20], [22]) - 42; }",
     );
+}
+
+/// The first diagnostic of a length that does not fit its constant parameter
+/// is that fit, at the argument, ahead of the call's follow-on mismatches.
+#[test]
+fn constant_count_fit_reports_the_parameter_type_at_the_argument() {
+    let source = include_str!("fixtures/stdlib_foundation/typed_constant_transport/constant-claim-provenance-v1/reject_nested_count_fit.lani");
+    let owned = source.to_owned();
+    let error = common::run_gpu_codegen_with_timeout("nested u8 count fit", move || {
+        let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).expect("GPU compiler");
+        pollster::block_on(compiler.compile_source_to_x86_64(&owned))
+    }).err().expect("a length that does not fit u8 emitted an executable");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+    let primary = diagnostic.primary_label.as_ref().unwrap_or_else(|| panic!("missing source label: {error:?}"));
+    assert!(primary.message.contains("does not fit `u8`"), "{diagnostic:?}");
+    let argument = source.find("narrow(values)").expect("fixture call") + "narrow(".len();
+    assert_eq!(primary.byte_start, Some(argument), "{diagnostic:?}");
 }
 
 #[test]

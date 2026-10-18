@@ -97,6 +97,16 @@ struct DaemonOptions {
     stdlib_root: Option<PathBuf>,
     transport: DaemonTransport,
     idle_buffer_timeout: Option<Duration>,
+    /// Sources compiled once before the daemon reports ready.
+    warmups: Vec<DaemonWarmup>,
+}
+
+/// A declared largest workload. Compiling it before the first request sizes
+/// every resident workspace, so the first real job runs at steady state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DaemonWarmup {
+    input: PathBuf,
+    source_root: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -414,8 +424,10 @@ pub(super) fn run(args: Vec<String>) -> Result<(), CliError> {
 
 fn print_help() {
     eprintln!(
-        "Usage: laniusc daemon (--stdio | --unix-socket path) [--backend both|x86_64|wasm] [--stdlib-root dir] [--idle-buffer-timeout-ms milliseconds]\n\
-         Starts one GPU-resident compiler and accepts newline-delimited JSON compile, trim, status, and shutdown requests."
+        "Usage: laniusc daemon (--stdio | --unix-socket path) [--backend both|x86_64|wasm] [--stdlib-root dir] [--idle-buffer-timeout-ms milliseconds] [--warmup source [--warmup-source-root dir]]...\n\
+         Starts one GPU-resident compiler and accepts newline-delimited JSON compile, trim, status, and shutdown requests.\n\
+         --warmup compiles a source for every selected target before reporting ready, discarding the output and the\n\
+         project's cached units, so resident buffers are already sized for the largest declared workload."
     );
 }
 
@@ -425,6 +437,7 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
     let mut stdio = false;
     let mut unix_socket = None;
     let mut idle_buffer_timeout_ms = DEFAULT_IDLE_BUFFER_TIMEOUT_MS;
+    let mut warmups: Vec<DaemonWarmup> = Vec::new();
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -453,6 +466,30 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
                         )
                     })?)?;
             }
+            "--warmup" => {
+                warmups.push(DaemonWarmup {
+                    input: PathBuf::from(args.next().ok_or_else(|| {
+                        missing_cli_option_value_error("--warmup", "a source path")
+                    })?),
+                    source_root: None,
+                });
+            }
+            "--warmup-source-root" => {
+                let root = PathBuf::from(args.next().ok_or_else(|| {
+                    missing_cli_option_value_error("--warmup-source-root", "a directory path")
+                })?);
+                set_warmup_source_root(&mut warmups, root)?;
+            }
+            value if value.starts_with("--warmup=") => {
+                warmups.push(DaemonWarmup {
+                    input: PathBuf::from(value.trim_start_matches("--warmup=")),
+                    source_root: None,
+                });
+            }
+            value if value.starts_with("--warmup-source-root=") => {
+                let root = PathBuf::from(value.trim_start_matches("--warmup-source-root="));
+                set_warmup_source_root(&mut warmups, root)?;
+            }
             value if value.starts_with("--backend=") => {
                 backend = parse_backend(value.trim_start_matches("--backend=").to_string())?;
             }
@@ -471,7 +508,7 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
                 return Err(unknown_cli_option_error(
                     "laniusc daemon",
                     flag,
-                    "--stdio, --unix-socket, --backend, --stdlib-root, --idle-buffer-timeout-ms",
+                    "--stdio, --unix-socket, --backend, --stdlib-root, --idle-buffer-timeout-ms, --warmup, --warmup-source-root",
                 ));
             }
         }
@@ -503,7 +540,16 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
         transport,
         idle_buffer_timeout: (idle_buffer_timeout_ms != 0)
             .then(|| Duration::from_millis(idle_buffer_timeout_ms)),
+        warmups,
     })
+}
+
+fn set_warmup_source_root(warmups: &mut [DaemonWarmup], root: PathBuf) -> Result<(), CliError> {
+    let Some(warmup) = warmups.last_mut() else {
+        return Err(CliError::from("--warmup-source-root must follow the --warmup it applies to"));
+    };
+    warmup.source_root = Some(root);
+    Ok(())
 }
 
 fn parse_idle_buffer_timeout_ms(value: impl AsRef<str>) -> Result<u64, CliError> {
@@ -615,6 +661,10 @@ async fn run_session(
     mut output: impl Write,
 ) -> Result<(), CliError> {
     let reaper = ResidentBufferReaper::start(compiler.clone(), options.idle_buffer_timeout);
+    let mut source_pack_cache = SourcePackCache::default();
+    // The reaper stays disarmed until the first real job, so idling after the
+    // warm-up keeps the capacity it sized.
+    let warmup = run_warmups(&compiler, options, &mut source_pack_cache).await?;
     let driver_cache = device::driver_shader_cache_status();
     if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
         eprintln!("[gpu_compile_host_timer] driver_shader_cache: {}", driver_cache.summary());
@@ -646,11 +696,11 @@ async fn run_session(
                 .idle_buffer_timeout
                 .map(|timeout| timeout.as_millis() as u64),
             "targets": options.backend.targets(),
+            "warmup": warmup,
         }),
     )?;
 
     let mut line = String::new();
-    let mut source_pack_cache = SourcePackCache::default();
     loop {
         line.clear();
         let read = input
@@ -1169,6 +1219,65 @@ impl Drop for ResidentBufferReaper {
     }
 }
 
+/// Compiles each `--warmup` source once per selected target before the daemon
+/// reports ready. Outputs are deleted and the project's cached units are
+/// dropped, so a warm-up keeps only resident capacity, created pipelines and
+/// the standard library's cached units, which every job shares.
+async fn run_warmups(
+    compiler: &GpuCompiler<'_>,
+    options: &DaemonOptions,
+    source_pack_cache: &mut SourcePackCache,
+) -> Result<Value, CliError> {
+    if options.warmups.is_empty() {
+        return Ok(Value::Null);
+    }
+    let started = Instant::now();
+    let mut jobs = Vec::new();
+    for (index, warmup) in options.warmups.iter().enumerate() {
+        for emit in options.backend.targets() {
+            let output = std::env::temp_dir().join(format!(
+                "laniusc-daemon-warmup-{}-{index}.{emit}",
+                std::process::id()
+            ));
+            let job_started = Instant::now();
+            let request = DaemonRequest {
+                id: json!(format!("warmup.{index}.{emit}")),
+                command: "compile".into(),
+                emit: Some((*emit).to_string()),
+                input: Some(warmup.input.clone()),
+                output: Some(output.clone()),
+                stdlib_root: None,
+                source_root: warmup.source_root.clone(),
+            };
+            let response = compile_request(compiler, options, source_pack_cache, request).await;
+            let _ = fs::remove_file(&output);
+            crate::gpu::trace::record_host_span(
+                "host.daemon",
+                &format!("daemon.warmup.{index}.{emit}"),
+                job_started,
+                Instant::now(),
+            );
+            if !response.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+                return Err(CliError::from(format!(
+                    "daemon warm-up of {} for {emit} failed: {response}",
+                    warmup.input.display()
+                )));
+            }
+            jobs.push(json!({
+                "input": warmup.input,
+                "emit": emit,
+                "elapsed_ms": job_started.elapsed().as_secs_f64() * 1000.0,
+            }));
+        }
+    }
+    compiler.clear_project_compiled_unit_cache();
+    device::persist_created_pipelines_in_background();
+    Ok(json!({
+        "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "jobs": jobs,
+    }))
+}
+
 async fn compile_request(
     compiler: &GpuCompiler<'_>,
     options: &DaemonOptions,
@@ -1267,6 +1376,7 @@ async fn compile_request(
         EmittedArtifact::File(byte_len) => byte_len,
     };
     let write_ms = write_started.elapsed().as_secs_f64() * 1000.0;
+    let _span = crate::gpu::trace::HostSpan::new("host.compiler", "daemon.response_metrics");
     json!({
         "schema": DAEMON_SCHEMA,
         "id": id,
@@ -1474,6 +1584,7 @@ fn write_response(output: &mut impl Write, response: &Value) -> Result<(), CliEr
 }
 
 fn write_artifact(path: &Path, bytes: &[u8], emit: &str) -> Result<(), String> {
+    let _span = crate::gpu::trace::HostSpan::new("host.compiler", "daemon.write_artifact");
     fs::write(path, bytes).map_err(|err| format!("write output {}: {err}", path.display()))?;
     #[cfg(unix)]
     if emit == "x86_64" {
@@ -1565,6 +1676,38 @@ mod tests {
         ])
         .expect("zero idle buffer timeout should parse");
         assert_eq!(options.idle_buffer_timeout, None);
+    }
+
+    #[test]
+    fn daemon_warmups_take_a_source_root_from_the_flag_after_them() {
+        let options = parse_options(vec![
+            "--stdio".into(),
+            "--warmup".into(),
+            "big.lani".into(),
+            "--warmup=project/main.lani".into(),
+            "--warmup-source-root=project".into(),
+        ])
+        .expect("warm-up options should parse");
+        assert_eq!(
+            options.warmups,
+            vec![
+                DaemonWarmup {
+                    input: PathBuf::from("big.lani"),
+                    source_root: None,
+                },
+                DaemonWarmup {
+                    input: PathBuf::from("project/main.lani"),
+                    source_root: Some(PathBuf::from("project")),
+                },
+            ]
+        );
+        let err = parse_options(vec![
+            "--stdio".into(),
+            "--warmup-source-root".into(),
+            "project".into(),
+        ])
+        .expect_err("a source root without a warm-up should fail");
+        assert!(err.to_string().contains("must follow the --warmup"));
     }
 
     #[test]
