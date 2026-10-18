@@ -367,6 +367,9 @@ pub struct GpuTypeChecker {
     status_prior: LaniusBuffer<u32>,
     call_inference_state: LaniusBuffer<u32>,
     call_inference_readback: LaniusBuffer<u32>,
+    /// Round 0's `call_inference_readback` words when round 1 is submitted
+    /// before the host waits for round 0.
+    call_inference_first_readback: LaniusBuffer<u32>,
     /// Host-visible `ct_counts` after each canonical interning batch.
     canonical_counts_readback: LaniusBuffer<u32>,
     /// Debug-only canonical validation counters.

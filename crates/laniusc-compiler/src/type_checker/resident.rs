@@ -360,6 +360,8 @@ impl GpuTypeChecker {
         // Words 0-1: inference state (word 1 counts the round's changes);
         // words 2-5: the status words after the round.
         let call_inference_readback = readback_u32s(device, "rb.type_check.calls.inference", 6);
+        let call_inference_first_readback =
+            readback_u32s(device, "rb.type_check.calls.inference.first", 6);
         let canonical_counts_readback = readback_u32s(
             device,
             "rb.type_check.canonical.counts",
@@ -382,6 +384,7 @@ impl GpuTypeChecker {
             status_prior,
             call_inference_state,
             call_inference_readback,
+            call_inference_first_readback,
             canonical_counts_readback,
             canonical_validation_readback,
             preflight_graph,
@@ -1908,15 +1911,33 @@ impl GpuTypeChecker {
                 let mut repeats = CallInferenceRepeats::new();
                 let mut repeat_warned = false;
                 let mut first_error_round = None;
-                for round in 0..round_limit {
-                    let round_started = std::time::Instant::now();
-                    let dispatches_before =
-                        crate::gpu::passes_core::recorded_compute_dispatch_count();
+                // Round 1 is submitted before the host waits for round 0, so
+                // its recording overlaps round 0 on the GPU and the two share
+                // one wait. Each round keeps its own submit and state write,
+                // so every command sees what it saw before; round 0's words
+                // go to their own readback and the host still decides round
+                // by round. Only a check whose round 0 changes nothing runs
+                // round 1 too: a round that changes nothing is a fixed point,
+                // so it rewrites the same facts. Error stops come at least
+                // CALL_INFERENCE_ERROR_ROUNDS after the first error.
+                // `LANIUS_CALL_INFERENCE_FIRST_BATCH=1` waits for each round.
+                let pair_first_rounds = round_limit >= 2 && call_inference_first_batch() >= 2;
+                let submit_round = |encoder: &mut wgpu::CommandEncoder,
+                                    readback: Option<&LaniusBuffer<u32>>|
+                 -> Result<(), GpuTypeCheckError> {
                     self.call_inference_state
                         .write(queue, 0, &[1, 0, 0, 0, 0, 0, 0, 0]);
                     record_returns(encoder)?;
-                    bind_groups.calls.inference_readback.record(encoder);
-                    bind_groups.calls.inference_status_readback.record(encoder);
+                    if let Some(readback) = readback {
+                        // The words `inference_readback` and
+                        // `inference_status_readback` copy, at their offsets.
+                        crate::gpu::passes_core::flush_deferred_compute(encoder);
+                        self.call_inference_state.copy_to(encoder, 0, readback, 0, 8);
+                        self.status_buf.copy_to(encoder, 0, readback, 8, 16);
+                    } else {
+                        bind_groups.calls.inference_readback.record(encoder);
+                        bind_groups.calls.inference_status_readback.record(encoder);
+                    }
                     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("type-check-call-inference-encoder"),
                     });
@@ -1931,21 +1952,45 @@ impl GpuTypeChecker {
                         recorded,
                         "type-check call inference",
                     );
-                    let submitted = std::time::Instant::now();
-                    let slice = self.call_inference_readback.slice(..);
+                    Ok(())
+                };
+                let read_round = |readback: &LaniusBuffer<u32>| -> Result<[u32; 6], GpuTypeCheckError> {
+                    let slice = readback.slice(..);
                     crate::gpu::passes_core::map_readback_blocking(
                         device,
                         &slice,
                         "type_check.call_inference",
                     )?;
-                    let mapped_at = std::time::Instant::now();
                     let mapped = slice.get_mapped_range();
                     let words: [u32; 6] = crate::gpu::readback::read_u32_words(
                         &mapped,
                         "type checker call inference",
                     )?;
                     drop(mapped);
-                    self.call_inference_readback.unmap();
+                    readback.unmap();
+                    Ok(words)
+                };
+                let mut submitted_next: Option<[u32; 6]> = None;
+                for round in 0..round_limit {
+                    let round_started = std::time::Instant::now();
+                    let dispatches_before =
+                        crate::gpu::passes_core::recorded_compute_dispatch_count();
+                    let (words, submitted, mapped_at) = if let Some(words) = submitted_next.take() {
+                        // Submitted and read with round 0.
+                        (words, round_started, round_started)
+                    } else if round == 0 && pair_first_rounds {
+                        submit_round(encoder, Some(&self.call_inference_first_readback))?;
+                        submit_round(encoder, None)?;
+                        let submitted = std::time::Instant::now();
+                        let words = read_round(&self.call_inference_first_readback)?;
+                        submitted_next = Some(read_round(&self.call_inference_readback)?);
+                        (words, submitted, std::time::Instant::now())
+                    } else {
+                        submit_round(encoder, None)?;
+                        let submitted = std::time::Instant::now();
+                        let words = read_round(&self.call_inference_readback)?;
+                        (words, submitted, std::time::Instant::now())
+                    };
                     let changed = words[1];
                     if trace_inference {
                         // record = host recording and submit (the GPU idles
@@ -2772,4 +2817,11 @@ mod call_inference_repeat_tests {
         let counts = (0..200u32).map(|round| 1000 - round * 5 + round % 3);
         assert_eq!(first_stall(counts, 8), None);
     }
+}
+
+/// Call-inference rounds submitted before the host waits for the first:
+/// 2 (default) pairs rounds 0 and 1, 1 waits for every round.
+fn call_inference_first_batch() -> u64 {
+    static BATCH: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *BATCH.get_or_init(|| crate::gpu::env::env_u64("LANIUS_CALL_INFERENCE_FIRST_BATCH", 2))
 }
