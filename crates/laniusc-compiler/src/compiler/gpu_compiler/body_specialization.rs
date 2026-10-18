@@ -577,6 +577,16 @@ impl ClosureIntake {
                 totals[0], totals[1], totals[2], totals[3], self.stages,
                 self.keys.len(), self.known, self.skipped, unused.len(),
             );
+            // Both fall back to the replay rounds (fail closed): a frontier
+            // left at the level limit drops the unit's whole closure (it may be
+            // polymorphic recursion); an export still busy after its retries
+            // drops only that instance.
+            if flags & 8 != 0 {
+                eprintln!("[specialization]   closure ignored: a frontier reached the level limit; the replay rounds find its instances");
+            }
+            if rejects[0] != 0 {
+                eprintln!("[specialization]   closure export failed for {} instances; the replay rounds find them", rejects[0]);
+            }
             for key in &unused {
                 eprintln!("[specialization]   unused closure key={}", &blake3::hash(key).to_hex()[..12]);
             }

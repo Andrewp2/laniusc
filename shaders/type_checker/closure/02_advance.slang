@@ -1,7 +1,9 @@
 // Close one instance-closure round (one lane): the instances the previous
 // round appended become this round's frontier, and 03_expand's indirect
 // dispatch arguments are written. After IC_LEVELS rounds the closing
-// advance dispatches nothing and flags a frontier it leaves unexpanded.
+// advance flags a frontier it leaves unexpanded and sizes the export
+// dispatches (04_export, 04a_export_final) to the instance table instead,
+// so a job without instances exports with zero workgroups.
 import type_checker.closure.instance_closure;
 
 RWStructuredBuffer<uint> instance_closure_args;
@@ -22,9 +24,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         instance_closure_counts[IC_COUNT_END] = length;
         groups = (length - start + 255u) / 256u;
     }
-    else if (length > start)
+    else
     {
-        ic_flag(IC_FLAG_DEPTH);
+        if (length > start) ic_flag(IC_FLAG_DEPTH);
+        groups = (length + 255u) / 256u;
     }
     uint x = min(groups, 65535u);
     instance_closure_args[0u] = x;

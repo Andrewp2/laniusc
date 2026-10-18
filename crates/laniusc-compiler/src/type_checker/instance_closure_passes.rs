@@ -152,6 +152,7 @@ pub(super) fn register_instance_closure_passes(
             kernel,
             realize_bindings,
         )?;
+        graph.add_indirect_dispatch(name, "instance_closure_args")?;
     }
     Ok(())
 }
@@ -179,7 +180,6 @@ impl InstanceClosureOperations {
         let counts = buffer("instance_closure_counts")?;
         let set = buffer("instance_closure_set")?;
         let head = buffer("instance_closure_edge_head")?;
-        let instances = u32::try_from(buffer("instance_closure_instances")?.byte_size / 32)?;
         let clear = crate::gpu::operations::ClearBuffersOperation::new(
             graph,
             INSTANCE_CLOSURE_CLEAR_PASS,
@@ -192,20 +192,19 @@ impl InstanceClosureOperations {
         let direct = |name, kernel, elements| {
             ComputeOperation::direct(device, graph, resources, name, &passes.kernel(kernel), elements)
         };
+        let args = buffer("instance_closure_args")?;
+        let indirect = |name, kernel| {
+            ComputeOperation::indirect(device, graph, resources, name, &passes.kernel(kernel), &args)
+        };
         Ok(Self {
             clear,
             mark: direct(INSTANCE_CLOSURE_MARK_PASS, MARK_KERNEL, hir_capacity)?,
             advance: direct(INSTANCE_CLOSURE_ADVANCE_PASS, ADVANCE_KERNEL, 1)?,
-            expand: ComputeOperation::indirect(
-                device,
-                graph,
-                resources,
-                INSTANCE_CLOSURE_EXPAND_PASS,
-                &passes.kernel(EXPAND_KERNEL),
-                &buffer("instance_closure_args")?,
-            )?,
-            export: direct(INSTANCE_CLOSURE_EXPORT_PASS, EXPORT_KERNEL, instances)?,
-            export_final: direct(INSTANCE_CLOSURE_EXPORT_FINAL_PASS, EXPORT_FINAL_KERNEL, instances)?,
+            expand: indirect(INSTANCE_CLOSURE_EXPAND_PASS, EXPAND_KERNEL)?,
+            // The closing advance writes the export's arguments: one lane
+            // per appended instance, none when the table is empty.
+            export: indirect(INSTANCE_CLOSURE_EXPORT_PASS, EXPORT_KERNEL)?,
+            export_final: indirect(INSTANCE_CLOSURE_EXPORT_FINAL_PASS, EXPORT_FINAL_KERNEL)?,
         })
     }
 
