@@ -67,6 +67,11 @@ pub(crate) struct LoweringJobBounds {
     /// host does not know one. The pointer-jump pairs come from it
     /// (`LoweringCapacities::job_jump_pairs`).
     pub(crate) hir_rows: u32,
+    /// The job's lexed source bytes, or `u32::MAX` when unknown. With
+    /// `hir_rows` it gives the rows the job can address
+    /// (`LoweringCapacities::for_job`), which bound its phase reset and the
+    /// x86 capacity-wide clears.
+    pub(crate) source_bytes: u32,
 }
 
 impl LoweringJobBounds {
@@ -74,13 +79,13 @@ impl LoweringJobBounds {
         parser_features: crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
         enum_declarations: u32::MAX,
         hir_rows: u32::MAX,
+        source_bytes: u32::MAX,
     };
 
     pub(crate) fn from_parser_features(parser_features: u32) -> Self {
         Self {
             parser_features,
-            enum_declarations: u32::MAX,
-            hir_rows: u32::MAX,
+            ..Self::CONSERVATIVE
         }
     }
 
@@ -90,32 +95,39 @@ impl LoweringJobBounds {
     /// nothing between them), or no enum bound is claimed. Every enum
     /// declaration starts with an `enum` keyword token, so the number of
     /// `enum` byte strings in the text bounds the declarations; comments,
-    /// strings and longer identifiers only raise the count.
+    /// strings and longer identifiers only raise the count. Without the enum
+    /// feature bit the job has no enum declaration and the text is not read.
     pub(crate) fn from_sources<'a>(
         parser_features: u32,
         lexed_bytes: u32,
         sources: impl IntoIterator<Item = &'a str>,
     ) -> Self {
-        let mut bytes = 0u64;
-        let mut enum_words = 0usize;
-        for source in sources {
-            bytes += source.len() as u64;
-            if enum_words < AGGREGATE_LAYOUT_ROUNDS {
-                enum_words += source
-                    .matches("enum")
-                    .take(AGGREGATE_LAYOUT_ROUNDS - enum_words)
-                    .count();
-            }
-        }
-        let enum_declarations = if bytes == u64::from(lexed_bytes) {
-            enum_words as u32
-        } else {
-            u32::MAX
-        };
+        let enum_declarations =
+            if parser_features & crate::lexer::features::PARSER_FEATURE_ENUMS == 0 {
+                0
+            } else {
+                let mut bytes = 0u64;
+                let mut enum_words = 0usize;
+                for source in sources {
+                    bytes += source.len() as u64;
+                    if enum_words < AGGREGATE_LAYOUT_ROUNDS {
+                        enum_words += source
+                            .matches("enum")
+                            .take(AGGREGATE_LAYOUT_ROUNDS - enum_words)
+                            .count();
+                    }
+                }
+                if bytes == u64::from(lexed_bytes) {
+                    enum_words as u32
+                } else {
+                    u32::MAX
+                }
+            };
         Self {
             parser_features,
             enum_declarations,
-            hir_rows: u32::MAX,
+            source_bytes: lexed_bytes,
+            ..Self::CONSERVATIVE
         }
     }
 
@@ -166,7 +178,7 @@ impl LoweringJobBounds {
     ///
     /// This rests on what the three passes read and write; a change that adds
     /// another dependency between rounds must revisit this bound.
-    /// gpu_compiler's physical_gpu_bounded_layout_rounds_match_all_rounds
+    /// gpu_compiler's physical_gpu_job_bounds_match_conservative_lowering
     /// checks it on nested structs, arrays, generics and nested enums.
     fn aggregate_layout_rounds(self) -> usize {
         if self.parser_features & crate::lexer::features::PARSER_FEATURE_ENUMS == 0 {
@@ -2206,8 +2218,11 @@ mod tests {
         assert_eq!(LoweringJobBounds::CONSERVATIVE.hir_rows, u32::MAX);
         assert_eq!(LoweringJobBounds::from_parser_features(0).hir_rows, u32::MAX);
         assert_eq!(bounds.hir_rows, u32::MAX);
+        assert_eq!(bounds.source_bytes, one.len() as u32);
+        assert_eq!(LoweringJobBounds::CONSERVATIVE.source_bytes, u32::MAX);
         let bounded = bounds.with_token_capacity(14);
         assert_eq!(bounded.hir_rows, 16);
+        assert_eq!(bounded.source_bytes, one.len() as u32);
         assert_eq!(bounded.aggregate_layout_rounds(), bounds.aggregate_layout_rounds());
         assert_eq!(bounds.with_token_capacity(u32::MAX).hir_rows, u32::MAX);
     }

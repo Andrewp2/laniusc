@@ -1,5 +1,7 @@
 //! GPU-resident lowering contracts between compact semantic HIR and targets.
 
+use std::collections::HashMap;
+
 use encase::ShaderType;
 
 use super::optimization_ir::{
@@ -1156,6 +1158,46 @@ impl LoweringCapacities {
         }
     }
 
+    /// The capacities that bound what a job with `source_bytes` lexed bytes
+    /// and at most `hir_rows` compact-HIR rows can address in a workspace
+    /// built with these, never more than these. They are those of a fresh
+    /// workspace for the job's rows (the structural bounds of
+    /// `from_frontend_unit`; every kernel also clamps its totals to the
+    /// capacities it was built with), except that the token capacity stays
+    /// this workspace's: synthetic declarations are numbered after the built
+    /// token capacity (`n_tokens + hir + local * hir_count` in
+    /// semantic/local_scatter.slang and materialize.slang), so the job's
+    /// declaration ids reach `self.tokens + 3 * hir_rows`. An unknown bound
+    /// (`u32::MAX`) or a failed derivation keeps these capacities.
+    pub(crate) fn for_job(self, source_bytes: u32, hir_rows: u32, target: LoweringTarget) -> Self {
+        if source_bytes == u32::MAX || hir_rows == u32::MAX {
+            return self;
+        }
+        match Self::from_frontend_unit(
+            source_bytes.min(self.source_bytes),
+            self.tokens,
+            hir_rows.min(self.hir_nodes),
+            target,
+        ) {
+            Ok(job) => job.bucketed().min(self),
+            Err(_) => self,
+        }
+    }
+
+    fn min(self, other: Self) -> Self {
+        Self {
+            source_bytes: self.source_bytes.min(other.source_bytes),
+            tokens: self.tokens.min(other.tokens),
+            hir_nodes: self.hir_nodes.min(other.hir_nodes),
+            semantic_instructions: self.semantic_instructions.min(other.semantic_instructions),
+            call_arguments: self.call_arguments.min(other.call_arguments),
+            parameters: self.parameters.min(other.parameters),
+            aggregate_elements: self.aggregate_elements.min(other.aggregate_elements),
+            target_instructions: self.target_instructions.min(other.target_instructions),
+            artifact_bytes: self.artifact_bytes.min(other.artifact_bytes),
+        }
+    }
+
     pub(crate) fn covers(self, required: Self) -> bool {
         self.source_bytes >= required.source_bytes
             && self.tokens >= required.tokens
@@ -1296,11 +1338,39 @@ pub fn semantic_lowering_compiler_graph(
     build_lowering_compiler_graph(capacities, None, false)
 }
 
+/// The bytes of every lowering resource for `capacities`, by resource name:
+/// what `lowering_compiler_graph_for_artifact` would declare, without
+/// planning its workspace.
+pub(crate) fn lowering_resource_bytes_for_artifact(
+    capacities: LoweringCapacities,
+    target: LoweringTarget,
+    artifact_kind: LoweringArtifactKind,
+) -> Result<HashMap<&'static str, u64>, String> {
+    let graph = lowering_compiler_graph_builder(
+        capacities,
+        Some(target),
+        artifact_kind == LoweringArtifactKind::Object,
+    )?;
+    Ok(graph
+        .resource_descs()
+        .iter()
+        .map(|resource| (resource.name, resource.bytes))
+        .collect())
+}
+
 fn build_lowering_compiler_graph(
     capacities: LoweringCapacities,
     target: Option<LoweringTarget>,
     include_object: bool,
 ) -> Result<CompilerGraph, String> {
+    lowering_compiler_graph_builder(capacities, target, include_object)?.build()
+}
+
+fn lowering_compiler_graph_builder(
+    capacities: LoweringCapacities,
+    target: Option<LoweringTarget>,
+    include_object: bool,
+) -> Result<CompilerGraphBuilder, String> {
     let mut graph = CompilerGraphBuilder::new();
     let value_capacity = capacities.declaration_capacity();
     let local_capacity = capacities.local_capacity();
@@ -3623,7 +3693,7 @@ fn build_lowering_compiler_graph(
     })?;
 
     let Some(target) = target else {
-        return graph.build();
+        return Ok(graph);
     };
     let opt_total = graph.add_resource(artifact(
         "lir.opt.total",
@@ -10391,7 +10461,7 @@ fn build_lowering_compiler_graph(
         "status_readback",
         lowering_status_readback,
     )?;
-    graph.build()
+    Ok(graph)
 }
 
 #[cfg(test)]
@@ -10552,6 +10622,55 @@ mod tests {
             assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
             assert!(small.dominator_tour < built.dominator_tour);
             assert!(small.ssa_value_link < built.ssa_value_link);
+        }
+    }
+
+    #[test]
+    fn job_capacities_keep_the_token_capacity_and_never_exceed_the_built_ones() {
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let retained = LoweringCapacities::from_frontend_unit(1 << 20, 200_000, 200_000, target)
+                .unwrap()
+                .bucketed();
+            assert_eq!(retained.for_job(u32::MAX, 402, target), retained);
+            assert_eq!(retained.for_job(1_000, u32::MAX, target), retained);
+            assert_eq!(retained.for_job(1 << 21, 1 << 20, target), retained);
+            let job = retained.for_job(1_000, 402, target);
+            assert_eq!(
+                job,
+                LoweringCapacities::from_frontend_unit(1_000, retained.tokens, 402, target)
+                    .unwrap()
+                    .bucketed()
+            );
+            assert!(retained.covers(job));
+            assert!(job.semantic_instructions < retained.semantic_instructions);
+            assert!(job.artifact_bytes < retained.artifact_bytes);
+            // Synthetic declarations follow the built token capacity.
+            assert_eq!(job.tokens, retained.tokens);
+            assert!(job.declaration_capacity() >= retained.tokens + 3 * 402);
+        }
+    }
+
+    #[test]
+    fn lowering_resource_bytes_are_the_built_graphs() {
+        let capacities = LoweringCapacities::from_frontend_unit(1 << 16, 1 << 14, 1 << 14, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            for kind in [LoweringArtifactKind::Executable, LoweringArtifactKind::Object] {
+                let started = std::time::Instant::now();
+                let bytes = lowering_resource_bytes_for_artifact(capacities, target, kind).unwrap();
+                let elapsed = started.elapsed();
+                let graph = lowering_compiler_graph_for_artifact(capacities, target, kind).unwrap();
+                eprintln!(
+                    "lowering_resource_bytes target={target:?} kind={kind:?} resources={} us={}",
+                    bytes.len(),
+                    elapsed.as_micros()
+                );
+                assert_eq!(bytes.len(), graph.resources().len());
+                for resource in graph.resources() {
+                    assert_eq!(bytes.get(resource.name), Some(&resource.bytes), "{}", resource.name);
+                }
+            }
         }
     }
 
@@ -11143,6 +11262,47 @@ mod tests {
         };
         let error = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap_err();
         assert!(error.contains("exceeding the 80-bit resident key capacity"));
+    }
+
+    // The type checker keeps the checked outputs lowering binds writable in
+    // arenas of their own; a writable binding of any other checked output
+    // could share a physical buffer with a read-only one in one bind group.
+    #[test]
+    fn lowering_binds_only_the_isolated_checked_outputs_writable() {
+        let capacities = LoweringCapacities {
+            source_bytes: 48,
+            tokens: 48,
+            hir_nodes: 32,
+            semantic_instructions: 64,
+            call_arguments: 16,
+            parameters: 16,
+            aggregate_elements: 16,
+            target_instructions: 96,
+            artifact_bytes: 1024,
+        };
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let graph = lowering_compiler_graph(capacities, target).unwrap();
+            let writable = graph
+                .passes()
+                .iter()
+                .flat_map(|pass| pass.accesses.iter())
+                .filter(|access| access.mode.writes())
+                .filter_map(|access| {
+                    graph.resources()[access.resource.index()]
+                        .name
+                        .strip_prefix("typecheck.")
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            let isolated = crate::type_checker::OUTPUTS_LOWERING_BINDS_WRITABLE
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            assert!(
+                writable.is_subset(&isolated),
+                "{target:?} lowering binds checked outputs {:?} writable",
+                writable.difference(&isolated).collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]

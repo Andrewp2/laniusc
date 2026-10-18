@@ -560,9 +560,7 @@ impl GpuX86LirStage {
             "lir.x86.analysis.clear",
             &analysis_clear_pass,
             &analysis_params,
-            semantic_capacity
-                .max(capacities.hir_nodes.max(1))
-                .max(capacities.declaration_capacity()),
+            Self::analysis_clear_elements(capacities),
         )?;
         let analysis_index = ComputeOperation::direct_with_uniform(
             device,
@@ -763,14 +761,34 @@ impl GpuX86LirStage {
         }
     }
 
+    /// The rows the analysis clear covers for `capacities`: its semantic,
+    /// function (HIR) and declaration rows.
+    fn analysis_clear_elements(capacities: LoweringCapacities) -> u32 {
+        capacities
+            .semantic_instructions
+            .max(1)
+            .max(capacities.hir_nodes.max(1))
+            .max(capacities.declaration_capacity())
+    }
+
+    /// Records one semantic count page; the first also records the analysis
+    /// passes, whose clear covers the built capacities or only the job's
+    /// (`job`, never more than the built ones). Every analysis reader bounds
+    /// its rows by the job's GPU totals or by ids from the job's own rows.
     pub(crate) fn record_count_page(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         page_id: usize,
         timer: &mut Option<&mut GpuTimer>,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
         if page_id == 0 {
-            self.analysis_clear.record(encoder)?;
+            match job {
+                Some(job) => self
+                    .analysis_clear
+                    .record_elements(encoder, Self::analysis_clear_elements(job))?,
+                None => self.analysis_clear.record(encoder)?,
+            }
             stamp(timer, encoder, "codegen.x86.analysis.clear.done");
             self.analysis_index.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.analysis.index.done");
@@ -826,6 +844,7 @@ impl GpuX86LirStage {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
         self.artifact.record_layout_after_byte_counts(encoder)?;
         if object {
@@ -834,7 +853,7 @@ impl GpuX86LirStage {
                 .context("x86 object projection was not allocated for this lowering job")?
                 .record_status_normalization(encoder)?;
         }
-        self.artifact.record_clear(encoder)?;
+        self.artifact.record_clear(encoder, job)?;
         Ok(())
     }
 
@@ -881,7 +900,7 @@ impl GpuX86LirStage {
     fn record_counts(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         let mut timer = None;
         for page_id in 0..self.count_pages.len() {
-            self.record_count_page(encoder, page_id, &mut timer)?;
+            self.record_count_page(encoder, page_id, &mut timer, None)?;
         }
         Ok(())
     }
