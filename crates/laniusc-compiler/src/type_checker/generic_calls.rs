@@ -30,7 +30,7 @@ use crate::{
     gpu::{
         buffers::{LaniusBuffer, TrackedBufferView},
         compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
-        readback::{PagedReadback, ReadbackRegion},
+        readback::{PagedReadback, ReadbackRegion, ReadbackRows, WordRead},
     },
     parser::passes::hir::{
         item::fields::{
@@ -857,11 +857,11 @@ pub(super) fn words(bytes: &[u8]) -> Vec<u32> {
         .collect()
 }
 
-/// The regions of one batched readback, read back as one flat vector of
-/// words. Each `push` returns where its words start in that vector.
+/// The regions and rows of one batched readback, read back as one flat
+/// vector of words. Each `push` returns where its words start in that vector.
 #[derive(Default)]
 pub(super) struct WordBatch<'a> {
-    regions: Vec<ReadbackRegion<'a>>,
+    reads: Vec<WordRead<'a>>,
     words: usize,
 }
 
@@ -899,19 +899,62 @@ impl<'a> WordBatch<'a> {
         width: usize,
         label: &str,
     ) -> Result<usize> {
+        self.table_rows(indices, &[(buffer, stride, width)], label)
+    }
+
+    /// Queues, for each index, the first `width` words of that row of each
+    /// table of `stride`-word rows in `tables`, in table order.
+    pub(super) fn table_rows<T>(
+        &mut self,
+        indices: &[u32],
+        tables: &[(&'a LaniusBuffer<T>, usize, usize)],
+        label: &str,
+    ) -> Result<usize> {
         let start = self.words;
-        self.regions.reserve(indices.len());
-        for &index in indices {
-            self.push(buffer, u64::from(index) * stride as u64, width, label)?;
+        if indices.is_empty() || tables.is_empty() {
+            return Ok(start);
         }
+        let mut rows = ReadbackRows::new(indices);
+        for &(buffer, stride, width) in tables {
+            rows = rows.column(buffer, 0, stride, width, label)?;
+        }
+        self.words += rows.words();
+        self.reads.push(WordRead::Rows(rows));
         Ok(start)
+    }
+
+    /// Queues the first `widths[i]` words of row `indices[i]` of a table of
+    /// `stride`-word rows and returns where each row's words start. Rows of
+    /// one width share one read.
+    pub(super) fn ragged_rows<T>(
+        &mut self,
+        buffer: &'a LaniusBuffer<T>,
+        indices: &[u32],
+        widths: &[usize],
+        stride: usize,
+        label: &str,
+    ) -> Result<Vec<usize>> {
+        let mut by_width = BTreeMap::<usize, (Vec<u32>, Vec<usize>)>::new();
+        for (position, (&index, &width)) in indices.iter().zip(widths).enumerate() {
+            let (rows, positions) = by_width.entry(width).or_default();
+            rows.push(index);
+            positions.push(position);
+        }
+        let mut starts = vec![0; indices.len()];
+        for (width, (rows, positions)) in by_width {
+            let start = self.rows(buffer, &rows, stride, width, label)?;
+            for (row, position) in positions.into_iter().enumerate() {
+                starts[position] = start + row * width;
+            }
+        }
+        Ok(starts)
     }
 
     /// Queues a planned region of whole words.
     pub(super) fn push_region(&mut self, region: ReadbackRegion<'a>) -> usize {
         let start = self.words;
         self.words += region.byte_len().div_ceil(4);
-        self.regions.push(region);
+        self.reads.push(WordRead::Region(region));
         start
     }
 
@@ -935,10 +978,10 @@ impl<'a> WordBatch<'a> {
         queue: &wgpu::Queue,
         label: &str,
     ) -> Result<Vec<u32>> {
-        if self.regions.is_empty() {
+        if self.reads.is_empty() {
             return Ok(Vec::new());
         }
-        let words = readback.read_regions_words(device, queue, &self.regions, label)?;
+        let words = readback.read_words(device, queue, &self.reads, label)?;
         debug_assert_eq!(words.len(), self.words);
         Ok(words)
     }
@@ -1051,17 +1094,11 @@ impl CheckedTypeReadback {
         // Column-major, so each column's rows are one gather run.
         let mut batch = WordBatch::default();
         for name in TYPE_INSTANCE_COLUMNS {
-            let buffer = inputs.buffer(name);
-            for &instance in &instances {
-                batch.push(buffer, u64::from(instance), 1, "generic argument type")?;
-            }
+            batch.rows(inputs.buffer(name), &instances, 1, 1, "generic argument type")?;
         }
         let legacy_start = batch.len();
         for name in ["type_native_scalar_identity", "type_native_word_count"] {
-            let buffer = inputs.buffer(name);
-            for &row in &legacy_rows {
-                batch.push(buffer, u64::from(row), 1, "legacy nominal type")?;
-            }
+            batch.rows(inputs.buffer(name), &legacy_rows, 1, 1, "legacy nominal type")?;
         }
         let values = batch.read(readback, device, queue, "checked type frontier")?;
         for (index, &instance) in instances.iter().enumerate() {
@@ -1447,29 +1484,26 @@ impl CheckedTypeReadback {
         if interface_exported {
             owner_columns.push((inputs.buffer("interface_generic_scope_owner_by_hir"), 1));
         }
-        for &owner in owners {
-            for &(buffer, width) in &owner_columns {
-                batch.push(
-                    buffer,
-                    u64::from(owner) * width as u64,
-                    width,
-                    "retained generic owner metadata",
-                )?;
-            }
-        }
-        let parameter_columns = [
+        let owner_tables = owner_columns
+            .iter()
+            .map(|&(buffer, width)| (buffer, width, width))
+            .collect::<Vec<_>>();
+        batch.table_rows(owners, &owner_tables, "retained generic owner metadata")?;
+        let parameter_tables = [
             &semantic.type_generic_param_slot,
             &semantic.type_const_param_slot,
             inputs.buffer("type_const_param_value_by_token"),
             inputs.buffer("type_const_param_scalar_by_token"),
             inputs.buffer("type_expr_ref_tag"),
             inputs.buffer("type_expr_ref_payload"),
-        ];
-        for row in parameters.chunks_exact(4) {
-            for buffer in parameter_columns {
-                batch.push(buffer, u64::from(row[1]), 1, "retained generic parameter metadata")?;
-            }
-        }
+        ]
+        .map(|buffer| (buffer, 1, 1));
+        let parameter_tokens = parameters.chunks_exact(4).map(|row| row[1]).collect::<Vec<_>>();
+        batch.table_rows(
+            &parameter_tokens,
+            &parameter_tables,
+            "retained generic parameter metadata",
+        )?;
         Ok(())
     }
 
@@ -1740,6 +1774,9 @@ pub(super) fn read_unit_facts(
         "compact_field_count",
         "compact_variant_count",
         "compact_variant_payload_row_count",
+        // Read here so the type decoder's argument rows need no round trip
+        // of their own.
+        "type_instance_arg_row_count_out",
     ] {
         batch.push(inputs.buffer(name), 0, 1, name)?;
     }
@@ -2062,6 +2099,7 @@ pub(super) fn read_unit_facts(
         template_contracts,
         &owner_aliases,
     )?;
+    types.argument_row_count = Some(counts[12]);
     types.read_nominal_metadata(
         &nominal_headers,
         &metadata[nominal_metadata_start..caller_metadata_start],
@@ -2088,9 +2126,8 @@ pub(super) fn read_unit_facts(
     if !enclosing_owners.is_empty() {
         let mut batch = WordBatch::default();
         let links = inputs.buffer("generic_decl_owner_by_node_a");
-        for &(_, parent) in &enclosing_owners {
-            batch.push(links, u64::from(parent), 1, "retained enclosing binder")?;
-        }
+        let parent_rows = enclosing_owners.iter().map(|&(_, parent)| parent).collect::<Vec<_>>();
+        batch.rows(links, &parent_rows, 1, 1, "retained enclosing binder")?;
         let parents = batch.read(&readback, device, queue, "retained binder links")?;
         for (&(owner, _), &parent) in enclosing_owners.iter().zip(&parents) {
             let enclosing = if parent == INVALID {
@@ -2546,23 +2583,21 @@ pub(super) fn read_unit_facts(
         .filter(|&index| constant_context_masks[index] != 0 && calls[index].is_some())
         .collect::<Vec<_>>();
     if !constant_context.is_empty() {
+        let calls_read = constant_context.iter().map(|&index| call_ids[index]).collect::<Vec<_>>();
+        let widths = constant_context
+            .iter()
+            .map(|&index| mask_words(constant_context_masks[index]))
+            .collect::<Vec<_>>();
         let mut batch = WordBatch::default();
-        let mut starts = Vec::with_capacity(constant_context.len() * 2);
-        for name in ["call_context_constant_kind", "call_context_constant_payload"] {
-            let buffer = inputs.buffer(name);
-            for &index in &constant_context {
-                starts.push(batch.push(
-                    buffer,
-                    u64::from(call_ids[index]) * 32,
-                    mask_words(constant_context_masks[index]),
-                    "checked result constant row",
-                )?);
-            }
-        }
+        let [kind_starts, payload_starts] =
+            ["call_context_constant_kind", "call_context_constant_payload"].map(|name| {
+                batch.ragged_rows(inputs.buffer(name), &calls_read, &widths, 32,
+                    "checked result constant row")
+            });
+        let (kind_starts, payload_starts) = (kind_starts?, payload_starts?);
         let rows = batch.read(&readback, device, queue, "checked result constants")?;
-        let (kind_starts, payload_starts) = starts.split_at(constant_context.len());
         for ((&index, &kinds), &payloads) in
-            constant_context.iter().zip(kind_starts).zip(payload_starts)
+            constant_context.iter().zip(&kind_starts).zip(&payload_starts)
         {
             let mask = constant_context_masks[index];
             for slot in 0..mask_words(mask) {
@@ -2656,22 +2691,20 @@ pub(super) fn read_unit_facts(
         .filter(|&index| context_masks[index] != 0 && calls[index].is_some())
         .collect::<Vec<_>>();
     if !context.is_empty() {
+        let calls_read = context.iter().map(|&index| call_ids[index]).collect::<Vec<_>>();
+        let widths = context
+            .iter()
+            .map(|&index| mask_words(context_masks[index]))
+            .collect::<Vec<_>>();
         let mut batch = WordBatch::default();
-        let mut starts = Vec::with_capacity(context.len() * 2);
-        for name in ["call_context_ref_tag", "call_context_ref_payload"] {
-            let buffer = inputs.buffer(name);
-            for &index in &context {
-                starts.push(batch.push(
-                    buffer,
-                    u64::from(call_ids[index]) * 32,
-                    mask_words(context_masks[index]),
-                    "checked contextual argument row",
-                )?);
-            }
-        }
+        let [tag_starts, payload_starts] =
+            ["call_context_ref_tag", "call_context_ref_payload"].map(|name| {
+                batch.ragged_rows(inputs.buffer(name), &calls_read, &widths, 32,
+                    "checked contextual argument row")
+            });
+        let (tag_starts, payload_starts) = (tag_starts?, payload_starts?);
         let rows = batch.read(&readback, device, queue, "checked contextual arguments")?;
-        let (tag_starts, payload_starts) = starts.split_at(context.len());
-        for ((&index, &tags), &payloads) in context.iter().zip(tag_starts).zip(payload_starts) {
+        for ((&index, &tags), &payloads) in context.iter().zip(&tag_starts).zip(&payload_starts) {
             let mask = context_masks[index];
             let call = calls[index].as_mut().expect("retained contextual call");
             for slot in 0..mask_words(mask) {
