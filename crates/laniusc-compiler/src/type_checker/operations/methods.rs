@@ -114,12 +114,13 @@ const RESOLVE_TABLE: ReflectedComputeSpec =
         .with_indirect_dispatch("method_token_dispatch_args");
 // Required members reached through a lexical `P: Trait` bound compete in the
 // same transaction, after local table candidates and before dependency pages.
+// One lane per call expression: the call owns the trait arguments' context.
 const OFFER_BOUND_MEMBERS: ReflectedComputeSpec = method_pass!(
     "offer_bound_members",
-    Calls,
+    HirNodes,
     "type_checker/methods/07a_offer_bound_members"
 )
-.with_indirect_dispatch("method_token_dispatch_args");
+.with_indirect_dispatch("method_hir_dispatch_args");
 
 // The eight preliminary lookup sweeps dispatch from one gated copy of the
 // method grids (see methods/08b_arm_lookup_sweeps): the method-token grid, the

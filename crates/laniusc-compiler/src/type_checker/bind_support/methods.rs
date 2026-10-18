@@ -32,7 +32,7 @@ pub(in crate::type_checker) fn create_method_bind_groups(
         mark_call_return_keys: indirect(METHODS_MARK_CALL_RETURN_KEYS_DIRECT, method_hir_args)?,
         reset_candidates: indirect(METHODS_RESET_CANDIDATES_DIRECT, method_token_args)?,
         resolve_table: indirect(METHODS_RESOLVE_TABLE_DIRECT, method_token_args)?,
-        offer_bound_members: indirect(METHODS_OFFER_BOUND_MEMBERS_DIRECT, method_token_args)?,
+        offer_bound_members: indirect(METHODS_OFFER_BOUND_MEMBERS_DIRECT, method_hir_args)?,
         finalize_candidates: indirect(METHODS_FINALIZE_CANDIDATES_DIRECT, method_token_args)?,
         resolve: indirect(METHODS_RESOLVE, method_token_hir_args)?,
         lookup: MethodLookupSweeps {
@@ -41,7 +41,7 @@ pub(in crate::type_checker) fn create_method_bind_groups(
             mark_call_return_keys: lookup(METHODS_MARK_CALL_RETURN_KEYS, METHOD_LOOKUP_HIR_ARGS_OFFSET)?,
             reset_candidates: lookup(METHODS_RESET_CANDIDATES, METHOD_LOOKUP_TOKEN_ARGS_OFFSET)?,
             resolve_table: lookup(METHODS_RESOLVE_TABLE, METHOD_LOOKUP_TOKEN_ARGS_OFFSET)?,
-            offer_bound_members: lookup(METHODS_OFFER_BOUND_MEMBERS, METHOD_LOOKUP_TOKEN_ARGS_OFFSET)?,
+            offer_bound_members: lookup(METHODS_OFFER_BOUND_MEMBERS, METHOD_LOOKUP_HIR_ARGS_OFFSET)?,
             finalize_candidates: lookup(METHODS_FINALIZE_CANDIDATES, METHOD_LOOKUP_TOKEN_ARGS_OFFSET)?,
             gate: single(METHODS_GATE_LOOKUP_SWEEP)?,
         },

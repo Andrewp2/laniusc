@@ -9,33 +9,19 @@ Probes:
 - b02: a bound proved through two levels of a generic impl
   (`total(Twice { inner: Twice { inner: Rect {..} } })`, `impl<T> Area for Twice<T>
   where T: Area`). The call fails LNC0008 (no matching impl); one level is p30.
-- b03: a generic trait's method called through a bound (`fn fetch<S, T>(s: S,
-  fallback: T) -> T where S: Get<T> { return s.get(); }` on `Slot<i32>` and
-  `Slot<Rec>`). The original compile rejects `s.get()` (LNC0027, no method
-  signature matches the receiver), with and without instance copies.
-- b04: a const-generic impl's method called through a bound (`measure<S>`
-  with `S: Size` on `Buf<i32, 3>`). The replayed bound call fails LNC0027
-  ("the receiver's implementation must be a non-generic local impl"), with and
-  without instance copies. A direct call on the concrete receiver is p42.
+  Two levels pass when the argument is an annotated `let two: Twice<Twice<Rect>>`;
+  only a type inferred from the nested struct literal fails (handed to P7a).
 
 Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b03: a static trait member called on a type parameter, `T::same(a, b)`
-  with `where T: Same<T>`. LNC0027 "call resolution failed" at 7:13. No call
-  key is published for a type-parameter head. This is the shape of
-  core::cmp::Eq and Ord. Blocks 75 modules (see b06).
-- b04: a self method through a bound on a trait with type arguments,
-  `where T: Conv<i32>` and `a.conv()`. LNC0027 at 3:62.
-  07a_offer_bound_members offers no member for a bound with arguments.
-  Needed for the same 75 modules.
 - b05: `Self` in a trait member signature, `fn same(self, other: Self)`.
   LNC0007 "unknown type" at 1:35. With b06 this is the other route to an Eq
   without type arguments.
 - b06: a bound on an imported trait, `where T: core::cmp::Eq<T>` and
-  `T::eq(a, b)`. LNC0005 "unresolved identifier" at 6:13 (LNC0027 when the
-  call is inside a stdlib module). Blocks every module family that compares
+  `T::eq(a, b)`. LNC0027 "call resolution failed" at 6:13: no candidate is
+  offered for the imported trait's required member. Blocks every module family that compares
   elements: option_* (11, contains), result_* (12, contains), slice_* (10),
   range_* (6), vec_* (10, sort and search), set_* (8), map_* (8) and deque_*
   (10, contains), 75 modules in all. core::set works around it with its own
@@ -56,9 +42,11 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
   Blocks a generic unwrap or expect; no existing module panics.
 - b12: a user type implementing a stdlib trait (`pub impl core::set::Key for
-  Point` in app::main), used through the bound in core::set. The compiler
-  stops with LNC0057 "compiler execution failed" instead of a diagnostic.
-  Blocks user item types in core::set.
+  Point` in app::main), used through the bound in core::set. The bound call
+  now routes to the user's impl; x86 then fails with LNC0017 "x86 callee
+  function lost its checked aggregate result layout" at core/set.lani:78 for
+  `Set<Point, 3>` (the record-element aggregate layout gap). The i32 control
+  passes. Blocks user item types in core::set.
 - b13: a generic function returning another generic function's imported
   `core::option::Option<T>` result, `return get(value);`. LNC0006 "type
   mismatch" at 5:65, from both `check` and a compile, even with the function
@@ -76,7 +64,11 @@ Not probes here:
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
-P10 found (x1..x5) are the directory probes m00..m05.
+P10 found (x1..x5) are the directory probes m00..m05. b03 (a generic trait's
+method through `S: Get<T>`, on `Slot<i32>` and `Slot<Rec>`) is p43; the
+static member `T::same(a, b)` through `T: Same<T>` is p44; a self method
+through `T: Conv<i32>` is p45; a const-generic impl's method through
+`S: Size` on `Buf<i32, 3>` is p46.
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with

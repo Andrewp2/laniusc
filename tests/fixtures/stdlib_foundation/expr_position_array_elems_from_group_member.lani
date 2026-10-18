@@ -1,0 +1,10 @@
+// expect: 0
+// Expression form and position: a field of a parenthesized name as an array-literal element.
+module app::main;
+struct B { lo: u8, hi: u8 }
+fn main() -> i32 {
+    let w: B = B { lo: 1, hi: 250 };
+    let a: [u8; 2] = [(w).hi, 2];
+    if (a[0] != 250) { return 1; }
+    return 0;
+}

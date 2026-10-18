@@ -132,11 +132,6 @@ uint const_annotation_context(uint current, bool floating)
     return 0u;
 }
 
-bool array_instance(uint instance)
-{
-    return valid_instance(instance) && type_instance_kind[instance] == TYPE_INSTANCE_ARRAY;
-}
-
 // A struct-literal field type declared in its literal's scope, substituted
 // under the literal's application `scope` (docs/canonical-type-ids.md), or
 // CT_NONE. Rows written during inference are interned on demand, from one
@@ -160,17 +155,23 @@ uint substituted_field_type(uint field, uint scope)
     return ct_is_record(id) ? id : CT_NONE;
 }
 
+// An array or slice canonical type: either gives a literal its element type.
+bool canonical_sequence(uint id)
+{
+    return ct_kind(id) == CT_KIND_ARRAY || ct_kind(id) == CT_KIND_SLICE;
+}
+
 // The numeric context of the elements `layers` array levels below canonical
-// array `id` (`fallback` when a level is not an array).
+// array or slice `id` (`fallback` when a level is neither).
 uint canonical_array_element_context(uint id, uint layers, bool floating, uint fallback)
 {
     for (uint layer = 0u; layer < layers; layer++)
     {
-        if (ct_kind(id) != CT_KIND_ARRAY) return fallback;
+        if (!canonical_sequence(id)) return fallback;
         id = ct_arg(id, 0u);
         if (!ct_is_record(id)) return fallback;
     }
-    if (ct_kind(id) != CT_KIND_ARRAY) return fallback;
+    if (!canonical_sequence(id)) return fallback;
     uint element = ct_arg(id, 0u);
     return numeric_context(uint2(element - 1u < SCALAR_USIZE ? 1u : 0u, element), floating);
 }
@@ -198,7 +199,7 @@ uint checked_literal_context(uint literal)
     // result, then (once the operand is an array element) each enclosing
     // array layer, innermost first. The parser owns an acyclic expression
     // forest, so the checked active row count bounds the operand climb;
-    // array layers are bounded as in `expected_array_literal_instance`.
+    // array layers are bounded as in `expected_literal_sequence_instance`.
     uint query = literal;
     uint mode = QUERY_OPERAND;
     uint array_node = INVALID; uint array_layers = 0u; uint array_depth = 0u;
@@ -232,11 +233,11 @@ uint checked_literal_context(uint literal)
         {
             uint expected = declared && field == CT_NONE && reference.x == TYPE_REF_INSTANCE
                 ? reference.y : INVALID;
-            bool found = field != CT_NONE ? ct_kind(field) == CT_KIND_ARRAY : array_instance(expected);
+            bool found = field != CT_NONE ? canonical_sequence(field) : sequence_instance(expected);
             if (!found && query != array_node && call_inference_result_tag[query] == TYPE_REF_INSTANCE)
             {
                 expected = call_inference_result_payload[query];
-                found = array_instance(expected);
+                found = sequence_instance(expected);
             }
             if (!found)
             {
@@ -245,15 +246,15 @@ uint checked_literal_context(uint literal)
                 array_layers++; query = parent;
                 if (++array_depth < 64u) continue;
             }
-            if (field != CT_NONE && ct_kind(field) == CT_KIND_ARRAY)
+            if (field != CT_NONE && canonical_sequence(field))
                 return canonical_array_element_context(field, array_layers, floating, peer);
             for (uint layer = 0u; layer < array_layers; layer++)
             {
-                if (!array_instance(expected) ||
+                if (!sequence_instance(expected) ||
                     type_instance_elem_ref_tag[expected] != TYPE_REF_INSTANCE) return peer;
                 expected = type_instance_elem_ref_payload[expected];
             }
-            return array_instance(expected) ? numeric_context(uint2(
+            return sequence_instance(expected) ? numeric_context(uint2(
                 type_instance_elem_ref_tag[expected], type_instance_elem_ref_payload[expected]), floating) : peer;
         }
         // A substituted field is a type row, never a numeric scalar.

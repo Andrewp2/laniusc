@@ -1,0 +1,9 @@
+// expect: 0
+// Expression form and position: an element of a call result as a generic argument.
+module app::main;
+fn keep<T>(value: T) -> T { return value; }
+fn pair() -> [i32; 2] { return [3, 4]; }
+fn main() -> i32 {
+    if (keep(pair()[1]) != 4) { return 1; }
+    return 0;
+}

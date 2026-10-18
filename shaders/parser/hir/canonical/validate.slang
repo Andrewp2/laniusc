@@ -65,8 +65,9 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_MEMBER_EXPR = 21u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 
-// A generic argument value: a type, a literal, or a signed literal (`-5`,
-// `+0.0`), which is a unary row whose only child is the literal.
+// A generic argument value: a type, a literal, or a negated literal (`-5`,
+// `-0.0`), which is a unary row whose only child is the literal. A positive
+// literal (`+5`) is its magnitude row (hir/type/arg/links).
 bool literal_row(uint node, uint count)
 { return node < count && hir_core[node].kind == 23u && hir_payload[node].a == 3u; }
 bool type_arg_value_row(uint node, uint count)

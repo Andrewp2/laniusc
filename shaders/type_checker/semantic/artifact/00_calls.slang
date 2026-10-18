@@ -278,6 +278,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // early void cache. Downstream checks and layout use this record.
             uint inferred_tag = call_inference_result_tag[row];
             uint inferred_payload = call_inference_result_payload[row];
+            // A result bound only by the call's context (a trait parameter
+            // through a bound, methods/07a and dependencies/15b) has no
+            // argument claim for generic_call_results to read, and the
+            // declaration's reference is the trait's or a routed impl's
+            // symbolic T. The accepted result, which replay specializes, is
+            // the call-site fact.
+            if (call.return_ref_tag == 2u && inferred_tag == 3u && inferred_payload < instance_capacity)
+            {
+                call.return_ref_tag = 3u;
+                call.return_ref_payload = inferred_payload;
+                uint instance_words = type_instance_aggregate_word_count[inferred_payload];
+                if (instance_words != 0u)
+                    semantic_aggregate_word_count_by_hir[row] = instance_words;
+            }
             if (inferred_tag == 1u && inferred_payload != 0u && inferred_payload != INVALID)
             {
                 call.return_ref_tag = inferred_tag;
