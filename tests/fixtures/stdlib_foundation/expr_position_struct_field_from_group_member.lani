@@ -1,0 +1,11 @@
+// expect: 0
+// Expression form and position: a field of a parenthesized name as a struct-literal field value.
+module app::main;
+struct Inner { x: i32 }
+struct Outer { inner: Inner }
+fn main() -> i32 {
+    let h: Outer = Outer { inner: Inner { x: 5 } };
+    let o: Outer = Outer { inner: (h).inner };
+    if (o.inner.x != 5) { return 1; }
+    return 0;
+}

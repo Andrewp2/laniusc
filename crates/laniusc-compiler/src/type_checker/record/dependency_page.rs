@@ -253,27 +253,31 @@ pub(in crate::type_checker) fn record_dependency_methods(
     let Some(visibility) = &state.dependency_visibility else {
         return Ok(());
     };
-    let (collector, projection, scatter) = match stage {
+    let (collector, bound, projection, scatter) = match stage {
         MethodSelectionStage::Direct => (
-            DEPENDENCY_METHODS_COLLECT, DEPENDENCY_METHODS_PROJECT,
-            DEPENDENCY_METHOD_PARAMS_SCATTER,
+            DEPENDENCY_METHODS_COLLECT, DEPENDENCY_BOUND_MEMBERS_OFFER,
+            DEPENDENCY_METHODS_PROJECT, DEPENDENCY_METHOD_PARAMS_SCATTER,
         ),
         // The lookup sweeps dispatch from their gated grids.
         MethodSelectionStage::Lookup => {
             return if collect {
-                visibility.collect_methods_lookup.record(encoder)
+                visibility.collect_methods_lookup.record(encoder)?;
+                // Imported traits' required members, through bounds on parameters.
+                visibility.offer_bound_members_lookup.record(encoder)
             } else {
                 visibility.project_methods_lookup.record(encoder)?;
                 visibility.scatter_method_params_lookup.record(encoder)
             };
         }
         MethodSelectionStage::Inference => (
-            DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_METHODS_PROJECT_INFERENCE,
-            DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
+            DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE,
+            DEPENDENCY_METHODS_PROJECT_INFERENCE, DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
         ),
     };
     if collect {
-        visibility.collect_methods_group.record_as(encoder, collector.name)
+        visibility.collect_methods_group.record_as(encoder, collector.name)?;
+        // Imported traits' required members, through bounds on parameters.
+        visibility.offer_bound_members_group.record_as(encoder, bound.name)
     } else {
         visibility.project_methods_group.record_as(encoder, projection.name)?;
         // Publish exact parameter patterns while the winner's page is active.

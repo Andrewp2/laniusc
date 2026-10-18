@@ -1,8 +1,9 @@
 // Route bound-member calls of the selected replay body (07a) to the member of
 // the implementation that the now-concrete receiver selects.
 //
-// Body specialization has substituted the call's accepted receiver. The
-// required member names its trait; a candidate is an implementation method of
+// Body specialization has substituted the call's accepted receiver: the
+// receiver value of `value.member(...)`, or the parameter `P` of a static
+// `P::member(...)`. The required member names its trait; a candidate is an implementation method of
 // that trait with the same name whose receiver pattern matches the receiver.
 // Types compare by canonical ID (docs/canonical-type-ids.md). A replay
 // re-arms every row before the match passes (03_rearm), so the receiver and
@@ -13,21 +14,38 @@
 // routed.
 //
 // A nongeneric implementation matches when its pattern is the receiver. A
-// generic one matches when its type parameters bind so that the pattern is the
-// receiver; the routed call then owns that environment, and each binding is
-// published as the call's context argument (contextual_call_environment.slang)
-// in the receiver's own checked spelling at the parameter's position, which is
-// what host retention reads to replay the routed body. Bindings are found
-// without a stack or local array: a walk over the pattern's open nodes
-// re-descends from the root along a packed child path, and the call's context
-// rows hold the bindings until the mask publishes them. Constant parameters,
-// a parameter that the receiver does not bind and methods with parameters of
-// their own are not routed; neither is a receiver with no match.
+// generic one matches when its type and constant parameters bind so that the
+// pattern is the receiver; the routed call then owns that environment, and
+// each binding is published as the call's context argument or constant
+// (contextual_call_environment.slang) in the receiver's own checked spelling
+// at the parameter's position, which is what host retention reads to replay
+// the routed body. A constant binding is the receiver's exact constant
+// operand (identity mode 0), a checked reference, so it is published as
+// admitted. Bindings are found without a stack or local array: a walk over
+// the pattern's open nodes re-descends from the root along a packed child
+// path, and the call's context rows hold the bindings until the masks publish
+// them. A parameter that the receiver does not bind and methods with
+// parameters of their own are not routed; neither is a receiver with no
+// match.
 // Outside replay every accepted receiver of these calls is still a parameter,
 // so nothing is routed and the enclosing body stays a template.
 //
+// A bound on an imported trait selects that trait's required member by its
+// portable identity (dependencies/15b: a dependency candidate of module
+// preference 0, which no implementation candidate has). An implementation of
+// that trait in this unit implements it by the trait's library and unit and
+// the required member's symbol (predicates/01f2), and the routed call becomes
+// a local one.
+//
+// An implementation outside this unit has no candidate here. In replay, the
+// instance's program evidence names it (body_impl_bindings.slang): the
+// implementation that proved the bound on the parameter's binding slot, keyed
+// by the required member's symbol and its trait's unit. The call then becomes
+// a dependency call of that implementation's member.
+//
 // One thread per call expression (HIR domain): the call owns the context rows,
-// and its callee member names the method token.
+// and its callee member, or the leaf of its callee path `P::member` for a
+// static member, names the method token.
 
 import gpu_index;
 import hir_records;
@@ -38,6 +56,8 @@ import type_checker.checked_type_graph;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
+import type_checker.constant_parameter_slots;
+import type_checker.predicates.trait_reference;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -46,6 +66,7 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<HirRange> compact_generic_param_ranges;
@@ -56,13 +77,21 @@ StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> method_lookup_head;
 StructuredBuffer<uint> method_lookup_next;
 StructuredBuffer<uint> method_decl_method_row;
-StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_name_id;
 StructuredBuffer<uint> fn_hir_by_decl_token;
 StructuredBuffer<uint> fn_start_token_by_decl_token;
-StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
+StructuredBuffer<uint> interface_public_decl_index_by_hir;
+StructuredBuffer<uint4> body_specialization_inputs;
+RWStructuredBuffer<uint> call_dependency_generic_requirements;
+RWStructuredBuffer<uint> call_dependency_library_id;
+RWStructuredBuffer<uint> call_dependency_unit_id;
+RWStructuredBuffer<uint> call_dependency_local_index;
+RWStructuredBuffer<uint> call_dependency_host_service;
+StructuredBuffer<uint> predicate_method_validation_required_symbol;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_bound_reference;
 StructuredBuffer<uint> decl_count_out;
@@ -74,15 +103,32 @@ RWStructuredBuffer<uint> call_context_owner_by_token;
 RWStructuredBuffer<uint> call_context_arg_mask;
 RWStructuredBuffer<uint> call_context_ref_tag;
 RWStructuredBuffer<uint> call_context_ref_payload;
+RWStructuredBuffer<uint> call_context_constant_mask;
+RWStructuredBuffer<uint> call_context_constant_kind;
+RWStructuredBuffer<uint> call_context_constant_payload;
+RWStructuredBuffer<uint> call_context_constant_identity_mode;
+RWStructuredBuffer<uint> call_context_constant_valid_mask;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
+StructuredBuffer<uint> call_generic_claim_prefix;
+StructuredBuffer<uint> call_generic_claim_scan_input;
+StructuredBuffer<uint> call_const_claim_prefix;
+StructuredBuffer<uint> call_const_claim_scan_input;
+RWStructuredBuffer<uint> call_generic_claim_callee;
+RWStructuredBuffer<uint> call_const_claim_callee;
+RWStructuredBuffer<uint> call_const_claim_selected;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TRAIT_REFERENCE_DEPENDENCY = 0x80000000u;
+static const uint REQUIRED_LOCAL = 1u;
+static const uint REQUIRED_IMPORTED = 2u;
 static const uint HIR_ITEM = 2u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_UNROUTED_BOUND_MEMBER = 0xffffff0eu;
 // A packed child path: five bits per level, six levels.
@@ -91,12 +137,15 @@ static const uint BIND_STEP_LIMIT = 256u;
 
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes); }
 bool valid_hir(uint node) { return node < active_hir_count(); }
+uint active_hir_node_count() { return active_hir_count(); }
+
+#include "../type/instances/body_specialization_owner.slang"
+#include "../type/instances/body_impl_bindings.slang"
 
 // Required members publish signature metadata without a lookup row (02_collect).
 uint required_member_trait(uint target)
 {
-    if (target >= gParams.n_tokens || method_decl_method_row[target] != INVALID ||
-        method_decl_receiver_mode[target] == 0u) return INVALID;
+    if (target >= gParams.n_tokens || method_decl_method_row[target] != INVALID) return INVALID;
     uint member = fn_hir_by_decl_token[target];
     if (!valid_hir(member)) return INVALID;
     uint trait = predicate_method_contract_owner_hir[member];
@@ -104,23 +153,144 @@ uint required_member_trait(uint target)
         compact_hir_payload[trait].a == HIR_ITEM_KIND_TRAIT ? trait : INVALID;
 }
 
-bool implements_trait(uint impl, uint trait)
+// The required member of call token `token`: (REQUIRED_LOCAL, its trait's
+// HIR item), or (REQUIRED_IMPORTED, the trait's library and unit, the
+// member's symbol) for an imported trait's member (dependencies/15b), or
+// (0, ..) for any other callee.
+uint4 required_member(uint token)
+{
+    uint library = call_dependency_library_id[token];
+    if (library == INVALID)
+    {
+        uint trait = required_member_trait(call_fn_index[token]);
+        return trait == INVALID ? uint4(0u, INVALID, INVALID, INVALID)
+            : uint4(REQUIRED_LOCAL, trait, INVALID, INVALID);
+    }
+    MethodCandidate candidate = method_candidate[token];
+    uint unit = call_dependency_unit_id[token];
+    uint symbol = call_dependency_local_index[token];
+    bool bound = candidate.state == METHOD_CANDIDATE_UNIQUE &&
+        candidate.callable_kind == METHOD_CALLABLE_DEPENDENCY &&
+        candidate.module_preference == 0u &&
+        candidate.matched_ref_tag == TYPE_REF_GENERIC_PARAM &&
+        candidate.library_id == library && candidate.unit_id == unit &&
+        candidate.local_index == symbol;
+    return bound ? uint4(REQUIRED_IMPORTED, library, unit, symbol)
+        : uint4(0u, INVALID, INVALID, INVALID);
+}
+
+// Whether implementation `impl`, with method HIR `member`, implements the
+// trait of `required`.
+bool implements(uint impl, uint member, uint4 required)
 {
     if (!valid_hir(impl)) return false;
     uint reference = predicate_bound_reference[impl];
-    return (reference & TRAIT_REFERENCE_DEPENDENCY) == 0u &&
-        reference < min(decl_count_out[0u], gParams.n_tokens) &&
-        decl_hir_node[reference] == trait;
+    if (required.x == REQUIRED_LOCAL)
+        return !trait_reference_is_dependency(reference) &&
+            reference < min(decl_count_out[0u], gParams.n_tokens) &&
+            decl_hir_node[reference] == required.y;
+    if (!trait_reference_is_dependency(reference) || !valid_hir(member)) return false;
+    uint paths; uint stride;
+    resolved_dependency_library_id.GetDimensions(paths, stride);
+    if (trait_reference_path(reference) >= paths) return false;
+    uint4 identity = trait_reference_identity(reference);
+    return identity.y == required.y && identity.z == required.z &&
+        predicate_method_validation_required_symbol[member] == required.w;
 }
 
-// The method token of call expression `call` (its callee member's name), or
-// INVALID.
-uint method_call_token(uint call)
+// The implementation member (library, unit, native symbol) outside this unit
+// that the replayed instance's evidence selected for the bound that offered
+// `candidate` (07a, 15b) on its parameter, for call token `token`.
+bool external_target(uint token, uint4 required, MethodCandidate candidate, out uint3 target)
 {
+    target = uint3(INVALID, INVALID, INVALID);
+    if (candidate.matched_ref_tag != TYPE_REF_GENERIC_PARAM) return false;
+    uint tokens; uint stride;
+    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
+    uint parameter = candidate.matched_ref_payload;
+    uint slot = parameter < tokens ? type_generic_param_slot_by_token[parameter] : INVALID;
+    uint encoded = enclosing_fn[token];
+    if (slot == INVALID || encoded == 0u || !valid_hir(encoded - 1u)) return false;
+    uint instance = body_specialization_entry_for_owner(encoded - 1u);
+    if (instance == INVALID) return false;
+    uint symbol = required.w;
+    uint2 trait_unit = required.yz;
+    if (required.x == REQUIRED_LOCAL)
+    {
+        uint member = fn_hir_by_decl_token[call_fn_index[token]];
+        if (!valid_hir(member)) return false;
+        symbol = 0x80000000u | member;
+        trait_unit = uint2(INVALID, INVALID);
+    }
+    return body_impl_binding(instance, slot, symbol, trait_unit, target) &&
+        target.x != INVALID && target.y != INVALID && target.z != INVALID;
+}
+
+// The method token of call expression `call`, or INVALID: its callee member's
+// name, or the leaf of its qualified callee path `P::member` (a path span ends
+// after its leaf), where methods/06 keys an associated call. A path callee is
+// also read at its first segment (methods/08 owner alias) and at the callee's
+// value token (semantic/artifact/00_calls); `aliases` are those tokens.
+uint method_call_token(uint call, out uint2 aliases)
+{
+    aliases = uint2(INVALID, INVALID);
     if (!valid_hir(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return INVALID;
-    uint member = compact_hir_payload[call].a;
-    return valid_hir(member) && compact_hir_core[member].kind == HIR_MEMBER_EXPR
-        ? compact_hir_payload[member].c : INVALID;
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_hir(callee)) return INVALID;
+    if (compact_hir_core[callee].kind == HIR_MEMBER_EXPR) return compact_hir_payload[callee].c;
+    uint path = compact_hir_core[callee].kind == HIR_NAME_EXPR
+        ? compact_hir_links[callee].first_child : callee;
+    if (!valid_hir(path) || compact_hir_core[path].kind != HIR_PATH_EXPR) return INVALID;
+    HirCore core = compact_hir_core[path];
+    if (core.token_end <= core.token_start + 1u) return INVALID;
+    aliases = uint2(core.token_start, compact_hir_payload[callee].d);
+    return core.token_end - 1u;
+}
+
+// The argument claims of call `call` bind the required member's parameters,
+// which include the trait's (calls/03a1). A routed call has another callee,
+// whose bindings are the context published here, so its claims are retired.
+void retire_claims(uint call)
+{
+    uint start = call_arg_row_start[call];
+    uint count = call_arg_row_count[call];
+    if (start == INVALID) return;
+    uint rows; uint claims; uint constants; uint stride;
+    call_generic_claim_prefix.GetDimensions(rows, stride);
+    call_generic_claim_callee.GetDimensions(claims, stride);
+    call_const_claim_callee.GetDimensions(constants, stride);
+    if (start > rows || count > rows - start) return;
+    for (uint row = start; row < start + count; row++)
+    {
+        uint first = call_generic_claim_prefix[row];
+        uint span = call_generic_claim_scan_input[row];
+        for (uint claim = first; claim < min(first + span, claims); claim++)
+            call_generic_claim_callee[claim] = INVALID;
+        first = call_const_claim_prefix[row];
+        span = call_const_claim_scan_input[row];
+        for (uint claim = first; claim < min(first + span, constants); claim++)
+        {
+            call_const_claim_callee[claim] = INVALID;
+            call_const_claim_selected[claim] = 0u;
+        }
+    }
+}
+
+// Publish the routed callee at method token `token` or an alias of it: a
+// local member `selected`, or a dependency member `target` (no local callee).
+// An imported trait's required member was itself a dependency callee.
+void publish_callee(uint token, MethodCandidate candidate, uint selected, uint backend,
+    uint3 target)
+{
+    if (token >= gParams.n_tokens) return;
+    method_candidate[token] = candidate;
+    call_fn_index[token] = selected;
+    backend_call_fn_index[token] = backend;
+    call_dependency_library_id[token] = target.x;
+    call_dependency_unit_id[token] = target.y;
+    call_dependency_local_index[token] = target.z;
+    call_dependency_host_service[token] = INVALID;
+    call_dependency_generic_requirements[token] = 0u;
 }
 
 // Whether call `call` has context rows (contextual_call_environment.slang).
@@ -170,38 +340,63 @@ uint next_open_child(uint node, uint from, uint arity)
     return arity;
 }
 
+// The slot of local parameter leaf `leaf` in its kind's numbering (type and
+// constant parameters have separate slots), or INVALID.
+uint leaf_slot(uint leaf, bool constant)
+{
+    uint tokens; uint stride;
+    uint token = ct_param_token(leaf);
+    if (constant)
+    {
+        type_const_param_slot_by_token.GetDimensions(tokens, stride);
+        return token < tokens ? type_const_param_slot_by_token[token] : INVALID;
+    }
+    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
+    return token < tokens ? type_generic_param_slot_by_token[token] : INVALID;
+}
+
 // Bind parameter leaf `leaf`, child `index` of the pattern node at `path`, to
 // `value`, the receiver's ID there. A slot bound before must agree by ID; a
 // new one keeps the receiver's checked operand at that position in the call's
-// context row and joins `bound`.
+// context row of its kind and joins `bound` (x type slots, y constant slots).
 bool bind_leaf(uint leaf, uint value, uint2 receiver, uint path, uint depth, uint index,
-    uint call, uint slot_limit, inout uint bound)
+    uint call, uint slot_limit, inout uint2 bound)
 {
-    if (!ct_is_type_param(leaf) || ct_is_dep_param(leaf) || !ct_closed(value) ||
-        ct_is_constant(value)) return false;
-    uint tokens; uint stride;
-    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
-    uint token = ct_param_token(leaf);
-    uint slot = token < tokens ? type_generic_param_slot_by_token[token] : INVALID;
+    bool constant = ct_is_const_param(leaf);
+    if (ct_is_dep_param(leaf) || !ct_closed(value) || ct_is_constant(value) != constant) return false;
+    uint slot = leaf_slot(leaf, constant);
     if (slot >= slot_limit) return false;
     uint row = call * 32u + slot;
-    if ((bound & (1u << slot)) != 0u)
-        return ct_ref(call_context_ref_tag[row], call_context_ref_payload[row]) == value;
+    uint bit = 1u << slot;
+    if (((constant ? bound.y : bound.x) & bit) != 0u)
+        return (constant
+            ? ct_constant_ref(call_context_constant_kind[row], call_context_constant_payload[row])
+            : ct_ref(call_context_ref_tag[row], call_context_ref_payload[row])) == value;
     uint2 operand = receiver;
     for (uint level = 0u; level < depth; level++) operand = checked_child(operand, path_index(path, level));
     operand = checked_child(operand, index);
-    if (operand.x == 0u || operand.y == INVALID || ct_ref(operand.x, operand.y) != value) return false;
+    if (operand.x == 0u || operand.y == INVALID || ct_ref(operand.x, operand.y) != value ||
+        ((operand.x & CT_CONSTANT_TAG_BIT) != 0u) != constant) return false;
+    if (constant)
+    {
+        call_context_constant_kind[row] = operand.x & ~CT_CONSTANT_TAG_BIT;
+        call_context_constant_payload[row] = operand.y;
+        call_context_constant_identity_mode[row] = 0u;
+        bound.y |= bit;
+        return true;
+    }
     call_context_ref_tag[row] = operand.x;
     call_context_ref_payload[row] = operand.y;
-    bound |= 1u << slot;
+    bound.x |= bit;
     return true;
 }
 
 // Whether generic pattern `pattern` matches the receiver (`actual` its ID,
-// `receiver` its checked operand), binding type slots below `slot_limit`.
-// Only open pattern nodes are visited; a closed child is compared by ID.
+// `receiver` its checked operand), binding type and constant slots below
+// `slot_limit`. Only open pattern nodes are visited; a closed child is
+// compared by ID.
 bool bind_pattern(uint pattern, uint actual, uint2 receiver, uint call, uint slot_limit,
-    inout uint bound)
+    inout uint2 bound)
 {
     if (!ct_is_record(pattern) || ct_closed(pattern)) return false;
     uint depth = 0u;
@@ -256,12 +451,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // One thread per call expression: calls own their context rows by HIR
     // node, and a receiver's HIR parent is not its member.
     uint node = linear_thread_id_2d(dtid, 65535u, 256u);
-    uint token = method_call_token(node);
+    uint2 aliases;
+    uint token = method_call_token(node, aliases);
+    // A dotted call has a receiver value; a path call has none (methods/06).
     if (token >= min(token_count[0u], gParams.n_tokens) ||
-        method_call_receiver_hir[token] == INVALID ||
-        call_dependency_library_id[token] != INVALID) return;
-    uint trait = required_member_trait(call_fn_index[token]);
-    if (trait == INVALID) return;
+        (method_call_receiver_hir[token] == INVALID) != (aliases.x != INVALID) ||
+        method_call_name_id[token] == INVALID) return;
+    uint4 required = required_member(token);
+    if (required.x == 0u) return;
     uint tag = method_call_receiver_ref_tag[token];
     uint payload = method_call_receiver_ref_payload[token];
     if (tag == TYPE_REF_GENERIC_PARAM || tag == 0u || payload == INVALID) return;
@@ -275,9 +472,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint selected_row = INVALID;
     bool selected_generic = false;
     uint matches = 0u;
-    // Context rows written by generic candidates, and the bindings published.
-    uint written = 0u;
-    uint published = 0u;
+    // Context rows written by generic candidates, and the bindings published
+    // (x type slots, y constant slots).
+    uint2 written = uint2(0u, 0u);
+    uint2 published = uint2(0u, 0u);
     bool rebound = false;
     if (count != 0u && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
         checked_type_capacity(), gParams.n_tokens, head))
@@ -308,7 +506,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 candidate = core.name_token;
                 impl = core.impl_node;
                 if (candidate >= gParams.n_tokens || method_decl_name_id[candidate] != name_id ||
-                    !implements_trait(impl, trait)) continue;
+                    !implements(impl, core.node, required)) continue;
                 operand = uint2(method_decl_receiver_ref_tag[candidate],
                     method_decl_receiver_ref_payload[candidate]);
             }
@@ -322,13 +520,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             else
             {
                 uint member = fn_hir_by_decl_token[candidate];
-                uint bound = 0u;
+                uint2 bound = uint2(0u, 0u);
+                // Each parameter binds one slot of its kind.
                 matched = ct_closed(actual) && call != INVALID && parameters < 32u && valid_hir(member) &&
                     compact_generic_param_ranges[member].count == 0u &&
                     bind_pattern(pattern, actual, receiver, call, parameters, bound) &&
-                    bound == (1u << parameters) - 1u;
+                    countbits(bound.x) + countbits(bound.y) == parameters;
                 written |= bound;
-                if (rebound) { published = matched ? bound : 0u; break; }
+                if (rebound) { published = matched ? bound : uint2(0u, 0u); break; }
             }
             if (!matched) continue;
             if (selected != candidate) matches++;
@@ -338,30 +537,68 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
     }
     // The accepted selection and its callee are one fact for call artifacts.
+    // An imported trait's member was verified as the candidate above.
     MethodCandidate candidate = method_candidate[token];
-    bool routed = matches == 1u && (!selected_generic || published != 0u) &&
-        candidate.state == METHOD_CANDIDATE_UNIQUE &&
-        candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
-        candidate.local_index == call_fn_index[token];
-    // The routed generic callee owns the call's context; rows written for
-    // other candidates hold no binding.
-    if (call != INVALID && (written != 0u || (routed && selected_generic)))
+    bool accepted = candidate.state == METHOD_CANDIDATE_UNIQUE &&
+        (required.x == REQUIRED_IMPORTED || (candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
+         candidate.local_index == call_fn_index[token]));
+    // With no implementation in this unit, the one the instance's evidence
+    // selected elsewhere.
+    uint3 target = uint3(INVALID, INVALID, INVALID);
+    bool external = matches == 0u && accepted && external_target(token, required, candidate, target);
+    bool bindings = any(published != 0u);
+    bool routed = accepted && (external || (matches == 1u && (!selected_generic || bindings)));
+    // The routed callee owns the call's context: a generic one its bindings,
+    // a nongeneric one none (the trait's arguments bound the required
+    // member's parameters, methods/07a). Rows written for other candidates
+    // hold no binding.
+    if (call != INVALID && (any(written != 0u) || routed))
     {
-        call_context_arg_mask[call] = routed && selected_generic
-            ? published : call_context_arg_mask[call] & ~written;
-        if (routed && selected_generic) call_context_owner_by_token[token] = call;
+        call_context_arg_mask[call] = routed
+            ? (selected_generic ? published.x : 0u) : call_context_arg_mask[call] & ~written.x;
+        uint constants = routed
+            ? (selected_generic ? published.y : 0u) : call_context_constant_mask[call] & ~written.y;
+        call_context_constant_mask[call] = constants;
+        call_context_constant_valid_mask[call] = routed
+            ? constants : call_context_constant_valid_mask[call] & ~written.y;
+        if (routed && selected_generic)
+        {
+            call_context_owner_by_token[token] = call;
+            if (aliases.x < gParams.n_tokens) call_context_owner_by_token[aliases.x] = call;
+            if (aliases.y < gParams.n_tokens) call_context_owner_by_token[aliases.y] = call;
+        }
     }
-    if (matches != 1u || (selected_generic && published == 0u))
+    if (!external && (matches != 1u || (selected_generic && !bindings)))
     {
         record_min_token_error(status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_UNROUTED_BOUND_MEMBER);
         return;
     }
     if (!routed) return;
-    candidate.local_index = selected;
+    retire_claims(node);
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;
-    method_candidate[token] = candidate;
-    call_fn_index[token] = selected;
-    uint start = fn_start_token_by_decl_token[selected];
-    backend_call_fn_index[token] = start < gParams.n_tokens ? start : selected;
+    uint backend = INVALID;
+    if (external)
+    {
+        // The evidence's implementation member, in its own unit.
+        candidate.callable_kind = METHOD_CALLABLE_DEPENDENCY;
+        candidate.library_id = target.x;
+        candidate.unit_id = target.y;
+        candidate.local_index = target.z;
+        selected = INVALID;
+    }
+    else
+    {
+        // The routed member is local to this unit.
+        candidate.callable_kind = METHOD_CALLABLE_LOCAL;
+        candidate.library_id = INVALID;
+        candidate.unit_id = INVALID;
+        candidate.local_index = selected;
+        uint start = fn_start_token_by_decl_token[selected];
+        backend = start < gParams.n_tokens ? start : selected;
+    }
+    publish_callee(token, candidate, selected, backend, target);
+    if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend, target);
+    if (aliases.y != token && aliases.y != aliases.x)
+        publish_callee(aliases.y, candidate, selected, backend, target);
 }

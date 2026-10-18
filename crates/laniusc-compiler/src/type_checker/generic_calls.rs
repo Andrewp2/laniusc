@@ -781,6 +781,10 @@ pub(crate) fn resolve_generic_requirements(
     dependency_pages: &[Vec<GpuSemanticInterfaceArtifact>],
     impl_bindings: &[BodyImplBinding],
 ) {
+    // A call through a bound on an imported trait targets the trait's
+    // required member, which body specialization routes to the selected
+    // implementation per instance; it has no instance of its own.
+    let mut requirement_calls = BTreeSet::new();
     for call in calls.iter_mut() {
         let (library_id, unit_id, symbol) = match call.target {
             CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
@@ -793,8 +797,20 @@ pub(crate) fn resolve_generic_requirements(
             call.required_constant_parameters = Some(0);
             continue;
         }
-        let requirements = dependency_pages.iter().flatten()
-            .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id)
+        let interface = dependency_pages.iter().flatten()
+            .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id);
+        if let (Some(interface), CheckedGenericTarget::DependencyMethod { method_symbol, .. }) =
+            (interface, call.target)
+        {
+            if interface.members.iter().any(|member| {
+                member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
+                    && member.value_hi == method_symbol
+            }) {
+                requirement_calls.insert(call.call_hir);
+                continue;
+            }
+        }
+        let requirements = interface
             .and_then(|interface| match call.target {
                 CheckedGenericTarget::Dependency { declaration_index, .. } => {
                     let declaration = interface.declarations.get(declaration_index as usize)?;
@@ -815,10 +831,11 @@ pub(crate) fn resolve_generic_requirements(
         call.required_constant_parameters = requirements.map(|counts| counts.1);
     }
     calls.retain(|call| {
-        !call.arguments.is_empty()
-            || !call.constants.is_empty()
-            || call.required_generic_parameters != Some(0)
-            || call.required_constant_parameters != Some(0)
+        !requirement_calls.contains(&call.call_hir)
+            && (!call.arguments.is_empty()
+                || !call.constants.is_empty()
+                || call.required_generic_parameters != Some(0)
+                || call.required_constant_parameters != Some(0))
     });
 }
 
@@ -2038,6 +2055,15 @@ pub(super) fn read_unit_facts(
             "retained callable native identity",
         )?;
     }
+    // Trait requirements are not declarations. Their compact payload carries
+    // the declaration-name token that a local call record's callee names.
+    let requirement_metadata_start = batch.rows(
+        inputs.buffer("compact_hir_payload"),
+        &requirement_hirs,
+        4,
+        4,
+        "trait requirement name",
+    )?;
     let contract_source = checked_contracts::ContractSourceRows {
         predicates: columns[16],
         type_arguments: columns[17],
@@ -2390,6 +2416,20 @@ pub(super) fn read_unit_facts(
             }
         }
     }
+    // A trait requirement owns a contract but no native target, so its calls
+    // are not retained. Their claims bind the trait's parameters, which the
+    // GPU checked against the bound's trait arguments (methods/07a).
+    let requirement_names = metadata[requirement_metadata_start..][..requirement_hirs.len() * 4]
+        .chunks_exact(4)
+        .map(|payload| payload[1])
+        .filter(|&name| name != INVALID)
+        .collect::<BTreeSet<_>>();
+    let requirement_tokens = local_tokens
+        .iter()
+        .zip(&local_names)
+        .filter(|(_, name)| requirement_names.contains(name))
+        .map(|(&token, _)| token)
+        .collect::<BTreeSet<_>>();
     // Only free functions use the public declaration table. Private method
     // identities are still their existing function-start-token symbols.
     let free_functions = (0..local_count)
@@ -2459,7 +2499,8 @@ pub(super) fn read_unit_facts(
                     .expect("local callee token was read")];
                 if callee.types == 0 && callee.constants == 0 {
                     ensure!(
-                        calls_with_claims.binary_search(&call_hir).is_err(),
+                        calls_with_claims.binary_search(&call_hir).is_err()
+                            || requirement_tokens.contains(&function_start_token),
                         "local callable {function_start_token} at call {call_hir} has generic claims but no generic parameter metadata"
                     );
                     calls.push(None);

@@ -4,7 +4,7 @@ use super::{
     GpuCompiler,
     GpuSemanticInterfaceArtifact,
     SourcePackArtifactTarget,
-    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit},
+    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, PendingOriginalUnit, RetainedPendingOriginal},
 };
 use crate::compiler::{
     ExplicitSourcePathFile,
@@ -14,6 +14,11 @@ use crate::compiler::{
 };
 
 const DEFAULT_COMPILED_UNIT_CACHE_BYTES: usize = 256 * 1024 * 1024;
+/// Pending originals of standard-library units (see `PendingOriginalCache`).
+const DEFAULT_PENDING_ORIGINAL_CACHE_BYTES: usize = 128 * 1024 * 1024;
+/// The daemon entry loader assigns library 0 to the standard library and
+/// library 1 to user sources (`clear_project_compiled_unit_cache`).
+const STANDARD_LIBRARY_ID: u32 = 0;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct CompiledUnitCacheKey {
@@ -147,15 +152,42 @@ fn hash_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {
     hasher.update(bytes);
 }
 
+/// A value the unit cache can retain, with its resident byte charge.
+pub(super) trait CachedUnitValue: Clone {
+    fn resident_byte_len(&self) -> usize;
+}
+
+impl CachedUnitValue for Arc<CompiledSourcePackUnit> {
+    fn resident_byte_len(&self) -> usize {
+        CompiledSourcePackUnit::resident_byte_len(self)
+    }
+}
+
+impl CachedUnitValue for RetainedPendingOriginal {
+    fn resident_byte_len(&self) -> usize {
+        RetainedPendingOriginal::resident_byte_len(self)
+    }
+}
+
 #[derive(Clone)]
-struct CachedCompiledUnit {
-    value: Arc<CompiledSourcePackUnit>,
+struct CachedCompiledUnit<V> {
+    value: V,
     resident_bytes: usize,
     last_used: u64,
 }
 
-pub(super) struct CompiledUnitCache {
-    entries: HashMap<CompiledUnitCacheKey, CachedCompiledUnit>,
+/// Released compiled units (strict compilation, any target).
+pub(super) type CompiledUnitCache = UnitCache<Arc<CompiledSourcePackUnit>>;
+
+/// Native pending originals of standard-library units, retained across jobs
+/// of one compiler. A hit is not a released unit: it re-enters the build as a
+/// new `PendingOriginalUnit`, which that build's program admission must
+/// release like a fresh compilation (the catalog still admits it every job).
+pub(super) type PendingOriginalCache = UnitCache<RetainedPendingOriginal>;
+
+/// A byte-bounded least-recently-used map from unit identity to a value.
+pub(super) struct UnitCache<V> {
+    entries: HashMap<CompiledUnitCacheKey, CachedCompiledUnit<V>>,
     hints: HashMap<CompiledUnitCacheHintKey, CompiledUnitCacheKey>,
     resident_bytes: usize,
     maximum_bytes: usize,
@@ -179,7 +211,19 @@ pub(crate) struct CompiledUnitCacheStats {
     pub resident_bytes: usize,
 }
 
-impl Default for CompiledUnitCache {
+impl CompiledUnitCacheStats {
+    fn plus(self, other: Self) -> Self {
+        Self {
+            hits: self.hits.saturating_add(other.hits),
+            misses: self.misses.saturating_add(other.misses),
+            evictions: self.evictions.saturating_add(other.evictions),
+            entries: self.entries.saturating_add(other.entries),
+            resident_bytes: self.resident_bytes.saturating_add(other.resident_bytes),
+        }
+    }
+}
+
+impl<V> Default for UnitCache<V> {
     fn default() -> Self {
         Self {
             entries: HashMap::new(),
@@ -194,7 +238,13 @@ impl Default for CompiledUnitCache {
     }
 }
 
-impl CompiledUnitCache {
+impl PendingOriginalCache {
+    pub(super) fn pending_default() -> Self {
+        Self { maximum_bytes: DEFAULT_PENDING_ORIGINAL_CACHE_BYTES, ..Self::default() }
+    }
+}
+
+impl<V: CachedUnitValue> UnitCache<V> {
     fn clear(&mut self) {
         self.entries.clear();
         self.hints.clear();
@@ -212,7 +262,7 @@ impl CompiledUnitCache {
             .sum();
     }
 
-    fn get(&mut self, key: &CompiledUnitCacheKey) -> Option<Arc<CompiledSourcePackUnit>> {
+    fn get(&mut self, key: &CompiledUnitCacheKey) -> Option<V> {
         self.clock = self.clock.wrapping_add(1);
         let entry = self.entries.get_mut(key);
         let Some(entry) = entry else {
@@ -224,7 +274,12 @@ impl CompiledUnitCache {
         Some(entry.value.clone())
     }
 
-    fn insert(&mut self, key: CompiledUnitCacheKey, value: impl Into<Arc<CompiledSourcePackUnit>>) {
+    /// A unit compiled without a cache lookup (one the cache never retains).
+    fn record_miss(&mut self) {
+        self.misses = self.misses.saturating_add(1);
+    }
+
+    fn insert(&mut self, key: CompiledUnitCacheKey, value: impl Into<V>) {
         let value = value.into();
         self.clock = self.clock.wrapping_add(1);
         let resident_bytes =
@@ -253,7 +308,7 @@ impl CompiledUnitCache {
     fn get_by_hint(
         &mut self,
         hint: &CompiledUnitCacheHintKey,
-    ) -> Option<Arc<CompiledSourcePackUnit>> {
+    ) -> Option<V> {
         let Some(key) = self.hints.get(hint).cloned() else {
             return None;
         };
@@ -301,7 +356,7 @@ impl CompiledUnitCache {
 }
 
 impl CompiledSourcePackUnit {
-    fn resident_byte_len(&self) -> usize {
+    pub(super) fn resident_byte_len(&self) -> usize {
         let mut bytes = std::mem::size_of::<Self>()
             .saturating_add(self.body_native_layouts.as_ref().map_or(0, |entries| entries.iter()
                 .map(|widths| widths.len().saturating_mul(4)).fold(0usize, usize::saturating_add)))
@@ -377,7 +432,7 @@ impl CompiledSourcePackUnit {
     }
 }
 
-fn interface_resident_bytes(interface: &GpuSemanticInterfaceArtifact) -> usize {
+pub(super) fn interface_resident_bytes(interface: &GpuSemanticInterfaceArtifact) -> usize {
     vector_resident_bytes(&interface.modules)
         .saturating_add(vector_resident_bytes(&interface.module_segments))
         .saturating_add(vector_resident_bytes(&interface.declarations))
@@ -488,6 +543,10 @@ impl GpuCompiler<'_> {
             .lock()
             .expect("compiled-unit cache mutex poisoned")
             .clear();
+        self.pending_original_cache
+            .lock()
+            .expect("pending-original cache mutex poisoned")
+            .clear();
     }
 
     /// Drops project results while retaining the daemon entry loader's
@@ -498,7 +557,11 @@ impl GpuCompiler<'_> {
         self.compiled_unit_cache
             .lock()
             .expect("compiled-unit cache mutex poisoned")
-            .clear_except_library(0);
+            .clear_except_library(STANDARD_LIBRARY_ID);
+        self.pending_original_cache
+            .lock()
+            .expect("pending-original cache mutex poisoned")
+            .clear_except_library(STANDARD_LIBRARY_ID);
     }
 
     pub(super) fn cached_compiled_unit_by_hint(
@@ -537,12 +600,89 @@ impl GpuCompiler<'_> {
         }
     }
 
+    /// Both caches: released units and standard-library pending originals.
     pub(crate) fn compiled_unit_cache_stats(&self) -> CompiledUnitCacheStats {
-        self.compiled_unit_cache
+        let compiled = self.compiled_unit_cache
             .lock()
             .expect("compiled-unit cache mutex poisoned")
-            .stats()
+            .stats();
+        compiled.plus(self.pending_original_cache
+            .lock()
+            .expect("pending-original cache mutex poisoned")
+            .stats())
     }
+
+    /// Compiles one path-backed native unit as a pending original, or reuses
+    /// a standard-library unit's pending original from an earlier job with
+    /// the same identity: target, library, unit, source paths, lengths and
+    /// modification times (or contents), and dependency interfaces.
+    ///
+    /// A reused original is not released: program admission checks its facts
+    /// and original calls on every job, as for a fresh compilation. Project
+    /// units (library != 0) are compiled on every job and count as misses.
+    /// `LANIUS_PENDING_ORIGINAL_CACHE=0` disables reuse.
+    pub(super) async fn compile_cached_pending_original_unit(
+        &self,
+        job: &SourcePackJob,
+        source_files: &[ExplicitSourcePathFile],
+        dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
+    ) -> Result<PendingOriginalUnit, super::CompileError> {
+        let unit_id = u32::try_from(job.phase_unit_index).map_err(|_| {
+            source_pack_artifact_store_error("pending native source-unit index exceeds u32")
+        })?;
+        let cacheable = job.library_id == STANDARD_LIBRARY_ID && pending_original_cache_enabled();
+        let cache_hint = if cacheable {
+            CompiledUnitCacheHintKey::new(
+                SourcePackArtifactTarget::X86_64, job.library_id, unit_id, source_files,
+                dependency_pages.as_ref(),
+            ).map_err(source_pack_artifact_store_error)?
+        } else {
+            None
+        };
+        if let Some(hit) = cache_hint.as_ref().and_then(|hint| self.pending_original_cache
+            .lock().expect("pending-original cache mutex poisoned").get_by_hint(hint))
+        {
+            return Ok(hit.pending());
+        }
+        let sources = read_explicit_source_path_files(
+            "pending native library-interface job", source_files)?;
+        let cache_key = match (&cache_hint, cacheable) {
+            (Some(hint), _) => Some(CompiledUnitCacheKey::from_hint(hint)),
+            (None, true) => Some(CompiledUnitCacheKey::new(
+                SourcePackArtifactTarget::X86_64, job.library_id, unit_id, &sources,
+                dependency_pages.as_ref(),
+            ).map_err(source_pack_artifact_store_error)?.with_source_paths(source_files)),
+            (None, false) => None,
+        };
+        {
+            let mut cache = self.pending_original_cache
+                .lock().expect("pending-original cache mutex poisoned");
+            match &cache_key {
+                Some(key) => if let Some(hit) = cache.get(key) {
+                    return Ok(hit.pending());
+                },
+                None => cache.record_miss(),
+            }
+        }
+        let source_paths = source_files.iter()
+            .map(|file| Some(file.path.clone())).collect::<Vec<_>>();
+        let pending = self.compile_pending_original_source_pack_unit(
+            sources.into(), job.library_id, unit_id, dependency_pages, Some(&source_paths),
+        ).await?;
+        if let Some(key) = cache_key {
+            let mut cache = self.pending_original_cache
+                .lock().expect("pending-original cache mutex poisoned");
+            cache.insert(key.clone(), pending.retain());
+            if let Some(hint) = cache_hint {
+                cache.insert_hint(hint, key);
+            }
+        }
+        Ok(pending)
+    }
+}
+
+fn pending_original_cache_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_PENDING_ORIGINAL_CACHE", true)
 }
 
 #[cfg(test)]
@@ -757,6 +897,50 @@ mod tests {
             x86_call_hirs: Vec::new().into(),
             x86_call_function_hirs: Vec::new().into(),
         }
+    }
+
+    #[test]
+    fn pending_originals_reenter_as_pending_with_their_original_facts() {
+        let pending = PendingOriginalUnit::from_unit_for_test(unit(0));
+        let mut cache = PendingOriginalCache::pending_default();
+        let key = CompiledUnitCacheKey::new(
+            SourcePackArtifactTarget::X86_64, 0, 0, &["module core;".into()], &[],
+        ).unwrap();
+        cache.insert(key.clone(), pending.retain());
+        // Every hit is a new pending wrapper over the same facts snapshot, so
+        // each build's admission sees the original compilation's facts.
+        for _ in 0..2 {
+            let reused = cache.get(&key).expect("retained pending original").pending();
+            assert!(reused.facts().same_snapshot(pending.facts()));
+        }
+        cache.record_miss();
+        let stats = cache.stats();
+        assert_eq!((stats.hits, stats.misses, stats.entries), (2, 1, 1));
+        // The facts snapshot's interface copy is charged with the unit.
+        assert_eq!(stats.resident_bytes, std::mem::size_of::<CompiledUnitCacheKey>()
+            + unit(0).resident_byte_len() + interface_resident_bytes(&unit(0).interface));
+        cache.clear_except_library(STANDARD_LIBRARY_ID);
+        assert_eq!(cache.stats().entries, 1);
+        cache.clear();
+        assert!(cache.get(&key).is_none());
+    }
+
+    #[test]
+    fn pending_original_cache_evicts_to_its_budget() {
+        let mut value = unit(0);
+        value.interface.name_bytes = vec![0; 4096];
+        // Room for the unit alone, not for the facts snapshot's interface copy.
+        let mut cache = PendingOriginalCache {
+            maximum_bytes: std::mem::size_of::<CompiledUnitCacheKey>() + value.resident_byte_len(),
+            ..PendingOriginalCache::pending_default()
+        };
+        let key = |source: &str| CompiledUnitCacheKey::new(
+            SourcePackArtifactTarget::X86_64, 0, 0, &[source.into()], &[],
+        ).unwrap();
+        cache.insert(key("module a;"), PendingOriginalUnit::from_unit_for_test(value).retain());
+        assert_eq!(cache.stats().entries, 0, "the facts' interface copy exceeds the budget");
+        assert_eq!(cache.stats().resident_bytes, 0);
+        assert_eq!(cache.stats().evictions, 1);
     }
 
     #[test]
