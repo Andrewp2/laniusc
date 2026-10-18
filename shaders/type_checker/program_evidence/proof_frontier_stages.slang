@@ -215,33 +215,37 @@ public void pps_stage_walk_bindings(uint local, uint consumer)
 }
 public void pps_stage_admit_binding_rows(uint local)
 { uint row; if (pps_stage_row(local, PPS_BINDINGS, row)) pev_batch_failure(pps_admit_binding_row(row)); }
-public void pps_stage_commit_substitutions()
+// The phase 55 commit. Unless `audited` (the group audits proved that the
+// serial cover audits succeed), it runs the serial audits first. Its one call
+// site keeps one inlined copy of the commit and of the serial audits.
+void pps_commit_substitution_tables(bool audited)
 {
-    if (!pps_building() || !pev_batch_is_building()) return;
-    uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint works;
-    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
-        !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
-        !pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) || !pps_count(PPS_WORK, works))
-    { pev_batch_failure(pev_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES)); return; }
-    // Exact replay validates bytes; independent coverage validates ownership.
-    // Equal requests must not alias an allocation and hide an unchecked row.
-    uint visits = 0u;
-    EvidenceStatus cover = pps_check_span_cover<PendingBindingNodeSpans>(PPS_TERM_NODES,
-        nodes.w, nodes.y, bindings.w, bindings.y, visits);
-    if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
-    cover = pps_check_span_cover<PendingSubstitutionBindingSpans>(PPS_BINDINGS,
-        bindings.w, bindings.y, substitutions.w, substitutions.y, visits);
-    if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
-    cover = pps_check_span_cover<SelectedWorkSubstitutionSpans>(PPS_SUBSTITUTIONS,
-        substitutions.w, substitutions.y, 0u, works, visits);
-    if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
+    if (!audited)
+    {
+        uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint works;
+        if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
+            !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
+            !pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) || !pps_count(PPS_WORK, works))
+        { pev_batch_failure(pev_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES)); return; }
+        // Exact replay validates bytes; independent coverage validates ownership.
+        // Equal requests must not alias an allocation and hide an unchecked row.
+        uint visits = 0u;
+        EvidenceStatus cover = pps_check_span_cover<PendingBindingNodeSpans>(PPS_TERM_NODES,
+            nodes.w, nodes.y, bindings.w, bindings.y, visits);
+        if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
+        cover = pps_check_span_cover<PendingSubstitutionBindingSpans>(PPS_BINDINGS,
+            bindings.w, bindings.y, substitutions.w, substitutions.y, visits);
+        if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
+        cover = pps_check_span_cover<SelectedWorkSubstitutionSpans>(PPS_SUBSTITUTIONS,
+            substitutions.w, substitutions.y, 0u, works, visits);
+        if (cover.state != PEV_VALID) { pev_batch_failure(cover); return; }
+    }
     uint tables[5] = { PPS_TERM_NODES, PPS_SUBSTITUTIONS, PPS_BINDINGS, 0u, 0u };
     pev_batch_failure(pps_commit_tables(tables, 3u));
 }
 // Phase 55 as one 256-lane workgroup. The lanes run the three cover audits
-// together; when that proves the serial audits succeed, lane 0 commits as
-// pps_stage_commit_substitutions does after them. Otherwise lane 0 runs the
-// serial stage for its exact result.
+// together; when that proves the serial audits succeed, lane 0 commits
+// directly. Otherwise lane 0 runs the serial audits for their exact result.
 public void pps_stage_commit_substitutions_group(uint lane)
 {
     if (!pps_building() || !pev_batch_is_building()) return;
@@ -259,10 +263,9 @@ public void pps_stage_commit_substitutions_group(uint lane)
     if (audited)
         audited = pps_group_check_span_cover<SelectedWorkSubstitutionSpans>(lane, PPS_SUBSTITUTIONS,
             substitutions.w, substitutions.y, 0u, works, charges);
-    if (lane != 0u) return;
-    if (!audited || charges > PEV_VISIT_LIMIT) { pps_stage_commit_substitutions(); return; }
-    uint tables[5] = { PPS_TERM_NODES, PPS_SUBSTITUTIONS, PPS_BINDINGS, 0u, 0u };
-    pev_batch_failure(pps_commit_tables(tables, 3u));
+    // The building checks above still hold: the group audits write only
+    // groupshared words.
+    if (lane == 0u) pps_commit_substitution_tables(audited && charges <= PEV_VISIT_LIMIT);
 }
 public void pps_stage_expand_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_expand_work(row)); }
