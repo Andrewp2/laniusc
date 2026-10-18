@@ -5,6 +5,31 @@ mod plan;
 
 pub(crate) use plan::{PlanBuffers, ReadPlan, ReplayStats};
 
+/// Trace spans of a large readback's host steps, so a profile splits its
+/// encoding from its copies out of the mapped page.
+struct HostSteps(Option<std::time::Instant>);
+
+impl HostSteps {
+    fn new(regions: usize) -> Self {
+        Self((regions >= 32 && crate::gpu::trace::enabled()).then(std::time::Instant::now))
+    }
+
+    fn stamp(&mut self, step: &str) {
+        if let Some(last) = self.0 {
+            let now = std::time::Instant::now();
+            crate::gpu::trace::record_host_span("host.compiler", step, last, now);
+            self.0 = Some(now);
+        }
+    }
+
+    /// Starts the next step now, without a span for the time since the last.
+    fn skip(&mut self) {
+        if self.0.is_some() {
+            self.0 = Some(std::time::Instant::now());
+        }
+    }
+}
+
 use super::{
     buffers::{LaniusBuffer, readback_bytes},
     passes_core::map_readback_blocking,
@@ -163,12 +188,17 @@ impl<'a> ReadbackRows<'a> {
         self.indices.len() * self.columns.iter().map(|column| column.width_words).sum::<usize>()
     }
 
-    /// The rows and their columns, as (buffer, absolute byte offset, bytes)
-    /// in read order.
-    pub(crate) fn pieces(&self) -> impl Iterator<Item = (&'a wgpu::Buffer, u64, usize)> + '_ {
+    /// The rows and their columns, as (buffer, its allocation identity,
+    /// absolute byte offset, bytes) in read order.
+    fn pieces(&self) -> impl Iterator<Item = (&'a wgpu::Buffer, Option<u64>, u64, usize)> + '_ {
         self.indices.iter().flat_map(|&index| {
             self.columns.iter().map(move |column| {
-                (column.source, column.row_offset(index), column.width_words * 4)
+                (
+                    column.source,
+                    column.allocation,
+                    column.row_offset(index),
+                    column.width_words * 4,
+                )
             })
         })
     }
@@ -353,9 +383,15 @@ impl PagedReadback {
     ) -> Result<Vec<u32>> {
         let mut replay = self.replay.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match replay.as_mut() {
-            Some(replay) => {
-                replay.read(reads, |reads| self.read_words_now(device, queue, reads, label))
-            }
+            Some(replay) => replay.read(
+                reads,
+                &ReplayReader {
+                    readback: self,
+                    device,
+                    queue,
+                    label,
+                },
+            ),
             None => self.read_words_now(device, queue, reads, label),
         }
     }
@@ -387,6 +423,20 @@ impl PagedReadback {
         reads: &[WordRead<'_>],
         label: &str,
     ) -> Result<Vec<u32>> {
+        Ok(self.read_words_compiling(device, queue, reads, label, false)?.0)
+    }
+
+    /// [`Self::read_words_now`]. With `compile`, also returns the readback
+    /// compiled for [`Self::read_compiled`] when it was gathered and every
+    /// buffer it copies from has an allocation identity.
+    fn read_words_compiling(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        reads: &[WordRead<'_>],
+        label: &str,
+        compile: bool,
+    ) -> Result<(Vec<u32>, Option<CompiledWords>)> {
         let mut total = 0usize;
         for read in reads {
             if let WordRead::Region(region) = read
@@ -400,11 +450,12 @@ impl PagedReadback {
             total += read.words();
         }
         if total == 0 {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), None));
         }
         let regions = reads.iter().map(WordRead::regions).sum::<usize>();
         let timing = regions >= 32
             && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+        let mut steps = HostSteps::new(regions);
         let started = std::time::Instant::now();
         let mut first_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
@@ -413,6 +464,7 @@ impl PagedReadback {
             Some(lease) => lease.record_words(device, queue, &mut first_encoder, reads, label)?,
             None => None,
         };
+        steps.stamp("readback.words.gather");
 
         // The copies in output order, each with its first output word. A
         // copy that continues the previous one in its source extends it.
@@ -423,16 +475,24 @@ impl PagedReadback {
                 gathered.image_starts[index].map(|image| (gathered.output, image))
             });
             match (image, read) {
-                (Some((output, image)), _) => {
-                    pieces.push(output, u64::from(image) * 4, read.words() * 4, word)
-                }
-                (None, WordRead::Region(region)) => {
-                    pieces.push(region.source, region.source_offset, region.byte_len, word)
-                }
+                (Some((output, image)), _) => pieces.push(
+                    output,
+                    PieceSource::Image,
+                    u64::from(image) * 4,
+                    read.words() * 4,
+                    word,
+                ),
+                (None, WordRead::Region(region)) => pieces.push(
+                    region.source,
+                    PieceSource::of(region.allocation),
+                    region.source_offset,
+                    region.byte_len,
+                    word,
+                ),
                 (None, WordRead::Rows(rows)) => {
                     let mut row_word = word;
-                    for (source, offset, byte_len) in rows.pieces() {
-                        pieces.push(source, offset, byte_len, row_word);
+                    for (source, allocation, offset, byte_len) in rows.pieces() {
+                        pieces.push(source, PieceSource::of(allocation), offset, byte_len, row_word);
                         row_word += byte_len / 4;
                     }
                 }
@@ -442,19 +502,21 @@ impl PagedReadback {
         let Pieces {
             regions: pieces,
             words: piece_words,
+            sources: piece_sources,
         } = pieces;
         let encode = started.elapsed();
+        steps.stamp("readback.words.pieces");
 
         let mut words = vec![0u32; total];
-        let stats = self.copy_regions(device, queue, first_encoder, &pieces, label, |index, offset, bytes| {
-            let start = piece_words[index] + offset / 4;
-            for (word, bytes) in words[start..start + bytes.len() / 4]
-                .iter_mut()
-                .zip(bytes.chunks_exact(4))
-            {
-                *word = u32::from_le_bytes(bytes.try_into().expect("four-byte chunk"));
-            }
-        })?;
+        let stats = self.copy_regions(
+            device,
+            queue,
+            first_encoder,
+            &pieces,
+            label,
+            &mut steps,
+            |index, offset, bytes| decode_words(&mut words, piece_words[index] + offset / 4, bytes),
+        )?;
         if timing {
             let (gathered_regions, dispatches) = gathered
                 .as_ref()
@@ -471,7 +533,125 @@ impl PagedReadback {
                 started.elapsed().as_secs_f64() * 1000.0,
             );
         }
-        Ok(words)
+        let compiled = match gathered {
+            Some(gathered)
+                if compile
+                    && gathered.groups.iter().all(|group| group.allocation.is_some())
+                    && piece_sources.iter().all(|source| *source != PieceSource::Unknown) =>
+            {
+                Some(CompiledWords {
+                    groups: gathered.groups,
+                    records: gathered.records,
+                    image_words: gathered.image_words,
+                    gathered_regions: gathered.gathered_regions,
+                    pieces: pieces
+                        .iter()
+                        .zip(&piece_sources)
+                        .map(|(piece, source)| CompiledPiece {
+                            source: match source {
+                                PieceSource::Allocation(allocation) => Some(*allocation),
+                                _ => None,
+                            },
+                            offset: piece.source_offset,
+                            byte_len: piece.byte_len,
+                        })
+                        .collect(),
+                    piece_words,
+                    words: total,
+                })
+            }
+            _ => None,
+        };
+        Ok((words, compiled))
+    }
+
+    /// Reads a compiled word readback ([`Self::read_words_compiling`]) again,
+    /// with the current contents of its buffers, without planning it.
+    /// Returns `None`, reading nothing, when a buffer it names is not in
+    /// `buffers` or the gather is in use.
+    fn read_compiled(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        compiled: &CompiledWords,
+        buffers: &PlanBuffers,
+        label: &str,
+    ) -> Result<Option<Vec<u32>>> {
+        let mut steps = HostSteps::new(compiled.gathered_regions);
+        let started = std::time::Instant::now();
+        let mut groups = Vec::with_capacity(compiled.groups.len());
+        for group in &compiled.groups {
+            let Some(source) = group.allocation.and_then(|allocation| buffers.get(allocation))
+            else {
+                return Ok(None);
+            };
+            groups.push(gather::GatherGroup {
+                source,
+                window: group.window,
+                records: group.records,
+            });
+        }
+        if compiled
+            .pieces
+            .iter()
+            .any(|piece| piece.source.is_some_and(|allocation| buffers.get(allocation).is_none()))
+        {
+            return Ok(None);
+        }
+        let Some(mut lease) = gather::lease(device, compiled.gathered_regions) else {
+            return Ok(None);
+        };
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        let (output, dispatches) = lease.dispatch(
+            device,
+            queue,
+            &mut encoder,
+            &groups,
+            &compiled.records,
+            compiled.image_words,
+            label,
+        )?;
+        let pieces = compiled
+            .pieces
+            .iter()
+            .map(|piece| ReadbackRegion {
+                source: match piece.source {
+                    Some(allocation) => buffers.get(allocation).expect("resolved piece source"),
+                    None => output,
+                },
+                source_offset: piece.offset,
+                byte_len: piece.byte_len,
+                allocation: None,
+            })
+            .collect::<Vec<_>>();
+        let encode = started.elapsed();
+        steps.stamp("readback.words.replay_gather");
+        let mut words = vec![0u32; compiled.words];
+        let stats = self.copy_regions(
+            device,
+            queue,
+            encoder,
+            &pieces,
+            label,
+            &mut steps,
+            |index, offset, bytes| {
+                decode_words(&mut words, compiled.piece_words[index] + offset / 4, bytes)
+            },
+        )?;
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] readback.words.compiled: label={label} regions={} gather_dispatches={dispatches} pieces={} copies={} bytes={} pages={} encode_ms={:.3} total_ms={:.3}",
+                compiled.gathered_regions,
+                pieces.len(),
+                stats.copies,
+                compiled.words * 4,
+                stats.pages,
+                (encode + stats.encode).as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64() * 1000.0,
+            );
+        }
+        Ok(Some(words))
     }
 
     /// The batched copy behind [`Self::read_regions`]: hands `sink` each
@@ -504,7 +684,9 @@ impl PagedReadback {
             .map_or((0, 0), |gathered| (gathered.gathered_regions, gathered.dispatches));
         let regions = gathered.as_ref().map_or(regions, |gathered| &gathered.regions[..]);
         let encode = started.elapsed();
-        let stats = self.copy_regions(device, queue, first_encoder, regions, label, sink)?;
+        let mut steps = HostSteps::new(regions.len());
+        let stats =
+            self.copy_regions(device, queue, first_encoder, regions, label, &mut steps, sink)?;
         if timing {
             let total = started.elapsed();
             eprintln!(
@@ -530,6 +712,7 @@ impl PagedReadback {
         first_encoder: wgpu::CommandEncoder,
         regions: &[ReadbackRegion<'_>],
         label: &str,
+        steps: &mut HostSteps,
         mut sink: impl FnMut(usize, usize, &[u8]),
     ) -> Result<CopyStats> {
         let mut stats = CopyStats::default();
@@ -614,33 +797,60 @@ impl PagedReadback {
             let command_buffer = encoder.finish();
             stats.encode += page_started.elapsed();
             stats.pages += 1;
+            steps.stamp("readback.copy.encode");
             queue.submit(Some(command_buffer));
+            steps.stamp("readback.copy.submit");
 
             let slice = self.staging.buffer.slice(..page_cursor as u64);
             let mapping = self.map_staging(device, &slice, label)?;
+            steps.skip();
             let mapped = slice.get_mapped_range();
             for (index, region_offset, offset, logical_len) in page_copies {
                 sink(index, region_offset, &mapped[offset..offset + logical_len]);
             }
             drop(mapped);
             drop(mapping);
+            steps.stamp("readback.copy.decode");
         }
         Ok(stats)
     }
 }
 
 /// The copies of a word readback in output order, each with its first
-/// output word.
+/// output word and what its source is.
 #[derive(Default)]
 struct Pieces<'a> {
     regions: Vec<ReadbackRegion<'a>>,
     words: Vec<usize>,
+    sources: Vec<PieceSource>,
+}
+
+/// The source of a copy: the gather image, or a buffer by allocation
+/// identity when it has one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PieceSource {
+    Image,
+    Allocation(u64),
+    Unknown,
+}
+
+impl PieceSource {
+    fn of(allocation: Option<u64>) -> Self {
+        allocation.map_or(Self::Unknown, Self::Allocation)
+    }
 }
 
 impl<'a> Pieces<'a> {
     /// Adds a copy of whole words; one that continues the previous copy in
     /// its source extends it.
-    fn push(&mut self, source: &'a wgpu::Buffer, offset: u64, byte_len: usize, word: usize) {
+    fn push(
+        &mut self,
+        source: &'a wgpu::Buffer,
+        kind: PieceSource,
+        offset: u64,
+        byte_len: usize,
+        word: usize,
+    ) {
         if byte_len == 0 {
             return;
         }
@@ -658,6 +868,73 @@ impl<'a> Pieces<'a> {
             allocation: None,
         });
         self.words.push(word);
+        self.sources.push(kind);
+    }
+}
+
+/// Decodes the little-endian words of `bytes` into `words` from `start`.
+fn decode_words(words: &mut [u32], start: usize, bytes: &[u8]) {
+    for (word, bytes) in words[start..start + bytes.len() / 4]
+        .iter_mut()
+        .zip(bytes.chunks_exact(4))
+    {
+        *word = u32::from_le_bytes(bytes.try_into().expect("four-byte chunk"));
+    }
+}
+
+/// A gathered word readback compiled for replay: its gather dispatches and
+/// region records, and its copies in output order. It names buffers by
+/// allocation identity only, so it keeps none alive.
+pub(super) struct CompiledWords {
+    groups: Vec<gather::GatheredGroup>,
+    records: Vec<u8>,
+    image_words: usize,
+    gathered_regions: usize,
+    pieces: Vec<CompiledPiece>,
+    piece_words: Vec<usize>,
+    words: usize,
+}
+
+impl CompiledWords {
+    /// The host bytes it retains, about.
+    pub(super) fn retained_bytes(&self) -> usize {
+        self.records.len()
+            + self.pieces.len() * std::mem::size_of::<CompiledPiece>()
+            + self.piece_words.len() * std::mem::size_of::<usize>()
+    }
+}
+
+/// One copy of a compiled readback: its source (`None`: the gather image),
+/// absolute byte offset and bytes.
+struct CompiledPiece {
+    source: Option<u64>,
+    offset: u64,
+    byte_len: usize,
+}
+
+/// The GPU reads of a read plan replay, made through one readback.
+struct ReplayReader<'r> {
+    readback: &'r PagedReadback,
+    device: &'r wgpu::Device,
+    queue: &'r wgpu::Queue,
+    label: &'r str,
+}
+
+impl plan::PlanReader for ReplayReader<'_> {
+    fn read_now(&self, reads: &[WordRead<'_>]) -> Result<Vec<u32>> {
+        self.readback.read_words_now(self.device, self.queue, reads, self.label)
+    }
+
+    fn read_compiling(&self, reads: &[WordRead<'_>]) -> Result<(Vec<u32>, Option<CompiledWords>)> {
+        self.readback.read_words_compiling(self.device, self.queue, reads, self.label, true)
+    }
+
+    fn read_compiled(
+        &self,
+        compiled: &CompiledWords,
+        buffers: &PlanBuffers,
+    ) -> Result<Option<Vec<u32>>> {
+        self.readback.read_compiled(self.device, self.queue, compiled, buffers, self.label)
     }
 }
 
@@ -1052,7 +1329,8 @@ mod lifecycle_tests {
         assert_eq!(fresh_counts, expected[0]);
         assert_ne!(fresh_rows, expected[1]);
         assert_eq!(plan.len(), 4);
-        assert_eq!((stats.read, stats.answered, stats.fetched), (2, 2, 2));
+        assert_eq!((stats.read, stats.answered, stats.fetched), (2, 3, 3));
+        assert!(!stats.compiled);
         assert!(readback.finish_read_plan().is_none());
 
         // Without a replay the same reads come straight from the GPU.
@@ -1066,6 +1344,29 @@ mod lifecycle_tests {
                 "outside",
             )
         );
+
+        // Runs that follow the plan keep it, and the second records its
+        // compiled fetch again, with the contents current at that run.
+        let outside_read =
+            || WordRead::Region(ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap());
+        let mut plan = plan;
+        for (run, seed) in [(0, 3u8), (1, 29)] {
+            let changed = (0..8192u32).map(|i| (i as u8).wrapping_mul(seed)).collect::<Vec<_>>();
+            second.write(&gpu.queue, 0, &changed);
+            readback.begin_read_plan(buffers(), Some(plan));
+            let replayed = [
+                read(&[counts()], "counts"),
+                read(&[rows(), tail()], "rows"),
+                read(&[outside_read()], "outside"),
+            ];
+            let (next, stats) = readback.finish_read_plan().unwrap();
+            assert_eq!((next.len(), stats.read, stats.answered), (4, 1, 4));
+            assert_eq!(stats.compiled, run == 1, "run {run} compiled fetch");
+            assert_eq!(replayed[1], read(&[rows(), tail()], "rows"), "run {run} rows");
+            assert_eq!(replayed[2], read(&[outside_read()], "outside"));
+            plan = next;
+        }
+
         assert!(pollster::block_on(validation.pop()).is_none());
     }
 }

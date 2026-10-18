@@ -918,12 +918,13 @@ impl Drop for UnitFactsPlanRecorder<'_> {
         };
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
             eprintln!(
-                "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={} exported={} counts={:?}",
+                "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={} compiled={} exported={} counts={:?}",
                 plan.len(),
                 stats.answered,
                 stats.read,
                 stats.fetched,
                 stats.fetched_words,
+                stats.compiled,
                 self.key.interface_exported,
                 self.key.counts,
             );
@@ -1884,7 +1885,9 @@ pub(super) fn read_unit_facts(
     // here between jobs. Resident workspace trim clears the owning cache.
     // Every page is one round trip: a 1 MB program's call metadata is 131 KB,
     // and a generic program's contextual argument rows are a few hundred KB.
-    const SNAPSHOT_PAGE_BYTES: usize = 1 << 20;
+    // A replayed read plan fetches a whole run's reads at once (1.2 MB for a
+    // 1 MB narrow program), so it too fits one page.
+    const SNAPSHOT_PAGE_BYTES: usize = 4 << 20;
     let readback = PagedReadback::from_staging(readback_buffers.buffer(
         device,
         "generic call snapshot",
