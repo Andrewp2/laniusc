@@ -382,8 +382,8 @@ pub struct GpuTypeChecker {
     /// Records the next job's canonical stages with a counter readback after
     /// every batch, as many batches as candidates need. Set after a job
     /// recorded without readbacks (one batch per stage) left candidates
-    /// pending or overflowed; that job's check finishes it, and its
-    /// synchronous re-record clears it.
+    /// pending or overflowed; that job's check finishes it. The check of a
+    /// synchronous job keeps it while that job still needed several batches.
     canonical_synchronous: std::sync::atomic::AtomicBool,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     /// Capacities of the last workspace allocated. A release (frontend

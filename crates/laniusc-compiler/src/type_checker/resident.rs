@@ -2502,10 +2502,25 @@ impl GpuTypeChecker {
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
         if !recorded.canonical_deferred {
-            crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.status")?;
-            // This synchronous job read its canonical counters per batch.
-            self.canonical_synchronous
-                .store(false, std::sync::atomic::Ordering::Relaxed);
+            // This synchronous job read its canonical counters per batch. The
+            // next job (often a body replay of the same program) stays
+            // synchronous while this one still needed more than one batch in
+            // some stage, so a deep program pays the re-record once.
+            let counts_slice = self.canonical_counts_readback.slice(..);
+            let counts_map = crate::gpu::passes_core::begin_readback_map(
+                &counts_slice,
+                "type_check.canonical.counts",
+            );
+            let status_map =
+                crate::gpu::passes_core::begin_readback_map(&slice, "type_check.status");
+            crate::gpu::passes_core::finish_readback_map_blocking(device, counts_map)?;
+            crate::gpu::passes_core::finish_readback_map_blocking(device, status_map)?;
+            let counts = read_u32_words_mapped(&counts_slice);
+            self.canonical_counts_readback.unmap();
+            self.canonical_synchronous.store(
+                counts[canonical_passes::CANONICAL_COUNT_BATCH_PENDING] != 0,
+                std::sync::atomic::Ordering::Relaxed,
+            );
         } else {
             // One wait covers both maps: the job's last canonical stage
             // copied its counters ahead of the status copy.

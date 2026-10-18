@@ -373,8 +373,10 @@ result.
     again (`DeferredParserFinish::RetryWithSynchronousCanonical`). A
     recording that stopped on a rejection (call inference that did not
     converge) reads the counters copied before its last wait and is recorded
-    again the same way. The check that follows a synchronous recording
-    switches back to deferred.
+    again the same way. The check of a synchronous recording keeps the next
+    job synchronous only while some stage still needed more than one batch
+    (a body replay of a deep program), and otherwise switches back to
+    deferred.
   - **Synchronous** (after a deferred retry, and with
     `LANIUS_TRACE_CANONICAL` or `LANIUS_DEBUG_VALIDATE_CANONICAL`). The host
     reads one done flag per batch, the pending count and the overflow bits,
