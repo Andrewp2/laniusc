@@ -151,18 +151,29 @@ public void ic_insert(uint env, uint callee, uint depth, uint call)
     ic_flag(IC_FLAG_SET);
 }
 
-// Link call row `call` as an edge of generic function row `owner`. The
-// exchange stays in this module: slangc (2026.2 here) segfaults on an atomic a
-// kernel applies to this module's buffer directly.
+// Link call row `call` as an edge of generic function row `owner`: push it
+// onto the owner's list with a compare-exchange. slangc (2026.2 here)
+// segfaults on InterlockedExchange into this module's buffers. Each failed
+// exchange means another lane linked its call, so `rows` attempts always
+// suffice.
 public void ic_link_edge(uint owner, uint call)
 {
     uint rows; uint stride;
     instance_closure_edge_head.GetDimensions(rows, stride);
     if (owner >= rows) return;
-    uint previous;
-    InterlockedExchange(instance_closure_edge_head[owner], call + 1u, previous);
-    instance_closure_edge_next[call] = previous;
-    ic_count(IC_COUNT_EDGES);
+    uint head = instance_closure_edge_head[owner];
+    for (uint attempt = 0u; attempt < rows; attempt++)
+    {
+        instance_closure_edge_next[call] = head;
+        uint previous;
+        InterlockedCompareExchange(instance_closure_edge_head[owner], head, call + 1u, previous);
+        if (previous == head)
+        {
+            ic_count(IC_COUNT_EDGES);
+            return;
+        }
+        head = previous;
+    }
 }
 
 // The first edge (+1) of function row `row`, 0 when it has none.

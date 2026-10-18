@@ -37,7 +37,6 @@ pub(crate) use generic_calls::{
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
 };
 pub(crate) use generic_calls::{
-    CheckedClosureInstance,
     CheckedGenericApplicationArgument,
     CheckedGenericArgument,
     CheckedGenericCall,

@@ -2965,6 +2965,12 @@ fn read_instance_closure(
             },
         });
     }
+    // The table is in lane order; admission and its packet rows must not be.
+    closure.instances.sort_by_cached_key(|instance| (
+        instance.call.call_hir,
+        instance.depth,
+        format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
+    ));
     Ok(closure)
 }
 
