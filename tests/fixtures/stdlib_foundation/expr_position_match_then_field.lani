@@ -1,0 +1,13 @@
+// expect: 0
+// Expression form and position: control for the match receiver: the match bound to a local first.
+module app::main;
+struct W { v: i32 }
+enum Pick { Left, Right }
+fn main() -> i32 {
+    let a: W = W { v: 7 };
+    let b: W = W { v: 9 };
+    let p: Pick = Right;
+    let c: W = match (p) { Left -> a, Right -> b };
+    if (c.v != 9) { return 1; }
+    return 0;
+}

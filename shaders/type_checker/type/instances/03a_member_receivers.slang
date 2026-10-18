@@ -135,6 +135,19 @@ bool self_ref(uint member, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
+// The receiver's own published expression type. Parenthesized receivers,
+// struct literals and matches have no name token of their own: payload.d of
+// a member is the receiver's first source token, which is `(` for a group.
+bool slot_ref(uint node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (!valid_hir(node)) return false;
+    tag = call_inference_result_tag[node]; payload = call_inference_result_payload[node];
+    if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    return false;
+}
+
 bool call_callee(uint member)
 {
     uint parent = compact_hir_expr_parent[member];
@@ -179,6 +192,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint receiver_token = kind == HIR_MEMBER_EXPR && valid_token(p.d) ? p.d : name_token(receiver);
     bool found = call_ref(receiver, tag, payload) || value_ref(receiver_token, tag, payload);
     if (!found && kind == HIR_MEMBER_EXPR) found = self_ref(member, tag, payload);
+    // A name inside parentheses: the receiver node is the name itself.
+    uint receiver_name = name_token(receiver);
+    if (!found && receiver_name != receiver_token) found = value_ref(receiver_name, tag, payload);
+    // Any other receiver form reads its own slot, published by 03g in an
+    // earlier round (so this lags the receiver's result by one round).
+    if (!found) found = slot_ref(receiver, tag, payload);
     if (!found) return;
     member_chain_root_ref_tag[member] = tag;
     member_chain_root_ref_payload[member] = payload;

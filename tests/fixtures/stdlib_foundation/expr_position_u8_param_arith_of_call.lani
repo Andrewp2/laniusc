@@ -1,0 +1,6 @@
+// expect: 0
+// Expression form and position: arithmetic on a u8 call result as a u8 argument.
+module app::main;
+fn get() -> u8 { return 200; }
+fn take(b: u8) -> i32 { if (b != 201) { return 1; } return 0; }
+fn main() -> i32 { return take(get() + 1); }

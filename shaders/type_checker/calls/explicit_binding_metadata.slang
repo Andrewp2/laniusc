@@ -12,24 +12,30 @@ StructuredBuffer<HirRange> explicit_mapping_argument_ranges;
 
 // A binding slot is tagged by domain. Type and constant slot zero can coexist.
 public static const uint EXPLICIT_CONSTANT_SLOT = 0x80000000u;
-public bool bind_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
-    TypeRefs type_refs, uint argument_row, uint expected_scalar)
-{
-    return bind_scoped_explicit_constant_operand(type_refs, ModuleScopeOperandNames(),
-        argument_row, expected_scalar);
-}
-
-public bool bind_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
+// Binds one explicit constant operand; the result is its
+// EXPLICIT_OPERAND_* reason (explicit_constant_operand).
+public uint bind_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
     BodyNames : IExplicitOperandBodyNames>(
     TypeRefs type_refs, BodyNames body_names, uint argument_row, uint expected_scalar)
 {
     uint kind; uint payload;
-    if (!checked_scoped_explicit_constant_operand(type_refs, body_names,
-        explicit_mapping_arguments[argument_row].value, expected_scalar, kind, payload)) return false;
     uint operand = explicit_mapping_arguments[argument_row].value;
+    uint reason = checked_scoped_explicit_constant_operand(type_refs, body_names, operand,
+        expected_scalar, kind, payload);
+    if (reason != EXPLICIT_OPERAND_BOUND) return reason;
     call_explicit_arg_constant_kind[operand] = kind;
     call_explicit_arg_constant_payload[operand] = payload;
-    return true;
+    return EXPLICIT_OPERAND_BOUND;
+}
+
+// The application status after operand `ordinal` failed for `reason`. An
+// operand diagnosed at itself is 5 | reason << 4 | ordinal << 8 | scalar << 16
+// (the final application check reports it); any other failure is 3.
+public uint explicit_operand_failure_status(uint reason, uint ordinal, uint scalar)
+{
+    bool diagnosed = reason == EXPLICIT_OPERAND_LITERAL_RANGE ||
+        reason == EXPLICIT_OPERAND_SCALAR_CONFLICT;
+    return diagnosed ? 5u | (reason << 4u) | (ordinal << 8u) | (scalar << 16u) : 3u;
 }
 
 public bool explicit_application_range(uint token, out HirRange arguments)

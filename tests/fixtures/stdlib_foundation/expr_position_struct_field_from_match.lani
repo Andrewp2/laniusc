@@ -1,0 +1,14 @@
+// expect: 0
+// Expression form and position: a match as a struct-literal field value.
+module app::main;
+struct Inner { x: i32 }
+struct Outer { inner: Inner }
+enum Pick { Left, Right }
+fn main() -> i32 {
+    let a: Inner = Inner { x: 1 };
+    let b: Inner = Inner { x: 2 };
+    let p: Pick = Right;
+    let o: Outer = Outer { inner: match (p) { Left -> a, Right -> b } };
+    if (o.inner.x != 2) { return 1; }
+    return 0;
+}

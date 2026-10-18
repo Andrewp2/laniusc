@@ -1,0 +1,9 @@
+// expect: 0
+// Expression form and position: a field of an element of a call result: make()[1].v.
+module app::main;
+struct W { v: i32 }
+fn make() -> [W; 2] { return [W { v: 1 }, W { v: 2 }]; }
+fn main() -> i32 {
+    if (make()[1].v != 2) { return 1; }
+    return 0;
+}

@@ -72,6 +72,7 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
     stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
+    pending_original_cache: std::sync::Mutex<unit_cache::PendingOriginalCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
     program_evidence_workspace: program_evidence::EvidenceWorkspacePool,
@@ -435,6 +436,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_lowering,
                 stable_unit_plan: std::sync::Mutex::new(None),
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
+                pending_original_cache: std::sync::Mutex::new(unit_cache::PendingOriginalCache::pending_default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
                 program_evidence_workspace: program_evidence::EvidenceWorkspacePool::new(

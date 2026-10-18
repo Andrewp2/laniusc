@@ -18,6 +18,7 @@ import type_checker.native_nominal_identity;
 import gpu_index;
 import checked_semantic_artifact;
 import type_checker.argument_context;
+import type_checker.array_extent_literal;
 import hir_expr_semantics;
 
 bool valid_instance(uint instance)
@@ -172,7 +173,13 @@ bool publish_array_length(uint node, uint instance, out uint count)
         gParams.n_tokens, descriptor) &&
         descriptor.disposition == CONSTANT_REFERENCE_SYMBOLIC &&
         scalar_is_integer(descriptor.terminal_scalar);
-    if (!symbolic)
+    // An out-of-range literal extent reports its own range error, not an
+    // unsupported array (array_extent_literal.slang).
+    uint range_literal = symbolic ? INVALID
+        : array_extent_range_literal(node, active_hir_count(), compact_hir_core, compact_hir_payload);
+    if (valid_token(range_literal))
+        record_min_token_error(status, range_literal, 24u, SCALAR_U32);
+    else if (!symbolic)
         record_min_token_error(status, compact_hir_core[node].token_start, 6u, 0x474e0006u);
     return false;
 }
