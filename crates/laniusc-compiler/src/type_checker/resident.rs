@@ -384,6 +384,7 @@ impl GpuTypeChecker {
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
             semantic_interface_buffers: CapacityBufferCache::default(),
+            unit_facts_read_plans: Default::default(),
         })
     }
 
@@ -414,6 +415,11 @@ impl GpuTypeChecker {
             .lock()
             .expect("GpuTypeChecker.resident_workspace poisoned") = None;
         self.semantic_interface_buffers.clear();
+        // The plans name this workspace's allocations, which are gone.
+        self.unit_facts_read_plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     pub(crate) fn dependency_interface_pages(

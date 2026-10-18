@@ -373,6 +373,8 @@ pub struct GpuTypeChecker {
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
     dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
     semantic_interface_buffers: CapacityBufferCache,
+    /// Read plans of recent unit-facts runs (no GPU resources).
+    unit_facts_read_plans: Mutex<generic_calls::UnitFactsReadPlans>,
 }
 
 /// Marker returned when type-check work has been recorded into a command
