@@ -192,7 +192,8 @@ fn imported_concrete_option_and_result_returns_cover_payload_widths_on_x86() {
         ("u16", "U16", "u16", "65535"),
         ("i32", "I32", "i32", "-2147483648"),
         ("u32", "U32", "u32", "4294967295"),
-        ("bool", "Bool", "bool", "true"),
+        // There is no core::option_bool since 7ae8a250: bool options use the
+        // generic core::option (tests/stdlib_option_bool_execution.rs).
         ("f32", "F32", "f32", "-2.5"),
     ] {
         let source = format!(

@@ -356,8 +356,16 @@ def build_workload(
     kinds: dict[str, tuple[int, tuple[str, ...], bool]],
     only_kind: str | None = None,
     type_pool: int | None = None,
+    acyclic_areas: bool = False,
 ) -> Workload:
-    """`type_pool` limits record type arguments to the first N record types."""
+    """`type_pool` limits record type arguments to the first N record types.
+
+    With `acyclic_areas` (the project layout, where each area is a module that
+    imports the areas its bodies mention) a step only uses records of its own
+    area or an earlier one, so the imports form a DAG. A pick of a later area
+    is remapped to an earlier one without drawing again, so workloads whose
+    picks were already acyclic, and every single-file workload, are unchanged.
+    """
     area_count = (leaf_count + LEAVES_PER_AREA - 1) // LEAVES_PER_AREA
     areas = [build_area(seed, index) for index in range(area_count)]
     all_records = [record for area in areas for record in area.records]
@@ -384,12 +392,18 @@ def build_workload(
                 elif rng.randrange(100) < 80 or len(areas) == 1:
                     pool = area.records
                 else:
-                    pool = rng.choice(areas).records
+                    picked = rng.choice(areas)
+                    if acyclic_areas and picked.index > area.index:
+                        picked = areas[picked.index % (area.index + 1)]
+                    pool = picked.records
                 index = rng.randrange(len(pool))
                 record = pool[index]
                 # Pairs of records use the next record type, so each record
                 # adds one two-record application rather than len(pool).
                 other = pool[(index + 1) % len(pool)]
+                if acyclic_areas and max(record.area, other.area) > area.index:
+                    record = area.records[index % len(area.records)]
+                    other = area.records[(index + 1) % len(area.records)]
             a = rng.randint(1, 9) if kind == "mul" else rng.randint(0, M)
             steps.append(Step(kind, a, rng.randint(0, M), rng.randint(0, 1 << 30), record, other))
         role = ROLES[leaf_index % len(ROLES)]
@@ -1237,10 +1251,12 @@ def main() -> int:
     if args.layout == "project" and not args.leaves:
         # Qualified paths make the project larger than the single file; scale
         # the leaf count so the project's total size is close to the target.
-        project = render_project(build_workload(args.seed, leaf_count, kinds, type_pool=pool))
+        project = render_project(build_workload(args.seed, leaf_count, kinds, type_pool=pool,
+                                                acyclic_areas=True))
         size = sum(len(text.encode()) for text in project.values())
         leaf_count = max(1, leaf_count * args.target_bytes // size)
-    workload = build_workload(args.seed, leaf_count, kinds, type_pool=pool)
+    workload = build_workload(args.seed, leaf_count, kinds, type_pool=pool,
+                              acyclic_areas=args.layout == "project")
     args.out.mkdir(parents=True, exist_ok=True)
     if args.layout == "single-file":
         target = None if args.leaves or args.matrix_probe else args.target_bytes

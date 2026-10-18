@@ -932,9 +932,11 @@ fn imported_generic_aliases_reject_type_length_and_header_conflicts() {
         ("let value: core::aliases::Fixed<i32, 2> = [19, 23, 7];", "LNC0006"),
         ("let value: core::aliases::Fixed<bool, 2> = [19, 23];", "LNC0006"),
         ("let value: core::aliases::Swap<bool, i32> = core::aliases::Pair { first: false, second: 42 };", "LNC0006"),
-        ("let value: core::aliases::Id<i32, bool> = 42;", "LNC0006"),
-        ("let value: core::aliases::Fixed<i32, bool> = [19, 23];", "LNC0006"),
-        ("let value: core::aliases::Fixed<2, i32> = [19, 23];", "LNC0006"),
+        // A type annotation with the wrong number or kind of operands names
+        // no type, as in any annotation (docs/compiler-generic-types.md).
+        ("let value: core::aliases::Id<i32, bool> = 42;", "LNC0007"),
+        ("let value: core::aliases::Fixed<i32, bool> = [19, 23];", "LNC0007"),
+        ("let value: core::aliases::Fixed<2, i32> = [19, 23];", "LNC0007"),
         ("let value: core::aliases::Id<Unknown> = 42;", "LNC0007"),
         ("let value: core::aliases::Flag<Unknown> = false;", "LNC0007"),
     ] {
@@ -1533,8 +1535,11 @@ fn direct_record_literal_arguments_preserve_generic_body_failure() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib))
     })
     .expect("direct empty literals must supply a complete generic binding");
-    let output =
-        common::run_x86_64_elf_output("literal argument assertion", "generic_types", &bytes);
+    let output = common::run_x86_64_elf_output_expecting_signal(
+        "literal argument assertion",
+        "generic_types",
+        &bytes,
+    );
     assert!(
         !output.status.success(),
         "the empty result cannot erase the body: {output:?}"
@@ -1773,8 +1778,11 @@ fn main() -> i32 {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib))
         })
         .expect("compile ordinary and generic failing bodies");
-        let output =
-            common::run_x86_64_elf_output("empty assertion failure", "generic_types", &bytes);
+        let output = common::run_x86_64_elf_output_expecting_signal(
+            "empty assertion failure",
+            "generic_types",
+            &bytes,
+        );
         assert!(
             !output.status.success(),
             "the empty result cannot skip assert: {output:?}"
@@ -7868,7 +7876,7 @@ impl<T> Boxed<T> {
         return self.length(values) + M;
     }
     pub fn dimensions<const N: usize, const M: u32>(&self, values: [[i32; N]; M]) -> usize {
-        return N * 10 + M;
+        return N * 10 + (M as usize);
     }
 }
 impl Plain {

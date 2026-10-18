@@ -509,6 +509,8 @@ static const uint INTRINSIC_I32_SLICE_DATA_PTR = 5u;
 static const uint INTRINSIC_STRING_DATA_PTR = 6u;
 // Concrete typed slices and i32 slices share the data/length/stride value ABI.
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
+// The third word (byte stride) of a slice argument, as isize.
+static const uint INTRINSIC_SLICE_STRIDE = 8u;
 
 bool intrinsic_slice_from_raw_parts(uint tag)
 {

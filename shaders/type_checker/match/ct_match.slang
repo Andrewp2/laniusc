@@ -41,9 +41,12 @@ public static const uint CT_MATCH_OVERFLOW = 0xffffffffu; // CT_PENDING: interni
 public static const uint CT_MATCH_OK = 0xfffffffdu;       // CT_NONE: matched, nothing interned
 
 static const uint SLOTS = 32u;
-// Packed path: five bits per level, six levels per word; level 0 is the
-// virtual parent of the root.
-static const uint DEPTH_LIMIT = 24u;
+// Packed path: five bits per level, six levels per word, twelve words in
+// three uint4 registers; level 0 is the virtual parent of the root. Level
+// 65 is the deepest a match descends, one below an interned type of height
+// 64 (CT_MAX_ROUNDS: deeper types intern to UNKNOWN), so a depth failure
+// never rejects an interned pair.
+static const uint DEPTH_LIMIT = 66u;
 static const uint STEP_LIMIT = 1024u;
 // Unset count class of a slot.
 static const uint NO_CLASS = 0xffffffffu;
@@ -52,23 +55,35 @@ static const uint POSITION_TYPE = 0u;
 static const uint POSITION_EXACT = 1u;
 static const uint POSITION_COUNT = 2u;
 
-uint path_index(uint4 path, uint level)
+struct MatchPath
 {
-    uint word = level / 6u;
-    uint packed = word == 0u ? path.x : word == 1u ? path.y : word == 2u ? path.z : path.w;
-    return (packed >> ((level % 6u) * 5u)) & 31u;
-}
+    uint4 low;
+    uint4 middle;
+    uint4 high;
 
-uint4 path_with(uint4 path, uint level, uint index)
-{
-    uint word = level / 6u;
-    uint shift = (level % 6u) * 5u;
-    uint keep = ~(31u << shift);
-    uint bits = index << shift;
-    return uint4(word == 0u ? (path.x & keep) | bits : path.x,
-        word == 1u ? (path.y & keep) | bits : path.y,
-        word == 2u ? (path.z & keep) | bits : path.z,
-        word == 3u ? (path.w & keep) | bits : path.w);
+    uint index(uint level)
+    {
+        uint word = level / 6u;
+        uint4 words = word < 4u ? low : word < 8u ? middle : high;
+        uint lane = word & 3u;
+        uint packed = lane == 0u ? words.x : lane == 1u ? words.y : lane == 2u ? words.z : words.w;
+        return (packed >> ((level % 6u) * 5u)) & 31u;
+    }
+
+    [mutating]
+    void set(uint level, uint index)
+    {
+        uint word = level / 6u;
+        uint shift = (level % 6u) * 5u;
+        uint lane = word & 3u;
+        uint4 keep = uint4(lane == 0u ? ~(31u << shift) : ~0u, lane == 1u ? ~(31u << shift) : ~0u,
+            lane == 2u ? ~(31u << shift) : ~0u, lane == 3u ? ~(31u << shift) : ~0u);
+        uint4 bits = uint4(lane == 0u ? index << shift : 0u, lane == 1u ? index << shift : 0u,
+            lane == 2u ? index << shift : 0u, lane == 3u ? index << shift : 0u);
+        if (word < 4u) low = (low & keep) | bits;
+        else if (word < 8u) middle = (middle & keep) | bits;
+        else high = (high & keep) | bits;
+    }
 }
 
 // The scalar of a typed constant: a value's or cast's own, a constant
@@ -181,7 +196,7 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
     inout uint type_mask, inout uint const_mask, inout SlotClaims claims)
 {
     uint depth = 0u;
-    uint4 path = uint4(0u, 0u, 0u, 0u);
+    MatchPath path = { uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u) };
     uint cursor = 0u;
     bool enter = true;
     for (uint step = 0u; step < STEP_LIMIT; step++)
@@ -191,7 +206,7 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
         uint other = actual;
         for (uint level = 2u; level <= depth; level++)
         {
-            uint index = path_index(path, level);
+            uint index = path.index(level);
             node = ct_arg(node, index);
             other = ct_arg(other, index);
         }
@@ -232,13 +247,13 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
         {
             if (depth + 1u >= DEPTH_LIMIT) return false;
             depth++;
-            path = path_with(path, depth, next);
+            path.set(depth, next);
             cursor = 0u;
             enter = true;
             continue;
         }
         if (top) return true;
-        cursor = path_index(path, depth) + 1u;
+        cursor = path.index(depth) + 1u;
         depth--;
         enter = false;
     }

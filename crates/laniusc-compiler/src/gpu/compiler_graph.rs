@@ -644,6 +644,61 @@ pub struct CompilerGraphWorkspace {
     /// consumer must therefore clear imported storage at its own phase
     /// boundary, after all producer commands and before its first pass.
     phase_reset_ranges: Vec<LaniusBuffer<u8>>,
+    /// Each imported slot with the logical resources the graph assigns to it,
+    /// so a job can reset only the bytes its own resources can address
+    /// (`phase_reset_plan`).
+    phase_reset_slots: Vec<PhaseResetSlot>,
+}
+
+struct PhaseResetSlot {
+    view: LaniusBuffer<u8>,
+    resources: Vec<&'static str>,
+}
+
+/// The phase reset for one job: the imported bytes its resources can address,
+/// merged per allocation, and the tails past them that it leaves as they are.
+pub(crate) struct PhaseResetPlan {
+    clears: Vec<LaniusBuffer<u8>>,
+    tails: Vec<LaniusBuffer<u8>>,
+    cleared_bytes: u64,
+    imported_bytes: u64,
+}
+
+impl PhaseResetPlan {
+    pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
+        for range in &self.clears {
+            range.clear(encoder, 0, None);
+        }
+    }
+
+    /// The imported bytes this plan does not clear, one view per slot.
+    pub(crate) fn tails(&self) -> &[LaniusBuffer<u8>] {
+        &self.tails
+    }
+
+    pub(crate) fn cleared_bytes(&self) -> u64 {
+        self.cleared_bytes
+    }
+
+    pub(crate) fn imported_bytes(&self) -> u64 {
+        self.imported_bytes
+    }
+}
+
+/// Sorts byte ranges and merges the ones that overlap or touch.
+fn merge_byte_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+    ranges.sort_unstable();
+    let mut merged = Vec::<(u64, u64)>::new();
+    for (start, end) in ranges {
+        if let Some((_, previous_end)) = merged.last_mut()
+            && start <= *previous_end
+        {
+            *previous_end = (*previous_end).max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    merged
 }
 
 /// A compiler graph together with the physical storage selected for it.
@@ -929,8 +984,15 @@ impl CompilerGraphWorkspace {
                 )
             })?;
             if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
+                let resources = graph
+                    .workspace
+                    .assignments
+                    .iter()
+                    .filter(|assignment| assignment.slot == slot.slot)
+                    .map(|assignment| assignment.name)
+                    .collect::<Vec<_>>();
                 eprintln!(
-                    "compiler_graph_import label={label} slot={} resource={} allocation={:?} offset={} bytes={} slot_bytes={}",
+                    "compiler_graph_import label={label} slot={} resource={} allocation={:?} offset={} bytes={} slot_bytes={} resources={resources:?}",
                     slot.slot,
                     assignment.name,
                     buffer.allocation_id(),
@@ -971,18 +1033,8 @@ impl CompilerGraphWorkspace {
                 .push((buffer.byte_offset, end));
         }
         let mut phase_reset_ranges = Vec::new();
-        for (allocation_id, (buffer, mut ranges)) in reset_ranges_by_allocation {
-            ranges.sort_unstable();
-            let mut merged = Vec::<(u64, u64)>::new();
-            for (start, end) in ranges {
-                if let Some((_, previous_end)) = merged.last_mut()
-                    && start <= *previous_end
-                {
-                    *previous_end = (*previous_end).max(end);
-                } else {
-                    merged.push((start, end));
-                }
-            }
+        for (allocation_id, (buffer, ranges)) in reset_ranges_by_allocation {
+            let merged = merge_byte_ranges(ranges);
             phase_reset_ranges.extend(merged.into_iter().map(|(start, end)| {
                 let bytes = end - start;
                 TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
@@ -1018,6 +1070,19 @@ impl CompilerGraphWorkspace {
                 }
             }
         }
+        let phase_reset_slots = imported_by_slot
+            .iter()
+            .map(|(&slot, view)| PhaseResetSlot {
+                view: view.clone(),
+                resources: graph
+                    .workspace
+                    .assignments
+                    .iter()
+                    .filter(|assignment| assignment.slot == slot)
+                    .map(|assignment| assignment.name)
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
 
         let unimported = WorkspacePlan {
             assignments: Vec::new(),
@@ -1142,6 +1207,7 @@ impl CompilerGraphWorkspace {
             slots,
             slot_by_resource,
             phase_reset_ranges,
+            phase_reset_slots,
         };
         register_compiler_graph_diagnostic(label, graph, &workspace);
         Ok(workspace)
@@ -1154,6 +1220,68 @@ impl CompilerGraphWorkspace {
         for range in &self.phase_reset_ranges {
             range.clear(encoder, 0, None);
         }
+    }
+
+    /// The phase reset for a job whose resources have the byte sizes
+    /// `job_bytes` gives, by resource name. Every logical resource views its
+    /// slot from offset zero, so each imported slot is cleared up to the
+    /// largest job size among the resources assigned to it, rounded up to
+    /// whole words and never past the slot. A resource `job_bytes` does not
+    /// know keeps its whole slot. Contiguous cleared ranges merge as in
+    /// `record_phase_reset`; with every resource at its built size this
+    /// clears the same bytes.
+    pub(crate) fn phase_reset_plan(
+        &self,
+        job_bytes: impl Fn(&'static str) -> Option<u64>,
+    ) -> Result<PhaseResetPlan, String> {
+        let mut ranges_by_allocation =
+            BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
+        let mut tails = Vec::new();
+        let mut imported_bytes = 0u64;
+        for slot in &self.phase_reset_slots {
+            let slot_bytes = slot.view.byte_size as u64;
+            imported_bytes += slot_bytes;
+            let prefix = slot
+                .resources
+                .iter()
+                .map(|&name| job_bytes(name).unwrap_or(slot_bytes))
+                .max()
+                .unwrap_or(slot_bytes)
+                .next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT)
+                .min(slot_bytes);
+            if prefix > 0 {
+                let allocation_id = slot.view.allocation_id().ok_or_else(|| {
+                    "imported compiler graph slot has no allocation identity".to_owned()
+                })?;
+                ranges_by_allocation
+                    .entry(allocation_id)
+                    .or_insert_with(|| (&slot.view.buffer, Vec::new()))
+                    .1
+                    .push((slot.view.byte_offset, slot.view.byte_offset + prefix));
+            }
+            if prefix < slot_bytes {
+                let tail = slot_bytes - prefix;
+                tails.push(slot.view.subrange::<u8>(prefix, tail, tail as usize)?);
+            }
+        }
+        let mut clears = Vec::new();
+        let mut cleared_bytes = 0u64;
+        for (allocation_id, (buffer, ranges)) in ranges_by_allocation {
+            for (start, end) in merge_byte_ranges(ranges) {
+                let bytes = end - start;
+                cleared_bytes += bytes;
+                clears.push(
+                    TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
+                        .alias::<u8>(bytes as usize),
+                );
+            }
+        }
+        Ok(PhaseResetPlan {
+            clears,
+            tails,
+            cleared_bytes,
+            imported_bytes,
+        })
     }
 
     #[cfg(test)]
@@ -3338,6 +3466,11 @@ impl CompilerGraphBuilder {
         Self::default()
     }
 
+    /// The resources declared so far, in declaration order.
+    pub(crate) fn resource_descs(&self) -> &[ResourceDesc] {
+        &self.resources
+    }
+
     pub fn resource_id(&self, name: &str) -> Option<ResourceId> {
         self.resources
             .iter()
@@ -3911,6 +4044,38 @@ impl CompilerGraphBuilder {
                 }
             }
         }
+    }
+
+    /// Keeps each named resource out of any arena shared with another
+    /// resource of this graph.
+    ///
+    /// For retained outputs that a later graph binds writable. Outputs of one
+    /// graph may share an arena through disjoint ranges when none of this
+    /// graph's passes binds them together, but the later graph's co-bindings
+    /// are not visible here. If it binds one of them writable and another
+    /// read-only in one dispatch, both bindings name the same physical buffer
+    /// and wgpu rejects the bind group.
+    pub(crate) fn isolate_resource_arenas(
+        &mut self,
+        names: &[&'static str],
+    ) -> Result<(), String> {
+        let isolated = names
+            .iter()
+            .map(|name| {
+                self.resource_id(name)
+                    .ok_or_else(|| format!("cannot isolate the arena of unknown resource {name}"))
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        for &left in &isolated {
+            for index in 0..self.resources.len() {
+                let right = ResourceId(index);
+                if right != left {
+                    self.reflected_arena_conflicts
+                        .insert((left.min(right), left.max(right)));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Adds an allocation-level reset at a reusable job boundary. It carries
@@ -4860,6 +5025,7 @@ mod tests {
             slots: Vec::new(),
             slot_by_resource: vec![None],
             phase_reset_ranges: Vec::new(),
+            phase_reset_slots: Vec::new(),
         };
         let bindings = workspace.bindings(&graph).unwrap();
         assert!(bindings.buffer(unused).is_none());
@@ -5038,6 +5204,45 @@ mod tests {
         .unwrap();
 
         assert_eq!(workspace.phase_reset_range_count(), 1);
+
+        // A job whose resources keep their built sizes clears the same range.
+        let full = workspace.phase_reset_plan(|_| None).unwrap();
+        assert_eq!((full.clears.len(), full.tails().len()), (1, 0));
+        assert_eq!((full.cleared_bytes(), full.imported_bytes()), (128, 128));
+        let built = workspace.phase_reset_plan(|_| Some(64)).unwrap();
+        assert_eq!((built.clears.len(), built.cleared_bytes()), (1, 128));
+        // A smaller job clears whole words of its own bytes, and the cleared
+        // ranges stop touching.
+        let job = workspace
+            .phase_reset_plan(|name| (name == "first").then_some(10))
+            .unwrap();
+        assert_eq!(job.clears.len(), 2);
+        assert_eq!(
+            job.clears
+                .iter()
+                .map(|range| (range.byte_offset, range.byte_size))
+                .collect::<Vec<_>>(),
+            [(0, 12), (64, 64)]
+        );
+        assert_eq!(job.cleared_bytes(), 76);
+        assert_eq!(
+            job.tails()
+                .iter()
+                .map(|tail| (tail.byte_offset, tail.byte_size))
+                .collect::<Vec<_>>(),
+            [(12, 52)]
+        );
+        let empty = workspace.phase_reset_plan(|_| Some(0)).unwrap();
+        assert_eq!((empty.clears.len(), empty.tails().len(), empty.cleared_bytes()), (0, 2, 0));
+    }
+
+    #[test]
+    fn reset_ranges_merge_when_they_overlap_or_touch() {
+        assert_eq!(
+            merge_byte_ranges(vec![(64, 128), (0, 12), (12, 20), (100, 140), (200, 204)]),
+            [(0, 20), (64, 140), (200, 204)]
+        );
+        assert!(merge_byte_ranges(Vec::new()).is_empty());
     }
 
     #[test]

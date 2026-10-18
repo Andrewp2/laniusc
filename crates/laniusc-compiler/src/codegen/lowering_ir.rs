@@ -1,5 +1,7 @@
 //! GPU-resident lowering contracts between compact semantic HIR and targets.
 
+use std::collections::HashMap;
+
 use encase::ShaderType;
 
 use super::optimization_ir::{
@@ -890,6 +892,43 @@ pub(crate) enum LoweringArtifactKind {
     Object,
 }
 
+/// Pointer-jump pairs that reach the root of every chain in a relation of
+/// `rows` rows. A chain is shorter than its relation, and the two rounds of a
+/// pair double the covered distance twice, so `ceil(bits(rows) / 2)` pairs
+/// cover `4^pairs > rows` links.
+pub(crate) fn pointer_jump_pairs(rows: u32) -> u32 {
+    (u32::BITS - rows.max(1).leading_zeros()).div_ceil(2)
+}
+
+/// The pointer-jump pairs one lowering records, per relation. Each pair is
+/// an a-to-b and a b-to-a round, so any count leaves the result in the
+/// relation's first buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LoweringJumpPairs {
+    /// Expression ancestors over compact-HIR rows.
+    pub(crate) execution_rank: u32,
+    /// Dominator-tree Euler-tour arcs, two per block.
+    pub(crate) dominator_tour: u32,
+    /// Immediate-dominator depth over blocks.
+    pub(crate) dominator_depth: u32,
+    /// Structured-region parents.
+    pub(crate) region_parent: u32,
+    /// Declaration-read copy chains over semantic rows.
+    pub(crate) ssa_value_link: u32,
+}
+
+impl LoweringJumpPairs {
+    pub(crate) fn min(self, other: Self) -> Self {
+        Self {
+            execution_rank: self.execution_rank.min(other.execution_rank),
+            dominator_tour: self.dominator_tour.min(other.dominator_tour),
+            dominator_depth: self.dominator_depth.min(other.dominator_depth),
+            region_parent: self.region_parent.min(other.region_parent),
+            ssa_value_link: self.ssa_value_link.min(other.ssa_value_link),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LoweringCapacities {
     pub source_bytes: u32,
@@ -1081,6 +1120,84 @@ impl LoweringCapacities {
             .max(1)
     }
 
+    /// The pointer-jump pairs the lowering records for relations sized by
+    /// these capacities. The graph registers these counts and a workspace
+    /// built from these capacities records at most these.
+    pub(crate) fn jump_pairs(self) -> LoweringJumpPairs {
+        let blocks = self.optimization_block_capacity();
+        LoweringJumpPairs {
+            execution_rank: pointer_jump_pairs(self.hir_nodes),
+            dominator_tour: pointer_jump_pairs(blocks.saturating_mul(2)),
+            dominator_depth: pointer_jump_pairs(blocks),
+            region_parent: pointer_jump_pairs(self.optimization_region_capacity()),
+            ssa_value_link: pointer_jump_pairs(self.semantic_instructions),
+        }
+    }
+
+    /// The pointer-jump pairs a job needs when its compact HIR has at most
+    /// `hir_rows` rows: those of a fresh allocation for such a job, and never
+    /// more than these capacities record. A workspace retained from a larger
+    /// job would otherwise record the larger job's pairs.
+    ///
+    /// Each relation's chains are shorter than its row count, and the job's
+    /// rows are bounded by both the fresh allocation's capacities (the
+    /// structural factors of `from_frontend_unit`) and these (every kernel
+    /// clamps its total to the capacity it was built with), so the smaller
+    /// pair count still reaches every root. The optimizer's finalize passes
+    /// reject unconverged dominator, region and SSA chains, so a short count
+    /// would fail the job rather than miscompile it. Execution ranks have no
+    /// such check; their chains run over HIR rows, which `hir_rows` bounds.
+    pub(crate) fn job_jump_pairs(self, hir_rows: u32, target: LoweringTarget) -> LoweringJumpPairs {
+        let built = self.jump_pairs();
+        if hir_rows >= self.hir_nodes {
+            return built;
+        }
+        match Self::from_frontend_unit(self.source_bytes, self.tokens, hir_rows, target) {
+            Ok(job) => job.bucketed().jump_pairs().min(built),
+            Err(_) => built,
+        }
+    }
+
+    /// The capacities that bound what a job with `source_bytes` lexed bytes
+    /// and at most `hir_rows` compact-HIR rows can address in a workspace
+    /// built with these, never more than these. They are those of a fresh
+    /// workspace for the job's rows (the structural bounds of
+    /// `from_frontend_unit`; every kernel also clamps its totals to the
+    /// capacities it was built with), except that the token capacity stays
+    /// this workspace's: synthetic declarations are numbered after the built
+    /// token capacity (`n_tokens + hir + local * hir_count` in
+    /// semantic/local_scatter.slang and materialize.slang), so the job's
+    /// declaration ids reach `self.tokens + 3 * hir_rows`. An unknown bound
+    /// (`u32::MAX`) or a failed derivation keeps these capacities.
+    pub(crate) fn for_job(self, source_bytes: u32, hir_rows: u32, target: LoweringTarget) -> Self {
+        if source_bytes == u32::MAX || hir_rows == u32::MAX {
+            return self;
+        }
+        match Self::from_frontend_unit(
+            source_bytes.min(self.source_bytes),
+            self.tokens,
+            hir_rows.min(self.hir_nodes),
+            target,
+        ) {
+            Ok(job) => job.bucketed().min(self),
+            Err(_) => self,
+        }
+    }
+
+    fn min(self, other: Self) -> Self {
+        Self {
+            source_bytes: self.source_bytes.min(other.source_bytes),
+            tokens: self.tokens.min(other.tokens),
+            hir_nodes: self.hir_nodes.min(other.hir_nodes),
+            semantic_instructions: self.semantic_instructions.min(other.semantic_instructions),
+            call_arguments: self.call_arguments.min(other.call_arguments),
+            parameters: self.parameters.min(other.parameters),
+            aggregate_elements: self.aggregate_elements.min(other.aggregate_elements),
+            target_instructions: self.target_instructions.min(other.target_instructions),
+            artifact_bytes: self.artifact_bytes.min(other.artifact_bytes),
+        }
+    }
+
     pub(crate) fn covers(self, required: Self) -> bool {
         self.source_bytes >= required.source_bytes
             && self.tokens >= required.tokens
@@ -1221,11 +1338,39 @@ pub fn semantic_lowering_compiler_graph(
     build_lowering_compiler_graph(capacities, None, false)
 }
 
+/// The bytes of every lowering resource for `capacities`, by resource name:
+/// what `lowering_compiler_graph_for_artifact` would declare, without
+/// planning its workspace.
+pub(crate) fn lowering_resource_bytes_for_artifact(
+    capacities: LoweringCapacities,
+    target: LoweringTarget,
+    artifact_kind: LoweringArtifactKind,
+) -> Result<HashMap<&'static str, u64>, String> {
+    let graph = lowering_compiler_graph_builder(
+        capacities,
+        Some(target),
+        artifact_kind == LoweringArtifactKind::Object,
+    )?;
+    Ok(graph
+        .resource_descs()
+        .iter()
+        .map(|resource| (resource.name, resource.bytes))
+        .collect())
+}
+
 fn build_lowering_compiler_graph(
     capacities: LoweringCapacities,
     target: Option<LoweringTarget>,
     include_object: bool,
 ) -> Result<CompilerGraph, String> {
+    lowering_compiler_graph_builder(capacities, target, include_object)?.build()
+}
+
+fn lowering_compiler_graph_builder(
+    capacities: LoweringCapacities,
+    target: Option<LoweringTarget>,
+    include_object: bool,
+) -> Result<CompilerGraphBuilder, String> {
     let mut graph = CompilerGraphBuilder::new();
     let value_capacity = capacities.declaration_capacity();
     let local_capacity = capacities.local_capacity();
@@ -3040,9 +3185,7 @@ fn build_lowering_compiler_graph(
             PassAccess::write("execution_rank", execution_rank_a),
         ],
     })?;
-    let rank_pairs = (u32::BITS - capacities.hir_nodes.max(1).leading_zeros())
-        .max(1)
-        .div_ceil(2);
+    let rank_pairs = capacities.jump_pairs().execution_rank;
     graph.add_repeated_region(
         rank_pairs,
         vec![
@@ -3550,7 +3693,7 @@ fn build_lowering_compiler_graph(
     })?;
 
     let Some(target) = target else {
-        return graph.build();
+        return Ok(graph);
     };
     let opt_total = graph.add_resource(artifact(
         "lir.opt.total",
@@ -6077,9 +6220,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
-    let dominator_tour_jump_pairs = (u32::BITS - dominator_tour_arc_capacity.leading_zeros())
-        .max(1)
-        .div_ceil(2);
+    let dominator_tour_jump_pairs = capacities.jump_pairs().dominator_tour;
     graph.add_repeated_region(
         dominator_tour_jump_pairs,
         vec![
@@ -6184,10 +6325,7 @@ fn build_lowering_compiler_graph(
             ),
         ],
     })?;
-    let dominator_jump_pairs = (u32::BITS
-        - capacities.optimization_block_capacity().leading_zeros())
-    .max(1)
-    .div_ceil(2);
+    let dominator_jump_pairs = capacities.jump_pairs().dominator_depth;
     graph.add_repeated_region(
         dominator_jump_pairs,
         vec![
@@ -6301,13 +6439,7 @@ fn build_lowering_compiler_graph(
             PassAccess::write("opt_ir_region_parent_link_a", opt_region_parent_link_a),
         ],
     })?;
-    let region_parent_pairs = (u32::BITS
-        - capacities
-            .optimization_region_capacity()
-            .max(1)
-            .leading_zeros())
-    .max(1)
-    .div_ceil(2);
+    let region_parent_pairs = capacities.jump_pairs().region_parent;
     graph.add_repeated_region(
         region_parent_pairs,
         vec![
@@ -7499,10 +7631,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
-    let value_link_jump_pairs = (u32::BITS
-        - capacities.semantic_instructions.max(1).leading_zeros())
-    .max(1)
-    .div_ceil(2);
+    let value_link_jump_pairs = capacities.jump_pairs().ssa_value_link;
     graph.add_repeated_region(
         value_link_jump_pairs,
         vec![
@@ -10332,7 +10461,29 @@ fn build_lowering_compiler_graph(
         "status_readback",
         lowering_status_readback,
     )?;
-    graph.build()
+    // The job's semantic and target row totals, read back with the status:
+    // a job lowered in a workspace larger than its own capacities checks
+    // them against those capacities (GpuLoweringPipeline::finish_status).
+    let job_totals_readback = graph.add_storage(
+        "lowering.job_totals_readback",
+        ResourceDomain::ArtifactBytes,
+        ResourceClass::External,
+        LoweringCapacities::bytes::<u32>(2),
+    )?;
+    for (name, source_binding, source) in [
+        ("lowering.semantic_total.readback", "semantic_total", semantic_total),
+        ("lowering.target_total.readback", "target_total", target_total),
+    ] {
+        graph.add_buffer_copy_pass(
+            name,
+            CompilerPhase::Artifact,
+            source_binding,
+            source,
+            "job_totals_readback",
+            job_totals_readback,
+        )?;
+    }
+    Ok(graph)
 }
 
 #[cfg(test)]
@@ -10454,6 +10605,95 @@ mod tests {
                     .unwrap()
             )
         );
+    }
+
+    #[test]
+    fn job_jump_pairs_are_a_fresh_allocations_and_never_exceed_the_built_ones() {
+        for rows in (0..4_100).chain([65_535, 65_536, 1 << 27, u32::MAX]) {
+            assert_eq!(
+                pointer_jump_pairs(rows),
+                (u32::BITS - rows.leading_zeros()).max(1).div_ceil(2),
+                "{rows}"
+            );
+            assert!(4u64.pow(pointer_jump_pairs(rows)) > u64::from(rows), "{rows}");
+        }
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let fresh = |hir: u32| {
+                LoweringCapacities::from_frontend_unit(1 << 20, hir, hir, target)
+                    .unwrap()
+                    .bucketed()
+            };
+            let retained = fresh(300_000);
+            let built = retained.jump_pairs();
+            assert_eq!(retained.job_jump_pairs(u32::MAX, target), built);
+            for hir in [0, 1, 7, 4_096, 4_097, 70_000, 299_999, 300_000, 1_000_000] {
+                assert_eq!(
+                    retained.job_jump_pairs(hir, target),
+                    fresh(hir).jump_pairs().min(built),
+                    "{hir}"
+                );
+            }
+            let small = retained.job_jump_pairs(5_000, target);
+            let job = fresh(5_000);
+            assert!(4u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
+            assert!(4u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
+            assert!(
+                4u64.pow(small.dominator_tour) > 2 * u64::from(job.optimization_block_capacity())
+            );
+            assert!(4u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity()));
+            assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
+            assert!(small.dominator_tour < built.dominator_tour);
+            assert!(small.ssa_value_link < built.ssa_value_link);
+        }
+    }
+
+    #[test]
+    fn job_capacities_keep_the_token_capacity_and_never_exceed_the_built_ones() {
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let retained = LoweringCapacities::from_frontend_unit(1 << 20, 200_000, 200_000, target)
+                .unwrap()
+                .bucketed();
+            assert_eq!(retained.for_job(u32::MAX, 402, target), retained);
+            assert_eq!(retained.for_job(1_000, u32::MAX, target), retained);
+            assert_eq!(retained.for_job(1 << 21, 1 << 20, target), retained);
+            let job = retained.for_job(1_000, 402, target);
+            assert_eq!(
+                job,
+                LoweringCapacities::from_frontend_unit(1_000, retained.tokens, 402, target)
+                    .unwrap()
+                    .bucketed()
+            );
+            assert!(retained.covers(job));
+            assert!(job.semantic_instructions < retained.semantic_instructions);
+            assert!(job.artifact_bytes < retained.artifact_bytes);
+            // Synthetic declarations follow the built token capacity.
+            assert_eq!(job.tokens, retained.tokens);
+            assert!(job.declaration_capacity() >= retained.tokens + 3 * 402);
+        }
+    }
+
+    #[test]
+    fn lowering_resource_bytes_are_the_built_graphs() {
+        let capacities = LoweringCapacities::from_frontend_unit(1 << 16, 1 << 14, 1 << 14, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            for kind in [LoweringArtifactKind::Executable, LoweringArtifactKind::Object] {
+                let started = std::time::Instant::now();
+                let bytes = lowering_resource_bytes_for_artifact(capacities, target, kind).unwrap();
+                let elapsed = started.elapsed();
+                let graph = lowering_compiler_graph_for_artifact(capacities, target, kind).unwrap();
+                eprintln!(
+                    "lowering_resource_bytes target={target:?} kind={kind:?} resources={} us={}",
+                    bytes.len(),
+                    elapsed.as_micros()
+                );
+                assert_eq!(bytes.len(), graph.resources().len());
+                for resource in graph.resources() {
+                    assert_eq!(bytes.get(resource.name), Some(&resource.bytes), "{}", resource.name);
+                }
+            }
+        }
     }
 
     #[test]
@@ -11044,6 +11284,47 @@ mod tests {
         };
         let error = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap_err();
         assert!(error.contains("exceeding the 80-bit resident key capacity"));
+    }
+
+    // The type checker keeps the checked outputs lowering binds writable in
+    // arenas of their own; a writable binding of any other checked output
+    // could share a physical buffer with a read-only one in one bind group.
+    #[test]
+    fn lowering_binds_only_the_isolated_checked_outputs_writable() {
+        let capacities = LoweringCapacities {
+            source_bytes: 48,
+            tokens: 48,
+            hir_nodes: 32,
+            semantic_instructions: 64,
+            call_arguments: 16,
+            parameters: 16,
+            aggregate_elements: 16,
+            target_instructions: 96,
+            artifact_bytes: 1024,
+        };
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let graph = lowering_compiler_graph(capacities, target).unwrap();
+            let writable = graph
+                .passes()
+                .iter()
+                .flat_map(|pass| pass.accesses.iter())
+                .filter(|access| access.mode.writes())
+                .filter_map(|access| {
+                    graph.resources()[access.resource.index()]
+                        .name
+                        .strip_prefix("typecheck.")
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            let isolated = crate::type_checker::OUTPUTS_LOWERING_BINDS_WRITABLE
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            assert!(
+                writable.is_subset(&isolated),
+                "{target:?} lowering binds checked outputs {:?} writable",
+                writable.difference(&isolated).collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]

@@ -19,7 +19,7 @@ pub fn length(index: i32) -> i32 {
 
 pub fn read(index: i32, data: ptr, length: i32) -> i32 {
     if (length <= -1) { return -1; }
-    let byte_length: usize = length;
+    let byte_length: usize = length as usize;
     return arg_read(index, data, byte_length);
 }
 
