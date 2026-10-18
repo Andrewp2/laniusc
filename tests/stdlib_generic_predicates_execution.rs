@@ -266,36 +266,56 @@ fn imported_option_payload_boundaries_and_summary_execute() {
     assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
 }
 
+fn compile_option_payload(
+    name: &str,
+    declaration: &str,
+) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
+    let entry = common::TempArtifact::new("laniusc_option_layout", name, Some("lani"));
+    entry.write_str(&format!(
+        "module app::main; import core::option; {declaration} fn main() -> i32 {{ let value: core::option::Option<Payload> = core::option::None(); return 0; }}"
+    ));
+    let path = entry.path().to_path_buf();
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    common::run_gpu_codegen_with_timeout(name, move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(
+            &path,
+            &root.join("stdlib"),
+        ))
+    })
+}
+
 #[test]
-fn imported_option_rejects_unresolved_payload_layouts() {
+fn imported_option_rejects_recursive_payload_layout() {
+    // A payload that contains itself by value has no finite size. The type
+    // checker reports it at the declaration, before native layout.
+    let error = compile_option_payload("cyclic", "struct Payload { next: Payload }")
+        .expect_err("a recursive by-value payload must not compile");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+    let label = diagnostic
+        .primary_label
+        .as_ref()
+        .expect("the recursive type diagnostic labels the declaration");
+    assert_eq!(label.message, "recursive type has infinite size", "{error:?}");
+}
+
+#[test]
+fn imported_option_accepts_closed_payload_layouts() {
     for (name, declaration) in [
         ("empty", "struct Payload {}"),
-        ("cyclic", "struct Payload { next: Payload }"),
         ("inline_array", "struct Payload { values: [i32; 3] }"),
         ("nested_array", "struct Payload { values: [[i32; 2]; 2] }"),
         ("string_array", "struct Payload { values: [str; 2] }"),
     ] {
-        let entry = common::TempArtifact::new("laniusc_option_layout", name, Some("lani"));
-        entry.write_str(&format!(
-            "module app::main; import core::option; {declaration} fn main() -> i32 {{ let value: core::option::Option<Payload> = core::option::None(); return 0; }}"
-        ));
-        let path = entry.path().to_path_buf();
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let result = common::run_gpu_codegen_with_timeout(name, move || {
-            pollster::block_on(compile_entry_to_x86_64_with_stdlib(
-                &path,
-                &root.join("stdlib"),
-            ))
-        });
-        let error = match result {
-            Err(error) => error,
-            Ok(_) => panic!("unsupported {name} payload layout compiled"),
-        };
-        assert_eq!(
-            error.to_public_diagnostic().code,
-            "LNC0006",
-            "{name}: {error:?}"
-        );
+        let bytes = compile_option_payload(name, declaration)
+            .unwrap_or_else(|error| panic!("{name} payload layout: {error:?}"));
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(name, "option_payload_layout", &bytes);
+            assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = bytes;
     }
 }
 

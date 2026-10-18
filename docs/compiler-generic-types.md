@@ -94,6 +94,31 @@ Implementation:
   three-element view inside five-element storage
   (tests/fixtures/stdlib_foundation/core_mem_size_of.lani).
 
+## Recursive by-value types (2026-10-18)
+
+A struct or enum that contains itself by value has no finite size. Type
+checking now rejects it with LNC0006 "type mismatch", labelled "recursive type
+has infinite size" at the declaration's name. Rejected cases include:
+- `struct Payload { next: Payload }`
+- mutual recursion: `struct A { b: B }` with `struct B { a: A }`
+- recursion through a fixed array: `struct Outer { inner: [Inner; 2] }` with
+  `struct Inner { outer: Outer }`
+- `enum Recursive { Stop, Again(Recursive) }`
+
+Before this, `core::option::Option<Payload>` over the first case reached x86
+and failed there with LNC0017 "x86 callee function lost its checked aggregate
+result layout".
+
+The check is part of the native layout walker,
+`type_checker/semantic/artifact/01c_generic_native_words`. It fires when a node
+is its own child or a walk returns to its root. It reports GPU type-check status
+28 (`RecursiveType`) at the local struct or enum declaration. A slice
+(`rest: [Cell]`) or a reference still breaks the cycle.
+
+Gap: only types whose layout is computed are checked. An uninstantiated generic
+declaration such as `struct Node<T> { value: T, next: Node<T> }` is still
+accepted.
+
 ## Canonical type boundary and startup checkpoint (2026-10-11)
 
 Canonical hash, constraint, and match traversal now use a type-only leaf
