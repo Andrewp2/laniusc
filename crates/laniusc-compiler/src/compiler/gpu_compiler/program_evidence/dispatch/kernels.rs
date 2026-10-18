@@ -864,13 +864,7 @@ impl ProofKernels {
             matches!(phase, COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
             "proof stage {phase} is not a normalization count"
         );
-        // One shared role: the solver reads each count back before it
-        // records the next one, so the queued zero write never races a use.
-        let demand = catalog.workspace().shared("program_evidence.proof_demand").buffer(
-            PROOF_STORE_TABLES as u32,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            Some(&[0; PROOF_STORE_TABLES]),
-        )?;
+        let demand = proof_demand(catalog)?;
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
@@ -1066,6 +1060,7 @@ pub(super) mod wave {
     pub const DONE: u32 = 2;
     pub const FAULT: u32 = 3;
     pub const OVERFLOW: u32 = 4;
+    pub const GROW: u32 = 5;
     pub const FAULT_IDENTITY: u32 = 1;
     pub const FAULT_LAYOUT: u32 = 2;
     pub const FAULT_RECEIPT: u32 = 3;
@@ -1158,7 +1153,13 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
     };
     use WaveSpan::*;
     Ok(match point {
-        WavePoint::FirstWork => vec![(FirstWork, vec![stage(49)?]), (FirstOne, vec![stage(50)?])],
+        // Each Work admission counts the next normalization's rows, as the
+        // stepped loop does (GpuProgramEvidence::admit_counted_work).
+        WavePoint::FirstWork => vec![
+            (FirstWork, vec![stage(49)?]),
+            (FirstOne, vec![stage(50)?]),
+            (FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]),
+        ],
         WavePoint::Round => {
             // ProofKernels::record_normalization, 51, 52, 57, record_selection.
             let mut groups = Vec::new();
@@ -1178,7 +1179,11 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             (SelectedOne, vec![stage(55)?]),
             (SelectedWork, vec![stage(56)?]),
         ],
-        WavePoint::Expanded => vec![(ExpandedWork, vec![stage(49)?]), (ExpandedOne, vec![stage(50)?])],
+        WavePoint::Expanded => vec![
+            (ExpandedWork, vec![stage(49)?]),
+            (ExpandedOne, vec![stage(50)?]),
+            (ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]),
+        ],
         WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
         WavePoint::Emitted => vec![
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
@@ -1195,6 +1200,17 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
 /// Words per step slot: whole uniform-offset alignments, at least the slot.
 pub(super) fn wave_slot_words(device: &wgpu::Device) -> u32 {
     (device.limits().min_uniform_buffer_offset_alignment / 4).max(SLOT_MIN_WORDS)
+}
+
+/// The zeroed normalization demand table (proof_demand.slang). One shared
+/// role: the solver reads each count back before the next zeroing is
+/// queued, so the queued write never races a use.
+pub(super) fn proof_demand(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
+    catalog.workspace().shared("program_evidence.proof_demand").buffer(
+        PROOF_STORE_TABLES as u32,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        Some(&[0; PROOF_STORE_TABLES]),
+    )
 }
 
 /// The solver state of one attempt, planned and read only by the GPU
@@ -1263,6 +1279,7 @@ impl ProofKernels {
         points: &[WavePoint],
         chunks: u32,
         state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
         catalog: &Arena,
         input: &Arena,
         output: &Arena,
@@ -1370,6 +1387,7 @@ impl ProofKernels {
                 ("program_evidence_wave", state.as_entire_binding()),
                 ("program_evidence_wave_slots", slot_buffer.as_entire_binding()),
                 ("program_evidence_wave_plan", plan_params.as_entire_binding()),
+                ("program_evidence_proof_demand", demand.as_entire_binding()),
             ];
             let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                 device,
@@ -1397,6 +1415,7 @@ impl ProofKernels {
                     ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
                     ("proof_store_params", proof_uniform(phase).as_entire_binding()),
                     ("thread_scratch", scratch.as_entire_binding()),
+                    ("program_evidence_proof_demand", demand.as_entire_binding()),
                 ];
                 let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                     device,
