@@ -51,8 +51,8 @@ pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
         input.descriptors.count, input.types.type_count,
         input.types.variant_count, input.functions.count);
     if (bytes <= 0) { return invalid(); }
-    let memory: ptr = verified::host::alloc(bytes,
-        ir::symbol_catalog::ALIGNMENT);
+    let memory: ptr = verified::host::alloc(bytes as usize,
+        ir::symbol_catalog::ALIGNMENT as usize);
     if (memory == 0) { return invalid(); }
     let output: ir::symbol_catalog::Catalog =
         ir::symbol_catalog::from_raw_parts(memory,

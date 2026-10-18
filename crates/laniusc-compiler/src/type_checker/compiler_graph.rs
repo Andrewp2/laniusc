@@ -6678,12 +6678,87 @@ fn build_graph(
     ])?;
     // Exact pass accesses are also the arena co-binding source of truth.
     graph.add_registered_pass_arena_conflicts();
+    // Lowering's co-bindings are not passes of this graph. It binds these
+    // outputs writable next to read-only checked outputs, so they must not
+    // share a physical arena with any of them.
+    graph.isolate_resource_arenas(OUTPUTS_LOWERING_BINDS_WRITABLE)?;
     graph.build()
 }
+
+/// Checked outputs that lowering binds read-write. Their canonical shader
+/// declaration (shaders/type_checker/constant_atoms.slang) is a
+/// RWStructuredBuffer, so every reader binds them writable.
+pub(crate) const OUTPUTS_LOWERING_BINDS_WRITABLE: &[&str] =
+    &["checked_constant_atoms", "checked_constant_projections"];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Lowering binds these outputs writable beside read-only checked outputs
+    // (see OUTPUTS_LOWERING_BINDS_WRITABLE), so no other slot may share their
+    // physical arena.
+    #[test]
+    fn outputs_lowering_binds_writable_get_arenas_of_their_own() {
+        let kernels =
+            crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker", "scan", "radix"])
+                .unwrap();
+        let graph = build_graph(
+            1024,
+            4096,
+            4,
+            4096,
+            1024,
+            768,
+            768,
+            10_000,
+            DependencyWorkspaceCapacity {
+                visible_rows: 16,
+                lookup_rows: 32,
+                type_rows: 2,
+                constant_type_rows: 2,
+                declaration_rows: 16,
+            },
+            1,
+            u32::MAX,
+            false,
+            &kernels,
+        )
+        .unwrap();
+        let layout = graph.workspace_arena_layout(&wgpu::Limits::default()).unwrap();
+        let slot_of = |name: &str| {
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap_or_else(|| panic!("{name} has no workspace slot"))
+                .slot
+        };
+        let arena_of = |slot: u32| {
+            layout
+                .placements
+                .iter()
+                .find(|placement| placement.slot == slot)
+                .unwrap()
+                .arena
+        };
+        for name in OUTPUTS_LOWERING_BINDS_WRITABLE {
+            let slot = slot_of(name);
+            let arena = arena_of(slot);
+            let sharing = layout
+                .placements
+                .iter()
+                .filter(|placement| placement.arena == arena && placement.slot != slot)
+                .map(|placement| placement.slot)
+                .collect::<Vec<_>>();
+            assert!(sharing.is_empty(), "{name} shares arena {arena} with slots {sharing:?}");
+        }
+        assert_ne!(
+            arena_of(slot_of("checked_constant_atoms")),
+            arena_of(slot_of("semantic_member_field_ordinal_by_hir"))
+        );
+    }
 
     #[test]
     fn dependency_ping_pong_bindings_protect_their_actual_resources() {

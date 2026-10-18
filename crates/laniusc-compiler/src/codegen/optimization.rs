@@ -7,6 +7,7 @@ use super::{
     lowering::{GpuSemanticLirView, lowering_allocations_with_semantic},
     lowering_ir::{
         LoweringCapacities,
+        LoweringJumpPairs,
         LoweringStatus,
         SemanticLirAggregateElement,
         SemanticLirCallArg,
@@ -1370,10 +1371,9 @@ pub(crate) struct GpuOptimizationStage {
     _ssa_use_group_start_flag: LaniusBuffer<u32>,
     _ssa_use_group_total: LaniusBuffer<u32>,
     _ssa_use_groups: LaniusBuffer<OptIrUseGroup>,
-    region_parent_pairs: u32,
-    dominator_tour_jump_pairs: u32,
-    dominator_jump_pairs: u32,
-    ssa_value_link_jump_pairs: u32,
+    /// The pairs the graph registers for these capacities; a job records
+    /// at most these.
+    jump_pairs: LoweringJumpPairs,
 }
 
 impl GpuOptimizationStage {
@@ -2319,9 +2319,6 @@ impl GpuOptimizationStage {
             &params,
             block_capacity,
         )?;
-        let dominator_tour_jump_pairs = (u32::BITS - dominator_tour_arc_capacity.leading_zeros())
-            .max(1)
-            .div_ceil(2);
         let dominator_depth_init = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2367,9 +2364,6 @@ impl GpuOptimizationStage {
             &params,
             block_capacity,
         )?;
-        let dominator_jump_pairs = (u32::BITS - block_capacity.leading_zeros())
-            .max(1)
-            .div_ceil(2);
         let region_mark = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2489,9 +2483,6 @@ impl GpuOptimizationStage {
             &params,
             edge_capacity,
         )?;
-        let region_parent_pairs = (u32::BITS - region_capacity.leading_zeros())
-            .max(1)
-            .div_ceil(2);
         let access_mark = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -3194,10 +3185,6 @@ impl GpuOptimizationStage {
             &ssa_value_params,
             use_capacity,
         )?;
-        let ssa_value_link_jump_pairs = (u32::BITS
-            - capacities.semantic_instructions.max(1).leading_zeros())
-        .max(1)
-        .div_ceil(2);
 
         let failure_trace = std::env::var_os("LANIUS_TRACE_OPTIMIZATION_FAILURE").map(|_| {
             macro_rules! trace_column {
@@ -3467,18 +3454,27 @@ impl GpuOptimizationStage {
             _ssa_use_group_start_flag: ssa_use_group_start_flag,
             _ssa_use_group_total: ssa_use_group_total,
             _ssa_use_groups: ssa_use_groups,
-            region_parent_pairs,
-            dominator_tour_jump_pairs,
-            dominator_jump_pairs,
-            ssa_value_link_jump_pairs,
+            jump_pairs: capacities.jump_pairs(),
         })
     }
 
     pub(crate) fn record(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        mut timer: Option<&mut GpuTimer>,
+        timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
+        self.record_with_jump_pairs(encoder, timer, self.jump_pairs)
+    }
+
+    /// Records the optimizer with a job's pointer-jump pairs
+    /// (`LoweringCapacities::job_jump_pairs`), capped at the built ones.
+    pub(crate) fn record_with_jump_pairs(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        mut timer: Option<&mut GpuTimer>,
+        jump_pairs: LoweringJumpPairs,
+    ) -> Result<()> {
+        let jump_pairs = jump_pairs.min(self.jump_pairs);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Optimization);
         }
@@ -3573,7 +3569,7 @@ impl GpuOptimizationStage {
         trace_checkpoint!("dominator_tour_child_rows", None);
         self.dominator_tour_init.record(encoder)?;
         trace_checkpoint!("dominator_tour_init", None);
-        for trace_iteration in 0..self.dominator_tour_jump_pairs {
+        for trace_iteration in 0..jump_pairs.dominator_tour {
             self.dominator_tour_a_to_b.record(encoder)?;
             trace_checkpoint!("dominator_tour_a_to_b", Some(trace_iteration));
             self.dominator_tour_b_to_a.record(encoder)?;
@@ -3592,7 +3588,7 @@ impl GpuOptimizationStage {
         }
         self.dominator_depth_init.record(encoder)?;
         trace_checkpoint!("dominator_depth_init", None);
-        for trace_iteration in 0..self.dominator_jump_pairs {
+        for trace_iteration in 0..jump_pairs.dominator_depth {
             self.dominator_depth_a_to_b.record(encoder)?;
             trace_checkpoint!("dominator_depth_a_to_b", Some(trace_iteration));
             self.dominator_depth_b_to_a.record(encoder)?;
@@ -3612,7 +3608,7 @@ impl GpuOptimizationStage {
         trace_checkpoint!("region_scatter", None);
         self.region_parent_init.record(encoder)?;
         trace_checkpoint!("region_parent_init", None);
-        for trace_iteration in 0..self.region_parent_pairs {
+        for trace_iteration in 0..jump_pairs.region_parent {
             self.region_parent_a_to_b.record(encoder)?;
             trace_checkpoint!("region_parent_a_to_b", Some(trace_iteration));
             self.region_parent_b_to_a.record(encoder)?;
@@ -3788,7 +3784,7 @@ impl GpuOptimizationStage {
         trace_checkpoint!("ssa_value_resolve_init", None);
         self.ssa_value_resolve_reads.record(encoder)?;
         trace_checkpoint!("ssa_value_resolve_reads", None);
-        for trace_iteration in 0..self.ssa_value_link_jump_pairs {
+        for trace_iteration in 0..jump_pairs.ssa_value_link {
             self.ssa_value_resolve_a_to_b.record(encoder)?;
             trace_checkpoint!("ssa_value_resolve_a_to_b", Some(trace_iteration));
             self.ssa_value_resolve_b_to_a.record(encoder)?;

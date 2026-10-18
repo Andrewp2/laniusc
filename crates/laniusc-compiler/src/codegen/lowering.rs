@@ -63,18 +63,29 @@ pub(crate) struct LoweringJobBounds {
     /// An upper bound on the job's local enum declarations, or `u32::MAX`
     /// when the host does not know one.
     pub(crate) enum_declarations: u32,
+    /// An upper bound on the job's compact-HIR rows, or `u32::MAX` when the
+    /// host does not know one. The pointer-jump pairs come from it
+    /// (`LoweringCapacities::job_jump_pairs`).
+    pub(crate) hir_rows: u32,
+    /// The job's lexed source bytes, or `u32::MAX` when unknown. With
+    /// `hir_rows` it gives the rows the job can address
+    /// (`LoweringCapacities::for_job`), which bound its phase reset and the
+    /// x86 capacity-wide clears.
+    pub(crate) source_bytes: u32,
 }
 
 impl LoweringJobBounds {
     pub(crate) const CONSERVATIVE: Self = Self {
         parser_features: crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
         enum_declarations: u32::MAX,
+        hir_rows: u32::MAX,
+        source_bytes: u32::MAX,
     };
 
     pub(crate) fn from_parser_features(parser_features: u32) -> Self {
         Self {
             parser_features,
-            enum_declarations: u32::MAX,
+            ..Self::CONSERVATIVE
         }
     }
 
@@ -84,31 +95,50 @@ impl LoweringJobBounds {
     /// nothing between them), or no enum bound is claimed. Every enum
     /// declaration starts with an `enum` keyword token, so the number of
     /// `enum` byte strings in the text bounds the declarations; comments,
-    /// strings and longer identifiers only raise the count.
+    /// strings and longer identifiers only raise the count. Without the enum
+    /// feature bit the job has no enum declaration and the text is not read.
     pub(crate) fn from_sources<'a>(
         parser_features: u32,
         lexed_bytes: u32,
         sources: impl IntoIterator<Item = &'a str>,
     ) -> Self {
-        let mut bytes = 0u64;
-        let mut enum_words = 0usize;
-        for source in sources {
-            bytes += source.len() as u64;
-            if enum_words < AGGREGATE_LAYOUT_ROUNDS {
-                enum_words += source
-                    .matches("enum")
-                    .take(AGGREGATE_LAYOUT_ROUNDS - enum_words)
-                    .count();
-            }
-        }
-        let enum_declarations = if bytes == u64::from(lexed_bytes) {
-            enum_words as u32
-        } else {
-            u32::MAX
-        };
+        let enum_declarations =
+            if parser_features & crate::lexer::features::PARSER_FEATURE_ENUMS == 0 {
+                0
+            } else {
+                let mut bytes = 0u64;
+                let mut enum_words = 0usize;
+                for source in sources {
+                    bytes += source.len() as u64;
+                    if enum_words < AGGREGATE_LAYOUT_ROUNDS {
+                        enum_words += source
+                            .matches("enum")
+                            .take(AGGREGATE_LAYOUT_ROUNDS - enum_words)
+                            .count();
+                    }
+                }
+                if bytes == u64::from(lexed_bytes) {
+                    enum_words as u32
+                } else {
+                    u32::MAX
+                }
+            };
         Self {
             parser_features,
             enum_declarations,
+            source_bytes: lexed_bytes,
+            ..Self::CONSERVATIVE
+        }
+    }
+
+    /// Bounds the job's compact HIR by the token capacity its parse ran
+    /// with. Canonical HIR keeps one row per elected source-token anchor
+    /// (parser/hir/canonical/local.slang), and anchors are positions in the
+    /// job's token stream, which has two more positions than its capacity.
+    pub(crate) fn with_token_capacity(self, token_capacity: u32) -> Self {
+        Self {
+            hir_rows: token_capacity.saturating_add(2),
+            ..self
         }
     }
 
@@ -148,7 +178,7 @@ impl LoweringJobBounds {
     ///
     /// This rests on what the three passes read and write; a change that adds
     /// another dependency between rounds must revisit this bound.
-    /// gpu_compiler's physical_gpu_bounded_layout_rounds_match_all_rounds
+    /// gpu_compiler's physical_gpu_job_bounds_match_conservative_lowering
     /// checks it on nested structs, arrays, generics and nested enums.
     fn aggregate_layout_rounds(self) -> usize {
         if self.parser_features & crate::lexer::features::PARSER_FEATURE_ENUMS == 0 {
@@ -1891,7 +1921,7 @@ impl GpuSemanticLoweringStage {
             _string_params: string_params,
             _function_params: function_params,
             template_params,
-            execution_rank_pairs: (u32::BITS - hir_nodes.leading_zeros()).max(1).div_ceil(2),
+            execution_rank_pairs: capacities.jump_pairs().execution_rank,
             total,
             core,
             operands,
@@ -2009,18 +2039,27 @@ impl GpuSemanticLoweringStage {
 
     #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_timed(encoder, None, None, LoweringJobBounds::CONSERVATIVE)
+        self.record_timed(
+            encoder,
+            None,
+            None,
+            LoweringJobBounds::CONSERVATIVE,
+            self.execution_rank_pairs,
+        )
     }
 
     /// Records the semantic stage. With `split`, the reset and the first
     /// passes are submitted before the layout rounds, so the GPU runs them
     /// while the host records and finishes the rest of the lowering.
+    /// `execution_rank_pairs` is the job's count
+    /// (`LoweringCapacities::job_jump_pairs`), capped at the built one.
     pub(crate) fn record_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
         split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
         bounds: LoweringJobBounds,
+        execution_rank_pairs: u32,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -2081,7 +2120,7 @@ impl GpuSemanticLoweringStage {
         operations.place_mark.record(encoder)?;
         stamp!("lowering.semantic.locals.scatter.done");
         operations.execution_rank_init.record(encoder)?;
-        for _ in 0..self.execution_rank_pairs {
+        for _ in 0..execution_rank_pairs.min(self.execution_rank_pairs) {
             operations.execution_rank_a_to_b.record(encoder)?;
             operations.execution_rank_b_to_a.record(encoder)?;
         }
@@ -2166,6 +2205,26 @@ mod tests {
                 .aggregate_layout_rounds(),
             1
         );
+    }
+
+    #[test]
+    fn only_the_token_capacity_bounds_the_hir_rows() {
+        let one = "enum A { X(i32) } struct S { a: A }";
+        let bounds = LoweringJobBounds::from_sources(
+            crate::lexer::features::PARSER_FEATURE_ENUMS,
+            one.len() as u32,
+            [one],
+        );
+        assert_eq!(LoweringJobBounds::CONSERVATIVE.hir_rows, u32::MAX);
+        assert_eq!(LoweringJobBounds::from_parser_features(0).hir_rows, u32::MAX);
+        assert_eq!(bounds.hir_rows, u32::MAX);
+        assert_eq!(bounds.source_bytes, one.len() as u32);
+        assert_eq!(LoweringJobBounds::CONSERVATIVE.source_bytes, u32::MAX);
+        let bounded = bounds.with_token_capacity(14);
+        assert_eq!(bounded.hir_rows, 16);
+        assert_eq!(bounded.source_bytes, one.len() as u32);
+        assert_eq!(bounded.aggregate_layout_rounds(), bounds.aggregate_layout_rounds());
+        assert_eq!(bounds.with_token_capacity(u32::MAX).hir_rows, u32::MAX);
     }
     use crate::{
         codegen::{

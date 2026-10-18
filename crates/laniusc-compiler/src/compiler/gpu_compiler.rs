@@ -560,24 +560,47 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_bounded_layout_rounds_match_all_rounds() {
+    fn physical_gpu_job_bounds_match_conservative_lowering() {
         std::thread::Builder::new()
-            .name("aggregate layout rounds".into())
+            .name("lowering job bounds".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn(run_layout_round_equivalence)
-            .expect("spawn aggregate layout round check")
+            .spawn(run_job_bounds_equivalence)
+            .expect("spawn lowering job bounds check")
             .join()
-            .expect("aggregate layout round check panicked");
+            .expect("lowering job bounds check panicked");
     }
 
-    // A job records one aggregate layout round without enums and one round
-    // per `enum` word of its text with them
-    // (LoweringJobBounds::aggregate_layout_rounds). Every later round must
-    // leave the layouts unchanged, so lowering the same checked program with
-    // all 64 rounds has to give the same executable byte for byte. The enum
-    // cases nest as deep as they have declarations, so their bound is tight.
-    fn run_layout_round_equivalence() {
-        use crate::codegen::lowering::LoweringJobBounds;
+    #[test]
+    fn physical_gpu_job_bounded_resets_match_fresh_workspaces() {
+        std::thread::Builder::new()
+            .name("lowering job resets".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_job_bounded_reset_equivalence)
+            .expect("spawn lowering job reset check")
+            .join()
+            .expect("lowering job reset check panicked");
+    }
+
+    // A small job in a lowering workspace retained from a big one resets only
+    // the imported bytes its own resources can address, and its x86 analysis
+    // and artifact clears cover only its rows (LoweringCapacities::for_job).
+    // The bytes past them keep the big job's words; here they are poisoned as
+    // well. Big and small jobs alternate in one compiler, and every artifact
+    // must match the one a fresh workspace gives.
+    fn run_job_bounded_reset_equivalence() {
+        use std::sync::atomic::Ordering;
+
+        use crate::codegen::lowering_pipeline::{
+            TEST_PHASE_RESET_POISON,
+            TEST_PHASE_RESET_POISONED_BYTES,
+        };
+
+        struct PoisonGuard;
+        impl Drop for PoisonGuard {
+            fn drop(&mut self) {
+                TEST_PHASE_RESET_POISON.store(u64::MAX, Ordering::Relaxed);
+            }
+        }
 
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
@@ -585,6 +608,196 @@ mod tests {
             GpuCompilerBackends::all(),
         ))
         .expect("initialize compiler");
+        let big: String = (0..2_000)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }} "))
+            .chain(["fn main() -> i32 { return f7(35); }".to_string()])
+            .collect();
+        let cases = [
+            ("constant", "fn main() -> i32 { return 42; }"),
+            (
+                "loops_and_locals",
+                "fn main() -> i32 { let i: i32 = 0; let total: i32 = 0; while (i < 8) { i = i + 1; if (i == 3) { continue; } if (i == 6) { break; } total = total + i; } for value in 2 .. 5 { total = total + value; } return total; }",
+            ),
+            (
+                "nested_aggregates_with_array_field",
+                "struct A { x: i32, y: i32, } struct B { a: A, values: [i32; 3], } struct C { b: B, tag: i32, } fn main() -> i32 { let b: B = B { a: A { x: 1, y: 2 }, values: [3, 4, 5] }; let c: C = C { b: b, tag: 6 }; return c.b.values[2] + c.b.a.y + c.tag; }",
+            ),
+            (
+                "enums_and_matches",
+                "enum Leaf { Missing, Value(i32) } struct Twig { left: Leaf, right: Leaf } fn leaf(value: Leaf) -> i32 { return match (value) { Value(number) -> number, Missing -> 0, }; } fn main() -> i32 { let twig: Twig = Twig { left: Value(40), right: Value(2) }; return leaf(twig.left) + leaf(twig.right); }",
+            ),
+            (
+                "generic_enum_struct_payload",
+                "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }",
+            ),
+        ];
+        // The filler functions with every case's features: loops, nested
+        // aggregates with an array field, enums and matches, a generic enum
+        // with a struct payload. The featureless `constant` job runs after it,
+        // so every feature-gated pass the small job skips has left this job's
+        // output in its resources.
+        let rich: String = (0..2_000)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}"))
+            .chain([
+                cases[1].1.replace("fn main()", "fn looped()"),
+                cases[2].1.replace("fn main()", "fn nested()"),
+                cases[3].1.replace("fn main()", "fn leaves()"),
+                "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let rest: i32 = looped() + nested() + leaves() + f7(35); let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => rest, Just(p) => p.x + p.y }; }".to_string(),
+            ])
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Wasm lowering does not handle enum payloads yet (LNC0057 for struct
+        // payloads; an invalid module for a scalar one), so the Wasm side runs
+        // the cases without them and a rich job without the enums.
+        let wasm_runs = |case: &str| !matches!(case, "enums_and_matches" | "generic_enum_struct_payload");
+        let rich_wasm: String = (0..2_000)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}"))
+            .chain([
+                cases[1].1.replace("fn main()", "fn looped()"),
+                cases[2].1.replace("fn main()", "fn nested()"),
+                "fn main() -> i32 { return looped() + nested() + f7(35); }".to_string(),
+            ])
+            .collect::<Vec<_>>()
+            .join(" ");
+        let pack = [
+            "module core::math; pub fn add(a: i32, b: i32) -> i32 { return a + b; }",
+            "module app::main; import core::math; fn main() -> i32 { return add(20, 22); }",
+        ];
+        let x86 = |source: &str| {
+            pollster::block_on(compiler.compile_source_to_x86_64(source))
+                .unwrap_or_else(|error| panic!("x86 compile: {error}"))
+        };
+        let wasm = |source: &str| {
+            pollster::block_on(compiler.compile_source_to_wasm(source))
+                .unwrap_or_else(|error| panic!("Wasm compile: {error}"))
+        };
+        let x86_pack = || {
+            pollster::block_on(compiler.compile_source_pack_to_x86_64(&pack))
+                .unwrap_or_else(|error| panic!("x86 source-pack compile: {error}"))
+        };
+        let release = || pollster::block_on(compiler.release_resident_job_buffers());
+
+        let fresh_x86 = cases.map(|(_, source)| {
+            release();
+            x86(source)
+        });
+        let fresh_wasm = cases.map(|(case, source)| {
+            wasm_runs(case).then(|| {
+                release();
+                wasm(source)
+            })
+        });
+        release();
+        let fresh_pack = x86_pack();
+        release();
+        let fresh_big_x86 = x86(&big);
+        release();
+        let fresh_big_wasm = wasm(&big);
+        release();
+        let fresh_rich_x86 = x86(&rich);
+        release();
+        let fresh_rich_wasm = wasm(&rich_wasm);
+
+        let _guard = PoisonGuard;
+        for word in [1u32, u32::MAX] {
+            TEST_PHASE_RESET_POISON.store(u64::from(word), Ordering::Relaxed);
+            let poisoned = TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed);
+            for (index, (case, source)) in cases.iter().enumerate() {
+                assert!(x86(&big) == fresh_big_x86, "x86 big job after {case} (poison {word:#x})");
+                assert!(
+                    x86(source) == fresh_x86[index],
+                    "x86 {case} after the big job (poison {word:#x})"
+                );
+                let Some(fresh) = &fresh_wasm[index] else { continue };
+                assert!(wasm(&big) == fresh_big_wasm, "Wasm big job after {case} (poison {word:#x})");
+                assert!(
+                    &wasm(source) == fresh,
+                    "Wasm {case} after the big job (poison {word:#x})"
+                );
+            }
+            assert!(x86(&big) == fresh_big_x86, "x86 big job before the pack (poison {word:#x})");
+            assert!(x86_pack() == fresh_pack, "x86 source pack after the big job (poison {word:#x})");
+            assert!(x86(&big) == fresh_big_x86, "x86 big job after the pack (poison {word:#x})");
+            let (constant, constant_source) = cases[0];
+            assert!(x86(&rich) == fresh_rich_x86, "x86 feature-rich big job (poison {word:#x})");
+            assert!(
+                x86(constant_source) == fresh_x86[0],
+                "x86 {constant} after the feature-rich big job (poison {word:#x})"
+            );
+            assert!(wasm(&rich_wasm) == fresh_rich_wasm, "Wasm feature-rich big job (poison {word:#x})");
+            assert!(
+                Some(wasm(constant_source)) == fresh_wasm[0],
+                "Wasm {constant} after the feature-rich big job (poison {word:#x})"
+            );
+            assert!(
+                TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed) > poisoned,
+                "the small jobs should leave imported tails to poison (poison {word:#x})"
+            );
+        }
+    }
+
+    // A job records one aggregate layout round without enums and one round
+    // per `enum` word of its text with them
+    // (LoweringJobBounds::aggregate_layout_rounds), and the pointer-jump
+    // pairs of its token capacity (LoweringCapacities::job_jump_pairs). Every
+    // later round must leave the layouts unchanged and every later pair must
+    // find nothing left to jump, so compiling the same program with the
+    // conservative bounds (all 64 rounds and the workspace's pairs) has to
+    // give the same artifact byte for byte. The enum cases nest as deep as
+    // they have declarations, so their bound is tight.
+    //
+    // Both compiles go through the production entry points on both targets;
+    // only the bounds differ (TEST_CONSERVATIVE_LOWERING_BOUNDS). The cases
+    // run in workspaces retained from a larger program, as a daemon's small
+    // jobs do after a big one, so their pairs are fewer than the workspace's.
+    fn run_job_bounds_equivalence() {
+        use std::sync::atomic::Ordering;
+
+        use crate::codegen::{
+            lowering::LoweringJobBounds,
+            lowering_pipeline::TEST_CONSERVATIVE_LOWERING_BOUNDS,
+        };
+
+        struct ConservativeBounds;
+        impl ConservativeBounds {
+            fn set(conservative: bool) -> Self {
+                TEST_CONSERVATIVE_LOWERING_BOUNDS.store(conservative, Ordering::Relaxed);
+                Self
+            }
+        }
+        impl Drop for ConservativeBounds {
+            fn drop(&mut self) {
+                TEST_CONSERVATIVE_LOWERING_BOUNDS.store(false, Ordering::Relaxed);
+            }
+        }
+
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::all(),
+        ))
+        .expect("initialize compiler");
+        let target_name = |target: LoweringTarget| match target {
+            LoweringTarget::X86_64 => "x86",
+            LoweringTarget::Wasm => "Wasm",
+        };
+        let compile = |target: LoweringTarget, source: &str, conservative: bool| -> Vec<u8> {
+            let _bounds = ConservativeBounds::set(conservative);
+            match target {
+                LoweringTarget::X86_64 => {
+                    pollster::block_on(compiler.compile_source_to_x86_64(source))
+                }
+                LoweringTarget::Wasm => pollster::block_on(compiler.compile_source_to_wasm(source)),
+            }
+            .unwrap_or_else(|error| panic!("{} compile: {error}", target_name(target)))
+        };
+        let larger: String = (0..2_000)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }} "))
+            .chain(["fn main() -> i32 { return f7(35); }".to_string()])
+            .collect();
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            compile(target, &larger, false);
+        }
         let cases = [
             (
                 "nested_aggregate_fields",
@@ -616,62 +829,140 @@ mod tests {
                 "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }",
                 42,
             ),
+            // The chain from Tree to Leaf passes through a fixed array field.
+            (
+                "enums_nested_through_an_array_field",
+                "enum Leaf { Missing, Value(i32) } struct Row { cells: [Leaf; 3], tag: i32 } enum Tree { Stump, Grown(Row, Leaf) } fn leaf(value: Leaf) -> i32 { return match (value) { Value(number) -> number, Missing -> 0, }; } fn main() -> i32 { let row: Row = Row { cells: [Value(1), Missing, Value(3)], tag: 4 }; let tree: Tree = Grown(row, Value(5)); return match (tree) { Grown(grown, last) -> leaf(grown.cells[0]) + leaf(grown.cells[1]) * 10 + leaf(grown.cells[2]) * 100 + grown.tag * 1000 + leaf(last) * 10000 - 54301, Stump -> 1, }; }",
+                0,
+            ),
         ];
+        // Wasm lowering does not handle enum payloads yet (LNC0057, routed to
+        // P9b), so the Wasm side runs only the cases without enums.
         for (case, source, expected) in cases {
-            pollster::block_on(compiler.type_check_source(source)).unwrap_or_else(|error| {
-                panic!("produce checked frontend artifacts for {case}: {error}")
-            });
-            let hir = compiler
-                .parser
-                .current_resident_hir()
-                .unwrap_or_else(|| panic!("parser should retain compact HIR for {case}"));
-            let lower = |bounds: LoweringJobBounds| -> Vec<u8> {
-                let mut encoder =
-                    gpu.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("aggregate layout round check"),
-                        });
-                let semantic = compiler
-                    .type_checker
-                    .semantic_artifact()
-                    .expect("type checker should retain semantic artifact");
-                let pipeline = compiler
-                    .type_checker
-                    .with_post_typecheck_workspace(&semantic, |workspace| {
-                        compiler.ensure_lowering_pipeline(
-                            LoweringTarget::X86_64,
-                            u32::try_from(source.len()).unwrap(),
-                            u32::try_from(source.len()).unwrap(),
-                            hir.capacity,
-                            LoweringArtifactKind::Executable,
-                            workspace,
-                            (&hir).into(),
-                            semantic.view(),
-                        )
-                    })
-                    .expect("type-check workspace should remain available")
-                    .expect("lowering workspace");
-                pipeline
-                    .record(&gpu.device, &gpu.queue, &mut encoder, None, bounds)
-                    .unwrap_or_else(|error| panic!("record lowering for {case}: {error}"));
-                submit_with_progress(&gpu.queue, "aggregate layout round check", encoder.finish());
-                pipeline
-                    .finish_artifact(&gpu.device, &gpu.queue)
-                    .unwrap_or_else(|error| panic!("finish artifact for {case}: {error}"))
-            };
-            let all_rounds = lower(LoweringJobBounds::CONSERVATIVE);
-            // All feature bits set: the bound comes from the text alone.
-            let bounded = lower(LoweringJobBounds::from_sources(
+            let wasm_runs = !source.contains("enum ");
+            let x86_compile = |conservative: bool| compile(LoweringTarget::X86_64, source, conservative);
+            let conservative = x86_compile(true);
+            assert_lowered_program_result(LoweringTarget::X86_64, case, &conservative, expected);
+            assert!(conservative == x86_compile(false), "{case}: the job bounds changed the x86 artifact");
+            // Read the x86 workspace before the Wasm compile: a Wasm job that
+            // replaces the frontend workspace releases every lowering
+            // workspace, the x86 one included.
+            //
+            // All feature bits set: the bound comes from the text alone. A
+            // token takes at least one byte, besides the file's EOF token.
+            let bounds = LoweringJobBounds::from_sources(
                 crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
                 u32::try_from(source.len()).unwrap(),
                 [source],
-            ));
-            assert_lowered_program_result(LoweringTarget::X86_64, case, &all_rounds, expected);
+            )
+            .with_token_capacity(u32::try_from(source.len() + 1).unwrap());
+            let retained = compiler
+                .x86_lowering
+                .as_deref()
+                .expect("x86 lowering cache")
+                .retained_capacities()
+                .expect("retained lowering workspace");
+            let job_pairs = retained.job_jump_pairs(bounds.hir_rows, LoweringTarget::X86_64);
             assert!(
-                all_rounds == bounded,
-                "{case}: bounded aggregate layout rounds changed the executable"
+                job_pairs.ssa_value_link < retained.jump_pairs().ssa_value_link
+                    && job_pairs.execution_rank < retained.jump_pairs().execution_rank,
+                "{case}: the retained workspace should record more pairs than the job needs"
             );
+            if wasm_runs {
+                let conservative = compile(LoweringTarget::Wasm, source, true);
+                assert_lowered_program_result(LoweringTarget::Wasm, case, &conservative, expected);
+                assert!(
+                    conservative == compile(LoweringTarget::Wasm, source, false),
+                    "{case}: the job bounds changed the Wasm artifact"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn physical_gpu_lowering_binds_checked_outputs_after_a_larger_check() {
+        std::thread::Builder::new()
+            .name("checked output arenas".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_lowering_after_a_larger_check)
+            .expect("spawn checked output arena check")
+            .join()
+            .expect("checked output arena check panicked");
+    }
+
+    // Type-check a large program, then a small one, then create the first
+    // lowering pipeline over the small job's checked outputs. The checker
+    // packed `checked_constant_atoms` into one arena with read-only checked
+    // outputs such as `semantic_member_field_ordinal_by_hir`; lowering binds
+    // the atoms writable and that ordinal read-only in `lir.semantic.scatter`,
+    // and wgpu rejected the bind group. The checker now keeps the outputs
+    // lowering binds writable in arenas of their own
+    // (OUTPUTS_LOWERING_BINDS_WRITABLE).
+    fn run_lowering_after_a_larger_check() {
+        use crate::codegen::lowering::LoweringJobBounds;
+
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::all(),
+        ))
+        .expect("initialize compiler");
+        let larger: String = (0..2_000)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }} "))
+            .chain(["fn main() -> i32 { return f7(35); }".to_string()])
+            .collect();
+        pollster::block_on(compiler.type_check_source(&larger))
+            .expect("check the program that grows the workspaces");
+        let source = "struct Vec2 { x: i32, y: i32, } struct Ray { origin: Vec2, direction: Vec2, } fn main() -> i32 { let origin: Vec2 = Vec2 { x: 1, y: 2 }; let direction: Vec2 = Vec2 { x: 3, y: 42 }; let ray: Ray = Ray { origin: origin, direction: direction }; return ray.direction.y; }";
+        pollster::block_on(compiler.type_check_source(source)).expect("check the small program");
+        let hir = compiler
+            .parser
+            .current_resident_hir()
+            .expect("parser should retain compact HIR");
+        let semantic = compiler
+            .type_checker
+            .semantic_artifact()
+            .expect("type checker should retain semantic artifact");
+        let pipeline = compiler
+            .type_checker
+            .with_post_typecheck_workspace(&semantic, |workspace| {
+                compiler.ensure_lowering_pipeline(
+                    LoweringTarget::X86_64,
+                    u32::try_from(source.len()).unwrap(),
+                    u32::try_from(source.len()).unwrap(),
+                    hir.capacity,
+                    LoweringArtifactKind::Executable,
+                    workspace,
+                    (&hir).into(),
+                    semantic.view(),
+                )
+            })
+            .expect("type-check workspace should remain available")
+            .expect("lowering workspace over the small job's checked outputs");
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("checked output arena check"),
+            });
+        pipeline
+            .record(
+                &gpu.device,
+                &gpu.queue,
+                &mut encoder,
+                None,
+                LoweringJobBounds::CONSERVATIVE,
+            )
+            .expect("record lowering");
+        submit_with_progress(&gpu.queue, "checked output arena check", encoder.finish());
+        let artifact = pipeline
+            .finish_artifact(&gpu.device, &gpu.queue)
+            .expect("finish artifact");
+        assert_lowered_program_result(
+            LoweringTarget::X86_64,
+            "nested_aggregate_fields",
+            &artifact,
+            42,
+        );
     }
 
     fn run_checked_hir_lowering_integration() {
