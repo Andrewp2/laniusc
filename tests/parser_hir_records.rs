@@ -10625,6 +10625,77 @@ fn main(first: i32, second: i32, third: i32) -> i32 {
 }
 
 #[test]
+fn parser_hir_long_binary_chain_spans_start_at_the_leftmost_operand_in_source_packs() {
+    // The span seed walks 32 left links locally; longer chains continue
+    // through the bounded steps. 70 terms cross that boundary twice, and the
+    // first operand is a layered production with no semantic row.
+    let terms = (0..70)
+        .map(|term| if term % 2 == 0 { "first" } else { "second" })
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let source = format!(
+        "module app::main;\n\nfn main(first: i32, second: i32) -> i32 {{\n    return {terms};\n}}\n"
+    );
+    let parsed = parse_resident_source_pack(&[source.as_str()]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let mut spine = vec![resolve_forward_expr_record(
+        &parsed,
+        return_expr,
+        "return expression",
+    )];
+    loop {
+        let add = *spine.last().unwrap();
+        let left = resolve_forward_expr_record(
+            &parsed,
+            assert_valid_source_pack_record_index(
+                &parsed,
+                parsed.hir_expr_record_left[add],
+                "add left operand",
+            ),
+            "add left operand",
+        );
+        if parsed.hir_expr_record_form[left] != HIR_EXPR_FORM_ADD {
+            assert_eq!(
+                parsed.hir_expr_record_form[left], HIR_EXPR_FORM_NAME,
+                "the deepest add's left operand should be the first name"
+            );
+            spine.push(left);
+            break;
+        }
+        spine.push(left);
+    }
+    assert_eq!(spine.len(), 70, "69 adds and the first name");
+    let first_start = parsed.hir_token_pos[*spine.last().unwrap()];
+    for (depth, &add) in spine[..spine.len() - 1].iter().enumerate() {
+        assert_eq!(
+            parsed.hir_token_pos[add], first_start,
+            "add at depth {depth} of the left spine should start at the first operand"
+        );
+    }
+}
+
+#[test]
 fn parser_hir_sum_of_products_links_multiply_operands_in_source_packs() {
     let parsed = parse_resident_source_pack(&[r#"
 module app::main;

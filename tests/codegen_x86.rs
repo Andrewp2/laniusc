@@ -2742,6 +2742,24 @@ fn main() -> bool {
 }
 
 #[test]
+fn x86_executes_short_circuit_chains_longer_than_the_span_walk() {
+    // A left-nested `||` chain past 32 operators. Each operator's span must
+    // start at the first operand, or the outer operator's opening rows sort
+    // into the inner operator's right-hand side.
+    for (name, last_compared, expected) in [("all_false", 3, 0), ("last_true", 4, 2)] {
+        let mut terms = (0..39)
+            .map(|ordinal| format!("values[{}] != {}", ordinal % 4, ordinal % 4))
+            .collect::<Vec<_>>();
+        terms.push(format!("values[3] != {last_compared}"));
+        let source = format!(
+            "fn main() -> i32 {{\n    let values: [i32; 4] = [0, 1, 2, 3];\n    if ({}) {{\n        return 2;\n    }}\n    return 0;\n}}\n",
+            terms.join(" ||\n        ")
+        );
+        assert_source_exit(&format!("short_circuit_chain_40_{name}"), &source, expected);
+    }
+}
+
+#[test]
 fn x86_executes_short_circuit_rhs_trapping_arithmetic() {
     assert_source_exit(
         "x86_executes_short_circuit_rhs_trapping_arithmetic",
