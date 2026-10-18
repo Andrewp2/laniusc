@@ -64,8 +64,8 @@ fn append_function(input: BodyLoweringInputs,
         || token_count > lowering::locals::MAX_CAPACITY) {
         return lowering::body_context::unsupported();
     }
-    let local_bytes: usize = lowering::locals::allocation_bytes(token_count);
-    let local_alignment: usize = lowering::locals::ALIGNMENT;
+    let local_bytes: usize = lowering::locals::allocation_bytes(token_count) as usize;
+    let local_alignment: usize = lowering::locals::ALIGNMENT as usize;
     let local_memory: ptr = verified::host::alloc(local_bytes, local_alignment);
     if (local_memory == 0) { return lowering::body_context::invalid(); }
     let locals: lowering::locals::Table = lowering::locals::from_raw_parts(
