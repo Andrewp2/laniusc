@@ -74,7 +74,7 @@ method through `S: Get<T>`, on `Slot<i32>` and `Slot<Rec>`) is p43; the
 static member `T::same(a, b)` through `T: Same<T>` is p44; a self method
 through `T: Conv<i32>` is p45; a const-generic impl's method through
 `S: Size` on `Buf<i32, 3>` is p46. b08 (a match expression as the value of
-an arm that other arms follow) is p47.
+an arm that other arms follow) is p48.
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with
