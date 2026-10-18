@@ -4,7 +4,10 @@
 //! before workspace reuse and decodes their scalar/descriptor identities. It
 //! neither infers types on the host nor emits a specialized function body.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -1344,6 +1347,14 @@ impl CheckedTypeReadback {
         roots: &[(u32, u32)],
     ) -> Result<()> {
         let mut timer = UnitFactsHostTimer::nested();
+        // Rows every instance column holds, and rows of the legacy width
+        // table: a row is read only when it lies inside them.
+        let instance_rows = TYPE_INSTANCE_COLUMNS
+            .iter()
+            .map(|name| inputs.buffer(name).byte_size as u64 / 4)
+            .min()
+            .unwrap_or(0);
+        let legacy_width_rows = inputs.buffer("type_native_word_count").byte_size as u64 / 4;
         let mut frontier = roots.iter().copied().collect::<BTreeSet<_>>();
         let mut visited = BTreeSet::new();
         for _ in 0..MAX_RETAINED_TYPE_DEPTH {
@@ -1361,9 +1372,7 @@ impl CheckedTypeReadback {
                 match tag {
                     0x8000_0001 | 0x8000_0002 | 0x8000_0003 => constants.push((tag & 0x7fff_ffff, payload)),
                     3 if payload != INVALID => {
-                        if TYPE_INSTANCE_COLUMNS.iter().all(|name| {
-                            u64::from(payload) * 4 + 4 <= inputs.buffer(name).byte_size as u64
-                        }) {
+                        if u64::from(payload) < instance_rows {
                             instances.insert(payload);
                         }
                     }
@@ -1371,10 +1380,7 @@ impl CheckedTypeReadback {
                         legacy_rows.extend(
                             Self::legacy_nominal_candidates(inputs, payload)
                                 .into_iter()
-                                .filter(|&row| {
-                                    u64::from(row) * 4 + 4
-                                        <= inputs.buffer("type_native_word_count").byte_size as u64
-                                }),
+                                .filter(|&row| u64::from(row) < legacy_width_rows),
                         );
                     }
                     2 if self.parameters.get(&payload).is_some_and(|parameter| {
@@ -2862,19 +2868,13 @@ pub(super) fn read_unit_facts(
         }
         let tag = columns[2][claim];
         let payload = columns[3][claim];
-        let ty = if let Some(ty) = types.get(&(tag, payload)) {
-            ty.clone()
-        } else {
-            read_type(&readback, device, queue, inputs, tag, payload, &mut types)?
-        };
         // Repeated arguments are checked by the GPU before this reader runs.
         // Retain one fact per slot without merging separate call identities.
-        if let Some(prior) = call.arguments.iter_mut().find(|arg| arg.slot == slot) {
-            if ty.retention_rank() > prior.ty.retention_rank() {
-                prior.ty = ty;
-            }
+        if let Some(ty) = types.get(&(tag, payload)) {
+            retain_argument(&mut call.arguments, slot, Cow::Borrowed(ty));
         } else {
-            call.arguments.push(CheckedGenericArgument { slot, ty });
+            let ty = read_type(&readback, device, queue, inputs, tag, payload, &mut types)?;
+            retain_argument(&mut call.arguments, slot, Cow::Owned(ty));
         }
     }
     for call in calls.iter_mut().flatten() {
@@ -2913,14 +2913,11 @@ pub(super) fn read_unit_facts(
                 }
                 let tag = rows[tags + slot];
                 let payload = rows[payloads + slot];
-                let ty = read_type(&readback, device, queue, inputs, tag, payload, &mut types)?;
-                let argument = CheckedGenericArgument { slot: slot as u32, ty };
-                if let Some(prior) = call.arguments.iter_mut().find(|arg| arg.slot == slot as u32) {
-                    if argument.ty.retention_rank() > prior.ty.retention_rank() {
-                        *prior = argument;
-                    }
+                if let Some(ty) = types.get(&(tag, payload)) {
+                    retain_argument(&mut call.arguments, slot as u32, Cow::Borrowed(ty));
                 } else {
-                    call.arguments.push(argument);
+                    let ty = read_type(&readback, device, queue, inputs, tag, payload, &mut types)?;
+                    retain_argument(&mut call.arguments, slot as u32, Cow::Owned(ty));
                 }
             }
             call.arguments.sort_by_key(|arg| arg.slot);
@@ -3010,6 +3007,25 @@ fn read_nominal_identity(
         .get(&token)
         .copied()
         .ok_or_else(|| anyhow!("retained nominal token {token} has no validated declaration owner"))
+}
+
+/// Keeps `ty` as the argument for `slot` unless the argument already there
+/// ranks at least as high. A cached type is cloned only when it is kept.
+fn retain_argument(
+    arguments: &mut Vec<CheckedGenericArgument>,
+    slot: u32,
+    ty: Cow<'_, CheckedGenericType>,
+) {
+    if let Some(prior) = arguments.iter_mut().find(|arg| arg.slot == slot) {
+        if ty.retention_rank() > prior.ty.retention_rank() {
+            prior.ty = ty.into_owned();
+        }
+    } else {
+        arguments.push(CheckedGenericArgument {
+            slot,
+            ty: ty.into_owned(),
+        });
+    }
 }
 
 pub(super) fn read_type(
@@ -3244,16 +3260,13 @@ fn read_uncached_type_at_depth(
                 )?),
             });
         }
-        let ty = CheckedGenericType::Nominal {
+        // read_type_at_depth caches the decoded type.
+        return Ok(CheckedGenericType::Nominal {
             identity,
             arguments,
             words: native_words,
             local_replay,
-        };
-        if ty.has_semantic_identity() {
-            types.insert((tag, payload), ty.clone());
-        }
-        return Ok(ty);
+        });
     }
     Ok(CheckedGenericType::Unresolved {
         reference_tag: tag,
