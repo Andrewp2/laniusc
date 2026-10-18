@@ -256,6 +256,16 @@ impl GpuCompiler<'_> {
                     // Polymorphic recursion replays alone, so a failure is its own.
                     let copies = instance_copies && !body.recursive && program
                         .instance_copy_available(&body.admitted).map_err(native_program_error)?;
+                    // A run's impl bindings share one packet table, so a run
+                    // closes before it would overflow it.
+                    let bindings = program.instance_impl_bindings(&body.admitted)
+                        .map_err(native_program_error)?.len();
+                    if bindings > gpu_type_checker::MAX_BODY_IMPL_BINDINGS {
+                        return Err(specialization_limit_error(&format!(
+                            "one generic body needs {bindings} implementation bindings; a replay holds at most {}",
+                            gpu_type_checker::MAX_BODY_IMPL_BINDINGS)));
+                    }
+                    let mut capped = false;
                     let placed = !body.recursive && runs.iter_mut().try_fold(false, |placed, run| {
                         // Original-scope runs stay small: their scopes are found by a linear search.
                         let limit = if run.copies {
@@ -266,7 +276,13 @@ impl GpuCompiler<'_> {
                         if placed || run.solo || run.copies != copies || run.keys.len() >= limit {
                             return Ok(placed);
                         }
-                        run.try_add(&key, &scope, entry.clone())
+                        if run.bindings + bindings > gpu_type_checker::MAX_BODY_IMPL_BINDINGS {
+                            capped = true;
+                            return Ok(false);
+                        }
+                        let added = run.try_add(&key, &scope, entry.clone())?;
+                        if added { run.bindings += bindings; }
+                        Ok(added)
                     }).map_err(|error: anyhow::Error| CompileError::GpuCodegen(error.to_string()))?;
                     if !placed {
                         let batch = gpu_type_checker::CheckedBodySpecializationBatch::single(entry)
@@ -274,7 +290,8 @@ impl GpuCompiler<'_> {
                                 Diagnostic::error("LNC0017", "generic specialization cannot represent this environment")
                                     .with_note(error.to_string())))?;
                         runs.push(ReplayRun {
-                            keys: vec![key], scopes: vec![scope], batch, solo: body.recursive, copies,
+                            keys: vec![key], scopes: vec![scope], batch, solo: body.recursive, copies, bindings,
+                            split: capped.then_some("impl-binding cap"),
                         });
                     }
                 }
@@ -401,7 +418,8 @@ impl GpuCompiler<'_> {
                     trace.replay(
                         &run.keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
                         specializations.len(), [started, prepared, compiled, finished],
-                        concrete.text.len(), replay_calls.len(), run_kind(run.copies, run.solo));
+                        concrete.text.len(), replay_calls.len(), run_kind(run.copies, run.solo),
+                        run.bindings, run.split);
                     contexts.push(ReplayContext {
                         library_id,
                         unit_id,
@@ -478,6 +496,11 @@ struct ReplayRun {
     solo: bool,
     /// Every body replays as an instance copy, so scopes may repeat.
     copies: bool,
+    /// The impl bindings of the run's bodies (at most MAX_BODY_IMPL_BINDINGS).
+    bindings: usize,
+    /// Why the run's first body opened a new run although an open run had
+    /// room for it (trace only).
+    split: Option<&'static str>,
 }
 
 impl ReplayRun {
@@ -608,6 +631,8 @@ impl SpecializationTrace {
         text_bytes: usize,
         replay_calls: usize,
         kind: usize,
+        bindings: usize,
+        split: Option<&str>,
     ) {
         self.runs += 1;
         self.kinds[kind] += 1;
@@ -617,8 +642,9 @@ impl SpecializationTrace {
         for (total, phase) in self.phases_ms.iter_mut().zip(phases) { *total += phase; }
         let (library, unit, _) = bodies[0].1.target;
         eprintln!(
-            "[specialization] run={} kind={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls}",
+            "[specialization] run={} kind={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls} impl_bindings={bindings}{}",
             self.runs, RUN_KINDS[kind], bodies.len(), phases[0], phases[1], phases[2],
+            split.map(|why| format!(" split={why}")).unwrap_or_default(),
         );
         for (key, body) in bodies {
             let call = body.admitted.checked_call();
@@ -911,6 +937,8 @@ mod tests {
             batch: gpu_type_checker::CheckedBodySpecializationBatch::single(entry(100, 3)).unwrap(),
             solo: false,
             copies,
+            bindings: 0,
+            split: None,
         };
         let mut copies = run(true);
         // Other environments of the same lexical body join a copy run.
