@@ -155,9 +155,9 @@ fn main() -> i32 {
     let workspace:[i32] = verified::host::i32_slice_from_raw_parts(
         workspace_memory, WORK_WORD_CAPACITY);
     let semantic_memory: ptr = verified::host::alloc(
-        verified::semantic_tokens::allocation_bytes(
-            verified::extraction::TOKEN_KIND_CAPACITY),
-        verified::semantic_tokens::ALIGNMENT);
+        (verified::semantic_tokens::allocation_bytes(
+            verified::extraction::TOKEN_KIND_CAPACITY)) as usize,
+        verified::semantic_tokens::ALIGNMENT as usize);
     if (semantic_memory == 0) { return exit_code(AllocationFailed); }
     let output:[i32];
     if (mode == LeanCoreMode) {
@@ -187,8 +187,8 @@ fn main() -> i32 {
         lowering::program_transport::bundle_words(unit_count);
     if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
     let bundle_memory: ptr = verified::host::alloc(
-        bundle_word_count * verified::host::I32_BYTES,
-        lowering::program_transport::BUNDLE_ALIGNMENT);
+        (bundle_word_count * verified::host::I32_BYTES) as usize,
+        lowering::program_transport::BUNDLE_ALIGNMENT as usize);
     if (bundle_memory == 0) { return exit_code(AllocationFailed); }
     let bundle: lowering::program_transport::Bundle =
         lowering::program_transport::from_raw_parts(bundle_memory, unit_count);
@@ -214,7 +214,7 @@ fn main() -> i32 {
             != path_length) {
             return exit_code(ArgumentReadFailed);
         }
-        let handle: i32 = verified::host::open_read(packed_path_pointer, path_length);
+        let handle: i32 = verified::host::open_read(packed_path_pointer, path_length as usize);
         if (handle <= -1) {
             return exit_code(OpenFailed);
         }
@@ -343,7 +343,7 @@ fn main() -> i32 {
             output, OUTPUT_BYTE_CAPACITY, output_length);
     }
     if (output_length <= -1) { return exit_code(LeanCoreOutputFailed); }
-    let output_size: usize = output_length;
+    let output_size: usize = output_length as usize;
     let output_pointer: ptr = verified::host::i32_slice_data_ptr(output);
     if (verified::host::write_stdout(output_pointer, output_size) != output_length) {
         return exit_code(OutputWriteFailed);

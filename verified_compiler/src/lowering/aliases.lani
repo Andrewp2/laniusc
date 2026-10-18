@@ -607,8 +607,8 @@ pub fn build(input: AliasBuildInputs, workspace: AliasBuildWorkspace) -> i32 {
     if (expected_symbols > 0) {
         symbol_bytes = expected_symbols * SYMBOL_RECORD_BYTES;
     }
-    let symbol_memory: ptr = verified::host::alloc(symbol_bytes,
-        SYMBOL_ALIGNMENT);
+    let symbol_memory: ptr = verified::host::alloc(symbol_bytes as usize,
+        SYMBOL_ALIGNMENT as usize);
     if (module_memory == 0 || symbol_memory == 0) {
         return failure(Invalid);
     }
