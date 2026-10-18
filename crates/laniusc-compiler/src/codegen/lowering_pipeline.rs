@@ -518,6 +518,7 @@ impl GpuLoweringPipeline {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
+        bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
         let split = lowering_split(device, queue);
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
@@ -534,7 +535,7 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
         self.semantic
-            .record_timed(encoder, timer.as_deref_mut(), split)?;
+            .record_timed(encoder, timer.as_deref_mut(), split, bounds)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -585,6 +586,7 @@ impl GpuLoweringPipeline {
         unit_id: u32,
         selection: super::lowering::ReplaySelection<'_>,
         mut timer: Option<&mut GpuTimer>,
+        bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
         let split = lowering_split(device, queue);
         // Like `record`, time every lowering operation; without this scope
@@ -612,7 +614,7 @@ impl GpuLoweringPipeline {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
         self.semantic
-            .record_timed(encoder, timer.as_deref_mut(), split)?;
+            .record_timed(encoder, timer.as_deref_mut(), split, bounds)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
