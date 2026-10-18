@@ -1,0 +1,7 @@
+module app::main;
+
+import gen::sizes;
+
+fn main() -> i32 {
+    return gen::sizes::B + 10;
+}

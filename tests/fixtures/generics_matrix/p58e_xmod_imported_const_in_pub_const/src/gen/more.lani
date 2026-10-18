@@ -1,0 +1,5 @@
+module gen::more;
+
+import gen::sizes;
+
+pub const D: i32 = gen::sizes::B + 10;

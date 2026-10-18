@@ -63,6 +63,10 @@ pub use semantic_interface::SemanticInterfaceExportFailure;
 /// Rows the type checker reserves for language symbols ahead of source names;
 /// capacity estimates outside the crate read it from here.
 pub const LANGUAGE_SYMBOL_COUNT: u32 = params::LANGUAGE_SYMBOL_COUNT;
+/// Constant reference rounds after the literal fold: a constant may refer to
+/// other constants this many levels deep
+/// (shaders/type_checker/semantic/artifact/const_fold.slang).
+pub const LOCAL_CONST_FOLD_ROUNDS: u32 = 8;
 mod util;
 
 use anyhow::Result;
@@ -309,6 +313,17 @@ impl std::fmt::Display for GpuTypeCheckError {
 
 impl std::error::Error for GpuTypeCheckError {}
 
+impl GpuTypeCheckError {
+    /// The check of a job recorded without canonical readbacks found a stage
+    /// that left candidates pending or overflowed. The caller records the
+    /// job again (lexer, parser and type check); the type checker records
+    /// that attempt synchronously.
+    pub(crate) fn requests_canonical_rerecord(&self) -> bool {
+        matches!(self, GpuTypeCheckError::Gpu(error)
+            if error.downcast_ref::<canonical_passes::CanonicalSynchronousRetry>().is_some())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{GpuTypeCheckCode, GpuTypeCheckError};
@@ -367,7 +382,8 @@ pub struct GpuTypeChecker {
     status_prior: LaniusBuffer<u32>,
     call_inference_state: LaniusBuffer<u32>,
     call_inference_readback: LaniusBuffer<u32>,
-    /// Host-visible `ct_counts` after each canonical interning batch.
+    /// Host-visible `ct_counts` after each canonical interning batch; a
+    /// deferred job's check reads the last stage's copy with its status.
     canonical_counts_readback: LaniusBuffer<u32>,
     /// Debug-only canonical validation counters.
     canonical_validation_readback: LaniusBuffer<u32>,
@@ -375,6 +391,12 @@ pub struct GpuTypeChecker {
     /// Canonical table capacity scale for the next workspace; doubled when a
     /// job's canonical stage overflows, then kept for later jobs.
     canonical_scale: std::sync::atomic::AtomicU32,
+    /// Records the next job's canonical stages with a counter readback after
+    /// every batch, as many batches as candidates need. Set after a job
+    /// recorded without readbacks (one batch per stage) left candidates
+    /// pending or overflowed; that job's check finishes it. The check of a
+    /// synchronous job keeps it while that job still needed several batches.
+    canonical_synchronous: std::sync::atomic::AtomicBool,
     resident_workspace: Mutex<Option<ResidentTypeCheckWorkspace>>,
     /// Capacities of the last workspace allocated. A release (frontend
     /// replacement or trim) keeps them, so the replacement covers every
@@ -392,6 +414,9 @@ pub struct GpuTypeChecker {
 pub struct RecordedTypeCheck {
     /// The status words of the round in which an error ended call inference.
     inference_error: Option<[u32; 4]>,
+    /// The canonical stages were recorded without counter readbacks, so the
+    /// check reads the job's counters before its status.
+    canonical_deferred: bool,
 }
 
 #[derive(Clone, Copy)]
