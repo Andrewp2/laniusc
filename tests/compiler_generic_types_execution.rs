@@ -932,9 +932,11 @@ fn imported_generic_aliases_reject_type_length_and_header_conflicts() {
         ("let value: core::aliases::Fixed<i32, 2> = [19, 23, 7];", "LNC0006"),
         ("let value: core::aliases::Fixed<bool, 2> = [19, 23];", "LNC0006"),
         ("let value: core::aliases::Swap<bool, i32> = core::aliases::Pair { first: false, second: 42 };", "LNC0006"),
-        ("let value: core::aliases::Id<i32, bool> = 42;", "LNC0006"),
-        ("let value: core::aliases::Fixed<i32, bool> = [19, 23];", "LNC0006"),
-        ("let value: core::aliases::Fixed<2, i32> = [19, 23];", "LNC0006"),
+        // A type annotation with the wrong number or kind of operands names
+        // no type, as in any annotation (docs/compiler-generic-types.md).
+        ("let value: core::aliases::Id<i32, bool> = 42;", "LNC0007"),
+        ("let value: core::aliases::Fixed<i32, bool> = [19, 23];", "LNC0007"),
+        ("let value: core::aliases::Fixed<2, i32> = [19, 23];", "LNC0007"),
         ("let value: core::aliases::Id<Unknown> = 42;", "LNC0007"),
         ("let value: core::aliases::Flag<Unknown> = false;", "LNC0007"),
     ] {
@@ -7850,7 +7852,7 @@ impl<T> Boxed<T> {
         return self.length(values) + M;
     }
     pub fn dimensions<const N: usize, const M: u32>(&self, values: [[i32; N]; M]) -> usize {
-        return N * 10 + M;
+        return N * 10 + (M as usize);
     }
 }
 impl Plain {
