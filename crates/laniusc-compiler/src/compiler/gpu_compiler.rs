@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_one_layout_round_matches_all_rounds_without_enums() {
+    fn physical_gpu_bounded_layout_rounds_match_all_rounds() {
         std::thread::Builder::new()
             .name("aggregate layout rounds".into())
             .stack_size(64 * 1024 * 1024)
@@ -570,10 +570,12 @@ mod tests {
             .expect("aggregate layout round check panicked");
     }
 
-    // A job without enums records one aggregate layout round
+    // A job records one aggregate layout round without enums and one round
+    // per `enum` word of its text with them
     // (LoweringJobBounds::aggregate_layout_rounds). Every later round must
     // leave the layouts unchanged, so lowering the same checked program with
-    // all 64 rounds has to give the same executable byte for byte.
+    // all 64 rounds has to give the same executable byte for byte. The enum
+    // cases nest as deep as they have declarations, so their bound is tight.
     fn run_layout_round_equivalence() {
         use crate::codegen::lowering::LoweringJobBounds;
 
@@ -597,6 +599,21 @@ mod tests {
             (
                 "unused_generic_declaration",
                 "struct Cell<T> { value: T, count: i32, } struct Pair { left: i32, right: i32, } fn main() -> i32 { let pair: Pair = Pair { left: 40, right: 2 }; return pair.left + pair.right; }",
+                42,
+            ),
+            (
+                "enums_nested_through_structs",
+                "enum Leaf { Missing, Value(i32) } struct Twig { left: Leaf, right: Leaf, weight: i32 } enum Branch { Bare, Grown(Twig, i32) } struct Limb { branch: Branch, tag: i32 } enum Tree { Stump, Full(Limb, Leaf) } fn leaf(value: Leaf) -> i32 { return match (value) { Value(number) -> number, Missing -> 0, }; } fn branch(value: Branch) -> i32 { return match (value) { Grown(twig, extra) -> leaf(twig.left) * 100 + leaf(twig.right) * 10 + twig.weight + extra, Bare -> -1000, }; } fn main() -> i32 { let twig: Twig = Twig { left: Value(3), right: Value(4), weight: 5 }; let limb: Limb = Limb { branch: Grown(twig, 6), tag: 7 }; let tree: Tree = Full(limb, Value(8)); return match (tree) { Full(grown, last) -> branch(grown.branch) + grown.tag * 1000 + leaf(last) * 10000 - 87351, Stump -> 1, }; }",
+                0,
+            ),
+            (
+                "enums_nested_in_enum_payloads",
+                "enum A { NoA, OneA(i32) } enum B { NoB, TwoB(A, A) } enum C { NoC, ThreeC(B, i32) } enum D { NoD, FourD(C, A) } fn a(v: A) -> i32 { return match (v) { OneA(n) -> n, NoA -> 0, }; } fn b(v: B) -> i32 { return match (v) { TwoB(x, y) -> a(x) * 10 + a(y), NoB -> 0, }; } fn c(v: C) -> i32 { return match (v) { ThreeC(x, n) -> b(x) * 10 + n, NoC -> 0, }; } fn main() -> i32 { let d: D = FourD(ThreeC(TwoB(OneA(1), OneA(2)), 3), OneA(4)); return match (d) { FourD(x, y) -> c(x) - 100 + a(y), NoD -> 1, }; }",
+                27,
+            ),
+            (
+                "generic_enum_struct_payload",
+                "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }",
                 42,
             ),
         ];
@@ -643,11 +660,16 @@ mod tests {
                     .unwrap_or_else(|error| panic!("finish artifact for {case}: {error}"))
             };
             let all_rounds = lower(LoweringJobBounds::CONSERVATIVE);
-            let one_round = lower(LoweringJobBounds::from_parser_features(0));
+            // All feature bits set: the bound comes from the text alone.
+            let bounded = lower(LoweringJobBounds::from_sources(
+                crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
+                u32::try_from(source.len()).unwrap(),
+                [source],
+            ));
             assert_lowered_program_result(LoweringTarget::X86_64, case, &all_rounds, expected);
             assert!(
-                all_rounds == one_round,
-                "{case}: one aggregate layout round changed the executable"
+                all_rounds == bounded,
+                "{case}: bounded aggregate layout rounds changed the executable"
             );
         }
     }

@@ -347,7 +347,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                             queue,
                             encoder,
                             timer.as_deref_mut(),
-                            LoweringJobBounds::from_parser_features(parser_feature_flags),
+                            LoweringJobBounds::from_sources(
+                                parser_feature_flags,
+                                bufs.n,
+                                [src],
+                            ),
                         )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                 }
@@ -699,7 +703,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                         unit_id,
                         lowering_target,
                         object_request,
-                        LoweringJobBounds::from_parser_features(parser.parser_feature_flags),
+                        LoweringJobBounds::from_sources(
+                            parser.parser_feature_flags,
+                            bufs.n,
+                            diagnostic_files.iter().map(|file| file.source.as_str()),
+                        ),
                     )
                 },
             )
@@ -777,7 +785,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                     unit_id,
                     lowering_target,
                     object_request,
-                    LoweringJobBounds::from_parser_features(parser_feature_flags),
+                    LoweringJobBounds::from_sources(
+                        parser_feature_flags,
+                        bufs.n,
+                        diagnostic_files.iter().map(|file| file.source.as_str()),
+                    ),
                 )
             },
             |err| parser_execution_failed_for_source_pack(diagnostic_files, err),
