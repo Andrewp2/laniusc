@@ -1,0 +1,10 @@
+// expect: 0
+// Imported nominal (std::vec_char::VecChar) at an imported call: the result returned from a local function.
+module app::main;
+import std::vec_char;
+fn make() -> std::vec_char::VecChar { return std::vec_char::new(); }
+fn main() -> i32 {
+    let v: std::vec_char::VecChar = make();
+    if (std::vec_char::len(v) != 0) { return 1; }
+    return 0;
+}
