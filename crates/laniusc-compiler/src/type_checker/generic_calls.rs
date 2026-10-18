@@ -2259,13 +2259,22 @@ pub(super) fn read_unit_facts(
             native_call_owners: Vec::new(),
         });
     }
-    let local_tokens = sorted_unique(
-        call_records
-            .chunks_exact(CALL_RECORD_READ_WORDS)
-            .filter(|record| record[11] == 1)
-            .map(|record| record[0])
-            .collect(),
-    );
+    // Without generic parameters (type or constant) no local callee is
+    // generic, and without type claims no local call needs the check below
+    // that its claims have parameter metadata. Such a unit (any plain
+    // program) skips the lookup chain: its local calls are not retained.
+    let local_lookups = generic_parameter_count != 0 || !calls_with_claims.is_empty();
+    let local_tokens = if local_lookups {
+        sorted_unique(
+            call_records
+                .chunks_exact(CALL_RECORD_READ_WORDS)
+                .filter(|record| record[11] == 1)
+                .map(|record| record[0])
+                .collect(),
+        )
+    } else {
+        Vec::new()
+    };
     let local_names = rows(
         &readback,
         device,
@@ -2529,6 +2538,10 @@ pub(super) fn read_unit_facts(
         .zip(call_records.chunks_exact(CALL_RECORD_READ_WORDS))
     {
         let (target, required_constant_parameters) = match record[11] {
+            1 if !local_lookups => {
+                calls.push(None);
+                continue;
+            }
             1 => {
                 let function_start_token = record[0];
                 let callee = callees[local_tokens
