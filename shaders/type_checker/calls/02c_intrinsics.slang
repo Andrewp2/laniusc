@@ -34,7 +34,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
-static const uint LANGUAGE_SYMBOL_COUNT = 72u;
+static const uint LANGUAGE_SYMBOL_COUNT = 73u;
 
 uint linear_thread_id(uint3 dtid)
 {
