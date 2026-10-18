@@ -18,7 +18,6 @@ use super::generic_calls::{
     CheckedTypeReadback,
     RetainedGenericCallInputs,
     read_type,
-    words,
 };
 use crate::gpu::readback::{PagedReadback, ReadbackRegion};
 use crate::parser::passes::hir::item::fields::{HIR_ITEM_KIND_ENUM, HIR_ITEM_KIND_STRUCT};
@@ -394,15 +393,6 @@ fn scalar_regions<'a>(
         .collect()
 }
 
-fn scalar_values(rows: &[Vec<u32>]) -> Result<Vec<u32>> {
-    rows.iter()
-        .map(|row| {
-            ensure!(row.len() == 1, "checked contract scalar has invalid width");
-            Ok(row[0])
-        })
-        .collect()
-}
-
 fn read_scalars(
     readback: &PagedReadback,
     device: &wgpu::Device,
@@ -414,15 +404,7 @@ fn read_scalars(
         return Ok(Vec::new());
     }
     let regions = scalar_regions(inputs, requests)?;
-    readback
-        .read_regions(device, queue, &regions, "checked contract facts")?
-        .iter()
-        .map(|bytes| {
-            let row = words(bytes);
-            ensure!(row.len() == 1, "checked contract scalar has invalid width");
-            Ok(row[0])
-        })
-        .collect()
+    readback.read_regions_words(device, queue, &regions, "checked contract facts")
 }
 
 fn validate_source_rows(source: ContractSourceRows<'_>) -> Result<()> {
@@ -514,7 +496,7 @@ pub(super) fn read_contracts(
     inputs: &RetainedGenericCallInputs,
     types: &mut CheckedTypeReadback,
     source: ContractSourceRows<'_>,
-    metadata: Option<&[Vec<u32>]>,
+    metadata: Option<&[u32]>,
 ) -> Result<CheckedUnitContracts> {
     validate_source_rows(source)?;
     if source.predicates.is_empty() {
@@ -529,13 +511,13 @@ pub(super) fn read_contracts(
             metadata.len() == source.predicates.len() / 4 * 10,
             "checked contract metadata has invalid width"
         );
-        scalar_values(&metadata[..requests.len()])?
+        metadata[..requests.len()].to_vec()
     } else {
         read_scalars(readback, device, queue, inputs, &requests)?
     };
     let ranges_requests = range_requests(source.predicates)?;
     let ranges = if let Some(metadata) = metadata {
-        scalar_values(&metadata[requests.len()..])?
+        metadata[requests.len()..].to_vec()
     } else {
         read_scalars(readback, device, queue, inputs, &ranges_requests)?
     };

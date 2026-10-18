@@ -73,6 +73,10 @@ impl<'a> ReadbackRegion<'a> {
             byte_len,
         })
     }
+
+    pub(crate) fn byte_len(&self) -> usize {
+        self.byte_len
+    }
 }
 
 impl PagedReadback {
@@ -184,6 +188,64 @@ impl PagedReadback {
         regions: &[ReadbackRegion<'_>],
         label: &str,
     ) -> Result<Vec<Vec<u8>>> {
+        let mut outputs = regions
+            .iter()
+            .map(|region| Vec::with_capacity(region.byte_len))
+            .collect::<Vec<_>>();
+        self.read_regions_with(device, queue, regions, label, |index, _, bytes| {
+            outputs[index].extend_from_slice(bytes)
+        })?;
+        Ok(outputs)
+    }
+
+    /// [`Self::read_regions`] for regions of whole words, returned as one
+    /// vector in which each region's words follow the previous region's.
+    /// Readers of thousands of rows slice it instead of decoding a vector per
+    /// region.
+    pub(crate) fn read_regions_words(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        regions: &[ReadbackRegion<'_>],
+        label: &str,
+    ) -> Result<Vec<u32>> {
+        let mut starts = Vec::with_capacity(regions.len());
+        let mut total = 0usize;
+        for region in regions {
+            if region.byte_len % 4 != 0 {
+                return Err(anyhow!(
+                    "{label} region of {} bytes is not a whole number of words",
+                    region.byte_len
+                ));
+            }
+            starts.push(total);
+            total += region.byte_len / 4;
+        }
+        let mut words = vec![0u32; total];
+        self.read_regions_with(device, queue, regions, label, |index, offset, bytes| {
+            let start = starts[index] + offset / 4;
+            for (word, bytes) in words[start..start + bytes.len() / 4]
+                .iter_mut()
+                .zip(bytes.chunks_exact(4))
+            {
+                *word = u32::from_le_bytes(bytes.try_into().expect("four-byte chunk"));
+            }
+        })?;
+        Ok(words)
+    }
+
+    /// The batched copy behind [`Self::read_regions`]: hands `sink` each
+    /// mapped piece of a region as (region index, byte offset in the region,
+    /// bytes), in order within a region. A piece of a whole-word region is
+    /// whole words.
+    fn read_regions_with(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        regions: &[ReadbackRegion<'_>],
+        label: &str,
+        mut sink: impl FnMut(usize, usize, &[u8]),
+    ) -> Result<()> {
         // Sparse fact readers pass thousands of regions; report where their
         // time goes (copy encoding vs. the GPU round trip).
         let timing = regions.len() >= 32
@@ -213,10 +275,6 @@ impl PagedReadback {
         let regions = gathered.as_ref().map_or(regions, |gathered| &gathered.regions[..]);
         encode += started.elapsed();
 
-        let mut outputs = regions
-            .iter()
-            .map(|region| Vec::with_capacity(region.byte_len))
-            .collect::<Vec<_>>();
         let mut consumed = vec![0usize; regions.len()];
 
         while regions
@@ -269,7 +327,7 @@ impl PagedReadback {
                                 Some((region.source, source_offset, page_cursor as u64, copy_len as u64));
                         }
                     }
-                    page_copies.push((index, page_cursor, logical_len));
+                    page_copies.push((index, consumed[index], page_cursor, logical_len));
                     consumed[index] += logical_len;
                     page_cursor += copy_len;
                 }
@@ -302,8 +360,8 @@ impl PagedReadback {
             let slice = self.staging.buffer.slice(..page_cursor as u64);
             let mapping = self.map_staging(device, &slice, label)?;
             let mapped = slice.get_mapped_range();
-            for (index, offset, logical_len) in page_copies {
-                outputs[index].extend_from_slice(&mapped[offset..offset + logical_len]);
+            for (index, region_offset, offset, logical_len) in page_copies {
+                sink(index, region_offset, &mapped[offset..offset + logical_len]);
             }
             drop(mapped);
             drop(mapping);
@@ -318,8 +376,7 @@ impl PagedReadback {
                 total.as_secs_f64() * 1000.0,
             );
         }
-
-        Ok(outputs)
+        Ok(())
     }
 }
 
@@ -556,6 +613,42 @@ mod lifecycle_tests {
             .read_regions(&gpu.device, &gpu.queue, &regions, "gather test again")
             .unwrap();
         assert_eq!(read, expected);
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
+
+    #[test]
+    fn gpu_paged_readback_reads_word_regions_as_one_vector() {
+        let gpu = device::global();
+        let first = storage_source(&gpu.device, &gpu.queue, 3);
+        let second = storage_source(&gpu.device, &gpu.queue, 59);
+        // A small page splits gathered and large regions across pages.
+        let readback = PagedReadback::new(&gpu.device, "readback words page", 256);
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let mut regions = Vec::new();
+        for i in 0..200u64 {
+            let buffer = if i % 3 == 0 { &second } else { &first };
+            // The 8192-byte source holds the largest region at any offset.
+            let offset = (i * 44) % 7500 / 4 * 4;
+            let len = [4usize, 8, 32, 0, 12, 600][i as usize % 6];
+            regions.push(ReadbackRegion::from_buffer(buffer, offset, len, "word region").unwrap());
+        }
+        let expected = readback
+            .read_regions(&gpu.device, &gpu.queue, &regions, "word regions as bytes")
+            .unwrap()
+            .concat()
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        let words = readback
+            .read_regions_words(&gpu.device, &gpu.queue, &regions, "word regions")
+            .unwrap();
+        assert_eq!(words, expected);
+        regions.push(ReadbackRegion::from_buffer(&first, 0, 6, "partial word").unwrap());
+        assert!(
+            readback
+                .read_regions_words(&gpu.device, &gpu.queue, &regions, "partial word")
+                .is_err()
+        );
         assert!(pollster::block_on(validation.pop()).is_none());
     }
 }
