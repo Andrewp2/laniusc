@@ -1,0 +1,96 @@
+// expect: 0
+// core::mem::size_of<T>() and typed_slice_from_storage<T> from generic
+// bodies, and the slice_stride intrinsic under them. Exits 0; any other code
+// names the failing check.
+module app::main;
+import core::mem;
+import alloc::allocator;
+
+struct P { x: i32, y: i32 }
+struct Empty {}
+struct Buf<T> { storage: ptr, length: i32, capacity: i32 }
+
+fn bytes<T>() -> i32 {
+    return core::mem::size_of<T>() as i32;
+}
+
+fn twice<T>() -> i32 {
+    return bytes<T>() * 2;
+}
+
+fn with_capacity<T>(capacity: i32) -> Buf<T> {
+    let size: usize = core::mem::size_of<T>() * (capacity as usize);
+    return Buf { storage: alloc::allocator::alloc(size, 8), length: 0, capacity: capacity };
+}
+
+fn push<T>(value: Buf<T>, item: T) -> Buf<T> {
+    let items: [T] = core::mem::typed_slice_from_storage(value.storage, value.capacity);
+    items[value.length] = item;
+    return Buf { storage: value.storage, length: value.length + 1, capacity: value.capacity };
+}
+
+fn at<T>(value: Buf<T>, index: i32) -> T {
+    let items: [T] = core::mem::typed_slice_from_storage(value.storage, value.capacity);
+    return items[index];
+}
+
+fn release<T>(value: Buf<T>) {
+    let size: usize = core::mem::size_of<T>() * (value.capacity as usize);
+    alloc::allocator::dealloc(value.storage, size, 8);
+}
+
+fn main() -> i32 {
+    // The table in core::mem, through one generic body per type.
+    if (bytes<i32>() != 4) { return 1; }
+    if (bytes<u8>() != 1) { return 2; }
+    if (bytes<u32>() != 8) { return 3; }
+    if (bytes<P>() != 16) { return 4; }
+    if (bytes<[i32; 3]>() != 24) { return 5; }
+    if (bytes<[i32]>() != 24) { return 6; }
+    if (bytes<str>() != 16) { return 7; }
+    if (bytes<Empty>() != 0) { return 8; }
+    if (bytes<bool>() != 8) { return 9; }
+    let direct: usize = core::mem::size_of<P>();
+    if (direct != 16) { return 10; }
+    if (twice<i32>() != 8 || twice<P>() != 32 || twice<[P; 2]>() != 64) { return 11; }
+
+    // The signed strides the sizes come from.
+    let nowhere: ptr = 0;
+    let ints: [i32] = core::mem::typed_slice_from_raw_parts(nowhere, 0);
+    let small: [u8] = core::mem::typed_slice_from_raw_parts(nowhere, 0);
+    let points: [P] = core::mem::typed_slice_from_raw_parts(nowhere, 0);
+    if (core::mem::slice_stride(ints) != 4) { return 12; }
+    if (core::mem::slice_stride(small) != 1) { return 13; }
+    if (core::mem::slice_stride(points) != -16) { return 14; }
+
+    // Allocation-backed buffers over a packed, a byte and a word type.
+    let numbers: Buf<i32> = with_capacity(3);
+    numbers = push(numbers, 5);
+    numbers = push(numbers, 6);
+    numbers = push(numbers, 7);
+    if (at(numbers, 0) != 5 || at(numbers, 2) != 7 || numbers.length != 3) { return 15; }
+    release(numbers);
+    let low: u8 = 7;
+    let high: u8 = 200;
+    let octets: Buf<u8> = with_capacity(2);
+    octets = push(octets, low);
+    octets = push(octets, high);
+    if ((at(octets, 0) as i32) != 7 || (at(octets, 1) as i32) != 200) { return 16; }
+    release(octets);
+
+    // Five P slots: the outer two guard a three-element view one slot up.
+    let outer: Buf<P> = with_capacity(5);
+    let all: [P] = core::mem::typed_slice_from_storage(outer.storage, 5);
+    all[0] = P { x: 91, y: 92 };
+    all[4] = P { x: 93, y: 94 };
+    let inner: [P] = core::mem::typed_slice_from_storage(outer.storage + core::mem::size_of<P>(), 3);
+    inner[0] = P { x: 1, y: 2 };
+    inner[1] = P { x: 3, y: 4 };
+    inner[2] = P { x: 5, y: 6 };
+    if (all[0].x != 91 || all[0].y != 92) { return 17; }
+    if (all[4].x != 93 || all[4].y != 94) { return 18; }
+    if (all[2].x != 3 || all[2].y != 4) { return 19; }
+    if (inner[0].x != 1 || inner[2].y != 6) { return 20; }
+    release(outer);
+    return 0;
+}

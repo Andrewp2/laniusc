@@ -13,6 +13,7 @@ import type_checker.local_struct_layout;
 import type_checker.native_nominal_identity;
 import type_checker.concrete_value_layout;
 import type_checker.dependencies.retained_value_layout;
+import status;
 
 bool valid_instance(uint instance)
 {
@@ -273,6 +274,7 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
 // lane publishes, so a node's layout is evaluated once, not once per
 // enclosing type, and no lane keeps a stack.
 RWStructuredBuffer<uint> type_native_word_memo;
+RWStructuredBuffer<uint> status;
 static const uint LAYOUT_NODE_NONE = 0xffffffffu;
 static const uint LAYOUT_STEP_DONE = 0xffffffffu;
 // The walker's depth bound: a path of more than 64 nodes has no layout.
@@ -323,6 +325,26 @@ void layout_node_ref(uint node, out uint tag, out uint payload)
     payload = (compact_hir_core[owner].kind == HIR_STRUCT_ITEM ? TY_STRUCT_BASE : TY_ENUM_BASE) + declaration;
 }
 
+// GPU type-check status code: a struct or enum contains itself by value.
+static const uint TYPE_CHECK_RECURSIVE_TYPE = 28u;
+
+// A value of memo node `node` would contain itself, so it has no finite
+// layout. Report the local struct or enum declaration at its name token;
+// codegen would otherwise only find a missing aggregate layout.
+void report_recursive_layout(uint node)
+{
+    uint capacity = checked_type_capacity();
+    uint declaration = INVALID;
+    if (node >= capacity) declaration = node - capacity;
+    else if (type_instance_kind[node] == 1u) declaration = type_instance_decl_token[node];
+    if (!valid_token(declaration)) return;
+    uint owner = type_decl_hir_node_by_token[declaration];
+    if (!valid_hir(owner)) return;
+    uint kind = compact_hir_core[owner].kind;
+    if (kind == HIR_STRUCT_ITEM || kind == HIR_ENUM_ITEM)
+        record_min_token_error(status, declaration, TYPE_CHECK_RECURSIVE_TYPE, 0u);
+}
+
 void layout_publish(uint node, uint words)
 {
     type_native_word_memo[node] = words >= INVALID - 1u ? INVALID : words + 1u;
@@ -364,7 +386,11 @@ uint layout_step(uint node)
                     child_tag, child_payload)
                     ? layout_node(child_tag, child_payload, child_words) : LAYOUT_NODE_NONE;
                 // A finite concrete type cannot contain itself by value.
-                if (child == node) child_words = INVALID;
+                if (child == node)
+                {
+                    report_recursive_layout(node);
+                    child_words = INVALID;
+                }
                 else if (child != LAYOUT_NODE_NONE)
                 {
                     uint entry = type_native_word_memo[child];
@@ -401,6 +427,7 @@ bool layout_descend(uint root)
         if (next == LAYOUT_STEP_DONE) return true;
         if (next == root)
         {
+            report_recursive_layout(root);
             layout_publish(root, INVALID);
             return true;
         }

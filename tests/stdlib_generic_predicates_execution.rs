@@ -266,37 +266,112 @@ fn imported_option_payload_boundaries_and_summary_execute() {
     assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
 }
 
+// Option payloads whose layouts were once unsupported: an empty struct and
+// inline, nested and string arrays. Each program stores a payload, reads it
+// back through a generic match, and checks every field, so a wrong payload
+// layout shows up as a wrong exit code or output.
 #[test]
-fn imported_option_rejects_unresolved_payload_layouts() {
-    for (name, declaration) in [
-        ("empty", "struct Payload {}"),
-        ("cyclic", "struct Payload { next: Payload }"),
-        ("inline_array", "struct Payload { values: [i32; 3] }"),
-        ("nested_array", "struct Payload { values: [[i32; 2]; 2] }"),
-        ("string_array", "struct Payload { values: [str; 2] }"),
+fn imported_option_payload_layouts_round_trip() {
+    for (name, declaration, present, fallback, checks, expected_stdout) in [
+        (
+            "empty",
+            "struct Payload {}",
+            "Payload {}",
+            "Payload {}",
+            "",
+            "",
+        ),
+        (
+            "inline_array",
+            "struct Payload { values: [i32; 3] }",
+            "Payload { values: [4, -5, 6] }",
+            "Payload { values: [7, 8, 9] }",
+            "if (got.values[0] != 4 || got.values[1] != -5 || got.values[2] != 6) { return 3; } \
+             if (other.values[0] != 7 || other.values[2] != 9) { return 4; }",
+            "",
+        ),
+        (
+            "nested_array",
+            "struct Payload { values: [[i32; 2]; 2] }",
+            "Payload { values: [[1, -2], [3, 4]] }",
+            "Payload { values: [[5, 6], [7, 8]] }",
+            "if (got.values[0][0] != 1 || got.values[0][1] != -2 || got.values[1][0] != 3 || \
+             got.values[1][1] != 4) { return 3; } if (other.values[1][1] != 8) { return 4; }",
+            "",
+        ),
+        (
+            "string_array",
+            "struct Payload { values: [str; 2] }",
+            "Payload { values: [\"ab\", \"γδε\"] }",
+            "Payload { values: [\"x\", \"y\"] }",
+            "if (std::io::println(got.values[0]) != 3 || std::io::println(got.values[1]) != 7) \
+             { return 3; } if (std::io::println(other.values[1]) != 2) { return 4; }",
+            "ab\nγδε\ny\n",
+        ),
     ] {
         let entry = common::TempArtifact::new("laniusc_option_layout", name, Some("lani"));
         entry.write_str(&format!(
-            "module app::main; import core::option; {declaration} fn main() -> i32 {{ let value: core::option::Option<Payload> = core::option::None(); return 0; }}"
+            "module app::main; import core::option; import std::io; {declaration} \
+             fn take(value: core::option::Option<Payload>, fallback: Payload) -> Payload {{ \
+             return match (value) {{ core::option::Some(inner) -> inner, core::option::None -> fallback }}; }} \
+             fn main() -> i32 {{ \
+             let present: core::option::Option<Payload> = core::option::Some({present}); \
+             let absent: core::option::Option<Payload> = core::option::None(); \
+             if (!present.is_some() || !absent.is_none()) {{ return 1; }} \
+             let got: Payload = take(present, {fallback}); \
+             let other: Payload = take(absent, {fallback}); \
+             {checks} return 0; }}"
         ));
         let path = entry.path().to_path_buf();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let result = common::run_gpu_codegen_with_timeout(name, move || {
+        let bytes = common::run_gpu_codegen_with_timeout(name, move || {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(
                 &path,
                 &root.join("stdlib"),
             ))
-        });
-        let error = match result {
-            Err(error) => error,
-            Ok(_) => panic!("unsupported {name} payload layout compiled"),
-        };
-        assert_eq!(
-            error.to_public_diagnostic().code,
-            "LNC0006",
-            "{name}: {error:?}"
-        );
+        })
+        .unwrap_or_else(|error| panic!("{name}: compile: {error}"));
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+            assert_eq!(
+                output.stdout,
+                expected_stdout.as_bytes(),
+                "{name}: {output:?}"
+            );
+            assert!(output.stderr.is_empty(), "{name}: {output:?}");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = (bytes, expected_stdout);
     }
+}
+
+// A payload that contains itself by value has no finite size. The type
+// checker reports it at the declaration, before native layout.
+#[test]
+fn imported_option_rejects_a_cyclic_payload() {
+    let entry = common::TempArtifact::new("laniusc_option_layout", "cyclic", Some("lani"));
+    entry.write_str(
+        "module app::main; import core::option; struct Payload { next: Payload } fn main() -> i32 { \
+         let value: core::option::Option<Payload> = core::option::None(); return 0; }",
+    );
+    let path = entry.path().to_path_buf();
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let error = common::run_gpu_codegen_with_timeout("cyclic payload", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(
+            &path,
+            &root.join("stdlib"),
+        ))
+    })
+    .expect_err("a cyclic payload layout compiled");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+    let label = diagnostic
+        .primary_label
+        .as_ref()
+        .expect("the recursive type diagnostic labels the declaration");
+    assert_eq!(label.message, "recursive type has infinite size", "{error:?}");
 }
 
 #[test]
@@ -326,32 +401,44 @@ fn main() -> i32 {
     let _ = bytes;
 }
 
+// Generic payload reads and the offsets after a generic payload. These once
+// failed explicitly because no scalar width could be assumed for T; each
+// instance now has its own layout. The program checks T = i32, a two-word
+// struct and bool, with the scalar after the payload read at each T's offset.
 #[test]
-fn unresolved_payload_reads_and_offsets_fail_explicitly() {
-    // No scalar width can safely be assumed for T, including when T itself
-    // is ignored and a later scalar payload is used.
-    for (body, entry) in [
-        (
-            "fn read<T>(value: Maybe<T>, fallback: T) -> T { return match (value) { Some(inner) -> inner, None -> fallback }; }",
-            "let value: Maybe<i32> = Some(-7); return read(value, 99);",
-        ),
-        (
-            "fn read<T>(value: Choice<T>) -> i32 { return match (value) { Item(ignored, used) -> used, Empty -> 0 }; }",
-            "let value: Choice<i32> = Item(-7, 99); return read(value);",
-        ),
-    ] {
-        let source = format!(
-            "pub enum Maybe<T> {{ Some(T), None }} pub enum Choice<T> {{ Item(T, i32), Empty }} {body} fn main() -> i32 {{ {entry} }}"
-        );
-        let result = common::run_gpu_codegen_with_timeout("unresolved payload", move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        });
-        let error = match result {
-            Err(error) => error,
-            Ok(_) => panic!("unresolved payload operation compiled: {body}"),
-        };
-        assert_eq!(error.to_public_diagnostic().code, "LNC0017", "{error:?}");
+fn generic_payload_reads_and_offsets_execute() {
+    let source = r#"
+pub struct Pair { first: i32, second: i32 }
+pub enum Maybe<T> { Some(T), None }
+pub enum Choice<T> { Item(T, i32), Empty }
+fn read<T>(value: Maybe<T>, fallback: T) -> T { return match (value) { Some(inner) -> inner, None -> fallback }; }
+fn used<T>(value: Choice<T>) -> i32 { return match (value) { Item(ignored, used) -> used, Empty -> -1 }; }
+fn main() -> i32 {
+    let small: Maybe<i32> = Some(-7);
+    let missing: Maybe<i32> = None();
+    if (read(small, 99) != -7 || read(missing, 99) != 99) { return 1; }
+    let pair: Maybe<Pair> = Some(Pair { first: -3, second: 44 });
+    let got: Pair = read(pair, Pair { first: 0, second: 0 });
+    if (got.first != -3 || got.second != 44) { return 2; }
+    let flag: Choice<bool> = Item(true, 42);
+    let wide: Choice<Pair> = Item(Pair { first: -7, second: 99 }, 43);
+    let nothing: Choice<i32> = Empty();
+    if (used(flag) != 42 || used(wide) != 43 || used(nothing) != -1) { return 3; }
+    return 0;
+}
+"#;
+    let bytes = common::run_gpu_codegen_with_timeout("generic payloads", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source))
+    })
+    .expect("compile generic payload reads and offsets");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("generic payloads", "generic_payload_offsets", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
     }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
 }
 
 fn assert_imported_generic_constructor_rejects_an_unrelated_local_nominal() {

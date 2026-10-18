@@ -1,0 +1,6 @@
+import core::mem;
+fn bytes<T>() -> usize { return core::mem::size_of<T>(); }
+fn main() -> i32 {
+    let direct: usize = core::mem::size_of<i32>();
+    return (direct as i32) + (bytes<[i32; 2]>() as i32) + 22;
+}

@@ -3,7 +3,8 @@
 // This pass runs after bounded generic array call inference. It keeps
 // array-valued call results length-aware by comparing the annotated destination
 // declaration's array instance with either the callee's declared return array
-// instance or the declaration-backed actual array argument instance. It consumes
+// instance or the actual argument's synthesized array (its call_inference_result
+// slot, whatever the argument's expression form). It consumes
 // dense statement/call payloads and type-instance refs; it does not inspect
 // source bytes, token spelling, helper
 // names, or callee function bodies. Over-width call/parameter windows fail
@@ -62,6 +63,8 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> method_call_name_id;
 
 StructuredBuffer<uint> call_return_generic_slot;
@@ -78,14 +81,11 @@ static const uint ERR_CALL_MISMATCH = 10u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
-
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
@@ -142,35 +142,6 @@ uint stmt_slot(uint node, uint slot)
     return payload.d;
 }
 
-uint expr_slot(uint node, uint slot)
-{
-    if (!valid_node(node)) return INVALID;
-    HirPayload payload = compact_hir_payload[node];
-    if (slot == 0u) return payload.a;
-    if (slot == 1u) return payload.b;
-    if (slot == 2u) return payload.c;
-    return payload.d;
-}
-
-uint resolve_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    return node;
-}
-
-uint name_token_for_expr(uint root)
-{
-    uint node = resolve_expr(root);
-    if (!valid_node(node) ||
-        (compact_hir_core[node].kind != HIR_NAME_EXPR &&
-         expr_slot(node, 0u) != HIR_EXPR_NAME))
-        return INVALID;
-
-    uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
-    return valid_token(token) ? token : compact_hir_core[node].token_start;
-}
-
 bool is_array_type(uint ty)
 {
     return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
@@ -221,23 +192,6 @@ uint call_arg_node_for_call(uint call_node, uint ordinal)
 
     uint row = start + ordinal;
     return row < active_hir_node_count() ? call_arg_row_node[row] : INVALID;
-}
-
-uint first_call_arg_name_token(uint callee_token, uint call_node)
-{
-    uint arg_node = call_arg_node_for_call(call_node, 0u);
-    uint arg_node_token = name_token_for_expr(arg_node);
-    if (valid_token(arg_node_token))
-        return arg_node_token;
-
-    if (valid_token(callee_token))
-    {
-        uint arg_token = call_arg_record[callee_token].x;
-        if (valid_token(arg_token))
-            return arg_token;
-    }
-
-    return INVALID;
 }
 
 uint call_arg_count_for_callee(uint callee_token, uint call_node)
@@ -308,12 +262,13 @@ uint call_param_row_candidate(uint param_row)
     return array_candidate(call_param_row_ref_tag[param_row], call_param_row_ref_payload[param_row]);
 }
 
-// A name's candidates: its visible declaration's (.x) and its own (.y).
-uint2 name_array_candidates(uint name_token)
+// An argument's candidate: its synthesized slot S (any expression form).
+// 03c runs after the inference loop, so every published slot is final.
+uint arg_array_candidate(uint arg_node)
 {
-    if (!valid_token(name_token))
-        return uint2(INVALID, INVALID);
-    return uint2(decl_array_candidate(visible_decl[name_token]), decl_array_candidate(name_token));
+    if (!valid_node(arg_node))
+        return INVALID;
+    return array_candidate(call_inference_result_tag[arg_node], call_inference_result_payload[arg_node]);
 }
 
 uint4 bounded_arrays(uint4 candidates)
@@ -328,16 +283,6 @@ uint4 bounded_arrays(uint4 candidates)
             bounded[index] = row;
     }
     return bounded;
-}
-
-// The bounded array declared for a name: its visible declaration's, else
-// its own when the name is not its own declaration. `bounded` holds the
-// checked name_array_candidates.
-uint name_bounded_array(uint name_token, uint2 bounded)
-{
-    if (!valid_token(name_token))
-        return INVALID;
-    return bounded.x != INVALID || visible_decl[name_token] == name_token ? bounded.x : bounded.y;
 }
 
 bool concrete_array_elem_ref(uint tag, uint payload)
@@ -460,30 +405,37 @@ bool same_id(uint left, uint right)
     return ct_is_resolved(left) && left == right;
 }
 
+// payload.a is the statement record kind only on a statement row.
+bool let_stmt(uint node)
+{
+    if (!valid_node(node)) return false;
+    uint kind = compact_hir_core[node].kind;
+    return (kind == HIR_STMT || kind == HIR_LET_STMT) && stmt_slot(node, 0u) == STMT_RECORD_KIND_LET;
+}
+
 // The let's candidates: expected (.x), declared return (.y) and the first
-// argument name's (.zw).
+// argument's slot (.z).
 uint4 let_candidates(uint node)
 {
     uint4 candidates = uint4(INVALID, INVALID, INVALID, INVALID);
-    if (!valid_node(node) || stmt_slot(node, 0u) != STMT_RECORD_KIND_LET)
+    if (!let_stmt(node))
         return candidates;
     candidates.x = decl_array_candidate(stmt_slot(node, 1u));
-    uint call_node = resolve_expr(stmt_slot(node, 2u));
+    uint call_node = stmt_slot(node, 2u);
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return candidates;
     uint callee_token = call_callee_token(call_node);
     if (!valid_token(callee_token))
         return candidates;
     candidates.y = callee_return_candidate(callee_token);
-    candidates.zw = name_array_candidates(first_call_arg_name_token(callee_token, call_node));
+    candidates.z = arg_array_candidate(call_arg_node_for_call(call_node, 0u));
     return candidates;
 }
 
 ArrayCheck prepare_let(uint node, uint4 bounded)
 {
     ArrayCheck check = no_check();
-    if (!valid_node(node) ||
-        stmt_slot(node, 0u) != STMT_RECORD_KIND_LET)
+    if (!let_stmt(node))
         return check;
 
     uint decl_token = stmt_slot(node, 1u);
@@ -498,8 +450,7 @@ ArrayCheck prepare_let(uint node, uint4 bounded)
     if (expected_instance == INVALID && !is_array_type(expected_ty))
         return check;
 
-    uint expr_node = stmt_slot(node, 2u);
-    uint call_node = resolve_expr(expr_node);
+    uint call_node = stmt_slot(node, 2u);
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return check;
 
@@ -549,8 +500,7 @@ ArrayCheck prepare_let(uint node, uint4 bounded)
     }
     else if (specialize_symbolic_result)
     {
-        actual_instance =
-            name_bounded_array(first_call_arg_name_token(callee_token, call_node), bounded.zw);
+        actual_instance = bounded.z;
     }
     check.mode = CHECK_LET_DECLARED;
     check.other = comparable_array(declared_instance);
@@ -598,14 +548,14 @@ void finish_let(ArrayCheck check, uint3 ids)
         TY_ARRAY_BASE * 256u + check.actual_ty);
 }
 
-// The argument row's candidates: its parameter (.x) and its name's (.zw).
+// The argument row's candidates: its parameter (.x) and its slot (.z).
 uint4 argument_candidates(uint row)
 {
     uint4 candidates = uint4(INVALID, INVALID, INVALID, INVALID);
     if (row >= call_arg_row_count_out[0])
         return candidates;
     candidates.x = call_param_row_candidate(call_arg_param_row[row]);
-    candidates.zw = name_array_candidates(name_token_for_expr(call_arg_row_node[row]));
+    candidates.z = arg_array_candidate(call_arg_row_node[row]);
     return candidates;
 }
 
@@ -631,8 +581,7 @@ ArrayCheck prepare_argument(uint row, uint4 bounded)
     if (!call_window_fits_cache(callee_token, call_node))
         return check;
 
-    uint arg_node = call_arg_row_node[row];
-    uint actual_instance = name_bounded_array(name_token_for_expr(arg_node), bounded.zw);
+    uint actual_instance = bounded.z;
     if (!concrete_bounded_array_instance(actual_instance))
         return check;
     check.mode = CHECK_ARGUMENT;

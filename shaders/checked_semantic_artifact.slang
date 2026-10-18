@@ -32,6 +32,11 @@ struct CheckedCallArtifact
     uint receiver_matched_ref_payload;
     uint receiver_parameter_ref_tag;
     uint receiver_parameter_ref_payload;
+    // 1 when an accepted explicit or contextual type argument still names an
+    // unsubstituted generic parameter of the caller, as `size_of<T>()` does in
+    // `fn bytes<T>() -> i32`. Only a concrete replay of the caller can
+    // instantiate such a callee, so the caller's body stays a template.
+    uint symbolic_type_environment;
 };
 
 // `semantic_calls_by_hir` is sparse by HIR kind. Every HIR_CALL_EXPR row is

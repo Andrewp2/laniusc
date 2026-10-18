@@ -97,6 +97,7 @@ RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> compact_hir_count;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -118,7 +119,9 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i < gParams.n_hir_nodes)
+    // HIR rows past the job's own are not nodes: no pass reads them as one.
+    // A parser allocation retained from a larger job keeps a larger capacity.
+    if (i < min(gParams.n_hir_nodes, compact_hir_count[0u]))
     {
         // Iteration kinds are retained through inference and final publication.
         semantic_iterable_kind_by_hir[i] = 0u;

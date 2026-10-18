@@ -262,6 +262,8 @@ define_token_kinds! {
     As,
     // parser retags of identifiers that name a cast target type
     CastTypeIdent,
+    // parser retag of the `!` right after a return arrow: the never type
+    ReturnNever,
 }
 
 impl TokenKind {
@@ -360,6 +362,7 @@ impl TokenKind {
             Self::ImplPub | Self::TraitPub => Self::Pub,
             Self::ParamSelfValue | Self::ParamSelfRefValue => Self::SelfValue,
             Self::ReturnArrow => Self::Arrow,
+            Self::ReturnNever => Self::Not,
             Self::ImplFor => Self::For,
             Self::InherentImpl | Self::TraitImpl => Self::Impl,
             Self::ImportString | Self::ExternAbiString => Self::String,
