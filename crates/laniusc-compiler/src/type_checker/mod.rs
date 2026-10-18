@@ -15,6 +15,8 @@ mod bind_models;
 mod bind_support;
 mod canonical_passes;
 mod compiler_graph;
+#[cfg(test)]
+pub(crate) use compiler_graph::OUTPUTS_LOWERING_BINDS_WRITABLE;
 mod generic_body;
 mod generic_calls;
 mod owner_spans;
