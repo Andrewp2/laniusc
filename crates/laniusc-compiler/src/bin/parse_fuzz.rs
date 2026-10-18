@@ -699,13 +699,29 @@ async fn main() -> Result<()> {
 
     let mut passed = 0usize;
     let mut failed = 0usize;
+    // `LANIUS_PARSE_FUZZ_RESIDENCY=1` prints, after each input, the live
+    // tracked GPU bytes and the cached bind groups, which must stay bounded.
+    let residency = env_truthy("LANIUS_PARSE_FUZZ_RESIDENCY");
+    let report_residency = |label: &str| {
+        if residency {
+            let stats = laniusc_compiler::gpu::buffers::tracked_buffer_allocation_stats();
+            println!(
+                "[residency] {label} live_buffers={} live_bytes={} cached_bind_groups={}",
+                stats.allocations,
+                stats.bytes,
+                laniusc_compiler::gpu::passes_core::reflected_bind_group_cache_len(),
+            );
+        }
+    };
 
     // 1) File corpus (goldens checked if present)
     for path in paths {
         let label = path.display().to_string();
         let src =
             std::fs::read_to_string(&path).with_context(|| format!("read input {}", label))?;
-        match run_source(Some(&path), &label, &src, true, &lexer, &parser, &tables).await {
+        let result = run_source(Some(&path), &label, &src, true, &lexer, &parser, &tables).await;
+        report_residency(&label);
+        match result {
             Ok(()) => passed += 1,
             Err(e) => {
                 eprintln!("[fail] {}:\n  {:#}", label, e);
@@ -726,7 +742,9 @@ async fn main() -> Result<()> {
         // Use the repo's grammar-oriented generator to make parser-valid programs.
         let src = laniusc_compiler::dev::generator::gen_valid_program(&mut rng, fuzz.len);
         let label = format!("fuzz_iter_{}_bytes_{}", i, src.len());
-        match run_source(None, &label, &src, true, &lexer, &parser, &tables).await {
+        let result = run_source(None, &label, &src, true, &lexer, &parser, &tables).await;
+        report_residency(&label);
+        match result {
             Ok(()) => passed += 1,
             Err(e) => {
                 eprintln!("[fail] {}:\n  {:#}", label, e);

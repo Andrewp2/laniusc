@@ -53,8 +53,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint dispatched = max(group_total, 1u);
         opt_ir_access_group_dispatch_args[0u] = min(dispatched, MAX_GROUPS_X);
+        // One workgroup per group: y is clamped as well as x, since
+        // nothing validates indirect arguments.
         opt_ir_access_group_dispatch_args[1u] =
-            (dispatched + MAX_GROUPS_X - 1u) / MAX_GROUPS_X;
+            min((dispatched + MAX_GROUPS_X - 1u) / MAX_GROUPS_X, MAX_GROUPS_X);
         opt_ir_access_group_dispatch_args[2u] = 1u;
     }
     if (group_id >= group_total) return;

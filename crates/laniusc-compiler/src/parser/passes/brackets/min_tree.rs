@@ -48,12 +48,8 @@ impl BracketsMinTreePass {
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gMinTree".into(), step.params.as_entire_binding()),
             (
-                "block_row_min".into(),
-                buffers.b_block_row_min.as_entire_binding(),
-            ),
-            (
-                "block_prefix".into(),
-                buffers.b_block_prefix.as_entire_binding(),
+                "layer_local_min".into(),
+                buffers.b_layer_local_min.as_entire_binding(),
             ),
             ("min_tree".into(), buffers.b_min_tree.as_entire_binding()),
         ]);
