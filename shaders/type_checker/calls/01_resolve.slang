@@ -41,6 +41,7 @@ RWStructuredBuffer<uint> call_generic_slot_ordinal;
 RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
+StructuredBuffer<uint> compact_hir_count;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -106,6 +107,9 @@ void clear_call_param_slot(uint token_i, uint param_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
+    // HIR rows past the job's own are not nodes: no pass reads them as one.
+    // A parser allocation retained from a larger job keeps a larger capacity.
+    uint hir_rows = min(gParams.n_hir_nodes, compact_hir_count[0u]);
     // Optional claim passes can be skipped in the next workspace job. Counts
     // belong to this job and cannot expose a previous generic unit's rows.
     if (i == 0u)
@@ -120,7 +124,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call_explicit_binding_tag.GetDimensions(binding_capacity, binding_stride);
     if (i < binding_capacity / 8u)
         for (uint row = 0u; row < 8u; row++) call_explicit_binding_tag[i * 8u + row] = 0u;
-    if (i < gParams.n_hir_nodes)
+    if (i < hir_rows)
     {
         semantic_argument_mode_by_hir[i] = 0u;
         call_explicit_arg_slot[i] = INVALID;
@@ -129,7 +133,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call_context_owner_by_token.GetDimensions(context_capacity, context_stride);
     if (i < gParams.n_tokens && i < context_capacity) call_context_owner_by_token[i] = INVALID;
     call_context_arg_mask.GetDimensions(context_capacity, context_stride);
-    if (i < gParams.n_hir_nodes && i < context_capacity)
+    if (i < hir_rows && i < context_capacity)
     {
         call_context_arg_mask[i] = 0u;
         call_context_constant_mask[i] = 0u;
@@ -165,7 +169,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         clear_call_param_slot(i, 3u);
     }
 
-    if (i < gParams.n_hir_nodes)
+    if (i < hir_rows)
     {
         call_result_instance[i] = INVALID;
     }
