@@ -1707,6 +1707,97 @@ fn main() -> i32 { return support::math::seven(); }
         }
     }
 
+    /// p61: a generic call into an earlier dependency page. The callee's
+    /// parameter rows name an imported nominal of their own page, and the
+    /// call is checked after another page was made resident, so the
+    /// parameter's type must not be read through the resident page's nodes.
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn p61_generic_call_into_an_earlier_dependency_page() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let first = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![r#"
+module lib::first;
+pub struct Pa { v: i32 }
+pub fn get<T>(p: Pa, x: T) -> i32 { return p.v; }
+pub fn keep<T>(p: Pa, x: T) -> T { return x; }
+"#
+            .into()]
+            .into(),
+            10,
+            0,
+            Vec::new().into(),
+            SourcePackArtifactTarget::X86_64,
+        ))
+        .expect("compile the first page's library");
+        let second = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![r#"
+module lib::second;
+pub struct Pb { w: i32, z: i32 }
+pub fn one(b: Pb) -> i32 { return b.w - b.z; }
+"#
+            .into()]
+            .into(),
+            11,
+            0,
+            Vec::new().into(),
+            SourcePackArtifactTarget::X86_64,
+        ))
+        .expect("compile the second page's library");
+        let source = r#"
+module app::main;
+import lib::first;
+import lib::second;
+fn main() -> i32 {
+    let p: lib::first::Pa = Pa { v: 40 };
+    let b: lib::second::Pb = Pb { w: 3, z: 2 };
+    let kept: i32 = lib::first::keep(p, 1);
+    return lib::first::get(p, true) + lib::second::one(b) + kept;
+}
+"#;
+        for (order, pages) in [
+            ("flat", vec![vec![first.interface.clone(), second.interface.clone()]]),
+            ("first-page-first", vec![vec![first.interface.clone()], vec![second.interface.clone()]]),
+            ("first-page-last", vec![vec![second.interface.clone()], vec![first.interface.clone()]]),
+        ] {
+            let consumer =
+                pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+                    vec![source.to_owned()].into(),
+                    12,
+                    0,
+                    pages.clone().into(),
+                    SourcePackArtifactTarget::X86_64,
+                ))
+                .unwrap_or_else(|error| panic!("{order}: compile the consumer: {error:?}"));
+            let objects = pollster::block_on(
+                compiler.specialize_x86_source_pack_objects(&[&first, &second, &consumer]),
+            )
+            .unwrap_or_else(|error| panic!("{order}: specialize: {error:?}"));
+            let input = x86::GpuX86LinkInput::for_executable_refs(
+                objects.iter().map(|object| object.as_ref()),
+            )
+            .expect("prepare objects");
+            let executable = compiler
+                .x86_linker()
+                .expect("x86 linker")
+                .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
+                .unwrap_or_else(|error| panic!("{order}: link: {error:?}"));
+            assert_x86_main_exit(&executable, order, 42);
+            // The other page's nominal in the callee's parameter must reject.
+            let wrong = source.replace("lib::first::get(p, true)", "lib::first::get(b, true)");
+            let error = pollster::block_on(
+                compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
+                    12,
+                    0,
+                    &[wrong],
+                    &pages,
+                ),
+            )
+            .expect_err("a nominal of the other page must not match the parameter");
+            assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{order}: {error:?}");
+        }
+    }
+
     #[test]
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn dependency_pages_preserve_record_fields_and_generic_body_replay() {
