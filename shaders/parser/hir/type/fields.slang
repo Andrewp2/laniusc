@@ -46,6 +46,8 @@ static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint HIR_TYPE_FORM_SLICE = 3u;
 static const uint HIR_TYPE_FORM_REF = 4u;
+// `-> !`: a leaf type row with no value, length or path.
+static const uint HIR_TYPE_FORM_NEVER = 5u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -216,4 +218,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_array_or_slice_type(i);
     else if (prod == PROD_TYPE_REF || prod == PROD_BOUND_TYPE_REF)
         publish_ref_type(i);
+    else if (prod == PROD_TYPE_NEVER)
+        hir_type_form[i] = HIR_TYPE_FORM_NEVER;
 }

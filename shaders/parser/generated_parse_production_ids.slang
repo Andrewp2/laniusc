@@ -316,3 +316,4 @@ static const uint PROD_CAST_TYPE_PATH = 311u;
 static const uint PROD_CAST_TYPE_PATH_IDENT = 312u;
 static const uint PROD_CAST_TYPE_PATH_MORE = 313u;
 static const uint PROD_CAST_TYPE_PATH_END = 314u;
+static const uint PROD_TYPE_NEVER = 315u;
