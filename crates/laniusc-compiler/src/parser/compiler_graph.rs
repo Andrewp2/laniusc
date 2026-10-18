@@ -506,7 +506,6 @@ impl ParserCompilerGraph {
                 ("bracket_depths", (&buffers.depths_out).into()),
                 ("bracket_block_sum", (&buffers.b_block_sum).into()),
                 ("bracket_block_minpref", (&buffers.b_block_minpref).into()),
-                ("bracket_block_row_min", (&buffers.b_block_row_min).into()),
                 ("bracket_block_maxdepth", (&buffers.b_block_maxdepth).into()),
             ],
         )?;
@@ -976,7 +975,7 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "bracket_block_sum"
             | "token_file_id"
             | "bracket_block_minpref"
-            | "bracket_block_row_min"
+            | "bracket_layer_local_min"
             | "bracket_block_maxdepth"
             | "bracket_block_prefix"
             | "bracket_prefix_sum"
@@ -1462,11 +1461,6 @@ fn build_graph(
             bracket_blocks * 4,
         ),
         (
-            "bracket_block_row_min",
-            ResourceDomain::RawNodes,
-            bracket_blocks * 4,
-        ),
-        (
             "bracket_block_maxdepth",
             ResourceDomain::RawNodes,
             bracket_blocks * 4,
@@ -1504,6 +1498,11 @@ fn build_graph(
         ("bracket_depths", ResourceDomain::RawNodes, 12),
         ("bracket_valid", ResourceDomain::RawNodes, 4),
         ("bracket_layer", ResourceDomain::RawNodes, stack_rows * 4),
+        (
+            "bracket_layer_local_min",
+            ResourceDomain::RawNodes,
+            bracket_blocks * 256 * 4,
+        ),
         (
             "match_for_index",
             ResourceDomain::RawNodes,
@@ -2268,16 +2267,14 @@ fn build_graph(
             ("bracket_depths", "bracket_depths"),
             ("bracket_block_sum", "bracket_block_sum"),
             ("bracket_block_minpref", "bracket_block_minpref"),
-            ("bracket_block_row_min", "bracket_block_row_min"),
             ("bracket_block_maxdepth", "bracket_block_maxdepth"),
         ],
     )?;
 
-    let bracket_aliases: [(&str, &str, Option<AccessMode>); 5] = [
+    let bracket_aliases: [(&str, &str, Option<AccessMode>); 4] = [
         ("exscan_inblock", "bracket_exscan_inblock", None),
         ("block_sum", "bracket_block_sum", None),
         ("block_minpref", "bracket_block_minpref", None),
-        ("block_row_min", "bracket_block_row_min", None),
         ("block_maxdepth", "bracket_block_maxdepth", None),
     ];
     static_pass(
@@ -2305,11 +2302,6 @@ fn build_graph(
             (
                 bracket_aliases[3].0,
                 bracket_aliases[3].1,
-                Some(AccessMode::Write),
-            ),
-            (
-                bracket_aliases[4].0,
-                bracket_aliases[4].1,
                 Some(AccessMode::Write),
             ),
         ],
@@ -2403,6 +2395,11 @@ fn build_graph(
             ("block_prefix", "bracket_block_prefix", None),
             ("out_depths_ro", "bracket_depths", None),
             ("layer", "bracket_layer", Some(AccessMode::Write)),
+            (
+                "layer_local_min",
+                "bracket_layer_local_min",
+                Some(AccessMode::Write),
+            ),
         ],
     )?;
     indirect(
@@ -2417,8 +2414,7 @@ fn build_graph(
         ResourceDomain::RawNodes,
         passes.b_min_tree.graph_pass(),
         &[
-            ("block_row_min", "bracket_block_row_min", None),
-            ("block_prefix", "bracket_block_prefix", None),
+            ("layer_local_min", "bracket_layer_local_min", None),
             ("min_tree", "bracket_min_tree", None),
         ],
     )?;
@@ -2454,8 +2450,7 @@ fn build_graph(
         &[
             ("sc_stream", "out_sc", None),
             ("layer", "bracket_layer", None),
-            ("block_row_min", "bracket_block_row_min", None),
-            ("block_prefix", "bracket_block_prefix", None),
+            ("layer_local_min", "bracket_layer_local_min", None),
             ("min_tree", "bracket_min_tree", None),
             ("out_valid", "bracket_valid", None),
             (

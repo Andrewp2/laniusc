@@ -115,10 +115,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (receiver_end == INVALID || receiver_end > receiver_end_limit)
                 hir_token_end[receiver] = receiver_end_limit;
         }
-        // The member expression includes its own generic argument list.
-        // The argument list's grammar span excludes the continuation.
+        // The member expression ends at its own generic argument list, or
+        // at its name when it has none. The empty argument list is anchored
+        // at the following token, so its span covers that token: for
+        // `0..bound.value {` it covered the loop body's `{`, and the member's
+        // completion sorted after the body opened.
         uint arguments = first_child[node];
         if (valid_node(arguments))
-            hir_token_end[node] = hir_token_end[arguments];
+            hir_token_end[node] = node_kind[arguments] == PROD_MEMBER_TYPE_ARGS_SOME
+                ? hir_token_end[arguments] : member_token + 1u;
     }
 }

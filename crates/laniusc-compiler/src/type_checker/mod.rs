@@ -634,6 +634,9 @@ struct ResidentTypeCheckWorkspace {
     semantic_projection: SemanticProjectionOperations,
     aggregate_comparison: AggregateComparisonOperation,
     scope_hir: ComputeOperation,
+    /// The semantic interface's type-topology operations, built by the first
+    /// job that records the interface and reused while their inputs match.
+    semantic_interface_topology: Mutex<semantic_interface::CachedSemanticInterfaceTopology>,
 }
 
 impl ResidentTypeCheckWorkspace {

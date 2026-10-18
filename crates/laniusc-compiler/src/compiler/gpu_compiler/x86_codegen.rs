@@ -90,9 +90,12 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<Vec<u8>, CompileError> {
         let pending = self.compile_x86_source_pack_auto(sources, source_paths).await?;
         let objects = self.specialize_pending_x86_source_pack_objects(vec![pending]).await?;
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter())
-                .map_err(source_pack_artifact_store_error)?;
+        let first_source = sources.first().map(|source| {
+            let path = source_paths.and_then(|paths| paths.first()).and_then(Option::as_deref);
+            (source.as_ref(), path)
+        });
+        let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
+            .map_err(|error| x86_link_input_error(error, first_source))?;
         let linker = self
             .x86_linker()
             .map_err(|reason| CompileError::GpuCodegen(reason.to_owned()))?;
@@ -115,6 +118,38 @@ pub(super) fn x86_empty_source_pack_compile_error() -> CompileError {
                 "the source pack is empty; the native x86 backend has no entrypoint",
             ))
             .with_note("x86 source packs must contain at least one source file before native entry selection can run"),
+    )
+}
+
+/// Maps a link-input error. When no object defines `main` this is the
+/// missing-main diagnostic, anchored at the start of the first source when its
+/// text is at hand. Any other link-input error is a source-pack artifact
+/// failure.
+pub(super) fn x86_link_input_error(
+    error: String,
+    first_source: Option<(&str, Option<&Path>)>,
+) -> CompileError {
+    if error != x86::X86_LINK_NO_ENTRY_OBJECT {
+        return source_pack_artifact_store_error(error);
+    }
+    let (path, source_line) = match first_source {
+        Some((text, path)) => (
+            path.map_or_else(|| PathBuf::from("<source>"), Path::to_path_buf),
+            text.lines().next().map(str::to_owned),
+        ),
+        None => (PathBuf::from("<source pack>"), None),
+    };
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0017", "missing main entrypoint")
+            .with_primary_label(DiagnosticLabel::primary(
+                path,
+                1,
+                1,
+                1,
+                source_line,
+                "no function named `main` is defined; the native x86 backend has no entrypoint",
+            ))
+            .with_help("define `fn main()` or `fn main() -> i32` as the program entry"),
     )
 }
 

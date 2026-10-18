@@ -166,6 +166,30 @@ const MAGIC_V2: &[u8; 8] = b"LXPRSE02";
 /// Sentinel used by parse tables to represent missing entries.
 pub const INVALID_TABLE_ENTRY: u32 = u32::MAX;
 
+/// Tags a parser row that holds two virtual generic-close tokens: a raw `>>`
+/// closing two type-argument lists. The low two 15-bit fields hold the inner
+/// and then the outer closing kind.
+const GENERIC_SHR_ROW_TAG: u32 = 0x8000_0000;
+
+/// Expands parser rows into the token sequence the grammar reads. The GPU
+/// pair pass (`llp_pairs.slang`) reads a generic `>>` row as its inner closer
+/// followed by its outer closer, so host replays of the same tables must too.
+/// The second vector maps each virtual token back to its parser row.
+fn virtual_token_kinds(token_kinds: &[u32]) -> (Vec<u32>, Vec<usize>) {
+    let mut kinds = Vec::with_capacity(token_kinds.len() + 1);
+    let mut rows = Vec::with_capacity(token_kinds.len() + 1);
+    for (row, &kind) in token_kinds.iter().enumerate() {
+        if kind & GENERIC_SHR_ROW_TAG != 0 {
+            kinds.extend([kind & 0x7fff, (kind >> 15) & 0x7fff]);
+            rows.extend([row, row]);
+        } else {
+            kinds.push(kind);
+            rows.push(row);
+        }
+    }
+    (kinds, rows)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Host-side parse-table oracle error.
 pub struct Ll1ParseError {
@@ -406,6 +430,8 @@ impl PrecomputedParseTables {
             });
         }
 
+        let (token_kinds, rows) = virtual_token_kinds(token_kinds);
+        let row_of = |pos: usize| rows.get(pos).copied().unwrap_or(pos);
         let input_end = token_kinds.len().saturating_sub(1);
         let first_input = if token_kinds.first().copied() == Some(0) {
             1
@@ -423,7 +449,7 @@ impl PrecomputedParseTables {
             if sym < self.n_kinds {
                 if sym != lookahead {
                     return Err(Ll1ParseError {
-                        pos,
+                        pos: row_of(pos),
                         code: Ll1ParseErrorCode::TerminalMismatch,
                         detail: sym,
                     });
@@ -435,7 +461,7 @@ impl PrecomputedParseTables {
             let nt = sym - self.n_kinds;
             if nt >= self.n_nonterminals || lookahead >= self.n_kinds {
                 return Err(Ll1ParseError {
-                    pos,
+                    pos: row_of(pos),
                     code: Ll1ParseErrorCode::BadSymbol,
                     detail: sym,
                 });
@@ -445,14 +471,14 @@ impl PrecomputedParseTables {
             let prod = self.ll1_predict[pred_idx];
             if prod == INVALID_TABLE_ENTRY || prod >= self.n_productions {
                 return Err(Ll1ParseError {
-                    pos,
+                    pos: row_of(pos),
                     code: Ll1ParseErrorCode::NoPrediction,
                     detail: nt,
                 });
             }
 
             out.push(prod);
-            positions.push(pos.saturating_sub(first_input) as u32);
+            positions.push(row_of(pos).saturating_sub(first_input) as u32);
             let off = self.prod_rhs_off[prod as usize] as usize;
             let len = self.prod_rhs_len[prod as usize] as usize;
             stack.extend(self.prod_rhs[off..off + len].iter().rev().copied());
@@ -460,7 +486,7 @@ impl PrecomputedParseTables {
 
         if pos != input_end {
             return Err(Ll1ParseError {
-                pos,
+                pos: row_of(pos),
                 code: Ll1ParseErrorCode::TrailingInput,
                 detail: token_kinds.get(pos).copied().unwrap_or(0),
             });
@@ -484,6 +510,11 @@ impl PrecomputedParseTables {
             });
         }
 
+        // A generic `>>` row is two grammar tokens. Without this expansion a
+        // syntax error anywhere after `Option<Option<T>>` was reported at the
+        // `>>` as a bad symbol.
+        let (token_kinds, rows) = virtual_token_kinds(token_kinds);
+        let row_of = |pos: usize| rows.get(pos).copied().unwrap_or(pos);
         let input_end = token_kinds.len().saturating_sub(1);
         let first_input = if token_kinds.first().copied() == Some(0) {
             1
@@ -499,7 +530,7 @@ impl PrecomputedParseTables {
             if sym < self.n_kinds {
                 if sym != lookahead {
                     return Some(Ll1RejectionContext {
-                        pos,
+                        pos: row_of(pos),
                         code: Ll1ParseErrorCode::TerminalMismatch,
                         found: lookahead,
                         expected: vec![sym],
@@ -512,7 +543,7 @@ impl PrecomputedParseTables {
             let nt = sym - self.n_kinds;
             if nt >= self.n_nonterminals || lookahead >= self.n_kinds {
                 return Some(Ll1RejectionContext {
-                    pos,
+                    pos: row_of(pos),
                     code: Ll1ParseErrorCode::BadSymbol,
                     found: lookahead,
                     expected: Vec::new(),
@@ -523,7 +554,7 @@ impl PrecomputedParseTables {
             let prod = self.ll1_predict[pred_idx];
             if prod == INVALID_TABLE_ENTRY || prod >= self.n_productions {
                 return Some(Ll1RejectionContext {
-                    pos,
+                    pos: row_of(pos),
                     code: Ll1ParseErrorCode::NoPrediction,
                     found: lookahead,
                     expected: self.expected_lookaheads_for_nonterminal(nt),
@@ -537,7 +568,7 @@ impl PrecomputedParseTables {
 
         if pos != input_end {
             return Some(Ll1RejectionContext {
-                pos,
+                pos: row_of(pos),
                 code: Ll1ParseErrorCode::TrailingInput,
                 found: token_kinds.get(pos).copied().unwrap_or(0),
                 expected: vec![0],
@@ -567,6 +598,10 @@ impl PrecomputedParseTables {
 
     /// Test-only host oracle for the adjacent-pair partial-parse stream.
     pub fn test_cpu_partial_parse_stream(&self, token_kinds: &[u32]) -> Vec<u32> {
+        // The GPU emits a generic `>>` row's two virtual pairs, inner then
+        // outer, in that row's pair slot, so the concatenated stream is the
+        // stream over the virtual tokens.
+        let (token_kinds, _) = virtual_token_kinds(token_kinds);
         let mut out = Vec::new();
         for pair in token_kinds.windows(2) {
             let prev = pair[0];
@@ -781,6 +816,54 @@ mod tests {
         assert_eq!(context.code, Ll1ParseErrorCode::NoPrediction);
         assert_eq!(context.found, 2);
         assert_eq!(context.expected, vec![1]);
+    }
+
+    /// `ident >> ;` where the `>>` row packs closers 2 (inner) and 3 (outer):
+    /// S -> 1 2 3 4 accepts it only when the row is read as two tokens.
+    fn tiny_generic_shr_table() -> PrecomputedParseTables {
+        let mut tables = PrecomputedParseTables::new(5, 1);
+        tables.n_nonterminals = 1;
+        tables.start_nonterminal = 0;
+        tables.ll1_predict = vec![INVALID_TABLE_ENTRY; 5];
+        tables.ll1_predict[1] = 0;
+        tables.prod_rhs_off = vec![0];
+        tables.prod_rhs_len = vec![4];
+        tables.prod_rhs = vec![1, 2, 3, 4];
+        for (prev, this, production) in [(0, 1, 10), (1, 2, 11), (2, 3, 12), (3, 4, 13), (4, 0, 14)]
+        {
+            tables.set_pp_for_pair(prev, this, &[production]);
+        }
+        tables
+    }
+
+    const PACKED_SHR: u32 = GENERIC_SHR_ROW_TAG | (3 << 15) | 2;
+
+    #[test]
+    fn host_replays_read_a_generic_shr_row_as_two_closers() {
+        let tables = tiny_generic_shr_table();
+        let rows = [0, 1, PACKED_SHR, 4, 0];
+
+        assert_eq!(
+            tables.test_cpu_partial_parse_stream(&rows),
+            vec![10, 11, 12, 13, 14]
+        );
+        let (productions, positions) = tables
+            .test_cpu_ll1_production_stream_with_positions(&rows)
+            .expect("the packed row is the two closers the production expects");
+        assert_eq!(productions, vec![0]);
+        assert_eq!(positions, vec![0]);
+        assert_eq!(tables.diagnose_ll1_rejection(&rows), None);
+
+        let context = tables
+            .diagnose_ll1_rejection(&[0, 1, PACKED_SHR, 1, 0])
+            .expect("a wrong token after the packed row is rejected");
+        assert_eq!(context.code, Ll1ParseErrorCode::TerminalMismatch);
+        assert_eq!(
+            context.pos, 3,
+            "the position is the parser row after the packed row"
+        );
+        assert_eq!(context.found, 1);
+        assert_eq!(context.expected, vec![4]);
     }
 
     #[test]

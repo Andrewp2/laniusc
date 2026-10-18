@@ -342,7 +342,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         )
                         .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
                     pipeline
-                        .record(encoder, timer.as_deref_mut())
+                        .record(device, queue, encoder, timer.as_deref_mut())
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                 }
                 Ok((type_check, hir))
@@ -549,7 +549,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
             pipeline
-                .record(encoder, timer.as_deref_mut())
+                .record(device, queue, encoder, timer.as_deref_mut())
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         if let Some(request) = object_request {
@@ -576,7 +576,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     crate::codegen::lowering::ReplaySelection::Functions(&[]),
             };
             pipeline
-                .record_object(queue, encoder, library_id, unit_id, selected_replay,
+                .record_object(device, queue, encoder, library_id, unit_id, selected_replay,
                     timer.as_deref_mut())
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }

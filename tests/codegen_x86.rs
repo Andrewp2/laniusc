@@ -2742,6 +2742,24 @@ fn main() -> bool {
 }
 
 #[test]
+fn x86_executes_short_circuit_chains_longer_than_the_span_walk() {
+    // A left-nested `||` chain past 32 operators. Each operator's span must
+    // start at the first operand, or the outer operator's opening rows sort
+    // into the inner operator's right-hand side.
+    for (name, last_compared, expected) in [("all_false", 3, 0), ("last_true", 4, 2)] {
+        let mut terms = (0..39)
+            .map(|ordinal| format!("values[{}] != {}", ordinal % 4, ordinal % 4))
+            .collect::<Vec<_>>();
+        terms.push(format!("values[3] != {last_compared}"));
+        let source = format!(
+            "fn main() -> i32 {{\n    let values: [i32; 4] = [0, 1, 2, 3];\n    if ({}) {{\n        return 2;\n    }}\n    return 0;\n}}\n",
+            terms.join(" ||\n        ")
+        );
+        assert_source_exit(&format!("short_circuit_chain_40_{name}"), &source, expected);
+    }
+}
+
+#[test]
 fn x86_executes_short_circuit_rhs_trapping_arithmetic() {
     assert_source_exit(
         "x86_executes_short_circuit_rhs_trapping_arithmetic",
@@ -4016,24 +4034,15 @@ fn main() {
     let err = common::run_gpu_codegen_with_timeout("x86 struct for iterable", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect_err(
-        "struct for iterables should fail until x86 lowering consumes an explicit iterable record",
-    );
+    .expect_err("a struct without an iterable record is not a for iterable");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
+            // The checker rejects the iterable's type before native codegen.
             assert_eq!(
-                diagnostic.code, "LNC0017",
-                "struct for-iterable rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "struct for-iterable rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("unsupported x86 for iterable"),
-                "diagnostic should identify the native iterable boundary: {message}"
+                diagnostic.code, "LNC0006",
+                "struct for-iterable rejection should be the checker's type mismatch: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -4069,20 +4078,15 @@ fn main() {
     let err = common::run_gpu_codegen_with_timeout("x86 scalar for iterable", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect_err(
-        "scalar for iterables should fail closed until x86 iteration lowering supports them",
-    );
+    .expect_err("a scalar is not a for iterable");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
+            // The checker rejects the iterable's type before native codegen.
             assert_eq!(
-                diagnostic.code, "LNC0017",
-                "scalar for-iterable rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("x86") && diagnostic.message.contains("iterable"),
-                "diagnostic should identify the native iterable boundary: {message}"
+                diagnostic.code, "LNC0006",
+                "scalar for-iterable rejection should be the checker's type mismatch: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -4111,15 +4115,13 @@ fn main() {
 
 #[test]
 fn x86_stage_status_pairs_error_code_with_min_detail() {
+    // Both statements report the same x86 diagnostic. The status must keep
+    // the earliest node's label with that diagnostic's code and message.
     let source = r#"
 fn main() {
-    let limit: i32 = 3;
-    let total: i32 = 0;
-    for value in limit {
-        total += value;
-    }
-    let later: str = "not yet";
-    return total;
+    let first: i32 = 12 / 0;
+    let second: i32 = 30 / 0;
+    return first + second;
 }
 "#
     .to_owned();
@@ -4132,9 +4134,13 @@ fn main() {
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
+            assert_eq!(
+                diagnostic.code, "LNC0017",
+                "x86 rejection should use the stable backend diagnostic: {message}"
+            );
             assert!(
-                diagnostic.message.contains("unsupported x86 for iterable"),
-                "diagnostic code/message should follow the earliest unsupported node, not a later literal: {message}"
+                diagnostic.message.contains("unsupported x86 zero divisor"),
+                "diagnostic code/message should follow the reported x86 node: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -4142,8 +4148,8 @@ fn main() {
                 .expect("x86 diagnostic should include a primary source label");
             assert_eq!(
                 label.source_line.as_deref(),
-                Some("    for value in limit {"),
-                "diagnostic label should stay paired with the reported x86 error: {message}"
+                Some("    let first: i32 = 12 / 0;"),
+                "diagnostic label should be the earliest node with the reported x86 error: {message}"
             );
         }
         CompileError::GpuCodegen(message) => {
@@ -4177,28 +4183,19 @@ fn main() {
 "#,
     ];
 
-    let err = common::run_gpu_codegen_with_timeout("x86 source-pack scalar for iterable", move || {
-        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-    })
-    .expect_err(
-        "source-pack scalar for iterables should fail closed until x86 iteration lowering supports them",
-    );
+    let err =
+        common::run_gpu_codegen_with_timeout("x86 source-pack scalar for iterable", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect_err("a scalar from another source-pack module is not a for iterable");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
+            // The checker rejects the iterable's type before native codegen.
             assert_eq!(
-                diagnostic.code, "LNC0017",
-                "source-pack scalar for-iterable rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "source-pack scalar for-iterable rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("unsupported x86 for iterable")
-                    && message.contains("native x86 backend"),
-                "diagnostic should identify the native iterable boundary: {message}"
+                diagnostic.code, "LNC0006",
+                "source-pack scalar for-iterable rejection should be the checker's type mismatch: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -10572,6 +10569,7 @@ fn x86_executes_source_pack_bool_helper_call_in_branch_condition() {
 #[test]
 fn x86_executes_source_pack_std_path_separator_helper() {
     let sources = [
+        include_str!("../stdlib/core/utf8.lani"),
         include_str!("../stdlib/std/path.lani"),
         r#"
 module app::main;

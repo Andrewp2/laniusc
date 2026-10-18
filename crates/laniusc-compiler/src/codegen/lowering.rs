@@ -1901,13 +1901,17 @@ impl GpuSemanticLoweringStage {
 
     #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_timed(encoder, None)
+        self.record_timed(encoder, None, None)
     }
 
+    /// Records the semantic stage. With `split`, the reset and the first
+    /// passes are submitted before the layout rounds, so the GPU runs them
+    /// while the host records and finishes the rest of the lowering.
     pub(crate) fn record_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
+        split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -1931,6 +1935,14 @@ impl GpuSemanticLoweringStage {
         // Struct widths that do not depend on enum fields are available to
         // the variant pass; the second walk incorporates enum-valued fields.
         operations.function_layout_words.record(encoder)?;
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.semantic_head",
+                "lowering.layout.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
         // Each round dispatches over the variant and field rows only, not
         // every HIR row: 192 dispatches of mostly idle lanes were the cost.
         for _ in 0..AGGREGATE_LAYOUT_ROUNDS {

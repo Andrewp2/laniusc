@@ -1,9 +1,13 @@
-// Pareas-style typed bracket validation using a block-minimum tree and one
-// previous-smaller-or-equal query per closing stack event. The production path
-// records only validity; debug/readback builds may additionally materialize the
-// involutive match table.
+// Pareas-style typed bracket validation with one previous-smaller-or-equal
+// query per closing stack event. The query climbs the blocks' local layer
+// heaps from 03_apply_prefix and the block-minimum tree from
+// 04_build_min_tree, so it reads O(log distance) layers instead of scanning
+// rows (blocked_search_tree.slang). The production path records only
+// validity; debug/readback builds may additionally materialize the involutive
+// match table.
 
 import atomics;
+import blocked_search_tree;
 import gpu_index;
 import segment_tree;
 
@@ -21,13 +25,12 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> sc_stream;
 StructuredBuffer<uint> partial_parse_status;
 StructuredBuffer<uint> layer;
-StructuredBuffer<int> block_row_min;
-StructuredBuffer<int> block_prefix;
+// Local minimum heaps of every 256-row block of layers.
+StructuredBuffer<int> layer_local_min;
 StructuredBuffer<int> min_tree;
 RWStructuredBuffer<uint> match_for_index;
 RWStructuredBuffer<uint> out_valid;
 
-static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -36,60 +39,19 @@ uint active_count()
     return min(gParams.n_sc, partial_parse_status[4u]);
 }
 
-public struct StackDepthTree : IRangeSearchTree<int>
+public struct StackDepthTree : IBlockedSearchTree<int>
 {
-    public static uint n_blocks()
-    {
-        return gParams.n_blocks;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return block_prefix[block] + block_row_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return min_tree[node];
-    }
-}
-
-public struct StackDepthRows : IRangeSearchRows<int>
-{
-    public static uint item_count()
-    {
-        return active_count();
-    }
-
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    public static int row_value(uint row)
-    {
-        return int(layer[row]);
-    }
+    [ForceInline] public static uint row_count() { return active_count(); }
+    [ForceInline] public static int row_value(uint row) { return int(layer[row]); }
+    [ForceInline] public static int local_node(uint block, uint node) { return layer_local_min[block * WG_SIZE + node]; }
+    [ForceInline] public static uint block_leaf_base() { return gParams.leaf_base; }
+    [ForceInline] public static int block_node(uint node) { return min_tree[node]; }
 }
 
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
 {
-    [ForceInline]
-    public static bool aggregate_may_match(int aggregate, int query)
-    {
-        return aggregate <= query;
-    }
-
-    [ForceInline]
-    public static bool leaf_matches(int value, int query)
-    {
-        return value <= query;
-    }
+    [ForceInline] public static bool aggregate_may_match(int aggregate, int query) { return aggregate <= query; }
+    [ForceInline] public static bool leaf_matches(int value, int query) { return value <= query; }
 }
 
 [shader("compute")]
@@ -105,16 +67,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((close_code & 1u) != 0u)
         return;
 
-    uint open_i;
     int wanted_depth = int(layer[close_i]);
-    bool found = range_search_tree_last_index_before<
-        int,
-        int,
-        StackDepthTree,
-        StackDepthRows,
-        DepthAtMost>(close_i, wanted_depth, open_i);
-
-    if (!found || open_i >= close_i)
+    uint open_i = blocked_search_last_before<int, int, StackDepthTree, DepthAtMost>(
+        close_i,
+        wanted_depth);
+    if (open_i >= close_i)
     {
         atomic_u32_and(out_valid, 0u, 0u);
         return;
