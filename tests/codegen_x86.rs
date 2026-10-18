@@ -11905,6 +11905,9 @@ fn main() -> i32 {
     let native: [u8; 3] = [10, 30, 2];
     if (bump(native) != 32) { return 8; }
     if ((native[1] as i32) != 20) { return 9; }
+    // The pointer can come straight from a nested intrinsic call.
+    let nested: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("Az"), 2);
+    if ((nested[0] as i32) != 65 || (nested[1] as i32) != 122) { return 10; }
     return 42;
 }
 "#,

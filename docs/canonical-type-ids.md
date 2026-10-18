@@ -418,6 +418,15 @@ Each job interns into one table, so an ID stays valid for the whole job.
   for the references that still name them. The substitution restart drops
   the rows the job-start seed recorded for rewritten candidates
   (`ct_row_of`); generated rows are stable, so the seed finds them again.
+  The job-start seed skips the body graph rows (00e), which hold stale
+  contents until the replay writes them. The restart's last pass
+  (`substitution.body.seed_rows`, `01b_seed_body_rows`) offers the active
+  ones, so a type argument's ID has its seed row, with the seed's width
+  witness. Before it, realizing `[P; N]` for a dependency's `Vec<P, N>`
+  wrote a private row for a foreign `P` from its declaration triple. That
+  row had no layout, and the dependency body lost the aggregate layouts of
+  its `Vec<P, N>` values (x86 LNC0017, "lost its checked aggregate result
+  layout"), unless the body also spelled `[T; N]`.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a
   false or missed merge (and the bridge self-check as a mismatch).
