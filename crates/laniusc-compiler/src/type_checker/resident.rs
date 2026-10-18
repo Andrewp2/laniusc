@@ -209,13 +209,13 @@ fn submit_and_read_u32s(
     readback: &LaniusBuffer<u32>,
     label: &'static str,
 ) -> Result<Vec<u32>> {
-    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    crate::gpu::passes_core::flush_deferred_compute_for_submit(encoder);
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("type-check-canonical-encoder"),
     });
     let recorded = std::mem::replace(encoder, next);
     crate::gpu::timer::stamp_active_submission_begin(encoder, label);
-    crate::gpu::passes_core::submit_with_progress(queue, label, recorded.finish());
+    crate::gpu::passes_core::submit_replaced_encoder(queue, encoder, recorded, label);
     let slice = readback.slice(..);
     crate::gpu::passes_core::map_readback_blocking(device, &slice, label)?;
     let words = slice
@@ -1925,10 +1925,11 @@ impl GpuTypeChecker {
                         encoder,
                         "type_check.call_inference",
                     );
-                    crate::gpu::passes_core::submit_with_progress(
+                    crate::gpu::passes_core::submit_replaced_encoder(
                         queue,
+                        encoder,
+                        recorded,
                         "type-check call inference",
-                        recorded.finish(),
                     );
                     let submitted = std::time::Instant::now();
                     let slice = self.call_inference_readback.slice(..);

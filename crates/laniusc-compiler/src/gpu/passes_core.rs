@@ -1121,6 +1121,7 @@ pub(crate) fn record_or_defer_compute_direct(
 ) {
     record_compiler_operation(label);
     if defer_compute_direct(pass, bind_group, groups, label) {
+        crate::gpu::encoder_chunks::after_deferred(encoder);
         return;
     }
     flush_deferred_compute(encoder);
@@ -1184,6 +1185,7 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
         &[],
         label,
     ) {
+        crate::gpu::encoder_chunks::after_deferred(encoder);
         return;
     }
     flush_deferred_compute(encoder);
@@ -1212,6 +1214,22 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
 /// when the `LANIUS_DEBUG_CAPTURE_PASS` dispatch is among them: it gets a pass
 /// of its own between its input and output copies).
 pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
+    flush_deferred_compute_and_cut(encoder, true);
+}
+
+/// Flushes the deferred dispatches of a recording about to be submitted. It
+/// does not cut a chunk (see `encoder_chunks`): the submit would only wait
+/// for a worker to finish it.
+pub(crate) fn flush_deferred_compute_for_submit(encoder: &mut wgpu::CommandEncoder) {
+    flush_deferred_compute_and_cut(encoder, false);
+}
+
+/// Commands waiting in this thread's deferred compute batch.
+pub(crate) fn deferred_compute_len() -> usize {
+    DEFERRED_COMPUTE.with(|state| state.borrow().commands.len())
+}
+
+fn flush_deferred_compute_and_cut(encoder: &mut wgpu::CommandEncoder, cut: bool) {
     let (label, commands) = DEFERRED_COMPUTE.with(|state| {
         let mut state = state.borrow_mut();
         (
@@ -1221,6 +1239,9 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
     });
     if commands.is_empty() {
         debug_capture_snapshot(encoder);
+        if cut {
+            crate::gpu::encoder_chunks::maybe_cut(encoder);
+        }
         return;
     }
     let started = host_timing_enabled().then(Instant::now);
@@ -1242,6 +1263,9 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
         );
     }
     debug_capture_snapshot(encoder);
+    if cut {
+        crate::gpu::encoder_chunks::maybe_cut(encoder);
+    }
 }
 
 /// Records deferred dispatches in order into one compute pass.
@@ -1357,8 +1381,28 @@ pub(crate) fn submit_with_optional_validation(
     validation_enabled: bool,
     validation_label: &str,
 ) -> SubmitTiming {
+    submit_all_with_optional_validation(
+        device,
+        queue,
+        label,
+        vec![command_buffer],
+        validation_enabled,
+        validation_label,
+    )
+}
+
+/// Submits command buffers in order in one `Queue::submit` and reports
+/// validation errors when enabled.
+pub(crate) fn submit_all_with_optional_validation(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    command_buffers: Vec<wgpu::CommandBuffer>,
+    validation_enabled: bool,
+    validation_label: &str,
+) -> SubmitTiming {
     let scope = validation_scope(device, validation_enabled);
-    let timing = submit_with_progress(queue, label, command_buffer);
+    let timing = submit_all_with_progress(queue, label, command_buffers);
     if let Some(err) = pop_validation_scope(scope) {
         eprintln!("[wgpu submit] validation while submitting {validation_label}: {err:#?}");
     }
@@ -1382,7 +1426,7 @@ pub(crate) fn submit_recorded_prefix(
     label: &'static str,
 ) {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    flush_deferred_compute(encoder);
+    flush_deferred_compute_for_submit(encoder);
     if !*ENABLED
         .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_SPLIT_SUBMISSIONS", true))
     {
@@ -1391,22 +1435,9 @@ pub(crate) fn submit_recorded_prefix(
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
     let recorded = std::mem::replace(encoder, next);
     crate::gpu::timer::stamp_active_submission_begin(encoder, label);
-    let start = Instant::now();
-    let commands = recorded.finish();
-    let finished = Instant::now();
-    crate::gpu::trace::record_host_span(
-        "host.submit",
-        &format!("{label}.encoder_finished"),
-        start,
-        finished,
-    );
-    if host_timing_enabled() {
-        eprintln!(
-            "[gpu_compile_host_timer] encoder_finish: label={label} finish_ms={:.3}",
-            finished.duration_since(start).as_secs_f64() * 1000.0,
-        );
-    }
-    submit_with_optional_validation(
+    let mut commands = crate::gpu::encoder_chunks::take(encoder);
+    commands.push(finish_encoder(recorded, label));
+    submit_all_with_optional_validation(
         device,
         queue,
         label,
@@ -1918,11 +1949,59 @@ pub(crate) fn trace_gpu_progress(label: &str) {
     }
 }
 
+/// Finishes an encoder, recording the host time as `{label}.encoder_finished`.
+/// wgpu validates and encodes every recorded command here (about 4-9 us per
+/// dispatch), so an untimed finish shows up as its caller's own host time.
+pub(crate) fn finish_encoder(encoder: wgpu::CommandEncoder, label: &str) -> wgpu::CommandBuffer {
+    let start = Instant::now();
+    let commands = encoder.finish();
+    let finished = Instant::now();
+    if crate::gpu::trace::enabled() {
+        crate::gpu::trace::record_host_span(
+            "host.submit",
+            &format!("{label}.encoder_finished"),
+            start,
+            finished,
+        );
+    }
+    if host_timing_enabled() {
+        eprintln!(
+            "[gpu_compile_host_timer] encoder_finish: label={label} finish_ms={:.3}",
+            finished.duration_since(start).as_secs_f64() * 1000.0,
+        );
+    }
+    commands
+}
+
+/// Submits a recording that `encoder` continues after `std::mem::replace`
+/// moved it out as `recorded`: the encoder's finished chunks, then
+/// `recorded`, in one `Queue::submit`.
+pub(crate) fn submit_replaced_encoder(
+    queue: &wgpu::Queue,
+    encoder: &wgpu::CommandEncoder,
+    recorded: wgpu::CommandEncoder,
+    label: &str,
+) -> SubmitTiming {
+    let mut commands = crate::gpu::encoder_chunks::take(encoder);
+    commands.push(finish_encoder(recorded, label));
+    submit_all_with_progress(queue, label, commands)
+}
+
 /// Submits one command buffer and records host-side submit timing.
 pub(crate) fn submit_with_progress(
     queue: &wgpu::Queue,
     label: &str,
     command_buffer: wgpu::CommandBuffer,
+) -> SubmitTiming {
+    submit_all_with_progress(queue, label, vec![command_buffer])
+}
+
+/// Submits command buffers in order in one `Queue::submit` and records
+/// host-side submit timing.
+pub(crate) fn submit_all_with_progress(
+    queue: &wgpu::Queue,
+    label: &str,
+    command_buffers: Vec<wgpu::CommandBuffer>,
 ) -> SubmitTiming {
     trace_gpu_progress(&format!("submit.start :: {label}"));
     if compute_schedule_enabled() {
@@ -1932,7 +2011,7 @@ pub(crate) fn submit_with_progress(
             .record_submission(label);
     }
     let start = Instant::now();
-    queue.submit(Some(command_buffer));
+    queue.submit(command_buffers);
     let end = Instant::now();
     crate::gpu::trace::record_host_span("host.submit", label, start, end);
     if host_timing_enabled() {
@@ -3423,6 +3502,9 @@ pub(crate) fn record_reflected_compute(
     let [x, y, _] = kernel.thread_group_size;
     let groups = plan_workgroups(dim, input, [x, y, 1])?;
     let deferred = defer_compute_direct_bind_groups(kernel, &bind_groups, groups, invocation);
+    if deferred {
+        crate::gpu::encoder_chunks::after_deferred(encoder);
+    }
     if !deferred {
         let launch = CaptureLaunch::Direct(groups);
         let captured =
@@ -3775,6 +3857,9 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
         );
 
         let deferred = defer_compute_direct_bind_groups(pd, &bind_groups, (gx, gy, gz), Self::NAME);
+        if deferred {
+            crate::gpu::encoder_chunks::after_deferred(ctx.encoder);
+        }
         if !deferred {
             let launch = CaptureLaunch::Direct((gx, gy, gz));
             let captured =
@@ -3856,6 +3941,9 @@ pub trait Pass<Buffers: CompilerGraphBuffers, DebugOutput> {
             dispatch_args.byte_offset,
             operation,
         );
+        if deferred {
+            crate::gpu::encoder_chunks::after_deferred(ctx.encoder);
+        }
         if !deferred {
             let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
             let captured =

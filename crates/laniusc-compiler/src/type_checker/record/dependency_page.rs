@@ -73,16 +73,17 @@ fn submit_dependency_page_boundary(
 ) {
     // Page uploads may overwrite every dependency word. Submit all work that
     // reads the current page, including deferred compute dispatches, first.
-    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    crate::gpu::passes_core::flush_deferred_compute_for_submit(encoder);
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("type-check-dependency-page-encoder"),
     });
     let recorded = std::mem::replace(encoder, next);
     crate::gpu::timer::stamp_active_submission_begin(encoder, "type_check.dependency_page");
-    crate::gpu::passes_core::submit_with_progress(
+    crate::gpu::passes_core::submit_replaced_encoder(
         queue,
+        encoder,
+        recorded,
         "type-check dependency page boundary",
-        recorded.finish(),
     );
 }
 

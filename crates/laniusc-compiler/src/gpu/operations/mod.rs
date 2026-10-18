@@ -72,6 +72,7 @@ fn record_direct_with_offsets(
         [x, y, 1],
     )?;
     if defer_compute_direct_with_offsets(pass, bind_group, groups, dynamic_offsets, label) {
+        crate::gpu::encoder_chunks::after_deferred(encoder);
         return Ok(());
     }
     let launch = CaptureLaunch::Direct(groups);
@@ -123,6 +124,7 @@ fn record_indirect_at(
         &[],
         label,
     ) {
+        crate::gpu::encoder_chunks::after_deferred(encoder);
         return Ok(());
     }
     let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, absolute_offset);
@@ -164,6 +166,7 @@ fn record_indirect_with_offsets(
         dynamic_offsets,
         label,
     ) {
+        crate::gpu::encoder_chunks::after_deferred(encoder);
         return Ok(());
     }
     let launch = CaptureLaunch::Indirect(&dispatch_args.buffer, dispatch_args.byte_offset);

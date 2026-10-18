@@ -800,6 +800,12 @@ impl GpuLexer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("compile-source-pack-parser-from-retained-shape-enc"),
                 });
+        // Finishes the parser recording's earlier chunks while it records.
+        let parser_chunks = crate::gpu::encoder_chunks::ChunkedEncoding::begin(
+            &self.device,
+            &parser_encoder,
+            "compile-source-pack-parser-from-retained-shape-enc",
+        );
 
         let recorded_parser = match record_parser(
             &self.device,
@@ -816,10 +822,12 @@ impl GpuLexer {
             timer.stamp(&mut parser_encoder, "parser.status_readback.done");
         }
 
-        let parser_commands = parser_encoder.finish();
+        let mut parser_commands = crate::gpu::encoder_chunks::take(&parser_encoder);
+        parser_commands.push(parser_encoder.finish());
+        drop(parser_chunks);
         staged_host_timer.stamp("compile.source-pack.parser.encoder_finished");
 
-        crate::gpu::passes_core::submit_with_optional_validation(
+        crate::gpu::passes_core::submit_all_with_optional_validation(
             &self.device,
             &self.queue,
             "compile.source-pack.parser-from-retained-shape",
@@ -834,6 +842,14 @@ impl GpuLexer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("compile-source-pack-after-parser-enc"),
                 });
+        // Type check, semantic interface and lowering: their submissions
+        // (submit_recorded_prefix and the type check's readback rounds) and
+        // the final one below take the chunks finished meanwhile.
+        let downstream_chunks = crate::gpu::encoder_chunks::ChunkedEncoding::begin(
+            &self.device,
+            &downstream_encoder,
+            "compile-source-pack-after-parser-enc",
+        );
         if let Some(timer) = maybe_timer.as_mut() {
             timer.stamp(
                 &mut downstream_encoder,
@@ -858,10 +874,12 @@ impl GpuLexer {
         }
         staged_host_timer.stamp("compile.source-pack.after-parser.timer_resolved");
 
-        let downstream_commands = downstream_encoder.finish();
+        let mut downstream_commands = crate::gpu::encoder_chunks::take(&downstream_encoder);
+        downstream_commands.push(downstream_encoder.finish());
+        drop(downstream_chunks);
         staged_host_timer.stamp("compile.source-pack.after-parser.encoder_finished");
 
-        crate::gpu::passes_core::submit_with_optional_validation(
+        crate::gpu::passes_core::submit_all_with_optional_validation(
             &self.device,
             &self.queue,
             "compile.source-pack.after-parser",

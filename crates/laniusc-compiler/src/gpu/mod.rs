@@ -12,6 +12,8 @@ pub mod device;
 pub(crate) mod dispatch_capture;
 /// Environment flag parsing helpers for GPU infrastructure.
 pub mod env;
+/// Finishes the earlier parts of a long recording on worker threads.
+pub(crate) mod encoder_chunks;
 /// Compiler-wide registry of reflected pipelines prepared before job timing.
 pub(crate) mod kernels;
 /// Reusable data-parallel operations assembled from reflected kernels.
