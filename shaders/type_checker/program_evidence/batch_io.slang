@@ -62,6 +62,14 @@ public void pev_obligation_status(uint obligation, uint state, uint detail, uint
     pev_output_write8(3u, obligation, uint4(state, detail, evidence, candidate),
         uint4(conflicting, required, available, 0u));
 }
+// A proven root. Word 7 is the catalog implementation that an
+// implementation proof applies plus one, 0 for an assumption proof: replay
+// routes the instance's bound members to that implementation's methods.
+public void pev_obligation_proven(uint obligation, uint state, uint proof, uint kind, uint source)
+{
+    pev_output_write8(3u, obligation, uint4(state, 0u, obligation, proof),
+        uint4(PEV_INVALID, 0u, 0u, kind == 1u ? source + 1u : 0u));
+}
 public void pev_obligation_failure(uint obligation, EvidenceStatus status)
 {
     uint state = status.state == PEV_RESOURCE_LIMIT ? 5u :

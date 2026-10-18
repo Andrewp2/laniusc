@@ -1225,7 +1225,8 @@ fn main()->i32 { if (keep(false)) { return 1; } return 0; }
                 .expect_err(&format!("{label}: invalid bound must reject before executable output"));
             let diagnostic = error.to_public_diagnostic();
             if label == "direct constant trait operand remains unsupported" {
-                assert_eq!(diagnostic.code, "LNC0016", "{label}: {error:?}");
+                // The impl header `impl Sized<2> for bool` is rejected first.
+                assert_eq!(diagnostic.code, "LNC0021", "{label}: {error:?}");
             } else {
                 assert!(matches!(diagnostic.code.as_str(), "LNC0007" | "LNC0008" | "LNC0021"),
                     "{label}: expected a source contract rejection: {error:?}");
@@ -1895,7 +1896,7 @@ fn ordinary_trait_methods_execute_alongside_generic_value_calls() {
         r#"
 module app::main;
 trait Hash<T> { fn hash(value: T) -> u32; }
-impl Hash<i32> for i32 { fn hash(value: i32) -> u32 { return value; } }
+impl Hash<i32> for i32 { fn hash(value: i32) -> u32 { return value as u32; } }
 fn keep<T>(value: T) -> T { return value; }
 fn main() -> i32 {
     if (i32::hash(keep(-1)) != 4294967295) { return 1; }

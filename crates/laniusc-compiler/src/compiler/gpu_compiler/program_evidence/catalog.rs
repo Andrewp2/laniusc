@@ -45,6 +45,18 @@ struct CallableInput {
     pub public_alias: Option<[u32; 3]>,
 }
 
+/// One method of an evidence-selected implementation: the trait member it
+/// implements (its interface symbol) and its native callable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::compiler::gpu_compiler) struct ImplementationMethodTarget {
+    /// Interface symbol of the trait member, scoped by the trait's unit.
+    pub required_symbol: u32,
+    pub trait_unit: [u32; 2],
+    pub receiver_mode: u32,
+    /// (library, unit, native symbol).
+    pub target: [u32; 3],
+}
+
 pub(in crate::compiler::gpu_compiler) struct CatalogInput<'a> {
     pub facts: &'a OriginalUnitFacts,
 }
@@ -117,6 +129,10 @@ pub(in crate::compiler::gpu_compiler) struct FrozenCatalog {
     pub callable_by_owner: BTreeMap<u32, u32>,
     pub predicate_by_owned_row: BTreeMap<(u32, u32), u32>,
     pub implementation_by_owned_row: BTreeMap<(u32, u32), u32>,
+    /// Inverses of the two maps above: table-8 and table-9 row -> (snapshot,
+    /// index into that snapshot's contract predicates or implementations).
+    predicate_sources: Vec<(u32, u32)>,
+    implementation_sources: Vec<(u32, u32)>,
     /// One upload, including catalog-owned output regions initialized by GPU.
     pub words: Arc<[u32]>,
     pub slices: [Slice; TABLE_COUNT],
@@ -168,6 +184,8 @@ impl FrozenCatalog {
             callable_by_owner: BTreeMap::new(),
             predicate_by_owned_row: BTreeMap::new(),
             implementation_by_owned_row: BTreeMap::new(),
+            predicate_sources: Vec::new(),
+            implementation_sources: Vec::new(),
             words: Arc::from([]),
             slices: [Slice::default(); TABLE_COUNT],
             outputs: [Slice::default(); OUTPUT_COUNT],
@@ -440,6 +458,9 @@ impl FrozenCatalog {
                     result
                         .predicate_by_owned_row
                         .insert((snapshot as u32, local_predicate as u32), row);
+                    ensure!(result.predicate_sources.len() == row as usize,
+                        "predicate rows are not appended in order");
+                    result.predicate_sources.push((snapshot as u32, local_predicate as u32));
                 }
                 let count = result.tables.count(8)? - first;
                 let row = result.tables.row_mut(2, owner)?;
@@ -566,6 +587,9 @@ impl FrozenCatalog {
                 result
                     .implementation_by_owned_row
                     .insert((snapshot as u32, local_impl as u32), row);
+                ensure!(result.implementation_sources.len() == row as usize,
+                    "implementation rows are not appended in order");
+                result.implementation_sources.push((snapshot as u32, local_impl as u32));
             }
             let interface = originals[&unit].facts.interface();
             ensure!(
@@ -622,6 +646,61 @@ impl FrozenCatalog {
         }
         Ok(result)
     }
+    /// The source unit that declares an implementation (table-9 row).
+    pub fn implementation_unit(&self, row: u32) -> Result<[u32; 2]> {
+        let &(snapshot, _) = self.implementation_sources.get(row as usize)
+            .ok_or_else(|| anyhow!("implementation row outside the frozen catalog"))?;
+        Ok(self.snapshots[snapshot as usize].unit)
+    }
+
+    /// The method targets of a nongeneric implementation (table-9 row), in
+    /// required-symbol order: what a bound member call routes to once evidence
+    /// has selected this implementation. None for an implementation with type
+    /// or constant parameters, whose methods need an environment of their own.
+    /// Copies accepted contract bindings; selects and compares nothing.
+    pub fn implementation_method_targets(&self, row: u32) -> Result<Option<Vec<ImplementationMethodTarget>>> {
+        let &(snapshot, local) = self.implementation_sources.get(row as usize)
+            .ok_or_else(|| anyhow!("implementation row outside the frozen catalog"))?;
+        let owner = self.tables.row(9, row)?[1];
+        if !self.composed_parameters(owner)?.is_empty() {
+            return Ok(None);
+        }
+        let implementation = self.snapshots[snapshot as usize].contracts.implementations
+            .get(local as usize)
+            .ok_or_else(|| anyhow!("implementation row has no retained contract"))?;
+        let trait_unit = implementation.trait_identity.unit();
+        ensure!(trait_unit.iter().all(|&word| word != INVALID),
+            "implementation trait has an unscoped identity");
+        let mut targets = implementation.method_bindings.iter().map(|binding| {
+            ensure!(binding.target.iter().all(|&word| word != INVALID),
+                "implementation method binding has an unscoped target");
+            Ok(ImplementationMethodTarget {
+                required_symbol: binding.required_symbol,
+                trait_unit,
+                receiver_mode: binding.receiver_mode,
+                target: binding.target,
+            })
+        }).collect::<Result<Vec<_>>>()?;
+        targets.sort_by_key(|target| target.required_symbol);
+        Ok(Some(targets))
+    }
+
+    /// The binding slot of a predicate (table-8 row) whose subject is a type
+    /// parameter of its owner chain, or None for another subject.
+    pub fn predicate_subject_slot(&self, row: u32) -> Result<Option<u32>> {
+        let &(snapshot, local) = self.predicate_sources.get(row as usize)
+            .ok_or_else(|| anyhow!("predicate row outside the frozen catalog"))?;
+        let predicate = self.snapshots[snapshot as usize].contracts.predicates
+            .get(local as usize)
+            .ok_or_else(|| anyhow!("predicate row has no retained contract"))?;
+        Ok(match &predicate.subject {
+            CheckedGenericType::Parameter(parameter)
+                if parameter.identity.domain == CheckedParameterDomain::Type
+                    && parameter.binding_slot < 32 => Some(parameter.binding_slot),
+            _ => None,
+        })
+    }
+
     pub fn applicable_predicates(&self, owner: u32) -> Result<Vec<u32>> {
         let mut result = Vec::new();
         for owner in self.owner_chain(owner)? {

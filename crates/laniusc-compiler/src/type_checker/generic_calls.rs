@@ -12,6 +12,7 @@ use crate::constant_value::{CheckedConstantValue, constant_scalar_is_supported};
 
 use super::{
     OwnedGpuSemanticArtifact,
+    generic_body::BodyImplBinding,
     checked_contracts::{
         self,
         CheckedCallOwner,
@@ -771,17 +772,27 @@ impl CheckedGenericCall {
 /// The GPU has already solved the receiver's complete structural pattern and
 /// published its accepted substitution. Do not reconstruct bindings from a
 /// nominal receiver's positional arguments here.
+///
+/// A replay's impl bindings name nongeneric implementation methods outside the
+/// template's imports (methods/09 routes bound members to them): a call to one
+/// has no requirements.
 pub(crate) fn resolve_generic_requirements(
     calls: &mut Vec<CheckedGenericCall>,
     dependency_pages: &[Vec<GpuSemanticInterfaceArtifact>],
+    impl_bindings: &[BodyImplBinding],
 ) {
     for call in calls.iter_mut() {
-        let (library_id, unit_id) = match call.target {
-            CheckedGenericTarget::Dependency { library_id, unit_id, .. }
-            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, .. } =>
-                (library_id, unit_id),
+        let (library_id, unit_id, symbol) = match call.target {
+            CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
+            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, method_symbol: symbol } =>
+                (library_id, unit_id, symbol),
             CheckedGenericTarget::Local { .. } => continue,
         };
+        if impl_bindings.iter().any(|binding| binding.target == [library_id, unit_id, symbol]) {
+            call.required_generic_parameters = Some(0);
+            call.required_constant_parameters = Some(0);
+            continue;
+        }
         let requirements = dependency_pages.iter().flatten()
             .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id)
             .and_then(|interface| match call.target {
@@ -2027,6 +2038,15 @@ pub(super) fn read_unit_facts(
             "retained callable native identity",
         )?;
     }
+    // Trait requirements are not declarations. Their compact payload carries
+    // the declaration-name token that a local call record's callee names.
+    let requirement_metadata_start = batch.rows(
+        inputs.buffer("compact_hir_payload"),
+        &requirement_hirs,
+        4,
+        4,
+        "trait requirement name",
+    )?;
     let contract_source = checked_contracts::ContractSourceRows {
         predicates: columns[16],
         type_arguments: columns[17],
@@ -2379,6 +2399,20 @@ pub(super) fn read_unit_facts(
             }
         }
     }
+    // A trait requirement owns a contract but no native target, so its calls
+    // are not retained. Their claims bind the trait's parameters, which the
+    // GPU checked against the bound's trait arguments (methods/07a).
+    let requirement_names = metadata[requirement_metadata_start..][..requirement_hirs.len() * 4]
+        .chunks_exact(4)
+        .map(|payload| payload[1])
+        .filter(|&name| name != INVALID)
+        .collect::<BTreeSet<_>>();
+    let requirement_tokens = local_tokens
+        .iter()
+        .zip(&local_names)
+        .filter(|(_, name)| requirement_names.contains(name))
+        .map(|(&token, _)| token)
+        .collect::<BTreeSet<_>>();
     // Only free functions use the public declaration table. Private method
     // identities are still their existing function-start-token symbols.
     let free_functions = (0..local_count)
@@ -2448,7 +2482,8 @@ pub(super) fn read_unit_facts(
                     .expect("local callee token was read")];
                 if callee.types == 0 && callee.constants == 0 {
                     ensure!(
-                        calls_with_claims.binary_search(&call_hir).is_err(),
+                        calls_with_claims.binary_search(&call_hir).is_err()
+                            || requirement_tokens.contains(&function_start_token),
                         "local callable {function_start_token} at call {call_hir} has generic claims but no generic parameter metadata"
                     );
                     calls.push(None);
