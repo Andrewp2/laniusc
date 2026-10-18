@@ -15,11 +15,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK) return;
     uint owner = predicate_owner_node[pred];
     if (!valid_node(owner) || owner == pred || !body_specialization_selects_owner(owner)) return;
-    uint row = lexical_parameter_row(pred, predicate_subject_token[pred], GENERIC_PARAM_KIND_TYPE);
-    uint token = row != INVALID ? generic_param_token[row] : INVALID;
-    if (!valid_token(token))
+    uint2 subject = predicate_subject_ref(pred);
+    uint token = subject.x == TYPE_REF_GENERIC_PARAM ? subject.y : predicate_subject_token[pred];
+    if (subject.x == 0u || !valid_token(token))
     { record_error(compact_hir_core[pred].token_start, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_INVALID_SUBJECT); return; }
-    uint2 subject = uint2(type_expr_ref_tag[token], type_expr_ref_payload[token]);
+    // The selected body's environment substitutes a parameter subject; a
+    // scalar subject is the same type in every specialization.
+    if (subject.x == TYPE_REF_GENERIC_PARAM)
+        subject = uint2(type_expr_ref_tag[token], type_expr_ref_payload[token]);
     uint count = predicate_bound_arg_count[pred];
     uint hash;
     if (!predicate_key_hash<PredicateTypeGraph>(subject, pred, count, INVALID, hash))

@@ -3797,8 +3797,8 @@ fn trait_bound_diagnostic(
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_INVALID_SUBJECT => (
             "LNC0008",
             "unsatisfied trait bound",
-            "trait bound subject must be a type generic parameter",
-            "use a declared type parameter as the bound subject; const generic parameters and undeclared names cannot carry trait bounds here",
+            "trait bound subject must be a type generic parameter or a scalar type",
+            "use a declared type parameter as the bound subject, or a scalar type such as bool; const generic parameters, record types and undeclared names cannot carry trait bounds here",
         ),
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_BOUND_NOT_TRAIT => (
             "LNC0008",
