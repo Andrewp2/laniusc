@@ -147,7 +147,9 @@ public EvidenceStatus pev_batch_context_header(uint context, out uint4 low, out 
         !pev_read4(13u, context, 4u, high) || !pev_catalog_row(0u, low.x) ||
         !pev_snapshot_is_valid(low.x) || !pev_batch_span(14u, low.w, high.x))
         return pev_invalid(1u, context, 13u);
-    if (high.w != 0u) return pev_invalid(21u, context, 13u);
+    // Word 7: 0 = hard context, 1 = soft (a refuted obligation demotes its
+    // calls instead of failing the batch, pev_batch_reduce_calls).
+    if (high.w > 1u) return pev_invalid(21u, context, 13u);
     if (high.y > 2u) return pev_invalid(4u, context, high.y);
     if (high.y == 2u)
     {

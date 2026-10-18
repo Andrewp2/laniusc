@@ -34,12 +34,18 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedEvidence {
     /// implementation proof; None for an assumption proof. A copied GPU fact:
     /// the host never selects an implementation.
     pub implementation: Option<u32>,
-    proof: OwnedProofRoot,
+    /// None: the GPU refuted this obligation under a soft context. It holds the
+    /// obligation's place in the evidence order and proves nothing.
+    proof: Option<OwnedProofRoot>,
 }
 
 impl ValidatedEvidence {
     pub fn is_concrete(&self) -> bool {
-        self.proof.is_concrete()
+        self.proof.as_ref().is_some_and(|proof| proof.is_concrete())
+    }
+    /// The GPU refuted this obligation under a soft context: it has no proof.
+    pub fn is_refuted(&self) -> bool {
+        self.proof.is_none()
     }
 }
 
@@ -67,6 +73,7 @@ pub(in crate::compiler::gpu_compiler) struct AdmittedCall {
     facts: Arc<[CheckedGenericCall]>,
     fact_index: usize,
     concrete: bool,
+    refuted: bool,
 }
 
 impl AdmittedCall {
@@ -78,6 +85,11 @@ impl AdmittedCall {
     }
     pub fn is_concrete(&self) -> bool {
         self.concrete
+    }
+    /// The GPU refuted an obligation of this call's soft context (call status
+    /// 8, or a sibling of one): the call is not admitted and is never concrete.
+    pub fn is_refuted(&self) -> bool {
+        self.refuted
     }
 }
 
@@ -298,6 +310,15 @@ impl ProgramPacket {
             .insert((snapshot, actual_function_hir), context);
         Ok(context)
     }
+    /// Marks a pending context soft (row word 7), for tests of the soft
+    /// obligation class. Production soft contexts are written as such when
+    /// they are appended.
+    #[cfg(test)]
+    pub fn mark_context_soft(&mut self, context: u32) -> Result<()> {
+        self.tables.row_mut(13, context)?[7] = 1;
+        Ok(())
+    }
+
     pub fn replay_context(&mut self, input: ReplayContextInput<'_>) -> Result<u32> {
         self.append_guard(|this| {
             let owner = this
@@ -335,10 +356,14 @@ impl ProgramPacket {
                 );
                 // The source evidence goal need not use this body's predicate ID:
                 // the GPU compares it under its retained source environment.
+                let proof = evidence
+                    .proof
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("refuted evidence cannot authorize a replay"))?;
                 let row: [u32; 8] = this.tables.row(17, evidence.input_row)?.try_into()?;
-                evidence.proof.require_concrete(&this.proof_store)?;
+                proof.require_concrete(&this.proof_store)?;
                 ensure!(
-                    evidence.proof.matches_evidence(row),
+                    proof.matches_evidence(row),
                     "retained evidence does not name its accepted proof and conclusion"
                 );
                 this.tables.push(
@@ -568,7 +593,7 @@ impl ProgramPacket {
                 ensure!(
                     !selected_replay.is_empty()
                         && self.tables.row(13, context)?[5] != 1
-                        && self.admitted_calls.contains_key(&prior.row),
+                        && matches!(self.admitted_calls.get(&prior.row), Some(1 | 2)),
                     "duplicate call occurrence is not an admitted original sibling"
                 );
                 ensure!(
@@ -724,7 +749,7 @@ impl ProgramPacket {
             .admitted_calls
             .get(&occurrence.row)
             .ok_or_else(|| anyhow!("call occurrence is not GPU-admitted"))?;
-        ensure!(matches!(state, 1 | 2), "call has no successful GPU state");
+        ensure!(matches!(state, 1 | 2 | 8), "call has no successful GPU state");
         let site = self.retained_call_site(occurrence.row)?;
         ensure!(
             site.snapshot == snapshot
@@ -744,6 +769,7 @@ impl ProgramPacket {
             facts: site.facts,
             fact_index: site.fact_index,
             concrete: state == 1,
+            refuted: state == 8,
         })
     }
 
@@ -1164,12 +1190,23 @@ impl ProgramPacket {
                 call_statuses.len() == submission.call_span.count as usize,
                 "missing GPU call status"
             );
+            // Status 8: the GPU refuted an obligation of the call's soft
+            // context. That context's every call is demoted below.
+            let mut demoted_contexts = BTreeSet::new();
             for (i, status) in call_statuses.iter().enumerate() {
+                let call = submission.call_span.first + i as u32;
                 ensure!(
-                    matches!(status[0], 1 | 2)
-                        && status[2] == submission.call_span.first + i as u32,
+                    matches!(status[0], 1 | 2 | 8) && status[2] == call,
                     "GPU call failed or status names another call"
                 );
+                if status[0] == 8 {
+                    let context = self.tables.row(15, call)?[0];
+                    ensure!(
+                        self.tables.row(13, context)?[7] == 1,
+                        "GPU refuted a call outside a soft context"
+                    );
+                    demoted_contexts.insert(context);
+                }
             }
             ensure!(
                 obligation_results.len() == submission.obligation_span.count as usize
@@ -1194,11 +1231,34 @@ impl ProgramPacket {
             for (i, (status, evidence)) in obligation_results.iter().zip(evidence_rows).enumerate()
             {
                 let obligation = submission.obligation_span.first + i as u32;
+                let goal = self.tables.row(16, obligation)?;
+                if status[0] == 3 {
+                    // Only an obligation whose own call the GPU refuted may
+                    // stay unproven; it holds its place without a proof.
+                    let call = goal[0];
+                    ensure!(
+                        call >= submission.call_span.first
+                            && call - submission.call_span.first < submission.call_span.count
+                            && call_statuses[(call - submission.call_span.first) as usize][0] == 8,
+                        "GPU obligation failed outside a refuted soft call"
+                    );
+                    let predicate_identity =
+                        self.catalog.stable_witness(self.catalog.tables.row(8, goal[1])?[0])?;
+                    retained.push(ValidatedEvidence {
+                        epoch: self.catalog.epoch,
+                        arena_id: self.arena_id,
+                        input_row: INVALID,
+                        predicate_identity,
+                        predicate_row: goal[1],
+                        implementation: None,
+                        proof: None,
+                    });
+                    continue;
+                }
                 ensure!(
                     matches!(status[0], 1 | 2) && status[2] == obligation,
                     "GPU obligation failed or evidence slot is wrong"
                 );
-                let goal = self.tables.row(16, obligation)?;
                 ensure!(
                     evidence[1] == goal[1]
                         && evidence[2] == goal[2]
@@ -1236,7 +1296,7 @@ impl ProgramPacket {
                     predicate_identity,
                     predicate_row: evidence[1],
                     implementation,
-                    proof,
+                    proof: Some(proof),
                 });
             }
             for call in submission.call_span.first
@@ -1246,10 +1306,13 @@ impl ProgramPacket {
                     "admitted call span",
                 )?
             {
-                self.admitted_calls.insert(
-                    call,
-                    call_statuses[(call - submission.call_span.first) as usize][0],
-                );
+                let context = self.tables.row(15, call)?[0];
+                let state = if demoted_contexts.contains(&context) {
+                    8
+                } else {
+                    call_statuses[(call - submission.call_span.first) as usize][0]
+                };
+                self.admitted_calls.insert(call, state);
             }
             Ok(retained)
         })();

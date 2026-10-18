@@ -1328,3 +1328,110 @@ fn gpu_evidence_workspace_alternates_catalogs_rejects_stale_capabilities_and_rec
     assert_ne!(gpu.storage.buffer.allocation_id(), storage_id, "idle trim drops retained evidence capacity");
     gpu.check(&mut packet).expect("fresh admission after compiler trim");
 }
+
+// Two calls with the same unprovable bound, in two functions (two contexts).
+const SOFT_PAIR: &str = r#"
+import core::contracts;
+fn helper()->i32 {
+    if(core::contracts::keep(false,[19,23,24])) { return 1; }
+    return 0;
+}
+fn main()->i32 {
+    if(core::contracts::keep(false,[19,23,24])) { return 1; }
+    return helper();
+}
+"#;
+
+/// Every call row of the packet, in row order, with its context row.
+fn call_contexts(packet: &ProgramPacket) -> Vec<(u32, u32)> {
+    (0..packet.tables.count(15).unwrap())
+        .map(|call| (call, packet.tables.row(15, call).unwrap()[0]))
+        .collect()
+}
+
+fn context_snapshot(packet: &ProgramPacket, context: u32) -> u32 {
+    packet.tables.row(13, context).unwrap()[0]
+}
+
+#[test]
+fn gpu_batch_soft_context_admits_a_bound_that_holds() {
+    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+    let provider = compile_unit(&compiler, [85, 0], PROVIDER, vec![]);
+    let caller = compile_unit(&compiler, [86, 0], CALLER, vec![vec![provider.interface.clone()]]);
+    let (mut gpu, mut packet) = batch_job(&compiler, &[&provider, &caller]);
+    let calls = call_contexts(&packet.packet);
+    assert_eq!(calls.len(), 1, "one generic call");
+    let (_, context) = calls[0];
+    packet.packet_mut().unwrap().mark_context_soft(context).unwrap();
+    let result = gpu.check(&mut packet).expect("a soft context whose bound holds is admitted");
+    assert_eq!(result.len(), 1);
+    assert!(result[0].is_concrete() && !result[0].is_refuted(), "the bound is proven");
+    let snapshot = context_snapshot(&packet.packet, context);
+    let admitted = packet.packet_mut().unwrap().admitted_unit_calls(snapshot, None).unwrap();
+    assert_eq!(admitted.len(), 1);
+    assert!(admitted[0].is_concrete() && !admitted[0].is_refuted(), "the call is admitted concrete");
+}
+
+#[test]
+fn gpu_batch_soft_refutation_demotes_only_its_context_and_never_a_hard_failure() {
+    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+    let provider = compile_unit(&compiler, [87, 0], PROVIDER, vec![]);
+    let caller = compile_unit(&compiler, [88, 0], SOFT_PAIR, vec![vec![provider.interface.clone()]]);
+
+    // Both contexts soft: both calls are refuted, and the batch stays valid.
+    let (mut gpu, mut packet) = batch_job(&compiler, &[&provider, &caller]);
+    let calls = call_contexts(&packet.packet);
+    assert_eq!(calls.len(), 2, "two generic calls");
+    assert_ne!(calls[0].1, calls[1].1, "one context per function");
+    for &(_, context) in &calls {
+        packet.packet_mut().unwrap().mark_context_soft(context).unwrap();
+    }
+    let result = gpu.check(&mut packet).expect("soft refutations keep the batch valid");
+    assert_eq!(result.len(), 2, "the evidence suffix covers every obligation");
+    assert!(result.iter().all(|evidence| evidence.is_refuted() && !evidence.is_concrete()));
+    let snapshot = context_snapshot(&packet.packet, calls[0].1);
+    let admitted = packet.packet_mut().unwrap().admitted_unit_calls(snapshot, None).unwrap();
+    assert_eq!(admitted.len(), 2);
+    assert!(admitted.iter().all(|call| call.is_refuted() && !call.is_concrete()),
+        "a refuted call is never admitted concrete");
+
+    // Without soft contexts the batch fails as before.
+    let (mut gpu, mut packet) = batch_job(&compiler, &[&provider, &caller]);
+    let error = gpu.check(&mut packet).expect_err("hard contexts fail on the missing implementation");
+    let failure = gpu_failure(&error);
+    assert_eq!(failure.receipt[0], 6, "batch obligation failure");
+    assert_eq!(failure.obligation.expect("failed obligation").1[0], 3);
+
+    // One soft, one hard: the hard call alone fails the batch, with its own
+    // obligation failure; the soft refutation is not reported.
+    for soft in 0..2 {
+        let (mut gpu, mut packet) = batch_job(&compiler, &[&provider, &caller]);
+        let calls = call_contexts(&packet.packet);
+        packet.packet_mut().unwrap().mark_context_soft(calls[soft].1).unwrap();
+        let error = gpu.check(&mut packet).expect_err("the hard context still fails");
+        let failure = gpu_failure(&error);
+        assert_eq!(failure.catalog[0], 1, "accepted catalog");
+        assert_eq!(failure.receipt[0], 6, "batch obligation failure");
+        let (call, status) = failure.call.expect("failed call");
+        assert_eq!(call, calls[1 - soft].0, "the report names the hard call");
+        assert_eq!(status[0], 3, "MISSING_IMPLEMENTATION on the hard call");
+        let (obligation, status) = failure.obligation.expect("failed obligation");
+        assert_eq!(packet.packet().tables.row(16, obligation).unwrap()[0], calls[1 - soft].0,
+            "the reported obligation belongs to the hard call");
+        assert_eq!(status[0], 3);
+    }
+}
+
+#[test]
+fn gpu_batch_rejects_a_soft_marker_other_than_one() {
+    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+    let provider = compile_unit(&compiler, [89, 0], PROVIDER, vec![]);
+    let caller = compile_unit(&compiler, [90, 0], CALLER, vec![vec![provider.interface.clone()]]);
+    let (mut gpu, mut packet) = batch_job(&compiler, &[&provider, &caller]);
+    let (_, context) = call_contexts(&packet.packet)[0];
+    packet.packet_mut().unwrap().tables.row_mut(13, context).unwrap()[7] = 2;
+    let error = gpu.check(&mut packet).expect_err("context word 7 is 0 or 1");
+    let failure = gpu_failure(&error);
+    assert_eq!(failure.receipt[0], 2, "invalid input");
+    assert_eq!(failure.receipt[1], 21, "the context-marker detail");
+}

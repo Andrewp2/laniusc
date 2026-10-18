@@ -1213,6 +1213,10 @@ impl GpuProgramEvidence {
             obligations: obligations.clone(),
             evidence: evidence.clone(),
         };
+        // A failure report names hard rows only: a soft-refuted call (status
+        // 8) and its obligations read as successes there.
+        let (failure_calls, failure_obligations) =
+            without_soft_refutations(&packet.packet, &submission, &calls, &obligations);
         let accepted = packet
             .packet
             .accept_submission(
@@ -1231,8 +1235,8 @@ impl GpuProgramEvidence {
                     catalog_status,
                     batch_status,
                     &contexts,
-                    &calls,
-                    &obligations,
+                    &failure_calls,
+                    &failure_obligations,
                 ))
             })?;
         packet.completed_serial = submission.serial;
@@ -1761,6 +1765,36 @@ pub(super) struct EvidenceDispatchFailure {
     pub call: Option<(u32, [u32; 8])>,
     pub obligation: Option<(u32, [u32; 8])>,
 }
+/// Call and obligation statuses with every soft refutation read as success:
+/// status 8 calls, and result-3 obligations of those calls.
+fn without_soft_refutations(
+    packet: &ProgramPacket,
+    submission: &Submission,
+    calls: &[[u32; 8]],
+    obligations: &[[u32; 8]],
+) -> (Vec<[u32; 8]>, Vec<[u32; 8]>) {
+    let mut calls = calls.to_vec();
+    let mut obligations = obligations.to_vec();
+    let refuted = |call: u32| {
+        call.checked_sub(submission.call_span.first)
+            .and_then(|offset| calls.get(offset as usize))
+            .is_some_and(|status| status[0] == 8)
+    };
+    for (i, status) in obligations.iter_mut().enumerate() {
+        let obligation = submission.obligation_span.first + i as u32;
+        let call = packet.tables.row(16, obligation).ok().map(|goal| goal[0]);
+        if status[0] == 3 && call.is_some_and(|call| refuted(call)) {
+            status[0] = 1;
+        }
+    }
+    for status in &mut calls {
+        if status[0] == 8 {
+            status[0] = 1;
+        }
+    }
+    (calls, obligations)
+}
+
 impl EvidenceDispatchFailure {
     fn new(
         submission: &Submission,
