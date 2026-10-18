@@ -55,6 +55,10 @@ use crate::{
 const INVALID: u32 = u32::MAX;
 const CALL_WORDS: usize = std::mem::size_of::<super::GpuCheckedCallArtifact>() / 4;
 const RETAINED_CALLABLE_WORDS: usize = 3;
+/// Words of a checked call record the unit snapshot reads: target token
+/// through callable kind.
+const CALL_RECORD_READ_WORDS: usize = 12;
+const _: () = assert!(CALL_RECORD_READ_WORDS <= CALL_WORDS);
 const MAX_RETAINED_TYPE_DEPTH: usize = 256;
 const TYPE_INSTANCE_COLUMNS: [&str; 13] = [
     "type_instance_kind",
@@ -853,6 +857,94 @@ pub(super) fn words(bytes: &[u8]) -> Vec<u32> {
         .collect()
 }
 
+/// The regions of one batched readback, read back as one flat vector of
+/// words. Each `push` returns where its words start in that vector.
+#[derive(Default)]
+pub(super) struct WordBatch<'a> {
+    regions: Vec<ReadbackRegion<'a>>,
+    words: usize,
+}
+
+impl<'a> WordBatch<'a> {
+    /// Queues `words` words of `buffer` from word `first`.
+    pub(super) fn push<T>(
+        &mut self,
+        buffer: &'a LaniusBuffer<T>,
+        first: u64,
+        words: usize,
+        label: &str,
+    ) -> Result<usize> {
+        let region = ReadbackRegion::from_buffer(buffer, first * 4, words * 4, label)?;
+        Ok(self.push_region(region))
+    }
+
+    /// Queues the first `words` words of `buffer` and returns their range.
+    pub(super) fn column<T>(
+        &mut self,
+        buffer: &'a LaniusBuffer<T>,
+        words: usize,
+        label: &str,
+    ) -> Result<std::ops::Range<usize>> {
+        let start = self.push(buffer, 0, words, label)?;
+        Ok(start..start + words)
+    }
+
+    /// Queues the first `width` words of row `index` of a table of
+    /// `stride`-word rows, for each index.
+    pub(super) fn rows<T>(
+        &mut self,
+        buffer: &'a LaniusBuffer<T>,
+        indices: &[u32],
+        stride: usize,
+        width: usize,
+        label: &str,
+    ) -> Result<usize> {
+        let start = self.words;
+        self.regions.reserve(indices.len());
+        for &index in indices {
+            self.push(buffer, u64::from(index) * stride as u64, width, label)?;
+        }
+        Ok(start)
+    }
+
+    /// Queues a planned region of whole words.
+    pub(super) fn push_region(&mut self, region: ReadbackRegion<'a>) -> usize {
+        let start = self.words;
+        self.words += region.byte_len().div_ceil(4);
+        self.regions.push(region);
+        start
+    }
+
+    pub(super) fn extend(&mut self, regions: impl IntoIterator<Item = ReadbackRegion<'a>>) {
+        for region in regions {
+            self.push_region(region);
+        }
+    }
+
+    /// Words queued so far: where the next push starts.
+    pub(super) fn len(&self) -> usize {
+        self.words
+    }
+
+    /// Reads every queued region in one round trip; an empty batch reads
+    /// nothing.
+    pub(super) fn read(
+        self,
+        readback: &PagedReadback,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &str,
+    ) -> Result<Vec<u32>> {
+        if self.regions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let words = readback.read_regions_words(device, queue, &self.regions, label)?;
+        debug_assert_eq!(words.len(), self.words);
+        Ok(words)
+    }
+}
+
+/// Rows `indices` of a table of `stride`-word rows, in one round trip.
 pub(super) fn rows<T>(
     readback: &PagedReadback,
     device: &wgpu::Device,
@@ -860,49 +952,25 @@ pub(super) fn rows<T>(
     buffer: &LaniusBuffer<T>,
     indices: &[u32],
     stride_words: usize,
-) -> Result<Vec<Vec<u32>>> {
-    let regions = indices
-        .iter()
-        .map(|&index| {
-            ReadbackRegion::from_buffer(
-                buffer,
-                u64::from(index) * stride_words as u64 * 4,
-                stride_words * 4,
-                "generic call rows",
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(readback
-        .read_regions(device, queue, &regions, "generic call rows")?
-        .iter()
-        .map(|bytes| words(bytes))
-        .collect())
+) -> Result<Vec<u32>> {
+    let mut batch = WordBatch::default();
+    batch.rows(buffer, indices, stride_words, stride_words, "generic call rows")?;
+    batch.read(readback, device, queue, "generic call rows")
 }
 
-/// `rows` for several independent tables in one readback round trip.
-pub(super) fn rows_batch<const N: usize>(
-    readback: &PagedReadback,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    requests: [(&LaniusBuffer<u32>, &[u32], usize); N],
-) -> Result<[Vec<Vec<u32>>; N]> {
-    let mut regions = Vec::new();
-    for (buffer, indices, stride_words) in requests {
-        for &index in indices {
-            regions.push(ReadbackRegion::from_buffer(
-                buffer,
-                u64::from(index) * stride_words as u64 * 4,
-                stride_words * 4,
-                "generic call rows",
-            )?);
-        }
+/// Rows `indices` of a table of `width`-word rows already on the host.
+fn table_rows(table: &[u32], indices: &[u32], width: usize) -> Vec<u32> {
+    let mut rows = Vec::with_capacity(indices.len() * width);
+    for &index in indices {
+        rows.extend_from_slice(&table[index as usize * width..][..width]);
     }
-    let mut bytes = readback
-        .read_regions(device, queue, &regions, "generic call rows")?
-        .into_iter();
-    Ok(requests.map(|(_, indices, _)| {
-        bytes.by_ref().take(indices.len()).map(|bytes| words(&bytes)).collect()
-    }))
+    rows
+}
+
+fn sorted_unique(mut values: Vec<u32>) -> Vec<u32> {
+    values.sort_unstable();
+    values.dedup();
+    values
 }
 
 /// The distinct valid rows of a one-word table among `values`: lookups a later
@@ -922,7 +990,10 @@ fn in_table_rows(values: impl Iterator<Item = u32>, table: &LaniusBuffer<u32>) -
 #[derive(Default)]
 pub(super) struct CheckedTypeReadback {
     owners: BTreeMap<u32, CheckedContractOwner>,
-    owner_parents: BTreeMap<u32, u32>,
+    /// The keys of `owners`, sorted: an owner's index is its position.
+    owner_keys: Vec<u32>,
+    /// Each owner's lexical parent HIR, in owner order.
+    owner_parents: Vec<(u32, u32)>,
     types: BTreeMap<(u32, u32), CheckedGenericType>,
     parameters: BTreeMap<u32, CheckedGenericParameter>,
     /// GPU-published substitutions for those exact declaration tokens, copied
@@ -977,45 +1048,30 @@ impl CheckedTypeReadback {
         if instances.is_empty() && legacy_rows.is_empty() {
             return Ok(());
         }
-        let mut regions = Vec::new();
-        for &instance in &instances {
-            for name in TYPE_INSTANCE_COLUMNS {
-                regions.push(ReadbackRegion::from_buffer(
-                    inputs.buffer(name),
-                    u64::from(instance) * 4,
-                    4,
-                    "generic argument type",
-                )?);
+        // Column-major, so each column's rows are one gather run.
+        let mut batch = WordBatch::default();
+        for name in TYPE_INSTANCE_COLUMNS {
+            let buffer = inputs.buffer(name);
+            for &instance in &instances {
+                batch.push(buffer, u64::from(instance), 1, "generic argument type")?;
             }
         }
-        for &row in &legacy_rows {
-            for name in ["type_native_scalar_identity", "type_native_word_count"] {
-                regions.push(ReadbackRegion::from_buffer(
-                    inputs.buffer(name),
-                    u64::from(row) * 4,
-                    4,
-                    "legacy nominal type",
-                )?);
+        let legacy_start = batch.len();
+        for name in ["type_native_scalar_identity", "type_native_word_count"] {
+            let buffer = inputs.buffer(name);
+            for &row in &legacy_rows {
+                batch.push(buffer, u64::from(row), 1, "legacy nominal type")?;
             }
         }
-        let values = readback
-            .read_regions(device, queue, &regions, "checked type frontier")?
-            .iter()
-            .map(|bytes| words(bytes)[0])
-            .collect::<Vec<_>>();
-        let header_words = instances.len() * TYPE_INSTANCE_COLUMNS.len();
-        for (&instance, row) in instances
-            .iter()
-            .zip(values[..header_words].chunks_exact(TYPE_INSTANCE_COLUMNS.len()))
-        {
-            self.instance_headers
-                .insert(instance, row.try_into().expect("type header width"));
+        let values = batch.read(readback, device, queue, "checked type frontier")?;
+        for (index, &instance) in instances.iter().enumerate() {
+            let header = std::array::from_fn(|column| values[column * instances.len() + index]);
+            self.instance_headers.insert(instance, header);
         }
-        for (&row, values) in legacy_rows
-            .iter()
-            .zip(values[header_words..].chunks_exact(2))
-        {
-            self.legacy_nominal_rows.insert(row, (values[0], values[1]));
+        let legacy = &values[legacy_start..];
+        for (index, &row) in legacy_rows.iter().enumerate() {
+            self.legacy_nominal_rows
+                .insert(row, (legacy[index], legacy[legacy_rows.len() + index]));
         }
         Ok(())
     }
@@ -1029,7 +1085,7 @@ impl CheckedTypeReadback {
         instances: &[u32],
         speculative: bool,
     ) -> Result<()> {
-        let mut regions = Vec::new();
+        let mut batch = WordBatch::default();
         let mut requested = Vec::new();
         for &instance in instances {
             if self.instance_arguments.contains_key(&instance) {
@@ -1063,7 +1119,7 @@ impl CheckedTypeReadback {
                         inputs.buffer("type_instance_arg_row_count_out"),
                         &[0],
                         1,
-                    )?[0][0];
+                    )?[0];
                     self.argument_row_count = Some(total);
                     total
                 }
@@ -1105,21 +1161,18 @@ impl CheckedTypeReadback {
             if speculative && pair.iter().any(|region| region.is_err()) {
                 continue;
             }
-            requested.push(instance);
-            for region in pair {
-                regions.push(region?);
-            }
+            let [tags, payloads] = pair;
+            let start = batch.push_region(tags?);
+            batch.push_region(payloads?);
+            requested.push((instance, start, count));
         }
-        let values = readback.read_regions(device, queue, &regions, "checked nominal frontier")?;
-        for (&instance, columns) in requested.iter().zip(values.chunks_exact(2)) {
+        let values = batch.read(readback, device, queue, "checked nominal frontier")?;
+        for (instance, start, count) in requested {
+            let tags = &values[start..start + count];
+            let payloads = &values[start + count..start + 2 * count];
             self.instance_arguments.insert(
                 instance,
-                Some(
-                    words(&columns[0])
-                        .into_iter()
-                        .zip(words(&columns[1]))
-                        .collect(),
-                ),
+                Some(tags.iter().copied().zip(payloads.iter().copied()).collect()),
             );
         }
         Ok(())
@@ -1223,11 +1276,10 @@ impl CheckedTypeReadback {
     }
 
     pub(super) fn owner_index(&self, hir: u32) -> Result<u32> {
-        self.owners
-            .keys()
-            .position(|&owner| owner == hir)
+        self.owner_keys
+            .binary_search(&hir)
             .map(|index| index as u32)
-            .ok_or_else(|| anyhow!("contract owner {hir} has no retained declaration"))
+            .map_err(|_| anyhow!("contract owner {hir} has no retained declaration"))
     }
     pub(super) fn parameter(&self, token: u32) -> Option<CheckedGenericParameter> {
         self.parameters.get(&token).copied()
@@ -1284,20 +1336,17 @@ impl CheckedTypeReadback {
             }
             let atoms = atoms.into_iter().collect::<Vec<_>>();
             let projections = projections.into_iter().collect::<Vec<_>>();
-            let mut regions = Vec::with_capacity(atoms.len() + projections.len());
+            let mut batch = WordBatch::default();
             for (rows, name) in [(&atoms, "checked_constant_atoms"),
                 (&projections, "checked_constant_projections")] {
-                for &row in rows {
-                    regions.push(ReadbackRegion::from_buffer(inputs.buffer(name),
-                        u64::from(row) * 16, 16, "retained constant frontier")?);
-                }
+                batch.rows(inputs.buffer(name), rows, 4, 4, "retained constant frontier")?;
             }
-            let bytes = readback.read_regions(device, queue, &regions, "retained constant frontier")?;
-            for (&row, bytes) in atoms.iter().zip(&bytes) {
-                self.retain_constant_atom(row, &words(bytes))?;
+            let values = batch.read(readback, device, queue, "retained constant frontier")?;
+            for (&row, words) in atoms.iter().zip(values.chunks_exact(4)) {
+                self.retain_constant_atom(row, words)?;
             }
-            for (&row, bytes) in projections.iter().zip(&bytes[atoms.len()..]) {
-                self.retain_constant_projection(row, &words(bytes))?;
+            for (&row, words) in projections.iter().zip(values[atoms.len() * 4..].chunks_exact(4)) {
+                self.retain_constant_projection(row, words)?;
                 let [_, child_kind, child_payload] = self.constant_projections[&row];
                 next.insert((child_kind, child_payload));
             }
@@ -1370,84 +1419,93 @@ impl CheckedTypeReadback {
         CheckedGenericConstantValue::Unresolved { kind, payload }
     }
 
-    fn parameter_metadata_regions<'a>(
+    /// Words of one owner's metadata row: HIR core (4), generic parameter
+    /// range (2), public declaration index, and with an exported interface
+    /// the generic scope owner.
+    fn owner_metadata_words(interface_exported: bool) -> usize {
+        if interface_exported { 8 } else { 7 }
+    }
+
+    /// Queues the owner rows, then six words per parameter: type slot,
+    /// constant slot, constant value, constant scalar, and the substitution
+    /// reference tag and payload.
+    fn push_parameter_metadata<'a>(
+        batch: &mut WordBatch<'a>,
         semantic: &'a OwnedGpuSemanticArtifact,
         inputs: &'a RetainedGenericCallInputs,
         parameters: &[u32],
         owners: &[u32],
         interface_exported: bool,
-    ) -> Result<Vec<ReadbackRegion<'a>>> {
+    ) -> Result<()> {
         // These columns depend only on the compact rows above. Copy them in
         // one batch instead of introducing a fence for every metadata table.
-        let mut regions = Vec::new();
+        let mut owner_columns = vec![
+            (inputs.buffer("compact_hir_core"), 4),
+            (inputs.buffer("compact_generic_param_ranges"), 2),
+            (inputs.buffer("interface_public_decl_index_by_hir"), 1),
+        ];
+        if interface_exported {
+            owner_columns.push((inputs.buffer("interface_generic_scope_owner_by_hir"), 1));
+        }
         for &owner in owners {
-            for (name, width) in [
-                ("compact_hir_core", 4),
-                ("compact_generic_param_ranges", 2),
-                ("interface_public_decl_index_by_hir", 1),
-                ("interface_generic_scope_owner_by_hir", 1),
-            ] {
-                if name == "interface_generic_scope_owner_by_hir" && !interface_exported {
-                    continue;
-                }
-                regions.push(ReadbackRegion::from_buffer(
-                    inputs.buffer(name),
-                    u64::from(owner) * width * 4,
-                    width as usize * 4,
-                    "retained generic owner metadata",
-                )?);
-            }
-        }
-        for row in parameters.chunks_exact(4) {
-            for buffer in [
-                &semantic.type_generic_param_slot,
-                &semantic.type_const_param_slot,
-                inputs.buffer("type_const_param_value_by_token"),
-                inputs.buffer("type_const_param_scalar_by_token"),
-                inputs.buffer("type_expr_ref_tag"),
-                inputs.buffer("type_expr_ref_payload"),
-            ] {
-                regions.push(ReadbackRegion::from_buffer(
+            for &(buffer, width) in &owner_columns {
+                batch.push(
                     buffer,
-                    u64::from(row[1]) * 4,
-                    4,
-                    "retained generic parameter metadata",
-                )?);
+                    u64::from(owner) * width as u64,
+                    width,
+                    "retained generic owner metadata",
+                )?;
             }
         }
-        Ok(regions)
+        let parameter_columns = [
+            &semantic.type_generic_param_slot,
+            &semantic.type_const_param_slot,
+            inputs.buffer("type_const_param_value_by_token"),
+            inputs.buffer("type_const_param_scalar_by_token"),
+            inputs.buffer("type_expr_ref_tag"),
+            inputs.buffer("type_expr_ref_payload"),
+        ];
+        for row in parameters.chunks_exact(4) {
+            for buffer in parameter_columns {
+                batch.push(buffer, u64::from(row[1]), 1, "retained generic parameter metadata")?;
+            }
+        }
+        Ok(())
     }
 
+    /// Decodes the rows [`Self::push_parameter_metadata`] queued.
     fn from_parameter_metadata(
         parameters: &[u32],
         owners: &[u32],
-        metadata: &[Vec<u32>],
+        metadata: &[u32],
         interface_exported: bool,
         template_contracts: Option<&CheckedUnitContracts>,
         owner_aliases: &BTreeMap<u32, u32>,
     ) -> Result<Self> {
         let template_hir = |hir: u32| owner_aliases.get(&hir).copied().unwrap_or(hir);
-        let owner_width = if interface_exported { 4 } else { 3 };
+        let owner_words = Self::owner_metadata_words(interface_exported);
         ensure!(
             parameters.len() % 4 == 0
-                && metadata.len() == owners.len() * owner_width + parameters.len() / 4 * 6,
+                && metadata.len() == owners.len() * owner_words + parameters.len() / 4 * 6,
             "retained generic parameter metadata is incomplete"
         );
-        let mut result = Self::default();
-        for (index, &hir) in owners.iter().enumerate() {
-            let core = &metadata[index * owner_width];
-            let public = metadata[index * owner_width + 2][0];
-            let scope_owner = if interface_exported {
-                metadata[index * owner_width + 3][0]
-            } else {
-                INVALID
-            };
-            let template_owner = template_contracts.and_then(|contracts| {
-                contracts
-                    .binders
-                    .iter()
-                    .find(|owner| owner.source_hir == template_hir(hir))
-            });
+        let (owner_rows, parameter_rows) = metadata.split_at(owners.len() * owner_words);
+        // The first template binder of each source HIR.
+        let mut template_binders = BTreeMap::new();
+        for owner in template_contracts.iter().flat_map(|contracts| &contracts.binders) {
+            template_binders.entry(owner.source_hir).or_insert(owner);
+        }
+        let mut result = Self {
+            owner_keys: owners.to_vec(),
+            owner_parents: Vec::with_capacity(owners.len()),
+            ..Self::default()
+        };
+        for (&hir, row) in owners.iter().zip(owner_rows.chunks_exact(owner_words)) {
+            let core = &row[..4];
+            let public = row[6];
+            let scope_owner = if interface_exported { row[7] } else { INVALID };
+            // An instance copy's owner takes its template's immutable binder.
+            let template_owner = template_binders.get(&template_hir(hir)).copied();
             ensure!(
                 interface_exported || template_owner.is_some(),
                 "replayed generic owner {hir} has no immutable template identity"
@@ -1481,17 +1539,27 @@ impl CheckedTypeReadback {
                     binder,
                     callable: template_owner.and_then(|owner| owner.callable),
                     parameters: Vec::new(),
-                    enclosing_owner: None,
+                    // Indices belong to the immutable definition table. A
+                    // replay publishes that original table, not its sparse
+                    // decoder cache; an export reads its links later.
+                    enclosing_owner: if interface_exported {
+                        None
+                    } else {
+                        template_owner.and_then(|owner| owner.enclosing_owner)
+                    },
                 },
             );
-            result.owner_parents.insert(hir, core[1]);
+            result.owner_parents.push((hir, core[1]));
         }
-        for (ordinal, row) in parameters.chunks_exact(4).enumerate() {
+        for (ordinal, (row, parameter_metadata)) in parameters
+            .chunks_exact(4)
+            .zip(parameter_rows.chunks_exact(6))
+            .enumerate()
+        {
             let owner = owners
                 .binary_search(&row[0])
                 .expect("retained parameter owner");
-            let range = &metadata[owner * owner_width + 1];
-            let parameter_metadata = owners.len() * owner_width + ordinal * 6;
+            let range = &owner_rows[owner * owner_words + 4..][..2];
             ensure!(
                 range[0] != INVALID
                     && ordinal as u32 >= range[0]
@@ -1499,21 +1567,15 @@ impl CheckedTypeReadback {
                 "generic parameter has no declaration-owned source ordinal"
             );
             let (domain, binding_slot) = match row[2] {
-                1 => (
-                    CheckedParameterDomain::Type,
-                    metadata[parameter_metadata][0],
-                ),
-                2 => (
-                    CheckedParameterDomain::Constant,
-                    metadata[parameter_metadata + 1][0],
-                ),
+                1 => (CheckedParameterDomain::Type, parameter_metadata[0]),
+                2 => (CheckedParameterDomain::Constant, parameter_metadata[1]),
                 _ => continue,
             };
             if binding_slot == INVALID {
                 continue;
             }
             let constant_scalar = if domain == CheckedParameterDomain::Constant {
-                let scalar = metadata[parameter_metadata + 3][0];
+                let scalar = parameter_metadata[3];
                 ensure!(constant_scalar_is_supported(scalar),
                     "retained constant parameter has no admitted declared scalar");
                 Some(scalar)
@@ -1530,13 +1592,8 @@ impl CheckedTypeReadback {
                 constant_scalar,
             };
             if !interface_exported {
-                let template = template_contracts
-                    .and_then(|contracts| {
-                        contracts
-                            .binders
-                            .iter()
-                            .find(|owner| owner.source_hir == template_hir(row[0]))
-                    })
+                let template = template_binders
+                    .get(&template_hir(row[0]))
                     .and_then(|owner| {
                         owner.parameters.iter().find(|parameter| {
                             parameter.identity.domain == domain
@@ -1563,39 +1620,38 @@ impl CheckedTypeReadback {
                 .parameters
                 .push(parameter);
             if domain == CheckedParameterDomain::Constant {
-                result
-                    .constants
-                    .insert(row[1], metadata[parameter_metadata + 2][0]);
+                result.constants.insert(row[1], parameter_metadata[2]);
             } else {
-                result.parameter_references.insert(
-                    row[1],
-                    (
-                        metadata[parameter_metadata + 4][0],
-                        metadata[parameter_metadata + 5][0],
-                    ),
-                );
+                result
+                    .parameter_references
+                    .insert(row[1], (parameter_metadata[4], parameter_metadata[5]));
             }
         }
         Ok(result)
     }
+
+    /// Words of one nominal header's metadata: declaration by name token,
+    /// HIR core (4), HIR payload (4), and public declaration index.
+    const NOMINAL_METADATA_WORDS: usize = 10;
+
     fn read_nominal_metadata(
         &mut self,
         headers: &[(u32, u32, u32, u32)],
-        metadata: &[Vec<u32>],
+        metadata: &[u32],
     ) -> Result<()> {
         ensure!(
-            metadata.len() == headers.len() * 4,
+            metadata.len() == headers.len() * Self::NOMINAL_METADATA_WORDS,
             "retained nominal ownership metadata is incomplete"
         );
         for (&(declaration, _hir, token, kind), metadata) in
-            headers.iter().zip(metadata.chunks_exact(4))
+            headers.iter().zip(metadata.chunks_exact(Self::NOMINAL_METADATA_WORDS))
         {
             ensure!(
-                metadata[0][0] == declaration,
+                metadata[0] == declaration,
                 "retained nominal token {token} does not map back to declaration {declaration}"
             );
-            let core = &metadata[1];
-            let payload = &metadata[2];
+            let core = &metadata[1..5];
+            let payload = &metadata[5..9];
             // Declaration item kinds and canonical HIR node kinds are
             // separate namespaces (parser/hir/nodes.slang).
             let expected_kind = match kind {
@@ -1614,7 +1670,7 @@ impl CheckedTypeReadback {
                 core[0],
                 payload[1]
             );
-            let public = metadata[3][0];
+            let public = metadata[9];
             let identity = if public != INVALID {
                 CheckedNominalIdentity::Public([INVALID, INVALID, public])
             } else {
@@ -1632,8 +1688,13 @@ impl CheckedTypeReadback {
     }
 }
 
+
 /// Decode accepted GPU facts while the calling compilation still owns the
 /// resident pipeline lock. Returned rows contain no borrowed GPU buffers.
+///
+/// Every batch is read as one flat word vector and decoded by offset, and
+/// every lookup table is a sorted vector: a replay of a 1 MB program decodes
+/// ~8k calls, so per-row allocations and tree lookups dominated its time.
 pub(super) fn read_unit_facts(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1665,117 +1726,45 @@ pub(super) fn read_unit_facts(
         SNAPSHOT_PAGE_BYTES,
         wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
     ));
-    let counts = readback.read_regions(
-        device,
-        queue,
-        &[
-            ReadbackRegion::from_buffer(
-                inputs.buffer("call_generic_claim_count_out"),
-                0,
-                4,
-                "claim count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("call_arg_row_count_out"),
-                0,
-                4,
-                "argument count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("retained_callable_count"),
-                0,
-                4,
-                "callable count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("call_const_claim_count_out"),
-                0,
-                4,
-                "constant claim count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("compact_generic_param_count"),
-                0,
-                4,
-                "generic parameter count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("decl_count_out"),
-                0,
-                4,
-                "declaration count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("compact_predicate_count"),
-                0,
-                4,
-                "predicate count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("compact_type_arg_count"),
-                0,
-                4,
-                "type argument count",
-            )?,
-            ReadbackRegion::from_buffer(
-                inputs.buffer("compact_method_count"),
-                0,
-                4,
-                "method count",
-            )?,
-            ReadbackRegion::from_buffer(inputs.buffer("compact_field_count"), 0, 4, "field count")?,
-            ReadbackRegion::from_buffer(inputs.buffer("compact_variant_count"), 0, 4, "variant count")?,
-            ReadbackRegion::from_buffer(inputs.buffer("compact_variant_payload_row_count"), 0, 4,
-                "variant payload count")?,
-        ],
-        "generic call counts",
-    )?;
+    let mut batch = WordBatch::default();
+    for name in [
+        "call_generic_claim_count_out",
+        "call_arg_row_count_out",
+        "retained_callable_count",
+        "call_const_claim_count_out",
+        "compact_generic_param_count",
+        "decl_count_out",
+        "compact_predicate_count",
+        "compact_type_arg_count",
+        "compact_method_count",
+        "compact_field_count",
+        "compact_variant_count",
+        "compact_variant_payload_row_count",
+    ] {
+        batch.push(inputs.buffer(name), 0, 1, name)?;
+    }
+    let counts = batch.read(&readback, device, queue, "generic call counts")?;
     timer.stamp("counts");
     // Inactive producer families may share reused scratch. Current job flags,
     // not previous buffer contents, determine whether those counts are valid.
-    let claim_count = if inputs.call_facts_active {
-        words(&counts[0])[0] as usize
-    } else {
-        0
-    };
-    let argument_count = if inputs.call_facts_active {
-        words(&counts[1])[0] as usize
-    } else {
-        0
-    };
-    let callable_count = if inputs.call_facts_active {
-        words(&counts[2])[0] as usize
-    } else {
-        0
-    };
-    let constant_claim_count = if inputs.call_facts_active {
-        words(&counts[3])[0] as usize
-    } else {
-        0
-    };
-    let generic_parameter_count = words(&counts[4])[0] as usize;
-    let declaration_count = words(&counts[5])[0] as usize;
-    let predicate_count = if interface_exported && inputs.contract_facts_active {
-        words(&counts[6])[0] as usize
-    } else {
-        0
-    };
-    let type_argument_count = if predicate_count != 0 {
-        words(&counts[7])[0] as usize
-    } else {
-        0
-    };
-    let method_count =
-        if inputs.method_facts_active || predicate_count != 0 || generic_parameter_count != 0 {
-            words(&counts[8])[0] as usize
-        } else {
-            0
-        };
+    let count = |index: usize, valid: bool| if valid { counts[index] as usize } else { 0 };
+    let claim_count = count(0, inputs.call_facts_active);
+    let argument_count = count(1, inputs.call_facts_active);
+    let callable_count = count(2, inputs.call_facts_active);
+    let constant_claim_count = count(3, inputs.call_facts_active);
+    let generic_parameter_count = count(4, true);
+    let declaration_count = count(5, true);
+    let predicate_count = count(6, interface_exported && inputs.contract_facts_active);
+    let type_argument_count = count(7, predicate_count != 0);
+    let method_count = count(
+        8,
+        inputs.method_facts_active || predicate_count != 0 || generic_parameter_count != 0,
+    );
     // Recipes are definition facts. A replay reuses the original contract Arc
     // and must not replace symbolic fields with the selected body's bindings.
-    let field_count = if interface_exported { words(&counts[9])[0] as usize } else { 0 };
-    let variant_count = if interface_exported { words(&counts[10])[0] as usize } else { 0 };
-    let variant_payload_count = if interface_exported { words(&counts[11])[0] as usize } else { 0 };
+    let field_count = count(9, interface_exported);
+    let variant_count = count(10, interface_exported);
+    let variant_payload_count = count(11, interface_exported);
     // A provider can own callable definitions without calls or generics.
     if callable_count == 0
         && predicate_count == 0
@@ -1791,25 +1780,6 @@ pub(super) fn read_unit_facts(
             "retained declaration count exceeds its checked {name} table"
         );
     }
-    let column_names = [
-        "call_generic_claim_callee",
-        "call_generic_claim_slot",
-        "call_generic_claim_ref_tag",
-        "call_generic_claim_ref_payload",
-        "call_generic_claim_arg_row",
-    ];
-    let mut regions = column_names
-        .iter()
-        .map(|name| {
-            ReadbackRegion::from_buffer(inputs.buffer(name), 0, claim_count * 4, "claim column")
-        })
-        .collect::<Result<Vec<_>>>()?;
-    regions.push(ReadbackRegion::from_buffer(
-        inputs.buffer("call_arg_row_call_node"),
-        0,
-        argument_count * 4,
-        "argument calls",
-    )?);
     let callable_bytes = callable_count
         .checked_mul(RETAINED_CALLABLE_WORDS * 4)
         .ok_or_else(|| anyhow!("retained callable record size overflow"))?;
@@ -1817,10 +1787,25 @@ pub(super) fn read_unit_facts(
         callable_bytes <= inputs.buffer("retained_callable_records").byte_size,
         "retained callable count exceeds its record table"
     );
-    regions.push(ReadbackRegion::from_buffer(
+    let mut batch = WordBatch::default();
+    let mut columns = Vec::new();
+    for name in [
+        "call_generic_claim_callee",
+        "call_generic_claim_slot",
+        "call_generic_claim_ref_tag",
+        "call_generic_claim_ref_payload",
+        "call_generic_claim_arg_row",
+    ] {
+        columns.push(batch.column(inputs.buffer(name), claim_count, "claim column")?);
+    }
+    columns.push(batch.column(
+        inputs.buffer("call_arg_row_call_node"),
+        argument_count,
+        "argument calls",
+    )?);
+    columns.push(batch.column(
         inputs.buffer("retained_callable_records"),
-        0,
-        callable_bytes,
+        callable_bytes / 4,
         "callable records with source spans",
     )?);
     for name in [
@@ -1830,26 +1815,17 @@ pub(super) fn read_unit_facts(
         "call_const_claim_ref_payload",
         "call_const_claim_arg_row",
     ] {
-        regions.push(ReadbackRegion::from_buffer(
-            inputs.buffer(name),
-            0,
-            constant_claim_count * 4,
-            "constant claim column",
-        )?);
+        columns.push(batch.column(inputs.buffer(name), constant_claim_count,
+            "constant claim column")?);
     }
-    regions.push(ReadbackRegion::from_buffer(
+    columns.push(batch.column(
         inputs.buffer("compact_generic_params"),
-        0,
-        generic_parameter_count * 16,
+        generic_parameter_count * 4,
         "retained generic parameters",
     )?);
     for name in ["decl_kind", "decl_name_token", "decl_hir_node"] {
-        regions.push(ReadbackRegion::from_buffer(
-            inputs.buffer(name),
-            0,
-            declaration_count * 4,
-            "retained declaration headers",
-        )?);
+        columns.push(batch.column(inputs.buffer(name), declaration_count,
+            "retained declaration headers")?);
     }
     for (name, count, width) in [
         ("compact_predicates", predicate_count, 4),
@@ -1866,102 +1842,107 @@ pub(super) fn read_unit_facts(
             count <= inputs.buffer(name).byte_size / (width * 4),
             "retained {name} count exceeds its checked table"
         );
-        regions.push(ReadbackRegion::from_buffer(
-            inputs.buffer(name),
-            0,
-            count * width * 4,
-            "retained contract source rows",
-        )?);
+        columns.push(batch.column(inputs.buffer(name), count * width,
+            "retained contract source rows")?);
     }
-    let selected_constant_column = regions.len();
-    regions.push(ReadbackRegion::from_buffer(
-        inputs.buffer("call_const_claim_selected"), 0, constant_claim_count * 4,
+    let selected_constant_column = columns.len();
+    columns.push(batch.column(
+        inputs.buffer("call_const_claim_selected"),
+        constant_claim_count,
         "GPU-selected constant claims",
     )?);
-    let columns = readback
-        .read_regions(device, queue, &regions, "generic call claims")?
-        .iter()
-        .map(|bytes| words(bytes))
-        .collect::<Vec<_>>();
+    let claims = batch.read(&readback, device, queue, "generic call claims")?;
+    let columns = columns.into_iter().map(|range| &claims[range]).collect::<Vec<_>>();
     timer.stamp("claims");
     // The compact producer owns all three columns. Invalid spans must fail
     // retention rather than silently remove a call from program obligations.
-    let mut call_spans = BTreeMap::new();
     ensure!(columns[6].len() % RETAINED_CALLABLE_WORDS == 0,
         "retained callable record table is truncated");
-    for record in columns[6].chunks_exact(RETAINED_CALLABLE_WORDS) {
-        ensure!(record[0] != INVALID && record[1] != INVALID && record[2] != 0
-            && record[1].checked_add(record[2]).is_some(),
-            "retained call {} has no valid checked source span", record[0]);
-        ensure!(call_spans.insert(record[0], [record[1], record[2]]).is_none(),
-            "retained call {} has duplicate source records", record[0]);
+    let mut call_spans = columns[6]
+        .chunks_exact(RETAINED_CALLABLE_WORDS)
+        .map(|record| {
+            ensure!(record[0] != INVALID && record[1] != INVALID && record[2] != 0
+                && record[1].checked_add(record[2]).is_some(),
+                "retained call {} has no valid checked source span", record[0]);
+            Ok((record[0], [record[1], record[2]]))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    call_spans.sort_unstable_by_key(|&(call, _)| call);
+    if let Some(pair) = call_spans.windows(2).find(|pair| pair[0].0 == pair[1].0) {
+        return Err(anyhow!("retained call {} has duplicate source records", pair[0].0));
     }
     // An instance-copy replay publishes only its copies' calls (rows at or
     // past the first copy row); the template's own calls were admitted with
     // the template, so their facts are not read again.
     if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row()) {
-        call_spans.retain(|&call, _| call >= first);
+        call_spans.retain(|&(call, _)| call >= first);
     }
-    let call_ids = call_spans.keys().copied().collect::<Vec<_>>();
-    let calls_with_claims = (0..claim_count)
-        .filter(|&claim| columns[0][claim] != INVALID && columns[1][claim] != INVALID)
-        .filter_map(|claim| columns[5].get(columns[4][claim] as usize).copied())
-        .collect::<BTreeSet<_>>();
-    let parameters = &columns[12];
+    let call_ids = call_spans.iter().map(|&(call, _)| call).collect::<Vec<_>>();
+    let calls_with_claims = sorted_unique(
+        (0..claim_count)
+            .filter(|&claim| columns[0][claim] != INVALID && columns[1][claim] != INVALID)
+            .filter_map(|claim| columns[5].get(columns[4][claim] as usize).copied())
+            .collect(),
+    );
+    let parameters = columns[12];
     // Reuse accepted compact declaration/method rows already in this batch.
     // Trait requirements own contracts but have no executable native target.
-    let requirement_hirs = columns[18]
-        .chunks_exact(4)
-        .filter(|method| method[2] == INVALID)
-        .map(|method| method[0])
-        .collect::<BTreeSet<_>>();
+    let requirement_hirs = sorted_unique(
+        columns[18]
+            .chunks_exact(4)
+            .filter(|method| method[2] == INVALID)
+            .map(|method| method[0])
+            .collect(),
+    );
     let method_impls = columns[18]
         .chunks_exact(4)
         .filter(|method| method[2] != INVALID)
         .map(|method| (method[0], method[2]))
         .collect::<Vec<_>>();
-    let callable_hirs = (0..declaration_count)
-        .filter(|&declaration| {
-            matches!(
-                columns[13][declaration],
-                HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN
-            )
-        })
-        .map(|declaration| columns[15][declaration])
-        .filter(|hir| !requirement_hirs.contains(hir))
-        .chain(method_impls.iter().map(|&(method, _)| method))
-        .collect::<BTreeSet<_>>();
+    let callable_hirs = sorted_unique(
+        (0..declaration_count)
+            .filter(|&declaration| {
+                matches!(
+                    columns[13][declaration],
+                    HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN
+                )
+            })
+            .map(|declaration| columns[15][declaration])
+            .filter(|hir| requirement_hirs.binary_search(hir).is_err())
+            .chain(method_impls.iter().map(|&(method, _)| method))
+            .collect(),
+    );
     ensure!(
-        !callable_hirs.contains(&INVALID),
+        callable_hirs.last() != Some(&INVALID),
         "retained callable declaration has no HIR"
     );
     // The owners of an instance-copy replay's copies take their template's
     // immutable identity.
     let owner_aliases = instance_copies
-        .map(|batch| batch.instance_owner_aliases(&callable_hirs.iter().copied().collect::<Vec<_>>(), &method_impls))
+        .map(|batch| batch.instance_owner_aliases(&callable_hirs, &method_impls))
         .transpose()?
         .unwrap_or_default();
-    let parameter_owners = parameters
-        .chunks_exact(4)
-        .map(|row| row[0])
-        .chain(
-            columns[16]
-                .chunks_exact(4)
-                .filter(|row| matches!(row[3] & 255, 1 | 2))
-                .map(|row| row[0]),
-        )
-        .chain(columns[18].chunks_exact(4).map(|row| row[0]))
-        .chain(method_impls.iter().map(|&(_, implementation)| implementation))
-        .chain(callable_hirs.iter().copied())
-        // Layout recipes also own nongeneric declaration scopes. Keep the
-        // same inventory during replay so template binder identities match.
-        .chain((0..declaration_count)
-            .filter(|&declaration| matches!(columns[13][declaration],
-                HIR_ITEM_KIND_STRUCT | HIR_ITEM_KIND_ENUM))
-            .map(|declaration| columns[15][declaration]))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    let parameter_owners = sorted_unique(
+        parameters
+            .chunks_exact(4)
+            .map(|row| row[0])
+            .chain(
+                columns[16]
+                    .chunks_exact(4)
+                    .filter(|row| matches!(row[3] & 255, 1 | 2))
+                    .map(|row| row[0]),
+            )
+            .chain(columns[18].chunks_exact(4).map(|row| row[0]))
+            .chain(method_impls.iter().map(|&(_, implementation)| implementation))
+            .chain(callable_hirs.iter().copied())
+            // Layout recipes also own nongeneric declaration scopes. Keep the
+            // same inventory during replay so template binder identities match.
+            .chain((0..declaration_count)
+                .filter(|&declaration| matches!(columns[13][declaration],
+                    HIR_ITEM_KIND_STRUCT | HIR_ITEM_KIND_ENUM))
+                .map(|declaration| columns[15][declaration]))
+            .collect(),
+    );
     let nominal_headers = (0..declaration_count)
         .filter(|&declaration| {
             matches!(
@@ -1978,73 +1959,83 @@ pub(super) fn read_unit_facts(
             )
         })
         .collect::<Vec<_>>();
-    let mut metadata_regions = call_ids
-        .iter()
-        .map(|&hir| {
-            ReadbackRegion::from_buffer(
-                &semantic.calls_by_hir,
-                u64::from(hir) * CALL_WORDS as u64 * 4,
-                CALL_WORDS * 4,
-                "generic call record",
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-    metadata_regions.extend(CheckedTypeReadback::parameter_metadata_regions(
+    // Everything below depends only on the rows above: call records, owner
+    // and parameter metadata, nominal ownership, callers, result context
+    // masks, callable native identities, and contract scalars share one
+    // round trip.
+    let mut batch = WordBatch::default();
+    batch.rows(
+        &semantic.calls_by_hir,
+        &call_ids,
+        CALL_WORDS,
+        CALL_RECORD_READ_WORDS,
+        "generic call record",
+    )?;
+    let parameter_metadata_start = batch.len();
+    CheckedTypeReadback::push_parameter_metadata(
+        &mut batch,
         semantic,
         inputs,
         parameters,
         &parameter_owners,
         interface_exported,
-    )?);
-    let nominal_metadata_start = metadata_regions.len();
+    )?;
+    let nominal_metadata_start = batch.len();
+    let nominal_columns = [
+        inputs.buffer("decl_id_by_name_token"),
+        inputs.buffer("compact_hir_core"),
+        inputs.buffer("compact_hir_payload"),
+        inputs.buffer("interface_public_decl_index_by_hir"),
+    ];
     for &(declaration, hir, token, _) in &nominal_headers {
         ensure!(
             hir != INVALID && token != INVALID,
             "retained nominal declaration {declaration} has no HIR or name token"
         );
-        for (name, row, width) in [
-            ("decl_id_by_name_token", token, 1),
-            ("compact_hir_core", hir, 4),
-            ("compact_hir_payload", hir, 4),
-            ("interface_public_decl_index_by_hir", hir, 1),
+        for (buffer, row, width) in [
+            (nominal_columns[0], token, 1),
+            (nominal_columns[1], hir, 4),
+            (nominal_columns[2], hir, 4),
+            (nominal_columns[3], hir, 1),
         ] {
-            metadata_regions.push(ReadbackRegion::from_buffer(
-                inputs.buffer(name),
-                u64::from(row) * width * 4,
-                width as usize * 4,
+            batch.push(
+                buffer,
+                u64::from(row) * width as u64,
+                width,
                 "retained nominal ownership",
-            )?);
+            )?;
         }
     }
-    let caller_metadata_start = metadata_regions.len();
-    for &call in &call_ids {
-        metadata_regions.push(ReadbackRegion::from_buffer(
-            &semantic.enclosing_fn_by_hir,
-            u64::from(call) * 4,
-            4,
-            "retained actual caller",
-        )?);
+    let caller_metadata_start = batch.len();
+    batch.rows(&semantic.enclosing_fn_by_hir, &call_ids, 1, 1, "retained actual caller")?;
+    // Both result domains share this batch. Masks own validity; unpublished
+    // context payload cells need no initialization or readback.
+    let masks_available = inputs.buffer("call_context_arg_mask").byte_size > 4;
+    let mask_start = batch.len();
+    if masks_available {
+        for name in ["call_context_arg_mask", "call_context_constant_mask"] {
+            batch.rows(inputs.buffer(name), &call_ids, 1, 1, "result context mask")?;
+        }
     }
-    let callable_metadata_start = metadata_regions.len();
+    let callable_metadata_start = batch.len();
     if interface_exported {
-        for &hir in &callable_hirs {
-            metadata_regions.push(ReadbackRegion::from_buffer(
-                inputs.buffer("semantic_function_native_symbol_by_hir"),
-                u64::from(hir) * 4,
-                4,
-                "retained callable native identity",
-            )?);
-        }
+        batch.rows(
+            inputs.buffer("semantic_function_native_symbol_by_hir"),
+            &callable_hirs,
+            1,
+            1,
+            "retained callable native identity",
+        )?;
     }
     let contract_source = checked_contracts::ContractSourceRows {
-        predicates: &columns[16],
-        type_arguments: &columns[17],
-        methods: &columns[18],
-        method_signatures: &columns[19],
-        declaration_kinds: &columns[13],
-        declaration_tokens: &columns[14],
+        predicates: columns[16],
+        type_arguments: columns[17],
+        methods: columns[18],
+        method_signatures: columns[19],
+        declaration_kinds: columns[13],
+        declaration_tokens: columns[14],
     };
-    let contract_metadata_start = metadata_regions.len();
+    let contract_metadata_start = batch.len();
     // Only gather valid sparse regions here. Defer any planning failure to
     // read_contracts, after parameter, nominal, and enclosing-owner checks.
     let contract_metadata = if interface_exported && predicate_count != 0 {
@@ -2054,19 +2045,19 @@ pub(super) fn read_unit_facts(
     };
     let contract_metadata_available = contract_metadata.is_some();
     if let Some(regions) = contract_metadata {
-        metadata_regions.extend(regions);
+        batch.extend(regions);
     }
     timer.stamp("plan_rows");
-    let metadata = readback
-        .read_regions(device, queue, &metadata_regions, "generic call rows")?
-        .iter()
-        .map(|bytes| words(bytes))
-        .collect::<Vec<_>>();
-    let call_records = &metadata[..call_ids.len()];
+    let metadata = batch.read(&readback, device, queue, "generic call rows")?;
+    timer.stamp("rows_read");
+    let call_records = &metadata[..parameter_metadata_start];
+    let owner_words = CheckedTypeReadback::owner_metadata_words(interface_exported);
+    let owner_metadata =
+        &metadata[parameter_metadata_start..][..parameter_owners.len() * owner_words];
     let mut types = CheckedTypeReadback::from_parameter_metadata(
         parameters,
         &parameter_owners,
-        &metadata[call_ids.len()..nominal_metadata_start],
+        &metadata[parameter_metadata_start..nominal_metadata_start],
         interface_exported,
         template_contracts,
         &owner_aliases,
@@ -2076,88 +2067,50 @@ pub(super) fn read_unit_facts(
         &metadata[nominal_metadata_start..caller_metadata_start],
     )?;
     timer.stamp("rows");
-    // Both result domains share one sparse mask readback. Masks own validity;
-    // unpublished context payload cells need no initialization or readback.
-    let mut context_masks = vec![0; call_ids.len()];
-    let mut constant_context_masks = vec![0; call_ids.len()];
-    let mut mask_regions = Vec::with_capacity(call_ids.len() * 2 + parameter_owners.len());
-    let masks_available = inputs.buffer("call_context_arg_mask").byte_size > 4;
-    if masks_available {
-        for &call in &call_ids {
-            for name in ["call_context_arg_mask", "call_context_constant_mask"] {
-                mask_regions.push(ReadbackRegion::from_buffer(
-                    inputs.buffer(name),
-                    u64::from(call) * 4,
-                    4,
-                    "result context mask",
-                )?);
-            }
-        }
-    }
-    let owner_link_start = mask_regions.len();
+    let callers = &metadata[caller_metadata_start..mask_start];
+    let no_masks;
+    let (context_masks, constant_context_masks): (&[u32], &[u32]) = if masks_available {
+        let masks = &metadata[mask_start..callable_metadata_start];
+        masks.split_at(call_ids.len())
+    } else {
+        no_masks = vec![0; call_ids.len()];
+        (&no_masks, &no_masks)
+    };
     let enclosing_owners = if interface_exported && generic_parameter_count != 0 {
         types
             .owner_parents
             .iter()
-            .filter_map(|(&owner, &parent)| (parent != INVALID).then_some((owner, parent)))
+            .filter_map(|&(owner, parent)| (parent != INVALID).then_some((owner, parent)))
             .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
-    for &(_, parent) in &enclosing_owners {
-        mask_regions.push(ReadbackRegion::from_buffer(
-            inputs.buffer("generic_decl_owner_by_node_a"),
-            u64::from(parent) * 4,
-            4,
-            "retained enclosing binder",
-        )?);
-    }
-    if !mask_regions.is_empty() {
-        let masks = readback.read_regions(
-            device,
-            queue,
-            &mask_regions,
-            "result context masks and binder links",
-        )?;
-        if masks_available {
-            for (index, pair) in masks[..owner_link_start].chunks_exact(2).enumerate() {
-                context_masks[index] = words(&pair[0])[0];
-                constant_context_masks[index] = words(&pair[1])[0];
-            }
+    if !enclosing_owners.is_empty() {
+        let mut batch = WordBatch::default();
+        let links = inputs.buffer("generic_decl_owner_by_node_a");
+        for &(_, parent) in &enclosing_owners {
+            batch.push(links, u64::from(parent), 1, "retained enclosing binder")?;
         }
-        for ((owner, _), metadata) in enclosing_owners.iter().zip(&masks[owner_link_start..]) {
-            let parent = words(metadata)[0];
+        let parents = batch.read(&readback, device, queue, "retained binder links")?;
+        for (&(owner, _), &parent) in enclosing_owners.iter().zip(&parents) {
             let enclosing = if parent == INVALID {
                 None
             } else {
                 Some(types.owner_index(parent)?)
             };
             ensure!(
-                parent != *owner,
+                parent != owner,
                 "retained binder has a self-owning enclosing link"
             );
             types
                 .owners
-                .get_mut(owner)
+                .get_mut(&owner)
                 .expect("retained owner")
                 .enclosing_owner = enclosing;
         }
     }
-    if !interface_exported {
-        if let Some(template) = template_contracts {
-            for owner in types.owners.values_mut() {
-                let source_hir = owner_aliases.get(&owner.source_hir).copied().unwrap_or(owner.source_hir);
-                let original = template
-                    .binders
-                    .iter()
-                    .find(|row| row.source_hir == source_hir)
-                    .ok_or_else(|| anyhow!("replayed owner has no immutable template scope"))?;
-                // Indices belong to the immutable definition table. The replay
-                // publishes that original table, not its sparse decoder cache.
-                owner.enclosing_owner = original.enclosing_owner;
-            }
-        }
-    }
+    // A replay's owners already carry their (or, for an instance copy, their
+    // template's) immutable enclosing owner from from_parameter_metadata.
     if interface_exported {
         // The nearest-generic map intentionally skips nongeneric binders.
         // Method scope instead has an exact lexical impl parent, already
@@ -2165,7 +2118,7 @@ pub(super) fn read_unit_facts(
         // other ancestor links and type decoding; do not replace its meaning.
         for &(method, implementation) in &method_impls {
             let parent = types.owner_index(implementation)?;
-            let core = &metadata[call_ids.len() + parent as usize * 4];
+            let core = &owner_metadata[parent as usize * owner_words..][..4];
             ensure!(
                 core[0] == HIR_NODE_IMPL && method != implementation,
                 "retained method {method} has no checked lexical impl owner"
@@ -2173,23 +2126,23 @@ pub(super) fn read_unit_facts(
             types.owners.get_mut(&method).expect("retained method owner")
                 .enclosing_owner = Some(parent);
         }
-        for (index, &hir) in callable_hirs.iter().enumerate() {
+        let natives = &metadata[callable_metadata_start..contract_metadata_start];
+        for (&hir, &native) in callable_hirs.iter().zip(natives) {
             let owner_index = parameter_owners
                 .binary_search(&hir)
                 .expect("retained callable owner");
-            let core = &metadata[call_ids.len() + owner_index * 4];
+            let core = &owner_metadata[owner_index * owner_words..][..4];
             ensure!(
                 core[0] == HIR_NODE_FN,
                 "retained callable {hir} is not a checked function owner"
             );
-            let native = &metadata[callable_metadata_start + index];
             ensure!(
-                native.len() == 1 && native[0] != INVALID,
+                native != INVALID,
                 "retained callable {hir} has no checked native identity"
             );
             let owner = types.owners.get_mut(&hir).expect("retained callable owner");
             owner.callable = Some(CheckedCallableOwner {
-                native_symbol: native[0],
+                native_symbol: native,
             });
         }
     }
@@ -2215,11 +2168,11 @@ pub(super) fn read_unit_facts(
             &readback, device, queue, inputs, &mut types,
             checked_contracts::NominalRecipeSourceRows {
                 headers: &nominal_headers,
-                fields: &columns[20],
-                variants: &columns[21],
-                payloads: &columns[22],
-                payload_starts: &columns[23],
-                payload_counts: &columns[24],
+                fields: columns[20],
+                variants: columns[21],
+                payloads: columns[22],
+                payload_starts: columns[23],
+                payload_counts: columns[24],
             },
         )?;
     }
@@ -2232,13 +2185,13 @@ pub(super) fn read_unit_facts(
             native_call_owners: Vec::new(),
         });
     }
-    let local_tokens = call_records
-        .iter()
-        .filter(|record| record[11] == 1)
-        .map(|record| record[0])
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    let local_tokens = sorted_unique(
+        call_records
+            .chunks_exact(CALL_RECORD_READ_WORDS)
+            .filter(|record| record[11] == 1)
+            .map(|record| record[0])
+            .collect(),
+    );
     let local_names = rows(
         &readback,
         device,
@@ -2246,180 +2199,206 @@ pub(super) fn read_unit_facts(
         inputs.buffer("call_fn_index"),
         &local_tokens,
         1,
-    )?
-    .iter()
-    .map(|row| row[0])
-    .collect::<Vec<_>>();
+    )?;
     ensure!(
         local_names.iter().all(|&name| name != INVALID),
         "local generic call has no declaration-name token"
     );
-    // Each level of this lookup chain is one readback, and the two chains
-    // below share levels: the method chain (cores and signatures, then the
-    // impl core, then its counts) and the declaration chain of the free
-    // functions that stay generic (declaration, then HIR, then public index).
-    // Those functions are known from the counts alone: a method call never
-    // reaches the declaration table. So the lookups take five round trips at
-    // most instead of twelve.
+    // Each level of this lookup chain is one readback. The method chain needs
+    // the method's impl and then the impl's counts; the free functions that
+    // stay generic need their declaration, then its HIR, then its public
+    // index. Method rows, impl cores, and declaration HIRs are already in the
+    // batches above, and the declarations of every local name are read with
+    // the counts, so the lookups take three round trips instead of five.
     let generic_counts_by_token = inputs.buffer("type_decl_generic_param_count_by_owner_token");
     let constant_counts_by_token = inputs.buffer("type_decl_const_param_count_by_owner_token");
     let decl_by_name_token = inputs.buffer("decl_id_by_name_token");
     let decl_hir_node = inputs.buffer("decl_hir_node");
     let public_decl_by_hir = inputs.buffer("interface_public_decl_index_by_hir");
-    let [local_counts, local_constant_rows, method_rows] = rows_batch(
-        &readback,
-        device,
-        queue,
-        [
-            (generic_counts_by_token, &local_names[..], 1),
-            (constant_counts_by_token, &local_names[..], 1),
-            (inputs.buffer("method_decl_method_row"), &local_names[..], 1),
-        ],
-    )?;
-    let generic_functions = (0..local_tokens.len())
+    let name_rows = in_table_rows(local_names.iter().copied(), decl_by_name_token);
+    let mut batch = WordBatch::default();
+    let local_count_start = batch.rows(generic_counts_by_token, &local_names, 1, 1, "local counts")?;
+    let local_constant_start =
+        batch.rows(constant_counts_by_token, &local_names, 1, 1, "local constant counts")?;
+    let method_row_start =
+        batch.rows(inputs.buffer("method_decl_method_row"), &local_names, 1, 1, "local methods")?;
+    let name_decl_start = batch.rows(decl_by_name_token, &name_rows, 1, 1, "local declarations")?;
+    let level = batch.read(&readback, device, queue, "generic call rows")?;
+    let local_count = local_tokens.len();
+    let local_type_counts = &level[local_count_start..][..local_count];
+    let local_constant_counts = &level[local_constant_start..][..local_count];
+    let method_rows = &level[method_row_start..][..local_count];
+    let name_decl_rows = &level[name_decl_start..][..name_rows.len()];
+    let generic_functions = (0..local_count)
         .filter(|&index| {
-            method_rows[index][0] == INVALID
-                && (local_counts[index][0] != 0 || local_constant_rows[index][0] != 0)
+            method_rows[index] == INVALID
+                && (local_type_counts[index] != 0 || local_constant_counts[index] != 0)
         })
         .map(|index| local_tokens[index])
-        .collect::<BTreeSet<_>>();
+        .collect::<Vec<_>>();
     let candidate_names = in_table_rows(
-        local_tokens
-            .iter()
-            .zip(&local_names)
-            .filter(|(token, _)| generic_functions.contains(token))
-            .map(|(_, &name)| name),
+        (0..local_count)
+            .filter(|&index| generic_functions.binary_search(&local_tokens[index]).is_ok())
+            .map(|index| local_names[index]),
         decl_by_name_token,
     );
-    let mut local_constant_counts = local_tokens
+    let name_decls = candidate_names
         .iter()
-        .copied()
-        .zip(local_constant_rows.iter().map(|row| row[0]))
+        .map(|&name| {
+            let row = name_rows.binary_search(&name).expect("candidate name was read");
+            (name, name_decl_rows[row])
+        })
         .collect::<BTreeMap<_, _>>();
-    let mut local_counts = local_tokens
-        .iter()
-        .copied()
-        .zip(local_counts.iter().map(|row| row[0]))
-        .collect::<BTreeMap<_, _>>();
+    let candidate_decls = in_table_rows(name_decls.values().copied(), decl_hir_node);
     // Methods inherit the impl's parameters even when their own signature
     // declares none. Read declaration-owned metadata; receiver constraints
     // have already been solved by the GPU into the call context relation.
-    let method_ids: Vec<_> = method_rows
-        .iter()
-        .filter_map(|row| (row[0] != INVALID).then_some(row[0]))
-        .collect();
-    let [method_cores, method_signatures, name_decls] = rows_batch(
-        &readback,
-        device,
-        queue,
-        [
-            (inputs.buffer("compact_method_cores"), &method_ids[..], 4),
-            (inputs.buffer("compact_method_signatures"), &method_ids[..], 4),
-            (decl_by_name_token, &candidate_names[..], 1),
-        ],
-    )?;
-    let name_decls = candidate_names
-        .iter()
-        .copied()
-        .zip(name_decls.iter().map(|row| row[0]))
-        .collect::<BTreeMap<_, _>>();
-    let candidate_decls = in_table_rows(name_decls.values().copied(), decl_hir_node);
-    let impl_ids: Vec<_> = method_cores.iter().map(|row| row[2]).collect();
-    let [impl_cores, decl_hir_rows] = rows_batch(
-        &readback,
-        device,
-        queue,
-        [
-            (inputs.buffer("compact_hir_core"), &impl_ids[..], 4),
-            (decl_hir_node, &candidate_decls[..], 1),
-        ],
-    )?;
+    let method_ids: Vec<_> = method_rows.iter().copied().filter(|&row| row != INVALID).collect();
+    let method_table_rows = columns[18].len() / 4;
+    let mut batch = WordBatch::default();
+    let method_rows_read = if method_ids.iter().all(|&row| (row as usize) < method_table_rows) {
+        None
+    } else {
+        let cores = batch.rows(inputs.buffer("compact_method_cores"), &method_ids, 4, 4,
+            "method cores")?;
+        let signatures = batch.rows(inputs.buffer("compact_method_signatures"), &method_ids, 4, 4,
+            "method signatures")?;
+        Some((cores, signatures))
+    };
+    let decl_hirs_read = if candidate_decls.iter().all(|&decl| (decl as usize) < declaration_count) {
+        None
+    } else {
+        Some(batch.rows(decl_hir_node, &candidate_decls, 1, 1, "declaration HIRs")?)
+    };
+    let fallback = batch.read(&readback, device, queue, "generic call rows")?;
+    let (method_cores, method_signatures) = match method_rows_read {
+        None => (
+            table_rows(columns[18], &method_ids, 4),
+            table_rows(columns[19], &method_ids, 4),
+        ),
+        Some((cores, signatures)) => (
+            fallback[cores..signatures].to_vec(),
+            fallback[signatures..signatures + method_ids.len() * 4].to_vec(),
+        ),
+    };
+    let decl_hir_rows = match decl_hirs_read {
+        None => table_rows(columns[15], &candidate_decls, 1),
+        Some(start) => fallback[start..start + candidate_decls.len()].to_vec(),
+    };
     let decl_hirs = candidate_decls
         .iter()
         .copied()
-        .zip(decl_hir_rows.iter().map(|row| row[0]))
+        .zip(decl_hir_rows)
         .collect::<BTreeMap<_, _>>();
     let candidate_hirs = in_table_rows(decl_hirs.values().copied(), public_decl_by_hir);
+    let impl_ids: Vec<_> = method_cores.chunks_exact(4).map(|row| row[2]).collect();
+    // An impl owns its methods' scope, so its core is in the owner metadata.
+    let impl_cores = match impl_ids
+        .iter()
+        .map(|implementation| {
+            parameter_owners
+                .binary_search(implementation)
+                .ok()
+                .map(|owner| &owner_metadata[owner * owner_words..][..4])
+        })
+        .collect::<Option<Vec<_>>>()
+    {
+        Some(cores) => cores.concat(),
+        None => rows(&readback, device, queue, inputs.buffer("compact_hir_core"), &impl_ids, 4)?,
+    };
     let token_capacity = generic_counts_by_token.byte_size / 4;
     // Implementation owners are unnamed. Their payload.b stores a dense
     // trait-bound HIR row, so only the core's source anchor keys owner counts.
     let impl_tokens = impl_cores
-        .iter()
+        .chunks_exact(4)
         .map(|core| {
             ensure!(core[0] == HIR_NODE_IMPL && (core[2] as usize) < token_capacity,
                 "retained method implementation has no source owner anchor");
             Ok(core[2])
         })
         .collect::<Result<Vec<_>>>()?;
-    let [impl_counts, impl_constant_counts, public_rows] = rows_batch(
-        &readback,
-        device,
-        queue,
-        [
-            (generic_counts_by_token, &impl_tokens[..], 1),
-            (constant_counts_by_token, &impl_tokens[..], 1),
-            (public_decl_by_hir, &candidate_hirs[..], 1),
-        ],
-    )?;
+    let mut batch = WordBatch::default();
+    let impl_count_start = batch.rows(generic_counts_by_token, &impl_tokens, 1, 1, "impl counts")?;
+    let impl_constant_start =
+        batch.rows(constant_counts_by_token, &impl_tokens, 1, 1, "impl constant counts")?;
+    let public_start =
+        batch.rows(public_decl_by_hir, &candidate_hirs, 1, 1, "public declarations")?;
+    let level = batch.read(&readback, device, queue, "generic call rows")?;
     let hir_symbols = candidate_hirs
         .iter()
         .copied()
-        .zip(public_rows.iter().map(|row| row[0]))
+        .zip(level[public_start..].iter().copied())
         .collect::<BTreeMap<_, _>>();
     let methods: BTreeMap<_, _> = method_ids
         .iter()
-        .copied()
-        .zip(
-            method_cores
-                .iter()
-                .zip(&method_signatures)
-                .zip(&impl_counts)
-                .zip(&impl_constant_counts),
-        )
-        .map(|(row, (((core, signature), count), constants))| {
-            (row, (core[0], signature[3], count[0], constants[0]))
+        .enumerate()
+        .map(|(index, &row)| {
+            (row, (
+                method_cores[index * 4],
+                method_signatures[index * 4 + 3],
+                level[impl_count_start + index],
+                level[impl_constant_start + index],
+            ))
         })
         .collect();
-    let mut local_method_symbols = BTreeMap::new();
-    let mut specialization_symbols = BTreeMap::new();
-    for (&token, method) in local_tokens.iter().zip(&method_rows) {
-        if let Some(&(hir, metadata, count, constants)) = methods.get(&method[0]) {
-            let types = local_counts[&token] + count;
-            let constants = local_constant_counts[&token] + constants;
+    /// What a local call target needs: its type and constant parameter
+    /// counts and, when it is generic, its native and specialization symbols.
+    #[derive(Clone, Copy)]
+    struct LocalCallee {
+        types: u32,
+        constants: u32,
+        method: bool,
+        native_symbol: u32,
+        specialization_symbol: u32,
+    }
+    let mut callees = (0..local_count)
+        .map(|index| LocalCallee {
+            types: local_type_counts[index],
+            constants: local_constant_counts[index],
+            method: false,
+            native_symbol: INVALID,
+            specialization_symbol: INVALID,
+        })
+        .collect::<Vec<_>>();
+    for (index, callee) in callees.iter_mut().enumerate() {
+        if let Some(&(hir, metadata, count, constants)) = methods.get(&method_rows[index]) {
+            let types = callee.types + count;
+            let constants = callee.constants + constants;
             if types != 0 || constants != 0 {
-                local_counts.insert(token, types);
-                local_constant_counts.insert(token, constants);
-                local_method_symbols.insert(
-                    token,
-                    if metadata & 0xffff == 1 {
+                *callee = LocalCallee {
+                    types,
+                    constants,
+                    method: true,
+                    native_symbol: if metadata & 0xffff == 1 {
                         0x8000_0000 | hir
                     } else {
-                        0x4000_0000 | token
+                        0x4000_0000 | local_tokens[index]
                     },
-                );
-                specialization_symbols.insert(token, 0x8000_0000 | hir);
+                    specialization_symbol: 0x8000_0000 | hir,
+                };
             }
         }
     }
     // Only free functions use the public declaration table. Private method
     // identities are still their existing function-start-token symbols.
-    let (local_tokens, local_names): (Vec<_>, Vec<_>) = local_tokens
-        .into_iter()
-        .zip(local_names)
-        .filter(|(token, _)| {
-            (local_counts[token] != 0 || local_constant_counts[token] != 0)
-                && !local_method_symbols.contains_key(token)
+    let free_functions = (0..local_count)
+        .filter(|&index| {
+            let callee = callees[index];
+            (callee.types != 0 || callee.constants != 0) && !callee.method
         })
-        .unzip();
+        .collect::<Vec<_>>();
     ensure!(
-        local_tokens.len() == generic_functions.len()
-            && local_tokens.iter().all(|token| generic_functions.contains(token)),
+        free_functions.len() == generic_functions.len()
+            && free_functions
+                .iter()
+                .all(|&index| generic_functions.binary_search(&local_tokens[index]).is_ok()),
         "local generic functions differ from their count-only prediction"
     );
-    let local_decls = local_names
+    let local_decls = free_functions
         .iter()
-        .map(|name| {
-            name_decls.get(name).copied().ok_or_else(|| {
+        .map(|&index| {
+            let name = local_names[index];
+            name_decls.get(&name).copied().ok_or_else(|| {
                 anyhow!("local generic call name {name} exceeds its declaration table")
             })
         })
@@ -2441,63 +2420,74 @@ pub(super) fn read_unit_facts(
         local_hirs.iter().all(|&hir| hir != INVALID),
         "local generic call has no declaration HIR"
     );
-    let mut local_symbols = local_tokens
-        .iter()
-        .copied()
-        .zip(&local_hirs)
-        .map(|(token, hir)| {
-            let symbol = hir_symbols.get(hir).copied().ok_or_else(|| {
-                anyhow!("local generic call HIR {hir} exceeds its public declaration table")
-            })?;
-            Ok((
-                token,
-                if symbol == INVALID {
-                    0x4000_0000 | token
-                } else {
-                    symbol
-                },
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>>>()?;
-    local_symbols.extend(local_method_symbols);
-    for &token in &local_tokens {
-        specialization_symbols.insert(token, 0x4000_0000 | token);
+    for (&index, hir) in free_functions.iter().zip(&local_hirs) {
+        let symbol = hir_symbols.get(hir).copied().ok_or_else(|| {
+            anyhow!("local generic call HIR {hir} exceeds its public declaration table")
+        })?;
+        let token = local_tokens[index];
+        callees[index].native_symbol = if symbol == INVALID {
+            0x4000_0000 | token
+        } else {
+            symbol
+        };
+        callees[index].specialization_symbol = 0x4000_0000 | token;
     }
     timer.stamp("local_lookups");
-    let mut calls = BTreeMap::new();
-    for (&call_hir, record) in call_ids.iter().zip(call_records) {
-        let target = match record[11] {
+    // Calls by their index in `call_ids`; `None` is not a generic call.
+    let mut calls = Vec::with_capacity(call_ids.len());
+    for ((&call_hir, &(_, source_span)), record) in call_ids
+        .iter()
+        .zip(&call_spans)
+        .zip(call_records.chunks_exact(CALL_RECORD_READ_WORDS))
+    {
+        let (target, required_constant_parameters) = match record[11] {
             1 => {
                 let function_start_token = record[0];
-                let generic_parameter_count = local_counts[&function_start_token];
-                if generic_parameter_count == 0 && local_constant_counts[&function_start_token] == 0
-                {
+                let callee = callees[local_tokens
+                    .binary_search(&function_start_token)
+                    .expect("local callee token was read")];
+                if callee.types == 0 && callee.constants == 0 {
                     ensure!(
-                        !calls_with_claims.contains(&call_hir),
+                        calls_with_claims.binary_search(&call_hir).is_err(),
                         "local callable {function_start_token} at call {call_hir} has generic claims but no generic parameter metadata"
                     );
+                    calls.push(None);
                     continue;
                 }
-                CheckedGenericTarget::Local {
-                    function_start_token,
-                    generic_parameter_count,
-                    native_symbol: local_symbols[&function_start_token],
-                    specialization_symbol: specialization_symbols[&function_start_token],
-                }
+                assert!(
+                    callee.native_symbol != INVALID && callee.specialization_symbol != INVALID,
+                    "generic local callee {function_start_token} has no symbol"
+                );
+                (
+                    CheckedGenericTarget::Local {
+                        function_start_token,
+                        generic_parameter_count: callee.types,
+                        native_symbol: callee.native_symbol,
+                        specialization_symbol: callee.specialization_symbol,
+                    },
+                    Some(callee.constants),
+                )
             }
-            3 if record[4] == INVALID && record[3] & 0x8000_0000 != 0 => {
+            3 if record[4] == INVALID && record[3] & 0x8000_0000 != 0 => (
                 CheckedGenericTarget::DependencyMethod {
                     library_id: record[1],
                     unit_id: record[2],
                     method_symbol: record[3],
-                }
+                },
+                None,
+            ),
+            3 if record[4] == INVALID => (
+                CheckedGenericTarget::Dependency {
+                    library_id: record[1],
+                    unit_id: record[2],
+                    declaration_index: record[3],
+                },
+                None,
+            ),
+            _ => {
+                calls.push(None);
+                continue;
             }
-            3 if record[4] == INVALID => CheckedGenericTarget::Dependency {
-                library_id: record[1],
-                unit_id: record[2],
-                declaration_index: record[3],
-            },
-            _ => continue,
         };
         let required_generic_parameters = match target {
             CheckedGenericTarget::Local {
@@ -2507,31 +2497,25 @@ pub(super) fn read_unit_facts(
             CheckedGenericTarget::Dependency { .. }
             | CheckedGenericTarget::DependencyMethod { .. } => None,
         };
-        calls.insert(
+        calls.push(Some(CheckedGenericCall {
             call_hir,
-            CheckedGenericCall {
-                call_hir,
-                source_span: call_spans[&call_hir],
-                target,
-                arguments: Vec::new(),
-                constants: Vec::new(),
-                required_constant_parameters: if matches!(
-                    target,
-                    CheckedGenericTarget::Local { .. }
-                ) {
-                    Some(local_constant_counts[&record[0]])
-                } else {
-                    None
-                },
-                required_generic_parameters,
-            },
-        );
+            source_span,
+            target,
+            arguments: Vec::new(),
+            constants: Vec::new(),
+            required_constant_parameters,
+            required_generic_parameters,
+        }));
     }
+    timer.stamp("targets");
+    let call_index = |call: u32| call_ids.binary_search(&call).ok();
     // The final GPU validator selects the exact argument row, including
     // precedence between typed and array-count evidence. Host retention copies
     // that selection; it does not solve count equations or compare recipes.
     let mut constant_bindings = Vec::new();
-    let mut selected_constant_keys = BTreeSet::new();
+    // Selected slots of each retained call; other calls' keys in the set.
+    let mut selected_slots = vec![0u32; call_ids.len()];
+    let mut other_selected_keys = BTreeSet::new();
     for row in 0..constant_claim_count {
         let selected = columns[selected_constant_column][row];
         ensure!(selected <= 1, "invalid GPU constant selection marker");
@@ -2544,89 +2528,97 @@ pub(super) fn read_unit_facts(
             argument < argument_count,
             "constant claim points outside its argument rows"
         );
-        ensure!(selected_constant_keys.insert((columns[5][argument], columns[8][row])),
-            "GPU selected more than one constant claim for the same call slot");
-        constant_bindings.push((
-            columns[5][argument],
-            columns[8][row],
-            columns[9][row],
-            columns[10][row],
-        ));
+        let (call, slot) = (columns[5][argument], columns[8][row]);
+        let fresh = match call_index(call) {
+            Some(index) => {
+                let fresh = selected_slots[index] & (1 << slot) == 0;
+                selected_slots[index] |= 1 << slot;
+                fresh
+            }
+            None => other_selected_keys.insert((call, slot)),
+        };
+        ensure!(fresh, "GPU selected more than one constant claim for the same call slot");
+        constant_bindings.push((call, slot, columns[9][row], columns[10][row]));
     }
-    let constant_context_ids = call_ids
-        .iter()
-        .zip(&constant_context_masks)
-        .filter_map(|(&call, &mask)| (mask != 0 && calls.contains_key(&call)).then_some(call))
+    // Context rows are read through their highest published slot.
+    let mask_words = |mask: u32| 32 - mask.leading_zeros() as usize;
+    let constant_context = (0..call_ids.len())
+        .filter(|&index| constant_context_masks[index] != 0 && calls[index].is_some())
         .collect::<Vec<_>>();
-    let mut constant_regions = Vec::with_capacity(constant_context_ids.len() * 2);
-    for &call in &constant_context_ids {
-        for name in [
-            "call_context_constant_kind",
-            "call_context_constant_payload",
-        ] {
-            constant_regions.push(ReadbackRegion::from_buffer(
-                inputs.buffer(name),
-                u64::from(call) * 32 * 4,
-                32 * 4,
-                "checked result constant row",
-            )?);
+    if !constant_context.is_empty() {
+        let mut batch = WordBatch::default();
+        let mut starts = Vec::with_capacity(constant_context.len() * 2);
+        for name in ["call_context_constant_kind", "call_context_constant_payload"] {
+            let buffer = inputs.buffer(name);
+            for &index in &constant_context {
+                starts.push(batch.push(
+                    buffer,
+                    u64::from(call_ids[index]) * 32,
+                    mask_words(constant_context_masks[index]),
+                    "checked result constant row",
+                )?);
+            }
         }
-    }
-    if !constant_regions.is_empty() {
-        let buffers =
-            readback.read_regions(device, queue, &constant_regions, "checked result constants")?;
-        for (&call, pair) in constant_context_ids.iter().zip(buffers.chunks_exact(2)) {
-            let mask =
-                constant_context_masks[call_ids.binary_search(&call).expect("contextual call row")];
-            let kinds = words(&pair[0]);
-            let payloads = words(&pair[1]);
-            for slot in 0..32u32 {
-                if mask & (1u32 << slot) == 0 || selected_constant_keys.contains(&(call, slot)) {
+        let rows = batch.read(&readback, device, queue, "checked result constants")?;
+        let (kind_starts, payload_starts) = starts.split_at(constant_context.len());
+        for ((&index, &kinds), &payloads) in
+            constant_context.iter().zip(kind_starts).zip(payload_starts)
+        {
+            let mask = constant_context_masks[index];
+            for slot in 0..mask_words(mask) {
+                if mask & (1u32 << slot) == 0 || selected_slots[index] & (1u32 << slot) != 0 {
                     continue;
                 }
-                let kind = kinds[slot as usize];
-                let payload = payloads[slot as usize];
+                let kind = rows[kinds + slot];
+                let payload = rows[payloads + slot];
                 ensure!(
                     matches!(kind, 1 | 2 | 3) && payload != INVALID,
                     "published result constant has no checked reference"
                 );
-                constant_bindings.push((call, slot, kind, payload));
+                constant_bindings.push((call_ids[index], slot as u32, kind, payload));
             }
         }
     }
+    let retained = |calls: &[Option<CheckedGenericCall>], call: u32| {
+        call_index(call).filter(|&index| calls[index].is_some())
+    };
     types.prefetch_constants(&readback, device, queue, inputs,
-        &constant_bindings.iter().filter(|(call, ..)| calls.contains_key(call))
+        &constant_bindings.iter().filter(|&&(call, ..)| retained(&calls, call).is_some())
             .map(|&(_, _, kind, payload)| (kind, payload)).collect::<Vec<_>>())?;
     for (call_id, slot, kind, payload) in constant_bindings {
-        let Some(call) = calls.get_mut(&call_id) else {
+        let Some(index) = retained(&calls, call_id) else {
             continue;
         };
+        let call = calls[index].as_mut().expect("retained call");
         let value = types.constant(kind, payload);
         ensure!(!call.constants.iter().any(|arg| arg.slot == slot),
             "duplicate GPU-selected constant binding");
         call.constants.push(CheckedGenericConstant { slot, value });
     }
-    for call in calls.values_mut() {
+    for call in calls.iter_mut().flatten() {
         call.constants.sort_by_key(|arg| arg.slot);
     }
+    timer.stamp("constants");
+    let claim_call = |claim: usize| {
+        let argument = columns[4][claim] as usize;
+        (argument < argument_count).then(|| columns[5][argument])
+    };
     let claim_roots = (0..claim_count).filter(|&claim|
         columns[0][claim] != INVALID && columns[1][claim] != INVALID &&
-        (columns[4][claim] as usize) < argument_count &&
-        calls.contains_key(&columns[5][columns[4][claim] as usize]))
+        claim_call(claim).is_some_and(|call| retained(&calls, call).is_some()))
         .map(|claim| (columns[2][claim], columns[3][claim])).collect::<Vec<_>>();
     types.prefetch_types(&readback, device, queue, inputs, &claim_roots)?;
     for claim in 0..claim_count {
         if columns[0][claim] == INVALID || columns[1][claim] == INVALID {
             continue;
         }
-        let argument = columns[4][claim] as usize;
-        ensure!(
-            argument < argument_count,
-            "generic claim points outside its argument rows"
-        );
-        let Some(call) = calls.get_mut(&columns[5][argument]) else {
+        let Some(call_hir) = claim_call(claim) else {
+            return Err(anyhow!("generic claim points outside its argument rows"));
+        };
+        let Some(index) = retained(&calls, call_hir) else {
             continue;
         };
+        let call = calls[index].as_mut().expect("retained call");
         let slot = columns[1][claim];
         // The GPU has already compared every repeated claim structurally.
         // Separate annotations can name the same type through different local
@@ -2656,53 +2648,46 @@ pub(super) fn read_unit_facts(
             call.arguments.push(CheckedGenericArgument { slot, ty });
         }
     }
-    for call in calls.values_mut() {
+    for call in calls.iter_mut().flatten() {
         call.arguments.sort_by_key(|arg| arg.slot);
     }
-    let context_ids = call_ids
-        .iter()
-        .zip(&context_masks)
-        .filter_map(|(&call, &mask)| (mask != 0 && calls.contains_key(&call)).then_some(call))
+    timer.stamp("claim_types");
+    let context = (0..call_ids.len())
+        .filter(|&index| context_masks[index] != 0 && calls[index].is_some())
         .collect::<Vec<_>>();
-    let mut context_regions = Vec::with_capacity(context_ids.len() * 2);
-    for &call in &context_ids {
+    if !context.is_empty() {
+        let mut batch = WordBatch::default();
+        let mut starts = Vec::with_capacity(context.len() * 2);
         for name in ["call_context_ref_tag", "call_context_ref_payload"] {
-            context_regions.push(ReadbackRegion::from_buffer(
-                inputs.buffer(name),
-                u64::from(call) * 32 * 4,
-                32 * 4,
-                "checked contextual argument row",
-            )?);
+            let buffer = inputs.buffer(name);
+            for &index in &context {
+                starts.push(batch.push(
+                    buffer,
+                    u64::from(call_ids[index]) * 32,
+                    mask_words(context_masks[index]),
+                    "checked contextual argument row",
+                )?);
+            }
         }
-    }
-    if !context_regions.is_empty() {
-        let buffers = readback.read_regions(
-            device,
-            queue,
-            &context_regions,
-            "checked contextual arguments",
-        )?;
-        for (&call_id, buffers) in context_ids.iter().zip(buffers.chunks_exact(2)) {
-            let mask = context_masks[call_ids
-                .binary_search(&call_id)
-                .expect("contextual call row")];
-            let tags = words(&buffers[0]);
-            let payloads = words(&buffers[1]);
-            let call = calls.get_mut(&call_id).expect("retained contextual call");
-            for slot in 0..32u32 {
+        let rows = batch.read(&readback, device, queue, "checked contextual arguments")?;
+        let (tag_starts, payload_starts) = starts.split_at(context.len());
+        for ((&index, &tags), &payloads) in context.iter().zip(tag_starts).zip(payload_starts) {
+            let mask = context_masks[index];
+            let call = calls[index].as_mut().expect("retained contextual call");
+            for slot in 0..mask_words(mask) {
                 if mask & (1u32 << slot) == 0
                     || call
                         .arguments
                         .iter()
-                        .any(|arg| arg.slot == slot && arg.ty.is_native_ready())
+                        .any(|arg| arg.slot == slot as u32 && arg.ty.is_native_ready())
                 {
                     continue;
                 }
-                let tag = tags[slot as usize];
-                let payload = payloads[slot as usize];
+                let tag = rows[tags + slot];
+                let payload = rows[payloads + slot];
                 let ty = read_type(&readback, device, queue, inputs, tag, payload, &mut types)?;
-                let argument = CheckedGenericArgument { slot, ty };
-                if let Some(prior) = call.arguments.iter_mut().find(|arg| arg.slot == slot) {
+                let argument = CheckedGenericArgument { slot: slot as u32, ty };
+                if let Some(prior) = call.arguments.iter_mut().find(|arg| arg.slot == slot as u32) {
                     if argument.ty.retention_rank() > prior.ty.retention_rank() {
                         *prior = argument;
                     }
@@ -2716,9 +2701,8 @@ pub(super) fn read_unit_facts(
     timer.stamp("calls");
     let native_call_owners: Vec<_> = call_ids
         .iter()
-        .enumerate()
-        .map(|(index, &call_hir)| {
-            let function = metadata[caller_metadata_start + index][0];
+        .zip(callers)
+        .map(|(&call_hir, &function)| {
             // Zero is the checked producer's explicit absence of a lexical function
             // (for example a constant initializer), never a nearby generic owner.
             CheckedCallOwner {
@@ -2727,23 +2711,32 @@ pub(super) fn read_unit_facts(
             }
         })
         .collect();
+    // A function's calls are adjacent in HIR order; check each owner once.
+    let mut accepted_owner = INVALID;
     for call in &native_call_owners {
+        if call.function_hir == INVALID || call.function_hir == accepted_owner {
+            continue;
+        }
         ensure!(
-            call.function_hir == INVALID
-                || types
-                    .owners
-                    .get(&call.function_hir)
-                    .is_some_and(|owner| owner.callable.is_some()),
+            types
+                .owners
+                .get(&call.function_hir)
+                .is_some_and(|owner| owner.callable.is_some()),
             "retained call {} has no accepted executable owner {}",
             call.call_hir,
             call.function_hir
         );
+        accepted_owner = call.function_hir;
     }
-    let call_owners = native_call_owners.iter().copied()
-        .filter(|owner| calls.contains_key(&owner.call_hir)).collect();
+    let call_owners = native_call_owners
+        .iter()
+        .zip(&calls)
+        .filter(|(_, call)| call.is_some())
+        .map(|(owner, _)| *owner)
+        .collect();
     timer.stamp("owners");
     Ok(CheckedUnitFacts {
-        generic_calls: calls.into_values().collect(),
+        generic_calls: calls.into_iter().flatten().collect(),
         contracts,
         call_owners,
         native_call_owners,
@@ -2889,7 +2882,7 @@ fn read_uncached_type_at_depth(
         {
             candidates
                 .iter()
-                .map(|row| vec![types.legacy_nominal_rows[row].0])
+                .map(|row| types.legacy_nominal_rows[row].0)
                 .collect()
         } else {
             rows(
@@ -2904,7 +2897,7 @@ fn read_uncached_type_at_depth(
         let matching = candidates
             .iter()
             .zip(&identities)
-            .filter_map(|(&row, identity)| (identity[0] == payload).then_some(row))
+            .filter_map(|(&row, &identity)| (identity == payload).then_some(row))
             .collect::<Vec<_>>();
         if matching.len() == 1 {
             let width = if let Some(&(_, width)) = types.legacy_nominal_rows.get(&matching[0]) {
@@ -2917,7 +2910,7 @@ fn read_uncached_type_at_depth(
                     inputs.buffer("type_native_word_count"),
                     &matching,
                     1,
-                )?[0][0]
+                )?[0]
             };
             return Ok(CheckedGenericType::Nominal {
                 identity: read_nominal_identity(matching[0], types)?,
@@ -3280,7 +3273,7 @@ mod tests {
             vec![12],
         ];
         let mut reader = CheckedTypeReadback::default();
-        reader.read_nominal_metadata(&headers, &metadata).unwrap();
+        reader.read_nominal_metadata(&headers, &metadata.concat()).unwrap();
         assert_eq!(
             read_nominal_identity(13, &reader).unwrap(),
             CheckedNominalIdentity::Public([INVALID, INVALID, 9]),
@@ -3307,7 +3300,7 @@ mod tests {
             invalid[column][word] = corrupt;
             assert!(
                 CheckedTypeReadback::default()
-                    .read_nominal_metadata(&headers[..1], &invalid)
+                    .read_nominal_metadata(&headers[..1], &invalid.concat())
                     .is_err(),
                 "reverse owner, HIR kind, and declaration name must agree: {invalid:?}"
             );
@@ -3417,7 +3410,7 @@ mod tests {
         ];
         let none = BTreeMap::new();
         let original = CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, true, None, &none).unwrap();
+            &parameters, &[7], &metadata.concat(), true, None, &none).unwrap();
         assert_eq!(original.parameters[&10].constant_scalar, None);
         assert_eq!(original.parameters[&11].constant_scalar, Some(SCALAR_U64));
         let contracts = CheckedUnitContracts {
@@ -3425,24 +3418,83 @@ mod tests {
         };
         metadata.remove(3); // Replay inherits the immutable template's public scope.
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_ok());
+            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_ok());
         // An instance copy at row 20 of template owner 7 takes 7's binder.
         let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &copied, &[20], &metadata, false, Some(&contracts), &none).is_err(),
+            &copied, &[20], &metadata.concat(), false, Some(&contracts), &none).is_err(),
             "a copied owner without its template has no immutable identity");
         let aliases = BTreeMap::from([(20, 7)]);
         let copy = CheckedTypeReadback::from_parameter_metadata(
-            &copied, &[20], &metadata, false, Some(&contracts), &aliases).unwrap();
+            &copied, &[20], &metadata.concat(), false, Some(&contracts), &aliases).unwrap();
         assert_eq!(copy.owners[&20].binder, original.owners[&7].binder);
         assert_eq!(copy.parameters[&31], original.parameters[&11]);
         metadata[12][0] = SCALAR_I64;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_err(),
+            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_err(),
             "same binder and slot cannot silently change scalar");
         metadata[12][0] = SCALAR_UNIT;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata, false, Some(&contracts), &none).is_err());
+            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_err());
+    }
+
+    /// An instance copy of a method inside an impl: both copied owners take
+    /// their template's binder, and the copied method its template's
+    /// enclosing owner (an index into the template's owner table), through
+    /// the aliases alone.
+    #[test]
+    fn instance_copy_owners_take_their_templates_enclosing_owner() {
+        use crate::primitive_types::*;
+        // Owner rows: core (kind, parent, start token, end token), parameter
+        // range, public identity, and on export the generic scope owner.
+        let owner = |kind: u32, parent: u32, token: u32, range: [u32; 2], exported: bool| {
+            let mut row = vec![kind, parent, token, token + 40, range[0], range[1], INVALID];
+            if exported {
+                row.push(INVALID);
+            }
+            row
+        };
+        let parameter_rows = [
+            [0, INVALID, INVALID, 0, 2, 10],
+            [INVALID, 0, INVALID, SCALAR_U64, 0, INVALID],
+        ]
+        .concat();
+        // Template: impl 5 (no parameters) encloses method 7 (parameters 10, 11).
+        let parameters = [7, 10, 1, INVALID, 7, 11, 2, 15];
+        let exported = [
+            owner(HIR_NODE_IMPL, INVALID, 30, [0, 0], true),
+            owner(HIR_NODE_FN, 5, 41, [0, 2], true),
+            parameter_rows.clone(),
+        ]
+        .concat();
+        let none = BTreeMap::new();
+        let template = CheckedTypeReadback::from_parameter_metadata(
+            &parameters, &[5, 7], &exported, true, None, &none).unwrap();
+        let impl_index = template.owner_index(5).unwrap();
+        let mut binders = vec![template.owners[&5].clone(), template.owners[&7].clone()];
+        binders[1].enclosing_owner = Some(impl_index);
+        let contracts = CheckedUnitContracts { binders, ..CheckedUnitContracts::default() };
+
+        // Replay: impl copy 18 encloses method copy 20 (parameters 30, 31).
+        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
+        let replay = [
+            owner(HIR_NODE_IMPL, INVALID, 130, [0, 0], false),
+            owner(HIR_NODE_FN, 18, 141, [0, 2], false),
+            parameter_rows,
+        ]
+        .concat();
+        let aliases = BTreeMap::from([(18, 5), (20, 7)]);
+        let copy = CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[18, 20], &replay, false, Some(&contracts), &aliases).unwrap();
+        assert_eq!(copy.owners[&18].binder, template.owners[&5].binder);
+        assert_eq!(copy.owners[&20].binder, template.owners[&7].binder);
+        assert_eq!(copy.owners[&20].enclosing_owner, Some(impl_index));
+        assert_eq!(copy.owners[&18].enclosing_owner, None);
+        assert_eq!(copy.parameters[&31], template.parameters[&11]);
+        // Without the impl's alias, the copied impl has no immutable identity.
+        let method_only = BTreeMap::from([(20, 7)]);
+        assert!(CheckedTypeReadback::from_parameter_metadata(
+            &copied, &[18, 20], &replay, false, Some(&contracts), &method_only).is_err());
     }
 
 }

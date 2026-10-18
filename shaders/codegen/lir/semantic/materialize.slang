@@ -1802,8 +1802,9 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     }
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC && intrinsic_slice_from_raw_parts(operands.a))
     {
-        // Raw views publish the documented packed-i32 or descending native
-        // element convention. The checked graph owns the compound width.
+        // Raw views publish the documented convention: packed i32 (+4),
+        // packed bytes for u8 (+1), and descending native words otherwise.
+        // The checked graph owns the compound width.
         layout_word_offset = LIR_INVALID;
         if (operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS)
             layout_word_offset = 4u;
@@ -1814,6 +1815,7 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
             uint element_payload = type_instance_elem_ref_payload[core.type_ref_payload];
             uint words = concrete_type_ref_words(element_tag, element_payload, hir_count);
             if (element_tag == 1u && element_payload == 3u) layout_word_offset = 4u;
+            else if (element_tag == 1u && element_payload == 13u) layout_word_offset = 1u;
             else if (words != LIR_INVALID && words <= 0x0fffffffu)
                 layout_word_offset = 0u - words * 8u;
         }

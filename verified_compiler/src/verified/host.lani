@@ -32,7 +32,7 @@ pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
 
 pub fn alloc_i32(words: i32) -> ptr {
     if (words <= -1 || words > I32_MAX / I32_BYTES) { return 0; }
-    let size: usize = words * I32_BYTES;
+    let size: usize = (words * I32_BYTES) as usize;
     let alignment: usize = I32_BYTES;
     return alloc(size, alignment);
 }
