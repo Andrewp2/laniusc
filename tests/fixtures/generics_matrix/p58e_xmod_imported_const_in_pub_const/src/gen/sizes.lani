@@ -1,0 +1,4 @@
+module gen::sizes;
+
+pub const A: i32 = 8;
+pub const B: i32 = A * 4;
