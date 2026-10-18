@@ -616,7 +616,8 @@ impl GpuTypeChecker {
                     .expect("GpuTypeChecker.resident_capacity_floor poisoned")
             })
             .map(|previous| previous.grow_to_cover(cache_key))
-            .unwrap_or(cache_key);
+            .unwrap_or_else(|| cache_key.first_allocation())
+            .bucketed();
         let resident_cache_trace =
             crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
         if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
