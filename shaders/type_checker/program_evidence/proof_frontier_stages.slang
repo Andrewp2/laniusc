@@ -238,6 +238,32 @@ public void pps_stage_commit_substitutions()
     uint tables[5] = { PPS_TERM_NODES, PPS_SUBSTITUTIONS, PPS_BINDINGS, 0u, 0u };
     pev_batch_failure(pps_commit_tables(tables, 3u));
 }
+// Phase 55 as one 256-lane workgroup. The lanes run the three cover audits
+// together; when that proves the serial audits succeed, lane 0 commits as
+// pps_stage_commit_substitutions does after them. Otherwise lane 0 runs the
+// serial stage for its exact result.
+public void pps_stage_commit_substitutions_group(uint lane)
+{
+    if (!pps_building() || !pev_batch_is_building()) return;
+    uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint works;
+    bool audited = pps_descriptor(PPS_TERM_NODES, nodes, accepted) &&
+        pps_descriptor(PPS_BINDINGS, bindings, accepted) &&
+        pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) && pps_count(PPS_WORK, works);
+    uint charges = 0u;
+    if (audited)
+        audited = pps_group_check_span_cover<PendingBindingNodeSpans>(lane, PPS_TERM_NODES,
+            nodes.w, nodes.y, bindings.w, bindings.y, charges);
+    if (audited)
+        audited = pps_group_check_span_cover<PendingSubstitutionBindingSpans>(lane, PPS_BINDINGS,
+            bindings.w, bindings.y, substitutions.w, substitutions.y, charges);
+    if (audited)
+        audited = pps_group_check_span_cover<SelectedWorkSubstitutionSpans>(lane, PPS_SUBSTITUTIONS,
+            substitutions.w, substitutions.y, 0u, works, charges);
+    if (lane != 0u) return;
+    if (!audited || charges > PEV_VISIT_LIMIT) { pps_stage_commit_substitutions(); return; }
+    uint tables[5] = { PPS_TERM_NODES, PPS_SUBSTITUTIONS, PPS_BINDINGS, 0u, 0u };
+    pev_batch_failure(pps_commit_tables(tables, 3u));
+}
 public void pps_stage_expand_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) pev_batch_failure(pps_expand_work(row)); }
 public void pps_stage_link_requirements(uint local)

@@ -633,6 +633,13 @@ const WAVE_PLAN_PHASE: u32 = 70;
 /// and prerequisite Works (phase 42).
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
+/// Commit stages that run as one 256-lane workgroup: the lanes audit
+/// together, then lane 0 publishes (or reruns the serial stage). Like the
+/// one-thread stages, they take only the one-row span (0, 1).
+const GROUP_STAGES: &[u32] = &[45, 47, 55];
+fn single_dispatch(phase: u32, threads: u32) -> bool {
+    threads == 1 || GROUP_STAGES.contains(&phase)
+}
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
@@ -659,20 +666,22 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/44_validate_prerequisite_normalization",
         256,
     ),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         45,
         "type_checker/program_evidence/entries/45_commit_normalized_terms",
-        1,
+        256,
     ),
     (
         46,
         "type_checker/program_evidence/entries/46_hash_normalized_goals",
         256,
     ),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         47,
         "type_checker/program_evidence/entries/47_commit_normalized_goals",
-        1,
+        256,
     ),
     (
         48,
@@ -717,10 +726,11 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (54, WALK_ROOTS, 256),
     (54, WALK_BINDINGS, 256),
     (54, BINDING_ROWS, 256),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         55,
         "type_checker/program_evidence/entries/55_commit_substitutions",
-        1,
+        256,
     ),
     (
         56,
@@ -1017,7 +1027,7 @@ impl ProofKernels {
     ) -> Result<()> {
         let (phase, _, threads) = PROOF_KEYS[index];
         ensure!(
-            threads != 1 || (span.first == 0 && span.count == 1),
+            !single_dispatch(phase, threads) || (span.first == 0 && span.count == 1),
             "singleton proof stage needs exactly one dispatch"
         );
         record_phase_with_proof(
@@ -1275,7 +1285,7 @@ impl ProofKernels {
                 for chunk in 1..=span_chunks {
                     for &(index, phase) in &steps {
                         ensure!(
-                            PROOF_KEYS[index].2 != 1 || span.is_one(),
+                            !single_dispatch(phase, PROOF_KEYS[index].2) || span.is_one(),
                             "singleton proof stage needs exactly one dispatch"
                         );
                         slots.push((index, phase, span, chunk, limit));
