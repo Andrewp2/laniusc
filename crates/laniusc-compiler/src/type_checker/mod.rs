@@ -777,6 +777,7 @@ pub(crate) struct GpuCheckedCallArtifact {
     pub receiver_matched_ref_payload: u32,
     pub receiver_parameter_ref_tag: u32,
     pub receiver_parameter_ref_payload: u32,
+    pub symbolic_type_environment: u32,
 }
 
 #[derive(Clone, Copy)]

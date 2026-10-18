@@ -5,6 +5,95 @@ type references and native layouts. `Option<T>` and `Result<T, E>` use this
 same mechanism. Execution below is x86_64 Linux ELF emitted by the GPU
 compiler; user-program GPU execution is not established.
 
+## `core::mem::size_of<T>()` (2026-10-15, implemented 2026-10-18)
+
+Generic heap-backed containers (the 36 allocating `vec_*`, `set_*`, `map_*`
+and `deque_*` modules, backlog b10, now matrix p52) have to size an
+allocation for `capacity` elements of `T`, then view it as `[T]`. core::mem
+provides `size_of<T>() -> usize` and `typed_slice_from_storage<T>(storage:
+ptr, length: i32) -> [T]` for this.
+
+**`size_of<T>()` is the storage size for allocation, not C's `sizeof`.** It
+returns the number of bytes one `T` takes in raw storage on this target: the
+size of the stride that `core::mem::typed_slice_from_raw_parts<T>` uses. An
+alignment of 8 is enough for every `T`.
+
+| `T` | `size_of<T>()` |
+| --- | --- |
+| `i32` | 4 (packed) |
+| `u8` | 1 (packed bytes) |
+| zero-sized types | 0 |
+| any other `T` | 8 × native words of `T` |
+
+The last row covers `u32`, `i64`, `bool`, `char` and `ptr`, which are all 8
+bytes. It also covers records, enums, slices (24), strings (16), and arrays
+`[T; N]`, which are 8 × N × words(T). This is not the C or Rust size. It is the
+layout raw views use on this target, so it is the right number to allocate
+with.
+
+`size_of` is a runtime value. It is not a constant expression, so it cannot be
+an array length or a const generic argument. Only the native layout knows the
+size, and the type checker runs before the native layout. A call type-checks
+with `T` abstract and always has type `usize`. Each instance of the enclosing
+body has a concrete `T`, whether it comes from an A2 replay or a D′ copy. A
+body that is never instantiated is never lowered, so it never asks for a size.
+Making `size_of` a constant expression is a possible later extension, once
+the type checker can see native layouts.
+
+A raw view of a type whose words descend needs its element-zero pointer to
+start `length * size_of<T>() - 8` bytes above the lowest address of its
+storage. The packed i32 and u8 views start at the lowest address. Generic code
+cannot tell the two apart, so `typed_slice_from_storage` views `length`
+elements stored in `[storage, storage + length * size_of<T>())`, whatever the
+direction. Every view of one storage must use the same length to agree on
+where element i is. A generic container needs only these calls:
+
+```
+let bytes: usize = core::mem::size_of<T>() * (capacity as usize);
+let storage: ptr = alloc::allocator::alloc(bytes, 8);
+let items: [T] = core::mem::typed_slice_from_storage(storage, capacity);
+```
+
+Implementation:
+- One intrinsic, `core::mem::slice_stride(view) -> isize` (intrinsic tag 8,
+  language symbol 72). It returns a view's signed byte stride, the third word
+  of its descriptor: +4, +1, 0, or -8 × words. On x86 the argument's words
+  arrive in RDI, RSI and RDX, and the call moves RDX into its result
+  (`X86_LIR_OP_INTRINSIC_IDENTITY` with operand a = 2). Wasm reports it
+  unsupported.
+- `size_of` and `typed_slice_from_storage` are ordinary generic functions in
+  core::mem. Each builds an empty raw view with the raw-parts intrinsic,
+  `slice_from_raw_parts(0, 0)` into a `[T]` local, and reads its stride. The
+  raw view constructor already closes T's layout in every instance
+  (materialize, `concrete_type_ref_words`), so no type argument has to reach
+  lowering. The stride is an immediate in the instance's code; a call costs a
+  few instructions. They call the intrinsic, not the generic
+  `typed_slice_from_raw_parts`: a replay of one core::mem body carries its
+  generic siblings' calls, and a sibling's call to that generic wrapper has no
+  emitted definition (LNC0017).
+- A body whose signature and locals are concrete can still pass its own `T`
+  on, as `fn bytes<T>() -> i32 { return core::mem::size_of<T>() as i32; }`
+  does. It used to be emitted once as a tag-only definition, so the callee was
+  never instantiated and the link failed with LNC0017. The checked call record
+  now has `symbolic_type_environment`: generic_call_results
+  (`semantic/artifact/00c`) sets it when an accepted type argument of the call
+  is still open in this run, either a lexical parameter or an instance that
+  the closure walker cannot close. It reads the call's contextual arguments
+  from `call_context_*` and its explicit ones from the source-owned explicit
+  environment (`checked_explicit_environment_argument`), because
+  `03a8_validate_explicit_applications` copies the explicit arguments into
+  `call_context_*` only after 00c has run. `function_templates` keeps a body
+  with such a call as a template, outside a replay and only inside a generic
+  environment, so the body's replay requests the callee. A replay ignores the
+  flag. Not covered yet: a symbolic environment that comes only from a
+  value argument's claim in a body that is otherwise closed, and symbolic
+  constant arguments (`f<N>()`).
+- Probes: sizes for i32, u8, u32, a record, `[i32; 3]`, `[i32]`, `str`, a
+  zero-sized record and bool from one generic body; two-deep generic calls;
+  generic push/get buffers over i32, u8 and a record; and a guarded
+  three-element view inside five-element storage
+  (tests/fixtures/stdlib_foundation/core_mem_size_of.lani).
+
 ## Canonical type boundary and startup checkpoint (2026-10-11)
 
 Canonical hash, constraint, and match traversal now use a type-only leaf

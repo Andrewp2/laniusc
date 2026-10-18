@@ -2218,6 +2218,7 @@ mod tests {
             receiver_matched_ref_payload: u32::MAX,
             receiver_parameter_ref_tag: 0,
             receiver_parameter_ref_payload: u32::MAX,
+            symbolic_type_environment: 0,
         }).collect::<Vec<_>>();
         let mut bytes = encase::StorageBuffer::new(Vec::new());
         bytes.write(&records).expect("encode complete checked calls");

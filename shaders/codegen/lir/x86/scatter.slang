@@ -819,6 +819,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         args.a != INTRINSIC_I32_ARRAY_DATA_PTR &&
         args.a != INTRINSIC_I32_SLICE_DATA_PTR &&
         args.a != INTRINSIC_STRING_DATA_PTR &&
+        args.a != INTRINSIC_SLICE_STRIDE &&
         !intrinsic_slice_from_raw_parts(args.a))
         flags = TARGET_LIR_FLAG_UNSUPPORTED;
     // Imported calls can carry a canonical aggregate width after their
@@ -926,10 +927,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
              (args.a == INTRINSIC_I32_ARRAY_DATA_PTR ||
               args.a == INTRINSIC_I32_SLICE_DATA_PTR ||
-              args.a == INTRINSIC_STRING_DATA_PTR))
+              args.a == INTRINSIC_STRING_DATA_PTR ||
+              args.a == INTRINSIC_SLICE_STRIDE))
     {
+        // The argument's words arrive in RDI, RSI and RDX. The data
+        // pointers are the first word; a view's byte stride is the third,
+        // which operand a = 2 selects.
         op = X86_LIR_OP_INTRINSIC_IDENTITY;
-        a = 0u; b = 0u; c = 0u;
+        a = args.a == INTRINSIC_SLICE_STRIDE ? 2u : 0u; b = 0u; c = 0u;
     }
     else if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
              intrinsic_slice_from_raw_parts(args.a))
