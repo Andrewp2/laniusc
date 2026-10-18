@@ -890,6 +890,43 @@ pub(crate) enum LoweringArtifactKind {
     Object,
 }
 
+/// Pointer-jump pairs that reach the root of every chain in a relation of
+/// `rows` rows. A chain is shorter than its relation, and the two rounds of a
+/// pair double the covered distance twice, so `ceil(bits(rows) / 2)` pairs
+/// cover `4^pairs > rows` links.
+pub(crate) fn pointer_jump_pairs(rows: u32) -> u32 {
+    (u32::BITS - rows.max(1).leading_zeros()).div_ceil(2)
+}
+
+/// The pointer-jump pairs one lowering records, per relation. Each pair is
+/// an a-to-b and a b-to-a round, so any count leaves the result in the
+/// relation's first buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LoweringJumpPairs {
+    /// Expression ancestors over compact-HIR rows.
+    pub(crate) execution_rank: u32,
+    /// Dominator-tree Euler-tour arcs, two per block.
+    pub(crate) dominator_tour: u32,
+    /// Immediate-dominator depth over blocks.
+    pub(crate) dominator_depth: u32,
+    /// Structured-region parents.
+    pub(crate) region_parent: u32,
+    /// Declaration-read copy chains over semantic rows.
+    pub(crate) ssa_value_link: u32,
+}
+
+impl LoweringJumpPairs {
+    pub(crate) fn min(self, other: Self) -> Self {
+        Self {
+            execution_rank: self.execution_rank.min(other.execution_rank),
+            dominator_tour: self.dominator_tour.min(other.dominator_tour),
+            dominator_depth: self.dominator_depth.min(other.dominator_depth),
+            region_parent: self.region_parent.min(other.region_parent),
+            ssa_value_link: self.ssa_value_link.min(other.ssa_value_link),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LoweringCapacities {
     pub source_bytes: u32,
@@ -1079,6 +1116,44 @@ impl LoweringCapacities {
             .saturating_add(self.aggregate_elements)
             .saturating_add(self.optimization_ssa_incoming_capacity())
             .max(1)
+    }
+
+    /// The pointer-jump pairs the lowering records for relations sized by
+    /// these capacities. The graph registers these counts and a workspace
+    /// built from these capacities records at most these.
+    pub(crate) fn jump_pairs(self) -> LoweringJumpPairs {
+        let blocks = self.optimization_block_capacity();
+        LoweringJumpPairs {
+            execution_rank: pointer_jump_pairs(self.hir_nodes),
+            dominator_tour: pointer_jump_pairs(blocks.saturating_mul(2)),
+            dominator_depth: pointer_jump_pairs(blocks),
+            region_parent: pointer_jump_pairs(self.optimization_region_capacity()),
+            ssa_value_link: pointer_jump_pairs(self.semantic_instructions),
+        }
+    }
+
+    /// The pointer-jump pairs a job needs when its compact HIR has at most
+    /// `hir_rows` rows: those of a fresh allocation for such a job, and never
+    /// more than these capacities record. A workspace retained from a larger
+    /// job would otherwise record the larger job's pairs.
+    ///
+    /// Each relation's chains are shorter than its row count, and the job's
+    /// rows are bounded by both the fresh allocation's capacities (the
+    /// structural factors of `from_frontend_unit`) and these (every kernel
+    /// clamps its total to the capacity it was built with), so the smaller
+    /// pair count still reaches every root. The optimizer's finalize passes
+    /// reject unconverged dominator, region and SSA chains, so a short count
+    /// would fail the job rather than miscompile it. Execution ranks have no
+    /// such check; their chains run over HIR rows, which `hir_rows` bounds.
+    pub(crate) fn job_jump_pairs(self, hir_rows: u32, target: LoweringTarget) -> LoweringJumpPairs {
+        let built = self.jump_pairs();
+        if hir_rows >= self.hir_nodes {
+            return built;
+        }
+        match Self::from_frontend_unit(self.source_bytes, self.tokens, hir_rows, target) {
+            Ok(job) => job.bucketed().jump_pairs().min(built),
+            Err(_) => built,
+        }
     }
 
     pub(crate) fn covers(self, required: Self) -> bool {
@@ -3040,9 +3115,7 @@ fn build_lowering_compiler_graph(
             PassAccess::write("execution_rank", execution_rank_a),
         ],
     })?;
-    let rank_pairs = (u32::BITS - capacities.hir_nodes.max(1).leading_zeros())
-        .max(1)
-        .div_ceil(2);
+    let rank_pairs = capacities.jump_pairs().execution_rank;
     graph.add_repeated_region(
         rank_pairs,
         vec![
@@ -6077,9 +6150,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
-    let dominator_tour_jump_pairs = (u32::BITS - dominator_tour_arc_capacity.leading_zeros())
-        .max(1)
-        .div_ceil(2);
+    let dominator_tour_jump_pairs = capacities.jump_pairs().dominator_tour;
     graph.add_repeated_region(
         dominator_tour_jump_pairs,
         vec![
@@ -6184,10 +6255,7 @@ fn build_lowering_compiler_graph(
             ),
         ],
     })?;
-    let dominator_jump_pairs = (u32::BITS
-        - capacities.optimization_block_capacity().leading_zeros())
-    .max(1)
-    .div_ceil(2);
+    let dominator_jump_pairs = capacities.jump_pairs().dominator_depth;
     graph.add_repeated_region(
         dominator_jump_pairs,
         vec![
@@ -6301,13 +6369,7 @@ fn build_lowering_compiler_graph(
             PassAccess::write("opt_ir_region_parent_link_a", opt_region_parent_link_a),
         ],
     })?;
-    let region_parent_pairs = (u32::BITS
-        - capacities
-            .optimization_region_capacity()
-            .max(1)
-            .leading_zeros())
-    .max(1)
-    .div_ceil(2);
+    let region_parent_pairs = capacities.jump_pairs().region_parent;
     graph.add_repeated_region(
         region_parent_pairs,
         vec![
@@ -7499,10 +7561,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read_write("lowering_status", lowering_status),
         ],
     })?;
-    let value_link_jump_pairs = (u32::BITS
-        - capacities.semantic_instructions.max(1).leading_zeros())
-    .max(1)
-    .div_ceil(2);
+    let value_link_jump_pairs = capacities.jump_pairs().ssa_value_link;
     graph.add_repeated_region(
         value_link_jump_pairs,
         vec![
@@ -10454,6 +10513,46 @@ mod tests {
                     .unwrap()
             )
         );
+    }
+
+    #[test]
+    fn job_jump_pairs_are_a_fresh_allocations_and_never_exceed_the_built_ones() {
+        for rows in (0..4_100).chain([65_535, 65_536, 1 << 27, u32::MAX]) {
+            assert_eq!(
+                pointer_jump_pairs(rows),
+                (u32::BITS - rows.leading_zeros()).max(1).div_ceil(2),
+                "{rows}"
+            );
+            assert!(4u64.pow(pointer_jump_pairs(rows)) > u64::from(rows), "{rows}");
+        }
+        for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
+            let fresh = |hir: u32| {
+                LoweringCapacities::from_frontend_unit(1 << 20, hir, hir, target)
+                    .unwrap()
+                    .bucketed()
+            };
+            let retained = fresh(300_000);
+            let built = retained.jump_pairs();
+            assert_eq!(retained.job_jump_pairs(u32::MAX, target), built);
+            for hir in [0, 1, 7, 4_096, 4_097, 70_000, 299_999, 300_000, 1_000_000] {
+                assert_eq!(
+                    retained.job_jump_pairs(hir, target),
+                    fresh(hir).jump_pairs().min(built),
+                    "{hir}"
+                );
+            }
+            let small = retained.job_jump_pairs(5_000, target);
+            let job = fresh(5_000);
+            assert!(4u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
+            assert!(4u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
+            assert!(
+                4u64.pow(small.dominator_tour) > 2 * u64::from(job.optimization_block_capacity())
+            );
+            assert!(4u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity()));
+            assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
+            assert!(small.dominator_tour < built.dominator_tour);
+            assert!(small.ssa_value_link < built.ssa_value_link);
+        }
     }
 
     #[test]

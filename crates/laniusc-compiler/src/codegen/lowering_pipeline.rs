@@ -64,6 +64,13 @@ enum TargetStage {
 }
 
 impl TargetStage {
+    fn lowering_target(&self) -> LoweringTarget {
+        match self {
+            Self::X86_64(_) => LoweringTarget::X86_64,
+            Self::Wasm(_) => LoweringTarget::Wasm,
+        }
+    }
+
     fn compiler_phase(&self) -> crate::gpu::timer::GpuCompilerPhase {
         match self {
             Self::X86_64(_) => crate::gpu::timer::GpuCompilerPhase::X86Emission,
@@ -534,8 +541,18 @@ impl GpuLoweringPipeline {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
-        self.semantic
-            .record_timed(encoder, timer.as_deref_mut(), split, bounds)?;
+        // A workspace retained from a larger job would record that job's
+        // pointer-jump pairs; the job's HIR bound gives its own.
+        let jump_pairs = self
+            .capacities
+            .job_jump_pairs(bounds.hir_rows, self.target.lowering_target());
+        self.semantic.record_timed(
+            encoder,
+            timer.as_deref_mut(),
+            split,
+            bounds,
+            jump_pairs.execution_rank,
+        )?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -544,7 +561,8 @@ impl GpuLoweringPipeline {
                 timer.as_deref_mut(),
             );
         }
-        self.optimizer.record(encoder, timer.as_deref_mut())?;
+        self.optimizer
+            .record_with_jump_pairs(encoder, timer.as_deref_mut(), jump_pairs)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -613,8 +631,18 @@ impl GpuLoweringPipeline {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
-        self.semantic
-            .record_timed(encoder, timer.as_deref_mut(), split, bounds)?;
+        // A workspace retained from a larger job would record that job's
+        // pointer-jump pairs; the job's HIR bound gives its own.
+        let jump_pairs = self
+            .capacities
+            .job_jump_pairs(bounds.hir_rows, self.target.lowering_target());
+        self.semantic.record_timed(
+            encoder,
+            timer.as_deref_mut(),
+            split,
+            bounds,
+            jump_pairs.execution_rank,
+        )?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -623,7 +651,8 @@ impl GpuLoweringPipeline {
                 timer.as_deref_mut(),
             );
         }
-        self.optimizer.record(encoder, timer.as_deref_mut())?;
+        self.optimizer
+            .record_with_jump_pairs(encoder, timer.as_deref_mut(), jump_pairs)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,

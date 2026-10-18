@@ -560,14 +560,14 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_bounded_layout_rounds_match_all_rounds() {
+    fn physical_gpu_job_bounds_match_conservative_lowering() {
         std::thread::Builder::new()
-            .name("aggregate layout rounds".into())
+            .name("lowering job bounds".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn(run_layout_round_equivalence)
-            .expect("spawn aggregate layout round check")
+            .spawn(run_job_bounds_equivalence)
+            .expect("spawn lowering job bounds check")
             .join()
-            .expect("aggregate layout round check panicked");
+            .expect("lowering job bounds check panicked");
     }
 
     // A job records one aggregate layout round without enums and one round
@@ -576,7 +576,13 @@ mod tests {
     // leave the layouts unchanged, so lowering the same checked program with
     // all 64 rounds has to give the same executable byte for byte. The enum
     // cases nest as deep as they have declarations, so their bound is tight.
-    fn run_layout_round_equivalence() {
+    //
+    // The cases run in workspaces retained from a larger program, as a
+    // daemon's small jobs do after a big one. Their pointer-jump pairs then
+    // come from their token capacity (LoweringCapacities::job_jump_pairs)
+    // and are fewer than the workspace's, which must not change the
+    // executable either.
+    fn run_job_bounds_equivalence() {
         use crate::codegen::lowering::LoweringJobBounds;
 
         let gpu = crate::gpu::device::global();
@@ -585,6 +591,12 @@ mod tests {
             GpuCompilerBackends::all(),
         ))
         .expect("initialize compiler");
+        let larger: String = (0..2_000)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }} "))
+            .chain(["fn main() -> i32 { return f7(35); }".to_string()])
+            .collect();
+        pollster::block_on(compiler.type_check_source(&larger))
+            .expect("check the program that grows the workspaces");
         let cases = [
             (
                 "nested_aggregate_fields",
@@ -660,16 +672,31 @@ mod tests {
                     .unwrap_or_else(|error| panic!("finish artifact for {case}: {error}"))
             };
             let all_rounds = lower(LoweringJobBounds::CONSERVATIVE);
-            // All feature bits set: the bound comes from the text alone.
-            let bounded = lower(LoweringJobBounds::from_sources(
+            // All feature bits set: the bound comes from the text alone. A
+            // token takes at least one byte, besides the file's EOF token.
+            let bounds = LoweringJobBounds::from_sources(
                 crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
                 u32::try_from(source.len()).unwrap(),
                 [source],
-            ));
+            )
+            .with_token_capacity(u32::try_from(source.len() + 1).unwrap());
+            let bounded = lower(bounds);
+            let retained = compiler
+                .x86_lowering
+                .as_deref()
+                .expect("x86 lowering cache")
+                .retained_capacities()
+                .expect("retained lowering workspace");
+            let job_pairs = retained.job_jump_pairs(bounds.hir_rows, LoweringTarget::X86_64);
+            assert!(
+                job_pairs.ssa_value_link < retained.jump_pairs().ssa_value_link
+                    && job_pairs.execution_rank < retained.jump_pairs().execution_rank,
+                "{case}: the retained workspace should record more pairs than the job needs"
+            );
             assert_lowered_program_result(LoweringTarget::X86_64, case, &all_rounds, expected);
             assert!(
                 all_rounds == bounded,
-                "{case}: bounded aggregate layout rounds changed the executable"
+                "{case}: the job bounds changed the executable"
             );
         }
     }

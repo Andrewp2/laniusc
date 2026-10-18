@@ -351,7 +351,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 parser_feature_flags,
                                 bufs.n,
                                 [src],
-                            ),
+                            )
+                            .with_token_capacity(token_capacity),
                         )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                 }
@@ -457,6 +458,8 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
+        // The parse ran with `token_capacity`, which bounds the job's HIR.
+        let lowering_bounds = lowering_bounds.with_token_capacity(token_capacity);
         let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(parse_bufs);
         let type_check = self.record_typecheck_from_parse_buffers(
             device,
