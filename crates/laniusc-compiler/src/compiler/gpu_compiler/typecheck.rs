@@ -2319,12 +2319,53 @@ impl PendingOriginalUnit {
         &self.facts
     }
 
+    /// Keep this original for a later build of the same unit (the
+    /// pending-original cache). The retained value is still pending.
+    pub(super) fn retain(&self) -> RetainedPendingOriginal {
+        RetainedPendingOriginal {
+            unit: std::sync::Arc::new(self.unit.clone()),
+            facts: self.facts.clone(),
+        }
+    }
+
     pub(super) fn finish(
         self,
         admission: program_evidence::ValidatedOriginalUnit,
     ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
         let calls = admission.check_original_unit(&self.facts)?;
         Ok((self.unit, calls))
+    }
+}
+
+#[cfg(test)]
+impl PendingOriginalUnit {
+    pub(super) fn from_unit_for_test(unit: CompiledSourcePackUnit) -> Self {
+        Self { facts: OriginalUnitFacts::from_unit(&unit), unit }
+    }
+}
+
+/// A pending original retained across builds by the pending-original cache
+/// (unit_cache.rs). Like `PendingOriginalUnit` it exposes no unit or object
+/// and no conversion into a compiled cache value: it re-enters a build only as
+/// a new `PendingOriginalUnit`, which that build's program admission must
+/// release. The new wrapper shares this facts snapshot, so its catalog
+/// inputs are exactly the original compilation's.
+#[derive(Clone)]
+pub(super) struct RetainedPendingOriginal {
+    unit: std::sync::Arc<CompiledSourcePackUnit>,
+    facts: OriginalUnitFacts,
+}
+
+impl RetainedPendingOriginal {
+    pub(super) fn pending(&self) -> PendingOriginalUnit {
+        PendingOriginalUnit { unit: self.unit.as_ref().clone(), facts: self.facts.clone() }
+    }
+
+    /// The unit's charge plus the facts snapshot's own interface copy; the
+    /// snapshot's other fields share the unit's allocations.
+    pub(super) fn resident_byte_len(&self) -> usize {
+        self.unit.resident_byte_len()
+            .saturating_add(super::unit_cache::interface_resident_bytes(self.facts.interface()))
     }
 }
 
