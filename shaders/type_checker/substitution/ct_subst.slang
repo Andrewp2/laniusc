@@ -73,8 +73,12 @@ uint2 memo_key(uint env, uint term)
         ((hash.y ^ (hash.x * 0x9e3779b1u)) | 1u));
 }
 
-// The memoized result of (env, term), or CT_PENDING. Acquire: the result's
-// record was published before the memo entry.
+// The memoized result of (env, term), or CT_PENDING. A hit compares the full
+// key, so a tag shared by two keys never returns the other key's result. A
+// slot's words go from zero to their final values once per job, and env and
+// term are nonzero records (ct_subst), so a torn read (a result next to a key word still zero)
+// cannot match: it misses. Acquire: the result's record was published before
+// the memo entry.
 public uint ct_subst_memo_find(uint env, uint term)
 {
     uint capacity = memo_capacity();
@@ -96,13 +100,15 @@ public uint ct_subst_memo_find(uint env, uint term)
 }
 
 // Record (env, term) -> result. A slot is claimed with the key's tag, its key
-// written, then (release) its result; readers ignore an entry whose result is
-// still 0. Many lanes substitute one (env, term) at once (every call of one
-// instantiation), and a key has one result (interning gives it one ID): a
-// lane that meets its own tag leaves the entry to the lane that claimed it,
-// so a key takes one slot however many lanes race on it. Only the claimer
-// writes a slot. A tag shared by another key whose entry is still being
-// written costs this key its entry, and a later lookup builds it again.
+// written, then (release, a device-scope barrier) its result; readers ignore
+// an entry whose result is still 0, and results are never 0. Many lanes
+// substitute one (env, term) at once (every call of one instantiation), and a
+// key has one result (interning gives it one ID): a lane that meets its own
+// tag leaves the entry to the lane that claimed it, so a key takes one slot
+// however many lanes race on it. Only the claimer writes a slot. A tag shared
+// by another key whose entry is still being written only costs this insert:
+// the descent builds the node again, and once that entry is complete its key
+// differs and the insert probes on.
 public bool ct_subst_memo_insert(uint env, uint term, uint result)
 {
     uint capacity = memo_capacity();
@@ -245,6 +251,9 @@ public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, in
     if (env == CT_NONE) return term;
     if (ct_is_param(term)) return ct_subst_param(slots, env, term);
     if (ct_closed(term)) return term;
+    // An open term has a parameter, and only an environment record binds
+    // one. Memo keys are therefore never zero.
+    if (!ct_is_record(env)) return CT_UNKNOWN;
     uint result = ct_subst_memo_find(env, term);
     if (result != CT_PENDING) return result;
     for (uint work = 0u; work < CT_SUBST_WORK_LIMIT; work++)
