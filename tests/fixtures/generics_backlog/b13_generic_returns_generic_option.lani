@@ -1,0 +1,6 @@
+// expect: 0
+import core::option;
+struct Cell<T> { item: T }
+fn get<T>(value: Cell<T>) -> core::option::Option<T> { return core::option::Some(value.item); }
+fn first<T>(value: Cell<T>) -> core::option::Option<T> { return get(value); }
+fn main() -> i32 { return 0; }

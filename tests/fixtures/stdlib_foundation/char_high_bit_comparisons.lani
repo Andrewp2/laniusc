@@ -10,10 +10,13 @@ fn literal_before_u32(value: u32) -> bool { return 1 < value; }
 fn main() -> i32 {
     let sign_bits: u32 = 2147483648;
     let max_bits: u32 = 4294967295;
-    let high: char = sign_bits;
-    let last: char = max_bits;
+    // Plane-15 and plane-16 private-use scalars, above every BMP and emoji
+    // code point. A char holds only Unicode scalar values, so the u32 sign
+    // bit is exercised by the u32 comparisons below.
+    let high: char = '󰀀';
+    let last: char = '􏿽';
 
-    // A literal on the left must compare in unsigned character order.
+    // A literal on the left must compare in unsigned code-point order.
     if (!('😀' < high) || !('😀' <= high) || '😀' > high || '😀' >= high ||
         !(high > '😀') || !(high >= '😀') || high < '😀' || high <= '😀' ||
         !('😀' < last) || !('😀' <= last) || last <= '😀' ||

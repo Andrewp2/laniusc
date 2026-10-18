@@ -213,6 +213,21 @@ pub(in crate::type_checker) struct MethodBindGroups {
     pub(in crate::type_checker) offer_bound_members: ComputeOperation,
     pub(in crate::type_checker) finalize_candidates: ComputeOperation,
     pub(in crate::type_checker) resolve: ComputeOperation,
+    pub(in crate::type_checker) lookup: MethodLookupSweeps,
+}
+
+/// The preliminary lookup sweeps' own operations. They dispatch from the gated
+/// copy of the method grids, so a sweep after one that changed no target
+/// launches no workgroups.
+pub(in crate::type_checker) struct MethodLookupSweeps {
+    pub(in crate::type_checker) arm: ComputeOperation,
+    pub(in crate::type_checker) mark_call_keys: ComputeOperation,
+    pub(in crate::type_checker) mark_call_return_keys: ComputeOperation,
+    pub(in crate::type_checker) reset_candidates: ComputeOperation,
+    pub(in crate::type_checker) resolve_table: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members: ComputeOperation,
+    pub(in crate::type_checker) finalize_candidates: ComputeOperation,
+    pub(in crate::type_checker) gate: ComputeOperation,
 }
 
 /// Bind groups for trait/predicate collection, indexing, and obligation checks.

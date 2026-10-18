@@ -283,6 +283,7 @@ impl GpuTypeChecker {
             typecheck_graph.u32_buffer("method_compact_dispatch_args")?;
         let method_token_hir_dispatch_args =
             typecheck_graph.u32_buffer("method_token_hir_dispatch_args")?;
+        let method_lookup_dispatch_args = typecheck_graph.u32_buffer(METHOD_LOOKUP_DISPATCH_ARGS)?;
         allocation_stamp!("buffers");
         let graph_bindings = typecheck_graph.bindings()?;
         let mut resources = ResourceMap::new();
@@ -478,6 +479,7 @@ impl GpuTypeChecker {
                 hir_node_capacity,
                 hir_active_count_buf: &hir_active_count,
                 hir_active_dispatch_args: &hir_active_dispatch_args,
+                method_lookup_dispatch_args: &method_lookup_dispatch_args,
                 hir_items,
                 decl_name_token: &decl_name_token,
                 decl_id_by_name_token: &decl_id_by_name_token,
@@ -604,6 +606,7 @@ impl GpuTypeChecker {
             &method_compact_dispatch_args,
             &method_hir_dispatch_args,
             &method_token_hir_dispatch_args,
+            &method_lookup_dispatch_args,
         )?;
         allocation_stamp!("methods");
 

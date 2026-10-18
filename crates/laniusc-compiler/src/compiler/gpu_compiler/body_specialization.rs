@@ -7,7 +7,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
 };
 
 use super::{
@@ -74,18 +74,26 @@ impl GpuCompiler<'_> {
             return Err(CompileError::GpuCodegen("admitted source inventory is incomplete".into()));
         }
         let mut templates = BTreeMap::new();
+        // The defined symbol identities of each template object, so the scan
+        // finds a call's tag-only definition without walking every symbol.
+        let mut defined_identities = BTreeMap::<(u32, u32), HashSet<&'a [u8]>>::new();
         let mut objects = Vec::with_capacity(units.len());
         let mut used_units = BTreeSet::new();
-        for unit in units {
+        for &unit in units {
             let CompiledSourcePackObject::X86_64(object) = &unit.object else {
                 return Err(CompileError::GpuCodegen(
                     "resident x86 specialization received a different target".into(),
                 ));
             };
-            templates.insert((unit.interface.library_id, unit.interface.unit_id), *unit);
+            templates.insert((unit.interface.library_id, unit.interface.unit_id), unit);
             used_units.insert((object.library_id, object.unit_id));
+            // Like `templates`, the last unit with a given identity wins.
+            let mut defined = HashSet::new();
             for symbol in &object.symbols {
                 let identity = symbol_identity(object, symbol);
+                if symbol.section != x86::GpuX86ObjectSection::Undefined {
+                    defined.insert(identity);
+                }
                 if identity.len() == 12 {
                     used_units.insert((
                         u32::from_le_bytes(identity[..4].try_into().unwrap()),
@@ -93,6 +101,7 @@ impl GpuCompiler<'_> {
                     ));
                 }
             }
+            defined_identities.insert((unit.interface.library_id, unit.interface.unit_id), defined);
             objects.push(Cow::Borrowed(object));
         }
         let mut specializations = BTreeMap::<Vec<u8>, (Vec<u8>, Vec<u32>)>::new();
@@ -141,16 +150,13 @@ impl GpuCompiler<'_> {
                         }
                         continue;
                     };
-                    let Some(template) = templates.get(&(library_id, unit_id)) else {
+                    let Some(defined) = defined_identities.get(&(library_id, unit_id)) else {
                         if context_index >= units.len() {
                             trace.skipped(context_index, call_hir, "no template unit", Some(call));
                         }
                         continue;
                     };
                     let identity = declaration_identity(library_id, unit_id, declaration_index);
-                    let CompiledSourcePackObject::X86_64(original) = &template.object else {
-                        unreachable!("templates were checked above")
-                    };
                     // A reusable native body does not waive the declaration's
                     // generic requirements. Validate unused parameters too, before
                     // accepting tag-only definitions or scheduling a replay.
@@ -160,10 +166,7 @@ impl GpuCompiler<'_> {
                             "generic call is missing declared type or constant bindings",
                         )));
                     }
-                    if original.symbols.iter().any(|symbol| {
-                        symbol.section != x86::GpuX86ObjectSection::Undefined
-                            && symbol_identity(original, symbol) == identity
-                    }) {
+                    if defined.contains(identity.as_slice()) {
                         // Tag-only generic functions already have a valid body.
                         if context_index >= units.len() {
                             trace.skipped(context_index, call_hir, "tag-only definition", Some(call));
@@ -340,12 +343,13 @@ impl GpuCompiler<'_> {
                         .ok_or_else(|| specialization_limit_error("native text length overflow"))?;
                     // Undefined symbols precede definitions, so dropping other
                     // definitions preserves every relocation target index.
+                    let published = identities.iter().map(Vec::as_slice).collect::<HashSet<_>>();
                     let keep: Vec<bool> = concrete
                         .symbols
                         .iter()
                         .map(|symbol| {
                             symbol.section == x86::GpuX86ObjectSection::Undefined
-                                || identities.iter().any(|identity| symbol_identity(&concrete, symbol) == identity.as_slice())
+                                || published.contains(symbol_identity(&concrete, symbol))
                         })
                         .collect();
                     let mut index = 0;
@@ -354,16 +358,20 @@ impl GpuCompiler<'_> {
                         index += 1;
                         retain
                     });
+                    // Each key takes the first text definition still carrying
+                    // its identity; a renamed definition no longer matches.
+                    let mut definitions = HashMap::<Vec<u8>, Vec<usize>>::new();
+                    for (index, symbol) in concrete.symbols.iter().enumerate().rev() {
+                        if symbol.section == x86::GpuX86ObjectSection::Text {
+                            definitions.entry(symbol_identity(&concrete, symbol).to_vec()).or_default().push(index);
+                        }
+                    }
                     let mut entries = BTreeMap::new();
                     for (position, key) in run.keys.iter().enumerate() {
                         let body = &pending[key];
-                        let definition = concrete
-                            .symbols
-                            .iter()
-                            .position(|symbol| {
-                                symbol.section == x86::GpuX86ObjectSection::Text
-                                    && symbol_identity(&concrete, symbol) == identities[position].as_slice()
-                            })
+                        let definition = definitions
+                            .get_mut(&identities[position])
+                            .and_then(Vec::pop)
                             .ok_or_else(|| {
                                 let call = body.admitted.checked_call();
                                 CompileError::GpuCodegen(format!(

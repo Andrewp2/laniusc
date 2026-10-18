@@ -149,9 +149,14 @@ uint expr_record_slot(uint node, uint slot)
     return payload.d;
 }
 
+// payload.a of a call row is its callee node and of a match row its
+// scrutinee (parser/hir/canonical/core.slang), not an expression form.
 uint expr_form(uint node)
 {
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_FORM) : HIR_EXPR_NONE;
+    if (!valid_node(node)) return HIR_EXPR_NONE;
+    uint kind = compact_hir_core[node].kind;
+    if (kind == HIR_CALL_EXPR || kind == HIR_MATCH_EXPR) return HIR_EXPR_NONE;
+    return expr_record_slot(node, HIR_EXPR_RECORD_FORM);
 }
 
 uint expr_value_token(uint node)

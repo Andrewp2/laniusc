@@ -142,6 +142,11 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) materialize_alias_targets_group: ComputeOperation,
     pub(in crate::type_checker) collect_methods_group: ComputeOperation,
     pub(in crate::type_checker) project_methods_group: ComputeOperation,
+    /// The preliminary lookup sweeps' method collection, projection and
+    /// parameter scatter, dispatched from the gated lookup grids.
+    pub(in crate::type_checker) collect_methods_lookup: ComputeOperation,
+    pub(in crate::type_checker) project_methods_lookup: ComputeOperation,
+    pub(in crate::type_checker) scatter_method_params_lookup: ComputeOperation,
     pub(in crate::type_checker) project_struct_literals_group: ComputeOperation,
     pub(in crate::type_checker) _params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
     pub(in crate::type_checker) _type_params: LaniusBuffer<DependencyInterfaceVisibilityParams>,
@@ -439,6 +444,15 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_METHODS_PROJECT,
         inputs.hir_active_dispatch_args,
     )?;
+    let lookup_sweep = |spec| {
+        ComputeOperation::indirect_spec_at(
+            device, graph, &value_path_resources, passes, spec,
+            inputs.method_lookup_dispatch_args, METHOD_LOOKUP_ACTIVE_HIR_ARGS_OFFSET,
+        )
+    };
+    let collect_methods_lookup = lookup_sweep(DEPENDENCY_METHODS_COLLECT_LOOKUP)?;
+    let project_methods_lookup = lookup_sweep(DEPENDENCY_METHODS_PROJECT_LOOKUP)?;
+    let scatter_method_params_lookup = lookup_sweep(DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP)?;
     let project_struct_literals_group = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -642,6 +656,9 @@ pub(in crate::type_checker) fn create(
         materialize_alias_targets_group,
         collect_methods_group,
         project_methods_group,
+        collect_methods_lookup,
+        project_methods_lookup,
+        scatter_method_params_lookup,
         project_struct_literals_group,
         _params: params,
         _type_params: type_params,
