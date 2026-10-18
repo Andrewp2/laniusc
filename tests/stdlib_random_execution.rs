@@ -58,7 +58,7 @@ fn raw_secure_u32_traps_on_host_failure_on_x86() {
         }
         let executable = write_executable(&bytes, "random_raw_scalar_failure");
         for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=2:when=1"] {
-            let output = common::short_process_output_with_timeout(
+            let output = common::signal_process_output_with_timeout(
                 format!("raw random scalar {injection}"),
                 std::process::Command::new("strace")
                     .arg("-qq")

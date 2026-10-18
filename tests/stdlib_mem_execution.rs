@@ -50,7 +50,11 @@ fn generic_slice_constructor_rejects_invalid_lengths_and_indices() {
         {
             use std::os::unix::process::ExitStatusExt;
 
-            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            let output = if expected_signal.is_some() {
+                common::run_x86_64_elf_output_expecting_signal(name, name, &bytes)
+            } else {
+                common::run_x86_64_elf_output(name, name, &bytes)
+            };
             assert_eq!(output.status.code(), expected_code, "{name}: {output:?}");
             assert_eq!(
                 output.status.signal(),

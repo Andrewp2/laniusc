@@ -1509,8 +1509,11 @@ fn direct_record_literal_arguments_preserve_generic_body_failure() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib))
     })
     .expect("direct empty literals must supply a complete generic binding");
-    let output =
-        common::run_x86_64_elf_output("literal argument assertion", "generic_types", &bytes);
+    let output = common::run_x86_64_elf_output_expecting_signal(
+        "literal argument assertion",
+        "generic_types",
+        &bytes,
+    );
     assert!(
         !output.status.success(),
         "the empty result cannot erase the body: {output:?}"
@@ -1749,8 +1752,11 @@ fn main() -> i32 {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib))
         })
         .expect("compile ordinary and generic failing bodies");
-        let output =
-            common::run_x86_64_elf_output("empty assertion failure", "generic_types", &bytes);
+        let output = common::run_x86_64_elf_output_expecting_signal(
+            "empty assertion failure",
+            "generic_types",
+            &bytes,
+        );
         assert!(
             !output.status.success(),
             "the empty result cannot skip assert: {output:?}"
