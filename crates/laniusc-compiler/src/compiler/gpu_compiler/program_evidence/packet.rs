@@ -471,6 +471,52 @@ impl ProgramPacket {
         })
     }
 
+    /// Append the instance closure's origin calls of `snapshot` (D1): each
+    /// fact becomes the one call of a fresh no-owner context (kind 2, no
+    /// assumptions), so its call HIR may repeat a frozen occurrence. A
+    /// callee whose owner chain has requirements is left out: its origin
+    /// needs evidence, which the closure cannot supply. Returns each appended
+    /// fact's index and context.
+    pub fn append_closure_calls(
+        &mut self,
+        snapshot: u32,
+        facts: Arc<[CheckedGenericCall]>,
+    ) -> Result<Vec<(usize, u32)>> {
+        self.append_guard(|this| {
+            ensure!(
+                (snapshot as usize) < this.catalog.snapshots.len(),
+                "closure call snapshot absent"
+            );
+            let mut appended = Vec::new();
+            for (index, call) in facts.iter().enumerate() {
+                let Ok(callable) = this.resolve_target(snapshot, call.target) else { continue };
+                let callee_owner = this.catalog.tables.row(4, callable)?[1];
+                if !this.catalog.applicable_predicates(callee_owner)?.is_empty() {
+                    continue;
+                }
+                let context = this.tables.count(13)?;
+                this.tables.push(13, &[snapshot, INVALID, INVALID, 0, 0, 2, INVALID, 0])?;
+                ensure!(
+                    this.context_call_owners.insert((context, call.call_hir), INVALID).is_none(),
+                    "closure context already owns its call"
+                );
+                this.append_call(snapshot, context, INVALID, facts.clone(), index)?;
+                appended.push((index, context));
+            }
+            Ok(appended)
+        })
+    }
+
+    /// The admitted closure call of `context` (`append_closure_calls`).
+    pub fn admitted_closure_call(&self, snapshot: u32, context: u32, call_hir: u32) -> Result<AdmittedCall> {
+        self.ready()?;
+        ensure!(
+            self.context_call_owners.get(&(context, call_hir)) == Some(&INVALID),
+            "context does not own a closure call"
+        );
+        self.admitted_occurrence(snapshot, context, call_hir, INVALID)
+    }
+
     /// Append calls that replay context `context` owns outside its template's
     /// frozen call inventory: each fact at `fact_indices` becomes a call row
     /// of that context, owned by `owner_hir` (the context's selected body).

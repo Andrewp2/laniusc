@@ -17,6 +17,7 @@ mod canonical_passes;
 mod compiler_graph;
 mod generic_body;
 mod generic_calls;
+mod instance_closure_passes;
 mod owner_spans;
 pub(crate) use owner_spans::{CheckedImplHeader, CheckedOwnerSpan, CheckedOwnerSpans, CheckedTraitCut};
 mod checked_contracts;
@@ -36,9 +37,11 @@ pub(crate) use generic_calls::{
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
 };
 pub(crate) use generic_calls::{
+    CheckedClosureInstance,
     CheckedGenericApplicationArgument,
     CheckedGenericArgument,
     CheckedGenericCall,
+    CheckedInstanceClosure,
     CheckedGenericConstant,
     CheckedGenericTarget,
     CheckedGenericType,
@@ -646,6 +649,7 @@ impl ResidentTypeCheckWorkspace {
         parser_feature_flags: u32,
         dependency_interfaces_present: bool,
         semantic_interface_required: bool,
+        instance_closure: bool,
     ) -> Result<OwnedGpuSemanticArtifact> {
         let graph = &self.typecheck_graph;
         Ok(OwnedGpuSemanticArtifact {
@@ -711,6 +715,7 @@ impl ResidentTypeCheckWorkspace {
                         hir,
                         parser_feature_flags,
                         dependency_interfaces_present,
+                        instance_closure,
                     )
                 })
                 .transpose()?,

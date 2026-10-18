@@ -43,6 +43,9 @@ pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
     /// Global obligation order; hypotheses have no concrete replay capability.
     evidence: Vec<ValidatedEvidence>,
     poisoned: bool,
+    /// Admitted origins of each unit's instance closure (D1), by unit:
+    /// (instantiation depth, origin call).
+    closure_origins: BTreeMap<[u32; 2], Vec<(u32, AdmittedCall)>>,
 }
 
 impl NativeProgramSession {
@@ -63,16 +66,49 @@ impl NativeProgramSession {
         for snapshot in &catalog.snapshots {
             packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;
         }
+        // The instance closure's origins join the same check: each closed
+        // instance of a callee without requirements is one call of its own.
+        let mut closure_calls = Vec::new();
+        if instance_closure_enabled() {
+            for (index, snapshot) in catalog.snapshots.iter().enumerate() {
+                let Some(closure) = snapshot.original_facts.instance_closure() else { continue };
+                let (calls, depths): (Vec<_>, Vec<_>) = closure.instances.iter()
+                    .filter(|instance| instance.call.has_closed_arguments())
+                    .map(|instance| (instance.call.clone(), instance.depth))
+                    .unzip();
+                if calls.is_empty() { continue; }
+                let calls: Arc<[CheckedGenericCall]> = calls.into();
+                let snapshot_index = u32::try_from(index)?;
+                let appended = packet.packet_mut()?.append_closure_calls(snapshot_index, calls.clone())?;
+                closure_calls.push((snapshot_index, snapshot.unit, calls, depths, appended));
+            }
+        }
         let mut result = Self {
             catalog,
             gpu,
             packet,
             evidence: Vec::new(),
             poisoned: false,
+            closure_origins: BTreeMap::new(),
         };
         // An empty call inventory still requires catalog and batch admission.
         result.check()?;
+        for (snapshot, unit, calls, depths, appended) in closure_calls {
+            let packet = result.packet.packet_mut()?;
+            let origins = appended.into_iter()
+                .map(|(index, context)| Ok((depths[index],
+                    packet.admitted_closure_call(snapshot, context, calls[index].call_hir)?)))
+                .collect::<Result<Vec<_>>>()?;
+            result.closure_origins.insert(unit,
+                origins.into_iter().filter(|(_, call)| call.is_concrete()).collect());
+        }
         Ok(result)
+    }
+
+    /// The admitted instance-closure origins of an original unit:
+    /// (instantiation depth, origin call), in closure order.
+    pub fn instance_closure_origins(&self, unit: [u32; 2]) -> &[(u32, AdmittedCall)] {
+        self.closure_origins.get(&unit).map_or(&[], Vec::as_slice)
     }
 
     fn ready(&self) -> Result<()> {
@@ -781,6 +817,12 @@ pub(super) fn normalize_omitted_batch_template_calls(
 
 /// Missing implementations remain a source diagnostic. Invalid input, resource
 /// exhaustion, unsupported graphs and ambiguity keep their distinct GPU cause.
+/// `LANIUS_INSTANCE_CLOSURE=0` leaves the instance closure's origins out of
+/// program admission, so every deeper body waits for a later replay round.
+pub(in crate::compiler::gpu_compiler) fn instance_closure_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true)
+}
+
 pub(in crate::compiler::gpu_compiler) fn native_program_error(
     error: anyhow::Error,
 ) -> CompileError {

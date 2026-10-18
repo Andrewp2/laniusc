@@ -33,6 +33,8 @@ pub(crate) struct CheckedUnitFacts {
     pub call_owners: Vec<CheckedCallOwner>,
     /// Full checked callable occurrence ownership before generic-only pruning.
     pub native_call_owners: Vec<CheckedCallOwner>,
+    /// The GPU instance closure of an original unit (D1).
+    pub instance_closure: super::generic_calls::CheckedInstanceClosure,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
