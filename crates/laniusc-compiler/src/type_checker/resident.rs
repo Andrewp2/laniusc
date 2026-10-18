@@ -795,6 +795,19 @@ impl GpuTypeChecker {
             (generic_body::BODY_IMPL_BINDING_ROW * 16) as u64,
             &binding_bytes,
         );
+        // So is the continuation header: only an instance-copy replay maps
+        // files past its template to the modules they continue.
+        let continuations = hir_items
+            .body_specialization
+            .map(CheckedBodySpecializationBatch::continuation_words)
+            .unwrap_or_else(|| generic_body::continuation_words(0, &[]));
+        let continuation_bytes: Vec<u8> =
+            continuations.into_iter().flat_map(u32::to_le_bytes).collect();
+        self.body_specialization_inputs.write(
+            queue,
+            (generic_body::BODY_CONTINUATION_ROW * 16) as u64,
+            &continuation_bytes,
+        );
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
         let parser_feature_flags = hir_items.parser_feature_flags;

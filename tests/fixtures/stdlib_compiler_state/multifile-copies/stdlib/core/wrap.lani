@@ -1,0 +1,30 @@
+module core::wrap;
+
+import core::helpers;
+
+// Private to this module: a copy of a body of this file must still see them.
+struct Hidden<T> {
+    value: T,
+    tag: i32,
+}
+
+impl<T> Hidden<T> {
+    fn get(&self) -> T {
+        return self.value;
+    }
+}
+
+fn bump(x: i32) -> i32 {
+    return x + 1;
+}
+
+pub fn keep<T>(value: T) -> T {
+    let hidden: Hidden<T> = Hidden { value: value, tag: 7 };
+    return hidden.get();
+}
+
+pub fn count<T>(value: T, n: i32) -> i32 {
+    let kept: T = keep(value);
+    let chosen: T = core::helpers::first(kept, value);
+    return bump(twice(n));
+}

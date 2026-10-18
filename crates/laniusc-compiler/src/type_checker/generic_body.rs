@@ -52,8 +52,17 @@ pub(super) const BODY_BATCH_WORDS: usize =
 pub(crate) const MAX_BODY_IMPL_BINDINGS: usize = 8192;
 pub(super) const BODY_IMPL_BINDING_ROW: usize = BODY_BATCH_WORDS / 4;
 pub(super) const BODY_IMPL_BINDING_WORDS: usize = 4 + MAX_BODY_IMPL_BINDINGS * 8;
+/// Continuation files of an instance-copy replay (InstanceSources). They
+/// follow the impl bindings at BODY_CONTINUATION_ROW in
+/// shaders/type_checker/modules/file_continuations.slang: a header row (file
+/// count, first continuation file, 0, 0), then the continued template file
+/// of each, four per row.
+pub(crate) const MAX_BODY_CONTINUATION_FILES: usize = 1024;
+pub(super) const BODY_CONTINUATION_ROW: usize = (BODY_BATCH_WORDS + BODY_IMPL_BINDING_WORDS) / 4;
+pub(super) const BODY_CONTINUATION_WORDS: usize = 4 + MAX_BODY_CONTINUATION_FILES;
 /// The complete body_specialization_inputs buffer.
-pub(super) const BODY_INPUT_WORDS: usize = BODY_BATCH_WORDS + BODY_IMPL_BINDING_WORDS;
+pub(super) const BODY_INPUT_WORDS: usize =
+    BODY_BATCH_WORDS + BODY_IMPL_BINDING_WORDS + BODY_CONTINUATION_WORDS;
 
 /// Selects an instance copy's declaration by the source byte of its `fn`
 /// keyword (`COPY_TARGET | byte`); 00d2 resolves it to the copy's HIR row.
@@ -341,7 +350,9 @@ fn node_key(node: &[u32; 8], edges: &[u32]) -> Vec<u32> {
 ///
 /// Instance copies: an entry whose target is `BODY_COPY_TARGET | byte` stores
 /// `byte + 1` as its copy word (705.z for entry 0, header .z otherwise), and
-/// 705.w holds the first copy row (`set_instance_copies`).
+/// 705.w holds the first copy row (`set_instance_copies`). Copies of an
+/// earlier template file's bodies sit in continuation files, which the
+/// continuation section maps to their modules (`set_continuation_files`).
 #[derive(Clone, Debug)]
 pub(crate) struct CheckedBodySpecializationBatch {
     entries: Vec<CheckedBodySpecialization>,
@@ -363,6 +374,10 @@ pub(crate) struct CheckedBodySpecializationBatch {
     shared_by_local: Vec<Vec<u32>>,
     /// Sorted by key, unique (set_impl_bindings).
     impl_bindings: Vec<BodyImplBinding>,
+    /// The file id of the first continuation file, and per continuation the
+    /// template file it continues (set_continuation_files).
+    continuation_first_file: u32,
+    continued_files: Vec<u32>,
 }
 
 impl CheckedBodySpecializationBatch {
@@ -378,6 +393,8 @@ impl CheckedBodySpecializationBatch {
             constant_nodes: Vec::new(),
             shared_by_local: Vec::new(),
             impl_bindings: Vec::new(),
+            continuation_first_file: 0,
+            continued_files: Vec::new(),
         };
         ensure!(batch.try_push(entry)?, "one body specialization exceeds the packet capacity");
         Ok(batch)
@@ -407,6 +424,28 @@ impl CheckedBodySpecializationBatch {
         self.copy_first_row = row;
         self.copy_owners = owners;
         Ok(())
+    }
+
+    /// The continuation files of an instance-copy batch: file
+    /// `first_file + c` continues template file `continued[c]`, which is
+    /// before `first_file`. Files increase, so each continues a distinct one.
+    pub(crate) fn set_continuation_files(&mut self, first_file: u32, continued: Vec<u32>) -> Result<()> {
+        ensure!(self.copy_first_row != 0 || continued.is_empty(),
+            "continuation files hold instance copies");
+        ensure!(continued.len() <= MAX_BODY_CONTINUATION_FILES,
+            "{} continuation files exceed the packet's {MAX_BODY_CONTINUATION_FILES}", continued.len());
+        ensure!(continued.windows(2).all(|pair| pair[0] < pair[1])
+            && continued.last().is_none_or(|&file| file < first_file),
+            "continuation files must continue distinct earlier template files in order");
+        self.continuation_first_file = first_file;
+        self.continued_files = continued;
+        Ok(())
+    }
+
+    /// The continuation section, uploaded at BODY_CONTINUATION_ROW on every
+    /// replay.
+    pub(crate) fn continuation_words(&self) -> Vec<u32> {
+        continuation_words(self.continuation_first_file, &self.continued_files)
     }
 
     /// Install the replay's impl bindings (any order). Each names an entry of
@@ -681,6 +720,17 @@ pub(crate) fn impl_binding_words(bindings: &[BodyImplBinding]) -> Vec<u32> {
         words.extend([binding.instance, binding.slot, binding.required_symbol, binding.trait_unit[0],
             binding.trait_unit[1], binding.target[0], binding.target[1], binding.target[2]]);
     }
+    words
+}
+
+/// See `CheckedBodySpecializationBatch::continuation_words`: the header
+/// (count, first file, 0, 0), then the continued files padded to whole rows.
+/// Every job without continuation files writes the zero header.
+pub(crate) fn continuation_words(first_file: u32, continued: &[u32]) -> Vec<u32> {
+    let mut words = Vec::with_capacity(4 + continued.len().next_multiple_of(4));
+    words.extend([continued.len() as u32, first_file, 0, 0]);
+    words.extend_from_slice(continued);
+    words.resize(4 + continued.len().next_multiple_of(4), 0);
     words
 }
 
@@ -1826,6 +1876,38 @@ mod tests {
         assert!(reader.contains("BODY_GRAPH_EXT_START + BODY_GRAPH_EXT_ROWS + (BODY_MAX_ENTRIES - 1u) * BODY_EXTRA_ENTRY_ROWS"));
         assert_eq!(BODY_IMPL_BINDING_ROW,
             BODY_ENTRY_TABLE_START + BODY_GRAPH_EXT_ROWS + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS);
-        assert_eq!(BODY_INPUT_WORDS, (BODY_IMPL_BINDING_ROW + 1 + 2 * MAX_BODY_IMPL_BINDINGS) * 4);
+        assert_eq!(BODY_CONTINUATION_ROW, BODY_IMPL_BINDING_ROW + 1 + 2 * MAX_BODY_IMPL_BINDINGS);
+        assert_eq!(BODY_INPUT_WORDS, (BODY_CONTINUATION_ROW + 1 + MAX_BODY_CONTINUATION_FILES / 4) * 4);
+    }
+
+    #[test]
+    fn continuation_files_follow_the_impl_bindings() {
+        let reader = include_str!("../../../../shaders/type_checker/modules/file_continuations.slang");
+        let value = |name: &str| -> usize {
+            let line = reader.lines()
+                .find(|line| line.starts_with(&format!("static const uint {name} = ")))
+                .unwrap_or_else(|| panic!("{name} is not a literal in file_continuations.slang"));
+            line.split('=').nth(1).unwrap().trim().trim_end_matches(';').trim_end_matches('u').parse().unwrap()
+        };
+        assert_eq!(value("BODY_MAX_CONTINUATION_FILES"), MAX_BODY_CONTINUATION_FILES);
+        assert!(reader.contains(
+            "BODY_CONTINUATION_ROW = BODY_IMPL_BINDING_ROW + 1u + BODY_MAX_IMPL_BINDINGS * 2u;"));
+        assert_eq!(MAX_BODY_CONTINUATION_FILES % 4, 0);
+
+        assert_eq!(continuation_words(0, &[]), vec![0, 0, 0, 0]);
+        assert_eq!(continuation_words(12, &[3, 7, 9, 10, 11]),
+            vec![5, 12, 0, 0, 3, 7, 9, 10, 11, 0, 0, 0]);
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(
+            entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.set_continuation_files(12, vec![3]).is_err(), "continuations without copies");
+        batch.set_instance_copies(40, vec![(3, None)]).unwrap();
+        assert!(batch.set_continuation_files(12, vec![7, 3]).is_err(), "unordered");
+        assert!(batch.set_continuation_files(12, vec![3, 3]).is_err(), "one file continued twice");
+        assert!(batch.set_continuation_files(12, vec![12]).is_err(), "not a template file");
+        batch.set_continuation_files(12, vec![3, 7]).unwrap();
+        assert_eq!(batch.continuation_words(), vec![2, 12, 0, 0, 3, 7, 0, 0]);
+        let plain = CheckedBodySpecializationBatch::single(entry(5, vec![scalar], vec![])).unwrap();
+        assert_eq!(plain.continuation_words(), vec![0, 0, 0, 0]);
     }
 }

@@ -173,17 +173,19 @@ impl NativeProgramSession {
         self.prepare_batch(origins, false)
     }
 
-    /// Whether an origin's body can replay as an instance copy: its template
-    /// retained the byte span of the selected callable, and the copy, which
-    /// is appended to the template's last file, resolves names in the same
-    /// module as the body (`InstanceSources::copyable`).
-    pub fn instance_copy_available(&mut self, origin: &AdmittedCall) -> Result<bool> {
+    /// Where an origin's copy goes (`InstanceSources::copy_rank`), or None
+    /// when its body replays in its original scope. A body can replay as a
+    /// copy when its template retained the byte span of the selected
+    /// callable and the copy, appended to the body's own file or to a
+    /// continuation of it, resolves names in the body's module. A copy
+    /// run's entries are in rank order.
+    pub fn instance_copy_rank(&mut self, origin: &AdmittedCall) -> Result<Option<u32>> {
         self.ready()?;
         let (_, snapshot, selected_owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
         let facts = &self.catalog.snapshots[snapshot as usize].original_facts;
         Ok(facts.owner_spans()
             .and_then(|spans| spans.get(selected_owner_hir))
-            .is_some_and(|span| InstanceSources::copyable(facts.template_sources(), span)))
+            .and_then(|span| InstanceSources::copy_rank(facts.template_sources(), span)))
     }
 
     /// Like `prepare_replay_batch`, but every origin replays a renamed copy of
@@ -297,6 +299,9 @@ impl NativeProgramSession {
         let mut specialization = batch.expect("nonempty batch");
         if let Some(instance) = &instance {
             specialization.set_instance_copies(instance.first_copy_row, instance.owners.clone())?;
+            let template_files = u32::try_from(template.template_sources().len())
+                .map_err(|_| anyhow!("template has too many source files"))?;
+            specialization.set_continuation_files(template_files, instance.sources.continuations.clone())?;
         }
         specialization.set_impl_bindings(bindings)?;
         // GPU checks each new context against the exact origin environment and
