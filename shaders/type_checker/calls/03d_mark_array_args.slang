@@ -3,14 +3,18 @@ import type_checker.constant_parameter_slots;
 // Publish per-call array-argument facts from compact argument rows.
 //
 // Conditions consume this fact instead of scanning a fixed argument window.
-// Each compact argument row does O(1) type attribution for its own expression
-// and atomically marks the owning call when the argument is array-typed.
+// Each compact argument row reads its expression's synthesized reference (the
+// shared rule of inference_expression_reference.slang) and atomically marks
+// the owning call when the argument is a complete bounded array that the
+// callee returns unchanged.
 
 import hir_records;
 import primitive_types;
-StructuredBuffer<uint> literal_context_type_by_hir;
 import atomics;
 import hir_expr_semantics;
+import type_checker.checked_index_reference;
+import type_checker.checked_scoped_types;
+import type_checker.checked_type_graph;
 
 struct Params
 {
@@ -26,7 +30,6 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_fn_index;
-StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_ref_tag;
 StructuredBuffer<uint> call_param_row_ref_payload;
@@ -34,14 +37,13 @@ StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> visible_decl;
-StructuredBuffer<uint> visible_type;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
@@ -49,62 +51,13 @@ StructuredBuffer<uint> call_arg_param_row;
 
 RWStructuredBuffer<uint> call_result_instance;
 
+#include "../inference_expression_reference.slang"
+
 static const uint INVALID = 0xffffffffu;
 
-static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_CALL_EXPR = 19u;
-static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
-static const uint HIR_MATCH_EXPR = 34u;
 
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
-static const uint HIR_EXPR_RECORD_RIGHT = 2u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
-
-static const uint HIR_EXPR_NONE = 0u;
-static const uint HIR_EXPR_NAME = 2u;
-static const uint HIR_EXPR_INT = 3u;
-static const uint HIR_EXPR_TRUE = 4u;
-static const uint HIR_EXPR_FALSE = 5u;
-static const uint HIR_EXPR_NOT = 6u;
-static const uint HIR_EXPR_EQ = 7u;
-static const uint HIR_EXPR_NE = 8u;
-static const uint HIR_EXPR_LT = 9u;
-static const uint HIR_EXPR_GT = 10u;
-static const uint HIR_EXPR_LE = 11u;
-static const uint HIR_EXPR_GE = 12u;
-static const uint HIR_EXPR_NEG = 13u;
-static const uint HIR_EXPR_ADD = 14u;
-static const uint HIR_EXPR_SUB = 15u;
-static const uint HIR_EXPR_MUL = 16u;
-static const uint HIR_EXPR_AND = 17u;
-static const uint HIR_EXPR_OR = 18u;
-static const uint HIR_EXPR_MOD = 19u;
-static const uint HIR_EXPR_DIV = 20u;
-static const uint HIR_EXPR_BIT_OR = 21u;
-static const uint HIR_EXPR_BIT_XOR = 22u;
-static const uint HIR_EXPR_BIT_AND = 23u;
-static const uint HIR_EXPR_SHL = 24u;
-static const uint HIR_EXPR_SHR = 25u;
-static const uint HIR_EXPR_FLOAT = 27u;
-static const uint HIR_EXPR_INDEX = 26u;
-
-static const uint TY_UNKNOWN = 0u;
-static const uint TY_BOOL = 2u;
-static const uint TY_INT = 3u;
-static const uint TY_UINT = 4u;
-static const uint TY_FLOAT = 5u;
-static const uint TY_CHAR = 6u;
-static const uint TY_STRING = 7u;
-static const uint TY_ARRAY_BASE = 128u;
-static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_GENERIC_BASE = 8192u;
-
-static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -137,227 +90,6 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < active_token_count();
-}
-
-uint expr_record_slot(uint node, uint slot)
-{
-    if (!valid_node(node)) return INVALID;
-    HirPayload payload = compact_hir_payload[node];
-    if (slot == HIR_EXPR_RECORD_FORM) return payload.a;
-    if (slot == HIR_EXPR_RECORD_LEFT) return payload.b;
-    if (slot == HIR_EXPR_RECORD_RIGHT) return payload.c;
-    return payload.d;
-}
-
-// payload.a of a call row is its callee node and of a match row its
-// scrutinee (parser/hir/canonical/core.slang), not an expression form.
-uint expr_form(uint node)
-{
-    if (!valid_node(node)) return HIR_EXPR_NONE;
-    uint kind = compact_hir_core[node].kind;
-    if (kind == HIR_CALL_EXPR || kind == HIR_MATCH_EXPR) return HIR_EXPR_NONE;
-    return expr_record_slot(node, HIR_EXPR_RECORD_FORM);
-}
-
-uint expr_value_token(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN) : INVALID;
-}
-
-uint resolve_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    return node;
-}
-
-uint value_token_for_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint token = expr_value_token(node);
-    if (!valid_token(token))
-        token = compact_hir_core[node].token_start;
-    return valid_token(token) ? token : INVALID;
-}
-
-uint visible_type_for_token(uint token)
-{
-    if (!valid_token(token))
-        return TY_UNKNOWN;
-
-    uint ty = visible_type[token];
-    if (ty != TY_UNKNOWN)
-        return ty;
-
-    uint decl = visible_decl[token];
-    if (valid_token(decl))
-    {
-        ty = visible_type[decl];
-        if (ty != TY_UNKNOWN)
-            return ty;
-    }
-
-    return call_return_type[token];
-}
-
-uint direct_node_type(uint node)
-{
-    if (!valid_node(node))
-        return TY_UNKNOWN;
-
-    uint lit = hir_scalar_type_for_hir(compact_hir_core[node].kind, expr_form(node));
-    if (lit != TY_UNKNOWN)
-        return lit;
-
-    uint token = compact_hir_core[node].token_start;
-    if (!valid_token(token))
-        return TY_UNKNOWN;
-
-    if (compact_hir_core[node].kind == HIR_NAME_EXPR)
-        return visible_type_for_token(value_token_for_node(node));
-
-    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
-    {
-        uint member_token = compact_hir_payload[node].c;
-        return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
-    }
-
-    if (compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR)
-        return visible_type_for_token(compact_hir_core[node].token_start);
-
-    if (compact_hir_core[node].kind == HIR_ARRAY_EXPR ||
-        compact_hir_core[node].kind == HIR_INDEX_EXPR ||
-        compact_hir_core[node].kind == HIR_MATCH_EXPR)
-        return call_return_type[token];
-
-    if (compact_hir_core[node].kind == HIR_CALL_EXPR)
-    {
-        uint call_ty = call_return_type[token];
-        if (call_ty != TY_UNKNOWN)
-            return call_ty;
-
-        uint callee_node = compact_hir_payload[node].a;
-        if (!valid_node(callee_node))
-            return TY_UNKNOWN;
-        if (compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR)
-        {
-            uint member_token = compact_hir_payload[callee_node].c;
-            return valid_token(member_token) ? visible_type_for_token(member_token) : TY_UNKNOWN;
-        }
-        uint callee_token = value_token_for_node(callee_node);
-        return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
-    }
-
-    return TY_UNKNOWN;
-}
-
-uint direct_expr_record_type(uint node)
-{
-    node = resolve_expr(node);
-    if (!valid_node(node))
-        return TY_UNKNOWN;
-
-    uint form = expr_form(node);
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
-        return TY_BOOL;
-    if (form == HIR_EXPR_INT || form == HIR_EXPR_FLOAT)
-    {
-        uint context = literal_context_type_by_hir[node];
-        if ((form == HIR_EXPR_INT && scalar_is_integer(context)) ||
-            (form == HIR_EXPR_FLOAT && scalar_is_float(context))) return context;
-        return form == HIR_EXPR_FLOAT ? TY_FLOAT : TY_INT;
-    }
-    if (form == HIR_EXPR_NAME)
-    {
-        uint token = expr_value_token(node);
-        if (!valid_token(token))
-            token = compact_hir_core[node].token_start;
-        return valid_token(token) ? visible_type_for_token(token) : TY_UNKNOWN;
-    }
-    if (form == HIR_EXPR_INDEX)
-    {
-        uint token = compact_hir_core[node].token_start;
-        return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
-    }
-
-    if (form == HIR_EXPR_NOT ||
-        form == HIR_EXPR_EQ ||
-        form == HIR_EXPR_NE ||
-        form == HIR_EXPR_LT ||
-        form == HIR_EXPR_GT ||
-        form == HIR_EXPR_LE ||
-        form == HIR_EXPR_GE ||
-        form == HIR_EXPR_AND ||
-        form == HIR_EXPR_OR)
-        return TY_BOOL;
-
-    if (form == HIR_EXPR_NEG ||
-        form == HIR_EXPR_ADD ||
-        form == HIR_EXPR_SUB ||
-        form == HIR_EXPR_MUL ||
-        form == HIR_EXPR_DIV)
-    {
-        uint left_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_LEFT)));
-        uint right_ty = direct_node_type(resolve_expr(expr_record_slot(node, HIR_EXPR_RECORD_RIGHT)));
-        return scalar_is_float(left_ty) ? left_ty : scalar_is_float(right_ty) ? right_ty :
-            scalar_is_integer(left_ty) ? left_ty : scalar_is_integer(right_ty) ? right_ty : TY_UNKNOWN;
-    }
-
-    if (form == HIR_EXPR_MOD ||
-        form == HIR_EXPR_BIT_OR ||
-        form == HIR_EXPR_BIT_XOR ||
-        form == HIR_EXPR_BIT_AND ||
-        form == HIR_EXPR_SHL ||
-        form == HIR_EXPR_SHR)
-        return TY_INT;
-
-    return TY_UNKNOWN;
-}
-
-bool expression_result_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    return compact_hir_core[node].kind == HIR_CALL_EXPR ||
-           compact_hir_core[node].kind == HIR_MEMBER_EXPR ||
-           compact_hir_core[node].kind == HIR_INDEX_EXPR ||
-           compact_hir_core[node].kind == HIR_MATCH_EXPR ||
-           compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR;
-}
-
-uint first_value_type_from_node(uint root)
-{
-    if (!valid_node(root))
-        return TY_UNKNOWN;
-
-    uint record_ty = direct_expr_record_type(root);
-    if (record_ty != TY_UNKNOWN)
-        return record_ty;
-
-    uint resolved = resolve_expr(root);
-    if (expression_result_node(resolved))
-        return direct_node_type(resolved);
-
-    return direct_node_type(root);
-}
-
-bool is_array_type(uint ty)
-{
-    return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
-           ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
-}
-
-uint name_token_for_expr(uint root)
-{
-    uint node = resolve_expr(root);
-    if (!valid_node(node) ||
-        (compact_hir_core[node].kind != HIR_NAME_EXPR &&
-         expr_form(node) != HIR_EXPR_NAME))
-        return INVALID;
-
-    uint token = expr_value_token(node);
-    return valid_token(token) ? token : compact_hir_core[node].token_start;
 }
 
 uint call_callee_token(uint call_node)
@@ -402,26 +134,6 @@ uint bounded_array_instance_from_ref(uint tag, uint payload)
                type_instance_len_payload[payload], gParams.n_tokens)
                ? payload
                : INVALID;
-}
-
-uint array_instance_from_decl_token(uint decl_token)
-{
-    if (!valid_token(decl_token))
-        return INVALID;
-    return bounded_array_instance_from_ref(
-        decl_type_ref_tag[decl_token],
-        decl_type_ref_payload[decl_token]);
-}
-
-uint array_instance_from_name_token(uint name_token)
-{
-    if (!valid_token(name_token))
-        return INVALID;
-    uint decl_token = visible_decl[name_token];
-    uint instance = array_instance_from_decl_token(decl_token);
-    return instance != INVALID || decl_token == name_token
-        ? instance
-        : array_instance_from_decl_token(name_token);
 }
 
 uint array_instance_from_callee_return(uint callee_token)
@@ -506,7 +218,7 @@ bool same_bounded_array_instance(uint lhs, uint rhs)
         type_instance_elem_ref_payload[rhs]);
 }
 
-void mark_array_return_arg_instance(uint call_node, uint arg_node, uint param_row)
+void mark_array_return_arg_instance(uint call_node, uint actual_instance, uint param_row)
 {
     uint callee_token = call_callee_token(call_node);
     if (!valid_token(callee_token))
@@ -520,7 +232,6 @@ void mark_array_return_arg_instance(uint call_node, uint arg_node, uint param_ro
     if (!same_bounded_array_instance(declared_instance, expected_arg_instance))
         return;
 
-    uint actual_instance = array_instance_from_name_token(name_token_for_expr(arg_node));
     if (!concrete_bounded_array_instance(actual_instance))
         return;
     atomic_u32_min(call_result_instance, call_node, actual_instance);
@@ -540,8 +251,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(arg_node) || !valid_node(call_node))
         return;
 
-    if (is_array_type(first_value_type_from_node(arg_node)))
-    {
-        mark_array_return_arg_instance(call_node, arg_node, call_arg_param_row[row]);
-    }
+    // The argument's synthesized reference: a complete bounded array instance
+    // whatever its expression form (a name, a member, a call result, ...).
+    uint tag; uint payload;
+    if (!inference_value_reference(arg_node, tag, payload))
+        return;
+    uint actual_instance = bounded_array_instance_from_ref(tag, payload);
+    if (actual_instance != INVALID)
+        mark_array_return_arg_instance(call_node, actual_instance, call_arg_param_row[row]);
 }
