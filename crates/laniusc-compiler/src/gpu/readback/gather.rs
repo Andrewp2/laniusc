@@ -46,6 +46,8 @@ const RECORD_WORDS: usize = 3;
 const MIN_GATHER_REGIONS: usize = 64;
 /// Larger regions already copy efficiently.
 const MAX_GATHER_REGION_BYTES: usize = 256;
+/// Groups remembered while grouping regions, before the window map.
+const RECENT_GROUPS: usize = 8;
 /// Bounds the retained gather buffers (16 MiB of output, at most 48 MiB of
 /// records when every region is one word).
 const MAX_GATHER_WORDS: usize = 1 << 22;
@@ -173,8 +175,10 @@ impl GatherLease {
 
         let mut groups = Vec::<SourceGroup<'a>>::new();
         let mut group_by_window = HashMap::<(&wgpu::Buffer, u64), usize>::new();
-        // Readers list a buffer's rows together; skip the map for runs.
-        let mut last_group = None::<(&wgpu::Buffer, u64, usize)>;
+        // Readers interleave the rows of a few buffers (a record's columns);
+        // the last few groups let most regions skip the window map.
+        let mut recent = [None::<(&wgpu::Buffer, u64, usize)>; RECENT_GROUPS];
+        let mut next_recent = 0;
         for (index, region) in regions.iter().enumerate() {
             if region.byte_len == 0
                 || region.byte_len > MAX_GATHER_REGION_BYTES
@@ -187,22 +191,27 @@ impl GatherLease {
             let Some(window) = source_window(region.source, start, end, align, max_window) else {
                 continue;
             };
-            let group = match last_group {
-                Some((source, offset, group)) if source == region.source && offset == window.0 => {
+            let known = recent.iter().flatten().find(|&&(source, offset, _)| {
+                offset == window.0 && source == region.source
+            });
+            let group = match known {
+                Some(&(_, _, group)) => group,
+                None => {
+                    let group = *group_by_window
+                        .entry((region.source, window.0))
+                        .or_insert_with(|| {
+                            groups.push(SourceGroup {
+                                source: region.source,
+                                window,
+                                regions: Vec::new(),
+                            });
+                            groups.len() - 1
+                        });
+                    recent[next_recent % RECENT_GROUPS] = Some((region.source, window.0, group));
+                    next_recent += 1;
                     group
                 }
-                _ => *group_by_window
-                    .entry((region.source, window.0))
-                    .or_insert_with(|| {
-                        groups.push(SourceGroup {
-                            source: region.source,
-                            window,
-                            regions: Vec::new(),
-                        });
-                        groups.len() - 1
-                    }),
             };
-            last_group = Some((region.source, window.0, group));
             groups[group].regions.push(index);
         }
         let gathered_regions = groups.iter().map(|group| group.regions.len()).sum::<usize>();
