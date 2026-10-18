@@ -290,6 +290,9 @@ impl GpuTypeChecker {
         typecheck_graph.register_bindings(&graph_bindings, &mut resources);
         resources.buffer("gParams", &self.params_buf);
         resources.buffer("gExplicitOperandParams", &self.params_buf);
+        // Dependency kernels with their own gParams layout read this job's
+        // lookup capacities here (dependencies/15b).
+        resources.buffer("gTypeCheckParams", &self.params_buf);
         resources.buffer("gConstantStoragePlan", &constant_storage_plan);
         resources.buffer(
             "body_specialization_inputs",

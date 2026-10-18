@@ -3,9 +3,6 @@ implemented yet. Run with `tools/generics_matrix.py --probes tests/fixtures/gene
 When a probe passes, move it to `tests/fixtures/generics_matrix/`.
 
 Probes:
-- b01: a where-clause bound on a concrete subject (`where bool: Inner<[i32; M]>`).
-  The predicates collector admits only type-parameter subjects (LNC0008). Moved out
-  of the matrix (was p26); the code-38 impl-head fix it also needed is covered by p27.
 - b02: a bound proved through two levels of a generic impl
   (`total(Twice { inner: Twice { inner: Rect {..} } })`, `impl<T> Area for Twice<T>
   where T: Area`). The call fails LNC0008 (no matching impl); one level is p30.
@@ -16,28 +13,12 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b05: `Self` in a trait member signature, `fn same(self, other: Self)`.
-  LNC0007 "unknown type" at 1:35. With b06 this is the other route to an Eq
-  without type arguments.
-- b06: a bound on an imported trait, `where T: core::cmp::Eq<T>` and
-  `T::eq(a, b)`. LNC0027 "call resolution failed" at 6:13: no candidate is
-  offered for the imported trait's required member. Blocks every module family that compares
-  elements: option_* (11, contains), result_* (12, contains), slice_* (10),
-  range_* (6), vec_* (10, sort and search), set_* (8), map_* (8) and deque_*
-  (10, contains), 75 modules in all. core::set works around it with its own
-  Key trait, so only types implemented in core::set can be set items.
 - b09: the array repeat expression `[10; 4]`. LNC0016 at 2:30 ("expected `]`
   or `,`, found `;`"). Generic fixed-capacity containers take their backing
   array from the caller instead. Blocks none.
 - b11: a diverging match arm, `None -> core::panic::panic()`, in a generic
   function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
   Blocks a generic unwrap or expect; no existing module panics.
-- b12: a user type implementing a stdlib trait (`pub impl core::set::Key for
-  Point` in app::main), used through the bound in core::set. The bound call
-  now routes to the user's impl; x86 then fails with LNC0017 "x86 callee
-  function lost its checked aggregate result layout" at core/set.lani:78 for
-  `Set<Point, 3>` (the record-element aggregate layout gap). The i32 control
-  passes. Blocks user item types in core::set.
 - b13: a generic function returning another generic function's imported
   `core::option::Option<T>` result, `return get(value);`. LNC0006 "type
   mismatch" at 5:65, from both `check` and a compile, even with the function
@@ -80,6 +61,14 @@ other arms follow) is p48. b10 (`core::mem::size_of<T>()`, directly and from a
 generic body) is p52; generic allocation-backed buffers over it and
 `core::mem::typed_slice_from_storage` are
 tests/fixtures/stdlib_foundation/core_mem_size_of.lani.
+`Self` in a trait member signature
+(b05) is p49; a user type implementing a stdlib trait used through the bound
+in core::set (b12) is p50; a where-clause bound on a scalar subject
+(b01, `where bool: Inner<[i32; M]>`) is p51. A record type as a concrete
+subject is still rejected with LNC0008. A bound on an imported trait,
+`where T: core::cmp::Eq<T>` with `T::eq(a, b)` (b06), is p53; it unblocks the
+module families that compare elements (option_*, result_*, slice_*, range_*,
+vec_*, set_*, map_* and deque_*, 75 modules).
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with
