@@ -2955,6 +2955,23 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
     let Some(failure) = error.downcast_ref::<crate::type_checker::SemanticInterfaceExportFailure>() else {
         return phase_error(&error);
     };
+    if failure.constant_not_evaluated() {
+        return CompileError::Diagnostic(
+            Diagnostic::error(
+                "LNC0057",
+                "a public constant's initializer did not evaluate at compile time",
+            )
+            .with_note(format!(
+                "a constant may refer to other constants at most {} levels deep, and only integer, `bool` and `char` operators fold (semantic-interface status 0x{:08x}, declaration {})",
+                crate::type_checker::LOCAL_CONST_FOLD_ROUNDS,
+                failure.status,
+                failure.row,
+            ))
+            .with_help(
+                "shorten the chain of constants that refer to each other, or write the value as a literal",
+            ),
+        );
+    }
     let Some(root) = failure.type_topology_root() else {
         return phase_error(&error);
     };

@@ -2429,14 +2429,15 @@ impl GpuTypeChecker {
                 bind_groups.semantic_projection.owner_spans_clear.record(encoder);
                 bind_groups.semantic_projection.owner_spans.record(encoder)?;
             }
-            bind_groups
-                .semantic_projection
-                .local_const_literals
-                .record(encoder)?;
-            bind_groups
-                .semantic_projection
-                .local_const_references
-                .record(encoder)?;
+            let semantic_projection = &bind_groups.semantic_projection;
+            semantic_projection.local_const_literals.record(encoder)?;
+            // Constant reference rounds; a round after one that staged no
+            // constant dispatches no workgroups (const_fold.slang).
+            for _ in 0..super::LOCAL_CONST_FOLD_ROUNDS {
+                semantic_projection.local_const_fold_round.record(encoder)?;
+                semantic_projection.local_const_references.record(encoder)?;
+                semantic_projection.local_const_fold_publish.record(encoder)?;
+            }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }

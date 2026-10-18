@@ -58,6 +58,11 @@ mod substitution_passes;
 mod semantic_interface;
 pub use semantic_interface::RecordedSemanticInterface;
 pub use semantic_interface::SemanticInterfaceExportFailure;
+
+/// Constant reference rounds after the literal fold: a constant may refer to
+/// other constants this many levels deep
+/// (shaders/type_checker/semantic/artifact/const_fold.slang).
+pub const LOCAL_CONST_FOLD_ROUNDS: u32 = 8;
 mod util;
 
 use anyhow::Result;
