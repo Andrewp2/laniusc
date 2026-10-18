@@ -141,6 +141,13 @@ pub(in crate::compiler::gpu_compiler) struct FrozenCatalog {
 
 impl FrozenCatalog {
     pub fn freeze(inputs: &[CatalogInput<'_>]) -> Result<Arc<Self>> {
+        // Sub-spans of program_evidence.catalog_freeze (traced runs only).
+        let mut phase = std::time::Instant::now();
+        let mut span = |name: &str| {
+            let now = std::time::Instant::now();
+            crate::gpu::trace::record_host_span("host.compiler", name, phase, now);
+            phase = now;
+        };
         let mut originals = BTreeMap::<[u32; 2], &CatalogInput<'_>>::new();
         for input in inputs {
             let unit = input.facts;
@@ -171,6 +178,7 @@ impl FrozenCatalog {
                 originals.insert(key, input);
             }
         }
+        span("program_evidence.catalog_freeze.originals");
         let epoch = owned_id()?;
         let mut result = Self {
             epoch,
@@ -217,6 +225,7 @@ impl FrozenCatalog {
                 call_owner_by_hir,
             });
         }
+        span("program_evidence.catalog_freeze.snapshots");
         // Page order and empty pages remain owned by the source snapshot. Flat
         // artifact byte equality verifies public provenance only. Pages never
         // add implementations or nominate a different private snapshot.
@@ -227,14 +236,31 @@ impl FrozenCatalog {
                     let index = *result.snapshot_by_unit.get(&key).ok_or_else(|| {
                         anyhow!("dependency unit {key:?} has no authoritative program snapshot")
                     })?;
+                    let authority = &result.snapshots[index as usize];
+                    // An artifact equal to the authoritative interface has its
+                    // bytes: the artifact's PartialEq is derived over u32/u8
+                    // fields and Vecs of such records only, so equal values
+                    // serialize (and validate) identically, and the
+                    // authoritative value serialized. Only an unequal one is
+                    // serialized to compare bytes.
+                    let equal = artifact == authority.original_facts.interface();
+                    if equal && cfg!(any(test, debug_assertions)) {
+                        ensure!(
+                            artifact.to_bytes().map_err(|e| anyhow!(e))?.as_slice()
+                                == authority.interface_bytes.as_ref(),
+                            "equal dependency artifact serialized to different bytes"
+                        );
+                    }
                     ensure!(
-                        artifact.to_bytes().map_err(|e| anyhow!(e))?.as_slice()
-                            == result.snapshots[index as usize].interface_bytes.as_ref(),
+                        equal
+                            || artifact.to_bytes().map_err(|e| anyhow!(e))?.as_slice()
+                                == authority.interface_bytes.as_ref(),
                         "dependency page conflicts with authoritative unit {key:?}"
                     );
                 }
             }
         }
+        span("program_evidence.catalog_freeze.dependency_pages");
         for snapshot in 0..result.snapshots.len() {
             let contracts = result.snapshots[snapshot].contracts.clone();
             let first = result.tables.count(2)?;
@@ -314,8 +340,10 @@ impl FrozenCatalog {
                 row[5] = count;
             }
         }
+        span("program_evidence.catalog_freeze.owners");
         for (&unit_key, input) in &originals {
             let snapshot = result.snapshot_by_unit[&unit_key];
+            let public = PublicCallables::new(input.facts.interface());
             let mut callables = input
                 .facts
                 .checked_contracts()
@@ -326,11 +354,9 @@ impl FrozenCatalog {
                     Some(CallableInput {
                         source_hir: owner.source_hir,
                         native_symbol: callable.native_symbol,
-                        public_alias: public_callable_exists(
-                            input.facts.interface(),
-                            callable.native_symbol,
-                        )
-                        .then_some([
+                        public_alias: public
+                            .contains(callable.native_symbol)
+                            .then_some([
                             unit_key[0],
                             unit_key[1],
                             callable.native_symbol,
@@ -346,8 +372,7 @@ impl FrozenCatalog {
                     "invalid callable native target"
                 );
                 ensure!(
-                    callable.public_alias.is_some()
-                        == public_callable_exists(input.facts.interface(), callable.native_symbol),
+                    callable.public_alias.is_some() == public.contains(callable.native_symbol),
                     "callable public/private identity disagrees with accepted export"
                 );
                 if let Some(alias) = callable.public_alias {
@@ -356,7 +381,7 @@ impl FrozenCatalog {
                         "foreign callable export alias"
                     );
                     ensure!(
-                        public_callable_exists(input.facts.interface(), callable.native_symbol),
+                        public.contains(callable.native_symbol),
                         "callable alias absent from accepted export"
                     );
                 }
@@ -388,21 +413,28 @@ impl FrozenCatalog {
                 result.tables.row_mut(2, owner)?[8] = row;
             }
         }
+        span("program_evidence.catalog_freeze.callables");
         // Group predicates by owner without changing order within that owner.
         // No graph equality, substitution or implementation matching happens here.
         for snapshot in 0..result.snapshots.len() {
             let contracts = result.snapshots[snapshot].contracts.clone();
             let unit = result.snapshots[snapshot].unit;
             let mut exported_predicates = BTreeSet::new();
+            // Each owner's predicates in source order, bucketed once. A
+            // predicate whose owner is out of range is rejected below.
+            let mut owned_predicates = vec![Vec::new(); contracts.binders.len()];
+            for (local_predicate, predicate) in contracts.predicates.iter().enumerate() {
+                if let Some(bucket) = owned_predicates.get_mut(predicate.owner as usize) {
+                    bucket.push(local_predicate);
+                }
+            }
             for local_owner in 0..contracts.binders.len() {
                 let owner =
                     result.owner(snapshot as u32, contracts.binders[local_owner].source_hir)?;
                 let first = result.tables.count(8)?;
-                for (local_predicate, predicate) in contracts
-                    .predicates
+                for (local_predicate, predicate) in owned_predicates[local_owner]
                     .iter()
-                    .enumerate()
-                    .filter(|(_, p)| p.owner as usize == local_owner)
+                    .map(|&local| (local, &contracts.predicates[local]))
                 {
                     let atom = match predicate.public_index {
                         Some(index) => {
@@ -608,11 +640,14 @@ impl FrozenCatalog {
         }
         // Recipe roots may introduce parameter and nominal atoms. Copy them
         // before freezing Atom1; their identities remain owned by this catalog.
+        span("program_evidence.catalog_freeze.predicates_and_implementations");
         result.native_layout = FrozenNativeLayout::capture(&mut result)?;
+        span("program_evidence.catalog_freeze.native_layout");
         for key in &result.atoms.keys {
             result.tables.push(1, key)?;
         }
         result.materialize()?;
+        span("program_evidence.catalog_freeze.materialize");
         Ok(Arc::new(result))
     }
 
@@ -844,20 +879,38 @@ fn retained_call_owners(calls: &[CheckedGenericCall], call_owners: &[CheckedCall
     Ok(owners)
 }
 
-fn public_callable_exists(interface: &GpuSemanticInterfaceArtifact, symbol: u32) -> bool {
-    if interface
-        .declarations
-        .get(symbol as usize)
-        .is_some_and(|d| matches!(d.kind, 4 | 5))
-    {
-        return true;
+/// The public callables of one accepted export: its function declarations
+/// (kind 4 or 5) and the native targets in this unit of its public
+/// implementation methods, which are collected once per unit.
+struct PublicCallables<'a> {
+    interface: &'a GpuSemanticInterfaceArtifact,
+    methods: BTreeSet<u32>,
+}
+
+impl<'a> PublicCallables<'a> {
+    fn new(interface: &'a GpuSemanticInterfaceArtifact) -> Self {
+        let methods = interface
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, member)| {
+                member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
+                    && member.trait_method_is_public()
+            })
+            .filter_map(|(row, _)| interface.implementation_method_target(row as u32).ok())
+            .filter(|target| target[..2] == [interface.library_id, interface.unit_id])
+            .map(|target| target[2])
+            .collect();
+        Self { interface, methods }
     }
-    interface.members.iter().enumerate().any(|(row, member)| {
-        member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
-            && member.trait_method_is_public()
-            && interface.implementation_method_target(row as u32)
-                .is_ok_and(|target| target == [interface.library_id, interface.unit_id, symbol])
-    })
+
+    fn contains(&self, symbol: u32) -> bool {
+        self.interface
+            .declarations
+            .get(symbol as usize)
+            .is_some_and(|d| matches!(d.kind, 4 | 5))
+            || self.methods.contains(&symbol)
+    }
 }
 
 pub(super) fn domain(value: CheckedParameterDomain) -> u32 {
