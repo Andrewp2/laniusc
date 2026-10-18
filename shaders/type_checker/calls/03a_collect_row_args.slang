@@ -64,8 +64,6 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
-StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
-StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> call_param_row_ordinal;
 StructuredBuffer<uint> call_param_row_type;
 StructuredBuffer<uint> call_param_row_ref_tag;

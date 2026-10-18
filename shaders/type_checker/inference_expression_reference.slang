@@ -11,6 +11,23 @@ StructuredBuffer<uint> literal_context_type_by_hir;
 #ifndef INFERENCE_CALL_RESULT_CLOSED
 #define INFERENCE_CALL_RESULT_CLOSED(instance) checked_instance_is_closed(instance)
 #endif
+// The type rows an includer reads (checked or mutable graph).
+#ifndef INFERENCE_TYPE_CAPACITY
+#define INFERENCE_TYPE_CAPACITY() checked_type_capacity()
+#endif
+// An unsuffixed numeric literal, under at most one negation, that has no
+// checked context yet. Its arithmetic peer supplies the operation's type.
+bool inference_uncontexted_literal(uint node, uint count)
+{
+    if (node >= count) return false;
+    if (compact_hir_core[node].kind == 17u && compact_hir_payload[node].a == 13u)
+        node = compact_hir_payload[node].b;
+    if (node >= count || compact_hir_core[node].kind != 23u) return false;
+    uint form = compact_hir_payload[node].a;
+    uint context = literal_context_type_by_hir[node];
+    return (form == HIR_SEM_EXPR_INT && !scalar_is_integer(context)) ||
+        (form == HIR_SEM_EXPR_FLOAT && !scalar_is_float(context));
+}
 bool inference_value_reference(uint node, out uint tag, out uint payload, bool current_match = true)
 {
     static const uint INVALID_REF = 0xffffffffu;
@@ -46,8 +63,16 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
             { tag = 1u; payload = 2u; break; }
             // Arithmetic inherits its checked operand type, as in scalar
             // projection. An unresolved operand must not become guessed i32.
+            // A binary operation whose left operand is an uncontexted literal
+            // takes the type of its right operand; a shift keeps its value's.
             if (form - 13u <= 3u || form - 19u <= 6u)
-            { root = value.b; continue; }
+            {
+                bool peer = form != 13u && form - 24u > 1u &&
+                    inference_uncontexted_literal(value.b, count) &&
+                    !inference_uncontexted_literal(value.c, count);
+                root = peer ? value.c : value.b;
+                continue;
+            }
             // `value as T` has its target's checked reference, published at
             // the target type's first token (payload.d).
             if (form != 36u || value.d >= gParams.n_tokens) return false;
@@ -121,7 +146,7 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
     }
 #ifdef INFERENCE_INDEX_GRAPH
     // The including kernel reads the type rows through its own graph.
-    if (!checked_index_elements<INFERENCE_INDEX_GRAPH>(indices, checked_type_capacity(), tag, payload))
+    if (!checked_index_elements<INFERENCE_INDEX_GRAPH>(indices, INFERENCE_TYPE_CAPACITY(), tag, payload))
         return false;
 #else
     if (!checked_index_elements(indices, type_instance_kind, type_instance_elem_ref_tag,
@@ -129,5 +154,5 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
 #endif
     return (tag == 1u && payload != 0u && payload != INVALID_REF) ||
         (tag == 2u && payload < gParams.n_tokens && type_generic_param_slot_by_token[payload] != INVALID_REF) ||
-        (tag == 3u && payload < checked_type_capacity() && type_instance_kind[payload] != 0u);
+        (tag == 3u && payload < INFERENCE_TYPE_CAPACITY() && type_instance_kind[payload] != 0u);
 }
