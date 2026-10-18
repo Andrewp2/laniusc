@@ -260,6 +260,11 @@ impl GpuCompiler<'_> {
                     } else {
                         None
                     };
+                    if trace.enabled && rank.is_none() && instance_copies && !body.recursive {
+                        let why = program.instance_copy_miss(&body.admitted).map_err(native_program_error)?;
+                        let (library, unit, declaration) = body.target;
+                        eprintln!("[specialization]   original unit={library}:{unit} decl={declaration}: {why}");
+                    }
                     ranked.push((rank, key));
                 }
                 ranked.sort_by_key(|(rank, _)| rank.unwrap_or(0));
