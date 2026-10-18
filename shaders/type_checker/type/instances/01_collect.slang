@@ -1,4 +1,5 @@
 import hir_records;
+import primitive_types;
 
 // HIR-driven scalar/path type-reference collection.
 //
@@ -42,6 +43,7 @@ static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint HIR_TYPE_FORM_NONE = 0u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
+static const uint HIR_TYPE_FORM_NEVER = 5u;
 
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -110,6 +112,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
     uint compact_count = active_compact_hir_count();
+    // The never type `!` is a leaf with no path; it names its scalar directly.
+    if (node < compact_count && compact_hir_core[node].kind == HIR_TYPE &&
+        compact_hir_payload[node].a == HIR_TYPE_FORM_NEVER)
+    {
+        uint token = compact_hir_core[node].token_start;
+        if (valid_token(token))
+        {
+            type_expr_ref_tag[token] = TYPE_REF_SCALAR;
+            type_expr_ref_payload[token] = SCALAR_NEVER;
+        }
+    }
     if (node < compact_count &&
         ((compact_hir_core[node].kind == HIR_TYPE &&
           compact_hir_payload[node].a == HIR_TYPE_FORM_PATH) ||

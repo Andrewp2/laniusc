@@ -37,7 +37,7 @@ uint4 ct_bridge_head(uint id)
 {
     uint records; uint stride;
     ct_head.GetDimensions(records, stride);
-    bool stored = id - (SCALAR_USIZE + 1u) < records - (SCALAR_USIZE + 1u);
+    bool stored = id - (SCALAR_NEVER + 1u) < records - (SCALAR_NEVER + 1u);
     return select(bool4(stored, stored, stored, stored), ct_head[select(stored, id, 0u)],
         uint4(0u, 0u, 0u, 0u));
 }
@@ -60,7 +60,7 @@ public uint2 ct_bridge_operand(uint ref)
     bool parameter = (domain | 2u) == 6u;
     uint parameter_tag = select(domain == 4u, 2u, APPLICATION_CONSTANT_ARGUMENT | 2u);
     operand = select(bool2(parameter, parameter), uint2(parameter_tag, ref & CT_PARAM_TOKEN_MASK), operand);
-    bool scalar = ref - 1u < SCALAR_USIZE;
+    bool scalar = ref - 1u < SCALAR_NEVER;
     return select(bool2(scalar, scalar), uint2(1u, ref), operand);
 }
 

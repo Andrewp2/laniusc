@@ -1114,7 +1114,7 @@ impl GpuTypeChecker {
             .checked_mul(2)
             .and_then(|value| value.checked_add(predicate_capacity))
             .and_then(|value| value.checked_add(decl_capacity))
-            .and_then(|value| value.checked_add(crate::primitive_types::SCALAR_USIZE - crate::primitive_types::SCALAR_UNIT + 1))
+            .and_then(|value| value.checked_add(crate::primitive_types::SCALAR_NEVER - crate::primitive_types::SCALAR_UNIT + 1))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface type capacity overflows u32"))?;
         let edge_capacity = capacity.checked_mul(2).and_then(|value| value.checked_add(decl_capacity)).ok_or_else(|| {
             anyhow::anyhow!("semantic-interface type-edge capacity overflows u32")

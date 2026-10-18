@@ -318,7 +318,9 @@ void emit_argument_claims(uint arg_row)
     uint environment = CT_UNKNOWN;
     uint count_mask = 0u;
     uint tag; uint payload;
-    if (argument_value_reference(node, tag, payload))
+    // A never argument does not arrive, so it binds no parameter: it emits
+    // no claims, like an argument whose type is not yet known.
+    if (argument_value_reference(node, tag, payload) && !type_ref_is_never(tag, payload))
     {
         uint param = call_arg_param_row[arg_row];
         // Interned at one site: the parameter pattern, the argument, and the

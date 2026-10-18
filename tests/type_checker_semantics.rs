@@ -6389,3 +6389,6 @@ fn main() -> i32 {
 
 #[path = "type_checker_semantics/trait_methods_control.rs"]
 mod trait_methods_control;
+
+#[path = "type_checker_semantics/never_type.rs"]
+mod never_type;

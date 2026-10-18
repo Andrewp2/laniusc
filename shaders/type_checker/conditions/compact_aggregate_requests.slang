@@ -3,6 +3,7 @@
 // row; variable-length type arguments are expanded by the downstream scan and
 // aggregate_args pass, never walked serially here.
 
+import primitive_types;
 import type_checker.checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;
@@ -32,6 +33,8 @@ StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> semantic_aggregate_decl_token_by_hir;
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> aggregate_compare_expected_instance;
@@ -105,6 +108,13 @@ void expression_ref(uint node, out uint tag, out uint payload)
     if (!valid_hir(node)) return;
     tag = semantic_expr_ref_tag_by_hir[node];
     payload = semantic_expr_ref_payload_by_hir[node];
+}
+
+// A value of type never fits any expected type (see compact_stmt.slang).
+bool never_value(uint node)
+{
+    return valid_hir(node) &&
+        type_ref_is_never(call_inference_result_tag[node], call_inference_result_payload[node]);
 }
 
 bool resolved_dependency_call(uint node)
@@ -229,7 +239,8 @@ void validate_struct_literal_fields(uint node)
     for (uint ordinal = 0u; ordinal < count; ordinal++)
     {
         HirField field = compact_fields[start + ordinal];
-        if (field.owner != node || !valid_token(field.name_token) || !valid_hir(field.value)) continue;
+        if (field.owner != node || !valid_token(field.name_token) || !valid_hir(field.value) ||
+            never_value(field.value)) continue;
         uint expected_tag = struct_init_field_expected_ref_tag[field.name_token];
         uint expected_payload = struct_init_field_expected_ref_payload[field.name_token];
         uint actual_tag; uint actual_payload;
@@ -317,6 +328,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // the dependency call-result relation after generic claims are resolved.
     // This pass remains authoritative for every other representation pair.
     uint expression_node = stmt.a == HIR_STMT_RETURN ? stmt.b : stmt.c;
+    if (never_value(expression_node)) return;
     if (actual_tag == TYPE_REF_EXTERNAL_CANONICAL &&
         resolved_dependency_call(expression_node))
         return;

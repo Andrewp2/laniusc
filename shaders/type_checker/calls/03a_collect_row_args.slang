@@ -295,8 +295,10 @@ void collect_row_argument(uint row)
         // accepted reference; default literal codes are not argument types.
         if (call_inference_state[0u] != 0u) return;
         uint actual_tag; uint actual_payload;
-        if (!argument_result_reference(resolve_expr(node), actual_tag, actual_payload) ||
-            !scalar_argument_matches(type, actual_tag, actual_payload, node))
+        bool known = argument_result_reference(resolve_expr(node), actual_tag, actual_payload);
+        // A never argument does not arrive; it fits any parameter.
+        if (known && type_ref_is_never(actual_tag, actual_payload)) return;
+        if (!known || !scalar_argument_matches(type, actual_tag, actual_payload, node))
             record_error(error_token, ERR_ASSIGN_MISMATCH,
                 actual_tag == TYPE_REF_SCALAR ? type * 256u + actual_payload : 0u);
         return;
@@ -333,8 +335,9 @@ void collect_row_argument(uint row)
         uint ignored;
         InterlockedMin(call_generic_return_arg_node[call], node, ignored);
     }
-    // An argument without an ID yet is matched in a later round.
-    if (!ct_is_resolved(actual)) return;
+    // An argument without an ID yet is matched in a later round. A never
+    // argument fits the pattern and binds none of its parameters.
+    if (!ct_is_resolved(actual) || type_ref_is_never(actual_tag, actual_payload)) return;
     // Only the legacy cache's four scalar slots need bindings. A parameter
     // root binds the argument itself, so its match interns nothing.
     bool root = ct_is_type_param(pattern);

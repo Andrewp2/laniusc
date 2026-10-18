@@ -1,4 +1,5 @@
 import hir_records;
+import primitive_types;
 
 // Propagate guaranteed-return facts from explicit returns through enclosing
 // if/else controls.  Each if row is a two-bit atomic latch: the thread which
@@ -21,6 +22,10 @@ StructuredBuffer<uint> compact_hir_nearest_block;
 StructuredBuffer<uint> compact_hir_nearest_control;
 StructuredBuffer<uint> compact_hir_nearest_fn;
 
+// The synthesized type of each expression; a call of a `-> !` function is
+// scalar never.
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 RWStructuredBuffer<uint> return_fn_flags;
 RWStructuredBuffer<uint> return_block_flags;
 
@@ -32,6 +37,7 @@ static const uint HIR_BLOCK = 6u;
 static const uint HIR_FN = 3u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_IF_STMT = 10u;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint THEN_ARM_RETURNED = 1u;
 static const uint ELSE_ARM_RETURNED = 2u;
@@ -57,6 +63,18 @@ bool return_statement_node(uint node)
     return valid_node(node) &&
            compact_hir_core[node].kind == HIR_RETURN_STMT &&
            compact_hir_payload[node].a == STMT_RECORD_KIND_RETURN;
+}
+
+// A call of type never that is a whole expression statement (`fail();`) ends
+// its block like a return. Compaction drops the expression-statement row, so
+// such a call is a direct child of its block.
+bool diverging_statement_call(uint node)
+{
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_CALL_EXPR ||
+        !type_ref_is_never(call_inference_result_tag[node], call_inference_result_payload[node]))
+        return false;
+    uint block = compact_hir_core[node].parent;
+    return valid_node(block) && compact_hir_core[block].kind == HIR_BLOCK;
 }
 
 uint arm_bit(uint control, uint returning_node)
@@ -107,7 +125,8 @@ void publish_guaranteed_return(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!return_statement_node(node))
-        return;
-    publish_guaranteed_return(node);
+    if (return_statement_node(node))
+        publish_guaranteed_return(node);
+    else if (diverging_statement_call(node))
+        publish_guaranteed_return(node);
 }

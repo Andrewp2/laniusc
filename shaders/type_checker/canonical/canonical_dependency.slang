@@ -125,7 +125,7 @@ uint build_dependency(uint t, bool final, out CtKey key)
     if (kind == 1u)
     {
         uint scalar = dependency_type_word(t * TYPE_WORDS + 1u);
-        return scalar >= 1u && scalar <= SCALAR_USIZE ? scalar : CT_UNKNOWN;
+        return scalar >= 1u && scalar <= SCALAR_NEVER ? scalar : CT_UNKNOWN;
     }
     if (kind == 2u) return ct_dep_type_param(dependency_generic_type_slot(t));
     if (kind == 8u)

@@ -15,7 +15,7 @@ import primitive_types;
 
 // ---------------------------------------------------------------------------
 // References. A canonical reference is a record ID in [1, CT_ID_LIMIT), a
-// parameter leaf, or a sentinel. Scalar codes 1..SCALAR_USIZE are preseeded
+// parameter leaf, or a sentinel. Scalar codes 1..SCALAR_NEVER are preseeded
 // record IDs. Parameter leaves are not records: they carry their declaration
 // token and domain, so `T` of two different binders never collides.
 public static const uint CT_PENDING = 0xffffffffu;
@@ -167,7 +167,7 @@ public bool ct_is_record(uint ref)
 // Dynamic records exclude the preseeded scalar IDs.
 public bool ct_is_stored(uint ref)
 {
-    return ref - (SCALAR_USIZE + 1u) < CT_ID_LIMIT - (SCALAR_USIZE + 1u);
+    return ref - (SCALAR_NEVER + 1u) < CT_ID_LIMIT - (SCALAR_NEVER + 1u);
 }
 
 public uint ct_type_param(uint token)
@@ -218,7 +218,7 @@ public bool ct_is_dep_param(uint ref)
 public uint ct_kind(uint ref)
 {
     if (!ct_is_record(ref)) return 0u;
-    return ref <= SCALAR_USIZE ? CT_KIND_SCALAR : ct_head[ref].x & 0xffu;
+    return ref <= SCALAR_NEVER ? CT_KIND_SCALAR : ct_head[ref].x & 0xffu;
 }
 
 public uint ct_arity(uint ref)
@@ -235,7 +235,7 @@ public uint ct_type_slots(uint ref)
 public uint3 ct_words(uint ref)
 {
     if (!ct_is_record(ref)) return uint3(0u, 0u, 0u);
-    return ref <= SCALAR_USIZE ? uint3(ref, 0u, 0u) : ct_head[ref].yzw;
+    return ref <= SCALAR_NEVER ? uint3(ref, 0u, 0u) : ct_head[ref].yzw;
 }
 
 public uint ct_arg(uint ref, uint index)
@@ -388,7 +388,7 @@ public uint ct_ref(uint tag, uint payload)
     if ((tag & CT_CONSTANT_TAG_BIT) != 0u) return ct_constant_ref(tag & ~CT_CONSTANT_TAG_BIT, payload);
     if (tag == 1u)
     {
-        if (payload >= 1u && payload <= SCALAR_USIZE) return payload;
+        if (payload >= 1u && payload <= SCALAR_NEVER) return payload;
         // Monomorphic nominal values keep legacy scalar-coded references to
         // the declaration's own zero-argument application row.
         if (payload >= 4096u && payload < 8192u)
@@ -671,7 +671,7 @@ public uint ct_intern_small(uint kind, uint arity, uint3 words, uint2 args, uint
     if (arity >= 1u) ct_key_fold(key, args.x);
     if (arity >= 2u) ct_key_fold(key, args.y);
     if (!key.ok) return CT_UNKNOWN;
-    if (kind == CT_KIND_SCALAR && words.x >= 1u && words.x <= SCALAR_USIZE && arity == 0u &&
+    if (kind == CT_KIND_SCALAR && words.x >= 1u && words.x <= SCALAR_NEVER && arity == 0u &&
         words.y == 0u && words.z == 0u) return words.x;
     uint slots = ct_slot_capacity();
     uint slot = ct_probe_start(key.shash);

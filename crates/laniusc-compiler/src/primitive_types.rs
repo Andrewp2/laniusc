@@ -2,8 +2,14 @@
 #![allow(dead_code)]
 include!(concat!(env!("OUT_DIR"), "/primitive_types.rs"));
 
+/// A primitive identity that has values: unit through usize (never excluded).
 pub(crate) const fn is_known(scalar: u32) -> bool {
     scalar >= SCALAR_UNIT && scalar <= SCALAR_USIZE
+}
+
+/// Any primitive identity, never included.
+pub(crate) const fn is_identity(scalar: u32) -> bool {
+    scalar >= SCALAR_UNIT && scalar <= SCALAR_NEVER
 }
 
 pub(crate) const fn is_signed_integer(scalar: u32) -> bool {
@@ -32,6 +38,7 @@ pub(crate) fn name(scalar: u32) -> Option<&'static str> {
         SCALAR_STR => "str", SCALAR_PTR => "ptr", SCALAR_I64 => "i64",
         SCALAR_U64 => "u64", SCALAR_I8 => "i8", SCALAR_I16 => "i16",
         SCALAR_U8 => "u8", SCALAR_U16 => "u16", SCALAR_F64 => "f64",
-        SCALAR_ISIZE => "isize", SCALAR_USIZE => "usize", _ => return None,
+        SCALAR_ISIZE => "isize", SCALAR_USIZE => "usize", SCALAR_NEVER => "!",
+        _ => return None,
     })
 }

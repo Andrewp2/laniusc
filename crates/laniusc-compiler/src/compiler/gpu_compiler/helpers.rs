@@ -104,7 +104,7 @@ fn type_code_note(code: u32) -> String {
 
     match code {
         TY_UNKNOWN => "unknown type".to_string(),
-        code if crate::primitive_types::is_known(code) => crate::primitive_types::name(code)
+        code if crate::primitive_types::is_identity(code) => crate::primitive_types::name(code)
             .expect("known scalar has a diagnostic name").to_string(),
         code if (TY_ARRAY_BASE..TY_STRUCT_BASE).contains(&code) => {
             let element_code = code - TY_ARRAY_BASE;

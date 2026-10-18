@@ -161,7 +161,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_token(match_token) || match_value.c == 0u ||
         match_value.c > active_arm_count() - first)
     { record_min_token_error(status, valid_token(match_token) ? match_token : 0u, 6u, 34u); return; }
-    uint tag = 0u; uint payload = INVALID; uint id = CT_UNKNOWN;
+    // The match has the type of its arms that complete; an arm of type never
+    // (a call of a `-> !` function) does not, and joins any type. A match
+    // whose every arm is never is itself never.
+    uint tag = 1u; uint payload = SCALAR_NEVER; uint id = CT_UNKNOWN;
+    bool joined = false;
     for (uint ordinal = 0u; ordinal < match_value.c; ordinal++)
     {
         HirMatchArm arm = compact_match_arms[first + ordinal];
@@ -175,7 +179,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 record_min_token_error(status, valid_token(result_token) ? result_token : match_token, 6u, 0x474e0003u);
             return;
         }
-        if (ordinal == 0u) { tag = next_tag; payload = next_payload; id = next_id; }
+        if (next_tag == 1u && next_payload == SCALAR_NEVER) continue;
+        if (!joined) { tag = next_tag; payload = next_payload; id = next_id; joined = true; }
         else if (!checked_refs_equal_ids(tag, payload, id, next_tag, next_payload, next_id, gParams.n_tokens))
         {
             if (call_inference_state[0u] == 0u) record_min_token_error(status, result_token, 3u, 0u);

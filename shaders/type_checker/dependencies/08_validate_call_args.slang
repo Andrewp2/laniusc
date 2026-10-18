@@ -264,6 +264,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         mode = kind == CT_KIND_REF ? 3u : kind == CT_KIND_SLICE ? 2u : 1u;
     }
     semantic_argument_mode_by_hir[arg.value] = mode;
+    // A never argument does not arrive; it fits any parameter.
+    if (type_ref_is_never(call_inference_result_tag[arg_node], call_inference_result_payload[arg_node]))
+        return;
 
     // Imported function generics participate in the shared compact call-row
     // claim pipeline. This late structural validator must not second-guess the

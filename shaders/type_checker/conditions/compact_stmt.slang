@@ -25,6 +25,9 @@ StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 RWStructuredBuffer<uint> status;
@@ -142,6 +145,15 @@ bool expression_type_ref(uint node, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID;
 }
 
+// A value of type never (a call of a `-> !` function, or a match whose every
+// arm is one) never arrives, so it fits any declared, assigned or returned
+// type. Its synthesized slot says so.
+bool never_value(uint node)
+{
+    return valid_hir(node) &&
+        type_ref_is_never(call_inference_result_tag[node], call_inference_result_payload[node]);
+}
+
 bool null_pointer_constant(uint node)
 {
     return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
@@ -173,6 +185,7 @@ void validate_decl(HirPayload stmt)
     // Symbol visibility may legitimately map a declaration token through a
     // different namespace row, so do not reinterpret aggregate annotations as
     // scalar void while aggregate validation owns the full type relation.
+    if (never_value(stmt.c)) return;
     uint expected_ref_tag = TYPE_REF_INVALID;
     uint expected_ref_payload = INVALID;
     bool expected_ref_known = expression_type_ref(
@@ -237,6 +250,7 @@ void validate_assignment(HirPayload stmt)
         }
         break;
     }
+    if (never_value(stmt.c)) return;
     uint expected_ref_tag = TYPE_REF_INVALID;
     uint expected_ref_payload = INVALID;
     uint actual_ref_tag; uint actual_ref_payload;
@@ -276,6 +290,18 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
     if (!valid_hir(fn)) return;
     uint fn_token = compact_hir_payload[fn].b;
     if (!valid_token(fn_token)) return;
+    // A `-> !` function does not return: only a never value may follow its
+    // `return`, and a returned never value fits any function.
+    if (type_ref_is_never(fn_return_ref_tag[fn_token], fn_return_ref_payload[fn_token]))
+    {
+        if (!never_value(stmt.b))
+            record_min_token_error(status,
+                valid_token(expression_token(stmt.b)) ? expression_token(stmt.b) : core.token_start,
+                ERR_ASSIGN_MISMATCH,
+                SCALAR_NEVER * 256u + (valid_hir(stmt.b) ? scalar_type(stmt.b) : TY_VOID));
+        return;
+    }
+    if (never_value(stmt.b)) return;
     uint expected_ref_tag = fn_return_ref_tag[fn_token];
     uint expected = call_return_type[fn_token];
     uint return_tag;

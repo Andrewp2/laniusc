@@ -459,6 +459,10 @@ void validate_struct_literal_field_row(uint field_row)
         checked_row_is_closed(struct_init_field_expected_ref_payload[field_token]))
         return;
 
+    // A never value does not arrive; it fits any field.
+    if (valid_compact_node(value_root) && type_ref_is_never(
+            call_inference_result_tag[value_root], call_inference_result_payload[value_root]))
+        return;
     uint value_token = INVALID;
     uint actual;
     if (scalar_is_known(expected))

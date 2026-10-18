@@ -246,7 +246,7 @@ The record kinds:
 
 | kind | words | args | extra |
 |---|---|---|---|
-| `CT_KIND_SCALAR` 1 | scalar code | — | — (IDs 1..17 are preseeded; no record) |
+| `CT_KIND_SCALAR` 1 | scalar code | — | — (IDs 1..18 are preseeded; no record; 18 is never `!`) |
 | `CT_KIND_NAMED` 2 | stable declaration (library, unit, local) | ordered operands, type and constant | (local declaration token or INVALID, constant-operand mask) |
 | `CT_KIND_ARRAY` 3 | — | (element, length count class) | — |
 | `CT_KIND_SLICE` 4 / `CT_KIND_REF` 5 | — | (element) | — |

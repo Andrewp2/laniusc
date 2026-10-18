@@ -6,7 +6,8 @@
 
 /// Current binary schema version for GPU semantic-interface artifacts.
 // Version 15 carries typed constant atoms and explicit array length graphs.
-pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 15;
+// Version 16 adds the never scalar leaf (18), shifting signature type indices.
+pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 16;
 const GPU_SEMANTIC_INTERFACE_MAGIC: [u8; 8] = *b"LNSIFACE";
 const HEADER_U32S: usize = 16;
 const MODULE_U32S: usize = 2;
@@ -487,7 +488,7 @@ impl GpuSemanticInterfaceArtifact {
             }
             type_subtree_starts.push(subtree_start);
             if kind == GpuSemanticInterfaceTypeKind::Scalar &&
-                !crate::primitive_types::is_known(ty.payload_lo) {
+                !crate::primitive_types::is_identity(ty.payload_lo) {
                 return Err(format!("semantic-interface type record {index} has an unknown scalar identity {}", ty.payload_lo));
             }
             match kind {

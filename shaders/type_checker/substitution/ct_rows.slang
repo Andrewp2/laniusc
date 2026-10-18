@@ -35,7 +35,7 @@ public uint ct_realized_word(uint id)
 // it has no checked spelling (a dependency slot parameter, an environment).
 public uint2 ct_realized_ref(uint ref)
 {
-    if (ref - 1u < SCALAR_USIZE) return uint2(1u, ref);
+    if (ref - 1u < SCALAR_NEVER) return uint2(1u, ref);
     if (ct_is_param(ref))
     {
         if (ct_is_dep_param(ref)) return uint2(0u, CT_ROW_INVALID);

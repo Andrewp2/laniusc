@@ -21,7 +21,7 @@ static const uint TYPE_KIND_SCALAR = 1u;
 void main()
 {
     uint hir_count = min(interface_type_count[0u], gParams.hir_capacity);
-    for (uint scalar = SCALAR_UNIT; scalar <= SCALAR_USIZE; scalar++)
+    for (uint scalar = SCALAR_UNIT; scalar <= SCALAR_NEVER; scalar++)
     {
         uint base = interface_scalar_leaf_index(hir_count, scalar) * TYPE_WORDS;
         interface_types[base] = TYPE_KIND_SCALAR;

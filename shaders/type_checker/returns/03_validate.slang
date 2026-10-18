@@ -2,6 +2,7 @@
 
 import hir_records;
 import status;
+import primitive_types;
 import fixed.compact_method;
 
 struct Params
@@ -123,7 +124,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint expected = return_tag == TYPE_REF_SCALAR
         ? fn_return_ref_payload[fn_token]
         : TY_UNKNOWN;
-    if (expected == TY_VOID)
+    // A unit function may end without a return; a `-> !` function falls off
+    // its end into a trap.
+    if (expected == TY_VOID || expected == SCALAR_NEVER)
         return;
 
     if (return_fn_flags[node] == 0u)

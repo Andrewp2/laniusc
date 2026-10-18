@@ -37,6 +37,10 @@ public static const uint SCALAR_F64 = 15u;
 public static const uint SCALAR_ISIZE = 16u;
 // PRIMITIVE_CONSTANT
 public static const uint SCALAR_USIZE = 17u;
+// The never type `!`: the result of a function that does not return. It has
+// no values and no machine width.
+// PRIMITIVE_CONSTANT
+public static const uint SCALAR_NEVER = 18u;
 // PRIMITIVE_CONSTANT
 public static const uint SCALAR_TYPE_SHIFT = 27u;
 // PRIMITIVE_CONSTANT
@@ -75,10 +79,27 @@ public bool scalar_in_set(uint scalar, uint set)
     return ((set >> select(scalar < 31u, scalar, 31u)) & 1u) != 0u;
 }
 
+// A primitive identity that has values: unit through usize. Never has no
+// values, so value rules (widths, literals, comparisons) do not apply to it.
 [ForceInline]
 public bool scalar_is_known(uint scalar)
 {
     return (scalar - SCALAR_UNIT) < SCALAR_USIZE;
+}
+
+// A checked type reference (tag, payload) to never: scalar tag 1. A value of
+// type never does not arrive, so it fits any expected type.
+[ForceInline]
+public bool type_ref_is_never(uint tag, uint payload)
+{
+    return tag == 1u && payload == SCALAR_NEVER;
+}
+
+// Any primitive identity, never included: canonical IDs and interface leaves.
+[ForceInline]
+public bool scalar_is_identity(uint scalar)
+{
+    return (scalar - SCALAR_UNIT) < SCALAR_NEVER;
 }
 
 [ForceInline]

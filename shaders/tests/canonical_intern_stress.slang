@@ -128,7 +128,7 @@ void validate_slot(uint slot)
 
 bool is_published(uint record)
 {
-    if (record <= SCALAR_USIZE) return true;
+    if (record <= SCALAR_NEVER) return true;
     uint slots = ct_slot_capacity();
     uint probe = ct_probe_start(ct_meta[record].zw);
     for (uint step = 0u; step < slots; step++)

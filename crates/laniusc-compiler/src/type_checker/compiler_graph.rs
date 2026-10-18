@@ -1260,7 +1260,7 @@ impl SemanticInterfaceScanGraph {
             .checked_mul(2)
             .and_then(|rows| rows.checked_add(predicate_rows))
             .and_then(|rows| rows.checked_add(declaration_rows))
-            .and_then(|rows| rows.checked_add(u64::from(crate::primitive_types::SCALAR_USIZE - crate::primitive_types::SCALAR_UNIT + 1)))
+            .and_then(|rows| rows.checked_add(u64::from(crate::primitive_types::SCALAR_NEVER - crate::primitive_types::SCALAR_UNIT + 1)))
             .ok_or_else(|| anyhow::anyhow!("semantic-interface type capacity overflows u64"))?;
         let edge_rows = semantic_hir_rows
             .checked_mul(2)
