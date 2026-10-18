@@ -13,6 +13,7 @@ import type_checker.predicates.owner_lookup;
 import type_checker.predicates.impl_lookup;
 import type_checker.predicates.trait_reference;
 import type_checker.calls.checked_call_type_graph;
+import type_checker.predicates.scalar_subject;
 
 struct Params
 {
@@ -38,6 +39,7 @@ StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> fn_hir_by_decl_token;
@@ -88,6 +90,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 
 
 
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
@@ -498,18 +501,30 @@ bool caller_contract_satisfies(uint call_node, uint required, uint2 subject, uin
     return false;
 }
 
+// The subject of accepted predicate `pred` in its owner's scope: the type
+// parameter it names, as (TYPE_REF_GENERIC_PARAM, declaration token), or the
+// scalar type it names (predicates/scalar_subject.slang). (0, INVALID) when it
+// names neither.
+uint2 predicate_subject_ref(uint pred)
+{
+    uint token = predicate_subject_token[pred];
+    uint row = lexical_parameter_row(pred, token, GENERIC_PARAM_KIND_TYPE);
+    if (row != INVALID) return uint2(TYPE_REF_GENERIC_PARAM, generic_param_token[row]);
+    uint code = predicate_scalar_subject_code(token, name_id_by_token, language_type_code_by_name_id);
+    return code != INVALID ? uint2(TYPE_REF_SCALAR, code) : uint2(0u, INVALID);
+}
+
 void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
 {
     uint callee = call_callee_token(node);
     if (!valid_token(callee) || !valid_node(fn_node) ||
         canonical_function_token(fn_node) != call_fn_index[callee]) return;
-    uint row = lexical_parameter_row(pred, predicate_subject_token[pred], GENERIC_PARAM_KIND_TYPE);
-    if (row == INVALID)
+    uint2 subject = predicate_subject_ref(pred);
+    if (subject.x == 0u)
     {
         record_error(callee, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_INVALID_SUBJECT);
         return;
     }
-    uint2 subject = uint2(TYPE_REF_GENERIC_PARAM, generic_param_token[row]);
     uint count = predicate_bound_arg_count[pred];
     uint context = 0x80000000u | callee;
     if (caller_contract_satisfies(node, pred, subject, context)) return;

@@ -1,7 +1,10 @@
 // Collect generic-bound predicate rows from the bounds/impl shared module.
 
+import type_checker.predicates.scalar_subject;
 #define PREDICATE_BOUND_ARGUMENT_VALIDATION 0
 #include "collect_common.slang"
+
+StructuredBuffer<uint> language_type_code_by_name_id;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -61,7 +64,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (lexical_parameter_row(node, subject_token, GENERIC_PARAM_KIND_TYPE) == INVALID)
+    if (lexical_parameter_row(node, subject_token, GENERIC_PARAM_KIND_TYPE) == INVALID &&
+        predicate_scalar_subject_code(subject_token, name_id_by_token,
+            language_type_code_by_name_id) == INVALID)
     {
         predicate_status[node] = PREDICATE_STATUS_INVALID_SUBJECT;
         return;
