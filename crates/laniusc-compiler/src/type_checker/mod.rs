@@ -30,7 +30,7 @@ pub(crate) use checked_contracts::{
     CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
     CheckedPredicateContract,
 };
-pub(crate) use generic_body::{BODY_COPY_TARGET, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES, MAX_ORIGINAL_REPLAY_ENTRIES};
+pub(crate) use generic_body::{BODY_COPY_TARGET, BodyImplBinding, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_ENTRIES, MAX_BODY_IMPL_BINDINGS, MAX_ORIGINAL_REPLAY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
     CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
