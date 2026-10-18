@@ -4,7 +4,13 @@
 //! rows. One buffer copy per row costs about 2 µs of encoding plus GPU time,
 //! so ~12k rows took ~22 ms of a warm 1 MB job. Instead, one dispatch per
 //! source buffer gathers the small rows into a dense image, and the page loop
-//! copies that image with a few coalesced copies.
+//! copies that image with a few coalesced copies. All dispatches of one
+//! readback share one compute pass.
+//!
+//! Word readbacks (`PagedReadback::read_words`) also take sets of rows of
+//! fixed-stride tables. Their records are written straight from the row
+//! indices, so ~40k rows of a 1.4 MB generic program no longer cost one
+//! region each to plan, group, remap and copy.
 //!
 //! A dispatch's bind group names only whole buffers (a source, or a fixed
 //! window of one too large to bind) and the retained region records, output
@@ -28,7 +34,7 @@ use std::{
 use anyhow::Result;
 use log::warn;
 
-use super::ReadbackRegion;
+use super::{ReadbackRegion, ReadbackRows, WordRead};
 use crate::gpu::{
     buffers::{LaniusBuffer, with_debug_copy},
     passes_core::{self, DispatchDim, InputElements, PassData},
@@ -112,11 +118,11 @@ pub(super) fn lease(device: &wgpu::Device, region_count: usize) -> Option<Gather
 }
 
 /// The source buffer of one dispatch: its bound window (offset, size) and
-/// the gathered regions that lie inside it.
+/// the records of the gathered regions that lie inside it.
 struct SourceGroup<'a> {
     source: &'a wgpu::Buffer,
     window: (u64, u64),
-    regions: Vec<usize>,
+    records: Vec<u8>,
 }
 
 /// The bound window (offset, size) of `source` that holds the bytes
@@ -156,6 +162,174 @@ pub(super) struct Gathered<'a> {
     pub(super) dispatches: usize,
 }
 
+/// A word readback after a gather was recorded: where each gathered read's
+/// words start in the image, which holds the gathered reads in order.
+pub(super) struct GatheredWords<'a> {
+    pub(super) output: &'a wgpu::Buffer,
+    pub(super) image_starts: Vec<Option<u32>>,
+    pub(super) gathered_regions: usize,
+    pub(super) dispatches: usize,
+}
+
+/// The gather dispatches of one readback: one per source window, each with
+/// the records of its regions.
+struct GatherPlan<'a> {
+    align: u64,
+    max_window: u64,
+    groups: Vec<SourceGroup<'a>>,
+    group_by_window: HashMap<(&'a wgpu::Buffer, u64), usize>,
+    /// Readers interleave the rows of a few buffers (a record's columns);
+    /// the last few groups let most regions skip the window map.
+    recent: [Option<(&'a wgpu::Buffer, u64, usize)>; RECENT_GROUPS],
+    next_recent: usize,
+    /// Words of the image so far: the next gathered region's first word.
+    image_words: usize,
+    regions: usize,
+}
+
+impl<'a> GatherPlan<'a> {
+    fn new(device: &wgpu::Device) -> Self {
+        let limits = device.limits();
+        Self {
+            align: u64::from(limits.min_storage_buffer_offset_alignment).max(8),
+            max_window: limits.max_storage_buffer_binding_size.min(u64::from(u32::MAX)) & !3,
+            groups: Vec::new(),
+            group_by_window: HashMap::new(),
+            recent: [None; RECENT_GROUPS],
+            next_recent: 0,
+            image_words: 0,
+            regions: 0,
+        }
+    }
+
+    fn gatherable_source(source: &wgpu::Buffer) -> bool {
+        source.usage().contains(wgpu::BufferUsages::STORAGE)
+    }
+
+    /// Whether every row of a `width_bytes`-wide column of `source` can be
+    /// gathered. A row that small always lies inside one window.
+    fn gatherable_rows(&self, source: &wgpu::Buffer, width_bytes: usize) -> bool {
+        width_bytes != 0
+            && width_bytes <= MAX_GATHER_REGION_BYTES
+            && Self::gatherable_source(source)
+            && (source.size() & !3 <= self.max_window
+                || self.max_window / 2 / self.align * self.align
+                    >= MAX_GATHER_REGION_BYTES as u64)
+    }
+
+    fn group(&mut self, source: &'a wgpu::Buffer, window: (u64, u64)) -> usize {
+        let known = self
+            .recent
+            .iter()
+            .flatten()
+            .find(|&&(known, offset, _)| offset == window.0 && known == source);
+        if let Some(&(_, _, group)) = known {
+            return group;
+        }
+        let groups = &mut self.groups;
+        let group = *self.group_by_window.entry((source, window.0)).or_insert_with(|| {
+            groups.push(SourceGroup {
+                source,
+                window,
+                records: Vec::new(),
+            });
+            groups.len() - 1
+        });
+        self.recent[self.next_recent % RECENT_GROUPS] = Some((source, window.0, group));
+        self.next_recent += 1;
+        group
+    }
+
+    /// Queues `words` words from the absolute byte `start`, which lies in
+    /// `group`'s window, at the next image word.
+    fn push(&mut self, group: usize, start: u64, words: usize) {
+        let group = &mut self.groups[group];
+        let source_word = ((start - group.window.0) / 4) as u32;
+        for word in [self.image_words as u32, source_word, words as u32] {
+            group.records.extend_from_slice(&word.to_le_bytes());
+        }
+        self.image_words += words;
+        self.regions += 1;
+    }
+
+    /// Queues one region when it is small enough to gather and returns its
+    /// first image word.
+    fn push_region(&mut self, region: &ReadbackRegion<'a>) -> Option<u32> {
+        if region.byte_len == 0
+            || region.byte_len > MAX_GATHER_REGION_BYTES
+            || !Self::gatherable_source(region.source)
+        {
+            return None;
+        }
+        let start = region.source_offset;
+        let end = start + region.byte_len.next_multiple_of(4) as u64;
+        let window = source_window(region.source, start, end, self.align, self.max_window)?;
+        let group = self.group(region.source, window);
+        let image = self.image_words as u32;
+        self.push(group, start, region.byte_len.div_ceil(4));
+        Some(image)
+    }
+
+    /// Queues every row of `rows` when all of its columns can be gathered
+    /// and returns the rows' first image word.
+    fn push_rows(&mut self, rows: &ReadbackRows<'a>) -> Option<u32> {
+        if rows.indices.is_empty()
+            || !rows
+                .columns
+                .iter()
+                .all(|column| self.gatherable_rows(column.source, column.width_words * 4))
+        {
+            return None;
+        }
+        let image = self.image_words as u32;
+        // A column whose buffer is bound whole has one group for every row.
+        let whole = rows
+            .columns
+            .iter()
+            .map(|column| {
+                let size = column.source.size() & !3;
+                (size <= self.max_window).then(|| self.group(column.source, (0, size)))
+            })
+            .collect::<Vec<_>>();
+        if let ([column], [Some(group)]) = (&rows.columns[..], &whole[..]) {
+            // One column of a buffer bound whole, the common shape: one
+            // record per row, written directly.
+            let records = &mut self.groups[*group].records;
+            records.reserve(rows.indices.len() * RECORD_WORDS * 4);
+            let first_word = (column.base / 4) as u32;
+            let stride = column.stride_words as u32;
+            let width = column.width_words as u32;
+            let mut image_word = image;
+            for &index in &rows.indices {
+                for word in [image_word, first_word + index * stride, width] {
+                    records.extend_from_slice(&word.to_le_bytes());
+                }
+                image_word += width;
+            }
+            self.image_words = image_word as usize;
+            self.regions += rows.indices.len();
+            return Some(image);
+        }
+        for &index in &rows.indices {
+            for (column, whole) in rows.columns.iter().zip(&whole) {
+                let start = column.row_offset(index);
+                let group = match whole {
+                    Some(group) => *group,
+                    None => {
+                        let end = start + column.width_words as u64 * 4;
+                        let window =
+                            source_window(column.source, start, end, self.align, self.max_window)
+                                .expect("a gatherable row lies inside one window");
+                        self.group(column.source, window)
+                    }
+                };
+                self.push(group, start, column.width_words);
+            }
+        }
+        Some(image)
+    }
+}
+
 impl GatherLease {
     /// Records the gather of every small region into `encoder` and returns
     /// the regions to copy instead. Returns `None`, recording nothing, when
@@ -169,109 +343,111 @@ impl GatherLease {
         regions: &[ReadbackRegion<'a>],
         label: &str,
     ) -> Result<Option<Gathered<'a>>> {
-        let limits = device.limits();
-        let align = u64::from(limits.min_storage_buffer_offset_alignment).max(8);
-        let max_window = limits.max_storage_buffer_binding_size.min(u64::from(u32::MAX)) & !3;
-
-        let mut groups = Vec::<SourceGroup<'a>>::new();
-        let mut group_by_window = HashMap::<(&wgpu::Buffer, u64), usize>::new();
-        // Readers interleave the rows of a few buffers (a record's columns);
-        // the last few groups let most regions skip the window map.
-        let mut recent = [None::<(&wgpu::Buffer, u64, usize)>; RECENT_GROUPS];
-        let mut next_recent = 0;
-        for (index, region) in regions.iter().enumerate() {
-            if region.byte_len == 0
-                || region.byte_len > MAX_GATHER_REGION_BYTES
-                || !region.source.usage().contains(wgpu::BufferUsages::STORAGE)
-            {
-                continue;
-            }
-            let start = region.source_offset;
-            let end = start + region.byte_len.next_multiple_of(4) as u64;
-            let Some(window) = source_window(region.source, start, end, align, max_window) else {
-                continue;
-            };
-            let known = recent.iter().flatten().find(|&&(source, offset, _)| {
-                offset == window.0 && source == region.source
-            });
-            let group = match known {
-                Some(&(_, _, group)) => group,
-                None => {
-                    let group = *group_by_window
-                        .entry((region.source, window.0))
-                        .or_insert_with(|| {
-                            groups.push(SourceGroup {
-                                source: region.source,
-                                window,
-                                regions: Vec::new(),
-                            });
-                            groups.len() - 1
-                        });
-                    recent[next_recent % RECENT_GROUPS] = Some((region.source, window.0, group));
-                    next_recent += 1;
-                    group
-                }
-            };
-            groups[group].regions.push(index);
-        }
-        let gathered_regions = groups.iter().map(|group| group.regions.len()).sum::<usize>();
-        if gathered_regions < MIN_GATHER_REGIONS {
-            return Ok(None);
-        }
-
+        let mut plan = GatherPlan::new(device);
         // The image keeps region order, so consecutive gathered regions copy
         // to the staging page as one range.
-        let mut image_word = vec![None::<u32>; regions.len()];
-        for group in &groups {
-            for &index in &group.regions {
-                image_word[index] = Some(0);
-            }
-        }
-        let mut image_words = 0usize;
-        for (index, word) in image_word.iter_mut().enumerate() {
-            if word.is_some() {
-                *word = Some(image_words as u32);
-                image_words += regions[index].byte_len.div_ceil(4);
-            }
-        }
-        if image_words > MAX_GATHER_WORDS {
+        let image_words = regions
+            .iter()
+            .map(|region| plan.push_region(region))
+            .collect::<Vec<_>>();
+        let gathered_regions = plan.regions;
+        let Some((output, dispatches)) = self.dispatch(device, queue, encoder, plan, label)? else {
+            return Ok(None);
+        };
+        let regions = regions
+            .iter()
+            .zip(&image_words)
+            .map(|(region, image)| match image {
+                Some(word) => ReadbackRegion {
+                    source: output,
+                    source_offset: u64::from(*word) * 4,
+                    byte_len: region.byte_len,
+                },
+                None => *region,
+            })
+            .collect();
+        Ok(Some(Gathered {
+            regions,
+            gathered_regions,
+            dispatches,
+        }))
+    }
+
+    /// [`Self::record`] for a word readback: gathers each small region and
+    /// each set of rows whose columns can all be gathered.
+    pub(super) fn record_words<'a>(
+        &'a mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        reads: &[WordRead<'a>],
+        label: &str,
+    ) -> Result<Option<GatheredWords<'a>>> {
+        let mut plan = GatherPlan::new(device);
+        let image_starts = reads
+            .iter()
+            .map(|read| match read {
+                WordRead::Region(region) => plan.push_region(region),
+                WordRead::Rows(rows) => plan.push_rows(rows),
+            })
+            .collect::<Vec<_>>();
+        let gathered_regions = plan.regions;
+        let Some((output, dispatches)) = self.dispatch(device, queue, encoder, plan, label)? else {
+            return Ok(None);
+        };
+        Ok(Some(GatheredWords {
+            output,
+            image_starts,
+            gathered_regions,
+            dispatches,
+        }))
+    }
+
+    /// Uploads the plan's records and records its dispatches, in one compute
+    /// pass unless operation timing needs a pass per dispatch. Returns the
+    /// image buffer and the dispatch count, or `None`, recording nothing,
+    /// when the plan is too small or too large to gather.
+    fn dispatch<'a>(
+        &'a mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        plan: GatherPlan<'_>,
+        label: &str,
+    ) -> Result<Option<(&'a wgpu::Buffer, usize)>> {
+        if plan.regions < MIN_GATHER_REGIONS || plan.image_words > MAX_GATHER_WORDS {
             return Ok(None);
         }
-
+        let image_words = plan.image_words;
+        let groups = plan.groups;
+        let limits = device.limits();
         // One run of region records per group, named by the group's params
         // record.
         let params_stride = PARAMS_BYTES
             .next_multiple_of(limits.min_uniform_buffer_offset_alignment.max(1) as usize);
-        let mut records = Vec::<u8>::with_capacity(gathered_regions * RECORD_WORDS * 4);
+        let record_bytes = groups.iter().map(|group| group.records.len()).sum::<usize>();
         let mut params = vec![0u8; groups.len() * params_stride];
-        let mut record_counts = Vec::with_capacity(groups.len());
         let mut first = 0u32;
         for (slot, group) in groups.iter().enumerate() {
-            for &index in &group.regions {
-                let region = &regions[index];
-                let image = image_word[index].expect("gathered region has an image word");
-                let source_word = ((region.source_offset - group.window.0) / 4) as u32;
-                let words = region.byte_len.div_ceil(4) as u32;
-                for word in [image, source_word, words] {
-                    records.extend_from_slice(&word.to_le_bytes());
-                }
-            }
-            let count = group.regions.len() as u32;
+            let count = (group.records.len() / (RECORD_WORDS * 4)) as u32;
             let slot_params = &mut params[slot * params_stride..][..8];
             slot_params[..4].copy_from_slice(&first.to_le_bytes());
             slot_params[4..].copy_from_slice(&count.to_le_bytes());
-            record_counts.push(count);
             first += count;
         }
 
-        retained_buffer(
+        let records = retained_buffer(
             device,
             &mut self.kernel().records,
             "readback.gather.records",
-            records.len() / 4,
+            record_bytes / 4,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        )
-        .write(queue, 0, &records);
+        );
+        let mut offset = 0u64;
+        for group in &groups {
+            records.write(queue, offset, &group.records);
+            offset += group.records.len() as u64;
+        }
         retained_buffer(
             device,
             &mut self.kernel().output,
@@ -295,7 +471,8 @@ impl GatherLease {
         // Create every bind group before recording, so an error leaves no
         // stamped dispatch in an encoder that is never submitted.
         let mut dispatches = Vec::with_capacity(groups.len());
-        for (slot, (group, &record_count)) in groups.iter().zip(&record_counts).enumerate() {
+        for (slot, group) in groups.iter().enumerate() {
+            let record_count = (group.records.len() / (RECORD_WORDS * 4)) as u32;
             let params = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                 buffer: &params_buffer.buffer,
                 offset: 0,
@@ -325,40 +502,41 @@ impl GatherLease {
             )?;
             dispatches.push((bindings, (slot * params_stride) as u32, workgroups));
         }
-        for (bindings, params_offset, (x, y, z)) in &dispatches {
-            {
-                let mut pass = passes_core::begin_counted_compute_pass(
-                    encoder,
-                    &wgpu::ComputePassDescriptor {
-                        label: Some(GATHER_LABEL),
-                        timestamp_writes: None,
-                    },
-                );
-                pass.set_pipeline(&kernel.pass.pipeline);
+        let descriptor = wgpu::ComputePassDescriptor {
+            label: Some(GATHER_LABEL),
+            timestamp_writes: None,
+        };
+        let timing_label = format!("{GATHER_LABEL}.{label}");
+        // The dispatches write disjoint image words, so one pass holds them
+        // all unless the timer can stamp only between passes.
+        if crate::gpu::timer::operation_capture_requires_split_passes() {
+            for (bindings, params_offset, (x, y, z)) in &dispatches {
+                {
+                    let mut pass = passes_core::begin_counted_compute_pass(encoder, &descriptor);
+                    pass.set_pipeline(&kernel.pass.pipeline);
+                    pass.set_bind_group(0, Some(bindings), &[*params_offset]);
+                    passes_core::record_compute_dispatch();
+                    pass.dispatch_workgroups(*x, *y, *z);
+                }
+                crate::gpu::timer::stamp_active_operation(encoder, timing_label.clone());
+            }
+        } else {
+            let timed = crate::gpu::timer::operation_capture_active();
+            let mut pass = passes_core::begin_counted_compute_pass(encoder, &descriptor);
+            pass.set_pipeline(&kernel.pass.pipeline);
+            for (bindings, params_offset, (x, y, z)) in &dispatches {
                 pass.set_bind_group(0, Some(bindings), &[*params_offset]);
                 passes_core::record_compute_dispatch();
                 pass.dispatch_workgroups(*x, *y, *z);
+                if timed {
+                    crate::gpu::timer::stamp_active_operation_in_pass(
+                        &mut pass,
+                        timing_label.clone(),
+                    );
+                }
             }
-            crate::gpu::timer::stamp_active_operation(encoder, format!("{GATHER_LABEL}.{label}"));
         }
-
-        let regions = regions
-            .iter()
-            .zip(&image_word)
-            .map(|(region, image)| match image {
-                Some(word) => ReadbackRegion {
-                    source: &output.buffer,
-                    source_offset: u64::from(*word) * 4,
-                    byte_len: region.byte_len,
-                },
-                None => *region,
-            })
-            .collect();
-        Ok(Some(Gathered {
-            regions,
-            gathered_regions,
-            dispatches: dispatches.len(),
-        }))
+        Ok(Some((&output.buffer, dispatches.len())))
     }
 
     fn kernel(&mut self) -> &mut GatherKernel {

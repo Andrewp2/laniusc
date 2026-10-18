@@ -387,6 +387,7 @@ impl GpuTypeChecker {
             preflight_graph,
             canonical_scale: std::sync::atomic::AtomicU32::new(1),
             resident_workspace: Mutex::new(None),
+            resident_capacity_floor: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
             semantic_interface_buffers: CapacityBufferCache::default(),
@@ -408,7 +409,8 @@ impl GpuTypeChecker {
     /// already hold that slot, so dropping it here frees nothing. It would
     /// only make the next job allocate a new slot, which changes the
     /// type-check input fingerprint and rebuilds the whole resident
-    /// workspace (about 190 ms on the 1 MB daemon job).
+    /// workspace (about 190 ms on the 1 MB daemon job). The capacity floor
+    /// stays too, so the replacement is sized for every earlier job.
     pub(crate) fn release_frontend_bound_workspace(&self) {
         *self
             .current_semantic_artifact
@@ -608,9 +610,19 @@ impl GpuTypeChecker {
             .as_ref()
             .map(|state| !state.can_reuse_for(cache_key))
             .unwrap_or(true);
+        // A released workspace leaves its capacities as the floor, so a
+        // replacement after a lexer or parser replacement still covers the
+        // larger units of earlier jobs.
         let allocation = resident_workspace_guard
             .as_ref()
-            .map(|state| state.cache_key.grow_to_cover(cache_key))
+            .map(|state| state.cache_key)
+            .or_else(|| {
+                *self
+                    .resident_capacity_floor
+                    .lock()
+                    .expect("GpuTypeChecker.resident_capacity_floor poisoned")
+            })
+            .map(|previous| previous.grow_to_cover(cache_key))
             .unwrap_or(cache_key);
         let resident_cache_trace =
             crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
@@ -700,6 +712,10 @@ impl GpuTypeChecker {
             let mut state = state?;
             state.resettable_buffers = resettable_buffers;
             *resident_workspace_guard = Some(state);
+            *self
+                .resident_capacity_floor
+                .lock()
+                .expect("GpuTypeChecker.resident_capacity_floor poisoned") = Some(allocation);
         }
         Ok(needs_rebuild)
     }

@@ -94,8 +94,10 @@ impl<'gpu> GpuCompiler<'gpu> {
             let path = source_paths.and_then(|paths| paths.first()).and_then(Option::as_deref);
             (source.as_ref(), path)
         });
+        let input_span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.input");
         let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
             .map_err(|error| x86_link_input_error(error, first_source))?;
+        drop(input_span);
         let linker = self
             .x86_linker()
             .map_err(|reason| CompileError::GpuCodegen(reason.to_owned()))?;

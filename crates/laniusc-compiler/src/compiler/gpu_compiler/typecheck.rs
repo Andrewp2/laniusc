@@ -24,7 +24,9 @@ enum FrontendWorkspaceReplacement {
 }
 
 impl FrontendWorkspaceReplacement {
-    const fn invalidates_parser_allocation(self) -> bool {
+    /// A lexer replacement invalidates every parser binding of lexer buffers,
+    /// but not the parser's own allocation, which binds none.
+    const fn invalidates_parser_lexer_bindings(self) -> bool {
         matches!(self, Self::Lexer)
     }
 }
@@ -196,6 +198,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         input.token_count_buffer,
                         input.token_file_id_buffer,
                         &self.parse_tables,
+                        parser_feature_flags,
                         timer,
                     )
                     .map_err(&map_parser_error)?
@@ -491,6 +494,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             encoder,
             "compile.source-pack.typecheck",
         );
+        // The GPU waits for the semantic interface's host recording here;
+        // without this boundary the trace charges that wait to its first pass.
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "compile.source-pack.typecheck.submission.begin");
+        }
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
         // Body replay keeps the template's public contract. Its checked graph
@@ -538,6 +546,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 encoder,
                 "compile.source-pack.semantic_interface",
             );
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "compile.source-pack.semantic_interface.submission.begin");
+            }
         }
         if lowering_target.is_some() && object_request.is_some() {
             return Err(CompileError::GpuCodegen(
@@ -1036,10 +1047,13 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) {
         self.type_checker.release_frontend_bound_workspace();
         self.release_typecheck_workspace_consumers();
-        if replacement.invalidates_parser_allocation() {
-            // Lexer replacement invalidates every parser binding, so the
-            // parser allocation cannot survive this boundary.
-            self.parser.release_current_resident_buffers();
+        if replacement.invalidates_parser_lexer_bindings() {
+            // Lexer replacement invalidates every parser binding of lexer
+            // buffers. The parser allocation binds none, so it stays: dropping
+            // it would reallocate at this unit's exact shape and feature
+            // families, and the next unit of another shape would replace it
+            // (and the type-check workspace) again.
+            self.parser.release_lexer_bindings();
             self.lexer.release_current_resident_buffers();
         }
         // For parser-only growth, retain the cache entry until the parser's
@@ -1047,6 +1061,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         // grow-to-cover allocation from the previous capacities before
         // releasing the old buffers. Dropping the entry here would make a
         // bounded build alternate between the exact shapes of its units.
+        // The lexer and the type-check workspace keep capacity floors across
+        // their releases for the same reason.
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
     }
 
@@ -1598,6 +1614,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 }),
             )
             .await?;
+        let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit_snapshot");
         let unit = finish_source_pack_unit(
             artifacts,
             template_sources,
@@ -2611,6 +2628,7 @@ fn finish_source_pack_unit(
     library_id: u32,
     unit_id: u32,
 ) -> Result<CompiledSourcePackUnit, CompileError> {
+    let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit");
     let template_source_paths: std::sync::Arc<[Option<PathBuf>]> = match source_paths {
         Some(paths) if paths.len() == template_sources.len() => paths.to_vec().into(),
         Some(_) => return Err(CompileError::GpuFrontend(
@@ -4309,8 +4327,8 @@ mod tests {
 
     #[test]
     fn parser_growth_retains_parser_capacity_history() {
-        assert!(FrontendWorkspaceReplacement::Lexer.invalidates_parser_allocation());
-        assert!(!FrontendWorkspaceReplacement::Parser.invalidates_parser_allocation());
+        assert!(FrontendWorkspaceReplacement::Lexer.invalidates_parser_lexer_bindings());
+        assert!(!FrontendWorkspaceReplacement::Parser.invalidates_parser_lexer_bindings());
     }
 
     #[test]
