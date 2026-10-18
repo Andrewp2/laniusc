@@ -41,6 +41,7 @@ struct Params
     uint path_capacity;
     uint namespace;
     uint hir_capacity;
+    uint token_capacity;
 };
 ConstantBuffer<Params> gParams;
 
@@ -103,13 +104,11 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-// Token-indexed rows; the visibility capacity may exceed the token capacity.
-uint token_capacity()
-{
-    uint rows; uint stride;
-    method_call_selection_owned.GetDimensions(rows, stride);
-    return rows;
-}
+// The unit's token capacity. The generic-parameter lookup is hashed modulo
+// a multiple of it (00b2), so a lookup must use the same capacity; a token
+// buffer's bound row count can exceed it, and the visibility capacity can
+// too.
+uint token_capacity() { return gParams.token_capacity; }
 
 #define LEXICAL_HIR_CAPACITY gParams.hir_capacity
 #define LEXICAL_TOKEN_CAPACITY token_capacity()
