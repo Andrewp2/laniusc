@@ -6,7 +6,7 @@ use std::{collections::{BTreeMap, BTreeSet}, sync::Arc};
 use anyhow::{Result, anyhow, ensure};
 
 use super::{
-    catalog::{CatalogInput, FrozenCatalog, accepted_call_owners},
+    catalog::{CatalogInput, FrozenCatalog, FrozenSnapshot, accepted_call_owners},
     dispatch::{EvidenceDispatchFailure, EvidenceWorkspacePool, GpuPacket, GpuProgramEvidence},
     packet::{AdmittedCall, ReplayContextInput, RetainedCallSite, ValidatedEvidence},
 };
@@ -27,6 +27,7 @@ use crate::{
     },
     type_checker::{
         BODY_COPY_TARGET,
+        BodyImplBinding,
         CheckedBodySpecialization,
         CheckedBodySpecializationBatch,
         CheckedGenericCall,
@@ -146,6 +147,22 @@ impl NativeProgramSession {
         Ok(ReplayScope { snapshot, selected_owner_hir, owners })
     }
 
+    /// The impl bindings of the body an origin call instantiates, as instance
+    /// 0 (see `BodyImplBinding`). Each bound of the body's owner chain on a
+    /// type slot that evidence proved with a nongeneric implementation outside
+    /// the template unit gives one binding per implementation method. Bounds
+    /// proved by an implementation of the template unit give none: 09 finds
+    /// those in the replayed unit itself.
+    pub fn instance_impl_bindings(&mut self, origin: &AdmittedCall) -> Result<Vec<BodyImplBinding>> {
+        self.ready()?;
+        let (_, snapshot, _, obligations) = self.packet.packet_mut()?.replay_origin(origin)?;
+        let end = obligations.first.checked_add(obligations.count)
+            .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
+        let evidence = self.evidence.get(obligations.first as usize..end as usize)
+            .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?;
+        impl_bindings(&self.catalog, self.catalog.snapshots[snapshot as usize].unit, evidence, 0)
+    }
+
     /// Validate several concrete origins of one template snapshot for one
     /// frontend run. Each origin gets its own replay context; one GPU check
     /// covers them all. The caller groups compatible scopes (`replay_scope`).
@@ -219,6 +236,7 @@ impl NativeProgramSession {
         };
         let mut batch: Option<CheckedBodySpecializationBatch> = None;
         let mut entries: Vec<(u32, u32)> = Vec::with_capacity(origins.len());
+        let mut bindings = Vec::new();
         for (index, (origin, &(origin_call, snapshot, selected_owner_hir, obligations))) in
             origins.iter().zip(&resolved).enumerate()
         {
@@ -263,6 +281,8 @@ impl NativeProgramSession {
                     Ok(proof.clone())
                 })
                 .collect::<Result<Vec<_>>>()?;
+            bindings.extend(impl_bindings(&self.catalog, self.catalog.snapshots[snapshot as usize].unit,
+                &evidence, index as u32)?);
             let context = self
                 .packet
                 .packet_mut()?
@@ -278,6 +298,7 @@ impl NativeProgramSession {
         if let Some(instance) = &instance {
             specialization.set_instance_copies(instance.first_copy_row, instance.owners.clone())?;
         }
+        specialization.set_impl_bindings(bindings)?;
         // GPU checks each new context against the exact origin environment and
         // retained evidence before the frontend can defer a local-only lookup.
         self.check()?;
@@ -415,6 +436,8 @@ impl<'session> ValidatedReplayRequest<'session> {
             &self.session.catalog, self.target_snapshot,
             &selected.keys().copied().collect(), unit,
         )?;
+        check_external_callees(&self.session.catalog.snapshots[self.target_snapshot as usize],
+            unit, self.specialization.impl_bindings())?;
         self.session
             .packet
             .packet_mut()?
@@ -447,6 +470,7 @@ impl<'session> ValidatedReplayRequest<'session> {
         let callable_symbols = frozen.contracts.binders.iter()
             .filter_map(|owner| owner.callable.map(|callable| callable.native_symbol))
             .collect::<BTreeSet<_>>();
+        check_external_callees(frozen, unit, self.specialization.impl_bindings())?;
         let CompiledSourcePackObject::X86_64(object) = &unit.object else {
             return Err(anyhow!("replay emission has the wrong target"));
         };
@@ -561,6 +585,67 @@ impl<'session> ValidatedReplayRequest<'session> {
     }
 }
 
+
+/// See `NativeProgramSession::instance_impl_bindings`; `instance` numbers the
+/// rows. Copies GPU-selected implementations and their accepted method
+/// bindings; selects and compares nothing. Proportional to the origin's
+/// evidence: an implementation of the template unit costs one lookup.
+fn impl_bindings(
+    catalog: &FrozenCatalog,
+    template_unit: [u32; 2],
+    evidence: &[ValidatedEvidence],
+    instance: u32,
+) -> Result<Vec<BodyImplBinding>> {
+    let mut bindings = Vec::new();
+    for proof in evidence {
+        let Some(implementation) = proof.implementation else { continue };
+        if catalog.implementation_unit(implementation)? == template_unit { continue; }
+        let Some(slot) = catalog.predicate_subject_slot(proof.predicate_row)? else { continue };
+        let Some(methods) = catalog.implementation_method_targets(implementation)? else { continue };
+        for method in methods {
+            if method.target[..2] == template_unit { continue; }
+            bindings.push(BodyImplBinding {
+                instance,
+                slot,
+                required_symbol: method.required_symbol,
+                trait_unit: if method.trait_unit == template_unit { [u32::MAX; 2] } else { method.trait_unit },
+                target: method.target,
+            });
+        }
+    }
+    Ok(bindings)
+}
+
+/// A replay object may call outside its template unit only into the units the
+/// template imports, or into an implementation method that one of the
+/// replay's impl bindings names (methods/09 routes bound members there).
+fn check_external_callees(
+    frozen: &FrozenSnapshot,
+    unit: &CompiledSourcePackUnit,
+    bindings: &[BodyImplBinding],
+) -> Result<()> {
+    let CompiledSourcePackObject::X86_64(object) = &unit.object else {
+        return Err(anyhow!("replay emission has the wrong target"));
+    };
+    let imports = frozen.dependency_pages.iter().flatten()
+        .map(|artifact| [artifact.library_id, artifact.unit_id])
+        .collect::<BTreeSet<_>>();
+    let targets = bindings.iter().map(|binding| binding.target).collect::<BTreeSet<_>>();
+    for symbol in object.symbols.iter().filter(|symbol| symbol.section == GpuX86ObjectSection::Undefined) {
+        let start = symbol.identity_byte_start as usize;
+        let Some(bytes) = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)
+            .filter(|bytes| bytes.len() == 12) else { continue };
+        let identity = [
+            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+        ];
+        let unit = [identity[0], identity[1]];
+        ensure!(unit == frozen.unit || imports.contains(&unit) || targets.contains(&identity),
+            "replay calls {identity:?} outside its template's imports, and no implementation binding names it");
+    }
+    Ok(())
+}
 
 /// Scratch replay substitutes the selected enclosing impl environment in
 /// the whole source unit. Only the selected generic body may be published;

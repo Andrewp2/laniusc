@@ -12,6 +12,7 @@ use crate::constant_value::{CheckedConstantValue, constant_scalar_is_supported};
 
 use super::{
     OwnedGpuSemanticArtifact,
+    generic_body::BodyImplBinding,
     checked_contracts::{
         self,
         CheckedCallOwner,
@@ -771,17 +772,27 @@ impl CheckedGenericCall {
 /// The GPU has already solved the receiver's complete structural pattern and
 /// published its accepted substitution. Do not reconstruct bindings from a
 /// nominal receiver's positional arguments here.
+///
+/// A replay's impl bindings name nongeneric implementation methods outside the
+/// template's imports (methods/09 routes bound members to them): a call to one
+/// has no requirements.
 pub(crate) fn resolve_generic_requirements(
     calls: &mut Vec<CheckedGenericCall>,
     dependency_pages: &[Vec<GpuSemanticInterfaceArtifact>],
+    impl_bindings: &[BodyImplBinding],
 ) {
     for call in calls.iter_mut() {
-        let (library_id, unit_id) = match call.target {
-            CheckedGenericTarget::Dependency { library_id, unit_id, .. }
-            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, .. } =>
-                (library_id, unit_id),
+        let (library_id, unit_id, symbol) = match call.target {
+            CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
+            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, method_symbol: symbol } =>
+                (library_id, unit_id, symbol),
             CheckedGenericTarget::Local { .. } => continue,
         };
+        if impl_bindings.iter().any(|binding| binding.target == [library_id, unit_id, symbol]) {
+            call.required_generic_parameters = Some(0);
+            call.required_constant_parameters = Some(0);
+            continue;
+        }
         let requirements = dependency_pages.iter().flatten()
             .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id)
             .and_then(|interface| match call.target {
