@@ -442,6 +442,7 @@ impl GpuParser {
                 token_count_buf,
                 token_file_id_buf,
                 tables,
+                CONSERVATIVE_PARSER_FEATURES,
                 &mut no_timer,
             )?
             .tree_capacity)
@@ -449,6 +450,11 @@ impl GpuParser {
 
     /// Measures exact tree capacity and semantic parser-family feature flags
     /// in one GPU submission/readback boundary.
+    ///
+    /// `parser_feature_flags` sizes a temporary probe allocation's optional
+    /// families. Pass the unit's conservative lexer summary when it is known,
+    /// or `CONSERVATIVE_PARSER_FEATURES` when the probe measures it.
+    #[allow(clippy::too_many_arguments)]
     pub fn measure_resident_partial_parse_capacity(
         &self,
         token_capacity: u32,
@@ -456,6 +462,7 @@ impl GpuParser {
         token_count_buf: &wgpu::Buffer,
         token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
+        parser_feature_flags: u32,
         timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<ResidentParserCapacity> {
         if let Some(timer) = timer_ref.as_deref_mut() {
@@ -511,12 +518,15 @@ impl GpuParser {
         // Capacity measurement needs only the partial-parse buffers with a
         // one-row tree. Keep that temporary allocation out of the full parser
         // cache so daemon jobs do not evict and recreate the resident HIR.
+        // The unit's feature mask keeps families it cannot use (the float
+        // workspace alone is 6 MiB) out of the temporary allocation.
         let mut capacity_buffers = None;
-        let bufs = self.resident_buffers_for_with_tree_capacity(
+        let bufs = self.resident_buffers_for_with_tree_capacity_and_features(
             &mut capacity_buffers,
             token_capacity,
             tables,
             Some(1),
+            parser_feature_flags,
         );
 
         let result = self.measure_partial_parse_capacity_with_buffers(

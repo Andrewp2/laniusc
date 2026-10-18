@@ -198,6 +198,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         input.token_count_buffer,
                         input.token_file_id_buffer,
                         &self.parse_tables,
+                        parser_feature_flags,
                         timer,
                     )
                     .map_err(&map_parser_error)?
