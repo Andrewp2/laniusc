@@ -1072,7 +1072,10 @@ Claim emission (03a1) records it at the argument; an array length that does
 not fit its constant parameter's type says so, with the type (`LNC0006`, "this
 array's length does not fit `u8`, ..."). The follow-on checks (03a4b's final
 invocations, 03a7 and 03c) skip a missing binding or a mismatched result when
-an error recorded before them lies inside the call's tokens. They read a copy
+a language error recorded before them lies inside the call's tokens. A
+compiler-boundary report there does not count: in `same(short, long)` with
+`N` bound to 2 and 3, result materialization (03e) reports the unbound result
+at `same` first, and 03a7 and 03c still record the mismatch. They read a copy
 of the status words made between dispatches (`status_prior`), so the first
 diagnostic does not depend on the order lanes record in.
 

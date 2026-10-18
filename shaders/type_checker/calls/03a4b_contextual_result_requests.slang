@@ -100,7 +100,7 @@ uint callee_token(uint call)
 void record_result_mismatch(uint call)
 {
     HirCore core = compact_hir_core[call];
-    if (call_inference_state[0u] == 0u && !error_recorded_within(status_prior, core.token_start, core.token_end))
+    if (call_inference_state[0u] == 0u && !language_error_recorded_within(status_prior, core.token_start, core.token_end))
         record_min_token_error(status, core.token_start, 3u, 0u);
 }
 

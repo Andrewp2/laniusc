@@ -565,7 +565,7 @@ ArrayCheck prepare_let(uint node, uint4 bounded)
 void record_result_error(ArrayCheck check, uint token, uint detail)
 {
     HirCore call = compact_hir_core[check.call_node];
-    if (!error_recorded_within(status_prior, call.token_start, call.token_end))
+    if (!language_error_recorded_within(status_prior, call.token_start, call.token_end))
         record_min_token_error(status, token, ERR_ASSIGN_MISMATCH, detail);
 }
 

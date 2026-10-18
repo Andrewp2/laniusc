@@ -245,7 +245,7 @@ void validate_required_generic(uint requirement_i)
     // match its parameter, such as a length that does not fit) is why a
     // binding is missing; it is the diagnostic.
     HirCore call_core = compact_hir_core[call_node];
-    bool explained = error_recorded_within(status_prior, call_core.token_start, call_core.token_end);
+    bool explained = language_error_recorded_within(status_prior, call_core.token_start, call_core.token_end);
 
     uint2 counts = required_callable_generic_counts(callee_i);
     uint slot = requirement_i - start;
