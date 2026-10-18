@@ -135,6 +135,10 @@ struct GraphContext<'a> {
     allocations: &'a CompilerGraphAllocations,
 }
 
+/// `ResourceMap::buffer_binding_signature`: per name, the buffer, offset,
+/// bound size and logical byte size.
+pub(crate) type BufferBindingSignature = Vec<(String, wgpu::Buffer, u64, Option<u64>, u64)>;
+
 /// Name-keyed binding resource map used by reflection-based bind-group builders.
 #[derive(Clone)]
 pub(crate) struct ResourceMap<'a> {
@@ -200,6 +204,29 @@ impl<'a> ResourceMap<'a> {
             identity.byte_size,
             identity.allocation_id,
         ))
+    }
+
+    /// Every registered name with the exact buffer range it binds and its
+    /// logical size, sorted by name. Operations built from two maps with equal
+    /// signatures bind the same ranges, so a caller may keep operations built
+    /// from one for the other. None when a resource is not a buffer.
+    pub(crate) fn buffer_binding_signature(&self) -> Option<BufferBindingSignature> {
+        let mut entries = Vec::with_capacity(self.resources.len());
+        for (name, resource) in &self.resources {
+            let wgpu::BindingResource::Buffer(binding) = resource else {
+                return None;
+            };
+            let logical_byte_size = self.graph_identities.get(name)?.logical_byte_size;
+            entries.push((
+                name.clone(),
+                binding.buffer.clone(),
+                binding.offset,
+                binding.size.map(std::num::NonZeroU64::get),
+                logical_byte_size,
+            ));
+        }
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        Some(entries)
     }
 
     /// Inserts a prebuilt binding resource under the shader resource name.

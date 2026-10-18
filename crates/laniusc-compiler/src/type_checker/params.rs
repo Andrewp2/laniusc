@@ -26,6 +26,10 @@ pub(in crate::type_checker) struct TypeCheckParams {
     /// nominal declarations in canonical type keys.
     pub(in crate::type_checker) canonical_library_id: u32,
     pub(in crate::type_checker) canonical_unit_id: u32,
+    /// The token rows of the resident workspace, which can exceed `n_tokens`
+    /// when it was allocated for a larger job. Whole-table clears stride over
+    /// this many lanes, the lanes they are dispatched with.
+    pub(in crate::type_checker) workspace_token_rows: u32,
 }
 
 /// Uniform for the enclosing-`if` depth prefix-scan passes.
@@ -208,6 +212,8 @@ pub(in crate::type_checker) struct DependencyInterfaceVisibilityParams {
     pub(in crate::type_checker) path_capacity: u32,
     pub(in crate::type_checker) namespace: u32,
     pub(in crate::type_checker) hir_capacity: u32,
+    /// The importing unit's token capacity (dependencies/15b).
+    pub(in crate::type_checker) token_capacity: u32,
 }
 
 /// The checked constant atom table's replay tail (generic_body::BODY_ATOM_RESERVE_ROWS).
@@ -505,22 +511,22 @@ pub(in crate::type_checker) const RADIX_U8_BUCKET_COUNT: u32 = 256;
 /// Exact-name hash slots allocated per 256-row source-name block, per table half.
 pub(in crate::type_checker) const NAME_HASH_TABLE_ROWS_PER_BLOCK: u32 = 257;
 /// Number of builtin symbols materialized before user names are resolved.
-pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 73;
+pub(in crate::type_checker) const LANGUAGE_SYMBOL_COUNT: u32 = 74;
 /// Concatenated builtin symbol spelling table.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_BYTES: &[u8] =
-    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptrfill_secure_bytesremove_filecreate_dirremove_dirrenamemonotonic_readsystem_readsleep_ms_i32reallocalloc_failedcorerangeRangeRangeInclusiveptri32_slice_from_raw_partsi32_slice_data_ptrstring_data_ptrslice_from_raw_partsslice_stride";
+    b"mainassertprintbooli8i16i32i64isizeu8u16u32u64usizef32f64charstrprint_i32_open_read_pathopen_write_pathread_i32write_textwrite_i32write_bytewrite_newlineclose_filei32_to_f32exitsecure_u32allocdeallocargcarg_lenarg_readunix_secondscurrent_dir_readvar_countvar_key_lenvar_key_readvar_lenvar_readclosereadwriteopen_readopen_writeopen_appendwrite_stdoutwrite_stderrread_stdini32_array_data_ptrfill_secure_bytesremove_filecreate_dirremove_dirrenamemonotonic_readsystem_readsleep_ms_i32reallocalloc_failedcorerangeRangeRangeInclusiveptri32_slice_from_raw_partsi32_slice_data_ptrstring_data_ptrslice_from_raw_partsSelfslice_stride";
 /// Start offsets into `LANGUAGE_SYMBOL_BYTES` for each builtin symbol.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_STARTS: &[u32] = &[
     0, 4, 10, 15, 19, 21, 24, 27, 30, 35, 37, 40, 43, 46, 51, 54, 57, 61, 64, 73, 74, 88, 103, 111,
     121, 130, 140, 153, 163, 173, 177, 187, 192, 199, 203, 210, 218, 230, 246, 255, 266, 278, 285,
     293, 298, 302, 307, 316, 326, 337, 349, 361, 371, 389, 406, 417, 427, 437, 443, 457, 468, 480,
-    487, 499, 503, 508, 513, 527, 530, 554, 572, 587, 607,
+    487, 499, 503, 508, 513, 527, 530, 554, 572, 587, 607, 611,
 ];
 /// Byte lengths for each builtin symbol spelling.
 pub(in crate::type_checker) const LANGUAGE_SYMBOL_LENS: &[u32] = &[
     4, 6, 5, 4, 2, 3, 3, 3, 5, 2, 3, 3, 3, 5, 3, 3, 4, 3, 9, 1, 14, 15, 8, 10, 9, 10, 13, 10, 10,
     4, 10, 5, 7, 4, 7, 8, 12, 16, 9, 11, 12, 7, 8, 5, 4, 5, 9, 10, 11, 12, 12, 10, 18, 17, 11, 10,
-    10, 6, 14, 11, 12, 7, 12, 4, 5, 5, 14, 3, 24, 18, 15, 20, 12,
+    10, 6, 14, 11, 12, 7, 12, 4, 5, 5, 14, 3, 24, 18, 15, 20, 4, 12,
 ];
 /// Number of language declarations materialized from builtin symbols.
 pub(in crate::type_checker) const LANGUAGE_DECL_COUNT: u32 = 26;
@@ -547,7 +553,7 @@ const LANGUAGE_DECL_TAG_SLICE_STRIDE: u32 = 8;
 /// Builtin symbol slots that become materialized language declarations.
 pub(in crate::type_checker) const LANGUAGE_DECL_SYMBOL_SLOTS: &[u32] = &[
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 52, 67, 68, 69, 70, 71,
-    72,
+    73,
 ];
 /// Declaration kind table parallel to `LANGUAGE_DECL_SYMBOL_SLOTS`.
 pub(in crate::type_checker) const LANGUAGE_DECL_KINDS: &[u32] = &[

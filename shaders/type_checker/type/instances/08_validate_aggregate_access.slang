@@ -10,6 +10,7 @@ import hir_expr_semantics;
 import primitive_types;
 import status;
 import type_checker.type.instances.struct_field_lookup;
+import type_checker.checked_type_identity;
 
 struct Params
 {
@@ -39,6 +40,8 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> struct_field_lookup_state;
 StructuredBuffer<uint> struct_lit_context_decl_token;
 StructuredBuffer<uint> struct_init_field_ordinal;
+StructuredBuffer<uint> struct_init_field_expected_ref_tag;
+StructuredBuffer<uint> struct_init_field_expected_ref_payload;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_type_decl;
@@ -448,6 +451,12 @@ void validate_struct_literal_field_row(uint field_row)
 
     uint expected = visible_type[field_token];
     if (expected == TY_UNKNOWN)
+        return;
+    // A closed checked expectation is compared with the value's complete
+    // type by conditions/compact_aggregate_requests. A scalar code cannot
+    // stand for it: a reference value has none, so `&Item` read as unknown.
+    if (struct_init_field_expected_ref_tag[field_token] == 3u &&
+        checked_row_is_closed(struct_init_field_expected_ref_payload[field_token]))
         return;
 
     uint value_token = INVALID;

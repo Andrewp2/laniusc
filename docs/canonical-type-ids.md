@@ -352,6 +352,11 @@ result.
   - if a round resolved nothing (a cycle) or the round limit
     `CT_MAX_ROUNDS = 64` is reached, the next round is *final*, and a final
     round turns pending candidates into `CT_UNKNOWN`.
+  - When the round limit (not a cycle) made the round final, a source row
+    that is still pending is deeper than the documented 64 levels. `01_intern`
+    records the limit boundary at its token (LNC0047, detail 2), so the
+    program is rejected there instead of by a later mismatch on the unknown
+    type. Generated rows have no source token and only become unknown.
 - **The host records batches.** It records `CANONICAL_ROUNDS_PER_BATCH = 8`
   rounds, then copies `ct_counts` to a host-visible buffer.
   - It reads one done flag per batch: the pending count and the overflow bits.
@@ -750,10 +755,15 @@ uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
   slot with count claims only is bound to the count in the declared scalar:
   a value, the counted parameter itself, or a cast of it, which keeps its
   pending fit. Every actual array keeps its own fit obligations.
+  `ct_match_fit` (and `ct_match_roots_fit`) also return, on a failed match,
+  the declared scalar that an actual length did not fit, for the fit
+  diagnostic of claim emission (03a1).
 - **No stack, no lane array.** A shape pass checks heads and closed children
   and collects the slot masks. Then one pass per bound slot folds that
   slot's occurrences. Each pass walks the pattern by re-descending from the
-  root along a packed child path (5 bits per level, depth 24). The child
+  root along a packed child path: 5 bits per level in three uint4
+  registers, deep enough for any interned type (height at most 64,
+  `CT_MAX_ROUNDS`), so a match never fails for depth alone. The child
   selection is a helper that returns the next open child: slangc 2026.2
   miscompiles a loop that carries a sentinel out of a `break`.
 - **Deviations from the scoped engines.** A cast in a pattern's array length

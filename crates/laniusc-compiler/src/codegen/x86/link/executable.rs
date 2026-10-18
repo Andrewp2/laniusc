@@ -23,6 +23,21 @@ use crate::{
 
 const RELOCATION_RECORD_BYTES_PER_COLUMN: usize = 16;
 const RELOCATION_BATCH_BYTES_PER_COLUMN: usize = 4 * 1024 * 1024;
+/// Page resources grow in these steps, not to each job's exact size, so a
+/// daemon job whose page is a little larger than the last keeps the retained
+/// page graph, its buffers and its bind groups.
+const PAGE_BYTE_CAPACITY_GRANULE: usize = 64 << 10;
+const PAGE_RELOCATION_CAPACITY_GRANULE: usize = 1024;
+
+/// `required` rounded up to `granule`, but never past `limit` unless
+/// `required` itself is.
+fn retained_page_capacity(required: usize, granule: usize, limit: usize) -> usize {
+    required
+        .max(1)
+        .next_multiple_of(granule)
+        .min(limit & !3usize)
+        .max(required)
+}
 
 pub(crate) struct X86ExecutablePageGraph {
     output_capacity: usize,
@@ -254,25 +269,32 @@ impl GpuX86Linker {
     ) -> Result<usize> {
         let timing = std::env::var_os("LANIUS_X86_LINK_TIMING").is_some();
         let started = std::time::Instant::now();
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.symbols");
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
+        drop(span);
         let symbols_resolved = started.elapsed();
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             eprintln!("[x86_object_identity] resolved_relocations={resolved_relocations:?}");
         }
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.plan");
         let output_plan = GpuX86PagedExecutablePlan::new(
             input,
             device.limits().max_storage_buffer_binding_size as u64,
         )
         .map_err(anyhow::Error::msg)?;
+        drop(span);
         let output_planned = started.elapsed();
         let output_len = output_plan.output_len;
         let output_capacity = output_len.div_ceil(4).saturating_mul(4).max(4);
         let output_capacity_u32 = u32::try_from(output_capacity)
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
 
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.layout");
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
+        drop(span);
         let layout_resolved = started.elapsed();
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.pages");
         let result = self.emit_executable_pages(
             device,
             queue,
@@ -286,6 +308,7 @@ impl GpuX86Linker {
             },
             consume_page,
         );
+        drop(span);
         if timing {
             eprintln!(
                 "x86_link_timing phase=total objects={} relocations={} pages={} output_bytes={} symbols_ms={:.3} plan_ms={:.3} layout_ms={:.3} pages_ms={:.3} total_ms={:.3}",
@@ -335,14 +358,22 @@ impl GpuX86Linker {
                 .read_rodata_range(page.rodata_input.clone())
                 .map_err(anyhow::Error::msg)?;
             let sources_read = started.elapsed();
-            let text_input =
-                self.reusable_input_bytes(device, queue, "codegen.x86.link.page.text", &text_bytes);
-            let rodata_input = self.reusable_input_bytes(
+            let input_limit = device.limits().max_storage_buffer_binding_size as usize;
+            let text_input = self.reusable_input_bytes_with_capacity(
+                device,
+                queue,
+                "codegen.x86.link.page.text",
+                &text_bytes,
+                retained_page_capacity(text_bytes.len(), PAGE_BYTE_CAPACITY_GRANULE, input_limit),
+            );
+            let rodata_input = self.reusable_input_bytes_with_capacity(
                 device,
                 queue,
                 "codegen.x86.link.page.rodata",
                 &rodata_bytes,
+                retained_page_capacity(rodata_bytes.len(), PAGE_BYTE_CAPACITY_GRANULE, input_limit),
             );
+            let inputs_uploaded = started.elapsed();
             let elf_params = self.reusable_uniform_u32(
                 device,
                 queue,
@@ -364,10 +395,13 @@ impl GpuX86Linker {
                     page.output_len,
                 ],
             );
-            let max_relocations_per_batch = max_relocation_batch_records(
-                device.limits().max_storage_buffer_binding_size as usize,
-            )?
-            .min(page.relocation_indices.len().max(1));
+            let binding_limit = device.limits().max_storage_buffer_binding_size as usize;
+            let max_relocations_per_batch =
+                max_relocation_batch_records(binding_limit)?.min(retained_page_capacity(
+                    page.relocation_indices.len(),
+                    PAGE_RELOCATION_CAPACITY_GRANULE,
+                    usize::MAX,
+                ));
             let relocation_a = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.page.relocation_a",
@@ -403,6 +437,7 @@ impl GpuX86Linker {
                 0,
                 u32_words_bytes(&[1, 0, u32::MAX, page.relocation_indices.len() as u32]),
             );
+            let params_written = started.elapsed();
 
             let relocation_batch_count = page
                 .relocation_indices
@@ -425,9 +460,21 @@ impl GpuX86Linker {
                 *graph_guard = Some(X86ExecutablePageGraph::new(
                     self,
                     device,
-                    page_capacity,
-                    text_bytes.len(),
-                    rodata_bytes.len(),
+                    retained_page_capacity(
+                        page_capacity,
+                        PAGE_BYTE_CAPACITY_GRANULE,
+                        binding_limit,
+                    ),
+                    retained_page_capacity(
+                        text_bytes.len(),
+                        PAGE_BYTE_CAPACITY_GRANULE,
+                        binding_limit,
+                    ),
+                    retained_page_capacity(
+                        rodata_bytes.len(),
+                        PAGE_BYTE_CAPACITY_GRANULE,
+                        binding_limit,
+                    ),
                     max_relocations_per_batch,
                     relocation_batch_count,
                 )?);
@@ -436,6 +483,7 @@ impl GpuX86Linker {
                 .as_ref()
                 .expect("x86 executable-page graph installed");
             let graph = &graph_state.materialized;
+            let graph_ready = started.elapsed();
             let output = graph.buffer::<u32>("out_words")?;
             let output_status = graph.buffer::<u32>("status")?;
             let readback = self.reusable_readback(
@@ -456,6 +504,7 @@ impl GpuX86Linker {
             resources.buffer("link_relocation_c", &relocation_c);
             resources.buffer("link_relocation_status", &relocation_status);
             resources.buffer("page_readback", &readback);
+            let bindings_ready = started.elapsed();
 
             let output_clear = ClearBufferOperation::entire(
                 graph,
@@ -631,14 +680,18 @@ impl GpuX86Linker {
             readback.unmap();
             if timing {
                 eprintln!(
-                    "x86_link_timing phase=page index={} output_bytes={} text_bytes={} rodata_bytes={} relocations={} source_read_ms={:.3} resources_ms={:.3} initialize_submit_ms={:.3} relocate_submit_ms={:.3} readback_submit_ms={:.3} gpu_wait_ms={:.3} output_write_ms={:.3} total_ms={:.3}",
+                    "x86_link_timing phase=page index={} output_bytes={} text_bytes={} rodata_bytes={} relocations={} source_read_ms={:.3} upload_ms={:.3} params_ms={:.3} graph_ms={:.3} bindings_ms={:.3} ops_ms={:.3} initialize_submit_ms={:.3} relocate_submit_ms={:.3} readback_submit_ms={:.3} gpu_wait_ms={:.3} output_write_ms={:.3} total_ms={:.3}",
                     page_index,
                     page.output_len,
                     page.text_input.len(),
                     page.rodata_input.len(),
                     page.relocation_indices.len(),
                     sources_read.as_secs_f64() * 1000.0,
-                    (resources_prepared - sources_read).as_secs_f64() * 1000.0,
+                    (inputs_uploaded - sources_read).as_secs_f64() * 1000.0,
+                    (params_written - inputs_uploaded).as_secs_f64() * 1000.0,
+                    (graph_ready - params_written).as_secs_f64() * 1000.0,
+                    (bindings_ready - graph_ready).as_secs_f64() * 1000.0,
+                    (resources_prepared - bindings_ready).as_secs_f64() * 1000.0,
                     (initialized - resources_prepared).as_secs_f64() * 1000.0,
                     (relocations_submitted - initialized).as_secs_f64() * 1000.0,
                     (readback_submitted - relocations_submitted).as_secs_f64() * 1000.0,

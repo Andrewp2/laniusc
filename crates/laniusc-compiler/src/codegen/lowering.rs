@@ -51,6 +51,114 @@ pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
 // The final validation rejects aggregate graphs that have not converged.
 const AGGREGATE_LAYOUT_ROUNDS: usize = 64;
 
+/// What the host knows about one lowering job's sources before recording it.
+/// The lowering stages are built once per workspace and reused across jobs,
+/// so anything that trims a job's recording comes from here, per job. A field
+/// may only claim what it proves for the job: `CONSERVATIVE` claims nothing.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LoweringJobBounds {
+    /// The lexer's parser feature bits for the job's source pack
+    /// (`crate::lexer::features`). A clear bit proves the syntax is absent.
+    pub(crate) parser_features: u32,
+    /// An upper bound on the job's local enum declarations, or `u32::MAX`
+    /// when the host does not know one.
+    pub(crate) enum_declarations: u32,
+}
+
+impl LoweringJobBounds {
+    pub(crate) const CONSERVATIVE: Self = Self {
+        parser_features: crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
+        enum_declarations: u32::MAX,
+    };
+
+    pub(crate) fn from_parser_features(parser_features: u32) -> Self {
+        Self {
+            parser_features,
+            enum_declarations: u32::MAX,
+        }
+    }
+
+    /// Bounds a job from its feature bits and the source texts it lexed.
+    /// `lexed_bytes` is the lexer's input length: the texts must be exactly
+    /// the bytes the lexer read (a source pack concatenates its files with
+    /// nothing between them), or no enum bound is claimed. Every enum
+    /// declaration starts with an `enum` keyword token, so the number of
+    /// `enum` byte strings in the text bounds the declarations; comments,
+    /// strings and longer identifiers only raise the count.
+    pub(crate) fn from_sources<'a>(
+        parser_features: u32,
+        lexed_bytes: u32,
+        sources: impl IntoIterator<Item = &'a str>,
+    ) -> Self {
+        let mut bytes = 0u64;
+        let mut enum_words = 0usize;
+        for source in sources {
+            bytes += source.len() as u64;
+            if enum_words < AGGREGATE_LAYOUT_ROUNDS {
+                enum_words += source
+                    .matches("enum")
+                    .take(AGGREGATE_LAYOUT_ROUNDS - enum_words)
+                    .count();
+            }
+        }
+        let enum_declarations = if bytes == u64::from(lexed_bytes) {
+            enum_words as u32
+        } else {
+            u32::MAX
+        };
+        Self {
+            parser_features,
+            enum_declarations,
+        }
+    }
+
+    /// The aggregate layout rounds the job needs. The rounds are a fixed
+    /// point for enum widths, and each round settles one more level of
+    /// enums nested in enums (directly or through struct fields).
+    ///
+    /// Without an `enum` token the job has no HIR enum item, so the variant
+    /// pass writes nothing and the enum-field pass writes the same rows from
+    /// inputs the rounds never change. The second and later rounds then
+    /// reproduce the state the first one leaves. The first is still needed:
+    /// the enum-field pass marks generic and unchecked array fields invalid,
+    /// which the walk before the rounds does not.
+    ///
+    /// With enums, round r leaves every enum of depth at most r at its final
+    /// width, where an enum whose payloads reach no local enum has depth 1
+    /// and every other enum is one deeper than the deepest enum its payloads
+    /// reach:
+    /// - the walk before the rounds gives every struct that reaches no enum
+    ///   its final width, so round 1 settles the depth-1 enums;
+    /// - in round r, function_layout_enum_variants reads payload widths from
+    ///   semantic_struct_word_count_by_hir, which holds the final width of
+    ///   every enum of depth below r and of every struct that reaches only
+    ///   such enums; function_layout_enum_fields then caches the enum-typed
+    ///   field widths and function_layout_words_round recomputes the structs
+    ///   from them, walking nested structs within one lane. Widths only grow
+    ///   (InterlockedMax from the discriminant width), so a lane that reads a
+    ///   value updated in the same pass reads one no larger than final.
+    ///
+    /// A chain of nested enums visits distinct declarations (a by-value cycle
+    /// keeps growing, and the final validation rejects it after any number
+    /// of rounds), so the depth is at most the number of local enum
+    /// declarations. Generic, imported and instance-typed payloads take
+    /// their widths from type_instance_native_words, which no round writes.
+    /// Too few rounds would not produce wrong code either: validation
+    /// recomputes every variant and rejects a width that would still grow.
+    ///
+    /// This rests on what the three passes read and write; a change that adds
+    /// another dependency between rounds must revisit this bound.
+    /// gpu_compiler's physical_gpu_bounded_layout_rounds_match_all_rounds
+    /// checks it on nested structs, arrays, generics and nested enums.
+    fn aggregate_layout_rounds(self) -> usize {
+        if self.parser_features & crate::lexer::features::PARSER_FEATURE_ENUMS == 0 {
+            1
+        } else {
+            (self.enum_declarations.max(1) as usize).min(AGGREGATE_LAYOUT_ROUNDS)
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct SemanticProjectParams {
@@ -1901,13 +2009,18 @@ impl GpuSemanticLoweringStage {
 
     #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_timed(encoder, None)
+        self.record_timed(encoder, None, None, LoweringJobBounds::CONSERVATIVE)
     }
 
+    /// Records the semantic stage. With `split`, the reset and the first
+    /// passes are submitted before the layout rounds, so the GPU runs them
+    /// while the host records and finishes the rest of the lowering.
     pub(crate) fn record_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
+        split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
+        bounds: LoweringJobBounds,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -1931,9 +2044,18 @@ impl GpuSemanticLoweringStage {
         // Struct widths that do not depend on enum fields are available to
         // the variant pass; the second walk incorporates enum-valued fields.
         operations.function_layout_words.record(encoder)?;
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.semantic_head",
+                "lowering.layout.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
         // Each round dispatches over the variant and field rows only, not
         // every HIR row: 192 dispatches of mostly idle lanes were the cost.
-        for _ in 0..AGGREGATE_LAYOUT_ROUNDS {
+        // A job without enums needs one round (`aggregate_layout_rounds`).
+        for _ in 0..bounds.aggregate_layout_rounds() {
             operations.function_layout_enum_variants.record(encoder)?;
             operations.function_layout_enum_fields.record(encoder)?;
             operations.function_layout_words_round.record(encoder)?;
@@ -1988,6 +2110,63 @@ impl GpuSemanticLoweringStage {
 mod tests {
     use super::*;
     use crate::primitive_types::{SCALAR_BOOL, SCALAR_I32, SCALAR_TYPE_SHIFT, SCALAR_UNIT};
+
+    #[test]
+    fn aggregate_layout_rounds_drop_to_one_only_without_enums() {
+        use crate::lexer::features::{
+            PARSER_FEATURE_ARRAYS,
+            PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_STRUCTS,
+            PARSER_FEATURE_TYPE_ARGS,
+        };
+        assert_eq!(
+            LoweringJobBounds::CONSERVATIVE.aggregate_layout_rounds(),
+            AGGREGATE_LAYOUT_ROUNDS
+        );
+        assert_eq!(
+            LoweringJobBounds::from_parser_features(PARSER_FEATURE_ENUMS).aggregate_layout_rounds(),
+            AGGREGATE_LAYOUT_ROUNDS
+        );
+        // Generic and array struct fields still need the one round that
+        // marks them invalid.
+        assert_eq!(
+            LoweringJobBounds::from_parser_features(
+                PARSER_FEATURE_STRUCTS | PARSER_FEATURE_ARRAYS | PARSER_FEATURE_TYPE_ARGS
+            )
+            .aggregate_layout_rounds(),
+            1
+        );
+        assert_eq!(LoweringJobBounds::from_parser_features(0).aggregate_layout_rounds(), 1);
+    }
+
+    #[test]
+    fn aggregate_layout_rounds_follow_the_enum_words_in_the_lexed_text() {
+        use crate::lexer::features::PARSER_FEATURE_ENUMS;
+        let rounds = |sources: &[&str], lexed: usize| {
+            LoweringJobBounds::from_sources(
+                PARSER_FEATURE_ENUMS,
+                lexed as u32,
+                sources.iter().copied(),
+            )
+            .aggregate_layout_rounds()
+        };
+        let one = "enum A { X(i32) } struct S { a: A }";
+        let two = "// enumerate\nenum B { Y(S) }";
+        assert_eq!(rounds(&[one], one.len()), 1);
+        // A comment's `enumerate` raises the bound; it never lowers it.
+        assert_eq!(rounds(&[one, two], one.len() + two.len()), 3);
+        // Texts that are not exactly the lexed bytes claim nothing.
+        assert_eq!(rounds(&[one], one.len() + 1), AGGREGATE_LAYOUT_ROUNDS);
+        assert_eq!(rounds(&[], 0), 1);
+        let many = "enum ".repeat(2 * AGGREGATE_LAYOUT_ROUNDS);
+        assert_eq!(rounds(&[&many], many.len()), AGGREGATE_LAYOUT_ROUNDS);
+        // Without the enum feature bit the text is not consulted.
+        assert_eq!(
+            LoweringJobBounds::from_sources(0, many.len() as u32, [many.as_str()])
+                .aggregate_layout_rounds(),
+            1
+        );
+    }
     use crate::{
         codegen::{
             lowering_ir::{

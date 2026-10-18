@@ -237,6 +237,8 @@ static LIVE_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static PEAK_BUFFER_ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static PEAK_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static NEXT_BUFFER_ALLOCATION_ID: AtomicU64 = AtomicU64::new(1);
+/// Bytes of tracked buffers released so far; it only grows.
+static RELEASED_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 static BUFFER_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static LIVE_BUFFER_BYTES_BY_LABEL: LazyLock<Mutex<HashMap<Arc<str>, (u64, u64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -514,6 +516,7 @@ impl Drop for BufferAllocationLedger {
         }
         LIVE_BUFFER_ALLOCATIONS.fetch_sub(1, Ordering::Relaxed);
         LIVE_BUFFER_BYTES.fetch_sub(self.bytes, Ordering::Relaxed);
+        RELEASED_BUFFER_BYTES.fetch_add(self.bytes, Ordering::Relaxed);
         let mut labels = LIVE_BUFFER_BYTES_BY_LABEL
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -529,6 +532,22 @@ impl Drop for BufferAllocationLedger {
         drop(labels);
         record_buffer_residency_event("release", self.id, &self.label, self.bytes);
     }
+}
+
+/// Bytes of tracked buffers released since the process started. The
+/// reflected bind-group cache prunes itself when this has grown enough.
+pub(crate) fn released_tracked_buffer_bytes() -> u64 {
+    RELEASED_BUFFER_BYTES.load(Ordering::Relaxed)
+}
+
+/// The allocation ids of the tracked buffers alive now.
+pub(crate) fn live_tracked_allocation_ids() -> std::collections::HashSet<u64> {
+    LIVE_BUFFER_IDENTITIES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .values()
+        .map(|(id, _, _)| *id)
+        .collect()
 }
 
 /// Returns the compiler allocation identity attached to a raw WGPU handle.
@@ -963,6 +982,25 @@ where
     });
     queue.write_buffer(&raw, 0, bytes);
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
+}
+
+/// Divisor of the headroom a growing resident capacity gets above its
+/// requirement.
+const RESIDENT_GROWTH_HEADROOM_DIVISOR: u32 = 64;
+
+/// One dimension of a resident allocation that has to cover `required`.
+///
+/// A dimension that already covers it keeps its size. One that grows is sized
+/// 1/64 above the requirement, so the next unit or edit of nearly the same
+/// size reuses the replacement instead of replacing it again, together with
+/// every workspace bound to it. Callers still round the result to their
+/// bucket granularity.
+pub(crate) fn grown_resident_capacity(current: u32, required: u32) -> u32 {
+    if current >= required {
+        current
+    } else {
+        required.saturating_add(required / RESIDENT_GROWTH_HEADROOM_DIVISOR)
+    }
 }
 
 struct CachedCapacityBuffer {
@@ -1420,6 +1458,16 @@ mod tests {
     use super::*;
 
     static ALLOCATION_LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn grown_resident_capacity_keeps_covering_sizes_and_pads_growth() {
+        assert_eq!(grown_resident_capacity(500, 400), 500);
+        assert_eq!(grown_resident_capacity(500, 500), 500);
+        assert_eq!(grown_resident_capacity(0, 6_400), 6_500);
+        assert_eq!(grown_resident_capacity(6_500, 6_501), 6_602);
+        assert_eq!(grown_resident_capacity(0, 63), 63);
+        assert_eq!(grown_resident_capacity(0, u32::MAX), u32::MAX);
+    }
 
     #[test]
     fn allocation_peak_window_starts_at_live_baseline_and_tracks_high_water_mark() {

@@ -31,7 +31,7 @@ use crate::{
     gpu::{
         buffers::{LaniusBuffer, TrackedBufferView},
         compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
-        readback::{PagedReadback, ReadbackRegion},
+        readback::{PagedReadback, PlanBuffers, ReadPlan, ReadbackRegion, ReadbackRows, WordRead},
     },
     parser::passes::hir::{
         item::fields::{
@@ -859,6 +859,77 @@ pub(crate) fn dependency_method_requirements(
     (types <= 32 && constants <= 32).then_some((types, constants))
 }
 
+/// Read plans of recent unit-facts runs, by their counts and kind. A run
+/// whose counts and kind match an earlier run's fetches that run's dependent
+/// reads with its first dependent read (see [`ReadPlan`]), so it costs two
+/// round trips instead of one per dependent step. The plans name buffers by
+/// allocation identity only.
+#[derive(Default)]
+pub(crate) struct UnitFactsReadPlans {
+    plans: Vec<(UnitFactsPlanKey, ReadPlan)>,
+}
+
+impl UnitFactsReadPlans {
+    /// A narrow job runs unit facts three times (the original unit and two
+    /// replays); a few units of headroom keep a source pack's plans.
+    const CAPACITY: usize = 8;
+
+    fn take(&mut self, key: &UnitFactsPlanKey) -> Option<ReadPlan> {
+        let index = self.plans.iter().position(|(planned, _)| planned == key)?;
+        Some(self.plans.remove(index).1)
+    }
+
+    fn insert(&mut self, key: UnitFactsPlanKey, plan: ReadPlan) {
+        self.plans.retain(|(planned, _)| *planned != key);
+        if self.plans.len() == Self::CAPACITY {
+            self.plans.remove(0);
+        }
+        self.plans.push((key, plan));
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.plans.clear();
+    }
+}
+
+/// The counts round's words and what kind of unit the run reads.
+#[derive(Clone, PartialEq, Eq)]
+struct UnitFactsPlanKey {
+    counts: Vec<u32>,
+    interface_exported: bool,
+    template_contracts: bool,
+    first_copy_row: Option<u32>,
+}
+
+/// Ends a run's plan replay and keeps its reads as the plan for its key.
+struct UnitFactsPlanRecorder<'a> {
+    readback: &'a PagedReadback,
+    plans: &'a std::sync::Mutex<UnitFactsReadPlans>,
+    key: UnitFactsPlanKey,
+}
+
+impl Drop for UnitFactsPlanRecorder<'_> {
+    fn drop(&mut self) {
+        let Some((plan, stats)) = self.readback.finish_read_plan() else {
+            return;
+        };
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={}",
+                plan.len(),
+                stats.answered,
+                stats.read,
+                stats.fetched,
+                stats.fetched_words,
+            );
+        }
+        self.plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(self.key.clone(), plan);
+    }
+}
+
 /// Trace spans for the unit snapshot's stages, so the host work between its
 /// readbacks shows up in a profile. Each span includes its stage's readback.
 struct UnitFactsHostTimer(Option<std::time::Instant>);
@@ -885,11 +956,11 @@ pub(super) fn words(bytes: &[u8]) -> Vec<u32> {
         .collect()
 }
 
-/// The regions of one batched readback, read back as one flat vector of
-/// words. Each `push` returns where its words start in that vector.
+/// The regions and rows of one batched readback, read back as one flat
+/// vector of words. Each `push` returns where its words start in that vector.
 #[derive(Default)]
 pub(super) struct WordBatch<'a> {
-    regions: Vec<ReadbackRegion<'a>>,
+    reads: Vec<WordRead<'a>>,
     words: usize,
 }
 
@@ -927,19 +998,62 @@ impl<'a> WordBatch<'a> {
         width: usize,
         label: &str,
     ) -> Result<usize> {
+        self.table_rows(indices, &[(buffer, stride, width)], label)
+    }
+
+    /// Queues, for each index, the first `width` words of that row of each
+    /// table of `stride`-word rows in `tables`, in table order.
+    pub(super) fn table_rows<T>(
+        &mut self,
+        indices: &[u32],
+        tables: &[(&'a LaniusBuffer<T>, usize, usize)],
+        label: &str,
+    ) -> Result<usize> {
         let start = self.words;
-        self.regions.reserve(indices.len());
-        for &index in indices {
-            self.push(buffer, u64::from(index) * stride as u64, width, label)?;
+        if indices.is_empty() || tables.is_empty() {
+            return Ok(start);
         }
+        let mut rows = ReadbackRows::new(indices);
+        for &(buffer, stride, width) in tables {
+            rows = rows.column(buffer, 0, stride, width, label)?;
+        }
+        self.words += rows.words();
+        self.reads.push(WordRead::Rows(rows));
         Ok(start)
+    }
+
+    /// Queues the first `widths[i]` words of row `indices[i]` of a table of
+    /// `stride`-word rows and returns where each row's words start. Rows of
+    /// one width share one read.
+    pub(super) fn ragged_rows<T>(
+        &mut self,
+        buffer: &'a LaniusBuffer<T>,
+        indices: &[u32],
+        widths: &[usize],
+        stride: usize,
+        label: &str,
+    ) -> Result<Vec<usize>> {
+        let mut by_width = BTreeMap::<usize, (Vec<u32>, Vec<usize>)>::new();
+        for (position, (&index, &width)) in indices.iter().zip(widths).enumerate() {
+            let (rows, positions) = by_width.entry(width).or_default();
+            rows.push(index);
+            positions.push(position);
+        }
+        let mut starts = vec![0; indices.len()];
+        for (width, (rows, positions)) in by_width {
+            let start = self.rows(buffer, &rows, stride, width, label)?;
+            for (row, position) in positions.into_iter().enumerate() {
+                starts[position] = start + row * width;
+            }
+        }
+        Ok(starts)
     }
 
     /// Queues a planned region of whole words.
     pub(super) fn push_region(&mut self, region: ReadbackRegion<'a>) -> usize {
         let start = self.words;
         self.words += region.byte_len().div_ceil(4);
-        self.regions.push(region);
+        self.reads.push(WordRead::Region(region));
         start
     }
 
@@ -963,10 +1077,10 @@ impl<'a> WordBatch<'a> {
         queue: &wgpu::Queue,
         label: &str,
     ) -> Result<Vec<u32>> {
-        if self.regions.is_empty() {
+        if self.reads.is_empty() {
             return Ok(Vec::new());
         }
-        let words = readback.read_regions_words(device, queue, &self.regions, label)?;
+        let words = readback.read_words(device, queue, &self.reads, label)?;
         debug_assert_eq!(words.len(), self.words);
         Ok(words)
     }
@@ -1079,17 +1193,11 @@ impl CheckedTypeReadback {
         // Column-major, so each column's rows are one gather run.
         let mut batch = WordBatch::default();
         for name in TYPE_INSTANCE_COLUMNS {
-            let buffer = inputs.buffer(name);
-            for &instance in &instances {
-                batch.push(buffer, u64::from(instance), 1, "generic argument type")?;
-            }
+            batch.rows(inputs.buffer(name), &instances, 1, 1, "generic argument type")?;
         }
         let legacy_start = batch.len();
         for name in ["type_native_scalar_identity", "type_native_word_count"] {
-            let buffer = inputs.buffer(name);
-            for &row in &legacy_rows {
-                batch.push(buffer, u64::from(row), 1, "legacy nominal type")?;
-            }
+            batch.rows(inputs.buffer(name), &legacy_rows, 1, 1, "legacy nominal type")?;
         }
         let values = batch.read(readback, device, queue, "checked type frontier")?;
         for (index, &instance) in instances.iter().enumerate() {
@@ -1475,29 +1583,26 @@ impl CheckedTypeReadback {
         if interface_exported {
             owner_columns.push((inputs.buffer("interface_generic_scope_owner_by_hir"), 1));
         }
-        for &owner in owners {
-            for &(buffer, width) in &owner_columns {
-                batch.push(
-                    buffer,
-                    u64::from(owner) * width as u64,
-                    width,
-                    "retained generic owner metadata",
-                )?;
-            }
-        }
-        let parameter_columns = [
+        let owner_tables = owner_columns
+            .iter()
+            .map(|&(buffer, width)| (buffer, width, width))
+            .collect::<Vec<_>>();
+        batch.table_rows(owners, &owner_tables, "retained generic owner metadata")?;
+        let parameter_tables = [
             &semantic.type_generic_param_slot,
             &semantic.type_const_param_slot,
             inputs.buffer("type_const_param_value_by_token"),
             inputs.buffer("type_const_param_scalar_by_token"),
             inputs.buffer("type_expr_ref_tag"),
             inputs.buffer("type_expr_ref_payload"),
-        ];
-        for row in parameters.chunks_exact(4) {
-            for buffer in parameter_columns {
-                batch.push(buffer, u64::from(row[1]), 1, "retained generic parameter metadata")?;
-            }
-        }
+        ]
+        .map(|buffer| (buffer, 1, 1));
+        let parameter_tokens = parameters.chunks_exact(4).map(|row| row[1]).collect::<Vec<_>>();
+        batch.table_rows(
+            &parameter_tokens,
+            &parameter_tables,
+            "retained generic parameter metadata",
+        )?;
         Ok(())
     }
 
@@ -1723,10 +1828,12 @@ impl CheckedTypeReadback {
 /// Every batch is read as one flat word vector and decoded by offset, and
 /// every lookup table is a sorted vector: a replay of a 1 MB program decodes
 /// ~8k calls, so per-row allocations and tree lookups dominated its time.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn read_unit_facts(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     readback_buffers: &crate::gpu::buffers::CapacityBufferCache,
+    read_plans: &std::sync::Mutex<UnitFactsReadPlans>,
     semantic: &OwnedGpuSemanticArtifact,
     interface_exported: bool,
     template_contracts: Option<&CheckedUnitContracts>,
@@ -1768,11 +1875,33 @@ pub(super) fn read_unit_facts(
         "compact_field_count",
         "compact_variant_count",
         "compact_variant_payload_row_count",
+        // Read here so the type decoder's argument rows need no round trip
+        // of their own.
+        "type_instance_arg_row_count_out",
     ] {
         batch.push(inputs.buffer(name), 0, 1, name)?;
     }
     let counts = batch.read(&readback, device, queue, "generic call counts")?;
     timer.stamp("counts");
+    // Every later read depends on these counts. The GPU work that wrote the
+    // retained rows has finished and nothing below records GPU work, so an
+    // earlier run's plan with the same counts can be fetched in one round.
+    let plan_key = UnitFactsPlanKey {
+        counts: counts.clone(),
+        interface_exported,
+        template_contracts: template_contracts.is_some(),
+        first_copy_row: instance_copies.and_then(|batch| batch.copy_first_row()),
+    };
+    let plan = read_plans
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take(&plan_key);
+    readback.begin_read_plan(PlanBuffers::new(semantic.retained_buffers()), plan);
+    let _plan_recorder = UnitFactsPlanRecorder {
+        readback: &readback,
+        plans: read_plans,
+        key: plan_key,
+    };
     // Inactive producer families may share reused scratch. Current job flags,
     // not previous buffer contents, determine whether those counts are valid.
     let count = |index: usize, valid: bool| if valid { counts[index] as usize } else { 0 };
@@ -2099,6 +2228,7 @@ pub(super) fn read_unit_facts(
         template_contracts,
         &owner_aliases,
     )?;
+    types.argument_row_count = Some(counts[12]);
     types.read_nominal_metadata(
         &nominal_headers,
         &metadata[nominal_metadata_start..caller_metadata_start],
@@ -2125,9 +2255,8 @@ pub(super) fn read_unit_facts(
     if !enclosing_owners.is_empty() {
         let mut batch = WordBatch::default();
         let links = inputs.buffer("generic_decl_owner_by_node_a");
-        for &(_, parent) in &enclosing_owners {
-            batch.push(links, u64::from(parent), 1, "retained enclosing binder")?;
-        }
+        let parent_rows = enclosing_owners.iter().map(|&(_, parent)| parent).collect::<Vec<_>>();
+        batch.rows(links, &parent_rows, 1, 1, "retained enclosing binder")?;
         let parents = batch.read(&readback, device, queue, "retained binder links")?;
         for (&(owner, _), &parent) in enclosing_owners.iter().zip(&parents) {
             let enclosing = if parent == INVALID {
@@ -2222,13 +2351,22 @@ pub(super) fn read_unit_facts(
             native_call_owners: Vec::new(),
         });
     }
-    let local_tokens = sorted_unique(
-        call_records
-            .chunks_exact(CALL_RECORD_READ_WORDS)
-            .filter(|record| record[11] == 1)
-            .map(|record| record[0])
-            .collect(),
-    );
+    // Without generic parameters (type or constant) no local callee is
+    // generic, and without type claims no local call needs the check below
+    // that its claims have parameter metadata. Such a unit (any plain
+    // program) skips the lookup chain: its local calls are not retained.
+    let local_lookups = generic_parameter_count != 0 || !calls_with_claims.is_empty();
+    let local_tokens = if local_lookups {
+        sorted_unique(
+            call_records
+                .chunks_exact(CALL_RECORD_READ_WORDS)
+                .filter(|record| record[11] == 1)
+                .map(|record| record[0])
+                .collect(),
+        )
+    } else {
+        Vec::new()
+    };
     let local_names = rows(
         &readback,
         device,
@@ -2492,6 +2630,10 @@ pub(super) fn read_unit_facts(
         .zip(call_records.chunks_exact(CALL_RECORD_READ_WORDS))
     {
         let (target, required_constant_parameters) = match record[11] {
+            1 if !local_lookups => {
+                calls.push(None);
+                continue;
+            }
             1 => {
                 let function_start_token = record[0];
                 let callee = callees[local_tokens
@@ -2598,23 +2740,21 @@ pub(super) fn read_unit_facts(
         .filter(|&index| constant_context_masks[index] != 0 && calls[index].is_some())
         .collect::<Vec<_>>();
     if !constant_context.is_empty() {
+        let calls_read = constant_context.iter().map(|&index| call_ids[index]).collect::<Vec<_>>();
+        let widths = constant_context
+            .iter()
+            .map(|&index| mask_words(constant_context_masks[index]))
+            .collect::<Vec<_>>();
         let mut batch = WordBatch::default();
-        let mut starts = Vec::with_capacity(constant_context.len() * 2);
-        for name in ["call_context_constant_kind", "call_context_constant_payload"] {
-            let buffer = inputs.buffer(name);
-            for &index in &constant_context {
-                starts.push(batch.push(
-                    buffer,
-                    u64::from(call_ids[index]) * 32,
-                    mask_words(constant_context_masks[index]),
-                    "checked result constant row",
-                )?);
-            }
-        }
+        let [kind_starts, payload_starts] =
+            ["call_context_constant_kind", "call_context_constant_payload"].map(|name| {
+                batch.ragged_rows(inputs.buffer(name), &calls_read, &widths, 32,
+                    "checked result constant row")
+            });
+        let (kind_starts, payload_starts) = (kind_starts?, payload_starts?);
         let rows = batch.read(&readback, device, queue, "checked result constants")?;
-        let (kind_starts, payload_starts) = starts.split_at(constant_context.len());
         for ((&index, &kinds), &payloads) in
-            constant_context.iter().zip(kind_starts).zip(payload_starts)
+            constant_context.iter().zip(&kind_starts).zip(&payload_starts)
         {
             let mask = constant_context_masks[index];
             for slot in 0..mask_words(mask) {
@@ -2708,22 +2848,20 @@ pub(super) fn read_unit_facts(
         .filter(|&index| context_masks[index] != 0 && calls[index].is_some())
         .collect::<Vec<_>>();
     if !context.is_empty() {
+        let calls_read = context.iter().map(|&index| call_ids[index]).collect::<Vec<_>>();
+        let widths = context
+            .iter()
+            .map(|&index| mask_words(context_masks[index]))
+            .collect::<Vec<_>>();
         let mut batch = WordBatch::default();
-        let mut starts = Vec::with_capacity(context.len() * 2);
-        for name in ["call_context_ref_tag", "call_context_ref_payload"] {
-            let buffer = inputs.buffer(name);
-            for &index in &context {
-                starts.push(batch.push(
-                    buffer,
-                    u64::from(call_ids[index]) * 32,
-                    mask_words(context_masks[index]),
-                    "checked contextual argument row",
-                )?);
-            }
-        }
+        let [tag_starts, payload_starts] =
+            ["call_context_ref_tag", "call_context_ref_payload"].map(|name| {
+                batch.ragged_rows(inputs.buffer(name), &calls_read, &widths, 32,
+                    "checked contextual argument row")
+            });
+        let (tag_starts, payload_starts) = (tag_starts?, payload_starts?);
         let rows = batch.read(&readback, device, queue, "checked contextual arguments")?;
-        let (tag_starts, payload_starts) = starts.split_at(context.len());
-        for ((&index, &tags), &payloads) in context.iter().zip(tag_starts).zip(payload_starts) {
+        for ((&index, &tags), &payloads) in context.iter().zip(&tag_starts).zip(&payload_starts) {
             let mask = context_masks[index];
             let call = calls[index].as_mut().expect("retained contextual call");
             for slot in 0..mask_words(mask) {
@@ -2811,6 +2949,7 @@ impl super::GpuTypeChecker {
             device,
             queue,
             &self.semantic_interface_buffers,
+            &self.unit_facts_read_plans,
             &semantic,
             interface_exported,
             template_contracts,
@@ -3105,6 +3244,30 @@ pub(crate) fn scope_generic_type_identities(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_facts_read_plans_keep_the_latest_plans_by_key() {
+        let key = |count: u32| UnitFactsPlanKey {
+            counts: vec![count, 7],
+            interface_exported: true,
+            template_contracts: false,
+            first_copy_row: None,
+        };
+        let mut plans = UnitFactsReadPlans::default();
+        for count in 0..10 {
+            plans.insert(key(count), ReadPlan::default());
+        }
+        plans.insert(key(9), ReadPlan::default());
+        assert_eq!(plans.plans.len(), UnitFactsReadPlans::CAPACITY);
+        assert!(plans.take(&key(0)).is_none() && plans.take(&key(1)).is_none());
+        let mut replay = key(9);
+        replay.first_copy_row = Some(3);
+        assert!(plans.take(&replay).is_none());
+        // A run takes its plan; the run's own reads replace it.
+        assert!(plans.take(&key(9)).is_some());
+        assert!(plans.take(&key(9)).is_none());
+        assert!(plans.take(&key(2)).is_some());
+    }
 
     fn parameter(domain: CheckedParameterDomain, source_ordinal: u32) -> CheckedGenericParameter {
         CheckedGenericParameter {

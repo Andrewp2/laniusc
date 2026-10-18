@@ -41,9 +41,12 @@ public static const uint CT_MATCH_OVERFLOW = 0xffffffffu; // CT_PENDING: interni
 public static const uint CT_MATCH_OK = 0xfffffffdu;       // CT_NONE: matched, nothing interned
 
 static const uint SLOTS = 32u;
-// Packed path: five bits per level, six levels per word; level 0 is the
-// virtual parent of the root.
-static const uint DEPTH_LIMIT = 24u;
+// Packed path: five bits per level, six levels per word, twelve words in
+// three uint4 registers; level 0 is the virtual parent of the root. Level
+// 65 is the deepest a match descends, one below an interned type of height
+// 64 (CT_MAX_ROUNDS: deeper types intern to UNKNOWN), so a depth failure
+// never rejects an interned pair.
+static const uint DEPTH_LIMIT = 66u;
 static const uint STEP_LIMIT = 1024u;
 // Unset count class of a slot.
 static const uint NO_CLASS = 0xffffffffu;
@@ -52,23 +55,35 @@ static const uint POSITION_TYPE = 0u;
 static const uint POSITION_EXACT = 1u;
 static const uint POSITION_COUNT = 2u;
 
-uint path_index(uint4 path, uint level)
+struct MatchPath
 {
-    uint word = level / 6u;
-    uint packed = word == 0u ? path.x : word == 1u ? path.y : word == 2u ? path.z : path.w;
-    return (packed >> ((level % 6u) * 5u)) & 31u;
-}
+    uint4 low;
+    uint4 middle;
+    uint4 high;
 
-uint4 path_with(uint4 path, uint level, uint index)
-{
-    uint word = level / 6u;
-    uint shift = (level % 6u) * 5u;
-    uint keep = ~(31u << shift);
-    uint bits = index << shift;
-    return uint4(word == 0u ? (path.x & keep) | bits : path.x,
-        word == 1u ? (path.y & keep) | bits : path.y,
-        word == 2u ? (path.z & keep) | bits : path.z,
-        word == 3u ? (path.w & keep) | bits : path.w);
+    uint index(uint level)
+    {
+        uint word = level / 6u;
+        uint4 words = word < 4u ? low : word < 8u ? middle : high;
+        uint lane = word & 3u;
+        uint packed = lane == 0u ? words.x : lane == 1u ? words.y : lane == 2u ? words.z : words.w;
+        return (packed >> ((level % 6u) * 5u)) & 31u;
+    }
+
+    [mutating]
+    void set(uint level, uint index)
+    {
+        uint word = level / 6u;
+        uint shift = (level % 6u) * 5u;
+        uint lane = word & 3u;
+        uint4 keep = uint4(lane == 0u ? ~(31u << shift) : ~0u, lane == 1u ? ~(31u << shift) : ~0u,
+            lane == 2u ? ~(31u << shift) : ~0u, lane == 3u ? ~(31u << shift) : ~0u);
+        uint4 bits = uint4(lane == 0u ? index << shift : 0u, lane == 1u ? index << shift : 0u,
+            lane == 2u ? index << shift : 0u, lane == 3u ? index << shift : 0u);
+        if (word < 4u) low = (low & keep) | bits;
+        else if (word < 8u) middle = (middle & keep) | bits;
+        else high = (high & keep) | bits;
+    }
 }
 
 // The scalar of a typed constant: a value's or cast's own, a constant
@@ -90,6 +105,8 @@ struct SlotClaims
     // The declared scalar of a constant slot, from its occurrences.
     uint scalar;
     bool exact;
+    // The declared scalar that an actual length did not fit, or 0.
+    uint fit_scalar;
 }
 
 // Occurrence of pattern parameter `leaf` at `position` against `actual`.
@@ -131,8 +148,13 @@ bool fold_occurrence<S : ICtSlots>(S slots, uint leaf, uint position, uint actua
         // declared scalar, or an integer constant parameter.
         uint3 value;
         bool count = ct_kind(actual) == CC_KIND_COUNT;
-        if (count ? !constant_value_from_count(cc_count(actual), scalar, value)
-            : !ct_is_const_param(actual) || !scalar_is_integer(typed_scalar<S>(slots, actual))) return false;
+        if (count && !constant_value_from_count(cc_count(actual), scalar, value))
+        {
+            claims.fit_scalar = scalar;
+            return false;
+        }
+        if (!count && (!ct_is_const_param(actual) || !scalar_is_integer(typed_scalar<S>(slots, actual))))
+            return false;
     }
     else
     {
@@ -174,7 +196,7 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
     inout uint type_mask, inout uint const_mask, inout SlotClaims claims)
 {
     uint depth = 0u;
-    uint4 path = uint4(0u, 0u, 0u, 0u);
+    MatchPath path = { uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u) };
     uint cursor = 0u;
     bool enter = true;
     for (uint step = 0u; step < STEP_LIMIT; step++)
@@ -184,7 +206,7 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
         uint other = actual;
         for (uint level = 2u; level <= depth; level++)
         {
-            uint index = path_index(path, level);
+            uint index = path.index(level);
             node = ct_arg(node, index);
             other = ct_arg(other, index);
         }
@@ -225,13 +247,13 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
         {
             if (depth + 1u >= DEPTH_LIMIT) return false;
             depth++;
-            path = path_with(path, depth, next);
+            path.set(depth, next);
             cursor = 0u;
             enter = true;
             continue;
         }
         if (top) return true;
-        cursor = path_index(path, depth) + 1u;
+        cursor = path.index(depth) + 1u;
         depth--;
         enter = false;
     }
@@ -273,10 +295,21 @@ struct CtTwoRoots : ICtRoots
 public uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pattern1, uint actual1,
     uint prior, uint flags, bool intern, inout CtSpare spare, out uint count_mask)
 {
+    uint fit_scalar;
+    return ct_match_fit<S>(slots, pattern0, actual0, pattern1, actual1, prior, flags, intern, spare,
+        count_mask, fit_scalar);
+}
+
+// ct_match, and on CT_MATCH_FAILED the declared scalar of a constant
+// parameter that an actual array length does not fit (0 when the match
+// failed for another reason), for a fit diagnostic.
+public uint ct_match_fit<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pattern1, uint actual1,
+    uint prior, uint flags, bool intern, inout CtSpare spare, out uint count_mask, out uint fit_scalar)
+{
     CtTwoRoots roots;
     roots.ids = uint4(pattern0, actual0, pattern1, actual1);
     roots.flags = flags;
-    return ct_match_roots<S, CtTwoRoots>(slots, roots, prior, intern, spare, count_mask);
+    return ct_match_roots_fit<S, CtTwoRoots>(slots, roots, prior, intern, spare, count_mask, fit_scalar);
 }
 
 // The type and constant slots that `pattern` uses, whatever it is matched
@@ -292,6 +325,7 @@ public bool ct_pattern_masks<S : ICtSlots>(S slots, uint pattern, out uint type_
     claims.klass = NO_CLASS;
     claims.scalar = 0u;
     claims.exact = false;
+    claims.fit_scalar = 0u;
     return ct_is_resolved(pattern) &&
         match_pass<S>(slots, pattern, pattern, false, 0u, type_mask, const_mask, claims);
 }
@@ -300,6 +334,15 @@ public bool ct_pattern_masks<S : ICtSlots>(S slots, uint pattern, out uint type_
 public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, uint prior, bool intern,
     inout CtSpare spare, out uint count_mask)
 {
+    uint fit_scalar;
+    return ct_match_roots_fit<S, R>(slots, roots, prior, intern, spare, count_mask, fit_scalar);
+}
+
+// ct_match_roots with ct_match_fit's `fit_scalar`.
+public uint ct_match_roots_fit<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, uint prior, bool intern,
+    inout CtSpare spare, out uint count_mask, out uint fit_scalar)
+{
+    fit_scalar = 0u;
     count_mask = 0u;
     uint type_mask = 0u;
     uint const_mask = 0u;
@@ -325,6 +368,7 @@ public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, u
         claims.exact = claims.binding != CT_NONE;
         claims.klass = claims.exact && constant ? cc_count_class(claims.binding) : NO_CLASS;
         claims.scalar = 0u;
+        claims.fit_scalar = 0u;
         uint roots_count = roots.count();
         for (uint root = 0u; root < roots_count; root++)
         {
@@ -332,7 +376,10 @@ public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, u
             if (!roots.root(root, pattern, actual, slice)) return CT_MATCH_FAILED;
             if (pattern == CT_NONE && actual == CT_NONE) continue;
             if (!match_pass<S>(slots, pattern, actual, slice, item, type_mask, const_mask, claims))
+            {
+                fit_scalar = claims.fit_scalar;
                 return CT_MATCH_FAILED;
+            }
         }
         if (item == 0u) continue;
         uint binding = claims.binding;

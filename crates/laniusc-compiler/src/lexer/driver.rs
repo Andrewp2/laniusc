@@ -47,13 +47,20 @@ pub struct GpuLexer {
 
     // Persistent buffers reused across lex() calls
     buffers: std::sync::Mutex<Option<buffers::GpuBuffers>>,
+    // Largest source-pack (byte, file) capacity allocated so far. Releasing
+    // the buffers keeps it, so the next allocation covers every earlier pack
+    // instead of only the current one: a daemon that alternates a small and
+    // a large unit then allocates once rather than at each switch, and so
+    // does the type-check workspace bound to these buffers.
+    source_pack_capacity_floor: std::sync::Mutex<(u32, u32)>,
     // Bind group cache to avoid recreating them every dispatch
     bg_cache: std::sync::Mutex<crate::gpu::passes_core::BindGroupCache>,
 }
 
 impl GpuLexer {
     /// Releases reusable source/token buffers and bind groups while retaining
-    /// the lexer pipelines and immutable tables.
+    /// the lexer pipelines, immutable tables and the source-pack capacity
+    /// floor that the next allocation covers.
     pub fn release_current_resident_buffers(&self) {
         *self
             .buffers
@@ -195,6 +202,7 @@ impl GpuLexer {
             token_map,
             passes,
             buffers: std::sync::Mutex::new(None),
+            source_pack_capacity_floor: std::sync::Mutex::new((0, 0)),
             bg_cache: std::sync::Mutex::new(crate::gpu::passes_core::BindGroupCache::new()),
         })
     }

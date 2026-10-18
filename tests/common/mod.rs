@@ -53,6 +53,8 @@ const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 180_000;
 const DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS: u64 = 4_000;
 const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
+// A run expected to die by a signal waits for the core_pattern pipe (apport takes 1-2 s).
+const DEFAULT_SIGNAL_PROCESS_TEST_TIMEOUT_MS: u64 = 5_000;
 const CHILD_PROCESS_POLL_INTERVAL_MS: u64 = 2;
 const TEST_TIMEOUT_EXIT_CODE: i32 = 124;
 
@@ -310,6 +312,24 @@ pub fn short_process_output_with_timeout(
         &context,
         command,
         process_test_timeout(),
+        TimeoutDetails::default(),
+    )
+    .unwrap_or_else(|err| {
+        panic!("{context}: spawn command: {err}");
+    })
+}
+
+/// `short_process_output_with_timeout` for a command the test expects to end
+/// by a signal.
+pub fn signal_process_output_with_timeout(
+    context: impl fmt::Display,
+    command: &mut Command,
+) -> Output {
+    let context = context.to_string();
+    command_output_result_with_timeout(
+        &context,
+        command,
+        signal_process_test_timeout(),
         TimeoutDetails::default(),
     )
     .unwrap_or_else(|err| {
@@ -610,6 +630,12 @@ fn env_seconds(name: &str) -> Option<Duration> {
 fn process_test_timeout() -> Duration {
     env_millis("LANIUS_PROCESS_TEST_TIMEOUT_MS")
         .unwrap_or_else(|| Duration::from_millis(DEFAULT_PROCESS_TEST_TIMEOUT_MS))
+}
+
+fn signal_process_test_timeout() -> Duration {
+    env_millis("LANIUS_SIGNAL_PROCESS_TEST_TIMEOUT_MS")
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_SIGNAL_PROCESS_TEST_TIMEOUT_MS))
+        .max(process_test_timeout())
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1660,12 +1686,34 @@ pub fn run_x86_64_elf_output(
     run_x86_64_elf_output_with_args(context, artifact_stem, elf, &[])
 }
 
+/// Runs an ELF the test expects to end by a signal (assert's or panic's
+/// SIGILL), with the longer signal timeout.
+#[cfg(all(unix, target_arch = "x86_64"))]
+pub fn run_x86_64_elf_output_expecting_signal(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    elf: &[u8],
+) -> Output {
+    run_x86_64_elf_output_within(context, artifact_stem, elf, &[], signal_process_test_timeout())
+}
+
 #[cfg(all(unix, target_arch = "x86_64"))]
 pub fn run_x86_64_elf_output_with_args(
     context: impl fmt::Display,
     artifact_stem: &str,
     elf: &[u8],
     args: &[&str],
+) -> Output {
+    run_x86_64_elf_output_within(context, artifact_stem, elf, args, process_test_timeout())
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn run_x86_64_elf_output_within(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    elf: &[u8],
+    args: &[&str],
+    timeout: Duration,
 ) -> Output {
     use std::os::unix::fs::PermissionsExt;
 
@@ -1691,10 +1739,9 @@ pub fn run_x86_64_elf_output_with_args(
 
     let mut command = Command::new(exe_path.path());
     command.args(args);
-    short_process_output_with_timeout(
-        format!("{context}: run native ELF {}", exe_path.path().display()),
-        &mut command,
-    )
+    let context = format!("{context}: run native ELF {}", exe_path.path().display());
+    command_output_result_with_timeout(&context, &mut command, timeout, TimeoutDetails::default())
+        .unwrap_or_else(|err| panic!("{context}: spawn command: {err}"))
 }
 
 fn sanitize_path_component(value: &str) -> String {

@@ -575,10 +575,12 @@ void validate_dependency_result(
         }
         if (step == 0u)
         {
-            // A declared result that does not match publishes nothing; a
-            // match whose constants cannot be published is the publication
-            // error.
-            if (outcome == CT_PUBLISH_CAPACITY || (outcome == CT_PUBLISH_REJECTED && ct_is_record(environment)))
+            // A declared result that does not match publishes nothing. Only
+            // exhausted row capacity is the publication error. A rejected
+            // publication (an unresolved binding, or one no caller-side row
+            // can spell) publishes nothing either; step 1 validates the
+            // result as it stands.
+            if (outcome == CT_PUBLISH_CAPACITY)
                 record_min_token_error(status, callee_token, 6u, 0x474e0001u);
             step = 1u;
             matched = false;

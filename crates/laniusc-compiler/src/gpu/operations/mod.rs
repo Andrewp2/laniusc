@@ -137,6 +137,7 @@ fn record_indirect_at(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     crate::gpu::passes_core::record_compute_dispatch();
+    crate::gpu::passes_core::record_indirect_compute_dispatch();
     if !crate::gpu::passes_core::debug_operation_skipped() {
         compute.dispatch_workgroups_indirect(&dispatch_args.buffer, absolute_offset);
     }
@@ -177,6 +178,7 @@ fn record_indirect_with_offsets(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), dynamic_offsets);
     crate::gpu::passes_core::record_compute_dispatch();
+    crate::gpu::passes_core::record_indirect_compute_dispatch();
     if !crate::gpu::passes_core::debug_operation_skipped() {
         compute.dispatch_workgroups_indirect(&dispatch_args.buffer, dispatch_args.byte_offset);
     }

@@ -44,7 +44,7 @@ fn panic_and_unreachable_trap_instead_of_returning() {
         {
             use std::os::unix::process::ExitStatusExt;
 
-            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            let output = common::run_x86_64_elf_output_expecting_signal(name, name, &bytes);
             assert_eq!(output.status.signal(), Some(4), "{name}: {output:?}");
             assert!(output.stdout.is_empty() && output.stderr.is_empty());
         }

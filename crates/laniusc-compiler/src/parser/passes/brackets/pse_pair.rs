@@ -53,10 +53,9 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsPsePairP
             ),
             ("layer".into(), b.b_layer.as_entire_binding()),
             (
-                "block_row_min".into(),
-                b.b_block_row_min.as_entire_binding(),
+                "layer_local_min".into(),
+                b.b_layer_local_min.as_entire_binding(),
             ),
-            ("block_prefix".into(), b.b_block_prefix.as_entire_binding()),
             ("min_tree".into(), b.b_min_tree.as_entire_binding()),
             (
                 "match_for_index".into(),

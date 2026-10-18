@@ -56,7 +56,7 @@ let items: [T] = core::mem::typed_slice_from_storage(storage, capacity);
 
 Implementation:
 - One intrinsic, `core::mem::slice_stride(view) -> isize` (intrinsic tag 8,
-  language symbol 72). It returns a view's signed byte stride, the third word
+  language symbol 73). It returns a view's signed byte stride, the third word
   of its descriptor: +4, +1, 0, or -8 × words. On x86 the argument's words
   arrive in RDI, RSI and RDX, and the call moves RDX into its result
   (`X86_LIR_OP_INTRINSIC_IDENTITY` with operand a = 2). Wasm reports it

@@ -1,6 +1,9 @@
 use anyhow::{Result, anyhow};
 
 mod gather;
+mod plan;
+
+pub(crate) use plan::{PlanBuffers, ReadPlan, ReplayStats};
 
 use super::{
     buffers::{LaniusBuffer, readback_bytes},
@@ -12,6 +15,8 @@ use super::{
 /// daemon residency therefore depends on the page size, not worst-case output.
 pub(crate) struct PagedReadback {
     staging: LaniusBuffer<u8>,
+    /// The read plan replay of one decoder run, if one is running.
+    replay: std::sync::Mutex<Option<plan::PlanReplay>>,
     #[cfg(test)]
     map_wait_override: Option<ReadbackMapWait>,
 }
@@ -50,6 +55,8 @@ pub(crate) struct ReadbackRegion<'a> {
     source: &'a wgpu::Buffer,
     source_offset: u64,
     byte_len: usize,
+    /// The source's allocation identity, which a read plan keys on.
+    allocation: Option<u64>,
 }
 
 impl<'a> ReadbackRegion<'a> {
@@ -71,6 +78,7 @@ impl<'a> ReadbackRegion<'a> {
             source: &source.buffer,
             source_offset: source.absolute_offset(source_offset),
             byte_len,
+            allocation: source.allocation_id(),
         })
     }
 
@@ -79,11 +87,124 @@ impl<'a> ReadbackRegion<'a> {
     }
 }
 
+/// One column of [`ReadbackRows`]: the first `width_words` words of each row
+/// of a table of `stride_words`-word rows whose row 0 starts at the absolute
+/// byte `base`.
+#[derive(Clone, Copy)]
+pub(crate) struct ReadbackRowsColumn<'a> {
+    source: &'a wgpu::Buffer,
+    base: u64,
+    stride_words: usize,
+    width_words: usize,
+    allocation: Option<u64>,
+}
+
+impl ReadbackRowsColumn<'_> {
+    /// The absolute byte offset of row `index`.
+    fn row_offset(&self, index: u32) -> u64 {
+        self.base + u64::from(index) * self.stride_words as u64 * 4
+    }
+}
+
+/// The same rows of one or more tables: for each index in order, each
+/// column's words in column order. A word readback gathers them with one
+/// record per row and column instead of one region each.
+#[derive(Clone)]
+pub(crate) struct ReadbackRows<'a> {
+    indices: Vec<u32>,
+    max_index: Option<u32>,
+    columns: Vec<ReadbackRowsColumn<'a>>,
+}
+
+impl<'a> ReadbackRows<'a> {
+    pub(crate) fn new(indices: &[u32]) -> Self {
+        Self {
+            indices: indices.to_vec(),
+            max_index: indices.iter().copied().max(),
+            columns: Vec::new(),
+        }
+    }
+
+    /// Adds a column: the first `width_words` words of each row of a table
+    /// of `stride_words`-word rows that starts at word `first_word` of
+    /// `source`'s view. Every row must lie inside the view.
+    pub(crate) fn column<T>(
+        mut self,
+        source: &'a LaniusBuffer<T>,
+        first_word: u64,
+        stride_words: usize,
+        width_words: usize,
+        label: &str,
+    ) -> Result<Self> {
+        if let Some(max) = self.max_index {
+            let end = (u64::from(max) * stride_words as u64)
+                .checked_add(first_word + width_words as u64)
+                .and_then(|words| words.checked_mul(4));
+            if end.is_none_or(|end| end > source.byte_size as u64) {
+                return Err(anyhow!("{label} exceeds its logical GPU buffer view"));
+            }
+        }
+        let base = source.absolute_offset(first_word * 4);
+        if base % 4 != 0 {
+            return Err(anyhow!("{label} rows are not four-byte aligned"));
+        }
+        self.columns.push(ReadbackRowsColumn {
+            source: &source.buffer,
+            base,
+            stride_words,
+            width_words,
+            allocation: source.allocation_id(),
+        });
+        Ok(self)
+    }
+
+    /// The words these rows read.
+    pub(crate) fn words(&self) -> usize {
+        self.indices.len() * self.columns.iter().map(|column| column.width_words).sum::<usize>()
+    }
+
+    /// The rows and their columns, as (buffer, absolute byte offset, bytes)
+    /// in read order.
+    pub(crate) fn pieces(&self) -> impl Iterator<Item = (&'a wgpu::Buffer, u64, usize)> + '_ {
+        self.indices.iter().flat_map(|&index| {
+            self.columns.iter().map(move |column| {
+                (column.source, column.row_offset(index), column.width_words * 4)
+            })
+        })
+    }
+}
+
+/// One part of a word readback ([`PagedReadback::read_words`]).
+#[derive(Clone)]
+pub(crate) enum WordRead<'a> {
+    Region(ReadbackRegion<'a>),
+    Rows(ReadbackRows<'a>),
+}
+
+impl WordRead<'_> {
+    /// The words this part reads; a region must be whole words.
+    pub(crate) fn words(&self) -> usize {
+        match self {
+            WordRead::Region(region) => region.byte_len / 4,
+            WordRead::Rows(rows) => rows.words(),
+        }
+    }
+
+    /// Regions or rows: what a gather counts.
+    fn regions(&self) -> usize {
+        match self {
+            WordRead::Region(_) => 1,
+            WordRead::Rows(rows) => rows.indices.len() * rows.columns.len(),
+        }
+    }
+}
+
 impl PagedReadback {
     pub(crate) fn new(device: &wgpu::Device, label: &str, page_bytes: usize) -> Self {
         let page_bytes = page_bytes.max(4).next_multiple_of(4);
         Self {
             staging: readback_bytes(device, label, page_bytes, page_bytes),
+            replay: std::sync::Mutex::new(None),
             #[cfg(test)]
             map_wait_override: None,
         }
@@ -92,6 +213,7 @@ impl PagedReadback {
     pub(crate) fn from_staging(staging: LaniusBuffer<u8>) -> Self {
         Self {
             staging,
+            replay: std::sync::Mutex::new(None),
             #[cfg(test)]
             map_wait_override: None,
         }
@@ -201,7 +323,7 @@ impl PagedReadback {
     /// [`Self::read_regions`] for regions of whole words, returned as one
     /// vector in which each region's words follow the previous region's.
     /// Readers of thousands of rows slice it instead of decoding a vector per
-    /// region.
+    /// region; [`Self::read_words`] also takes rows.
     pub(crate) fn read_regions_words(
         &self,
         device: &wgpu::Device,
@@ -209,21 +331,123 @@ impl PagedReadback {
         regions: &[ReadbackRegion<'_>],
         label: &str,
     ) -> Result<Vec<u32>> {
-        let mut starts = Vec::with_capacity(regions.len());
+        let reads = regions.iter().copied().map(WordRead::Region).collect::<Vec<_>>();
+        self.read_words(device, queue, &reads, label)
+    }
+
+    /// Reads `reads` in one round trip as one vector in which each read's
+    /// words follow the previous read's. Small regions and rows are first
+    /// gathered on the GPU into one dense image (see [`gather`]), so a set of
+    /// thousands of rows costs one record per row, and the copies that
+    /// continue each other in their source (the whole image, usually) are
+    /// one copy.
+    ///
+    /// While a read plan replay runs ([`Self::begin_read_plan`]), a read the
+    /// plan's fetch holds is answered from it without a round trip.
+    pub(crate) fn read_words(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        reads: &[WordRead<'_>],
+        label: &str,
+    ) -> Result<Vec<u32>> {
+        let mut replay = self.replay.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match replay.as_mut() {
+            Some(replay) => {
+                replay.read(reads, |reads| self.read_words_now(device, queue, reads, label))
+            }
+            None => self.read_words_now(device, queue, reads, label),
+        }
+    }
+
+    /// Starts a read plan replay ([`plan`]): the next word read that is not
+    /// answered also fetches every read of `plan` whose buffers are in
+    /// `buffers`, and later reads are answered from that fetch. Only a
+    /// decoder whose planned buffers no GPU work writes until
+    /// [`Self::finish_read_plan`] may replay a plan.
+    pub(crate) fn begin_read_plan(&self, buffers: PlanBuffers, plan: Option<ReadPlan>) {
+        *self.replay.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(plan::PlanReplay::new(buffers, plan));
+    }
+
+    /// Ends the replay; returns the word reads made since it began, which are
+    /// the next run's plan, and what the replay did.
+    pub(crate) fn finish_read_plan(&self) -> Option<(ReadPlan, ReplayStats)> {
+        self.replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .map(plan::PlanReplay::finish)
+    }
+
+    fn read_words_now(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        reads: &[WordRead<'_>],
+        label: &str,
+    ) -> Result<Vec<u32>> {
         let mut total = 0usize;
-        for region in regions {
-            if region.byte_len % 4 != 0 {
+        for read in reads {
+            if let WordRead::Region(region) = read
+                && region.byte_len % 4 != 0
+            {
                 return Err(anyhow!(
                     "{label} region of {} bytes is not a whole number of words",
                     region.byte_len
                 ));
             }
-            starts.push(total);
-            total += region.byte_len / 4;
+            total += read.words();
         }
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+        let regions = reads.iter().map(WordRead::regions).sum::<usize>();
+        let timing = regions >= 32
+            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+        let started = std::time::Instant::now();
+        let mut first_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        let mut lease = gather::lease(device, regions);
+        let gathered = match lease.as_mut() {
+            Some(lease) => lease.record_words(device, queue, &mut first_encoder, reads, label)?,
+            None => None,
+        };
+
+        // The copies in output order, each with its first output word. A
+        // copy that continues the previous one in its source extends it.
+        let mut pieces = Pieces::default();
+        let mut word = 0usize;
+        for (index, read) in reads.iter().enumerate() {
+            let image = gathered.as_ref().and_then(|gathered| {
+                gathered.image_starts[index].map(|image| (gathered.output, image))
+            });
+            match (image, read) {
+                (Some((output, image)), _) => {
+                    pieces.push(output, u64::from(image) * 4, read.words() * 4, word)
+                }
+                (None, WordRead::Region(region)) => {
+                    pieces.push(region.source, region.source_offset, region.byte_len, word)
+                }
+                (None, WordRead::Rows(rows)) => {
+                    let mut row_word = word;
+                    for (source, offset, byte_len) in rows.pieces() {
+                        pieces.push(source, offset, byte_len, row_word);
+                        row_word += byte_len / 4;
+                    }
+                }
+            }
+            word += read.words();
+        }
+        let Pieces {
+            regions: pieces,
+            words: piece_words,
+        } = pieces;
+        let encode = started.elapsed();
+
         let mut words = vec![0u32; total];
-        self.read_regions_with(device, queue, regions, label, |index, offset, bytes| {
-            let start = starts[index] + offset / 4;
+        let stats = self.copy_regions(device, queue, first_encoder, &pieces, label, |index, offset, bytes| {
+            let start = piece_words[index] + offset / 4;
             for (word, bytes) in words[start..start + bytes.len() / 4]
                 .iter_mut()
                 .zip(bytes.chunks_exact(4))
@@ -231,6 +455,22 @@ impl PagedReadback {
                 *word = u32::from_le_bytes(bytes.try_into().expect("four-byte chunk"));
             }
         })?;
+        if timing {
+            let (gathered_regions, dispatches) = gathered
+                .as_ref()
+                .map_or((0, 0), |gathered| (gathered.gathered_regions, gathered.dispatches));
+            eprintln!(
+                "[gpu_compile_host_timer] readback.words: label={label} reads={} regions={} gathered={gathered_regions} gather_dispatches={dispatches} pieces={} copies={} bytes={} pages={} encode_ms={:.3} total_ms={:.3}",
+                reads.len(),
+                regions,
+                pieces.len(),
+                stats.copies,
+                total * 4,
+                stats.pages,
+                (encode + stats.encode).as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64() * 1000.0,
+            );
+        }
         Ok(words)
     }
 
@@ -244,37 +484,56 @@ impl PagedReadback {
         queue: &wgpu::Queue,
         regions: &[ReadbackRegion<'_>],
         label: &str,
-        mut sink: impl FnMut(usize, usize, &[u8]),
+        sink: impl FnMut(usize, usize, &[u8]),
     ) -> Result<()> {
         // Sparse fact readers pass thousands of regions; report where their
         // time goes (copy encoding vs. the GPU round trip).
         let timing = regions.len() >= 32
             && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
         let started = std::time::Instant::now();
-        let mut pages = 0usize;
-        let mut copies = 0usize;
-        let mut encode = std::time::Duration::ZERO;
 
-        let mut first_encoder = Some(
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) }),
-        );
+        let mut first_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
         let mut lease = gather::lease(device, regions.len());
         let gathered = match lease.as_mut() {
-            Some(lease) => lease.record(
-                device,
-                queue,
-                first_encoder.as_mut().expect("first readback encoder"),
-                regions,
-                label,
-            )?,
+            Some(lease) => lease.record(device, queue, &mut first_encoder, regions, label)?,
             None => None,
         };
         let (gathered_regions, gather_dispatches) = gathered
             .as_ref()
             .map_or((0, 0), |gathered| (gathered.gathered_regions, gathered.dispatches));
         let regions = gathered.as_ref().map_or(regions, |gathered| &gathered.regions[..]);
-        encode += started.elapsed();
+        let encode = started.elapsed();
+        let stats = self.copy_regions(device, queue, first_encoder, regions, label, sink)?;
+        if timing {
+            let total = started.elapsed();
+            eprintln!(
+                "[gpu_compile_host_timer] readback.regions: label={label} regions={} gathered={gathered_regions} gather_dispatches={gather_dispatches} copies={} bytes={} pages={} encode_ms={:.3} total_ms={:.3}",
+                regions.len(),
+                stats.copies,
+                regions.iter().map(|region| region.byte_len).sum::<usize>(),
+                stats.pages,
+                (encode + stats.encode).as_secs_f64() * 1000.0,
+                total.as_secs_f64() * 1000.0,
+            );
+        }
+        Ok(())
+    }
 
+    /// Copies `regions` through the staging page, one round trip per page,
+    /// recording the first page's copies into `first_encoder`. Ranges that
+    /// are contiguous in both source and page share one copy.
+    fn copy_regions(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        first_encoder: wgpu::CommandEncoder,
+        regions: &[ReadbackRegion<'_>],
+        label: &str,
+        mut sink: impl FnMut(usize, usize, &[u8]),
+    ) -> Result<CopyStats> {
+        let mut stats = CopyStats::default();
+        let mut first_encoder = Some(first_encoder);
         let mut consumed = vec![0usize; regions.len()];
 
         while regions
@@ -321,7 +580,7 @@ impl PagedReadback {
                                     page_start,
                                     len,
                                 );
-                                copies += 1;
+                                stats.copies += 1;
                             }
                             pending =
                                 Some((region.source, source_offset, page_cursor as u64, copy_len as u64));
@@ -344,7 +603,7 @@ impl PagedReadback {
                     page_start,
                     len,
                 );
-                copies += 1;
+                stats.copies += 1;
             }
             if page_copies.is_empty() {
                 return Err(anyhow!(
@@ -353,8 +612,8 @@ impl PagedReadback {
                 ));
             }
             let command_buffer = encoder.finish();
-            encode += page_started.elapsed();
-            pages += 1;
+            stats.encode += page_started.elapsed();
+            stats.pages += 1;
             queue.submit(Some(command_buffer));
 
             let slice = self.staging.buffer.slice(..page_cursor as u64);
@@ -366,18 +625,48 @@ impl PagedReadback {
             drop(mapped);
             drop(mapping);
         }
-        if timing {
-            let total = started.elapsed();
-            eprintln!(
-                "[gpu_compile_host_timer] readback.regions: label={label} regions={} gathered={gathered_regions} gather_dispatches={gather_dispatches} copies={copies} bytes={} pages={pages} encode_ms={:.3} total_ms={:.3}",
-                regions.len(),
-                regions.iter().map(|region| region.byte_len).sum::<usize>(),
-                encode.as_secs_f64() * 1000.0,
-                total.as_secs_f64() * 1000.0,
-            );
-        }
-        Ok(())
+        Ok(stats)
     }
+}
+
+/// The copies of a word readback in output order, each with its first
+/// output word.
+#[derive(Default)]
+struct Pieces<'a> {
+    regions: Vec<ReadbackRegion<'a>>,
+    words: Vec<usize>,
+}
+
+impl<'a> Pieces<'a> {
+    /// Adds a copy of whole words; one that continues the previous copy in
+    /// its source extends it.
+    fn push(&mut self, source: &'a wgpu::Buffer, offset: u64, byte_len: usize, word: usize) {
+        if byte_len == 0 {
+            return;
+        }
+        if let Some(last) = self.regions.last_mut()
+            && last.source == source
+            && last.source_offset + last.byte_len as u64 == offset
+        {
+            last.byte_len += byte_len;
+            return;
+        }
+        self.regions.push(ReadbackRegion {
+            source,
+            source_offset: offset,
+            byte_len,
+            allocation: None,
+        });
+        self.words.push(word);
+    }
+}
+
+/// What [`PagedReadback::copy_regions`] recorded.
+#[derive(Default)]
+struct CopyStats {
+    pages: usize,
+    copies: usize,
+    encode: std::time::Duration,
 }
 
 /// Decodes exactly `N` little-endian `u32` words from readback bytes.
@@ -648,6 +937,134 @@ mod lifecycle_tests {
             readback
                 .read_regions_words(&gpu.device, &gpu.queue, &regions, "partial word")
                 .is_err()
+        );
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
+
+    /// Rows read through `read_words` match the same rows read as one region
+    /// each: gathered single- and multi-column rows, rows of a copy-only
+    /// buffer (copied row by row), and regions between them.
+    #[test]
+    fn gpu_paged_readback_reads_rows_like_their_regions() {
+        let gpu = device::global();
+        let first = storage_source(&gpu.device, &gpu.queue, 11);
+        let second = storage_source(&gpu.device, &gpu.queue, 77);
+        let copy_only = source(&gpu.device);
+        copy_only.write(&gpu.queue, 0, &(0..16u8).collect::<Vec<_>>());
+        // A small page splits the image and the direct copies across pages.
+        let readback = PagedReadback::new(&gpu.device, "readback rows page", 512);
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+
+        let indices = (0..150u32).map(|i| (i * 37) % 160).collect::<Vec<_>>();
+        let few = [3u32, 0, 2, 2, 1];
+        let reads = vec![
+            WordRead::Rows(
+                ReadbackRows::new(&indices).column(&first, 2, 12, 3, "one column").unwrap(),
+            ),
+            WordRead::Region(ReadbackRegion::from_buffer(&second, 40, 24, "region").unwrap()),
+            WordRead::Rows(
+                ReadbackRows::new(&indices)
+                    .column(&second, 0, 4, 4, "two columns")
+                    .unwrap()
+                    .column(&first, 1, 1, 1, "two columns")
+                    .unwrap(),
+            ),
+            WordRead::Rows(
+                ReadbackRows::new(&few).column(&copy_only, 0, 1, 1, "copy-only rows").unwrap(),
+            ),
+            WordRead::Rows(ReadbackRows::new(&[]).column(&first, 0, 1, 1, "no rows").unwrap()),
+        ];
+        let mut regions = Vec::new();
+        for &index in &indices {
+            let offset = u64::from(index * 12 + 2) * 4;
+            regions.push(ReadbackRegion::from_buffer(&first, offset, 12, "row").unwrap());
+        }
+        regions.push(ReadbackRegion::from_buffer(&second, 40, 24, "region").unwrap());
+        for &index in &indices {
+            let (wide, narrow) = (u64::from(index * 4) * 4, u64::from(index + 1) * 4);
+            regions.push(ReadbackRegion::from_buffer(&second, wide, 16, "row").unwrap());
+            regions.push(ReadbackRegion::from_buffer(&first, narrow, 4, "row").unwrap());
+        }
+        for &index in &few {
+            let offset = u64::from(index) * 4;
+            regions.push(ReadbackRegion::from_buffer(&copy_only, offset, 4, "row").unwrap());
+        }
+        let expected = readback
+            .read_regions(&gpu.device, &gpu.queue, &regions, "rows as regions")
+            .unwrap()
+            .concat()
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(expected.len(), reads.iter().map(WordRead::words).sum::<usize>());
+        let words = readback.read_words(&gpu.device, &gpu.queue, &reads, "rows").unwrap();
+        assert_eq!(words, expected);
+        assert!(
+            ReadbackRows::new(&[171]).column(&first, 0, 12, 1, "past the view").is_err(),
+            "a row past the view is rejected"
+        );
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
+
+    /// A replayed plan fetches its reads with the first read it does not
+    /// answer, answers the rest from that fetch with the current contents,
+    /// and still reads anything outside the plan.
+    #[test]
+    fn gpu_read_plan_replay_answers_planned_reads_from_one_fetch() {
+        let gpu = device::global();
+        let first = storage_source(&gpu.device, &gpu.queue, 5);
+        let second = storage_source(&gpu.device, &gpu.queue, 91);
+        let readback = PagedReadback::new(&gpu.device, "readback plan page", 4096);
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let buffers = || PlanBuffers::new([(&first).into(), (&second).into()]);
+        let indices = (0..90u32).map(|i| (i * 13) % 120).collect::<Vec<_>>();
+        let counts = || WordRead::Region(ReadbackRegion::from_buffer(&first, 64, 8, "counts").unwrap());
+        let rows = || {
+            WordRead::Rows(
+                ReadbackRows::new(&indices)
+                    .column(&second, 1, 6, 2, "rows")
+                    .unwrap()
+                    .column(&first, 0, 2, 1, "rows")
+                    .unwrap(),
+            )
+        };
+        let tail = || WordRead::Region(ReadbackRegion::from_buffer(&second, 4000, 400, "tail").unwrap());
+        let read = |reads: &[WordRead<'_>], label| {
+            readback.read_words(&gpu.device, &gpu.queue, reads, label).unwrap()
+        };
+
+        readback.begin_read_plan(buffers(), None);
+        let expected = [read(&[counts()], "counts"), read(&[rows(), tail()], "rows")];
+        let (plan, stats) = readback.finish_read_plan().unwrap();
+        assert_eq!((plan.len(), stats.read, stats.answered), (3, 2, 0));
+
+        // The next run sees new contents in the planned ranges.
+        let changed = (0..8192u32).map(|i| (i as u8).wrapping_mul(7)).collect::<Vec<_>>();
+        second.write(&gpu.queue, 0, &changed);
+        readback.begin_read_plan(buffers(), Some(plan));
+        let fresh_counts = read(&[counts()], "counts");
+        let fresh_rows = read(&[rows(), tail()], "rows");
+        let outside = read(
+            &[WordRead::Region(ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap())],
+            "outside",
+        );
+        let (plan, stats) = readback.finish_read_plan().unwrap();
+        assert_eq!(fresh_counts, expected[0]);
+        assert_ne!(fresh_rows, expected[1]);
+        assert_eq!(plan.len(), 4);
+        assert_eq!((stats.read, stats.answered, stats.fetched), (2, 2, 2));
+        assert!(readback.finish_read_plan().is_none());
+
+        // Without a replay the same reads come straight from the GPU.
+        assert_eq!(read(&[rows(), tail()], "rows"), fresh_rows);
+        assert_eq!(
+            outside,
+            read(
+                &[WordRead::Region(
+                    ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap()
+                )],
+                "outside",
+            )
         );
         assert!(pollster::block_on(validation.pop()).is_none());
     }
