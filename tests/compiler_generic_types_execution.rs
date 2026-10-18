@@ -11403,7 +11403,7 @@ fn float_constant_operands_reject_named_scalar_mismatch() {
     reject_trait_program(
         "named f32 cannot bind an f64 constant parameter",
         include_str!("fixtures/stdlib_foundation/typed_float_constants/reject_named_width.lani"),
-        "LNC0027",
+        "LNC0006",
     );
 }
 
