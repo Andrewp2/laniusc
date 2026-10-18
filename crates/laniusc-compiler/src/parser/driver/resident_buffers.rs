@@ -90,25 +90,6 @@ impl GpuParser {
         )
     }
 
-    /// Returns resident parser buffers with an explicit recovered-tree capacity.
-    pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity<'a>(
-        &self,
-        slot: &'a mut Option<ResidentParserBufferCache>,
-        token_capacity: u32,
-        tables: &PrecomputedParseTables,
-        tree_capacity_override: Option<u32>,
-    ) -> &'a ParserBuffers {
-        self.resident_buffers_for_with_tree_capacity_and_debug(
-            slot,
-            token_capacity,
-            token_capacity,
-            tables,
-            tree_capacity_override,
-            false,
-            CONSERVATIVE_PARSER_FEATURES,
-        )
-    }
-
     /// Returns resident buffers whose optional HIR families match a
     /// conservative GPU-lexer feature summary.
     pub(in crate::parser::driver) fn resident_buffers_for_with_tree_capacity_and_features<'a>(

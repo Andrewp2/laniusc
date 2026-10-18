@@ -79,6 +79,7 @@ StructuredBuffer<uint> generic_param_lookup_state;
 StructuredBuffer<uint> generic_param_kind;
 StructuredBuffer<uint> generic_param_token;
 StructuredBuffer<HirRange> compact_generic_param_ranges;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<MethodCandidate> method_candidate;
 RWStructuredBuffer<uint> call_context_owner_by_token;
 RWStructuredBuffer<uint> call_context_arg_mask;
@@ -219,17 +220,34 @@ uint2 bound_argument(uint predicate, uint ordinal)
     return tag >= 1u && tag <= 3u && payload != INVALID ? uint2(tag, payload) : uint2(0u, INVALID);
 }
 
+// The context slot of the trait's `Self`, or INVALID when its signatures do
+// not name `Self`. type/instances/00e gives a trait that uses it a slot after
+// its declared type parameters, keyed by the trait's name token.
+uint trait_self_slot(uint trait)
+{
+    if (!valid_hir(trait)) return INVALID;
+    uint owner = hir_generic_owner_token(compact_hir_core[trait], compact_hir_payload[trait],
+        gParams.n_tokens);
+    if (owner >= gParams.n_tokens) return INVALID;
+    uint capacity; uint stride;
+    type_generic_param_slot_by_token.GetDimensions(capacity, stride);
+    return owner < capacity ? type_generic_param_slot_by_token[owner] : INVALID;
+}
+
 // Publish the predicate's arguments as call `call`'s context arguments for
-// the trait's type parameters. False when an argument is not a checked type
-// or the trait has other parameters.
-bool publish_trait_arguments(uint call, uint predicate, uint member_trait)
+// the trait's type parameters, and the bound's subject `subject` (a type
+// parameter token) for the trait's `Self`. False when an argument is not a
+// checked type or the trait has other parameters.
+bool publish_trait_arguments(uint call, uint predicate, uint member_trait, uint subject)
 {
     uint count = predicate_bound_arg_count[predicate];
-    if (count == 0u) return true;
+    uint self_slot = trait_self_slot(member_trait);
+    if (count == 0u && self_slot == INVALID) return true;
     uint rows; uint stride;
     call_context_ref_tag.GetDimensions(rows, stride);
     if (count > 31u || call >= rows / 32u ||
-        compact_generic_param_ranges[member_trait].count != count) return false;
+        compact_generic_param_ranges[member_trait].count != count ||
+        (self_slot != INVALID && self_slot != count)) return false;
     for (uint ordinal = 0u; ordinal < count; ordinal++)
         if (bound_argument(predicate, ordinal).x == 0u) return false;
     for (uint ordinal = 0u; ordinal < count; ordinal++)
@@ -238,7 +256,14 @@ bool publish_trait_arguments(uint call, uint predicate, uint member_trait)
         call_context_ref_tag[call * 32u + ordinal] = argument.x;
         call_context_ref_payload[call * 32u + ordinal] = argument.y;
     }
-    call_context_arg_mask[call] |= (1u << count) - 1u;
+    uint slots = count;
+    if (self_slot != INVALID)
+    {
+        call_context_ref_tag[call * 32u + self_slot] = TYPE_REF_GENERIC_PARAM;
+        call_context_ref_payload[call * 32u + self_slot] = subject;
+        slots += 1u;
+    }
+    call_context_arg_mask[call] |= slots >= 32u ? 0xffffffffu : (1u << slots) - 1u;
     return true;
 }
 
@@ -286,8 +311,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // explicitly typed one), a path call of a self member, two traits
     // supplying this name, or a bound whose arguments do not bind the
     // trait's parameters cannot be selected.
-    if (mode != INVALID && publish_trait_arguments(call, predicate,
-        local_trait(predicate_bound_reference[predicate])))
+    uint member_trait = local_trait(predicate_bound_reference[predicate]);
+    if (mode != INVALID && publish_trait_arguments(call, predicate, member_trait, payload))
     {
         candidate.state = METHOD_CANDIDATE_UNIQUE;
         candidate.deref_count = depth;
@@ -297,7 +322,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         candidate.matched_ref_tag = tag;
         candidate.matched_ref_payload = payload;
         candidate.receiver_mode = mode;
-        if (predicate_bound_arg_count[predicate] != 0u)
+        if (predicate_bound_arg_count[predicate] != 0u || trait_self_slot(member_trait) != INVALID)
         {
             call_context_owner_by_token[token] = call;
             if (aliases.x < gParams.n_tokens) call_context_owner_by_token[aliases.x] = call;

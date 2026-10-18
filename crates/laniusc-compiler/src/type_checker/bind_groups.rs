@@ -704,6 +704,7 @@ impl GpuTypeChecker {
             semantic_projection,
             aggregate_comparison,
             scope_hir,
+            semantic_interface_topology: Mutex::default(),
         })
     }
 }

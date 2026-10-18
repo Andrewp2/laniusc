@@ -1180,6 +1180,12 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         core.type_id = semantic_lir_functions[semantic_function_id[node]].result_type;
         semantic_type_ref_for_hir(payload.b, hir_count,
             type_ref_tag, core.type_ref_payload);
+        // A bare `return;` carries no value even in `fn main()`, whose
+        // entry ABI result is i32: the target clears the exit register.
+        // Typing it as the function's result would make SSA read its
+        // absent operand.
+        if (hir.kind != HIR_CONST_ITEM && payload.b >= hir_count)
+            core.type_id = 1u;
     }
     if (range_for)
     {
