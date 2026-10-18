@@ -7,8 +7,28 @@ pub(super) fn trace_wasm_compile(stage: &str) {
     }
 }
 
+/// A type-mismatch detail flag: an argument's array length does not fit the
+/// scalar (the low bits) of the constant parameter it binds
+/// (calls/03a1_emit_generic_claims.slang).
+pub(super) const ASSIGN_MISMATCH_COUNT_FIT: u32 = 0x4000_0000;
+
+/// The declared scalar of a count-fit mismatch detail.
+pub(super) fn count_fit_scalar(detail: u32) -> Option<u32> {
+    (detail & ASSIGN_MISMATCH_COUNT_FIT != 0).then_some(detail & 0xffff)
+}
+
+fn count_fit_scalar_name(scalar: u32) -> String {
+    crate::primitive_types::name(scalar).map_or_else(|| "its integer type".to_string(), |name| format!("`{name}`"))
+}
+
 /// Converts a packed type-mismatch detail code into diagnostic note text.
 pub(super) fn type_mismatch_note(detail: u32) -> String {
+    if let Some(scalar) = count_fit_scalar(detail) {
+        return format!(
+            "pass an array whose length fits {}, or declare the constant parameter with a wider integer type",
+            count_fit_scalar_name(scalar)
+        );
+    }
     if detail == 0 {
         return "change the expression or the annotation so both sides have the same type"
             .to_string();
@@ -32,6 +52,12 @@ pub(super) fn type_mismatch_note(detail: u32) -> String {
 
 /// Converts a packed type-mismatch detail code into primary-label text.
 pub(super) fn type_mismatch_label(detail: u32) -> String {
+    if let Some(scalar) = count_fit_scalar(detail) {
+        return format!(
+            "this array's length does not fit {}, the type of the constant parameter it binds",
+            count_fit_scalar_name(scalar)
+        );
+    }
     if detail == 0 {
         return "value type does not match this context".to_string();
     }
@@ -430,6 +456,18 @@ mod tests {
         assert!(float_note.contains("found float"));
         assert!(float_note.contains("requires another type"));
         assert!(!float_note.contains("type code"));
+    }
+
+    #[test]
+    fn count_fit_mismatch_names_the_constant_parameter_type() {
+        use crate::primitive_types::SCALAR_U8;
+        let detail = ASSIGN_MISMATCH_COUNT_FIT | SCALAR_U8;
+        assert_eq!(count_fit_scalar(detail), Some(SCALAR_U8));
+        assert_eq!(count_fit_scalar(128 * 256), None);
+        let label = type_mismatch_label(detail);
+        assert!(label.contains("does not fit `u8`"), "{label}");
+        assert!(label.contains("constant parameter"), "{label}");
+        assert!(type_mismatch_note(detail).contains("wider integer type"));
     }
 
     #[test]

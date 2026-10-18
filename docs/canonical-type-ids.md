@@ -741,6 +741,9 @@ uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
   slot with count claims only is bound to the count in the declared scalar:
   a value, the counted parameter itself, or a cast of it, which keeps its
   pending fit. Every actual array keeps its own fit obligations.
+  `ct_match_fit` (and `ct_match_roots_fit`) also return, on a failed match,
+  the declared scalar that an actual length did not fit, for the fit
+  diagnostic of claim emission (03a1).
 - **No stack, no lane array.** A shape pass checks heads and closed children
   and collects the slot masks. Then one pass per bound slot folds that
   slot's occurrences. Each pass walks the pattern by re-descending from the

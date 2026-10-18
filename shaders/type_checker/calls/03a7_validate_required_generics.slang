@@ -43,6 +43,8 @@ StructuredBuffer<uint> call_required_generic_prefix;
 
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
+// The status words before the final validation passes.
+StructuredBuffer<uint> status_prior;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -239,6 +241,11 @@ void validate_required_generic(uint requirement_i)
     if (!valid_token(callee_i) ||
         call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
         return;
+    // An error already recorded inside the call (an argument that does not
+    // match its parameter, such as a length that does not fit) is why a
+    // binding is missing; it is the diagnostic.
+    HirCore call_core = compact_hir_core[call_node];
+    bool explained = error_recorded_within(status_prior, call_core.token_start, call_core.token_end);
 
     uint2 counts = required_callable_generic_counts(callee_i);
     uint slot = requirement_i - start;
@@ -252,7 +259,7 @@ void validate_required_generic(uint requirement_i)
                 constant_slot, kind, value))
         {
             call_return_type[callee_i] = TY_UNKNOWN;
-            if (!explicit_application_operand_diagnosed(callee_i))
+            if (!explained && !explicit_application_operand_diagnosed(callee_i))
                 record_error(callee_i, ERR_MISSING_CONSTANT_BINDING, constant_slot);
         }
         return;
@@ -263,7 +270,7 @@ void validate_required_generic(uint requirement_i)
         return;
 
     call_return_type[callee_i] = TY_UNKNOWN;
-    if (slot_status == REQUIRED_SLOT_TOUCHED_UNKNOWN ||
+    if (slot_status == REQUIRED_SLOT_TOUCHED_UNKNOWN || explained ||
         explicit_application_operand_diagnosed(callee_i))
         return;
 

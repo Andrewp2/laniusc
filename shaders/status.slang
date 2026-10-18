@@ -5,6 +5,17 @@ public static const uint STATUS_TOKEN_SLOT = 1u;
 public static const uint STATUS_CODE_SLOT = 2u;
 public static const uint STATUS_DETAIL_SLOT = 3u;
 
+// Whether `prior`, a copy of the status words made before this pass, holds
+// an error at a token in [first, end). A follow-on check skips its own error
+// when the construct it checks already contains one: that error comes first
+// and explains it. The copy is made between dispatches, so the answer does
+// not depend on what other lanes of this pass record.
+public bool error_recorded_within(StructuredBuffer<uint> prior, uint first, uint end)
+{
+    uint token = prior[STATUS_TOKEN_SLOT];
+    return prior[STATUS_OK_SLOT] == 0u && token >= first && token < end;
+}
+
 public void record_min_token_error(
     RWStructuredBuffer<uint> status,
     uint token_i,

@@ -8070,6 +8070,24 @@ fn constant_count_identity_and_fit_reject_through_production_calls() {
     );
 }
 
+/// The first diagnostic of a length that does not fit its constant parameter
+/// is that fit, at the argument, ahead of the call's follow-on mismatches.
+#[test]
+fn constant_count_fit_reports_the_parameter_type_at_the_argument() {
+    let source = include_str!("fixtures/stdlib_foundation/typed_constant_transport/constant-claim-provenance-v1/reject_nested_count_fit.lani");
+    let owned = source.to_owned();
+    let error = common::run_gpu_codegen_with_timeout("nested u8 count fit", move || {
+        let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).expect("GPU compiler");
+        pollster::block_on(compiler.compile_source_to_x86_64(&owned))
+    }).err().expect("a length that does not fit u8 emitted an executable");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+    let primary = diagnostic.primary_label.as_ref().unwrap_or_else(|| panic!("missing source label: {error:?}"));
+    assert!(primary.message.contains("does not fit `u8`"), "{diagnostic:?}");
+    let argument = source.find("narrow(values)").expect("fixture call") + "narrow(".len();
+    assert_eq!(primary.byte_start, Some(argument), "{diagnostic:?}");
+}
+
 #[test]
 fn generic_result_only_constants_execute_local_calls() {
     execute(

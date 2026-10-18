@@ -309,6 +309,7 @@ impl GpuTypeChecker {
         register_hir_resources(&mut resources, hir_items);
         resources.buffer("status", &self.status_buf);
         resources.buffer("status_readback", &self.status_readback);
+        resources.buffer("status_prior", &self.status_prior);
         resources.buffer("call_inference_state", &self.call_inference_state);
         resources.buffer("call_inference_readback", &self.call_inference_readback);
         resources.buffer("canonical_counts_readback", &self.canonical_counts_readback);
