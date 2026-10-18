@@ -140,6 +140,7 @@ pub enum GpuTypeCheckCode {
     InvalidCast,
     MissingConstantBinding,
     GenericInstantiationBoundary,
+    RecursiveType,
     Unknown(u32),
 }
 
@@ -172,6 +173,7 @@ impl GpuTypeCheckCode {
             25 => Self::FloatLiteral,
             26 => Self::ComputedFloatConstant,
             27 => Self::InvalidCast,
+            28 => Self::RecursiveType,
             other => Self::Unknown(other),
         }
     }
@@ -204,6 +206,7 @@ impl GpuTypeCheckCode {
             Self::ComputedFloatConstant => "computed floating constant is not supported".to_string(),
             Self::InvalidCast => "invalid cast".to_string(),
             Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
+            Self::RecursiveType => "recursive type has infinite size".to_string(),
             Self::GenericInstantiationBoundary => {
                 "generic type instantiation reached a compiler boundary".to_string()
             }
@@ -834,6 +837,7 @@ pub(crate) struct GpuCheckedCallArtifact {
     pub receiver_matched_ref_payload: u32,
     pub receiver_parameter_ref_tag: u32,
     pub receiver_parameter_ref_payload: u32,
+    pub symbolic_type_environment: u32,
 }
 
 #[derive(Clone, Copy)]

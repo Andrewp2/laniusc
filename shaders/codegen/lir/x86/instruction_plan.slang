@@ -1189,8 +1189,9 @@ uint plan_specialized(X86PlanInput input)
         plan_jump(1u, 0xe8u, X86_RESOLVE_RUNTIME, operands.a == 2u
             ? X86_RUNTIME_ASSERT_OFFSET : X86_RUNTIME_PRINT_I32_OFFSET);
     else if (op == X86_LIR_OP_INTRINSIC_IDENTITY)
-        // The preceding CALL_ARG row placed the aggregate pointer in RDI.
-        plan_move64(X86_REG | 7u, locations.result);
+        // The preceding CALL_ARG rows placed the argument's words in RDI,
+        // RSI and RDX. Operand a = 2 selects a view's stride in RDX.
+        plan_move64(X86_REG | (operands.a == 2u ? 2u : 7u), locations.result);
     else if (op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_SYMBOL)
     {
         // Strings occupy direct pointer/length value slots. The native pair

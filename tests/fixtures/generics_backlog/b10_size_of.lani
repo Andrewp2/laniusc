@@ -1,5 +1,0 @@
-import core::mem;
-fn main() -> i32 {
-    let bytes: usize = core::mem::size_of<i32>();
-    return (bytes as i32) + 38;
-}
