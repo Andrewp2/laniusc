@@ -212,8 +212,6 @@ pub(in crate::type_checker) struct DependencyInterfaceVisibilityParams {
     pub(in crate::type_checker) path_capacity: u32,
     pub(in crate::type_checker) namespace: u32,
     pub(in crate::type_checker) hir_capacity: u32,
-    /// The importing unit's token capacity (dependencies/15b).
-    pub(in crate::type_checker) token_capacity: u32,
 }
 
 /// The checked constant atom table's replay tail (generic_body::BODY_ATOM_RESERVE_ROWS).
