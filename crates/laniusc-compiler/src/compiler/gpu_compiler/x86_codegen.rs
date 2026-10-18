@@ -90,9 +90,11 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<Vec<u8>, CompileError> {
         let pending = self.compile_x86_source_pack_auto(sources, source_paths).await?;
         let objects = self.specialize_pending_x86_source_pack_objects(vec![pending]).await?;
+        let input_span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.input");
         let input =
             x86::GpuX86LinkInput::for_executable_refs(objects.iter())
                 .map_err(source_pack_artifact_store_error)?;
+        drop(input_span);
         let linker = self
             .x86_linker()
             .map_err(|reason| CompileError::GpuCodegen(reason.to_owned()))?;

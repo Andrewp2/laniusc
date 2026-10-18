@@ -330,6 +330,8 @@ impl GpuTimer {
 
     /// Attempts to read the timestamps the last `resolve` copied out.
     pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<GpuTimestampSample>> {
+        // Tracing's own cost: the wait for every stamped submission and the copy.
+        let _span = crate::gpu::trace::HostSpan::new("host.trace", "trace.timer_readback");
         let recording = self
             .recording
             .lock()
@@ -624,6 +626,7 @@ impl GpuJobTimingSession {
     /// resolving a timestamp that was never written waits forever.
     pub fn finish(mut self, device: &wgpu::Device, queue: &wgpu::Queue, record: bool) {
         self.capture = None;
+        let _span = crate::gpu::trace::HostSpan::new("host.trace", "trace.job_session");
         if !record {
             set_gpu_clock_calibration(None);
             return;
