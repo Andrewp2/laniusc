@@ -369,12 +369,14 @@ impl GpuProgramEvidence {
             )?);
         }
         SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
+        let waited = std::time::Instant::now();
         let raw = self.readback.read_regions(
             &self.device,
             &self.queue,
             &regions,
             "program proof progress counters",
         )?;
+        kernels::record_timing::add(&kernels::record_timing::WAIT_NS, waited);
         let header = words(&raw[0])?;
         let receipt = one_status(&raw[1])?;
         let demand = raw.get(2).map(|bytes| words(bytes)).transpose()?;
@@ -438,7 +440,9 @@ impl GpuProgramEvidence {
             }],
         )?;
         passes_core::flush_deferred_compute(&mut encoder);
+        let submitted = std::time::Instant::now();
         self.queue.submit(Some(encoder.finish()));
+        kernels::record_timing::add(&kernels::record_timing::SUBMIT_NS, submitted);
         Ok(())
     }
 
@@ -475,7 +479,9 @@ impl GpuProgramEvidence {
                 &self.storage, &packet.input, &packet.output, resources)?)
         };
         passes_core::flush_deferred_compute(&mut commands);
+        let submitted = std::time::Instant::now();
         self.queue.submit(Some(commands.finish()));
+        kernels::record_timing::add(&kernels::record_timing::SUBMIT_NS, submitted);
         let (progress, demand) = self.proof_progress_with(packet, layout, submission, demand.as_ref())?;
         if let Some(demand) = demand.filter(|_| progress.is_building()) {
             self.grow_for_demand(packet, &progress, &demand)?;
@@ -491,7 +497,9 @@ impl GpuProgramEvidence {
         mut encoder: wgpu::CommandEncoder,
     ) -> Result<proof::ProofProgress> {
         passes_core::flush_deferred_compute(&mut encoder);
+        let submitted = std::time::Instant::now();
         self.queue.submit(Some(encoder.finish()));
+        kernels::record_timing::add(&kernels::record_timing::SUBMIT_NS, submitted);
         self.proof_progress(packet, layout, submission)
     }
 
@@ -757,7 +765,9 @@ impl GpuProgramEvidence {
             packet.proof_resources(submission),
         )?;
         passes_core::flush_deferred_compute(&mut commands);
+        let submitted = std::time::Instant::now();
         self.queue.submit(Some(commands.finish()));
+        kernels::record_timing::add(&kernels::record_timing::SUBMIT_NS, submitted);
         Ok(None)
     }
 
@@ -863,7 +873,9 @@ impl GpuProgramEvidence {
                 recorded.iter().map(|template| template.dispatches).sum::<usize>()
             };
             passes_core::flush_deferred_compute(&mut commands);
+            let submitted = std::time::Instant::now();
             self.queue.submit(Some(commands.finish()));
+            kernels::record_timing::add(&kernels::record_timing::SUBMIT_NS, submitted);
             submits += 1;
             let (progress, words, demanded) = self.wave_progress(packet, layout, submission, &state, &demand)?;
             if debug {
@@ -925,7 +937,9 @@ impl GpuProgramEvidence {
                         packet.proof_resources(submission),
                     )?;
                     passes_core::flush_deferred_compute(&mut commands);
+                    let submitted = std::time::Instant::now();
                     self.queue.submit(Some(commands.finish()));
+                    kernels::record_timing::add(&kernels::record_timing::SUBMIT_NS, submitted);
                     return Ok(None);
                 }
                 wave::OVERFLOW => {
@@ -1011,12 +1025,14 @@ impl GpuProgramEvidence {
             )?,
         ];
         SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
+        let waited = std::time::Instant::now();
         let raw = self.readback.read_regions(
             &self.device,
             &self.queue,
             &regions,
             "program proof wave progress",
         )?;
+        kernels::record_timing::add(&kernels::record_timing::WAIT_NS, waited);
         let header = words(&raw[0])?;
         let receipt = one_status(&raw[1])?;
         let state = words(&raw[2])?;
@@ -1119,6 +1135,7 @@ impl GpuProgramEvidence {
         let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false);
         let solve_started = std::time::Instant::now();
         SOLVER_READBACKS.with(|count| count.set(0));
+        kernels::record_timing::reset();
         let mut attempts = 0u32;
         loop {
             attempts += 1;
@@ -1150,10 +1167,11 @@ impl GpuProgramEvidence {
         }
         if debug {
             eprintln!(
-                "[lanius-pev] solve: {} attempts={attempts} readbacks={} wall={:.3}ms",
+                "[lanius-pev] solve: {} attempts={attempts} readbacks={} wall={:.3}ms {}",
                 if self.solver_waves(packet)? { "waves" } else { "stepped" },
                 SOLVER_READBACKS.with(|count| count.get()),
                 solve_started.elapsed().as_secs_f64() * 1000.0,
+                kernels::record_timing::summary(),
             );
         }
 
