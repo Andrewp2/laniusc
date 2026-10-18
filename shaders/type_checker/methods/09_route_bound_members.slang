@@ -14,16 +14,19 @@
 // routed.
 //
 // A nongeneric implementation matches when its pattern is the receiver. A
-// generic one matches when its type parameters bind so that the pattern is the
-// receiver; the routed call then owns that environment, and each binding is
-// published as the call's context argument (contextual_call_environment.slang)
-// in the receiver's own checked spelling at the parameter's position, which is
-// what host retention reads to replay the routed body. Bindings are found
-// without a stack or local array: a walk over the pattern's open nodes
-// re-descends from the root along a packed child path, and the call's context
-// rows hold the bindings until the mask publishes them. Constant parameters,
-// a parameter that the receiver does not bind and methods with parameters of
-// their own are not routed; neither is a receiver with no match.
+// generic one matches when its type and constant parameters bind so that the
+// pattern is the receiver; the routed call then owns that environment, and
+// each binding is published as the call's context argument or constant
+// (contextual_call_environment.slang) in the receiver's own checked spelling
+// at the parameter's position, which is what host retention reads to replay
+// the routed body. A constant binding is the receiver's exact constant
+// operand (identity mode 0), a checked reference, so it is published as
+// admitted. Bindings are found without a stack or local array: a walk over
+// the pattern's open nodes re-descends from the root along a packed child
+// path, and the call's context rows hold the bindings until the masks publish
+// them. A parameter that the receiver does not bind and methods with
+// parameters of their own are not routed; neither is a receiver with no
+// match.
 // Outside replay every accepted receiver of these calls is still a parameter,
 // so nothing is routed and the enclosing body stays a template.
 //
@@ -53,6 +56,7 @@ import type_checker.checked_type_graph;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
+import type_checker.constant_parameter_slots;
 import type_checker.predicates.trait_reference;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -99,6 +103,11 @@ RWStructuredBuffer<uint> call_context_owner_by_token;
 RWStructuredBuffer<uint> call_context_arg_mask;
 RWStructuredBuffer<uint> call_context_ref_tag;
 RWStructuredBuffer<uint> call_context_ref_payload;
+RWStructuredBuffer<uint> call_context_constant_mask;
+RWStructuredBuffer<uint> call_context_constant_kind;
+RWStructuredBuffer<uint> call_context_constant_payload;
+RWStructuredBuffer<uint> call_context_constant_identity_mode;
+RWStructuredBuffer<uint> call_context_constant_valid_mask;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_generic_claim_prefix;
@@ -331,38 +340,63 @@ uint next_open_child(uint node, uint from, uint arity)
     return arity;
 }
 
+// The slot of local parameter leaf `leaf` in its kind's numbering (type and
+// constant parameters have separate slots), or INVALID.
+uint leaf_slot(uint leaf, bool constant)
+{
+    uint tokens; uint stride;
+    uint token = ct_param_token(leaf);
+    if (constant)
+    {
+        type_const_param_slot_by_token.GetDimensions(tokens, stride);
+        return token < tokens ? type_const_param_slot_by_token[token] : INVALID;
+    }
+    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
+    return token < tokens ? type_generic_param_slot_by_token[token] : INVALID;
+}
+
 // Bind parameter leaf `leaf`, child `index` of the pattern node at `path`, to
 // `value`, the receiver's ID there. A slot bound before must agree by ID; a
 // new one keeps the receiver's checked operand at that position in the call's
-// context row and joins `bound`.
+// context row of its kind and joins `bound` (x type slots, y constant slots).
 bool bind_leaf(uint leaf, uint value, uint2 receiver, uint path, uint depth, uint index,
-    uint call, uint slot_limit, inout uint bound)
+    uint call, uint slot_limit, inout uint2 bound)
 {
-    if (!ct_is_type_param(leaf) || ct_is_dep_param(leaf) || !ct_closed(value) ||
-        ct_is_constant(value)) return false;
-    uint tokens; uint stride;
-    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
-    uint token = ct_param_token(leaf);
-    uint slot = token < tokens ? type_generic_param_slot_by_token[token] : INVALID;
+    bool constant = ct_is_const_param(leaf);
+    if (ct_is_dep_param(leaf) || !ct_closed(value) || ct_is_constant(value) != constant) return false;
+    uint slot = leaf_slot(leaf, constant);
     if (slot >= slot_limit) return false;
     uint row = call * 32u + slot;
-    if ((bound & (1u << slot)) != 0u)
-        return ct_ref(call_context_ref_tag[row], call_context_ref_payload[row]) == value;
+    uint bit = 1u << slot;
+    if (((constant ? bound.y : bound.x) & bit) != 0u)
+        return (constant
+            ? ct_constant_ref(call_context_constant_kind[row], call_context_constant_payload[row])
+            : ct_ref(call_context_ref_tag[row], call_context_ref_payload[row])) == value;
     uint2 operand = receiver;
     for (uint level = 0u; level < depth; level++) operand = checked_child(operand, path_index(path, level));
     operand = checked_child(operand, index);
-    if (operand.x == 0u || operand.y == INVALID || ct_ref(operand.x, operand.y) != value) return false;
+    if (operand.x == 0u || operand.y == INVALID || ct_ref(operand.x, operand.y) != value ||
+        ((operand.x & CT_CONSTANT_TAG_BIT) != 0u) != constant) return false;
+    if (constant)
+    {
+        call_context_constant_kind[row] = operand.x & ~CT_CONSTANT_TAG_BIT;
+        call_context_constant_payload[row] = operand.y;
+        call_context_constant_identity_mode[row] = 0u;
+        bound.y |= bit;
+        return true;
+    }
     call_context_ref_tag[row] = operand.x;
     call_context_ref_payload[row] = operand.y;
-    bound |= 1u << slot;
+    bound.x |= bit;
     return true;
 }
 
 // Whether generic pattern `pattern` matches the receiver (`actual` its ID,
-// `receiver` its checked operand), binding type slots below `slot_limit`.
-// Only open pattern nodes are visited; a closed child is compared by ID.
+// `receiver` its checked operand), binding type and constant slots below
+// `slot_limit`. Only open pattern nodes are visited; a closed child is
+// compared by ID.
 bool bind_pattern(uint pattern, uint actual, uint2 receiver, uint call, uint slot_limit,
-    inout uint bound)
+    inout uint2 bound)
 {
     if (!ct_is_record(pattern) || ct_closed(pattern)) return false;
     uint depth = 0u;
@@ -438,9 +472,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint selected_row = INVALID;
     bool selected_generic = false;
     uint matches = 0u;
-    // Context rows written by generic candidates, and the bindings published.
-    uint written = 0u;
-    uint published = 0u;
+    // Context rows written by generic candidates, and the bindings published
+    // (x type slots, y constant slots).
+    uint2 written = uint2(0u, 0u);
+    uint2 published = uint2(0u, 0u);
     bool rebound = false;
     if (count != 0u && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
         checked_type_capacity(), gParams.n_tokens, head))
@@ -485,13 +520,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             else
             {
                 uint member = fn_hir_by_decl_token[candidate];
-                uint bound = 0u;
+                uint2 bound = uint2(0u, 0u);
+                // Each parameter binds one slot of its kind.
                 matched = ct_closed(actual) && call != INVALID && parameters < 32u && valid_hir(member) &&
                     compact_generic_param_ranges[member].count == 0u &&
                     bind_pattern(pattern, actual, receiver, call, parameters, bound) &&
-                    bound == (1u << parameters) - 1u;
+                    countbits(bound.x) + countbits(bound.y) == parameters;
                 written |= bound;
-                if (rebound) { published = matched ? bound : 0u; break; }
+                if (rebound) { published = matched ? bound : uint2(0u, 0u); break; }
             }
             if (!matched) continue;
             if (selected != candidate) matches++;
@@ -510,15 +546,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // selected elsewhere.
     uint3 target = uint3(INVALID, INVALID, INVALID);
     bool external = matches == 0u && accepted && external_target(token, required, candidate, target);
-    bool routed = accepted && (external || (matches == 1u && (!selected_generic || published != 0u)));
+    bool bindings = any(published != 0u);
+    bool routed = accepted && (external || (matches == 1u && (!selected_generic || bindings)));
     // The routed callee owns the call's context: a generic one its bindings,
     // a nongeneric one none (the trait's arguments bound the required
     // member's parameters, methods/07a). Rows written for other candidates
     // hold no binding.
-    if (call != INVALID && (written != 0u || routed))
+    if (call != INVALID && (any(written != 0u) || routed))
     {
         call_context_arg_mask[call] = routed
-            ? (selected_generic ? published : 0u) : call_context_arg_mask[call] & ~written;
+            ? (selected_generic ? published.x : 0u) : call_context_arg_mask[call] & ~written.x;
+        uint constants = routed
+            ? (selected_generic ? published.y : 0u) : call_context_constant_mask[call] & ~written.y;
+        call_context_constant_mask[call] = constants;
+        call_context_constant_valid_mask[call] = routed
+            ? constants : call_context_constant_valid_mask[call] & ~written.y;
         if (routed && selected_generic)
         {
             call_context_owner_by_token[token] = call;
@@ -526,7 +568,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (aliases.y < gParams.n_tokens) call_context_owner_by_token[aliases.y] = call;
         }
     }
-    if (!external && (matches != 1u || (selected_generic && published == 0u)))
+    if (!external && (matches != 1u || (selected_generic && !bindings)))
     {
         record_min_token_error(status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_UNROUTED_BOUND_MEMBER);
         return;
