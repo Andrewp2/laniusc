@@ -35,6 +35,11 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   passes. Present on 335e31b8; core::vec's form of it checked clean on
   b8172cdf. core::vec repeats get's
   body in first and last until it is fixed; then they should call get again.
+- b14 (directory): a self method called through a path on a type imported
+  from a local module, `Counter::get(next)` after `import gen::count;`.
+  LNC0027 "call resolution failed" ("call does not match a resolved function
+  or method"). `next.get()` works (p57). Fails before and after bf4fd323,
+  so it is not the import-visible capacity. Owner: P13.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.

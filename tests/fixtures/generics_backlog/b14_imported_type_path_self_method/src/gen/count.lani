@@ -1,0 +1,15 @@
+module gen::count;
+
+pub struct Counter {
+    value: i32,
+}
+
+pub impl Counter {
+    pub fn get(self) -> i32 {
+        return self.value;
+    }
+}
+
+pub fn bump(counter: Counter) -> Counter {
+    return Counter { value: counter.value + 2 };
+}
