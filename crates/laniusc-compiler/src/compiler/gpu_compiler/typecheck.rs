@@ -568,14 +568,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
             let (library_id, unit_id) = request.ids();
-            let selected_replay_hirs = match request.frontend_trait_check() {
+            let selected_replay = match request.frontend_trait_check() {
                 gpu_type_checker::FrontendTraitCheck::AuthorizedReplay { .. } =>
-                    request.selected_function_hirs(),
+                    request.replay_selection(),
                 gpu_type_checker::FrontendTraitCheck::Strict
-                | gpu_type_checker::FrontendTraitCheck::PendingOriginal => &[],
+                | gpu_type_checker::FrontendTraitCheck::PendingOriginal =>
+                    crate::codegen::lowering::ReplaySelection::Functions(&[]),
             };
             pipeline
-                .record_object(queue, encoder, library_id, unit_id, selected_replay_hirs,
+                .record_object(queue, encoder, library_id, unit_id, selected_replay,
                     timer.as_deref_mut())
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
@@ -930,6 +931,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     queue,
                     semantic_interface.is_some(),
                     object_request.and_then(LoweringObjectRequest::template_contracts),
+                    object_request.and_then(LoweringObjectRequest::body_specialization),
                 )
                 .map_err(|error| {
                     CompileError::GpuFrontend(format!(
@@ -946,8 +948,22 @@ impl<'gpu> GpuCompiler<'gpu> {
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
         finish_timer.stamp("body_native_layouts");
+        // An original x86 unit with an interface keeps the byte spans of its
+        // generic bodies, from which a concrete replay copies instances. A
+        // unit without a generic owner has no such body, and skips the readback.
+        let owner_spans = if semantic_interface.is_some()
+            && object_request.is_some_and(|request| request.body_specialization().is_none())
+            && unit_facts.contracts.binders.iter().any(|owner| !owner.parameters.is_empty())
+        {
+            self.type_checker
+                .retained_owner_spans(device, queue)
+                .map_err(|error| CompileError::GpuFrontend(format!("owner span readback failed: {error}")))?
+        } else {
+            None
+        };
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
             body_native_layouts,
+            owner_spans,
             semantic_interface,
             target_artifact,
             x86_object,
@@ -1588,7 +1604,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                 Some(BodySpecializationInput::authorized(request)),
                 Some(template.template_source_paths().as_ref()),
             )
-            .await?;
+            .await
+            .map_err(|error| match (error, request.instance_sources()) {
+                // The frontend checked instance copies; name template bytes.
+                (CompileError::Diagnostic(diagnostic), Some(instance)) => CompileError::Diagnostic(
+                    instance.template_diagnostic(
+                        diagnostic,
+                        template.template_sources(),
+                        Some(template.template_source_paths().as_ref()),
+                    ),
+                ),
+                (error, _) => error,
+            })?;
         Ok(PendingReplayUnit {
             request_identity: request.identity(),
             unit: compiled,
@@ -1766,7 +1793,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         body_specialization: Option<BodySpecializationInput<'_>>,
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<CompiledSourcePackUnit, CompileError> {
-        let sources = template_sources.as_ref();
+        // An instance-copy replay checks the template with copies appended;
+        // the unit still retains exactly the template's sources.
+        let frontend_sources = body_specialization
+            .and_then(|input| input.frontend_sources)
+            .unwrap_or(&template_sources)
+            .clone();
+        let sources = frontend_sources.as_ref();
         if target == SourcePackArtifactTarget::X86_64 && sources.is_empty() {
             return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
         }
@@ -1781,7 +1814,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     library_id,
                     unit_id,
                     specialization: body_specialization.unwrap().specialization,
-                    selected_function_hirs: body_specialization.unwrap().selected_function_hirs,
+                    replay_selection: body_specialization.unwrap().replay_selection,
                     template_contracts: body_specialization.unwrap().contracts.as_ref(),
                     frontend_trait_check: body_specialization.unwrap().frontend_trait_check,
                 }
@@ -1806,7 +1839,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         // files or depending on the current lexer/parser workspace.
         let mut artifacts = self
             .type_check_explicit_source_pack_with_paths_and_interface(
-                template_sources.as_ref(),
+                frontend_sources.as_ref(),
                 source_paths,
                 Some(library_id),
                 unit_id,
@@ -2202,6 +2235,7 @@ struct OriginalUnitSnapshot {
     template_sources: std::sync::Arc<[String]>,
     template_source_paths: std::sync::Arc<[Option<PathBuf>]>,
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+    owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
 }
 
 impl OriginalUnitFacts {
@@ -2215,6 +2249,7 @@ impl OriginalUnitFacts {
                 template_sources: unit.template_sources.clone(),
                 template_source_paths: unit.template_source_paths.clone(),
                 template_dependency_pages: unit.template_dependency_pages.clone(),
+                owner_spans: unit.owner_spans.clone(),
             }),
         }
     }
@@ -2251,6 +2286,10 @@ impl OriginalUnitFacts {
 
     pub(super) fn template_dependency_pages(&self) -> &std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]> {
         &self.snapshot.template_dependency_pages
+    }
+
+    pub(super) fn owner_spans(&self) -> Option<&gpu_type_checker::CheckedOwnerSpans> {
+        self.snapshot.owner_spans.as_deref()
     }
 }
 
@@ -2300,7 +2339,7 @@ impl PendingReplayUnit {
     pub(super) fn finish(
         mut self,
         request: program_evidence::ValidatedReplayRequest<'_>,
-    ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
+    ) -> anyhow::Result<(CompiledSourcePackUnit, program_evidence::CheckedReplayCalls)> {
         let calls = request.check_replay_unit(&mut self.unit, &self.request_identity)?;
         Ok((self.unit, calls))
     }
@@ -2311,8 +2350,11 @@ impl PendingReplayUnit {
 #[derive(Clone, Copy)]
 struct BodySpecializationInput<'a> {
     specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
-    /// The lexical callables whose bodies this replay may publish, in entry order.
-    selected_function_hirs: &'a [u32],
+    /// The lexical callables whose bodies this replay may publish, in entry
+    /// order, or the first instance-copy row of a copy replay.
+    replay_selection: crate::codegen::lowering::ReplaySelection<'a>,
+    /// The template with instance copies appended, for a copy replay.
+    frontend_sources: Option<&'a std::sync::Arc<[String]>>,
     interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
     contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
     frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
@@ -2326,7 +2368,8 @@ impl<'a> BodySpecializationInput<'a> {
     ) -> Self {
         Self {
             specialization,
-            selected_function_hirs: &[],
+            replay_selection: crate::codegen::lowering::ReplaySelection::Functions(&[]),
+            frontend_sources: None,
             interface,
             contracts,
             frontend_trait_check: gpu_type_checker::FrontendTraitCheck::Strict,
@@ -2337,7 +2380,8 @@ impl<'a> BodySpecializationInput<'a> {
         let template = request.template();
         Self {
             specialization: request.specialization(),
-            selected_function_hirs: request.selected_function_hirs(),
+            replay_selection: request.replay_selection(),
+            frontend_sources: request.instance_sources().map(|_| request.frontend_sources()),
             interface: template.interface(),
             contracts: template.checked_contracts(),
             frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
@@ -2364,7 +2408,7 @@ enum LoweringObjectRequest<'a> {
         library_id: u32,
         unit_id: u32,
         specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
-        selected_function_hirs: &'a [u32],
+        replay_selection: crate::codegen::lowering::ReplaySelection<'a>,
         template_contracts: &'a gpu_type_checker::CheckedUnitContracts,
         frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
     },
@@ -2399,10 +2443,10 @@ impl<'a> LoweringObjectRequest<'a> {
         }
     }
 
-    fn selected_function_hirs(self) -> &'a [u32] {
+    fn replay_selection(self) -> crate::codegen::lowering::ReplaySelection<'a> {
         match self {
-            Self::X86_64Specialized { selected_function_hirs, .. } => selected_function_hirs,
-            _ => &[],
+            Self::X86_64Specialized { replay_selection, .. } => replay_selection,
+            _ => crate::codegen::lowering::ReplaySelection::Functions(&[]),
         }
     }
     fn target(self) -> LoweringTarget {
@@ -2582,6 +2626,7 @@ fn finish_source_pack_unit(
         ));
     }
     Ok(CompiledSourcePackUnit {
+        owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
         interface,
         object,
         template_sources,
@@ -2598,6 +2643,7 @@ fn finish_source_pack_unit(
 
 struct CheckedSourcePackArtifacts {
     body_native_layouts: Option<Vec<Vec<u32>>>,
+    owner_spans: Option<gpu_type_checker::CheckedOwnerSpans>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
     x86_object: Option<crate::codegen::x86::GpuX86RelocatableObject>,
@@ -2615,6 +2661,9 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// concrete replay. These refine the cache independently of semantic keys.
     /// One vector per batched replay entry, in entry order.
     pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
+    /// Byte spans of this original unit's copyable generic bodies; None for
+    /// a replay or a unit whose spans were not retained.
+    pub(in crate::compiler) owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
     pub(in crate::compiler) generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,

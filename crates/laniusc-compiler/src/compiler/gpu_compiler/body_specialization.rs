@@ -7,7 +7,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
 };
 
 use super::{
@@ -74,18 +74,26 @@ impl GpuCompiler<'_> {
             return Err(CompileError::GpuCodegen("admitted source inventory is incomplete".into()));
         }
         let mut templates = BTreeMap::new();
+        // The defined symbol identities of each template object, so the scan
+        // finds a call's tag-only definition without walking every symbol.
+        let mut defined_identities = BTreeMap::<(u32, u32), HashSet<&'a [u8]>>::new();
         let mut objects = Vec::with_capacity(units.len());
         let mut used_units = BTreeSet::new();
-        for unit in units {
+        for &unit in units {
             let CompiledSourcePackObject::X86_64(object) = &unit.object else {
                 return Err(CompileError::GpuCodegen(
                     "resident x86 specialization received a different target".into(),
                 ));
             };
-            templates.insert((unit.interface.library_id, unit.interface.unit_id), *unit);
+            templates.insert((unit.interface.library_id, unit.interface.unit_id), unit);
             used_units.insert((object.library_id, object.unit_id));
+            // Like `templates`, the last unit with a given identity wins.
+            let mut defined = HashSet::new();
             for symbol in &object.symbols {
                 let identity = symbol_identity(object, symbol);
+                if symbol.section != x86::GpuX86ObjectSection::Undefined {
+                    defined.insert(identity);
+                }
                 if identity.len() == 12 {
                     used_units.insert((
                         u32::from_le_bytes(identity[..4].try_into().unwrap()),
@@ -93,6 +101,7 @@ impl GpuCompiler<'_> {
                     ));
                 }
             }
+            defined_identities.insert((unit.interface.library_id, unit.interface.unit_id), defined);
             objects.push(Cow::Borrowed(object));
         }
         let mut specializations = BTreeMap::<Vec<u8>, (Vec<u8>, Vec<u32>)>::new();
@@ -108,12 +117,14 @@ impl GpuCompiler<'_> {
         }).collect::<Vec<_>>();
         let mut trace = SpecializationTrace::new();
         let batch_limit = replay_batch_limit();
+        let instance_copies = instance_copies_enabled();
         // Breadth-first rounds: scan every context of the frontier, then
         // replay the round's new environments with compatible scopes of one
         // template unit sharing a frontend run, then patch the round's calls.
         let mut round_start = 0usize;
         while round_start < contexts.len() {
             let round_end = contexts.len();
+            let scan_started = std::time::Instant::now();
             let mut pending = BTreeMap::<Vec<u8>, PendingBody>::new();
             let mut patches = Vec::<(usize, usize, Vec<u8>)>::new();
             for context_index in round_start..round_end {
@@ -139,16 +150,13 @@ impl GpuCompiler<'_> {
                         }
                         continue;
                     };
-                    let Some(template) = templates.get(&(library_id, unit_id)) else {
+                    let Some(defined) = defined_identities.get(&(library_id, unit_id)) else {
                         if context_index >= units.len() {
                             trace.skipped(context_index, call_hir, "no template unit", Some(call));
                         }
                         continue;
                     };
                     let identity = declaration_identity(library_id, unit_id, declaration_index);
-                    let CompiledSourcePackObject::X86_64(original) = &template.object else {
-                        unreachable!("templates were checked above")
-                    };
                     // A reusable native body does not waive the declaration's
                     // generic requirements. Validate unused parameters too, before
                     // accepting tag-only definitions or scheduling a replay.
@@ -158,10 +166,7 @@ impl GpuCompiler<'_> {
                             "generic call is missing declared type or constant bindings",
                         )));
                     }
-                    if original.symbols.iter().any(|symbol| {
-                        symbol.section != x86::GpuX86ObjectSection::Undefined
-                            && symbol_identity(original, symbol) == identity
-                    }) {
+                    if defined.contains(identity.as_slice()) {
                         // Tag-only generic functions already have a valid body.
                         if context_index >= units.len() {
                             trace.skipped(context_index, call_hir, "tag-only definition", Some(call));
@@ -232,6 +237,7 @@ impl GpuCompiler<'_> {
                     patches.push((context_index, symbol_index, concrete_identity));
                 }
             }
+            host_span("scan", scan_started);
             // Group by template unit, then pack compatible scopes greedily in
             // key order (deterministic: keys are canonical environments).
             let mut by_unit = BTreeMap::<(u32, u32), Vec<Vec<u8>>>::new();
@@ -239,14 +245,27 @@ impl GpuCompiler<'_> {
                 by_unit.entry((body.target.0, body.target.1)).or_default().push(key.clone());
             }
             for keys in by_unit.into_values() {
+                let plan_started = std::time::Instant::now();
                 let mut runs = Vec::<ReplayRun>::new();
                 for key in keys {
                     let body = &pending[&key];
                     let scope = program.replay_scope(&body.admitted).map_err(native_program_error)?;
                     let entry = replay_entry(body.admitted.checked_call(), body.target);
+                    // A body with a retained declaration span replays as a
+                    // renamed copy, which shares a run with any other copy.
                     // Polymorphic recursion replays alone, so a failure is its own.
+                    let copies = instance_copies && !body.recursive && program
+                        .instance_copy_available(&body.admitted).map_err(native_program_error)?;
                     let placed = !body.recursive && runs.iter_mut().try_fold(false, |placed, run| {
-                        if placed || run.solo || run.keys.len() >= batch_limit { return Ok(placed); }
+                        // Original-scope runs stay small: their scopes are found by a linear search.
+                        let limit = if run.copies {
+                            batch_limit
+                        } else {
+                            batch_limit.min(gpu_type_checker::MAX_ORIGINAL_REPLAY_ENTRIES)
+                        };
+                        if placed || run.solo || run.copies != copies || run.keys.len() >= limit {
+                            return Ok(placed);
+                        }
                         run.try_add(&key, &scope, entry.clone())
                     }).map_err(|error: anyhow::Error| CompileError::GpuCodegen(error.to_string()))?;
                     if !placed {
@@ -254,9 +273,12 @@ impl GpuCompiler<'_> {
                             .map_err(|error| CompileError::Diagnostic(
                                 Diagnostic::error("LNC0017", "generic specialization cannot represent this environment")
                                     .with_note(error.to_string())))?;
-                        runs.push(ReplayRun { keys: vec![key], scopes: vec![scope], batch, solo: body.recursive });
+                        runs.push(ReplayRun {
+                            keys: vec![key], scopes: vec![scope], batch, solo: body.recursive, copies,
+                        });
                     }
                 }
+                host_span("plan", plan_started);
                 for run in runs {
                     let started = std::time::Instant::now();
                     let origins = run.keys.iter().map(|key| &pending[key].admitted).collect::<Vec<_>>();
@@ -270,19 +292,25 @@ impl GpuCompiler<'_> {
                         instantiation_depth_error(body.admitted.checked_call(),
                             owner.and_then(|owner| templates.get(&owner).copied()), Some(error))
                     };
-                    let request = program
-                        .prepare_replay_batch(&origins)
-                        .map_err(|error| recursion(native_program_error(error)))?;
+                    let request = if run.copies {
+                        program.prepare_instance_batch(&origins)
+                    } else {
+                        program.prepare_replay_batch(&origins)
+                    }
+                    .map_err(|error| recursion(native_program_error(error)))?;
                     let prepared = std::time::Instant::now();
                     let pending_unit = self
                         .compile_authorized_body_specialization(&request)
                         .await
                         .map_err(&recursion)?;
                     let compiled = std::time::Instant::now();
-                    let selected = request.selected_function_hirs().to_vec();
-                    let (replay, replay_calls) =
+                    let (replay, checked) =
                         request.finish(pending_unit).map_err(|error| recursion(native_program_error(error)))?;
+                    let replay_calls = checked.calls;
                     let finished = std::time::Instant::now();
+                    crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
+                    crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
+                    crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
                     let entry_layouts = replay.body_native_layouts.as_ref()
                         .filter(|layouts| layouts.len() == run.keys.len())
                         .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?
@@ -299,21 +327,29 @@ impl GpuCompiler<'_> {
                     }
                     let specialized_unit = *candidate;
                     used_units.insert((library_id, specialized_unit));
-                    let identities = run.keys.iter().map(|key| {
-                        let (_, _, declaration_index) = pending[key].target;
-                        declaration_identity(library_id, unit_id, declaration_index)
-                    }).collect::<Vec<_>>();
+                    // A copy's definition is its own private callable; an
+                    // original replay defines the declaration itself. The
+                    // published identity keeps that symbol, so two copies of
+                    // one declaration in a run stay distinct.
+                    let definition_symbols = match &checked.copy_symbols {
+                        Some(symbols) => symbols.clone(),
+                        None => run.keys.iter().map(|key| pending[key].target.2).collect(),
+                    };
+                    let identities = definition_symbols.iter()
+                        .map(|&symbol| declaration_identity(library_id, unit_id, symbol))
+                        .collect::<Vec<_>>();
                     specialized_text_bytes = specialized_text_bytes
                         .checked_add(concrete.text.len())
                         .ok_or_else(|| specialization_limit_error("native text length overflow"))?;
                     // Undefined symbols precede definitions, so dropping other
                     // definitions preserves every relocation target index.
+                    let published = identities.iter().map(Vec::as_slice).collect::<HashSet<_>>();
                     let keep: Vec<bool> = concrete
                         .symbols
                         .iter()
                         .map(|symbol| {
                             symbol.section == x86::GpuX86ObjectSection::Undefined
-                                || identities.iter().any(|identity| symbol_identity(&concrete, symbol) == identity.as_slice())
+                                || published.contains(symbol_identity(&concrete, symbol))
                         })
                         .collect();
                     let mut index = 0;
@@ -322,16 +358,20 @@ impl GpuCompiler<'_> {
                         index += 1;
                         retain
                     });
+                    // Each key takes the first text definition still carrying
+                    // its identity; a renamed definition no longer matches.
+                    let mut definitions = HashMap::<Vec<u8>, Vec<usize>>::new();
+                    for (index, symbol) in concrete.symbols.iter().enumerate().rev() {
+                        if symbol.section == x86::GpuX86ObjectSection::Text {
+                            definitions.entry(symbol_identity(&concrete, symbol).to_vec()).or_default().push(index);
+                        }
+                    }
                     let mut entries = BTreeMap::new();
                     for (position, key) in run.keys.iter().enumerate() {
                         let body = &pending[key];
-                        let definition = concrete
-                            .symbols
-                            .iter()
-                            .position(|symbol| {
-                                symbol.section == x86::GpuX86ObjectSection::Text
-                                    && symbol_identity(&concrete, symbol) == identities[position].as_slice()
-                            })
+                        let definition = definitions
+                            .get_mut(&identities[position])
+                            .and_then(Vec::pop)
                             .ok_or_else(|| {
                                 let call = body.admitted.checked_call();
                                 CompileError::GpuCodegen(format!(
@@ -340,7 +380,7 @@ impl GpuCompiler<'_> {
                                 ))
                             })?;
                         let native_identity =
-                            declaration_identity(library_id, specialized_unit, body.target.2);
+                            declaration_identity(library_id, specialized_unit, definition_symbols[position]);
                         replace_symbol_identity(&mut concrete, definition, &native_identity)?;
                         let mut admitted_layouts = entry_layouts[position].clone();
                         for witness in &body.witnesses {
@@ -348,17 +388,20 @@ impl GpuCompiler<'_> {
                                 .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
                         }
                         specializations.insert(key.clone(), (native_identity, admitted_layouts));
-                        entries.insert(selected[position], body.origin);
+                        if checked.entry_hirs[position] != u32::MAX {
+                            entries.insert(checked.entry_hirs[position], body.origin);
+                        }
                     }
                     concrete.unit_id = specialized_unit;
                     concrete.entry_offset = None;
                     concrete
                         .validate()
                         .map_err(|error| CompileError::GpuCodegen(error))?;
+                    host_span("publish", finished);
                     trace.replay(
                         &run.keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
                         specializations.len(), [started, prepared, compiled, finished],
-                        concrete.text.len(), replay_calls.len());
+                        concrete.text.len(), replay_calls.len(), run_kind(run.copies, run.solo));
                     contexts.push(ReplayContext {
                         library_id,
                         unit_id,
@@ -370,6 +413,7 @@ impl GpuCompiler<'_> {
                     objects.push(Cow::Owned(concrete));
                 }
             }
+            let patch_started = std::time::Instant::now();
             for (context_index, symbol_index, key) in patches {
                 replace_symbol_identity(
                     objects[context_index].to_mut(),
@@ -377,6 +421,7 @@ impl GpuCompiler<'_> {
                     &specializations[&key].0,
                 )?;
             }
+            host_span("patch", patch_started);
             round_start = round_end;
         }
         trace.finish(specializations.len(), specialized_text_bytes);
@@ -431,6 +476,8 @@ struct ReplayRun {
     batch: gpu_type_checker::CheckedBodySpecializationBatch,
     /// A polymorphically recursive body, which never shares its run.
     solo: bool,
+    /// Every body replays as an instance copy, so scopes may repeat.
+    copies: bool,
 }
 
 impl ReplayRun {
@@ -443,27 +490,41 @@ impl ReplayRun {
         scope: &ReplayScope,
         entry: CheckedBodySpecialization,
     ) -> anyhow::Result<bool> {
-        if self.scopes.iter().any(|other| other.snapshot != scope.snapshot
-            || other.selected_owner_hir == scope.selected_owner_hir)
-        {
-            return Ok(false);
-        }
-        let mut batch = self.batch.clone();
-        if !batch.try_push(entry)? {
-            return Ok(false);
-        }
-        let added = batch.entries().len() - 1;
-        for (index, other) in self.scopes.iter().enumerate() {
-            for (owner, parameters) in &scope.owners {
-                if !other.owners.iter().any(|(shared, _)| shared == owner) { continue; }
-                if !parameters.iter().all(|&(slot, domain)|
-                    batch.binds_identically(index, added, slot, domain))
-                {
-                    return Ok(false);
+        if self.copies {
+            // Copies own their enclosing impls too, so nothing is shared and
+            // only the snapshot must agree (every scope has the first one's).
+            // `try_push` leaves the batch unchanged when the entry does not
+            // fit, so a run of thousands of copies never clones its batch.
+            if self.scopes.first().is_some_and(|first| first.snapshot != scope.snapshot)
+                || !self.batch.try_push(entry)?
+            {
+                return Ok(false);
+            }
+        } else {
+            if self.scopes.iter().any(|other| other.snapshot != scope.snapshot
+                || other.selected_owner_hir == scope.selected_owner_hir)
+            {
+                return Ok(false);
+            }
+            // An original-scope run is small (MAX_ORIGINAL_REPLAY_ENTRIES);
+            // a trial copy undoes a push whose shared owners bind differently.
+            let mut batch = self.batch.clone();
+            if !batch.try_push(entry)? {
+                return Ok(false);
+            }
+            let added = batch.entries().len() - 1;
+            for (index, other) in self.scopes.iter().enumerate() {
+                for (owner, parameters) in &scope.owners {
+                    if !other.owners.iter().any(|(shared, _)| shared == owner) { continue; }
+                    if !parameters.iter().all(|&(slot, domain)|
+                        batch.binds_identically(index, added, slot, domain))
+                    {
+                        return Ok(false);
+                    }
                 }
             }
+            self.batch = batch;
         }
-        self.batch = batch;
         self.keys.push(key.to_vec());
         self.scopes.push(scope.clone());
         Ok(true)
@@ -486,6 +547,18 @@ fn replay_entry(call: &CheckedGenericCall, target: (u32, u32, u32)) -> CheckedBo
     }
 }
 
+/// A host span on the specialization lane of LANIUS_PERFETTO_TRACE, from
+/// `start` to now.
+fn host_span(name: &str, start: std::time::Instant) {
+    crate::gpu::trace::record_host_span("specialization", name, start, std::time::Instant::now());
+}
+
+/// `LANIUS_REPLAY_COPIES=0` replays every body in its original scope instead
+/// of as an instance copy.
+fn instance_copies_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_COPIES", true)
+}
+
 /// `LANIUS_REPLAY_BATCH=N` caps the bodies per frontend run (1 replays each
 /// body alone, as before batching).
 fn replay_batch_limit() -> usize {
@@ -502,8 +575,18 @@ struct SpecializationTrace {
     start: std::time::Instant,
     reused: usize,
     runs: usize,
+    /// Runs by kind: instance copies, original scope, polymorphic recursion.
+    kinds: [usize; 3],
     phases_ms: [f64; 3],
 }
+
+/// Trace index of a run's kind: 0 copies, 1 original scope, 2 solo
+/// (polymorphic recursion, in its original scope).
+fn run_kind(copies: bool, solo: bool) -> usize {
+    if solo { 2 } else if copies { 0 } else { 1 }
+}
+
+const RUN_KINDS: [&str; 3] = ["copies", "original", "solo"];
 
 impl SpecializationTrace {
     fn new() -> Self {
@@ -512,6 +595,7 @@ impl SpecializationTrace {
             start: std::time::Instant::now(),
             reused: 0,
             runs: 0,
+            kinds: [0; 3],
             phases_ms: [0.0; 3],
         }
     }
@@ -523,16 +607,18 @@ impl SpecializationTrace {
         times: [std::time::Instant; 4],
         text_bytes: usize,
         replay_calls: usize,
+        kind: usize,
     ) {
         self.runs += 1;
+        self.kinds[kind] += 1;
         if !self.enabled { return; }
         let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
         let phases = [ms(times[0], times[1]), ms(times[1], times[2]), ms(times[2], times[3])];
         for (total, phase) in self.phases_ms.iter_mut().zip(phases) { *total += phase; }
         let (library, unit, _) = bodies[0].1.target;
         eprintln!(
-            "[specialization] run={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls}",
-            self.runs, bodies.len(), phases[0], phases[1], phases[2],
+            "[specialization] run={} kind={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls}",
+            self.runs, RUN_KINDS[kind], bodies.len(), phases[0], phases[1], phases[2],
         );
         for (key, body) in bodies {
             let call = body.admitted.checked_call();
@@ -559,8 +645,9 @@ impl SpecializationTrace {
     fn finish(&self, bodies: usize, text_bytes: usize) {
         if !self.enabled { return; }
         eprintln!(
-            "[specialization] summary bodies={bodies} runs={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
-            self.runs, self.reused, self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
+            "[specialization] summary bodies={bodies} runs={} copy_runs={} original_runs={} solo_runs={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
+            self.runs, self.kinds[0], self.kinds[1], self.kinds[2], self.reused,
+            self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
             self.start.elapsed().as_secs_f64() * 1000.0,
         );
     }
@@ -807,6 +894,37 @@ mod tests {
                 .collect(),
             constants: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_copy_run_takes_every_copy_of_one_body_in_place() {
+        let entry = |byte: u32, scalar: u32| CheckedBodySpecialization {
+            target_symbol: crate::type_checker::BODY_COPY_TARGET | byte,
+            source_unit: [0, 0],
+            arguments: vec![CheckedGenericArgument { slot: 0, ty: CheckedGenericType::Scalar(scalar) }],
+            constants: Vec::new(),
+        };
+        let scope = |snapshot: u32| ReplayScope { snapshot, selected_owner_hir: 9, owners: vec![(4, vec![(0, 0)])] };
+        let run = |copies: bool| ReplayRun {
+            keys: vec![vec![0]],
+            scopes: vec![scope(1)],
+            batch: gpu_type_checker::CheckedBodySpecializationBatch::single(entry(100, 3)).unwrap(),
+            solo: false,
+            copies,
+        };
+        let mut copies = run(true);
+        // Other environments of the same lexical body join a copy run.
+        for (index, scalar) in [4u32, 5, 6].into_iter().enumerate() {
+            assert!(copies.try_add(&[index as u8 + 1], &scope(1), entry(200 + index as u32, scalar)).unwrap());
+        }
+        assert_eq!((copies.batch.entries().len(), copies.keys.len(), copies.scopes.len()), (4, 4, 4));
+        // Another template snapshot does not, and leaves the run unchanged.
+        assert!(!copies.try_add(&[9], &scope(2), entry(300, 7)).unwrap());
+        assert_eq!((copies.batch.entries().len(), copies.keys.len(), copies.scopes.len()), (4, 4, 4));
+        // An original-scope run never selects one lexical body twice.
+        let mut original = run(false);
+        assert!(!original.try_add(&[1], &scope(1), entry(200, 4)).unwrap());
+        assert_eq!(original.batch.entries().len(), 1);
     }
 
     #[test]

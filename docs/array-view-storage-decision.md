@@ -39,6 +39,7 @@ the producer opcode or a scalar type number.
 | Backing storage | View data | Stride |
 | --- | --- | --- |
 | Packed integer array | Address of logical element zero | `+4` |
+| Raw byte view (`[u8]` from raw parts) | The given pointer | `+1` |
 | Native scalar array | Address of logical element zero | `-8` |
 | Native compound array | Address of logical element zero | `-8 * element_words` |
 | Zero-sized elements | Existing backing place | `0` |
@@ -51,13 +52,47 @@ Nested fixed-array elements retain their concrete value layout; each new view
 is constructed from that element's actual place.
 
 `slice_from_raw_parts` publishes its documented backing convention: packed `+4`
-for i32 and descending native words for other element layouts. Zero-sized
+for i32, packed bytes (`+1`) for u8, and descending native words for other
+element layouts. Zero-sized
 elements have stride zero. Its receiving context supplies the complete checked
 slice type; specialization closes the element layout before construction. Bounds
 remain element counts, including zero-sized elements. Invalid layout facts,
 unbound element layouts, arithmetic capacity exhaustion, and unsupported raw
 backing shapes must fail explicitly. This proposal does not make unchecked raw
 pointers safe.
+
+### u8 views have two element widths (2026-10-15)
+
+A native `[u8; N]` array stores descending eight-byte words, but a raw byte
+view steps one byte, so it can cover string data or the bytes of packed i32
+storage. A `[u8]` parameter can receive either. x86 index loads and stores of a
+runtime `[u8]` view therefore test the descriptor's stride:
+
+```
+cmp rcx, 1               ; RCX holds the view's byte stride
+jne word
+movzx eax, byte [rax]    ; a store writes mov [rax], dl
+jmp done
+word: mov rax, [rax]     ; a store writes mov [rax], rdx
+```
+
+Only runtime views take the test. Fixed `[u8; N]` places, and views of every
+other element type, keep the direct load or store. Before this, a raw `[u8]`
+view used stride `-8` and eight-byte loads, so it read outside its backing
+(`repro_u8_string_slice` exited 195 rather than 122).
+
+Not covered: an `i8` raw view still uses stride `-8`.
+
+Follow-up option: store native `[u8; N]` arrays as packed bytes too. Then `+1`
+would be the only u8 stride, the test would go away, and u8 arrays would take
+an eighth of their current space. The cost is an ABI change of the same reach as
+the packed-i32 path. It touches the native value layout of every u8 array and of
+every record, enum and array that contains one: `native_value_layout.slang`
+widths, `storage_layout.slang` strides, array literal stores, whole-word
+aggregate copies, x86 field and element offsets, and the native object format
+version. It needs a full x86 and stdlib fixture regate. The test costs 11 bytes
+of code and one well-predicted branch per access, next to the bounds check that
+every access already makes, so it can wait until byte-heavy code shows the cost.
 
 ## ABI effect and implementation owners
 

@@ -1,5 +1,7 @@
 // Module-form char helpers for source-level stdlib imports.
 module core::char;
+import core::mem;
+import core::option;
 fn codepoint(value: char) -> u32 {
     return value as u32;
 }
@@ -218,4 +220,38 @@ pub fn is_ascii_graphic(value: char) -> bool {
 }
 pub fn is_ascii_printable(value: char) -> bool {
     return value >= ' ' && value <= '~';
+}
+
+// Unicode scalar values are 0..=0xD7FF and 0xE000..=0x10FFFF. A char holds
+// exactly these; surrogates and larger values are not chars.
+pub fn is_scalar_value(value: u32) -> bool {
+    return value <= 55295 || value >= 57344 && value <= 1114111;
+}
+
+// Checked conversion from a code point. Surrogates and values above U+10FFFF
+// return None. There is no unchecked integer-to-char cast; `u8 as char` is
+// the only integer cast to char.
+pub fn from_u32(value: u32) -> core::option::Option<char> {
+    if (!is_scalar_value(value)) {
+        return core::option::None();
+    }
+    return core::option::Some(scalar_from_u32(value));
+}
+
+// As from_u32, returning fallback for a value that is not a scalar.
+pub fn from_u32_or(value: u32, fallback: char) -> char {
+    if (!is_scalar_value(value)) {
+        return fallback;
+    }
+    return scalar_from_u32(value);
+}
+
+// A char is its 32-bit code point. Write the checked value into a zeroed
+// native word and read the word back as a char. Callers check the range.
+fn scalar_from_u32(value: u32) -> char {
+    let cells: [i32; 2] = [0, 0];
+    cells[0] = value as i32;
+    let word: ptr = core::mem::i32_array_data_ptr(cells);
+    let view: [char] = core::mem::typed_slice_from_raw_parts(word, 1);
+    return view[0];
 }

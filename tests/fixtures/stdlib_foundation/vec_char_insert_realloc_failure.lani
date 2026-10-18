@@ -2,14 +2,14 @@ module app::main;
 import std::vec_char;
 
 fn main() -> i32 {
-    let high_code: u32 = 2147483648;
-    let max_code: u32 = 4294967295;
-    let high_bit: char = high_code;
-    let maximum: char = max_code;
+    // A char holds a Unicode scalar, so U+F0000 and U+10FFFF (the largest
+    // scalar) stand in for high code points.
+    let high_bit: char = '󰀀';
+    let maximum: char = '􏿿';
     let first: char = high_bit;
     let second: char = maximum;
-    let inserted: char = 1;
-    let fallback: char = 0;
+    let inserted: char = '①';
+    let fallback: char = '\0';
     let value: std::vec_char::VecChar = std::vec_char::try_with_capacity(2);
     if (std::vec_char::capacity(value) != 2) { return 2; }
     value = std::vec_char::try_push(value, first);

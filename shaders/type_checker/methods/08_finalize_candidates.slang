@@ -118,7 +118,7 @@ ReceiverPlan plan_receiver(uint token, MethodCandidate candidate)
     // in this job's checked arena can be reused; page rows are never candidates.
     uint tokens; uint stride;
     type_generic_param_slot_by_token.GetDimensions(tokens, stride);
-    uint base = tokens + 64u;
+    uint base = tokens + BODY_GRAPH_NODES;
     uint previous = method_call_parameter_ref_payload[token];
     if (method_call_parameter_ref_tag[token] == 3u && previous >= base &&
         previous < mutable_type_capacity() && previous - base < type_application_count[0u] &&

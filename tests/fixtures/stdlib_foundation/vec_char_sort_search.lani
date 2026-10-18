@@ -6,8 +6,9 @@ fn main() -> i32 {
     let zero: char = '\0';
     let seven: char = '7';
     let high: char = '😀';
-    let max_code: u32 = 4294967295;
-    let maximum: char = max_code;
+    // A char holds a Unicode scalar, so U+F0000 and U+10FFFF (the largest
+    // scalar) stand in for high code points.
+    let maximum: char = '􏿿';
     let empty: std::vec_char::VecChar = std::vec_char::new();
     if (std::vec_char::sort_in_place(empty) != 0 ||
         std::vec_char::reverse_in_place(empty) != 0 ||
@@ -68,10 +69,9 @@ fn main() -> i32 {
         std::vec_char::capacity(owned) != 8) { return 9; }
     std::vec_char::destroy(owned);
 
-    // Character storage admits all 32-bit patterns. Verify unsigned order
-    // across the sign bit as well as ordinary Unicode scalar values.
-    let sign_code: u32 = 2147483648;
-    let sign_bit: char = sign_code;
+    // Verify unsigned code-point order from NUL through emoji and plane-15
+    // scalars to the largest scalar value.
+    let sign_bit: char = '󰀀';
     let full: [char; 5] = [maximum, sign_bit, zero, high, sign_bit];
     let bit_patterns: std::vec_char::VecChar = std::vec_char::new();
     bit_patterns = std::vec_char::try_extend_from_slice(bit_patterns, full, 5);

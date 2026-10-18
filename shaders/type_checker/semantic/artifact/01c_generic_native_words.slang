@@ -28,6 +28,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint4> body_specialization_inputs;
+#include "../../type/instances/body_graph_rows.slang"
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_start;
@@ -136,10 +137,10 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
         // Missing witnesses fall through to the ordinary checked payload graph.
         uint source_capacity; uint stride;
         type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-        uint seed_count = min(body_specialization_inputs[0u].z, 64u);
+        uint seed_count = body_graph_node_count();
         if (payload >= source_capacity && payload - source_capacity < seed_count)
         {
-            uint witness = body_specialization_inputs[65u + (payload - source_capacity) * 2u].w;
+            uint witness = body_graph_node(payload - source_capacity).w;
             if (witness != INVALID) return witness;
         }
         // Concrete enum layouts must be evaluated from their checked payload
@@ -436,7 +437,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint capacity = checked_type_capacity();
     uint source_capacity; uint stride;
     type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-    uint seed_count = min(body_specialization_inputs[0u].z, 64u);
+    uint seed_count = body_graph_node_count();
     // One evaluation site handles source and generated rows.
     for (uint instance = token; instance < capacity;)
     {
@@ -470,8 +471,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // source-owned bare nominal replays through its checked scalar
             // reference. Cache admission reads this exact contiguous result.
             uint ordinal = instance - source_capacity;
-            uint4 node = body_specialization_inputs[65u + ordinal * 2u];
-            uint anchor = body_specialization_inputs[66u + ordinal * 2u].w;
+            uint4 node = body_graph_node(ordinal);
+            uint anchor = body_graph_identity(ordinal).w;
             if (node.x == 9u && (anchor & 0xe0000000u) == 0x40000000u)
             { tag = TYPE_REF_SCALAR; payload = anchor & 0x1fffffffu; }
         }
@@ -480,12 +481,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Only active seed rows participate; inactive reserved storage can
         // belong to a previous job. Ordinary jobs retain their existing walk.
         if (instance < source_capacity)
-            instance = source_capacity + (token < seed_count ? token : 64u + token);
-        else if (instance - source_capacity < 64u)
+            instance = source_capacity + (token < seed_count ? token : BODY_GRAPH_NODES + token);
+        else if (instance - source_capacity < BODY_GRAPH_NODES)
         {
             uint ordinal = instance - source_capacity;
-            instance = gParams.n_tokens < seed_count - ordinal
-                ? instance + gParams.n_tokens : source_capacity + 64u + token;
+            instance = ordinal < seed_count && gParams.n_tokens < seed_count - ordinal
+                ? instance + gParams.n_tokens : source_capacity + BODY_GRAPH_NODES + token;
         }
         else if (gParams.n_tokens >= capacity - instance) break;
         else instance += gParams.n_tokens;

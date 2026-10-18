@@ -2607,6 +2607,30 @@ fn main() -> bool {
 }
 
 #[test]
+fn x86_executes_char_ordering() {
+    // Chars order by unsigned code point, with literals on either side.
+    assert_source_exit(
+        "char_ordering",
+        r#"
+fn is_digit(value: char) -> bool { return value >= '0' && value <= '9'; }
+fn below(left: char, right: char) -> bool { return left < right; }
+fn main() -> i32 {
+    let c: char = 'm';
+    if (!is_digit('7') || is_digit('a') || is_digit('/') || is_digit(':')) { return 1; }
+    if (!below('a', c) || below(c, 'a') || below(c, c)) { return 2; }
+    if (!(c > 'Z') || !(c <= 'm') || c >= 'n') { return 3; }
+    let high: char = 'é';
+    let emoji: char = '😀';
+    if (!(high > 'z') || high < 'A' || !(emoji > high) || emoji <= 'é') { return 4; }
+    if (!('a' < 'b') || 'b' <= 'a') { return 5; }
+    return 42;
+}
+"#,
+        42,
+    );
+}
+
+#[test]
 fn x86_executes_conditional_rhs_calls() {
     for (name, expression, expected) in [
         ("skip_and", "false && trap()", 0),
@@ -8874,8 +8898,8 @@ fn main() -> i32 {
         alloc::allocator::dealloc(out_ptr, capacity, align);
         return 3;
     }
-    let out_len: usize = out_len_i32;
-    let err_len: usize = err_len_i32;
+    let out_len: usize = out_len_i32 as usize;
+    let err_len: usize = err_len_i32 as usize;
     let out_written: i32 = std::io::write_stdout(out_ptr, out_len);
     let err_written: i32 = std::io::write_stderr(err_ptr, err_len);
     alloc::allocator::dealloc(err_ptr, capacity, align);
@@ -9424,7 +9448,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(ptr, capacity, align);
         return 2;
     }
-    let count_len: usize = count;
+    let count_len: usize = count as usize;
     let written: i32 = std::io::write_stdout(ptr, count_len);
     alloc::allocator::dealloc(ptr, capacity, align);
     if (written != count) {
@@ -9586,7 +9610,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(ptr, capacity, align);
         return 4;
     }
-    let count_len: usize = count;
+    let count_len: usize = count as usize;
     let written: i32 = std::fs::write(output, ptr, count_len);
     let output_close: i32 = std::fs::close(output);
     alloc::allocator::dealloc(ptr, capacity, align);
@@ -9686,7 +9710,7 @@ fn main() -> i32 {
         return 4;
     }
 
-    let input_len: usize = input_len_i32;
+    let input_len: usize = input_len_i32 as usize;
     let input: std::fs::FileHandle = std::fs::open_read(input_path, input_len);
     if (input < 0) {
         alloc::allocator::dealloc(data, data_capacity, align);
@@ -9703,7 +9727,7 @@ fn main() -> i32 {
         return 6;
     }
 
-    let output_len: usize = output_len_i32;
+    let output_len: usize = output_len_i32 as usize;
     let output: std::fs::FileHandle = std::fs::open_write(output_path, output_len);
     if (output < 0) {
         alloc::allocator::dealloc(data, data_capacity, align);
@@ -10410,7 +10434,7 @@ fn main() -> i32 {
         alloc::allocator::dealloc(key_ptr, capacity, align);
         return 13;
     }
-    let key_len: usize = key_len_i32;
+    let key_len: usize = key_len_i32 as usize;
     let value_len: i32 = value_len_for_key(key_ptr, key_len);
     if (value_len < 0) {
         alloc::allocator::dealloc(value_ptr, capacity, align);
@@ -11836,4 +11860,60 @@ fn main() -> i32 {
 "#,
         42,
     );
+}
+
+#[test]
+fn x86_u8_raw_views_step_one_byte() {
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+
+fn sum(bytes: [u8], count: i32) -> i32 {
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < count) {
+        total = total + (bytes[i] as i32);
+        i = i + 1;
+    }
+    return total;
+}
+
+fn bump(values: [u8]) -> i32 {
+    values[1] = 20;
+    return (values[0] as i32) + (values[1] as i32) + (values[2] as i32);
+}
+
+fn main() -> i32 {
+    let text_data: ptr = core::mem::string_data_ptr("Az");
+    let text: [u8] = core::mem::typed_slice_from_raw_parts(text_data, 2);
+    if ((text[0] as i32) != 65) { return 1; }
+    if ((text[1] as i32) != 122) { return 2; }
+    // 0x42410000 is [0, 0, 65, 66] in little-endian memory.
+    let words: [i32; 1] = [1111556096];
+    let word_data: ptr = core::mem::i32_array_data_ptr(words);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(word_data, 4);
+    if ((bytes[2] as i32) != 65) { return 3; }
+    if ((bytes[3] as i32) != 66) { return 4; }
+    bytes[0] = 7;
+    if (words[0] != 1111556103) { return 5; }
+    if ((bytes[1] as i32) != 0) { return 6; }
+    if (sum(bytes, 4) != 138) { return 7; }
+    // A native u8 array keeps its descending words.
+    let native: [u8; 3] = [10, 30, 2];
+    if (bump(native) != 32) { return 8; }
+    if ((native[1] as i32) != 20) { return 9; }
+    return 42;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 u8 raw views", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("u8 raw views should compile to x86_64");
+
+    let output = common::run_x86_64_elf_output("x86 u8 raw views", "x86_u8_raw_views", &bytes);
+    assert_eq!(output.status.code(), Some(42), "u8 raw views failed: {output:?}");
 }

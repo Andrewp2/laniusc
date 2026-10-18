@@ -2672,12 +2672,17 @@ fn ll1_rejection_syntax_label_for_source_pack<'a>(
     let tokens = source_pack_syntax_tokens(files);
     let first_input = ll1_first_input_index(semantic_token_kinds);
     let source_index = rejection.pos.checked_sub(first_input);
+    let after_fn = source_index
+        .and_then(|index| index.checked_sub(1))
+        .and_then(|index| tokens.get(index))
+        .is_some_and(|entry| token_source_text(&entry.file.source, &entry.token) == Some("fn"));
     let message = ll1_rejection_message_for_context(
         tokens
             .get(source_index?)
             .map(|entry| syntax_token_description(&entry.file.source, &entry.token))
             .unwrap_or_else(|| "end of input".to_string()),
         rejection,
+        after_fn,
     );
 
     if let Some(entry) = tokens.get(source_index?) {
@@ -2740,7 +2745,11 @@ impl SourceSyntaxTokens<'_> {
             .and_then(|index| self.tokens.get(index))
             .map(|token| syntax_token_description(self.source, token))
             .unwrap_or_else(|| "end of input".to_string());
-        let message = ll1_rejection_message_for_context(found, rejection);
+        let after_fn = source_index
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| self.tokens.get(index))
+            .is_some_and(|token| token_source_text(self.source, token) == Some("fn"));
+        let message = ll1_rejection_message_for_context(found, rejection, after_fn);
 
         if let Some(token) = source_index.and_then(|index| self.tokens.get(index)) {
             SourceSyntaxLabel {
@@ -2754,8 +2763,17 @@ impl SourceSyntaxTokens<'_> {
     }
 }
 
-fn ll1_rejection_message_for_context(found: String, rejection: &Ll1RejectionContext) -> String {
+/// `after_fn` is true when the rejected token follows the `fn` keyword. An
+/// identifier expected there is the function's name, so the label says so.
+fn ll1_rejection_message_for_context(
+    found: String,
+    rejection: &Ll1RejectionContext,
+    after_fn: bool,
+) -> String {
     match expected_syntax_terminal_list(&rejection.expected) {
+        Some(expected) if after_fn && expected == "identifier" => {
+            format!("expected function name, found {found}")
+        }
         Some(expected) => format!("expected {expected}, found {found}"),
         None => format!("unexpected {found}"),
     }
@@ -5384,6 +5402,23 @@ mod tests {
         assert_eq!(label.start, 0);
         assert_eq!(label.len, "fn".len());
         assert_eq!(label.message, "expected identifier, found keyword `fn`");
+    }
+
+    #[test]
+    fn ll1_rejection_context_label_names_the_identifier_after_fn() {
+        let source = "fn fn main() { return 0; }\n";
+        let rejection = Ll1RejectionContext {
+            pos: 2,
+            code: crate::parser::tables::Ll1ParseErrorCode::TerminalMismatch,
+            found: TokenKind::Fn as u32,
+            expected: vec![TokenKind::Ident as u32],
+        };
+        let label = SourceSyntaxTokens::from_source(source)
+            .label_for_ll1_rejection(&[0, TokenKind::Fn as u32, TokenKind::Fn as u32], &rejection);
+
+        assert_eq!(label.start, 3);
+        assert_eq!(label.len, "fn".len());
+        assert_eq!(label.message, "expected function name, found keyword `fn`");
     }
 
     #[test]

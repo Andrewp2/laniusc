@@ -8,6 +8,7 @@ mod backends;
 pub use backends::GpuCompilerBackends;
 mod benchmarks;
 mod body_specialization;
+mod instance_copies;
 mod program_evidence;
 mod bounded_path_codegen;
 mod buffers;
@@ -414,6 +415,12 @@ impl<'gpu> GpuCompiler<'gpu> {
                 }
             }
             host_timer.stamp("parallel_pipeline_families");
+            if host_timer.print_enabled {
+                eprintln!(
+                    "[gpu_compile_host_timer] driver_shader_cache: {}",
+                    crate::gpu::device::driver_shader_cache_status().summary()
+                );
+            }
             host_timer.pipeline_cache_size(gpu, "after_parallel_pipeline_families");
             Ok(Self {
                 gpu,

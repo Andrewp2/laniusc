@@ -615,6 +615,10 @@ async fn run_session(
     mut output: impl Write,
 ) -> Result<(), CliError> {
     let reaper = ResidentBufferReaper::start(compiler.clone(), options.idle_buffer_timeout);
+    let driver_cache = device::driver_shader_cache_status();
+    if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        eprintln!("[gpu_compile_host_timer] driver_shader_cache: {}", driver_cache.summary());
+    }
     write_response(
         &mut output,
         &json!({
@@ -627,6 +631,15 @@ async fn run_session(
             "wgpu_resources": wgpu_resource_metrics(),
             "gpu_allocator": gpu_allocator_metrics(),
             "compute_pipelines_created": pipeline_creation_count(),
+            "driver_shader_cache": {
+                "result": driver_cache.result(),
+                "enabled": driver_cache.enabled,
+                "dir": driver_cache.dir.as_ref().map(|dir| dir.display().to_string()),
+                "app_name": driver_cache.app_name,
+                "named_shard_bytes": driver_cache.named_shard_bytes,
+                "written_since_start": driver_cache.written_since_start,
+                "pipeline_create_ms": driver_cache.pipeline_time.as_secs_f64() * 1000.0,
+            },
             "recorded_compute_passes": recorded_compute_pass_count(),
             "recorded_compute_dispatches": recorded_compute_dispatch_count(),
             "idle_buffer_timeout_ms": options

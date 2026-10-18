@@ -254,6 +254,42 @@ fn simple_llp_grammar_builds_paper_style_pair_tables() {
 }
 
 #[test]
+fn pairs_outside_the_llp_table_pop_a_symbol_no_pair_pushes() {
+    let current = current_grammar();
+    let prod_arity = compute_prod_arity(&current.spec.productions);
+    let (tables, pair_tables, _) =
+        build_llp_precomputed_tables(&current.spec, &current.predictions, prod_arity)
+            .expect("build LLP tables");
+    let sequence = |prev: u32, this: u32| {
+        let idx = (prev * N_KINDS + this) as usize;
+        let off = tables.sc_off[idx] as usize;
+        &tables.sc_superseq[off..off + tables.sc_len[idx] as usize]
+    };
+    let mut pushed = HashSet::new();
+    let mut rejected_code = None;
+    for prev in 0..N_KINDS {
+        for this in 0..N_KINDS {
+            let codes = sequence(prev, this);
+            if pair_tables.stack_change.cells.contains_key(&(prev, this)) {
+                assert_eq!(codes, &pair_tables.stack_change.cells[&(prev, this)][..]);
+                pushed.extend(codes.iter().filter(|code| *code & 1 == 1).map(|code| code >> 1));
+                continue;
+            }
+            // `x not_a_cast NotAType;` has the pair (Ident, Ident).
+            assert_eq!(codes.len(), 1, "rejected pair {}", format_pair((prev, this)));
+            assert_eq!(codes[0] & 1, 0, "rejected pair {} must pop", format_pair((prev, this)));
+            assert_eq!(*rejected_code.get_or_insert(codes[0]), codes[0]);
+        }
+    }
+    let ident = TokenKind::Ident as u32;
+    assert!(!pair_tables.stack_change.cells.contains_key(&(ident, ident)));
+    let rejected_symbol = rejected_code.expect("the grammar rejects some pairs") >> 1;
+    assert!(!pushed.contains(&rejected_symbol));
+    // The empty file is the one table pair with no stack change.
+    assert!(sequence(EOF_TOKEN, EOF_TOKEN).is_empty());
+}
+
+#[test]
 fn psls_conflict_report_names_productions_and_gammas() {
     let spec = parse_grammar(
         "

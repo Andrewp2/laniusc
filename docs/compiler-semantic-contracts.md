@@ -136,9 +136,11 @@ canonical ID are one value. Two producers can publish the same application as
 different checked rows: the nested-literal pass its indexed field row, and the
 canonical context path the realized row of the ID. Comparing rows there instead
 of IDs counted a change every round (`calls/03k3_project_record_contexts`, the
-same rule as `calls/03e_materialize_return_types`). Identical reference words
-are also one value when a structural comparison cannot walk them, such as an
-array element whose type name is unresolved: `calls/03i_materialize_array_literals`
+same rule as `calls/03e_materialize_return_types` and
+`calls/03i_materialize_array_literals`). A fact that has no canonical ID yet,
+such as an array element whose type name is unresolved, is no change: the pass
+waits for a later round instead of republishing it. An older 03i compared
+element references structurally, rejected references it could not walk, and
 republished such a literal, allocating a row, every round.
 
 ## Semantic replay identity, widths, and original recipes (2026-10-11)

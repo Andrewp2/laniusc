@@ -2,6 +2,7 @@
 // Input must be valid UTF-8. Return 2 for malformed input, 3 for I/O failure,
 // 4 for too many scalars, and 5 if vector growth or output fails.
 module app::main;
+import core::char;
 import std::io_utf8;
 import std::vec_char;
 
@@ -22,7 +23,8 @@ fn main() -> i32 {
             std::vec_char::destroy(values);
             return 4;
         }
-        let scalar: char = code;
+        // The reader returns only scalar values below its sentinels.
+        let scalar: char = core::char::from_u32_or(code, '\0');
         let before: i32 = std::vec_char::len(values);
         values = std::vec_char::try_push(values, scalar);
         if (std::vec_char::len(values) != before + 1) {
@@ -37,7 +39,7 @@ fn main() -> i32 {
     while (index < std::vec_char::len(values)) {
         let item: char = std::vec_char::get_or(values, index, '\0');
         if (!has_previous || item != previous) {
-            let code: u32 = item;
+            let code: u32 = item as u32;
             if (!std::io_utf8::write_stdout_scalar(code)) {
                 std::vec_char::destroy(values);
                 return 5;

@@ -1,0 +1,2 @@
+fn cap<T, const N: usize>(values: [T; N]) -> i32 { return N as i32; }
+fn main() -> i32 { let a: [i32; 2] = [0, 0]; let b: [char; 3] = ['a', 'b', 'c']; return cap(a) + cap(b) + 37; }

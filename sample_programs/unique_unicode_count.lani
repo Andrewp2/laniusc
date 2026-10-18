@@ -2,6 +2,7 @@
 // Return 2 for malformed UTF-8, 3 for input failure, 4 for allocation or
 // capacity failure, and 5 for output failure.
 module app::main;
+import core::char;
 import std::io_byte;
 import std::io_decimal;
 import std::io_utf8;
@@ -20,7 +21,8 @@ fn main() -> i32 {
             std::set_char::destroy(seen);
             return 3;
         }
-        let scalar: char = code;
+        // The reader returns only scalar values below its sentinels.
+        let scalar: char = core::char::from_u32_or(code, '\0');
         let existed: bool = std::set_char::contains(seen, scalar);
         let before: i32 = std::set_char::len(seen);
         seen = std::set_char::try_insert(seen, scalar);

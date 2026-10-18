@@ -1,10 +1,13 @@
+// A u32 code point reaches char only through the checked conversion.
 module app::main;
+import core::char;
+import core::option;
 fn from_ascii(value: u32) -> char {
-    return value as char;
+    return core::option::unwrap_or(core::char::from_u32(value), '?');
 }
 fn main() -> i32 {
     let letter: char = from_ascii(65);
-    if (letter == 'A') {
+    if (letter == 'A' && from_ascii(55296) == '?') {
         return 0;
     }
     return 1;

@@ -4,18 +4,18 @@ import std::set_char;
 fn main() -> i32 {
     let value: std::set_char::SetChar = std::set_char::try_reserve(std::set_char::new(), 3);
     if (std::set_char::capacity(value) != 3) { return 2; }
-    value = std::set_char::try_insert(value, 41);
+    value = std::set_char::try_insert(value, ')');
     if (std::set_char::len(value) != 1) { return 3; }
     value = std::set_char::try_shrink_to_fit(value);
     if (std::set_char::len(value) == 1 &&
         std::set_char::capacity(value) == 3 &&
-        std::set_char::at_or(value, 0, 0) == 41) {
+        std::set_char::at_or(value, 0, '\0') == ')') {
         std::set_char::destroy(value);
         return 0;
     }
     if (std::set_char::len(value) == 1 &&
         std::set_char::capacity(value) == 1 &&
-        std::set_char::at_or(value, 0, 0) == 41) {
+        std::set_char::at_or(value, 0, '\0') == ')') {
         std::set_char::destroy(value);
         return 4;
     }

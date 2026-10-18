@@ -1,0 +1,16 @@
+trait Same { fn same(self, other: Self) -> bool; }
+impl Same for i32 { fn same(self, other: i32) -> bool { return self == other; } }
+fn find<T>(items: [T; 3], item: T) -> i32 where T: Same {
+    let index: i32 = 0;
+    while (index < 3) {
+        let current: T = items[index];
+        if (current.same(item)) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+fn main() -> i32 {
+    let items: [i32; 3] = [7, 9, 4];
+    if (find(items, 4) != 2 || find(items, 5) != -1) { return 1; }
+    return 42;
+}

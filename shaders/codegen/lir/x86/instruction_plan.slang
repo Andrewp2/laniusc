@@ -1031,6 +1031,9 @@ uint plan_specialized(X86PlanInput input)
         bool string = integer_type == SEMANTIC_LIR_TY_STRING;
         bool aggregate = (metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
         bool packed = (metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u;
+        // plan_index_address leaves a runtime view's byte stride in RCX.
+        bool runtime_u8 = integer_type == SCALAR_U8 &&
+            core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME;
         bool copy = op == X86_LIR_OP_INDEX_STORE &&
             (metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u;
         bool pair_store = op == X86_LIR_OP_INDEX_STORE && !copy &&
@@ -1057,6 +1060,11 @@ uint plan_specialized(X86PlanInput input)
             {
                 bool f32 = !aggregate && integer_type == X86_LIR_TY_FLOAT;
                 bool packed_load = !aggregate && packed;
+                // A u8 view's stride (RCX) is +1 over raw bytes and -8 over a
+                // native array's words. A byte view loads one byte:
+                // cmp rcx, 1; jne +5; movzx eax, byte [rax]; jmp +3
+                if (!aggregate && runtime_u8)
+                    plan_bytes_words(3u, 0xf98348u, 0x0f057501u, 0x03eb00b6u);
                 if (!aggregate) plan_prefixed(!packed_load && !f32, 0x48u, 2u, 0x008bu);
                 plan_value_move(is_float, is_float ? f64 : !packed_load, X86_REG, locations.result);
             }
@@ -1077,6 +1085,9 @@ uint plan_specialized(X86PlanInput input)
         else
         {
             plan_value_move(is_float, is_float ? f64 : !packed, locations.c, X86_REG | 2u);
+            // A byte view stores one byte, as the load above reads one:
+            // cmp rcx, 1; jne +4; mov [rax], dl; jmp +3
+            if (runtime_u8) plan_bytes_words(2u, 0x8348u, 0x047501f9u, 0x03eb1088u);
             plan_prefixed(!packed, 0x48u, 2u, 0x1089u); // mov [rax], edx/rdx
         }
         return 0u;

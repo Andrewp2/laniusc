@@ -1,0 +1,18 @@
+module app::main;
+import core::set;
+
+struct Point { x: i32, y: i32 }
+
+pub impl core::set::Key for Point {
+    pub fn key(self) -> u32 { return (self.x * 1000 + self.y) as u32; }
+}
+
+fn main() -> i32 {
+    let origin: Point = Point { x: 0, y: 0 };
+    let points: core::set::Set<Point, 3> = core::set::from_storage([origin, origin, origin]);
+    points = core::set::try_insert(points, Point { x: 1, y: 2 });
+    points = core::set::try_insert(points, Point { x: 1, y: 2 });
+    points = core::set::try_insert(points, Point { x: 3, y: 4 });
+    if (core::set::len(points) != 2 || !core::set::contains(points, Point { x: 3, y: 4 })) { return 1; }
+    return 42;
+}
