@@ -214,6 +214,7 @@ fn submit_and_read_u32s(
         label: Some("type-check-canonical-encoder"),
     });
     let recorded = std::mem::replace(encoder, next);
+    crate::gpu::timer::stamp_active_submission_begin(encoder, label);
     crate::gpu::passes_core::submit_with_progress(queue, label, recorded.finish());
     let slice = readback.slice(..);
     crate::gpu::passes_core::map_readback_blocking(device, &slice, label)?;
@@ -1855,6 +1856,10 @@ impl GpuTypeChecker {
                         label: Some("type-check-call-inference-encoder"),
                     });
                     let recorded = std::mem::replace(encoder, next);
+                    crate::gpu::timer::stamp_active_submission_begin(
+                        encoder,
+                        "type_check.call_inference",
+                    );
                     crate::gpu::passes_core::submit_with_progress(
                         queue,
                         "type-check call inference",

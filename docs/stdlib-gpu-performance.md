@@ -1,5 +1,75 @@
 # GPU compiler performance: stdlib fixes
 
+## Startup and shader caches (2026-10-15)
+
+A warm start creates about 570 compute pipelines from two caches. The first
+is the NVIDIA driver's shader disk cache. The second is the wgpu pipeline
+cache file in `LANIUS_PIPELINE_CACHE_DIR`. A cold start compiles every
+pipeline and takes 70–190 s on the development laptop. A warm start takes
+about 1 s.
+
+**Driver cache, shared shard (the default).** Without a name, NVIDIA keys its
+shader cache by the executable's path. Every new binary path then started
+cold: pins, worktrees, renamed test binaries. Touching or rewriting a binary
+in place did not invalidate its entry. laniusc now sets
+`__GL_SHADER_DISK_CACHE_APP_NAME=laniusc` unless the variable is already set,
+so every laniusc binary shares one shard, `laniusc<n>.bin`/`.toc`. An upgrade
+compiles only the kernels that changed.
+
+Unless one of the `__GL_SHADER_DISK_CACHE*` variables is set, the cache lives
+in `<LANIUS_PIPELINE_CACHE_DIR>/nvidia`. The driver's default, `~/.cache/nvidia`,
+is shared with every application and capped at 1 GiB. Once full it evicts:
+one 1.6 s start took 236 s.
+
+The daemon's ready event reports `driver_shader_cache` (`hit`, `miss`, `off`,
+`not-nvidia` or `unknown`) with the pipeline creation time. With
+`LANIUS_GPU_COMPILE_HOST_TIMING=1` it is also printed on stderr.
+
+**Concurrent processes.** While one process holds `laniusc0`, the driver gives
+a second concurrent process the next shard, `laniusc1`, and so on. Each
+shard pays one cold start per kernel change, after which it stays warm. A
+`laniusc check` run beside a daemon took 71.4 s the first time: it compiled
+563 pipelines into a fresh 20 MB `laniusc1`. The next concurrent check took
+0.8 s.
+
+**Pipeline cache file only (`LANIUS_DRIVER_SHADER_CACHE=0`).** This turns the
+driver cache off. It applies only when none of the four `__GL_SHADER_DISK_CACHE*`
+variables is set, since laniusc never overrides the user's driver settings.
+Pipelines then come from the wgpu pipeline cache file
+`…_set-<kernel digest>`. The file is keyed by the kernel set, not by the
+executable. When the kernel set changes, the new file is seeded from the
+newest existing set file of at most 64 MiB, so only changed pipelines
+compile.
+
+laniusc also falls back to this mode by itself on a driver that ignored the
+shard name before; the `nvidia-app-name-ignored` marker records that.
+
+Each process writes the file through its own temporary file, then renames it
+into place. Temporary files older than ten minutes are pruned. A start whose
+pipelines were all cache hits does not rewrite the file.
+
+Measured on 2026-10-15 (pin `89341837`, tip `d81d20d5`):
+
+| | daemon start | `laniusc check` |
+|---|---|---|
+| driver cache (default) | 1.27 s | 0.84–1.02 s |
+| pipeline cache file only | 1.09–1.97 s | 1.28–1.39 s |
+
+- The set file was 39.9 MB and took 92–136 ms to read and create.
+- A daemon and three checks, two of them concurrent, were all warm.
+- An upgrade compiled 44 of 569 pipelines.
+
+The driver cache stays the default because the file-only mode is slower to
+start.
+
+**The 100 MB VkPipelineCache cap.** NVIDIA's VkPipelineCache data stops
+growing near 100 MB. A set file seeded from a full one never gains new
+pipelines, so every start recompiled its misses (about 110 s) and saved the
+same bytes. Seeds are therefore limited to 64 MiB
+(`LANIUS_PIPELINE_CACHE_SEED_MAX_BYTES`). A seeded set still carries its
+seed's stale pipelines forward, so a long chain of kernel changes eventually
+needs a fresh set and one cold start.
+
 ## Generic trait method startup and cache identity (2026-10-11)
 
 The Stage A direct-method integration has focused correctness evidence and no

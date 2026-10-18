@@ -78,6 +78,7 @@ fn submit_dependency_page_boundary(
         label: Some("type-check-dependency-page-encoder"),
     });
     let recorded = std::mem::replace(encoder, next);
+    crate::gpu::timer::stamp_active_submission_begin(encoder, "type_check.dependency_page");
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "type-check dependency page boundary",
@@ -257,10 +258,15 @@ pub(in crate::type_checker) fn record_dependency_methods(
             DEPENDENCY_METHODS_COLLECT, DEPENDENCY_METHODS_PROJECT,
             DEPENDENCY_METHOD_PARAMS_SCATTER,
         ),
-        MethodSelectionStage::Lookup => (
-            DEPENDENCY_METHODS_COLLECT_LOOKUP, DEPENDENCY_METHODS_PROJECT_LOOKUP,
-            DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP,
-        ),
+        // The lookup sweeps dispatch from their gated grids.
+        MethodSelectionStage::Lookup => {
+            return if collect {
+                visibility.collect_methods_lookup.record(encoder)
+            } else {
+                visibility.project_methods_lookup.record(encoder)?;
+                visibility.scatter_method_params_lookup.record(encoder)
+            };
+        }
         MethodSelectionStage::Inference => (
             DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_METHODS_PROJECT_INFERENCE,
             DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,

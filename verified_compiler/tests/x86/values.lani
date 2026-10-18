@@ -73,7 +73,7 @@ pub fn word_equal(value: usize) -> i32 {
     if (value == word_identity(value)) { return 1; }
     return 0;
 }
-pub fn widen(value: i32) -> usize { let wide: usize = value; return wide; }
+pub fn widen(value: i32) -> usize { let wide: usize = value as usize; return wide; }
 pub fn narrow(value: usize) -> i32 { let small: i32 = value; return small; }
 fn slice_identity(value: [i32]) -> [i32] { return value; }
 pub fn slice_forward(value: [i32]) -> [i32] { return slice_identity(value); }

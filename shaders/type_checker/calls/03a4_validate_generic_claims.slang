@@ -1,14 +1,19 @@
-import type_checker.constant_atoms;
-// Validate direct-call generic claims after final call resolution.
-
-import external_type_identity;
-import type_checker.concrete_type_equality;
+// Validate direct-call generic claims after final call resolution: each
+// claim against the call's explicit and contextual arguments for its slot,
+// and against the slot's canonical (first concrete) claim. Operands compare
+// by canonical ID (docs/canonical-type-ids.md); rows written during
+// inference are interned on demand.
 import hir_records;
 import status;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.claim_reference;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.contextual_call_environment;
+import type_checker.checked_type_identity;
+import type_checker.checked_slots;
+import type_checker.canonical.canonical_api;
+import type_checker.canonical.canonical_checked_rows;
+import type_checker.substitution.ct_checked;
 
 struct Params
 {
@@ -32,85 +37,21 @@ StructuredBuffer<uint> call_generic_claim_arg_row;
 StructuredBuffer<uint> call_generic_claim_lookup_head;
 StructuredBuffer<uint> call_generic_claim_lookup_next;
 StructuredBuffer<uint> call_inference_state;
-StructuredBuffer<uint> type_instance_kind;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> type_instance_arg_row_start;
-StructuredBuffer<uint> type_instance_arg_row_count_out;
-StructuredBuffer<uint> type_instance_arg_row_ref_tag;
-StructuredBuffer<uint> type_instance_arg_row_ref_payload;
-StructuredBuffer<uint> type_instance_elem_ref_tag;
-StructuredBuffer<uint> type_instance_elem_ref_payload;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_len_kind;
-StructuredBuffer<uint> type_instance_len_payload;
-
 
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
-static const uint TY_UNKNOWN = 0u;
-static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
-static const uint TYPE_REF_INSTANCE = 3u;
-static const uint TYPE_INSTANCE_ARRAY = 2u;
-static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint GENERIC_CLAIM_CAPACITY_MULTIPLIER = 32u;
-
-
-import type_checker.instance_arguments;
-StructuredBuffer<uint> type_generic_param_slot_by_token;
-
-public struct CheckedConcreteTypeGraph : IConcreteTypeGraph
-{
-    public static bool constant_value(uint row, out uint3 value)
-    { return checked_constant_atom_value(row, value); }
-    public static uint constant_parameter_scalar(uint reference)
-    { return checked_constant_parameter_scalar(reference); }
-    public static bool constant_projection(uint row, out uint scalar, out uint2 child)
-    { return checked_constant_projection(row, scalar, child); }
-    public static uint metadata(uint instance, uint field)
-    {
-        switch (field)
-        {
-        case 0u: return type_instance_kind[instance];
-        case 1u: return type_instance_decl_token[instance];
-        case 2u: return type_instance_arg_count[instance];
-        case 3u: return type_instance_elem_ref_tag[instance];
-        case 4u: return type_instance_elem_ref_payload[instance];
-        case 5u: return type_instance_len_kind[instance];
-        case 6u: return type_instance_len_payload[instance];
-        case 7u: return external_type_library_id[instance];
-        case 8u: return external_type_unit_id[instance];
-        case 9u: return external_type_local_index[instance];
-        default: return INVALID;
-        }
-    }
-
-    public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
-    {
-        tag = 0u; payload = INVALID;
-        uint source_capacity; uint stride;
-        type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-        return checked_instance_argument(instance, slot, source_capacity,
-            type_instance_arg_count, type_instance_arg_start,
-            type_instance_arg_ref_tag, type_instance_arg_ref_payload,
-            type_instance_arg_row_start, type_instance_arg_row_count_out,
-            type_instance_arg_row_ref_tag, type_instance_arg_row_ref_payload, tag, payload);
-    }
-}
 
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-[ForceInline]
 uint active_token_count()
 {
     return min(token_count[0], gParams.n_tokens);
@@ -124,8 +65,7 @@ uint active_hir_node_count()
 uint generic_claim_capacity()
 {
     uint base = max(active_token_count(), active_hir_node_count());
-    uint max_base = 0xffffffffu / GENERIC_CLAIM_CAPACITY_MULTIPLIER;
-    return base > max_base ? 0xffffffffu : base * GENERIC_CLAIM_CAPACITY_MULTIPLIER;
+    return base > INVALID / GENERIC_CLAIM_CAPACITY_MULTIPLIER ? INVALID : base * GENERIC_CLAIM_CAPACITY_MULTIPLIER;
 }
 
 bool valid_node(uint node)
@@ -136,11 +76,6 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < active_token_count();
-}
-
-void record_error(uint token_i, uint code, uint detail)
-{
-    record_min_token_error(status, token_i, code, detail);
 }
 
 uint claim_error_token(uint row, uint fallback_token)
@@ -185,6 +120,21 @@ uint canonical_claim_row(uint row, uint active_count)
     return canonical;
 }
 
+// The operand this claim must equal: 0 the explicit argument, 1 the
+// contextual argument, 2 the canonical claim. False when there is none.
+bool expected_operand(uint row, uint prev_row, uint which, out uint tag, out uint payload)
+{
+    uint environment = 0x80000000u | call_generic_claim_callee[row];
+    uint slot = call_generic_claim_slot[row];
+    tag = 0u; payload = INVALID;
+    if (which == 0u) return checked_explicit_environment_argument(environment, slot, tag, payload);
+    if (which == 1u) return checked_context_environment_argument(environment, slot, tag, payload);
+    if (prev_row == INVALID || prev_row == row) return false;
+    tag = call_generic_claim_ref_tag[prev_row];
+    payload = call_generic_claim_ref_payload[prev_row];
+    return true;
+}
+
 void validate_claim_at(uint row)
 {
     uint active_count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
@@ -192,29 +142,24 @@ void validate_claim_at(uint row)
         return;
 
     uint prev_row = canonical_claim_row(row, active_count);
-    uint callee = call_generic_claim_callee[row];
     uint tag = call_generic_claim_ref_tag[row];
     uint payload = call_generic_claim_ref_payload[row];
-    uint capacity; uint stride;
-    type_instance_kind.GetDimensions(capacity, stride);
-    uint expected_tag; uint expected_payload;
-    if (checked_explicit_environment_argument(0x80000000u | callee, call_generic_claim_slot[row],
-        expected_tag, expected_payload) && !concrete_type_refs_equal<CheckedConcreteTypeGraph>(
-        tag, payload, expected_tag, expected_payload, capacity))
-        record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, 0u);
-    if (checked_context_environment_argument(0x80000000u | callee, call_generic_claim_slot[row],
-        expected_tag, expected_payload) && !concrete_type_refs_equal<CheckedConcreteTypeGraph>(
-        tag, payload, expected_tag, expected_payload, capacity))
-        record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, 0u);
-    if (prev_row == INVALID || prev_row == row) return;
-    uint prior_tag = call_generic_claim_ref_tag[prev_row];
-    uint prior_payload = call_generic_claim_ref_payload[prev_row];
-    if (!concrete_type_refs_equal<CheckedConcreteTypeGraph>(
-        tag, payload, prior_tag, prior_payload, capacity))
+    uint spare = CT_NONE;
+    uint id = ct_intern_checked<CtCheckedRows>(tag, payload, spare);
+    // One comparison site, so the interning and identity readers inline once.
+    [loop]
+    for (uint which = 0u; which < 3u; which++)
     {
-        uint detail = tag == TYPE_REF_SCALAR && prior_tag == TYPE_REF_SCALAR
-            ? prior_payload * 256u + payload : 0u;
-        record_error(claim_error_token(row, callee), ERR_ASSIGN_MISMATCH, detail);
+        uint expected_tag; uint expected_payload;
+        if (!expected_operand(row, prev_row, which, expected_tag, expected_payload)) continue;
+        uint expected = ct_intern_checked<CtCheckedRows>(expected_tag, expected_payload, spare);
+        if (checked_types_equal_ids(CheckedSlots(), tag, payload, id,
+                expected_tag, expected_payload, expected, false))
+            continue;
+        uint detail = which == 2u && tag == TYPE_REF_SCALAR && expected_tag == TYPE_REF_SCALAR
+            ? expected_payload * 256u + payload : 0u;
+        record_min_token_error(status, claim_error_token(row, call_generic_claim_callee[row]),
+            ERR_ASSIGN_MISMATCH, detail);
     }
 }
 

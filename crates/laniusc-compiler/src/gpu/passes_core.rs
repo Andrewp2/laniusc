@@ -40,6 +40,8 @@ use crate::{
 };
 
 static PIPELINE_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
+/// Summed over threads: the time `create_compute_pipeline` took.
+static PIPELINE_CREATION_NANOS: AtomicU64 = AtomicU64::new(0);
 static BIND_GROUP_CREATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_PASS_COUNT: AtomicU64 = AtomicU64::new(0);
 static RECORDED_COMPUTE_DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -641,6 +643,13 @@ mod compute_pass_counting_tests {
 /// not perform pipeline initialization after it has reported readiness.
 pub(crate) fn pipeline_creation_count() -> u64 {
     PIPELINE_CREATION_COUNT.load(Ordering::Relaxed)
+}
+
+/// The time this process spent in `create_compute_pipeline`, summed over
+/// threads. A driver cache hit costs well under a millisecond a pipeline; a
+/// compile costs ~250 ms.
+pub(crate) fn pipeline_creation_time() -> Duration {
+    Duration::from_nanos(PIPELINE_CREATION_NANOS.load(Ordering::Relaxed))
 }
 
 /// Returns the monotonic number of bind groups created through the compiler's
@@ -1274,6 +1283,7 @@ pub(crate) fn submit_recorded_prefix(
     }
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
     let recorded = std::mem::replace(encoder, next);
+    crate::gpu::timer::stamp_active_submission_begin(encoder, label);
     let start = Instant::now();
     let commands = recorded.finish();
     crate::gpu::trace::record_host_span(
@@ -1694,10 +1704,11 @@ pub fn pipeline_from_spirv_and_bgls(
         compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: crate::gpu::device::pipeline_cache_for(device).as_deref(),
     });
-    PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
-    crate::gpu::device::mark_pipeline_cache_dirty(device);
     let compute_pipeline_end = Instant::now();
-    crate::gpu::device::note_pipeline_created(device);
+    let creation = compute_pipeline_end.duration_since(compute_pipeline_start);
+    PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    PIPELINE_CREATION_NANOS.fetch_add(creation.as_nanos() as u64, Ordering::Relaxed);
+    crate::gpu::device::note_pipeline_creation(device, creation);
     trace_pipeline(label, "compute_pipeline.done");
     trace_pipeline_timing(
         label,
