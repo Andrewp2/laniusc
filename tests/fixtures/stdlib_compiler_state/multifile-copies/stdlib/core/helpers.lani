@@ -1,0 +1,9 @@
+module core::helpers;
+
+pub fn twice(x: i32) -> i32 {
+    return x + x;
+}
+
+pub fn first<T>(left: T, right: T) -> T {
+    return left;
+}

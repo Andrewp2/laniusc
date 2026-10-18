@@ -1,0 +1,7 @@
+module core::zlast;
+
+import core::wrap;
+
+pub fn last<T>(value: T) -> T {
+    return core::wrap::keep(value);
+}
