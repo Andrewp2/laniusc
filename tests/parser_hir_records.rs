@@ -10625,6 +10625,77 @@ fn main(first: i32, second: i32, third: i32) -> i32 {
 }
 
 #[test]
+fn parser_hir_long_binary_chain_spans_start_at_the_leftmost_operand_in_source_packs() {
+    // The span seed walks 32 left links locally; longer chains continue
+    // through the bounded steps. 70 terms cross that boundary twice, and the
+    // first operand is a layered production with no semantic row.
+    let terms = (0..70)
+        .map(|term| if term % 2 == 0 { "first" } else { "second" })
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let source = format!(
+        "module app::main;\n\nfn main(first: i32, second: i32) -> i32 {{\n    return {terms};\n}}\n"
+    );
+    let parsed = parse_resident_source_pack(&[source.as_str()]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let mut spine = vec![resolve_forward_expr_record(
+        &parsed,
+        return_expr,
+        "return expression",
+    )];
+    loop {
+        let add = *spine.last().unwrap();
+        let left = resolve_forward_expr_record(
+            &parsed,
+            assert_valid_source_pack_record_index(
+                &parsed,
+                parsed.hir_expr_record_left[add],
+                "add left operand",
+            ),
+            "add left operand",
+        );
+        if parsed.hir_expr_record_form[left] != HIR_EXPR_FORM_ADD {
+            assert_eq!(
+                parsed.hir_expr_record_form[left], HIR_EXPR_FORM_NAME,
+                "the deepest add's left operand should be the first name"
+            );
+            spine.push(left);
+            break;
+        }
+        spine.push(left);
+    }
+    assert_eq!(spine.len(), 70, "69 adds and the first name");
+    let first_start = parsed.hir_token_pos[*spine.last().unwrap()];
+    for (depth, &add) in spine[..spine.len() - 1].iter().enumerate() {
+        assert_eq!(
+            parsed.hir_token_pos[add], first_start,
+            "add at depth {depth} of the left spine should start at the first operand"
+        );
+    }
+}
+
+#[test]
 fn parser_hir_sum_of_products_links_multiply_operands_in_source_packs() {
     let parsed = parse_resident_source_pack(&[r#"
 module app::main;
@@ -17478,4 +17549,97 @@ fn parser_value_path_angles_stay_inside_their_statement_and_container() {
     ] {
         assert!(parse_resident_source(source).ll1.accepted, "separate statements and functions");
     }
+}
+
+fn residency_unit_source(unit: usize, functions: usize) -> String {
+    let mut source = String::new();
+    for function in 0..functions {
+        source.push_str(&format!(
+            "fn unit{unit}_f{function}(a: i32, b: i32) -> i32 {{ let c: i32 = a * {} + b; if (c > {unit}) {{ return c - b; }} return c; }}\n",
+            function + unit
+        ));
+    }
+    source.push_str(&format!("fn main() -> i32 {{ return unit{unit}_f0({unit}, 1); }}\n"));
+    source
+}
+
+/// One process parses many distinct units, as parse_fuzz and a long-running
+/// daemon do. Each unit's one-shot parser buffers must be freed after it:
+/// the reflected bind-group cache used to keep every buffer it had bound
+/// alive, and parse_fuzz ran out of VRAM after ~58 files.
+#[test]
+fn parser_frees_gpu_memory_across_distinct_units() {
+    common::block_on_gpu_with_timeout("parser residency over distinct units", async move {
+        let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tables/parse_tables.bin"
+        )))
+        .expect("load precomputed parse tables");
+        let lexer = GpuLexer::new().await.expect("create GPU lexer");
+        let parser = GpuParser::new().await.expect("create GPU parser");
+        let device = laniusc_compiler::gpu::device::global().device.clone();
+        let allocated = || {
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            device
+                .generate_allocator_report()
+                .map(|report| report.total_allocated_bytes)
+        };
+        async fn parse_unit(
+            lexer: &GpuLexer,
+            parser: &GpuParser,
+            tables: &PrecomputedParseTables,
+            source: String,
+        ) {
+            let tokens = lexer.lex(&source).await.expect("lex residency unit");
+            let mut kinds = tokens.iter().map(|token| token.kind as u32).collect::<Vec<_>>();
+            kinds.insert(0, 0);
+            kinds.push(0);
+            parser.parse(&kinds, tables).await.expect("parse residency unit");
+            let resident = lexer
+                .with_resident_tokens(&source, |_, _, buffers| {
+                    parser.parse_resident_tokens(buffers.n, &buffers.tokens_out, &buffers.token_count, tables)
+                })
+                .await
+                .expect("resident lex residency unit")
+                .expect("resident parse residency unit");
+            assert!(resident.ll1.accepted, "residency unit must parse: {:?}", resident.ll1);
+        }
+        // The largest unit goes first, so later units fit the resident
+        // capacity and only their one-shot buffers come and go.
+        parse_unit(&lexer, &parser, &tables, residency_unit_source(0, 160)).await;
+        let Some(warm) = allocated() else {
+            eprintln!("parser residency: the adapter has no allocator report; skipped");
+            return;
+        };
+        let cached_bind_groups = laniusc_compiler::gpu::passes_core::reflected_bind_group_cache_len;
+        let warm_bind_groups = cached_bind_groups();
+        let mut largest_step = 0u64;
+        let mut previous = warm;
+        for unit in 1..=24usize {
+            let functions = 8 + (unit * 37) % 113;
+            parse_unit(&lexer, &parser, &tables, residency_unit_source(unit, functions)).await;
+            let now = allocated().expect("allocator report");
+            largest_step = largest_step.max(now.saturating_sub(previous));
+            previous = now;
+            eprintln!(
+                "parser residency: unit {unit} ({functions} functions) allocated {} MiB, cached bind groups {}",
+                now >> 20,
+                cached_bind_groups()
+            );
+        }
+        // Released buffers are dropped once 64 MiB of them accumulate, so the
+        // allocation may exceed the warm unit's by that window plus what one
+        // unit allocates, never by a per-unit amount times the unit count.
+        let bound = warm + (64 << 20) + 2 * largest_step;
+        assert!(
+            previous <= bound,
+            "24 distinct units grew the GPU allocation from {} MiB to {} MiB (bound {} MiB, largest step {} MiB, cached bind groups {} -> {})",
+            warm >> 20,
+            previous >> 20,
+            bound >> 20,
+            largest_step >> 20,
+            warm_bind_groups,
+            cached_bind_groups()
+        );
+    })
 }

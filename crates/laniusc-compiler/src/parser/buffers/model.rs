@@ -659,7 +659,6 @@ pub struct ParserBuffers {
     pub b_exscan_inblock: LaniusBuffer<i32>,
     pub b_block_sum: LaniusBuffer<i32>,
     pub b_block_minpref: LaniusBuffer<i32>,
-    pub b_block_row_min: LaniusBuffer<i32>,
     pub b_block_maxdepth: LaniusBuffer<i32>,
     pub b_block_prefix: LaniusBuffer<i32>,
     pub b_block_prefix_sum_a: LaniusBuffer<i32>,
@@ -671,6 +670,8 @@ pub struct ParserBuffers {
     pub valid_out: LaniusBuffer<u32>,
 
     pub b_layer: LaniusBuffer<u32>,
+    /// Each 256-row block's local minimum heap over `b_layer`.
+    pub b_layer_local_min: LaniusBuffer<i32>,
     pub match_for_index: LaniusBuffer<u32>,
 
     // counts used at dispatch

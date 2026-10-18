@@ -16,38 +16,24 @@ StructuredBuffer<uint> partial_parse_status;  // [4]=actual stack-change count
 RWStructuredBuffer<int> exscan_inblock; // len = n_sc (exclusive prefix inside block)
 RWStructuredBuffer<int> block_sum;      // len = n_blocks
 RWStructuredBuffer<int> block_minpref;  // len = n_blocks (min prefix within block)
-RWStructuredBuffer<int> block_row_min;  // len = n_blocks (exact min adjusted bracket layer)
 RWStructuredBuffer<int> block_maxdepth; // len = n_blocks (max depth within block)
 
 groupshared int s_val[256];
-groupshared int s_minp[256];
-groupshared int s_depth[256];
+groupshared int2 s_min_max[256];
 
 static const uint MAX_GROUPS_X = 65535u;
 
-public struct BracketScanI32Min : IPrefixScanOp<int>
+// x: running minimum, y: running maximum.
+public struct BracketScanI32x2MinMax : IPrefixScanOp<int2>
 {
-    public static int identity()
+    public static int2 identity()
     {
-        return 2147483647;
+        return int2(2147483647, -2147483647);
     }
 
-    public static int combine(int left, int right)
+    public static int2 combine(int2 left, int2 right)
     {
-        return min(left, right);
-    }
-}
-
-public struct BracketScanI32Max : IPrefixScanOp<int>
-{
-    public static int identity()
-    {
-        return -2147483647;
-    }
-
-    public static int combine(int left, int right)
-    {
-        return max(left, right);
+        return int2(min(left.x, right.x), max(left.y, right.y));
     }
 }
 
@@ -76,25 +62,16 @@ void main(uint3 tid: SV_DispatchThreadID,
     int block_total = s_val[GSIZE - 1u];
     int inclusive_depth = s_val[ltid.x];
 
-    // Convert to exclusive scan (ex = inc - val) and track min-prefix / max-depth in-block
+    // Convert to exclusive scan (ex = inc - val)
     int ex = inc - v;
 
-    // Compute min prefix in-block: min over partial sums (exclusive domain)
-    // We can reconstruct running depth within block as ex + depth_base (added later),
-    // here we only need the block-local min of (ex + 0) and the block sum.
-    int minp = prefix_scan_inclusive<int, BracketScanI32Min, 256>(
+    // One scan gives the block-local minimum of the exclusive prefixes
+    // (clamped to 0) and a cheap upper bound on the block's maximum depth;
+    // block_prefix is added later.
+    int2 min_max = prefix_scan_inclusive<int2, BracketScanI32x2MinMax, 256>(
         ltid.x,
-        min(ex, 0),
-        s_minp);
-    int row_layer = i < n ? ex + (v > 0 ? 1 : 0) : 2147483647;
-    int row_min = prefix_scan_inclusive<int, BracketScanI32Min, 256>(
-        ltid.x,
-        row_layer,
-        s_depth);
-    int max_depth = prefix_scan_inclusive<int, BracketScanI32Max, 256>(
-        ltid.x,
-        max(ex + ((inclusive_depth > 0) ? 1 : 0), ex), // cheap upper bound proxy for max depth
-        s_val);
+        int2(min(ex, 0), max(ex + ((inclusive_depth > 0) ? 1 : 0), ex)),
+        s_min_max);
 
     if (i < n)
     {
@@ -103,8 +80,7 @@ void main(uint3 tid: SV_DispatchThreadID,
     if (ltid.x + 1u == GSIZE)
     {
         block_sum[block] = block_total;
-        block_minpref[block] = minp;
-        block_row_min[block] = row_min;
-        block_maxdepth[block] = max_depth;
+        block_minpref[block] = min_max.x;
+        block_maxdepth[block] = min_max.y;
     }
 }

@@ -883,9 +883,6 @@ impl ParserBuffers {
         let b_block_minpref = compiler_graph
             .buffer::<i32>("bracket_block_minpref")
             .expect("parser graph must own bracket block minimum prefixes");
-        let b_block_row_min = compiler_graph
-            .buffer::<i32>("bracket_block_row_min")
-            .expect("parser graph must own bracket block row minima");
         let b_block_maxdepth = compiler_graph
             .buffer::<i32>("bracket_block_maxdepth")
             .expect("parser graph must own bracket block maximum depths");
@@ -903,6 +900,7 @@ impl ParserBuffers {
             .expect("parser graph must own bracket validity output");
 
         let b_layer = graph_buffer!(u32, "bracket_layer");
+        let b_layer_local_min = graph_buffer!(i32, "bracket_layer_local_min");
         let match_for_index = graph_buffer!(u32, "match_for_index");
 
         // ---------- Tree parent recovery ----------
@@ -2017,7 +2015,6 @@ impl ParserBuffers {
             b_exscan_inblock,
             b_block_sum,
             b_block_minpref,
-            b_block_row_min,
             b_block_maxdepth,
             b_block_prefix,
             b_block_prefix_sum_a,
@@ -2029,6 +2026,7 @@ impl ParserBuffers {
             valid_out,
 
             b_layer,
+            b_layer_local_min,
             match_for_index,
 
             b_n_blocks: n_blocks,

@@ -580,7 +580,27 @@ fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
     // Vulkan loader instead (VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation)
     // so it reports through its own log settings.
     flags.remove(wgpu::InstanceFlags::VALIDATION | wgpu::InstanceFlags::GPU_BASED_VALIDATION);
+    flags.set(
+        wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL,
+        indirect_dispatch_validation(),
+    );
     flags
+}
+
+/// Whether wgpu checks indirect dispatch arguments. The check zeroes a
+/// dispatch whose x, y or z exceeds `max_compute_workgroups_per_dimension`.
+/// To do that, wgpu records a checking dispatch, three barriers and a rebind
+/// of every bind group before each indirect dispatch. A warm 1 MB job has
+/// about 690 indirect dispatches.
+///
+/// Every shader that writes indirect arguments caps x at 65535 and moves the
+/// rest into y, and y and z are clamped or provably small (y is at most 257
+/// for a u32 count of 256-wide groups). So release builds skip the check.
+/// Debug builds keep it, and so does `cargo test` (`.cargo/config.toml`), so
+/// an out-of-range dispatch is still caught there.
+/// `LANIUS_WGPU_INDIRECT_VALIDATION=1|0` overrides both defaults.
+fn indirect_dispatch_validation() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_WGPU_INDIRECT_VALIDATION", cfg!(debug_assertions))
 }
 
 /// Returns a reference to the global GPU context (created on first use).

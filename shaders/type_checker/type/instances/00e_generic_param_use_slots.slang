@@ -29,6 +29,7 @@ StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_name_id;
 StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 StructuredBuffer<uint> generic_param_count_out;
@@ -51,7 +52,11 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
+static const uint HIR_ITEM = 2u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_IMPL = 35u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
+static const uint LANGUAGE_SYMBOL_SELF = 72u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
@@ -196,6 +201,47 @@ void publish_const_len_use_slot(uint node)
         type_const_param_slot_by_token[token] = slot;
 }
 
+// The trait item whose declaration encloses `node`, or INVALID (an impl, or
+// no trait, encloses it first).
+uint enclosing_trait(uint node)
+{
+    uint hir_count = active_hir_node_count();
+    for (uint depth = 0u; depth < 64u && node < hir_count; depth++)
+    {
+        HirCore core = compact_hir_core[node];
+        if (core.kind == HIR_ITEM && compact_hir_payload[node].a == HIR_ITEM_KIND_TRAIT) return node;
+        if (core.kind == HIR_IMPL || core.parent == node) return INVALID;
+        node = core.parent;
+    }
+    return INVALID;
+}
+
+// `Self` in a trait declaration names the implementing type. It is one
+// implicit type parameter of the trait, in the slot after the trait's declared
+// type parameters, so a bound's subject (methods/07a) and an impl's subject
+// (predicates/method_validation_common.slang) bind it as they bind the
+// declared ones. Its identity is the trait's name token; it has no generic
+// parameter row and adds to no parameter count.
+void publish_trait_self_reference(uint node, uint token)
+{
+    uint name = name_id_by_token[token];
+    if (name == INVALID || name != language_name_id[LANGUAGE_SYMBOL_SELF]) return;
+    uint trait = enclosing_trait(node);
+    if (trait == INVALID) return;
+    uint owner = hir_generic_owner_token(compact_hir_core[trait], compact_hir_payload[trait], gParams.n_tokens);
+    if (!valid_token(owner)) return;
+    uint slot = type_decl_generic_param_count_by_owner_token[owner];
+    if (slot >= 32u)
+    {
+        record_min_token_error(status, token, ERR_BAD_HIR, 0x474e0002u);
+        return;
+    }
+    type_generic_param_slot_by_token[owner] = slot;
+    type_generic_param_slot_by_token[token] = slot;
+    type_expr_ref_tag[token] = TYPE_REF_GENERIC_PARAM;
+    type_expr_ref_payload[token] = owner;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -227,7 +273,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint row = lexical_parameter_row(node, token, GENERIC_PARAM_KIND_TYPE);
     if (row == INVALID)
+    {
+        if (!qualified_value) publish_trait_self_reference(node, token);
         return;
+    }
 
     uint slot = lexical_parameter_slot(row);
     if (slot != INVALID)

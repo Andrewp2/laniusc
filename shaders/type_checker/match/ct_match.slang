@@ -90,6 +90,8 @@ struct SlotClaims
     // The declared scalar of a constant slot, from its occurrences.
     uint scalar;
     bool exact;
+    // The declared scalar that an actual length did not fit, or 0.
+    uint fit_scalar;
 }
 
 // Occurrence of pattern parameter `leaf` at `position` against `actual`.
@@ -131,8 +133,13 @@ bool fold_occurrence<S : ICtSlots>(S slots, uint leaf, uint position, uint actua
         // declared scalar, or an integer constant parameter.
         uint3 value;
         bool count = ct_kind(actual) == CC_KIND_COUNT;
-        if (count ? !constant_value_from_count(cc_count(actual), scalar, value)
-            : !ct_is_const_param(actual) || !scalar_is_integer(typed_scalar<S>(slots, actual))) return false;
+        if (count && !constant_value_from_count(cc_count(actual), scalar, value))
+        {
+            claims.fit_scalar = scalar;
+            return false;
+        }
+        if (!count && (!ct_is_const_param(actual) || !scalar_is_integer(typed_scalar<S>(slots, actual))))
+            return false;
     }
     else
     {
@@ -273,10 +280,21 @@ struct CtTwoRoots : ICtRoots
 public uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pattern1, uint actual1,
     uint prior, uint flags, bool intern, inout CtSpare spare, out uint count_mask)
 {
+    uint fit_scalar;
+    return ct_match_fit<S>(slots, pattern0, actual0, pattern1, actual1, prior, flags, intern, spare,
+        count_mask, fit_scalar);
+}
+
+// ct_match, and on CT_MATCH_FAILED the declared scalar of a constant
+// parameter that an actual array length does not fit (0 when the match
+// failed for another reason), for a fit diagnostic.
+public uint ct_match_fit<S : ICtSlots>(S slots, uint pattern0, uint actual0, uint pattern1, uint actual1,
+    uint prior, uint flags, bool intern, inout CtSpare spare, out uint count_mask, out uint fit_scalar)
+{
     CtTwoRoots roots;
     roots.ids = uint4(pattern0, actual0, pattern1, actual1);
     roots.flags = flags;
-    return ct_match_roots<S, CtTwoRoots>(slots, roots, prior, intern, spare, count_mask);
+    return ct_match_roots_fit<S, CtTwoRoots>(slots, roots, prior, intern, spare, count_mask, fit_scalar);
 }
 
 // The type and constant slots that `pattern` uses, whatever it is matched
@@ -292,6 +310,7 @@ public bool ct_pattern_masks<S : ICtSlots>(S slots, uint pattern, out uint type_
     claims.klass = NO_CLASS;
     claims.scalar = 0u;
     claims.exact = false;
+    claims.fit_scalar = 0u;
     return ct_is_resolved(pattern) &&
         match_pass<S>(slots, pattern, pattern, false, 0u, type_mask, const_mask, claims);
 }
@@ -300,6 +319,15 @@ public bool ct_pattern_masks<S : ICtSlots>(S slots, uint pattern, out uint type_
 public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, uint prior, bool intern,
     inout CtSpare spare, out uint count_mask)
 {
+    uint fit_scalar;
+    return ct_match_roots_fit<S, R>(slots, roots, prior, intern, spare, count_mask, fit_scalar);
+}
+
+// ct_match_roots with ct_match_fit's `fit_scalar`.
+public uint ct_match_roots_fit<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, uint prior, bool intern,
+    inout CtSpare spare, out uint count_mask, out uint fit_scalar)
+{
+    fit_scalar = 0u;
     count_mask = 0u;
     uint type_mask = 0u;
     uint const_mask = 0u;
@@ -325,6 +353,7 @@ public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, u
         claims.exact = claims.binding != CT_NONE;
         claims.klass = claims.exact && constant ? cc_count_class(claims.binding) : NO_CLASS;
         claims.scalar = 0u;
+        claims.fit_scalar = 0u;
         uint roots_count = roots.count();
         for (uint root = 0u; root < roots_count; root++)
         {
@@ -332,7 +361,10 @@ public uint ct_match_roots<S : ICtSlots, R : ICtRoots>(S slots, inout R roots, u
             if (!roots.root(root, pattern, actual, slice)) return CT_MATCH_FAILED;
             if (pattern == CT_NONE && actual == CT_NONE) continue;
             if (!match_pass<S>(slots, pattern, actual, slice, item, type_mask, const_mask, claims))
+            {
+                fit_scalar = claims.fit_scalar;
                 return CT_MATCH_FAILED;
+            }
         }
         if (item == 0u) continue;
         uint binding = claims.binding;

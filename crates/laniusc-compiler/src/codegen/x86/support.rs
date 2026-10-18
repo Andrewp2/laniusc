@@ -132,18 +132,21 @@ impl GpuX86Linker {
         buffer
     }
 
-    pub(super) fn reusable_input_bytes(
+    /// Uploads `bytes` into a retained allocation of at least `capacity`
+    /// bytes. Only the ranges that differ from the last upload are written.
+    pub(super) fn reusable_input_bytes_with_capacity(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         label: &str,
         bytes: &[u8],
+        capacity: usize,
     ) -> LaniusBuffer<u8> {
         let byte_len = bytes.len().max(4).next_multiple_of(4);
         let buffer = self.job_buffers.binding_capacity(
             device,
             label,
-            byte_len,
+            capacity.max(byte_len),
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         );
         let mut shadows = self
