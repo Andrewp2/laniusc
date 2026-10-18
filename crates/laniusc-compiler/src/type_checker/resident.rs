@@ -757,9 +757,9 @@ impl GpuTypeChecker {
                 .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_library_id()),
             canonical_unit_id: dependency_pages
                 .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_unit_id()),
+            // Written with the workspace's allocation below.
+            workspace_token_rows: 0,
         };
-        self.params_buf
-            .write(queue, 0, &type_check_params_bytes(&params));
         self.status_buf.write(queue, 0, &status_init_bytes());
         let dependency_types_present =
             dependency_pages.is_some_and(GpuDependencyInterfacePages::has_type_references);
@@ -828,6 +828,13 @@ impl GpuTypeChecker {
             let bind_groups = resident_workspace_guard
                 .as_ref()
                 .expect("resident type-check state must exist");
+            // A workspace retained from a larger job keeps its token rows.
+            let params = TypeCheckParams {
+                workspace_token_rows: bind_groups.cache_key.token_capacity.max(1),
+                ..params
+            };
+            self.params_buf
+                .write(queue, 0, &type_check_params_bytes(&params));
             *self
                 .current_semantic_artifact
                 .lock()
