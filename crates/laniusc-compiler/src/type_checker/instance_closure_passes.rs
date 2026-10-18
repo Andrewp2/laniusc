@@ -107,6 +107,13 @@ pub(super) fn register_instance_closure_passes(
         MARK_KERNEL,
         &[],
     )?;
+    // Mark writes every instance row and edge link it appends before any
+    // pass reads it, and readers stay below the appended counts; the
+    // argument table only reserves its blocks here (export fills them).
+    graph.mark_pass_bindings_initialize(
+        INSTANCE_CLOSURE_MARK_PASS,
+        &["instance_closure_instances", "instance_closure_refs", "instance_closure_edge_next"],
+    )?;
     graph.add_kernel_pass_by_name(
         INSTANCE_CLOSURE_ADVANCE_PASS,
         CompilerPhase::TypeCheck,
