@@ -141,10 +141,12 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) project_type_instances_group: ComputeOperation,
     pub(in crate::type_checker) materialize_alias_targets_group: ComputeOperation,
     pub(in crate::type_checker) collect_methods_group: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members_group: ComputeOperation,
     pub(in crate::type_checker) project_methods_group: ComputeOperation,
     /// The preliminary lookup sweeps' method collection, projection and
     /// parameter scatter, dispatched from the gated lookup grids.
     pub(in crate::type_checker) collect_methods_lookup: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members_lookup: ComputeOperation,
     pub(in crate::type_checker) project_methods_lookup: ComputeOperation,
     pub(in crate::type_checker) scatter_method_params_lookup: ComputeOperation,
     pub(in crate::type_checker) project_struct_literals_group: ComputeOperation,
@@ -436,6 +438,14 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_METHODS_COLLECT,
         inputs.hir_active_dispatch_args,
     )?;
+    let offer_bound_members_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_BOUND_MEMBERS_OFFER,
+        inputs.hir_active_dispatch_args,
+    )?;
     let project_methods_group = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -451,6 +461,7 @@ pub(in crate::type_checker) fn create(
         )
     };
     let collect_methods_lookup = lookup_sweep(DEPENDENCY_METHODS_COLLECT_LOOKUP)?;
+    let offer_bound_members_lookup = lookup_sweep(DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP)?;
     let project_methods_lookup = lookup_sweep(DEPENDENCY_METHODS_PROJECT_LOOKUP)?;
     let scatter_method_params_lookup = lookup_sweep(DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP)?;
     let project_struct_literals_group = ComputeOperation::indirect_spec(
@@ -655,8 +666,10 @@ pub(in crate::type_checker) fn create(
         project_type_instances_group,
         materialize_alias_targets_group,
         collect_methods_group,
+        offer_bound_members_group,
         project_methods_group,
         collect_methods_lookup,
+        offer_bound_members_lookup,
         project_methods_lookup,
         scatter_method_params_lookup,
         project_struct_literals_group,

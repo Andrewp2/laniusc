@@ -92,8 +92,9 @@ impl ProofProgress {
     /// malformed graph, and missing evidence failures must remain terminal.
     pub fn capacity_retry(
         &self,
-        layout: &ProofStoreLayout,
+        session: &ProofStoreSession,
     ) -> Result<Option<[u32; PROOF_STORE_TABLES]>> {
+        let layout = session.layout();
         if self.receipt[0] != 3 || self.receipt[1] != STORE_CAPACITY_DETAIL {
             return Ok(None);
         }
@@ -118,7 +119,7 @@ impl ProofProgress {
             .checked_next_power_of_two()
             .filter(|&n| n != INVALID)
             .unwrap_or(required);
-        size_goal_buckets(&mut capacities)?;
+        size_work_bounded(&mut capacities, session.accepted_prefix())?;
         Ok(Some(capacities))
     }
 
@@ -159,6 +160,29 @@ fn size_goal_buckets(capacities: &mut [u32; PROOF_STORE_TABLES]) -> Result<()> {
     Ok(())
 }
 
+// Tables whose rows each Work row of the solve emits at most once, so the Work
+// capacity bounds them exactly and they never need a retry of their own:
+// normalization reserves one goal per Work and the goal index one entry per
+// Work; selection one substitution per selected Work; expansion one
+// requirement per child Work; reduction one proof per ready Work and one proof
+// edge per child of its Work; and a Work enqueues at most two events (ready or
+// failed, then proven). Persistent tables add this solve's rows after their
+// accepted ledger prefix. A larger Work capacity grows them with it.
+fn size_work_bounded(
+    capacities: &mut [u32; PROOF_STORE_TABLES],
+    accepted: &[u32; PROOF_STORE_PERSISTENT],
+) -> Result<()> {
+    let work = capacities[WORK];
+    for table in [3usize, 4, 6, 7] {
+        capacities[table] = capacities[table].max(add(accepted[table], work, "work-bounded proof rows")?);
+    }
+    for table in [9usize, 10] {
+        capacities[table] = capacities[table].max(work);
+    }
+    capacities[QUEUE] = capacities[QUEUE].max(mul(work, 2, "work-bounded reduction events")?);
+    size_goal_buckets(capacities)
+}
+
 // Each source obligation creates one root Work, Goal, RootLink and normalization
 // request before recursive expansion. Seed these linear tables directly rather
 // than repeatedly restarting that known root inventory from a fixed small cap.
@@ -182,6 +206,6 @@ pub(super) fn initial_capacities(
         )?);
     }
     capacities[QUEUE] = capacities[QUEUE].max(mul(source_obligations, 2, "root proof queue")?);
-    size_goal_buckets(&mut capacities)?;
+    size_work_bounded(&mut capacities, session.accepted_prefix())?;
     Ok(capacities)
 }

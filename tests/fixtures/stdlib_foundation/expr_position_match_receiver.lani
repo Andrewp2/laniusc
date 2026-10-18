@@ -1,0 +1,13 @@
+// expect: 0
+// Expression form and position: a match as a member receiver: (match (p) { .. }).v.
+module app::main;
+struct W { v: i32 }
+enum Pick { Left, Right }
+fn main() -> i32 {
+    let a: W = W { v: 7 };
+    let b: W = W { v: 9 };
+    let p: Pick = Right;
+    let chosen: i32 = (match (p) { Left -> a, Right -> b }).v;
+    if (chosen != 9) { return 1; }
+    return 0;
+}

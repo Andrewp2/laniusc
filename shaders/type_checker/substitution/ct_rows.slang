@@ -60,8 +60,15 @@ public uint2 ct_realized_ref(uint ref)
 public void ct_seed_type_row(uint row, uint kind, uint token, uint id, uint tokens)
 {
     // Body rows are rewritten by each body specialization; they are not
-    // stable spellings.
+    // stable spellings. A replay offers its own after the body canonical
+    // stage (01b_seed_body_rows).
     if (row - tokens < BODY_GRAPH_NODES) return;
+    ct_offer_type_row(row, kind, token, id);
+}
+
+// ct_seed_type_row for any row, body rows included.
+public void ct_offer_type_row(uint row, uint kind, uint token, uint id)
+{
     if (kind == 0u || kind > 4u || row >= CT_ROW_LIMIT || !ct_is_record(id) || id >= ct_row_of_capacity()) return;
     if (ct_kind(id) != kind + (CT_KIND_NAMED - 1u)) return;
     if (kind == 1u && token != ct_named_decl_token(id)) return;

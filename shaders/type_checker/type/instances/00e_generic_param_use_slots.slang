@@ -52,6 +52,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_TYPE = 5u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 
@@ -208,9 +209,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
+    // A path `P::member` whose first segment is a lexical type parameter
+    // names an associated member of that parameter: its qualifier is a type
+    // use, which method lookup reads as the call's receiver (methods/06). A
+    // path span ends after its leaf, so a qualified path spans more than one
+    // token.
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    if (node >= hir_count || compact_hir_core[node].kind != HIR_TYPE ||
-        compact_hir_payload[node].a != HIR_TYPE_FORM_PATH)
+    bool qualified_value = node < hir_count && compact_hir_core[node].kind == HIR_PATH_EXPR &&
+        compact_hir_core[node].token_end > compact_hir_core[node].token_start + 1u;
+    if (node >= hir_count || (!qualified_value && (compact_hir_core[node].kind != HIR_TYPE ||
+        compact_hir_payload[node].a != HIR_TYPE_FORM_PATH)))
         return;
 
     uint token = compact_hir_core[node].token_start;

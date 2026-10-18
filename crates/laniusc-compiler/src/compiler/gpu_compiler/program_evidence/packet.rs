@@ -28,6 +28,12 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedEvidence {
     arena_id: u64,
     input_row: u32,
     pub predicate_identity: StableWitnessIdentity,
+    /// The catalog predicate (table 8) this proof concludes.
+    pub predicate_row: u32,
+    /// The catalog implementation (table 9) the GPU selected for an
+    /// implementation proof; None for an assumption proof. A copied GPU fact:
+    /// the host never selects an implementation.
+    pub implementation: Option<u32>,
     proof: OwnedProofRoot,
 }
 
@@ -1215,12 +1221,21 @@ impl ProgramPacket {
                 );
                 let predicate_atom = self.catalog.tables.row(8, evidence[1])?[0];
                 let predicate_identity = self.catalog.stable_witness(predicate_atom)?;
+                // Result word 7 is the root proof's implementation plus one
+                // (pps_publish_root); 0 for an assumption proof.
+                let implementation = status[7].checked_sub(1);
+                if let Some(row) = implementation {
+                    ensure!(row < self.catalog.tables.count(9)?,
+                        "GPU evidence names an implementation outside the catalog");
+                }
                 let input_row = self.tables.push(17, evidence)?;
                 retained.push(ValidatedEvidence {
                     epoch: self.catalog.epoch,
                     arena_id: self.arena_id,
                     input_row,
                     predicate_identity,
+                    predicate_row: evidence[1],
+                    implementation,
                     proof,
                 });
             }

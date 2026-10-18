@@ -1,0 +1,9 @@
+// expect: 0
+// Expression form and position: a parenthesized call as a member receiver: (make()).v.
+module app::main;
+struct W { v: i32 }
+fn make() -> W { return W { v: 7 }; }
+fn main() -> i32 {
+    if ((make()).v != 7) { return 1; }
+    return 0;
+}

@@ -151,6 +151,25 @@ public bool checked_source_literal_value(uint node, uint scalar, out uint3 value
     return constant_value_is_valid(value);
 }
 
+// An integer literal operand (through forwarding wrappers and one unary minus)
+// whose magnitude the expected integer scalar cannot represent. Its literal
+// token owns the range diagnostic, as in any other checked integer context.
+public bool explicit_integer_literal_out_of_range(uint node, uint scalar, out uint literal_token)
+{
+    literal_token = 0xffffffffu;
+    if (!scalar_is_integer(scalar)) return false;
+    uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
+    uint literal; bool negative;
+    if (!integer_literal_magnitude(node, count, explicit_operand_hir_core,
+        explicit_operand_hir_payload, literal, negative)) return false;
+    HirPayload magnitude = explicit_operand_hir_payload[literal];
+    uint3 value;
+    if (constant_value_from_integer_magnitude(scalar, uint2(magnitude.b, magnitude.c), negative, value))
+        return false;
+    literal_token = explicit_operand_hir_core[literal].token_start;
+    return literal_token < explicit_operand_token_capacity();
+}
+
 bool explicit_operand_inside_body(uint node)
 {
     uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
@@ -164,66 +183,68 @@ bool explicit_operand_inside_body(uint node)
     return node < count; // A malformed parent cycle is not module scope.
 }
 
-// expected_scalar=0 is reserved for callers that preserve a named operand's
-// own type (array-count projection). Generic binding always supplies a scalar.
-public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
-    TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
+// A named operand's own checked value, before any expected scalar applies.
+// kind 0: not a resolvable named constant. 1: an existing checked atom of a
+// constant parameter (value). 2: a symbolic constant parameter (value is its
+// token). 4: a declared constant's concrete value, published on binding.
+struct NamedConstantOperand { uint kind; uint value; uint scalar; uint3 concrete; }
+
+NamedConstantOperand unresolved_named_constant()
 {
-    return checked_scoped_named_constant_operand(type_refs, ModuleScopeOperandNames(), node,
-        expected_scalar, kind, value);
+    NamedConstantOperand none;
+    none.kind = 0u; none.value = 0xffffffffu; none.scalar = 0u; none.concrete = uint3(0u, 0u, 0u);
+    return none;
 }
 
-public bool checked_scoped_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
-    BodyNames : IExplicitOperandBodyNames>(
-    TypeRefs type_refs, BodyNames body_names, uint node, uint expected_scalar,
-    out uint kind, out uint value)
+NamedConstantOperand resolved_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
+    BodyNames : IExplicitOperandBodyNames>(TypeRefs type_refs, BodyNames body_names, uint node)
 {
-    kind = 0u; value = 0xffffffffu;
-    if (expected_scalar != 0u && !constant_scalar_is_supported(expected_scalar)) return false;
+    NamedConstantOperand named = unresolved_named_constant();
     uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
-    if (node >= count) return false;
+    if (node >= count) return named;
     HirCore core = explicit_operand_hir_core[node];
     HirPayload payload = explicit_operand_hir_payload[node];
     if (core.kind != 5u || payload.a != 1u || core.token_start >= explicit_operand_token_capacity() ||
-        explicit_operand_argument_ranges[core.token_start].count != 0u) return false;
+        explicit_operand_argument_ranges[core.token_start].count != 0u) return named;
     uint path = explicit_operand_path_id[node];
     uint capacity; uint stride;
     explicit_operand_paths.GetDimensions(capacity, stride);
-    if (path >= min(explicit_operand_path_count[0u], capacity)) return false;
+    if (path >= min(explicit_operand_path_count[0u], capacity)) return named;
     HirPath source_path = explicit_operand_paths[path];
     explicit_operand_path_segments.GetDimensions(capacity, stride);
     if (source_path.segment_count == 0u || source_path.segment_start > capacity ||
-        source_path.segment_count > capacity - source_path.segment_start) return false;
+        source_path.segment_count > capacity - source_path.segment_start) return named;
     if (source_path.segment_count == 1u)
     {
         uint name = explicit_operand_path_segments[source_path.segment_start].name_token;
-        if (name >= explicit_operand_token_capacity()) return false;
+        if (name >= explicit_operand_token_capacity()) return named;
         uint row = lexical_parameter_row(node, name, 2u);
         uint parameters = min(explicit_operand_parameter_count[0u], explicit_operand_token_capacity());
         if (row < parameters)
         {
             uint token = explicit_operand_parameter_token[row];
-            if (token >= explicit_operand_token_capacity()) return false;
+            if (token >= explicit_operand_token_capacity()) return named;
             uint scalar = checked_constant_parameter_scalar(token);
-            if (scalar == 0u || (expected_scalar != 0u && scalar != expected_scalar)) return false;
+            if (scalar == 0u) return named;
             uint atom = explicit_operand_parameter_value[token];
             if (atom != 0xffffffffu)
             {
                 uint3 concrete;
-                if (!checked_constant_atom_value(atom, concrete) || concrete.x != scalar) return false;
-                kind = 1u; value = atom;
+                if (!checked_constant_atom_value(atom, concrete) || concrete.x != scalar) return named;
+                named.kind = 1u; named.value = atom;
             }
-            else { kind = 2u; value = token; }
-            return true;
+            else { named.kind = 2u; named.value = token; }
+            named.scalar = scalar;
+            return named;
         }
         // A nearer type parameter shadows an ordinary declaration too.
-        if (lexical_parameter_row(node, name, 1u) < parameters) return false;
+        if (lexical_parameter_row(node, name, 1u) < parameters) return named;
         // Early nominal checking precedes canonical lexical value resolution.
         // Do not accidentally bind a module constant shadowed by a body local.
         if (explicit_operand_inside_body(node) && !body_names.body_name_unshadowed(name))
-            return false;
+            return named;
     }
-    if (explicit_operand_resolved_value_status[path] != 0u) return false;
+    if (explicit_operand_resolved_value_status[path] != 0u) return named;
     uint3 concrete;
     uint imported = path * 4u;
     explicit_operand_dependency_value_metadata.GetDimensions(capacity, stride);
@@ -238,41 +259,80 @@ public bool checked_scoped_named_constant_operand<TypeRefs : IExplicitOperandTyp
     {
         uint declaration = explicit_operand_resolved_value_decl[path];
         if (declaration >= min(explicit_operand_decl_count[0u], explicit_operand_token_capacity()) ||
-            explicit_operand_decl_kind[declaration] != 3u) return false;
+            explicit_operand_decl_kind[declaration] != 3u) return named;
         uint owner = explicit_operand_decl_hir[declaration];
-        if (owner >= count || explicit_operand_hir_core[owner].kind != 25u) return false;
+        if (owner >= count || explicit_operand_hir_core[owner].kind != 25u) return named;
         uint annotation = explicit_operand_const_type[owner];
-        if (annotation >= count) return false;
+        if (annotation >= count) return named;
         uint anchor = explicit_operand_hir_core[annotation].token_start;
         if (anchor >= explicit_operand_token_capacity() || type_refs.type_ref_tag(anchor) != 1u)
-            return false;
+            return named;
         uint scalar = type_refs.type_ref_payload(anchor);
         // Ordinary computed constants have no checked value at this stage.
         // Only a literal initializer can use this source adapter.
-        if (!checked_source_literal_value(explicit_operand_const_value[owner], scalar, concrete)) return false;
+        if (!checked_source_literal_value(explicit_operand_const_value[owner], scalar, concrete))
+            return named;
     }
-    if (!constant_value_is_valid(concrete) ||
-        (expected_scalar != 0u && concrete.x != expected_scalar)) return false;
-    return publish_explicit_constant_atom(node, concrete, kind, value);
+    if (!constant_value_is_valid(concrete)) return named;
+    named.kind = 4u; named.scalar = concrete.x; named.concrete = concrete;
+    return named;
+}
+
+// The checked reference of a resolved named operand of the expected scalar.
+bool bind_named_constant_operand(uint node, NamedConstantOperand named, uint expected_scalar,
+    out uint kind, out uint value)
+{
+    kind = 0u; value = 0xffffffffu;
+    if (named.kind == 0u || (expected_scalar != 0u && named.scalar != expected_scalar)) return false;
+    if (named.kind == 4u) return publish_explicit_constant_atom(node, named.concrete, kind, value);
+    kind = named.kind; value = named.value;
+    return true;
+}
+
+// expected_scalar=0 is reserved for callers that preserve a named operand's
+// own type (array-count projection). Generic binding always supplies a scalar.
+public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
+    TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
+{
+    kind = 0u; value = 0xffffffffu;
+    if (expected_scalar != 0u && !constant_scalar_is_supported(expected_scalar)) return false;
+    return bind_named_constant_operand(node,
+        resolved_named_constant_operand(type_refs, ModuleScopeOperandNames(), node),
+        expected_scalar, kind, value);
+}
+
+// Why an explicit constant operand binds or not. Conflicting type evidence
+// (a named constant declared with another scalar) and an integer literal out
+// of the parameter's range are diagnosed at the operand; anything else is an
+// unsupported operand of the application.
+public static const uint EXPLICIT_OPERAND_BOUND = 0u;
+public static const uint EXPLICIT_OPERAND_UNSUPPORTED = 1u;
+public static const uint EXPLICIT_OPERAND_LITERAL_RANGE = 2u;
+public static const uint EXPLICIT_OPERAND_SCALAR_CONFLICT = 3u;
+
+public uint checked_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
+    BodyNames : IExplicitOperandBodyNames>(
+    TypeRefs type_refs, BodyNames body_names, uint node, uint expected_scalar,
+    out uint kind, out uint value)
+{
+    kind = 0u; value = 0xffffffffu;
+    if (!constant_scalar_is_supported(expected_scalar)) return EXPLICIT_OPERAND_UNSUPPORTED;
+    uint3 literal;
+    if (checked_source_literal_value(node, expected_scalar, literal))
+        return publish_explicit_constant_atom(node, literal, kind, value)
+            ? EXPLICIT_OPERAND_BOUND : EXPLICIT_OPERAND_UNSUPPORTED;
+    uint literal_token;
+    if (explicit_integer_literal_out_of_range(node, expected_scalar, literal_token))
+        return EXPLICIT_OPERAND_LITERAL_RANGE;
+    NamedConstantOperand named = resolved_named_constant_operand(type_refs, body_names, node);
+    if (named.kind != 0u && named.scalar != expected_scalar) return EXPLICIT_OPERAND_SCALAR_CONFLICT;
+    return bind_named_constant_operand(node, named, expected_scalar, kind, value)
+        ? EXPLICIT_OPERAND_BOUND : EXPLICIT_OPERAND_UNSUPPORTED;
 }
 
 public bool checked_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
     TypeRefs type_refs, uint node, uint expected_scalar, out uint kind, out uint value)
 {
     return checked_scoped_explicit_constant_operand(type_refs, ModuleScopeOperandNames(), node,
-        expected_scalar, kind, value);
-}
-
-public bool checked_scoped_explicit_constant_operand<TypeRefs : IExplicitOperandTypeRefs,
-    BodyNames : IExplicitOperandBodyNames>(
-    TypeRefs type_refs, BodyNames body_names, uint node, uint expected_scalar,
-    out uint kind, out uint value)
-{
-    kind = 0u; value = 0xffffffffu;
-    if (!constant_scalar_is_supported(expected_scalar)) return false;
-    uint3 literal;
-    if (checked_source_literal_value(node, expected_scalar, literal))
-        return publish_explicit_constant_atom(node, literal, kind, value);
-    return checked_scoped_named_constant_operand(type_refs, body_names, node, expected_scalar,
-        kind, value);
+        expected_scalar, kind, value) == EXPLICIT_OPERAND_BOUND;
 }

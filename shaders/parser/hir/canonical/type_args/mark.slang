@@ -16,7 +16,7 @@ static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
-// An argument row is a type, a literal, or a signed literal (`-5`, `+0.0`);
+// An argument row is a type, a literal, or a negated literal (`-5`, `-0.0`);
 // the links pass seeds owners only for those argument roots.
 bool argument_value_kind(uint kind)
 { return kind == HIR_TYPE || kind == HIR_LITERAL_EXPR || kind == HIR_UNARY_EXPR; }
