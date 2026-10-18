@@ -13,12 +13,6 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b06: a bound on an imported trait, `where T: core::cmp::Eq<T>` and
-  `T::eq(a, b)`. Passes since b0aff19e (15b now hashes the generic-parameter
-  lookup with the job's token capacity, as 00b2 builds it); it moves to the
-  matrix once it has a number. It blocked every module family that compares
-  elements: option_*, result_*, slice_*, range_*, vec_*, set_*, map_* and
-  deque_*, 75 modules in all.
 - b07: a const parameter as a cast operand, `N as i32`. Checks, but x86
   rejects it with LNC0017 "operation is not implemented by the x86 backend"
   at 1:59. `let n: usize = N; n as i32` and `(len as usize) == N` work.
@@ -59,7 +53,10 @@ through `T: Conv<i32>` is p45; a const-generic impl's method through
 (b05) is p49; a user type implementing a stdlib trait used through the bound
 in core::set (b12) is p50; a where-clause bound on a scalar subject
 (b01, `where bool: Inner<[i32; M]>`) is p51. A record type as a concrete
-subject is still rejected with LNC0008.
+subject is still rejected with LNC0008. A bound on an imported trait,
+`where T: core::cmp::Eq<T>` with `T::eq(a, b)` (b06), is p53; it unblocks the
+module families that compare elements (option_*, result_*, slice_*, range_*,
+vec_*, set_*, map_* and deque_*, 75 modules).
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with
