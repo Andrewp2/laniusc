@@ -46,6 +46,12 @@ pub fn xor<T>(value: Option<T>, right: Option<T>) -> Option<T> {
     return right;
 }
 
+// Some(Some(v)) gives Some(v); Some(None) and None give None.
+pub fn flatten<T>(value: Option<Option<T>>) -> Option<T> {
+    let absent: Option<T> = None();
+    return match (value) { Some(inner) -> inner, None -> absent };
+}
+
 pub impl<T> Option<T> {
     pub fn is_some(self) -> bool {
         return match (self) { Some(_) -> true, None -> false };

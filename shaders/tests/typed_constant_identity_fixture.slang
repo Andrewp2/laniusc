@@ -4,7 +4,6 @@ import type_checker.concrete_type_equality;
 // production equality/hash outcomes, not a duplicate host type evaluator.
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;
-import type_checker.constant_constraints;
 
 public static const uint INVALID = 0xffffffffu;
 static const uint ATOM = 0x80000001u;

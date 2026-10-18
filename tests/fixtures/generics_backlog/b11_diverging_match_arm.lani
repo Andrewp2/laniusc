@@ -1,0 +1,9 @@
+import core::panic;
+enum Opt<T> { Some(T), None }
+fn unwrap<T>(value: Opt<T>) -> T {
+    return match (value) { Some(inner) -> inner, None -> core::panic::panic() };
+}
+fn main() -> i32 {
+    let a: Opt<i32> = Some(42);
+    return unwrap(a);
+}

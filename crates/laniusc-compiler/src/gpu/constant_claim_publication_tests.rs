@@ -428,6 +428,25 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
         put(name, vec![0; TOKENS]);
     }
     put("type_instance_arg_row_count_out", vec![0]);
+    // 03a8 validates explicit applications by canonical ID (1f3ee486). The
+    // tables start as canonical/00_clear leaves them: no records past the
+    // preseeded scalars, every candidate pending. Candidates are the type
+    // rows above, the 128 atoms and the 32 projections.
+    const RECORDS: usize = 1024;
+    let (rows, atom_rows, projection_rows) = (TOKENS, 128, 32);
+    put("ct_head", vec![0; RECORDS * 4]);
+    put("ct_meta", vec![0; RECORDS * 4]);
+    put("ct_extra", vec![0; RECORDS * 2]);
+    put("ct_args", vec![0; 4096]);
+    put("ct_slot", vec![0; 4096]);
+    let mut counts = vec![0; 16];
+    counts[0] = 32; // CT_COUNT_NEXT_RECORD = CT_FIRST_RECORD
+    counts[2] = (rows + atom_rows + projection_rows) as u32; // CT_COUNT_PENDING
+    put("ct_counts", counts);
+    put("canonical_row", vec![INVALID; rows]);
+    put("canonical_atom", vec![INVALID; atom_rows]);
+    put("canonical_projection", vec![INVALID; projection_rows]);
+    put("canonical_dependency_type", vec![INVALID; 16]);
     put(
         "queries",
         vec![

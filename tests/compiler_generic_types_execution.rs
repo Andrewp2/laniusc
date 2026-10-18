@@ -8040,6 +8040,36 @@ fn generic_constant_values_reject_noninteger_array_lengths() {
     }
 }
 
+/// Source forms of the typed constant-identity cases whose GPU fixtures tested
+/// the deleted inference engine (constant_constraints.slang).
+#[test]
+fn constant_count_identity_and_fit_reject_through_production_calls() {
+    let distinct = |scalar: &str| format!(
+        "fn same<const N: {scalar}>(left: [i32; N], right: [i32; N]) -> i32 {{ return left[0] + right[0]; }} \
+         fn mixed<const K: {scalar}, const J: {scalar}>(left: [i32; K], right: [i32; J]) -> i32 {{ return same(left, right); }} \
+         fn main() -> i32 {{ return mixed([20], [22]); }}"
+    );
+    for (label, source, code) in [
+        // Two distinct count parameters are not one constant, at either width.
+        ("distinct u64 count parameters", distinct("u64"), "LNC0006"),
+        ("distinct u32 count parameters", distinct("u32"), "LNC0006"),
+        // Equal counts cannot discharge the retained u8 fit of 256.
+        ("nested u8 count fit", include_str!("fixtures/stdlib_foundation/typed_constant_transport/constant-claim-provenance-v1/reject_nested_count_fit.lani").to_owned(), "LNC0006"),
+        // A named count outside the array count range never becomes a low-word count;
+        // it reaches no native layout.
+        ("negative named count", include_str!("fixtures/stdlib_foundation/typed_constant_transport/array-native-readers-v1/reject_negative_count.lani").to_owned(), "LNC0047"),
+        ("wide named count", "module app::wide; const WIDE: u64 = 4294967296; fn invalid(value: [i32; app::wide::WIDE]) -> i32 { return value[0]; } fn main() -> i32 { return 0; }".to_owned(), "LNC0047"),
+    ] {
+        reject_trait_program(label, &source, code);
+    }
+    execute(
+        "shared count parameter",
+        "fn same<const N: u64>(left: [i32; N], right: [i32; N]) -> i32 { return left[0] + right[0]; } \
+         fn mixed<const K: u64>(left: [i32; K], right: [i32; K]) -> i32 { return same(left, right); } \
+         fn main() -> i32 { return mixed([20], [22]) - 42; }",
+    );
+}
+
 #[test]
 fn generic_result_only_constants_execute_local_calls() {
     execute(

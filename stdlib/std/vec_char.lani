@@ -1,7 +1,7 @@
-// Owned, allocation-backed char vector for the current native target. Storage
-// uses 32-bit cells accessed through the available i32 raw-slice intrinsic.
-// All 32-bit character codes are preserved, including non-scalar patterns.
-// Sorting and searching use unsigned code-value order.
+// Owned, allocation-backed char vector for the current native target. Each
+// char occupies one native eight-byte slot (slot i at storage + 8 * i), read
+// and written as char through typed views, so no integer conversion is
+// involved. Sorting and searching use code-point order.
 // Ownership is linear by convention: keep only the newest returned VecChar,
 // do not copy it or use it after destroy. The language cannot enforce moves yet.
 // Growth failure returns the original vector unchanged. Compare len after
@@ -9,7 +9,7 @@
 module std::vec_char;
 import alloc::allocator;
 import core::mem;
-import core::u32_cells;
+import core::slice_char;
 
 pub struct VecChar {
     storage: ptr,
@@ -17,8 +17,34 @@ pub struct VecChar {
     reserved: i32,
 }
 
-// i32 indexing and byte-size arithmetic limit capacity to MAX_I32 / 4.
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
 pub const MAX_CAPACITY: i32 = 536870911;
+
+fn slot(storage: ptr, index: i32) -> [char] {
+    let offset: usize = (index as usize) * 8;
+    return core::mem::typed_slice_from_raw_parts(storage + offset, 1);
+}
+
+fn load(storage: ptr, index: i32) -> char {
+    let view: [char] = slot(storage, index);
+    return view[0];
+}
+
+fn store(storage: ptr, index: i32, item: char) {
+    let view: [char] = slot(storage, index);
+    view[0] = item;
+}
+
+// A typed view runs downward from its first element, so the view over the
+// first count items starts at the last one and holds item i at count - 1 - i.
+fn reversed_items(storage: ptr, count: i32) -> [char] {
+    let offset: usize = ((count - 1) as usize) * 8;
+    return core::mem::typed_slice_from_raw_parts(storage + offset, count);
+}
+
+fn byte_size(count: i32) -> usize {
+    return (count as usize) * 8;
+}
 
 pub fn new() -> VecChar {
     let empty: ptr = 0;
@@ -46,15 +72,12 @@ pub fn try_reserve(value: VecChar, minimum_capacity: i32) -> VecChar {
     if (minimum_capacity <= value.reserved) {
         return value;
     }
-    let byte_count: i32 = minimum_capacity * 4;
-    let new_bytes: usize = byte_count as usize;
+    let new_bytes: usize = byte_size(minimum_capacity);
     let next: ptr = 0;
     if (value.storage == 0) {
-        next = alloc::allocator::alloc(new_bytes, 4);
+        next = alloc::allocator::alloc(new_bytes, 8);
     } else {
-        let old_byte_count: i32 = value.reserved * 4;
-        let old_bytes: usize = old_byte_count as usize;
-        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+        next = alloc::allocator::realloc(value.storage, byte_size(value.reserved), new_bytes, 8);
     }
     if (next == 0) {
         return value;
@@ -79,16 +102,13 @@ pub fn try_clone(value: VecChar) -> VecChar {
     if (length == 0) {
         return new();
     }
-    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, length);
     let copy: VecChar = try_with_capacity(length);
     if (copy.reserved < length) {
         return new();
     }
     let index: i32 = 0;
     while (index < length) {
-        let raw: i32 = source[index];
-        let item: char = raw;
-        copy = try_push(copy, item);
+        copy = try_push(copy, load(value.storage, index));
         index += 1;
     }
     return copy;
@@ -112,9 +132,7 @@ pub fn try_push(value: VecChar, item: char) -> VecChar {
             return value;
         }
     }
-    let elements: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item as i32;
-    elements[grown.length] = raw_item;
+    store(grown.storage, grown.length, item);
     return VecChar { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
 }
 
@@ -169,14 +187,12 @@ pub fn try_insert(value: VecChar, index: i32, item: char) -> VecChar {
     if (grown.length == old_len) {
         return grown;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let inserted: i32 = cells[old_len];
     let cursor: i32 = old_len;
     while (cursor > index) {
-        cells[cursor] = cells[cursor - 1];
+        store(grown.storage, cursor, load(grown.storage, cursor - 1));
         cursor -= 1;
     }
-    cells[index] = inserted;
+    store(grown.storage, index, item);
     return grown;
 }
 
@@ -187,10 +203,9 @@ pub fn try_remove(value: VecChar, index: i32) -> VecChar {
     if (index < 0 || index >= value.length) {
         return value;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let cursor: i32 = index;
     while (cursor + 1 < value.length) {
-        cells[cursor] = cells[cursor + 1];
+        store(value.storage, cursor, load(value.storage, cursor + 1));
         cursor += 1;
     }
     return try_pop(value);
@@ -201,10 +216,7 @@ pub fn get_or(value: VecChar, index: i32, fallback: char) -> char {
     if (index < 0 || index >= value.length) {
         return fallback;
     }
-    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = elements[index];
-    let item: char = raw_item;
-    return item;
+    return load(value.storage, index);
 }
 
 // Mutates the owned allocation only for an in-bounds index.
@@ -212,20 +224,20 @@ pub fn try_set(value: VecChar, index: i32, item: char) -> bool {
     if (index < 0 || index >= value.length) {
         return false;
     }
-    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = item as i32;
-    elements[index] = raw_item;
+    store(value.storage, index, item);
     return true;
 }
 
-// The backing allocation contains i32 cells that preserve char bit patterns.
-// core::u32_cells applies unsigned comparisons to those stored words.
+// Sort ascending by code point and return len. The view holds the items in
+// reverse, so sorting it ascending and reversing it leaves them ascending.
 pub fn sort_in_place(value: VecChar) -> i32 {
     if (value.length <= 1) {
         return value.length;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    return core::u32_cells::sort(cells, value.length);
+    let view: [char] = reversed_items(value.storage, value.length);
+    let sorted: bool = core::slice_char::sort(view, value.length);
+    let reversed: i32 = core::slice_char::reverse(view, value.length);
+    return reversed;
 }
 
 // Reverse initialized elements and return the number of swaps performed.
@@ -233,28 +245,48 @@ pub fn reverse_in_place(value: VecChar) -> i32 {
     if (value.length <= 1) {
         return 0;
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    return core::u32_cells::reverse_in_place(cells, value.length);
+    let left: i32 = 0;
+    let right: i32 = value.length - 1;
+    let swaps: i32 = 0;
+    while (left < right) {
+        let saved: char = load(value.storage, left);
+        store(value.storage, left, load(value.storage, right));
+        store(value.storage, right, saved);
+        left += 1;
+        right -= 1;
+        swaps += 1;
+    }
+    return swaps;
 }
 
-// Search requires nondecreasing unsigned order. The bounds return an index
+// Search requires nondecreasing code-point order. The bounds return an index
 // from zero through len; empty vectors return zero without reading storage.
 pub fn lower_bound(value: VecChar, needle: char) -> i32 {
-    if (value.length == 0) {
-        return 0;
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (load(value.storage, middle) < needle) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_bits: i32 = needle as i32;
-    return core::u32_cells::lower_bound(cells, value.length, needle_bits);
+    return low;
 }
 
 pub fn upper_bound(value: VecChar, needle: char) -> i32 {
-    if (value.length == 0) {
-        return 0;
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (load(value.storage, middle) <= needle) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
     }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    let needle_bits: i32 = needle as i32;
-    return core::u32_cells::upper_bound(cells, value.length, needle_bits);
+    return low;
 }
 
 // Return first or last matching index, or fallback when the needle is absent.
@@ -327,16 +359,11 @@ pub fn try_shrink_to_fit(value: VecChar) -> VecChar {
         return value;
     }
     if (value.length == 0) {
-        let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count as usize;
-        alloc::allocator::dealloc(value.storage, bytes, 4);
+        alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
         return new();
     }
-    let old_byte_count: i32 = value.reserved * 4;
-    let new_byte_count: i32 = value.length * 4;
-    let old_bytes: usize = old_byte_count as usize;
-    let new_bytes: usize = new_byte_count as usize;
-    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    let next: ptr = alloc::allocator::realloc(
+        value.storage, byte_size(value.reserved), byte_size(value.length), 8);
     if (next == 0) {
         return value;
     }
@@ -347,8 +374,6 @@ pub fn try_shrink_to_fit(value: VecChar) -> VecChar {
 // the vector after this call.
 pub fn destroy(value: VecChar) {
     if (value.storage != 0) {
-        let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count as usize;
-        alloc::allocator::dealloc(value.storage, bytes, 4);
+        alloc::allocator::dealloc(value.storage, byte_size(value.reserved), 8);
     }
 }
