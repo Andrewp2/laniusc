@@ -136,6 +136,7 @@ use super::{
         },
         types::fields::{
             HIR_TYPE_FORM_ARRAY,
+            HIR_TYPE_FORM_NEVER,
             HIR_TYPE_FORM_NONE,
             HIR_TYPE_FORM_PATH,
             HIR_TYPE_FORM_REF,

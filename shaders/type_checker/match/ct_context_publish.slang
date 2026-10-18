@@ -158,7 +158,20 @@ uint prior_id(uint2 operand, uint3 interned)
 public uint ct_publish_context<C : ICtClaims>(uint call, uint token, uint env,
     uint types, uint constants, uint count_mask, uint flags, uint3 interned, out uint2 request)
 {
+    bool changed;
+    return ct_publish_context_changes<C>(call, token, env, types, constants, count_mask, flags,
+        interned, request, changed);
+}
+
+// ct_publish_context that also reports whether the publication changed the
+// call's context: a slot it writes was unbound or held another operand, or a
+// constant it admits was not admitted yet.
+public uint ct_publish_context_changes<C : ICtClaims>(uint call, uint token, uint env,
+    uint types, uint constants, uint count_mask, uint flags, uint3 interned, out uint2 request,
+    out bool changed)
+{
     request = uint2(0u, INVALID);
+    changed = false;
     bool claims = (flags & CT_PUBLISH_CLAIMS) != 0u;
     uint written_types = 0u;
     uint written_constants = 0u;
@@ -233,11 +246,16 @@ public uint ct_publish_context<C : ICtClaims>(uint call, uint token, uint env,
             uint row = call * 32u + slot;
             if (!constant)
             {
+                changed = changed || (call_context_arg_mask[call] & bit) == 0u ||
+                    call_context_ref_tag[row] != operand.x || call_context_ref_payload[row] != operand.y;
                 call_context_ref_tag[row] = operand.x;
                 call_context_ref_payload[row] = operand.y;
                 written_types |= bit;
                 continue;
             }
+            changed = changed || (call_context_constant_mask[call] & bit) == 0u ||
+                call_context_constant_kind[row] != operand.x || call_context_constant_payload[row] != operand.y ||
+                call_context_constant_identity_mode[row] != mode;
             call_context_constant_kind[row] = operand.x;
             call_context_constant_payload[row] = operand.y;
             call_context_constant_identity_mode[row] = mode;
@@ -246,7 +264,11 @@ public uint ct_publish_context<C : ICtClaims>(uint call, uint token, uint env,
     }
     call_context_arg_mask[call] |= written_types;
     // Realized and retained constants are checked references.
-    if ((flags & CT_PUBLISH_ADMIT) != 0u) call_context_constant_valid_mask[call] |= written_constants;
+    if ((flags & CT_PUBLISH_ADMIT) != 0u)
+    {
+        changed = changed || (call_context_constant_valid_mask[call] & written_constants) != written_constants;
+        call_context_constant_valid_mask[call] |= written_constants;
+    }
     call_context_constant_mask[call] |= written_constants;
     return CT_PUBLISHED;
 }

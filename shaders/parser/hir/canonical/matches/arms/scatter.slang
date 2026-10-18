@@ -1,3 +1,8 @@
+// Scatter each match arm to row `match start + arm ordinal`.
+//
+// The mark pass counted arms at their match's anchor token, so the exclusive
+// scan at that anchor is the start of the match's contiguous arm range. Arms
+// are found through the raw node recorded at their own anchor.
 import hir_records;
 import prefix_scan;
 import canonical_hir_identity;
@@ -37,6 +42,13 @@ uint mapped_expression(uint raw)
     uint dense = mapped(root);
     return dense != INVALID ? dense : mapped(raw);
 }
+// Status 2 is an inconsistent record, 3 a capacity overflow.
+void record_status(uint status, uint raw)
+{
+    uint ignored;
+    InterlockedMax(canonical_status[0u], status, ignored);
+    InterlockedMax(canonical_status[3u], raw + 1u, ignored);
+}
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -44,25 +56,35 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint anchor = tid(dtid);
     uint total = inclusive_scan_total(block_count(), family_block_prefix);
     if (anchor == 0u) family_count[0u] = total;
-    if (anchor >= gCanonical.canonical_capacity || family_flag[anchor] == 0u) return;
+    if (anchor >= gCanonical.canonical_capacity) return;
     uint encoded = candidate_raw_by_anchor[anchor];
     uint raw = encoded == 0u ? INVALID : encoded - 1u;
     if (raw >= gCanonical.raw_capacity) return;
-    uint block = anchor / 256u;
+    uint owner_raw = arm_owner_match[raw];
+    uint owner_anchor = owner_raw < gCanonical.raw_capacity ? hir_token_pos[owner_raw] : INVALID;
+    if (owner_anchor >= gCanonical.canonical_capacity) return;
+    uint arm_count = family_flag[owner_anchor];
+    uint ordinal = arm_ordinal[raw];
+    // The mark pass counted this arm, so a rank outside the count means the
+    // arm list and its ranks disagree.
+    if (ordinal >= arm_count)
+    {
+        record_status(2u, raw);
+        return;
+    }
+    uint block = owner_anchor / 256u;
     uint base = block == 0u ? 0u : family_block_prefix[block - 1u];
-    uint row = base + family_local_prefix[anchor];
+    uint row = base + family_local_prefix[owner_anchor] + ordinal;
     if (row >= gCanonical.canonical_capacity)
     {
-        uint ignored;
-        InterlockedMax(canonical_status[0u], 3u, ignored);
-        InterlockedMax(canonical_status[3u], raw + 1u, ignored);
+        record_status(3u, raw);
         return;
     }
     HirMatchArm arm;
-    arm.owner = mapped(arm_owner_match[raw]);
+    arm.owner = mapped(owner_raw);
     arm.pattern = mapped(arm_pattern[raw]);
     arm.result = mapped_expression(arm_result[raw]);
-    arm.ordinal = arm_ordinal[raw];
+    arm.ordinal = ordinal;
     hir_match_arms[row] = arm;
     uint arm_node = mapped(raw);
     if (arm_node < gCanonical.canonical_capacity)

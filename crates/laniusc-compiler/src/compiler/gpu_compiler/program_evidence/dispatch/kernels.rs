@@ -633,6 +633,13 @@ const WAVE_PLAN_PHASE: u32 = 70;
 /// and prerequisite Works (phase 42).
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
+/// Commit stages that run as one 256-lane workgroup: the lanes audit
+/// together, then lane 0 publishes (or reruns the serial stage). Like the
+/// one-thread stages, they take only the one-row span (0, 1).
+const GROUP_STAGES: &[u32] = &[45, 47, 55];
+fn single_dispatch(phase: u32, threads: u32) -> bool {
+    threads == 1 || GROUP_STAGES.contains(&phase)
+}
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
@@ -659,20 +666,22 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/44_validate_prerequisite_normalization",
         256,
     ),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         45,
         "type_checker/program_evidence/entries/45_commit_normalized_terms",
-        1,
+        256,
     ),
     (
         46,
         "type_checker/program_evidence/entries/46_hash_normalized_goals",
         256,
     ),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         47,
         "type_checker/program_evidence/entries/47_commit_normalized_goals",
-        1,
+        256,
     ),
     (
         48,
@@ -717,10 +726,11 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (54, WALK_ROOTS, 256),
     (54, WALK_BINDINGS, 256),
     (54, BINDING_ROWS, 256),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         55,
         "type_checker/program_evidence/entries/55_commit_substitutions",
-        1,
+        256,
     ),
     (
         56,
@@ -854,13 +864,7 @@ impl ProofKernels {
             matches!(phase, COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
             "proof stage {phase} is not a normalization count"
         );
-        // One shared role: the solver reads each count back before it
-        // records the next one, so the queued zero write never races a use.
-        let demand = catalog.workspace().shared("program_evidence.proof_demand").buffer(
-            PROOF_STORE_TABLES as u32,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            Some(&[0; PROOF_STORE_TABLES]),
-        )?;
+        let demand = proof_demand(catalog)?;
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
@@ -1017,7 +1021,7 @@ impl ProofKernels {
     ) -> Result<()> {
         let (phase, _, threads) = PROOF_KEYS[index];
         ensure!(
-            threads != 1 || (span.first == 0 && span.count == 1),
+            !single_dispatch(phase, threads) || (span.first == 0 && span.count == 1),
             "singleton proof stage needs exactly one dispatch"
         );
         record_phase_with_proof(
@@ -1056,6 +1060,7 @@ pub(super) mod wave {
     pub const DONE: u32 = 2;
     pub const FAULT: u32 = 3;
     pub const OVERFLOW: u32 = 4;
+    pub const GROW: u32 = 5;
     pub const FAULT_IDENTITY: u32 = 1;
     pub const FAULT_LAYOUT: u32 = 2;
     pub const FAULT_RECEIPT: u32 = 3;
@@ -1148,7 +1153,13 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
     };
     use WaveSpan::*;
     Ok(match point {
-        WavePoint::FirstWork => vec![(FirstWork, vec![stage(49)?]), (FirstOne, vec![stage(50)?])],
+        // Each Work admission counts the next normalization's rows, as the
+        // stepped loop does (GpuProgramEvidence::admit_counted_work).
+        WavePoint::FirstWork => vec![
+            (FirstWork, vec![stage(49)?]),
+            (FirstOne, vec![stage(50)?]),
+            (FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]),
+        ],
         WavePoint::Round => {
             // ProofKernels::record_normalization, 51, 52, 57, record_selection.
             let mut groups = Vec::new();
@@ -1168,7 +1179,11 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             (SelectedOne, vec![stage(55)?]),
             (SelectedWork, vec![stage(56)?]),
         ],
-        WavePoint::Expanded => vec![(ExpandedWork, vec![stage(49)?]), (ExpandedOne, vec![stage(50)?])],
+        WavePoint::Expanded => vec![
+            (ExpandedWork, vec![stage(49)?]),
+            (ExpandedOne, vec![stage(50)?]),
+            (ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]),
+        ],
         WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
         WavePoint::Emitted => vec![
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
@@ -1185,6 +1200,17 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
 /// Words per step slot: whole uniform-offset alignments, at least the slot.
 pub(super) fn wave_slot_words(device: &wgpu::Device) -> u32 {
     (device.limits().min_uniform_buffer_offset_alignment / 4).max(SLOT_MIN_WORDS)
+}
+
+/// The zeroed normalization demand table (proof_demand.slang). One shared
+/// role: the solver reads each count back before the next zeroing is
+/// queued, so the queued write never races a use.
+pub(super) fn proof_demand(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
+    catalog.workspace().shared("program_evidence.proof_demand").buffer(
+        PROOF_STORE_TABLES as u32,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        Some(&[0; PROOF_STORE_TABLES]),
+    )
 }
 
 /// The solver state of one attempt, planned and read only by the GPU
@@ -1253,6 +1279,7 @@ impl ProofKernels {
         points: &[WavePoint],
         chunks: u32,
         state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
         catalog: &Arena,
         input: &Arena,
         output: &Arena,
@@ -1275,7 +1302,7 @@ impl ProofKernels {
                 for chunk in 1..=span_chunks {
                     for &(index, phase) in &steps {
                         ensure!(
-                            PROOF_KEYS[index].2 != 1 || span.is_one(),
+                            !single_dispatch(phase, PROOF_KEYS[index].2) || span.is_one(),
                             "singleton proof stage needs exactly one dispatch"
                         );
                         slots.push((index, phase, span, chunk, limit));
@@ -1360,6 +1387,7 @@ impl ProofKernels {
                 ("program_evidence_wave", state.as_entire_binding()),
                 ("program_evidence_wave_slots", slot_buffer.as_entire_binding()),
                 ("program_evidence_wave_plan", plan_params.as_entire_binding()),
+                ("program_evidence_proof_demand", demand.as_entire_binding()),
             ];
             let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                 device,
@@ -1387,6 +1415,7 @@ impl ProofKernels {
                     ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
                     ("proof_store_params", proof_uniform(phase).as_entire_binding()),
                     ("thread_scratch", scratch.as_entire_binding()),
+                    ("program_evidence_proof_demand", demand.as_entire_binding()),
                 ];
                 let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                     device,

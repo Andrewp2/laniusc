@@ -5,6 +5,11 @@
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_candidates;
 import type_checker.canonical.canonical_checked_rows;
+import status;
+
+struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<Params> gParams;
+RWStructuredBuffer<uint> status;
 
 // Two frontier lists of half the buffer each; round r reads list r & 1 and
 // appends to list (r + 1) & 1. The lists are sized from a fraction of the
@@ -42,7 +47,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (i >= min(ct_counts[CT_COUNT_PENDING], list)) return;
         candidate = canonical_frontier[(round & 1u) * list + i];
     }
-    uint id = canonical_intern_candidate<CtCheckedRows>(candidate, ct_counts[CT_COUNT_FINAL] != 0u);
+    bool final = ct_counts[CT_COUNT_FINAL] != 0u;
+    uint id = canonical_intern_candidate<CtCheckedRows>(candidate, final);
+    // The round limit (CT_OVERFLOW_ROUNDS, not a cycle) made this round
+    // final: a source type still pending is deeper than the documented 64
+    // levels. It is the limit boundary at its own token (LNC0047, detail 2),
+    // not an UNKNOWN that a later comparison reports as a mismatch. The
+    // smallest token is the outermost type.
+    if (final && round != 0u && id == CT_UNKNOWN && candidate < gParams.n_tokens &&
+        (ct_counts[CT_COUNT_OVERFLOW] & CT_OVERFLOW_ROUNDS) != 0u)
+        record_min_token_error(status, candidate, 6u, 0x474e0002u);
     if (id != CT_PENDING)
     {
         ct_publish_candidate(candidate, id);

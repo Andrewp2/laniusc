@@ -382,3 +382,11 @@ cast_type_path [cast_type_path] -> cast_type_path_segment cast_type_path_tail;
 cast_type_path_segment [cast_type_path_ident] -> 'CastTypeIdent';
 cast_type_path_tail [cast_type_path_more] -> 'PathColon' 'PathColon' cast_type_path_segment cast_type_path_tail;
 cast_type_path_tail [cast_type_path_end] -> ;
+
+# ----- Never type -----
+# `fn f() -> ! { ... }` declares a function that never returns. The `!` gets
+# its own token kind only right after a return arrow, so the never type is a
+# return type and nothing else: `let x: !;` stays a syntax error, and a `!`
+# after a match arm's arrow is still logical not. The production sits at the
+# end of the file to keep earlier production IDs.
+type_expr [type_never] -> 'ReturnNever';

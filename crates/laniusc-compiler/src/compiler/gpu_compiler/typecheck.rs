@@ -3403,6 +3403,13 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("declare the array length parameter with an integer type such as usize"),
         ),
+        GpuTypeCheckCode::RecursiveType => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "recursive type has infinite size",
+                ))
+                .with_note("a value of this type contains itself by value; hold the inner value through a reference or a slice instead"),
+        ),
         GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
                 .with_primary_label(diagnostic_label_from_source_span(
