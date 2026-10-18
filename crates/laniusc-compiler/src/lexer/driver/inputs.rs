@@ -2,7 +2,10 @@ use anyhow::{Result, anyhow};
 use log::warn;
 
 use super::GpuLexer;
-use crate::lexer::{buffers, buffers::GpuBuffers};
+use crate::{
+    gpu::buffers::grown_resident_capacity,
+    lexer::{buffers, buffers::GpuBuffers},
+};
 
 const SOURCE_BYTE_CAPACITY_GRANULARITY: u32 = 4 * 1024;
 const SOURCE_FILE_CAPACITY_GRANULARITY: u32 = 64;
@@ -12,6 +15,18 @@ fn capacity_bucket(value: u32, granularity: u32) -> u32 {
         .max(1)
         .div_ceil(granularity)
         .saturating_mul(granularity)
+}
+
+/// Reports a lexer buffer replacement, which also replaces the identities the
+/// resident type-check workspace is bound to.
+fn trace_lexer_resize(old_bytes: u32, new_bytes: u32, old_files: u32, new_files: u32) {
+    if crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false)
+        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
+    {
+        eprintln!(
+            "[gpu_compile_host_timer] lexer.resident_cache: allocate=true bytes={old_bytes}->{new_bytes} files={old_files}->{new_files}"
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +87,21 @@ impl GpuLexer {
         })
     }
 
+    fn source_pack_capacity_floor(&self) -> (u32, u32) {
+        *self
+            .source_pack_capacity_floor
+            .lock()
+            .expect("GpuLexer.source_pack_capacity_floor poisoned")
+    }
+
+    fn raise_source_pack_capacity_floor(&self, bytes: u32, files: u32) {
+        let mut floor = self
+            .source_pack_capacity_floor
+            .lock()
+            .expect("GpuLexer.source_pack_capacity_floor poisoned");
+        *floor = (floor.0.max(bytes), floor.1.max(files));
+    }
+
     /// Prepares resident buffers and metadata for one source string.
     pub(super) fn prepare_buffers_for_input<'a>(
         &'a self,
@@ -105,7 +135,7 @@ impl GpuLexer {
 
         if guard.is_none() {
             *guard = Some(recreate(capacity_bucket(
-                aligned_len,
+                grown_resident_capacity(0, aligned_len),
                 SOURCE_BYTE_CAPACITY_GRANULARITY,
             ))?);
         }
@@ -124,10 +154,12 @@ impl GpuLexer {
 
             let needs_resize = desired_cap > cap_bytes || nb_dfa > cap_nb_dfa || n > cap_n;
             if needs_resize {
-                let mut new_bufs = recreate(capacity_bucket(
-                    desired_cap,
+                let new_bytes = capacity_bucket(
+                    grown_resident_capacity(cap_bytes.max(cap_n), desired_cap),
                     SOURCE_BYTE_CAPACITY_GRANULARITY,
-                ))?;
+                );
+                trace_lexer_resize(cap_bytes, new_bytes, 1, 1);
+                let mut new_bufs = recreate(new_bytes)?;
                 self.write_current_lex_inputs(
                     &mut new_bufs,
                     input_bytes,
@@ -162,6 +194,7 @@ impl GpuLexer {
         start_state: u32,
         skip_kinds: [u32; 4],
     ) -> Result<std::sync::MutexGuard<'a, Option<buffers::GpuBuffers>>> {
+        let _span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.source-pack.prepare_buffers");
         let (input_bytes, source_files) = build_source_pack(sources)?;
         let n = u32::try_from(input_bytes.len())
             .map_err(|_| anyhow!("source pack byte length exceeds lexer capacity"))?;
@@ -189,10 +222,18 @@ impl GpuLexer {
         };
 
         if guard.is_none() {
-            *guard = Some(recreate(
-                capacity_bucket(aligned_len, SOURCE_BYTE_CAPACITY_GRANULARITY),
-                capacity_bucket(source_file_capacity, SOURCE_FILE_CAPACITY_GRANULARITY),
-            )?);
+            let (floor_bytes, floor_files) = self.source_pack_capacity_floor();
+            let bytes = capacity_bucket(
+                grown_resident_capacity(floor_bytes, aligned_len),
+                SOURCE_BYTE_CAPACITY_GRANULARITY,
+            );
+            let files = capacity_bucket(
+                source_file_capacity.max(floor_files),
+                SOURCE_FILE_CAPACITY_GRANULARITY,
+            );
+            trace_lexer_resize(0, bytes, 0, files);
+            *guard = Some(recreate(bytes, files)?);
+            self.raise_source_pack_capacity_floor(bytes, files);
         }
 
         {
@@ -213,10 +254,21 @@ impl GpuLexer {
                 || n > cap_n
                 || source_file_capacity > cap_files;
             if needs_resize {
-                let mut new_bufs = recreate(
-                    capacity_bucket(desired_cap, SOURCE_BYTE_CAPACITY_GRANULARITY),
-                    capacity_bucket(source_file_capacity, SOURCE_FILE_CAPACITY_GRANULARITY),
-                )?;
+                // Grow every dimension and never shrink one: a pack with more
+                // files but fewer bytes keeps the byte capacity. Each
+                // replacement gives the buffers new identities, which rebuilds
+                // the resident type-check workspace bound to them.
+                let new_bytes = capacity_bucket(
+                    grown_resident_capacity(cap_bytes.max(cap_n), desired_cap),
+                    SOURCE_BYTE_CAPACITY_GRANULARITY,
+                );
+                let new_files = capacity_bucket(
+                    source_file_capacity.max(cap_files),
+                    SOURCE_FILE_CAPACITY_GRANULARITY,
+                );
+                trace_lexer_resize(cap_bytes, new_bytes, cap_files, new_files);
+                let mut new_bufs = recreate(new_bytes, new_files)?;
+                self.raise_source_pack_capacity_floor(new_bytes, new_files);
                 self.write_source_pack_lex_inputs(
                     &mut new_bufs,
                     &input_bytes,
@@ -389,6 +441,7 @@ mod tests {
         SOURCE_BYTE_CAPACITY_GRANULARITY,
         SOURCE_FILE_CAPACITY_GRANULARITY,
         capacity_bucket,
+        grown_resident_capacity,
     };
 
     #[test]
@@ -404,5 +457,20 @@ mod tests {
         );
         assert_eq!(capacity_bucket(1, SOURCE_FILE_CAPACITY_GRANULARITY), 64);
         assert_eq!(capacity_bucket(65, SOURCE_FILE_CAPACITY_GRANULARITY), 128);
+    }
+
+    #[test]
+    fn source_capacity_headroom_covers_a_slightly_larger_next_pack() {
+        // Two units of one stdlib build: the second is 4000 bytes larger and
+        // crossed the exact bucket, which replaced every workspace bound to
+        // the lexer buffers.
+        let exact = capacity_bucket(1_400_000, SOURCE_BYTE_CAPACITY_GRANULARITY);
+        assert!(exact < 1_404_000);
+        let grown = capacity_bucket(
+            grown_resident_capacity(0, 1_400_000),
+            SOURCE_BYTE_CAPACITY_GRANULARITY,
+        );
+        assert!(grown >= 1_404_000);
+        assert_eq!(grown_resident_capacity(grown, 1_404_000), grown);
     }
 }

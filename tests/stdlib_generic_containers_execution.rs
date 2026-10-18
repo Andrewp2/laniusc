@@ -26,6 +26,15 @@ fn generic_vec_set_pair_and_option_consumer_executes() {
     run_fixture("generic_containers");
 }
 
+// User generics over Vec<T, N> with record T call core::vec from their own
+// instances, so the library bodies are replayed with a type argument from
+// the program: records, a record array, Option and Pair of a record, and a
+// record inside a record.
+#[test]
+fn user_generics_over_record_vecs_execute() {
+    run_fixture("generic_record_vec");
+}
+
 // Guard the generic modules against a public function with no call site in
 // the consumer program.
 #[test]

@@ -84,16 +84,10 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             })
             .collect::<Vec<_>>();
         if self.target == SourcePackArtifactTarget::X86_64 {
-            let unit_id = u32::try_from(handle.job.phase_unit_index).map_err(|_| {
-                source_pack_artifact_store_error("pending native source-unit index exceeds u32")
-            })?;
-            let sources = read_explicit_source_path_files(
-                "pending native library-interface job", &handle.source_files)?;
-            let source_paths = handle.source_files.iter()
-                .map(|file| Some(file.path.clone())).collect::<Vec<_>>();
-            let pending = self.compiler.compile_pending_original_source_pack_unit(
-                sources.into(), handle.job.library_id, unit_id, dependency_pages.into(),
-                Some(&source_paths),
+            // A standard-library unit may reuse an earlier job's pending
+            // original; it is admitted with the rest of this program at link.
+            let pending = self.compiler.compile_cached_pending_original_unit(
+                &handle.job, &handle.source_files, dependency_pages.into(),
             ).await?;
             let artifact = PendingNativeArtifact {
                 slot: self.pending_originals.len(), facts: pending.facts().clone(),
@@ -133,8 +127,10 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                 }
                 let pending = std::mem::take(&mut self.pending_originals);
                 let objects = self.compiler.specialize_pending_x86_source_pack_objects(pending).await?;
+                let input_span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.input");
                 let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
                     .map_err(|error| super::x86_codegen::x86_link_input_error(error, None))?;
+                drop(input_span);
                 let linker = self.compiler.x86_linker().map_err(|reason| {
                     source_pack_artifact_store_error(format!(
                         "initialize resident x86_64 source-pack linker: {reason}"

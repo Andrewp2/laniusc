@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::{
-    codegen::lowering_ir::LoweringArtifactKind,
+    codegen::{lowering::LoweringJobBounds, lowering_ir::LoweringArtifactKind},
     gpu::buffers::LaniusBuffer,
     lexer::{
         types::{GpuToken, Token},
@@ -24,7 +24,9 @@ enum FrontendWorkspaceReplacement {
 }
 
 impl FrontendWorkspaceReplacement {
-    const fn invalidates_parser_allocation(self) -> bool {
+    /// A lexer replacement invalidates every parser binding of lexer buffers,
+    /// but not the parser's own allocation, which binds none.
+    const fn invalidates_parser_lexer_bindings(self) -> bool {
         matches!(self, Self::Lexer)
     }
 }
@@ -196,6 +198,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         input.token_count_buffer,
                         input.token_file_id_buffer,
                         &self.parse_tables,
+                        parser_feature_flags,
                         timer,
                     )
                     .map_err(&map_parser_error)?
@@ -342,7 +345,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                         )
                         .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
                     pipeline
-                        .record(device, queue, encoder, timer.as_deref_mut())
+                        .record(
+                            device,
+                            queue,
+                            encoder,
+                            timer.as_deref_mut(),
+                            LoweringJobBounds::from_sources(
+                                parser_feature_flags,
+                                bufs.n,
+                                [src],
+                            ),
+                        )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                 }
                 Ok((type_check, hir))
@@ -443,6 +456,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest<'_>>,
+        lowering_bounds: LoweringJobBounds,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
@@ -480,6 +494,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             encoder,
             "compile.source-pack.typecheck",
         );
+        // The GPU waits for the semantic interface's host recording here;
+        // without this boundary the trace charges that wait to its first pass.
+        if let Some(timer) = timer.as_deref_mut() {
+            timer.stamp(encoder, "compile.source-pack.typecheck.submission.begin");
+        }
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
         // Body replay keeps the template's public contract. Its checked graph
@@ -527,6 +546,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 encoder,
                 "compile.source-pack.semantic_interface",
             );
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "compile.source-pack.semantic_interface.submission.begin");
+            }
         }
         if lowering_target.is_some() && object_request.is_some() {
             return Err(CompileError::GpuCodegen(
@@ -549,7 +571,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
             pipeline
-                .record(device, queue, encoder, timer.as_deref_mut())
+                .record(device, queue, encoder, timer.as_deref_mut(), lowering_bounds)
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         if let Some(request) = object_request {
@@ -577,7 +599,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             };
             pipeline
                 .record_object(device, queue, encoder, library_id, unit_id, selected_replay,
-                    timer.as_deref_mut())
+                    timer.as_deref_mut(), lowering_bounds)
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         downstream_host_timer.stamp("lowering");
@@ -692,6 +714,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                         unit_id,
                         lowering_target,
                         object_request,
+                        LoweringJobBounds::from_sources(
+                            parser.parser_feature_flags,
+                            bufs.n,
+                            diagnostic_files.iter().map(|file| file.source.as_str()),
+                        ),
                     )
                 },
             )
@@ -769,6 +796,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                     unit_id,
                     lowering_target,
                     object_request,
+                    LoweringJobBounds::from_sources(
+                        parser_feature_flags,
+                        bufs.n,
+                        diagnostic_files.iter().map(|file| file.source.as_str()),
+                    ),
                 )
             },
             |err| parser_execution_failed_for_source_pack(diagnostic_files, err),
@@ -1015,10 +1047,13 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) {
         self.type_checker.release_frontend_bound_workspace();
         self.release_typecheck_workspace_consumers();
-        if replacement.invalidates_parser_allocation() {
-            // Lexer replacement invalidates every parser binding, so the
-            // parser allocation cannot survive this boundary.
-            self.parser.release_current_resident_buffers();
+        if replacement.invalidates_parser_lexer_bindings() {
+            // Lexer replacement invalidates every parser binding of lexer
+            // buffers. The parser allocation binds none, so it stays: dropping
+            // it would reallocate at this unit's exact shape and feature
+            // families, and the next unit of another shape would replace it
+            // (and the type-check workspace) again.
+            self.parser.release_lexer_bindings();
             self.lexer.release_current_resident_buffers();
         }
         // For parser-only growth, retain the cache entry until the parser's
@@ -1026,6 +1061,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         // grow-to-cover allocation from the previous capacities before
         // releasing the old buffers. Dropping the entry here would make a
         // bounded build alternate between the exact shapes of its units.
+        // The lexer and the type-check workspace keep capacity floors across
+        // their releases for the same reason.
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
     }
 
@@ -1577,6 +1614,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 }),
             )
             .await?;
+        let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit_snapshot");
         let unit = finish_source_pack_unit(
             artifacts,
             template_sources,
@@ -2324,12 +2362,53 @@ impl PendingOriginalUnit {
         &self.facts
     }
 
+    /// Keep this original for a later build of the same unit (the
+    /// pending-original cache). The retained value is still pending.
+    pub(super) fn retain(&self) -> RetainedPendingOriginal {
+        RetainedPendingOriginal {
+            unit: std::sync::Arc::new(self.unit.clone()),
+            facts: self.facts.clone(),
+        }
+    }
+
     pub(super) fn finish(
         self,
         admission: program_evidence::ValidatedOriginalUnit,
     ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
         let calls = admission.check_original_unit(&self.facts)?;
         Ok((self.unit, calls))
+    }
+}
+
+#[cfg(test)]
+impl PendingOriginalUnit {
+    pub(super) fn from_unit_for_test(unit: CompiledSourcePackUnit) -> Self {
+        Self { facts: OriginalUnitFacts::from_unit(&unit), unit }
+    }
+}
+
+/// A pending original retained across builds by the pending-original cache
+/// (unit_cache.rs). Like `PendingOriginalUnit` it exposes no unit or object
+/// and no conversion into a compiled cache value: it re-enters a build only as
+/// a new `PendingOriginalUnit`, which that build's program admission must
+/// release. The new wrapper shares this facts snapshot, so its catalog
+/// inputs are exactly the original compilation's.
+#[derive(Clone)]
+pub(super) struct RetainedPendingOriginal {
+    unit: std::sync::Arc<CompiledSourcePackUnit>,
+    facts: OriginalUnitFacts,
+}
+
+impl RetainedPendingOriginal {
+    pub(super) fn pending(&self) -> PendingOriginalUnit {
+        PendingOriginalUnit { unit: self.unit.as_ref().clone(), facts: self.facts.clone() }
+    }
+
+    /// The unit's charge plus the facts snapshot's own interface copy; the
+    /// snapshot's other fields share the unit's allocations.
+    pub(super) fn resident_byte_len(&self) -> usize {
+        self.unit.resident_byte_len()
+            .saturating_add(super::unit_cache::interface_resident_bytes(self.facts.interface()))
     }
 }
 
@@ -2549,6 +2628,7 @@ fn finish_source_pack_unit(
     library_id: u32,
     unit_id: u32,
 ) -> Result<CompiledSourcePackUnit, CompileError> {
+    let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit");
     let template_source_paths: std::sync::Arc<[Option<PathBuf>]> = match source_paths {
         Some(paths) if paths.len() == template_sources.len() => paths.to_vec().into(),
         Some(_) => return Err(CompileError::GpuFrontend(
@@ -3371,7 +3451,10 @@ fn assign_mismatch_looks_like_invalid_member_access(
     detail: u32,
 ) -> bool {
     const TY_VOID: u32 = 1;
-    detail != 0 && detail % 256 == TY_VOID && span_is_dotted_member(source, start)
+    detail != 0
+        && super::helpers::count_fit_scalar(detail).is_none()
+        && detail % 256 == TY_VOID
+        && span_is_dotted_member(source, start)
 }
 
 fn span_is_dotted_member(source: &str, start: usize) -> bool {
@@ -4244,8 +4327,8 @@ mod tests {
 
     #[test]
     fn parser_growth_retains_parser_capacity_history() {
-        assert!(FrontendWorkspaceReplacement::Lexer.invalidates_parser_allocation());
-        assert!(!FrontendWorkspaceReplacement::Parser.invalidates_parser_allocation());
+        assert!(FrontendWorkspaceReplacement::Lexer.invalidates_parser_lexer_bindings());
+        assert!(!FrontendWorkspaceReplacement::Parser.invalidates_parser_lexer_bindings());
     }
 
     #[test]

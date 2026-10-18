@@ -487,6 +487,10 @@ pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
 pub(super) const CALLS_INFERENCE_STATUS_READBACK_PASS: &str =
     "type_check.calls.inference.status.readback";
+/// The status words as the follow-on checks find them (03a4b's final
+/// invocations, 03a7 and 03c): an error already recorded inside a call
+/// explains that call's missing binding or mismatched result.
+pub(super) const CALLS_STATUS_PRIOR_PASS: &str = "type_check.calls.status_prior";
 pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
 /// The language's call inference depth limit (like Rust's recursion_limit;
 /// docs/compiler-semantic-contracts.md): inference may take at most this many
@@ -3942,6 +3946,7 @@ fn build_graph(
     graph_resources!(graph, External {
         _status as "status" in Bytes => 16;
         _status_readback as "status_readback" in Bytes => 16;
+        status_prior as "status_prior" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
         call_inference_readback as "call_inference_readback" in Calls => 24;
     });
@@ -5419,6 +5424,7 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT.name, "hir_active_dispatch_args")?;
+    DEPENDENCY_BOUND_MEMBERS_OFFER.register_kernel(&mut graph, kernels)?;
     METHODS_FINALIZE_CANDIDATES_DIRECT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHODS_PROJECT.name,
@@ -5477,6 +5483,7 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_LOOKUP.name, METHOD_LOOKUP_DISPATCH_ARGS)?;
+    DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP.register_kernel(&mut graph, kernels)?;
     METHODS_FINALIZE_CANDIDATES.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
@@ -5575,6 +5582,7 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_INFERENCE.name, "hir_active_dispatch_args")?;
+    DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_FINALIZE_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
@@ -5652,6 +5660,16 @@ fn build_graph(
     CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
+    // Recorded before each 03a4b invocation and before the final validation
+    // passes (resident.rs).
+    graph.add_buffer_copy_pass(
+        CALLS_STATUS_PRIOR_PASS,
+        CompilerPhase::TypeCheck,
+        "status",
+        _status,
+        "status_prior",
+        status_prior,
+    )?;
     CALLS_CONTEXTUAL_RESULT_REQUESTS.register_kernel(&mut graph, kernels)?;
     CALLS_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
@@ -7883,17 +7901,17 @@ mod tests {
         for ordered in [
             [METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name, METHODS_RESET_CANDIDATES_DIRECT.name,
              METHODS_RESOLVE_TABLE_DIRECT.name, METHODS_OFFER_BOUND_MEMBERS_DIRECT.name,
-             DEPENDENCY_METHODS_COLLECT.name,
+             DEPENDENCY_METHODS_COLLECT.name, DEPENDENCY_BOUND_MEMBERS_OFFER.name,
              METHODS_FINALIZE_CANDIDATES_DIRECT.name, DEPENDENCY_METHODS_PROJECT.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER.name],
             [METHODS_MARK_CALL_RETURN_KEYS.name, METHODS_RESET_CANDIDATES.name,
              METHODS_RESOLVE_TABLE.name, METHODS_OFFER_BOUND_MEMBERS.name,
-             DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+             DEPENDENCY_METHODS_COLLECT_LOOKUP.name, DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP.name,
              METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name],
             [METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.name, METHODS_RESET_CANDIDATES_INFERENCE.name,
              METHODS_RESOLVE_TABLE_INFERENCE.name, METHODS_OFFER_BOUND_MEMBERS_INFERENCE.name,
-             DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
+             DEPENDENCY_METHODS_COLLECT_INFERENCE.name, DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE.name,
              METHODS_FINALIZE_CANDIDATES_INFERENCE.name, DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name],
         ] {
@@ -7917,6 +7935,7 @@ mod tests {
             METHODS_MARK_CALL_KEYS_LOOKUP.name, METHODS_MARK_CALL_RETURN_KEYS.name,
             METHODS_RESET_CANDIDATES.name, METHODS_RESOLVE_TABLE.name,
             METHODS_OFFER_BOUND_MEMBERS.name, DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
+            DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP.name,
             METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
             DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name,
         ];
@@ -7978,6 +7997,7 @@ mod tests {
             METHODS_RESOLVE_TABLE_INFERENCE,
             METHODS_OFFER_BOUND_MEMBERS_INFERENCE,
             DEPENDENCY_METHODS_COLLECT_INFERENCE,
+            DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE,
             METHODS_FINALIZE_CANDIDATES_INFERENCE,
             DEPENDENCY_METHODS_PROJECT_INFERENCE,
             DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,

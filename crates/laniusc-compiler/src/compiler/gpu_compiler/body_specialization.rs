@@ -246,16 +246,29 @@ impl GpuCompiler<'_> {
             }
             for keys in by_unit.into_values() {
                 let plan_started = std::time::Instant::now();
-                let mut runs = Vec::<ReplayRun>::new();
+                // A body with a retained declaration span replays as a
+                // renamed copy, which shares a run with any other copy.
+                // Polymorphic recursion replays alone, so a failure is its own.
+                // A copy run's entries are in copy rank order (the template's
+                // last file, then continuation files by file), so keys are
+                // sorted by rank, stably: within a rank they stay in key order.
+                let mut ranked = Vec::with_capacity(keys.len());
                 for key in keys {
+                    let body = &pending[&key];
+                    let rank = if instance_copies && !body.recursive {
+                        program.instance_copy_rank(&body.admitted).map_err(native_program_error)?
+                    } else {
+                        None
+                    };
+                    ranked.push((rank, key));
+                }
+                ranked.sort_by_key(|(rank, _)| rank.unwrap_or(0));
+                let mut runs = Vec::<ReplayRun>::new();
+                for (rank, key) in ranked {
                     let body = &pending[&key];
                     let scope = program.replay_scope(&body.admitted).map_err(native_program_error)?;
                     let entry = replay_entry(body.admitted.checked_call(), body.target);
-                    // A body with a retained declaration span replays as a
-                    // renamed copy, which shares a run with any other copy.
-                    // Polymorphic recursion replays alone, so a failure is its own.
-                    let copies = instance_copies && !body.recursive && program
-                        .instance_copy_available(&body.admitted).map_err(native_program_error)?;
+                    let copies = rank.is_some();
                     // A run's impl bindings share one packet table, so a run
                     // closes before it would overflow it.
                     let bindings = program.instance_impl_bindings(&body.admitted)
@@ -319,10 +332,12 @@ impl GpuCompiler<'_> {
                     let pending_unit = self
                         .compile_authorized_body_specialization(&request)
                         .await
+                        .inspect_err(|_| trace.failed(&run.keys, &pending))
                         .map_err(&recursion)?;
                     let compiled = std::time::Instant::now();
-                    let (replay, checked) =
-                        request.finish(pending_unit).map_err(|error| recursion(native_program_error(error)))?;
+                    let (replay, checked) = request.finish(pending_unit)
+                        .inspect_err(|_| trace.failed(&run.keys, &pending))
+                        .map_err(|error| recursion(native_program_error(error)))?;
                     let replay_calls = checked.calls;
                     let finished = std::time::Instant::now();
                     crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
@@ -652,6 +667,21 @@ impl SpecializationTrace {
                 "[specialization]   depth={} decl={} key={} args={:?} consts={:?}",
                 body.origin.depth, body.target.2, &blake3::hash(key).to_hex()[..12],
                 call.arguments, call.constants,
+            );
+        }
+    }
+
+    /// The bodies of a run whose replay failed. A run that succeeds prints
+    /// them in `replay`, after its compile.
+    fn failed(&self, keys: &[Vec<u8>], pending: &BTreeMap<Vec<u8>, PendingBody>) {
+        if !self.enabled { return; }
+        for key in keys {
+            let body = &pending[key];
+            let call = body.admitted.checked_call();
+            eprintln!(
+                "[specialization] failed depth={} target={:?} key={} args={:?} consts={:?} witnesses={:?}",
+                body.origin.depth, body.target, &blake3::hash(key).to_hex()[..12],
+                call.arguments, call.constants, body.witnesses,
             );
         }
     }

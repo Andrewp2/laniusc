@@ -114,8 +114,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     MethodCandidate winner = method_candidate[token];
     if (winner.state != METHOD_CANDIDATE_UNIQUE ||
         winner.callable_kind != METHOD_CALLABLE_DEPENDENCY) return;
+    // A trait's required member is the winner of a call through a bound
+    // (15b); its signature, in the bound's context, types the call.
     uint member = dependency_find_method(winner.library_id, winner.unit_id, winner.local_index);
-    if (member == INVALID || !dependency_public_implementation_method(member)) return;
+    if (member == INVALID) return;
     uint owner = dependency_member_word(member * MEMBER_WORDS);
     bind_dependency_explicit_application(KernelTypeRefs(), token, owner, winner.local_index);
     publish_method_result(token, member, owner, dotted);

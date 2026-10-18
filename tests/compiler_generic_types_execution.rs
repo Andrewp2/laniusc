@@ -1314,6 +1314,30 @@ fn imported_generic_bodies_execute_with_caller_selected_implementations() {
 }
 
 #[test]
+fn library_bodies_of_every_module_file_replay_as_copies() {
+    // Every module of this library has generic bodies, so most are not in
+    // the unit's last file. Their copies go to continuation files, which must
+    // still see their module's private items and imports.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/stdlib_compiler_state/multifile-copies/stdlib");
+    execute_with_stdlib("multi-file library copies", r#"
+import core::helpers;
+import core::wrap;
+import core::zlast;
+fn main() -> i32 {
+    if (core::wrap::count(true, 3) != 7) { return 1; }
+    if (core::wrap::count(5, 4) != 9) { return 2; }
+    if (core::wrap::keep(11) != 11) { return 3; }
+    if (core::wrap::keep(false)) { return 4; }
+    if (core::zlast::last(13) != 13) { return 5; }
+    if (core::helpers::first(17, 2) != 17) { return 6; }
+    if (!core::helpers::first(true, false)) { return 7; }
+    return 0;
+}
+"#, &root, b"", 0);
+}
+
+#[test]
 fn caller_selected_bounds_forward_through_nested_bodies_and_existing_bodies() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/stdlib_compiler_state/program-replay/stdlib");
@@ -8071,6 +8095,24 @@ fn constant_count_identity_and_fit_reject_through_production_calls() {
     );
 }
 
+/// The first diagnostic of a length that does not fit its constant parameter
+/// is that fit, at the argument, ahead of the call's follow-on mismatches.
+#[test]
+fn constant_count_fit_reports_the_parameter_type_at_the_argument() {
+    let source = include_str!("fixtures/stdlib_foundation/typed_constant_transport/constant-claim-provenance-v1/reject_nested_count_fit.lani");
+    let owned = source.to_owned();
+    let error = common::run_gpu_codegen_with_timeout("nested u8 count fit", move || {
+        let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).expect("GPU compiler");
+        pollster::block_on(compiler.compile_source_to_x86_64(&owned))
+    }).err().expect("a length that does not fit u8 emitted an executable");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+    let primary = diagnostic.primary_label.as_ref().unwrap_or_else(|| panic!("missing source label: {error:?}"));
+    assert!(primary.message.contains("does not fit `u8`"), "{diagnostic:?}");
+    let argument = source.find("narrow(values)").expect("fixture call") + "narrow(".len();
+    assert_eq!(primary.byte_start, Some(argument), "{diagnostic:?}");
+}
+
 #[test]
 fn generic_result_only_constants_execute_local_calls() {
     execute(
@@ -10824,16 +10866,26 @@ fn main() -> i32 { return go(21); }
 }
 
 #[test]
-fn generic_bound_member_calls_reject_unroutable_implementations() {
-    // A generic implementation needs its own call environment, which the
-    // symbolic selection cannot have produced; it rejects instead of routing.
-    reject_trait_program("generic implementation", r#"
+fn generic_bound_member_calls_route_to_generic_implementations() {
+    // Replay routes the member to the implementation the instance's evidence
+    // selected, and binds that implementation's own parameter from the
+    // subject (methods/09_route_bound_members).
+    execute_with_status("generic implementation", r#"
 trait Read { fn read(&self) -> i32; }
 struct Box<U> { v: U, n: i32 }
 impl<U> Read for Box<U> { fn read(&self) -> i32 { return self.n; } }
 fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
-fn main() -> i32 { return via(Box { v: true, n: 0 }); }
-"#, "LNC0027");
+fn main() -> i32 { return via(Box { v: true, n: 42 }); }
+"#, b"", 42);
+    // The implementation's own prerequisite is part of the bound's proof.
+    reject_trait_program("generic implementation prerequisite", r#"
+trait Mark {}
+trait Read { fn read(&self) -> i32; }
+struct Box<U> { v: U, n: i32 }
+impl<U> Read for Box<U> where U: Mark { fn read(&self) -> i32 { return self.n; } }
+fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
+fn main() -> i32 { return via(Box { v: true, n: 42 }); }
+"#, "LNC0008");
 }
 
 
@@ -11403,7 +11455,7 @@ fn float_constant_operands_reject_named_scalar_mismatch() {
     reject_trait_program(
         "named f32 cannot bind an f64 constant parameter",
         include_str!("fixtures/stdlib_foundation/typed_float_constants/reject_named_width.lani"),
-        "LNC0027",
+        "LNC0006",
     );
 }
 

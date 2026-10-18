@@ -92,6 +92,14 @@ memo table keyed by `(env, t)`:
 - **intern** (bottom-up, by height): build the substituted record from the
   children's results and intern it as above.
 
+The memo (`ct_subst_memo`) is an open-addressing table with at most 64
+probes per key. A lane claims a slot with a tag of its key, and a lane that
+meets its own tag leaves the entry to the claimer, so the lanes that
+substitute one `(env, t)` at once (every call of one instantiation) share
+one slot. An untagged claim gave each racing lane a slot of its own; a hot
+instantiation then filled 64 consecutive slots and overflowed the memo
+(`CT_OVERFLOW_SUBST_MEMO`) at every capacity scale.
+
 Field types of a nominal application are `subst(C, field_decl_type)`.
 Monomorphization closure (today's `03e1` expansion) is the fixpoint
 "request every field of every new closed nominal ID" until no new IDs
@@ -410,6 +418,15 @@ Each job interns into one table, so an ID stays valid for the whole job.
   for the references that still name them. The substitution restart drops
   the rows the job-start seed recorded for rewritten candidates
   (`ct_row_of`); generated rows are stable, so the seed finds them again.
+  The job-start seed skips the body graph rows (00e), which hold stale
+  contents until the replay writes them. The restart's last pass
+  (`substitution.body.seed_rows`, `01b_seed_body_rows`) offers the active
+  ones, so a type argument's ID has its seed row, with the seed's width
+  witness. Before it, realizing `[P; N]` for a dependency's `Vec<P, N>`
+  wrote a private row for a foreign `P` from its declaration triple. That
+  row had no layout, and the dependency body lost the aggregate layouts of
+  its `Vec<P, N>` values (x86 LNC0017, "lost its checked aggregate result
+  layout"), unless the body also spelled `[T; N]`.
 - Outside a replay, interned rows must not be rewritten afterwards. The
   cross-check at the end of the late stage reports a rewritten row as a
   false or missed merge (and the bridge self-check as a mismatch).
@@ -733,6 +750,9 @@ uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
   slot with count claims only is bound to the count in the declared scalar:
   a value, the counted parameter itself, or a cast of it, which keeps its
   pending fit. Every actual array keeps its own fit obligations.
+  `ct_match_fit` (and `ct_match_roots_fit`) also return, on a failed match,
+  the declared scalar that an actual length did not fit, for the fit
+  diagnostic of claim emission (03a1).
 - **No stack, no lane array.** A shape pass checks heads and closed children
   and collects the slot masks. Then one pass per bound slot folds that
   slot's occurrences. Each pass walks the pattern by re-descending from the

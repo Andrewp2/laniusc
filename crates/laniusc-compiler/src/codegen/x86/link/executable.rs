@@ -269,25 +269,32 @@ impl GpuX86Linker {
     ) -> Result<usize> {
         let timing = std::env::var_os("LANIUS_X86_LINK_TIMING").is_some();
         let started = std::time::Instant::now();
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.symbols");
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
+        drop(span);
         let symbols_resolved = started.elapsed();
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             eprintln!("[x86_object_identity] resolved_relocations={resolved_relocations:?}");
         }
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.plan");
         let output_plan = GpuX86PagedExecutablePlan::new(
             input,
             device.limits().max_storage_buffer_binding_size as u64,
         )
         .map_err(anyhow::Error::msg)?;
+        drop(span);
         let output_planned = started.elapsed();
         let output_len = output_plan.output_len;
         let output_capacity = output_len.div_ceil(4).saturating_mul(4).max(4);
         let output_capacity_u32 = u32::try_from(output_capacity)
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
 
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.layout");
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
+        drop(span);
         let layout_resolved = started.elapsed();
+        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.pages");
         let result = self.emit_executable_pages(
             device,
             queue,
@@ -301,6 +308,7 @@ impl GpuX86Linker {
             },
             consume_page,
         );
+        drop(span);
         if timing {
             eprintln!(
                 "x86_link_timing phase=total objects={} relocations={} pages={} output_bytes={} symbols_ms={:.3} plan_ms={:.3} layout_ms={:.3} pages_ms={:.3} total_ms={:.3}",

@@ -152,6 +152,14 @@ pub(super) struct GpuPacket {
     constant_admission_fault: std::cell::RefCell<Option<typed_constant_fault_tests::ConstantAdmissionFault>>,
 }
 impl GpuPacket {
+    fn proof_resources(&self, submission: &Submission) -> kernels::ProofResources<'_> {
+        kernels::ProofResources {
+            storage: &self.proof,
+            epoch: submission.epoch,
+            arena_id: submission.arena_id,
+            serial: submission.serial,
+        }
+    }
     /// Descriptive source provenance remains readable after a failed batch;
     /// this accessor cannot admit rows or grant another replay capability.
     pub(super) fn failure_call_site(
@@ -331,7 +339,19 @@ impl GpuProgramEvidence {
         layout: &OutputLayout,
         submission: &Submission,
     ) -> Result<proof::ProofProgress> {
-        let regions = [
+        Ok(self.proof_progress_with(packet, layout, submission, None)?.0)
+    }
+
+    /// The counter readback, plus a normalization count's demand table when
+    /// one was recorded since the last readback.
+    fn proof_progress_with(
+        &self,
+        packet: &GpuPacket,
+        layout: &OutputLayout,
+        submission: &Submission,
+        demand: Option<&LaniusBuffer<u32>>,
+    ) -> Result<(proof::ProofProgress, Option<Vec<u32>>)> {
+        let mut regions = vec![
             ReadbackRegion::from_buffer(
                 &packet.proof.buffer,
                 0,
@@ -340,6 +360,14 @@ impl GpuProgramEvidence {
             )?,
             layout.region(&self.storage, &packet.output, 10, Span::new(0, 1)?)?,
         ];
+        if let Some(demand) = demand {
+            regions.push(ReadbackRegion::from_buffer(
+                demand,
+                0,
+                arena::byte_len(PROOF_STORE_TABLES as u32)?,
+                "proof normalization demand",
+            )?);
+        }
         SOLVER_READBACKS.with(|count| count.set(count.get() + 1));
         let raw = self.readback.read_regions(
             &self.device,
@@ -349,12 +377,110 @@ impl GpuProgramEvidence {
         )?;
         let header = words(&raw[0])?;
         let receipt = one_status(&raw[1])?;
-        proof::ProofProgress::from_owned_readback(
+        let demand = raw.get(2).map(|bytes| words(bytes)).transpose()?;
+        let progress = proof::ProofProgress::from_owned_readback(
             packet.packet.proof_store.layout(),
             submission,
             header,
             receipt,
-        )
+        )?;
+        Ok((progress, demand))
+    }
+
+    /// Grows every table the counted normalization would overflow, in place:
+    /// the reserved rows of every table move to the larger layout before the
+    /// next submission runs, and the solver continues from the same counters.
+    /// Goal buckets keep their count (a bucket's chain only gets longer).
+    fn grow_for_demand(
+        &self,
+        packet: &mut GpuPacket,
+        progress: &proof::ProofProgress,
+        demand: &[u32],
+    ) -> Result<()> {
+        ensure!(demand.len() == PROOF_STORE_TABLES, "proof normalization demand has no table words");
+        let session = &mut packet.packet.proof_store;
+        let current: [u32; PROOF_STORE_TABLES] =
+            std::array::from_fn(|table| session.layout().slices[table].capacity);
+        let mut capacities = current;
+        for table in 0..PROOF_STORE_TABLES {
+            // An unrepresentable request stays with the reservation, which
+            // reports it as a terminal resource limit.
+            let Some(required) = progress.reserved[table].checked_add(demand[table]) else { continue };
+            if table != 11 && required > capacities[table] && required != u32::MAX {
+                capacities[table] = required
+                    .checked_next_power_of_two()
+                    .filter(|&rows| rows != u32::MAX)
+                    .unwrap_or(required);
+            }
+        }
+        if capacities == current {
+            return Ok(());
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false) {
+            let grown = (0..PROOF_STORE_TABLES)
+                .filter(|&table| capacities[table] != current[table])
+                .map(|table| format!("{table}:{}->{}", current[table], capacities[table]))
+                .collect::<Vec<_>>();
+            eprintln!("[lanius-pev] proof store grows in place: {}", grown.join(" "));
+        }
+        let upload = session.regrow(capacities, &progress.reserved, &progress.header)?;
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("program_evidence.proof_regrow"),
+            });
+        packet.proof.prepare(&mut encoder, upload.layout.word_count, &upload.copies)?;
+        packet.proof.upload(
+            &mut encoder,
+            &[ArenaWrite {
+                first_word: 0,
+                words: upload.header,
+            }],
+        )?;
+        passes_core::flush_deferred_compute(&mut encoder);
+        self.queue.submit(Some(encoder.finish()));
+        Ok(())
+    }
+
+    /// Admits the pending Work (49, 50) and, in the same submission, counts
+    /// the term, request and goal rows its normalization will reserve (67
+    /// for original Works, 68 for prerequisite Works). The count rides the
+    /// progress readback; every table it would overflow grows in place
+    /// before normalization runs, instead of a capacity failure restarting
+    /// the whole solve.
+    fn admit_counted_work(
+        &self,
+        packet: &mut GpuPacket,
+        layout: &OutputLayout,
+        submission: &Submission,
+        progress: &proof::ProofProgress,
+        count: u32,
+    ) -> Result<proof::ProofProgress> {
+        let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
+        let pending = progress.pending(proof::WORK)?;
+        let mut commands = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("program_evidence.proof_wave"),
+            });
+        let resources = packet.proof_resources(submission);
+        for (phase, span) in [(49, pending), (50, Span::new(0, 1)?)] {
+            solver.record(&self.device, &mut commands, phase, span, &self.storage,
+                &packet.input, &packet.output, resources)?;
+        }
+        let demand = if pending.count == 0 {
+            None
+        } else {
+            Some(solver.record_normalization_count(&self.device, &mut commands, count, pending,
+                &self.storage, &packet.input, &packet.output, resources)?)
+        };
+        passes_core::flush_deferred_compute(&mut commands);
+        self.queue.submit(Some(commands.finish()));
+        let (progress, demand) = self.proof_progress_with(packet, layout, submission, demand.as_ref())?;
+        if let Some(demand) = demand.filter(|_| progress.is_building()) {
+            self.grow_for_demand(packet, &progress, &demand)?;
+        }
+        Ok(progress)
     }
 
     fn submit_proof_progress(
@@ -403,13 +529,9 @@ impl GpuProgramEvidence {
             )?;
             attempt_plan.assumption_index = Span::new(0, layout.input_suffix_counts[14])?;
         }
-        let resources = kernels::ProofResources {
-            storage: &packet.proof,
-            epoch: submission.epoch,
-            arena_id: submission.arena_id,
-            serial: submission.serial,
-        };
-        let record = |commands: &mut wgpu::CommandEncoder, phase: u32, span: Span| {
+        // Resources are rebuilt per recording: the proof arena may grow in
+        // place between submissions (grow_for_demand).
+        let record = |packet: &GpuPacket, commands: &mut wgpu::CommandEncoder, phase: u32, span: Span| {
             solver.record(
                 &self.device,
                 commands,
@@ -418,7 +540,7 @@ impl GpuProgramEvidence {
                 &self.storage,
                 &packet.input,
                 &packet.output,
-                resources,
+                packet.proof_resources(submission),
             )
         };
         let one = Span::new(0, 1)?;
@@ -428,9 +550,9 @@ impl GpuProgramEvidence {
             &self.storage,
             &packet.input,
             &packet.output,
-            resources,
+            packet.proof_resources(submission),
         )?;
-        record(&mut commands, 40, one)?;
+        record(packet, &mut commands, 40, one)?;
         batch.record_before_solver(
             &self.device,
             &mut commands,
@@ -438,20 +560,17 @@ impl GpuProgramEvidence {
             &self.storage,
             &packet.input,
             &packet.output,
-            resources,
+            packet.proof_resources(submission),
         )?;
-        record(&mut commands, 48, plan.obligations)?;
+        record(packet, &mut commands, 48, plan.obligations)?;
         if self.solver_waves(packet)? {
-            return self.run_solver_waves(packet, layout, plan, submission, resources, commands);
+            return self.run_solver_waves(packet, layout, plan, submission, packet.proof_resources(submission), commands);
         }
         let mut progress = self.submit_proof_progress(packet, layout, submission, commands)?;
         if !progress.is_building() {
             return Ok(Some(progress));
         }
-        let mut commands = encoder();
-        record(&mut commands, 49, progress.pending(proof::WORK)?)?;
-        record(&mut commands, 50, one)?;
-        progress = self.submit_proof_progress(packet, layout, submission, commands)?;
+        progress = self.admit_counted_work(packet, layout, submission, &progress, kernels::COUNT_ORIGINAL_NORMALIZATION)?;
         if !progress.is_building() {
             return Ok(Some(progress));
         }
@@ -474,7 +593,7 @@ impl GpuProgramEvidence {
                         let binding_recipe = typed_constant_fault_tests::needs_binding_recipe_boundary(packet);
                         let last = if binding_recipe { 45 } else { 42 };
                         for phase in 41..=last {
-                            record(&mut commands, phase, if phase == 45 { one } else { work })?;
+                            record(packet, &mut commands, phase, if phase == 45 { one } else { work })?;
                         }
                         progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                         if !progress.is_building() { return Ok(Some(progress)); }
@@ -486,7 +605,7 @@ impl GpuProgramEvidence {
                         commands = encoder();
                         let first = if binding_recipe { 46 } else { 43 };
                         for phase in first..=47 {
-                            record(&mut commands, phase, if matches!(phase, 45 | 47) { one } else { work })?;
+                            record(packet, &mut commands, phase, if matches!(phase, 45 | 47) { one } else { work })?;
                         }
                     } else {
                         solver.record_normalization(
@@ -496,7 +615,7 @@ impl GpuProgramEvidence {
                             &self.storage,
                             &packet.input,
                             &packet.output,
-                            resources,
+                            packet.proof_resources(submission),
                         )?;
                     }
                 }
@@ -508,13 +627,13 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
-                record(&mut commands, 51, work)?;
-                record(&mut commands, 52, work)?;
+                record(packet, &mut commands, 51, work)?;
+                record(packet, &mut commands, 52, work)?;
                 // Only requirements whose children just normalized may link.
                 // A prior already-notified representative is handled on GPU.
-                record(&mut commands, 57, requirements)?;
+                record(packet, &mut commands, 57, requirements)?;
                 solver.record_selection(
                     &self.device,
                     &mut commands,
@@ -522,7 +641,7 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {
@@ -539,7 +658,7 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
                 solver.record_binding_rows(
                     &self.device,
@@ -548,18 +667,15 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
-                record(&mut commands, 55, one)?;
-                record(&mut commands, 56, work)?;
+                record(packet, &mut commands, 55, one)?;
+                record(packet, &mut commands, 56, work)?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {
                     return Ok(Some(progress));
                 }
-                let mut commands = encoder();
-                record(&mut commands, 49, progress.pending(proof::WORK)?)?;
-                record(&mut commands, 50, one)?;
-                progress = self.submit_proof_progress(packet, layout, submission, commands)?;
+                progress = self.admit_counted_work(packet, layout, submission, &progress, kernels::COUNT_PREREQUISITE_NORMALIZATION)?;
                 if !progress.is_building() {
                     return Ok(Some(progress));
                 }
@@ -570,7 +686,7 @@ impl GpuProgramEvidence {
                 // Consume this immutable prefix only. Notifications appended by
                 // this wave are scheduled from the next counter readback.
                 let mut commands = encoder();
-                record(&mut commands, 58, queue)?;
+                record(packet, &mut commands, 58, queue)?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {
                     return Ok(Some(progress));
@@ -585,7 +701,7 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
                 // Both proof kinds inspect the frozen pending wave before
                 // any proof or edge prefix gains admitted authority.
@@ -596,7 +712,7 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
                 solver.record_proof_edge_rows(
                     &self.device,
@@ -605,12 +721,12 @@ impl GpuProgramEvidence {
                     &self.storage,
                     &packet.input,
                     &packet.output,
-                    resources,
+                    packet.proof_resources(submission),
                 )?;
-                record(&mut commands, 60, one)?;
-                record(&mut commands, 61, queue)?;
-                record(&mut commands, 62, queue)?;
-                record(&mut commands, 63, one)?;
+                record(packet, &mut commands, 60, one)?;
+                record(packet, &mut commands, 61, queue)?;
+                record(packet, &mut commands, 62, queue)?;
+                record(packet, &mut commands, 63, one)?;
                 progress = self.submit_proof_progress(packet, layout, submission, commands)?;
                 if !progress.is_building() {
                     return Ok(Some(progress));
@@ -630,7 +746,7 @@ impl GpuProgramEvidence {
         let mut commands = encoder();
         // The GPU classifies unresolved finite cycles and missing leaves and
         // checks every source obligation before the native publication gate.
-        record(&mut commands, 64, Span::new(0, progress.admitted[13])?)?;
+        record(packet, &mut commands, 64, Span::new(0, progress.admitted[13])?)?;
         batch.record_after_solver(
             &self.device,
             &mut commands,
@@ -638,7 +754,7 @@ impl GpuProgramEvidence {
             &self.storage,
             &packet.input,
             &packet.output,
-            resources,
+            packet.proof_resources(submission),
         )?;
         passes_core::flush_deferred_compute(&mut commands);
         self.queue.submit(Some(commands.finish()));
@@ -978,7 +1094,7 @@ impl GpuProgramEvidence {
             else {
                 break;
             };
-            let Some(grown) = stopped.capacity_retry(packet.packet.proof_store.layout())? else {
+            let Some(grown) = stopped.capacity_retry(&packet.packet.proof_store)? else {
                 break;
             };
             if debug {

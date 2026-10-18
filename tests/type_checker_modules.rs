@@ -12,7 +12,12 @@ use laniusc_compiler::{
             SourcePackLinkObjectBatch,
         },
         wasm::{GpuWasmRelocatableObject, GpuWasmRelocationTargetKind},
-        x86::{GpuX86ObjectSection, GpuX86RelocatableObject, GpuX86RelocationTargetKind},
+        x86::{
+            GpuX86ObjectSection,
+            GpuX86ObjectSymbolRecord,
+            GpuX86RelocatableObject,
+            GpuX86RelocationTargetKind,
+        },
     },
     compiler::{
         AsyncPagedArtifactBuildExecutor,
@@ -1929,10 +1934,20 @@ fn main() -> i32 { return answer(); }
     assert_eq!(object.library_id, 7);
     assert_eq!(object.entry_offset, Some(0));
     assert!(!object.text.is_empty());
-    assert_eq!(object.symbols.len(), 2);
+    // The imported `unused`, then the public `answer` and the private `main`.
+    // Private callables are named by 0x4000_0000 | their first token.
+    assert_eq!(object.symbols.len(), 3);
     assert_eq!(object.symbols[0].section, GpuX86ObjectSection::Undefined);
-    assert_eq!(object.symbols[1].section, GpuX86ObjectSection::Text);
-    assert!(object.symbols[1].size > 0);
+    let callable_item = |symbol: &GpuX86ObjectSymbolRecord| {
+        let start = symbol.identity_byte_start as usize + 8;
+        u32::from_le_bytes(object.identity_bytes[start..start + 4].try_into().unwrap())
+    };
+    for symbol in &object.symbols[1..] {
+        assert_eq!(symbol.section, GpuX86ObjectSection::Text);
+        assert!(symbol.size > 0);
+    }
+    assert_eq!(callable_item(&object.symbols[1]), 0);
+    assert_eq!(callable_item(&object.symbols[2]) & 0xc000_0000, 0x4000_0000);
     assert!(object.relocations.iter().any(|relocation| {
         relocation.target_kind == GpuX86RelocationTargetKind::Symbol && relocation.target_index == 0
     }));
@@ -4662,7 +4677,11 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_core_ordering_module_calls() {
+    // core::ordering's two-word adapters import the wide integer modules.
     assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/wide_u64.lani"),
+        include_str!("../stdlib/core/wide_i64.lani"),
         include_str!("../stdlib/core/ordering.lani"),
         r#"
 module app::main;

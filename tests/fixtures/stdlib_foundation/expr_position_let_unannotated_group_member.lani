@@ -1,0 +1,10 @@
+// expect: 0
+// Expression form and position: a field of a parenthesized name as an unannotated let initializer.
+module app::main;
+struct W { v: i32 }
+fn main() -> i32 {
+    let w: W = W { v: 7 };
+    let x = (w).v;
+    if (x != 7) { return 1; }
+    return 0;
+}

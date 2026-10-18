@@ -61,6 +61,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &bufs.token_count,
                             Some(&bufs.token_file_id),
                             &self.parse_tables,
+                            crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
                             &mut timer,
                         )
                         .map_err(|err| benchmark_parser_execution_error(&src, err))?;

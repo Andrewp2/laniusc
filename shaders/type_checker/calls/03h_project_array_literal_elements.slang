@@ -1,6 +1,6 @@
 // Snapshot first-element references before any literal publishes a new graph.
 // Nonempty literals infer from their first checked element; empty literals
-// require an expected array type. One lane per literal, independent of its
+// require an expected array or slice type. One lane per literal, independent of its
 // element count. Literal scalar context was published by a preceding dispatch.
 #include "array_literal_inference_inputs.slang"
 RWStructuredBuffer<uint> array_literal_element_ref_tag;
@@ -22,7 +22,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (tag == 0u)
     {
-        uint expected = expected_array_literal_instance(node);
+        uint expected = expected_literal_sequence_instance(node);
         if (valid_instance(expected))
         {
             tag = type_instance_elem_ref_tag[expected];

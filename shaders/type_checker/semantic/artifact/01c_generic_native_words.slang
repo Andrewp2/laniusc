@@ -427,6 +427,8 @@ uint layout_words(uint tag, uint payload)
 
 RWStructuredBuffer<uint> type_native_word_count;
 RWStructuredBuffer<uint> type_native_scalar_identity;
+// Generated rows allocated so far (allocate_application.slang).
+StructuredBuffer<uint> type_application_count;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -438,8 +440,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint source_capacity; uint stride;
     type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
     uint seed_count = body_graph_node_count();
+    // Generated rows end at the last allocated one: a workspace retained from
+    // a larger job has more capacity, and its unallocated rows own nothing.
+    uint generated_base = source_capacity + BODY_GRAPH_NODES;
+    uint end = generated_base >= capacity ? capacity
+        : generated_base + min(type_application_count[0u], capacity - generated_base);
     // One evaluation site handles source and generated rows.
-    for (uint instance = token; instance < capacity;)
+    for (uint instance = token; instance < end;)
     {
         uint tag = TYPE_REF_INSTANCE;
         uint payload = instance;
@@ -488,7 +495,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             instance = ordinal < seed_count && gParams.n_tokens < seed_count - ordinal
                 ? instance + gParams.n_tokens : source_capacity + BODY_GRAPH_NODES + token;
         }
-        else if (gParams.n_tokens >= capacity - instance) break;
+        else if (gParams.n_tokens >= end - instance) break;
         else instance += gParams.n_tokens;
     }
 }

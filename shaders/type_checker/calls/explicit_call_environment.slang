@@ -28,6 +28,11 @@ public bool checked_source_constant_operand(uint operand, out uint kind, out uin
     return (kind >= 1u && kind <= 3u) && payload != 0xffffffffu;
 }
 
+// Low nibble 5: one operand is diagnosed at itself (an integer literal out of
+// range, or a named constant of another scalar), packed as in
+// explicit_binding_metadata's explicit_operand_failure_status.
+public static const uint EXPLICIT_APPLICATION_OPERAND_DIAGNOSED = 5u;
+
 // Metadata uses the applying name even when the accepted environment is keyed
 // by a projected head alias. Jobs without source applications retain that key.
 public uint checked_call_application_owner(uint token)
@@ -37,6 +42,17 @@ public uint checked_call_application_owner(uint token)
     if (token >= capacity) return token;
     uint owner = call_explicit_application_owner_by_token[token];
     return owner < capacity ? owner : token;
+}
+
+// The call is already rejected at one of its explicit operands; required-slot
+// and agreement validators record nothing more for it.
+public bool explicit_application_operand_diagnosed(uint token)
+{
+    uint capacity; uint stride;
+    call_explicit_application_status.GetDimensions(capacity, stride);
+    token = checked_call_application_owner(token);
+    return token < capacity &&
+        (call_explicit_application_status[token] & 15u) == EXPLICIT_APPLICATION_OPERAND_DIAGNOSED;
 }
 
 // The producer decodes source syntax or normalized parent operands once.

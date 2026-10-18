@@ -1,0 +1,8 @@
+// expect: 0
+// Expression form and position: a struct literal as a member receiver: (W { v: 7 }).v.
+module app::main;
+struct W { v: i32 }
+fn main() -> i32 {
+    if ((W { v: 7 }).v != 7) { return 1; }
+    return 0;
+}
