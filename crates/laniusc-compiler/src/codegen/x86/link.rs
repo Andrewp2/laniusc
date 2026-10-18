@@ -41,6 +41,11 @@ use crate::codegen::GpuLinkByteSource;
 
 pub(super) const X86_LINK_SYMBOL_IDENTITY_BYTES: usize = 12;
 
+/// The link-input error for objects none of which defines `main`. Library
+/// objects carry no entry requirement, so the program-level check happens
+/// here; the compiler reports it as the missing-main diagnostic.
+pub(crate) const X86_LINK_NO_ENTRY_OBJECT: &str = "x86 link has no entry object";
+
 /// A GPU-resolved call identity for which no native definition was emitted.
 #[derive(Debug)]
 pub(crate) struct GpuX86MissingSymbolDefinition {
@@ -298,7 +303,7 @@ impl GpuX86LinkInput {
 
     fn finish_validation(&self) -> Result<(), String> {
         if self.entry_object_index == u32::MAX {
-            return Err("x86 link has no entry object".to_string());
+            return Err(X86_LINK_NO_ENTRY_OBJECT.to_string());
         }
         Ok(())
     }

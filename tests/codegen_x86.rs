@@ -4016,24 +4016,15 @@ fn main() {
     let err = common::run_gpu_codegen_with_timeout("x86 struct for iterable", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect_err(
-        "struct for iterables should fail until x86 lowering consumes an explicit iterable record",
-    );
+    .expect_err("a struct without an iterable record is not a for iterable");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
+            // The checker rejects the iterable's type before native codegen.
             assert_eq!(
-                diagnostic.code, "LNC0017",
-                "struct for-iterable rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert_eq!(
-                diagnostic.category, "native codegen",
-                "struct for-iterable rejection should stay in native codegen: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("unsupported x86 for iterable"),
-                "diagnostic should identify the native iterable boundary: {message}"
+                diagnostic.code, "LNC0006",
+                "struct for-iterable rejection should be the checker's type mismatch: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -4069,20 +4060,15 @@ fn main() {
     let err = common::run_gpu_codegen_with_timeout("x86 scalar for iterable", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect_err(
-        "scalar for iterables should fail closed until x86 iteration lowering supports them",
-    );
+    .expect_err("a scalar is not a for iterable");
 
     match err {
         CompileError::Diagnostic(diagnostic) => {
             let message = diagnostic.render();
+            // The checker rejects the iterable's type before native codegen.
             assert_eq!(
-                diagnostic.code, "LNC0017",
-                "scalar for-iterable rejection should use the stable x86 diagnostic: {message}"
-            );
-            assert!(
-                diagnostic.message.contains("x86") && diagnostic.message.contains("iterable"),
-                "diagnostic should identify the native iterable boundary: {message}"
+                diagnostic.code, "LNC0006",
+                "scalar for-iterable rejection should be the checker's type mismatch: {message}"
             );
             let label = diagnostic
                 .primary_label
@@ -10572,6 +10558,7 @@ fn x86_executes_source_pack_bool_helper_call_in_branch_condition() {
 #[test]
 fn x86_executes_source_pack_std_path_separator_helper() {
     let sources = [
+        include_str!("../stdlib/core/utf8.lani"),
         include_str!("../stdlib/std/path.lani"),
         r#"
 module app::main;
