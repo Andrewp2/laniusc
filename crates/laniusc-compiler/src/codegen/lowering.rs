@@ -51,6 +51,56 @@ pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
 // The final validation rejects aggregate graphs that have not converged.
 const AGGREGATE_LAYOUT_ROUNDS: usize = 64;
 
+/// What the host knows about one lowering job's sources before recording it.
+/// The lowering stages are built once per workspace and reused across jobs,
+/// so anything that trims a job's recording comes from here, per job. A field
+/// may only claim what it proves for the job: `CONSERVATIVE` claims nothing.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LoweringJobBounds {
+    /// The lexer's parser feature bits for the job's source pack
+    /// (`crate::lexer::features`). A clear bit proves the syntax is absent.
+    pub(crate) parser_features: u32,
+}
+
+impl LoweringJobBounds {
+    pub(crate) const CONSERVATIVE: Self = Self {
+        parser_features: crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
+    };
+
+    pub(crate) fn from_parser_features(parser_features: u32) -> Self {
+        Self { parser_features }
+    }
+
+    /// The aggregate layout rounds the job needs. The rounds are a fixed
+    /// point for enum widths. Without an `enum` token the job has no HIR enum
+    /// item, so the variant pass writes nothing and the enum-field pass writes
+    /// the same rows from inputs the rounds never change. The second and
+    /// later rounds then reproduce the state the first one leaves. The first
+    /// is still needed: the enum-field pass marks generic and unchecked array
+    /// fields invalid, which the walk before the rounds does not.
+    ///
+    /// This rests on what the three passes read:
+    /// - function_layout_enum_fields writes a cached width only for a local
+    ///   HIR enum declaration. Its invalid rows depend only on HIR rows and
+    ///   the type_instance_* tables.
+    /// - Imported enums reach function_layout_words as checked applications,
+    ///   through type_instance_native_words, never through a cached row.
+    /// - function_layout_words reads its own field rows but never
+    ///   semantic_struct_word_count_by_hir, so struct widths do not feed
+    ///   back between rounds; nested structs are walked within one lane.
+    ///
+    /// A change that adds such a read must revisit this bound.
+    /// gpu_compiler's physical_gpu_one_layout_round_matches_all_rounds_without_enums
+    /// checks it on nested, array and generic declarations.
+    fn aggregate_layout_rounds(self) -> usize {
+        if self.parser_features & crate::lexer::features::PARSER_FEATURE_ENUMS == 0 {
+            1
+        } else {
+            AGGREGATE_LAYOUT_ROUNDS
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct SemanticProjectParams {
@@ -1901,7 +1951,7 @@ impl GpuSemanticLoweringStage {
 
     #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_timed(encoder, None, None)
+        self.record_timed(encoder, None, None, LoweringJobBounds::CONSERVATIVE)
     }
 
     /// Records the semantic stage. With `split`, the reset and the first
@@ -1912,6 +1962,7 @@ impl GpuSemanticLoweringStage {
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
         split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
+        bounds: LoweringJobBounds,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -1945,7 +1996,8 @@ impl GpuSemanticLoweringStage {
         }
         // Each round dispatches over the variant and field rows only, not
         // every HIR row: 192 dispatches of mostly idle lanes were the cost.
-        for _ in 0..AGGREGATE_LAYOUT_ROUNDS {
+        // A job without enums needs one round (`aggregate_layout_rounds`).
+        for _ in 0..bounds.aggregate_layout_rounds() {
             operations.function_layout_enum_variants.record(encoder)?;
             operations.function_layout_enum_fields.record(encoder)?;
             operations.function_layout_words_round.record(encoder)?;
@@ -2000,6 +2052,34 @@ impl GpuSemanticLoweringStage {
 mod tests {
     use super::*;
     use crate::primitive_types::{SCALAR_BOOL, SCALAR_I32, SCALAR_TYPE_SHIFT, SCALAR_UNIT};
+
+    #[test]
+    fn aggregate_layout_rounds_drop_to_one_only_without_enums() {
+        use crate::lexer::features::{
+            PARSER_FEATURE_ARRAYS,
+            PARSER_FEATURE_ENUMS,
+            PARSER_FEATURE_STRUCTS,
+            PARSER_FEATURE_TYPE_ARGS,
+        };
+        assert_eq!(
+            LoweringJobBounds::CONSERVATIVE.aggregate_layout_rounds(),
+            AGGREGATE_LAYOUT_ROUNDS
+        );
+        assert_eq!(
+            LoweringJobBounds::from_parser_features(PARSER_FEATURE_ENUMS).aggregate_layout_rounds(),
+            AGGREGATE_LAYOUT_ROUNDS
+        );
+        // Generic and array struct fields still need the one round that
+        // marks them invalid.
+        assert_eq!(
+            LoweringJobBounds::from_parser_features(
+                PARSER_FEATURE_STRUCTS | PARSER_FEATURE_ARRAYS | PARSER_FEATURE_TYPE_ARGS
+            )
+            .aggregate_layout_rounds(),
+            1
+        );
+        assert_eq!(LoweringJobBounds::from_parser_features(0).aggregate_layout_rounds(), 1);
+    }
     use crate::{
         codegen::{
             lowering_ir::{

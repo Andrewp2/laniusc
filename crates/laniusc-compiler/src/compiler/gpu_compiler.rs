@@ -559,6 +559,99 @@ mod tests {
             .expect("checked-HIR lowering integration panicked");
     }
 
+    #[test]
+    fn physical_gpu_one_layout_round_matches_all_rounds_without_enums() {
+        std::thread::Builder::new()
+            .name("aggregate layout rounds".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_layout_round_equivalence)
+            .expect("spawn aggregate layout round check")
+            .join()
+            .expect("aggregate layout round check panicked");
+    }
+
+    // A job without enums records one aggregate layout round
+    // (LoweringJobBounds::aggregate_layout_rounds). Every later round must
+    // leave the layouts unchanged, so lowering the same checked program with
+    // all 64 rounds has to give the same executable byte for byte.
+    fn run_layout_round_equivalence() {
+        use crate::codegen::lowering::LoweringJobBounds;
+
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::all(),
+        ))
+        .expect("initialize compiler");
+        let cases = [
+            (
+                "nested_aggregate_fields",
+                "struct Vec2 { x: i32, y: i32, } struct Ray { origin: Vec2, direction: Vec2, } fn main() -> i32 { let origin: Vec2 = Vec2 { x: 1, y: 2 }; let direction: Vec2 = Vec2 { x: 3, y: 42 }; let ray: Ray = Ray { origin: origin, direction: direction }; return ray.direction.y; }",
+                42,
+            ),
+            (
+                "four_deep_aggregates_with_array_field",
+                "struct A { x: i32, y: i32, } struct B { a: A, values: [i32; 3], } struct C { b: B, tag: i32, } struct D { c: C, last: A, } fn main() -> i32 { let a: A = A { x: 1, y: 2 }; let b: B = B { a: a, values: [3, 4, 5] }; let c: C = C { b: b, tag: 6 }; let d: D = D { c: c, last: A { x: 7, y: 8 } }; return d.c.b.values[2] + d.c.b.a.y + d.c.tag + d.last.y; }",
+                21,
+            ),
+            (
+                "unused_generic_declaration",
+                "struct Cell<T> { value: T, count: i32, } struct Pair { left: i32, right: i32, } fn main() -> i32 { let pair: Pair = Pair { left: 40, right: 2 }; return pair.left + pair.right; }",
+                42,
+            ),
+        ];
+        for (case, source, expected) in cases {
+            pollster::block_on(compiler.type_check_source(source)).unwrap_or_else(|error| {
+                panic!("produce checked frontend artifacts for {case}: {error}")
+            });
+            let hir = compiler
+                .parser
+                .current_resident_hir()
+                .unwrap_or_else(|| panic!("parser should retain compact HIR for {case}"));
+            let lower = |bounds: LoweringJobBounds| -> Vec<u8> {
+                let mut encoder =
+                    gpu.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("aggregate layout round check"),
+                        });
+                let semantic = compiler
+                    .type_checker
+                    .semantic_artifact()
+                    .expect("type checker should retain semantic artifact");
+                let pipeline = compiler
+                    .type_checker
+                    .with_post_typecheck_workspace(&semantic, |workspace| {
+                        compiler.ensure_lowering_pipeline(
+                            LoweringTarget::X86_64,
+                            u32::try_from(source.len()).unwrap(),
+                            u32::try_from(source.len()).unwrap(),
+                            hir.capacity,
+                            LoweringArtifactKind::Executable,
+                            workspace,
+                            (&hir).into(),
+                            semantic.view(),
+                        )
+                    })
+                    .expect("type-check workspace should remain available")
+                    .expect("lowering workspace");
+                pipeline
+                    .record(&gpu.device, &gpu.queue, &mut encoder, None, bounds)
+                    .unwrap_or_else(|error| panic!("record lowering for {case}: {error}"));
+                submit_with_progress(&gpu.queue, "aggregate layout round check", encoder.finish());
+                pipeline
+                    .finish_artifact(&gpu.device, &gpu.queue)
+                    .unwrap_or_else(|error| panic!("finish artifact for {case}: {error}"))
+            };
+            let all_rounds = lower(LoweringJobBounds::CONSERVATIVE);
+            let one_round = lower(LoweringJobBounds::from_parser_features(0));
+            assert_lowered_program_result(LoweringTarget::X86_64, case, &all_rounds, expected);
+            assert!(
+                all_rounds == one_round,
+                "{case}: one aggregate layout round changed the executable"
+            );
+        }
+    }
+
     fn run_checked_hir_lowering_integration() {
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
@@ -807,7 +900,13 @@ mod tests {
                     .expect("type-check workspace should remain available")
                     .expect("lowering workspace");
                 pipeline
-                    .record(&gpu.device, &gpu.queue, &mut encoder, None)
+                    .record(
+                        &gpu.device,
+                        &gpu.queue,
+                        &mut encoder,
+                        None,
+                        crate::codegen::lowering::LoweringJobBounds::CONSERVATIVE,
+                    )
                     .unwrap_or_else(|error| {
                         panic!("record {target:?} lowering for {case}: {error}")
                     });

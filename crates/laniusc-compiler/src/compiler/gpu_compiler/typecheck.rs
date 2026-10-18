@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::{
-    codegen::lowering_ir::LoweringArtifactKind,
+    codegen::{lowering::LoweringJobBounds, lowering_ir::LoweringArtifactKind},
     gpu::buffers::LaniusBuffer,
     lexer::{
         types::{GpuToken, Token},
@@ -342,7 +342,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                         )
                         .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
                     pipeline
-                        .record(device, queue, encoder, timer.as_deref_mut())
+                        .record(
+                            device,
+                            queue,
+                            encoder,
+                            timer.as_deref_mut(),
+                            LoweringJobBounds::from_parser_features(parser_feature_flags),
+                        )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                 }
                 Ok((type_check, hir))
@@ -443,6 +449,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest<'_>>,
+        lowering_bounds: LoweringJobBounds,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
@@ -549,7 +556,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
             pipeline
-                .record(device, queue, encoder, timer.as_deref_mut())
+                .record(device, queue, encoder, timer.as_deref_mut(), lowering_bounds)
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         if let Some(request) = object_request {
@@ -577,7 +584,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             };
             pipeline
                 .record_object(device, queue, encoder, library_id, unit_id, selected_replay,
-                    timer.as_deref_mut())
+                    timer.as_deref_mut(), lowering_bounds)
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         downstream_host_timer.stamp("lowering");
@@ -692,6 +699,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         unit_id,
                         lowering_target,
                         object_request,
+                        LoweringJobBounds::from_parser_features(parser.parser_feature_flags),
                     )
                 },
             )
@@ -769,6 +777,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     unit_id,
                     lowering_target,
                     object_request,
+                    LoweringJobBounds::from_parser_features(parser_feature_flags),
                 )
             },
             |err| parser_execution_failed_for_source_pack(diagnostic_files, err),
