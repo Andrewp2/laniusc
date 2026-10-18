@@ -969,6 +969,7 @@ pub(crate) fn defer_compute_direct_with_offsets(
     dynamic_offsets: &[u32],
     operation_label: &str,
 ) -> bool {
+    tally_bindings(pass, operation_label);
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Direct(groups);
         debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
@@ -1007,6 +1008,7 @@ pub(crate) fn defer_compute_indirect(
     dynamic_offsets: &[u32],
     operation_label: &str,
 ) -> bool {
+    tally_bindings(pass, operation_label);
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
         debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
@@ -1044,6 +1046,7 @@ pub(crate) fn defer_compute_direct_bind_groups(
     groups: (u32, u32, u32),
     operation_label: &str,
 ) -> bool {
+    tally_bindings(pass, operation_label);
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Direct(groups);
         debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
@@ -1080,6 +1083,7 @@ pub(crate) fn defer_compute_indirect_bind_groups(
     dispatch_offset: u64,
     operation_label: &str,
 ) -> bool {
+    tally_bindings(pass, operation_label);
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
         debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
@@ -1668,6 +1672,89 @@ pub fn bgls_from_reflection_with_dynamic_uniforms(
             entries: &entries,
         },
     )])
+}
+
+/// `LANIUS_GPU_BINDING_TALLY`: per operation label, the dispatches a job
+/// records and the buffer bindings each one carries. wgpu's
+/// `CommandEncoder::finish` merges and tracks every bound buffer per
+/// dispatch, so dispatches x bindings ranks where finish time goes.
+fn binding_tally_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_GPU_BINDING_TALLY", false))
+}
+
+/// Label -> (dispatches, storage bindings, all buffer bindings, shader id).
+static BINDING_TALLY: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, (u64, usize, usize, String)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+fn tally_bindings(pass: &PassData, label: &str) {
+    if !binding_tally_enabled() {
+        return;
+    }
+    let mut tally = BINDING_TALLY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(entry) = tally.get_mut(label) {
+        entry.0 += 1;
+        return;
+    }
+    let (storage, buffers) = reflected_compute_buffer_counts(&pass.reflection).unwrap_or((0, 0));
+    tally.insert(label.to_owned(), (1, storage, buffers, pass.shader_id.clone()));
+}
+
+/// Prints and clears the tally (one line per label, most bindings
+/// recorded first).
+pub(crate) fn print_binding_tally(job: &str) {
+    if !binding_tally_enabled() {
+        return;
+    }
+    let tally = std::mem::take(
+        &mut *BINDING_TALLY
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    let mut rows = tally.into_iter().collect::<Vec<_>>();
+    rows.sort_by_key(|(label, (dispatches, _, buffers, _))| {
+        (std::cmp::Reverse(*dispatches * *buffers as u64), label.clone())
+    });
+    for (label, (dispatches, storage, buffers, shader)) in rows {
+        eprintln!(
+            "[binding_tally] job={job} label={label} shader={shader} dispatches={dispatches} storage={storage} buffers={buffers} bound={}",
+            dispatches * buffers as u64,
+        );
+    }
+}
+
+/// Storage-buffer and all-buffer descriptors of the reflected compute stage.
+fn reflected_compute_buffer_counts(reflection: &SlangReflection) -> Result<(usize, usize)> {
+    let entry = reflection
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage.as_deref() == Some("compute"))
+        .ok_or_else(|| anyhow!("no compute entry point found in reflection"))?;
+    let parameters = if let Some(layout) = entry.program_layout.as_ref() {
+        layout
+            .parameters
+            .iter()
+            .flat_map(|set| set.parameters.iter())
+            .collect::<Vec<_>>()
+    } else {
+        reflection.parameters.iter().collect::<Vec<_>>()
+    };
+    let mut storage = 0;
+    let mut buffers = 0;
+    for parameter in parameters {
+        if let Some(wgpu::BindingType::Buffer { ty, .. }) =
+            slang_category_and_type_to_wgpu(parameter, &parameter.ty)
+        {
+            buffers += 1;
+            if matches!(ty, wgpu::BufferBindingType::Storage { .. }) {
+                storage += 1;
+            }
+        }
+    }
+    Ok((storage, buffers))
 }
 
 /// Counts storage-buffer descriptors visible to the reflected compute stage.

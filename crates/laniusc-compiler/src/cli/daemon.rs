@@ -870,6 +870,7 @@ async fn run_session(
             job_trace_started,
             Instant::now(),
         );
+        crate::gpu::passes_core::print_binding_tally(&job_trace_name);
         let resources_after = job_resource_creation_counts();
         let recorded_compute_passes_during_job =
             recorded_compute_pass_count().saturating_sub(compute_passes_before);
