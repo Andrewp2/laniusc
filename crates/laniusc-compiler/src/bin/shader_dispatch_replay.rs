@@ -25,11 +25,12 @@ use laniusc_compiler::{
         device,
         passes_core::{bgls_from_reflection, map_readback_blocking, pipeline_from_spirv_and_bgls},
     },
-    reflection::parse_reflection_from_bytes,
+    reflection::{parse_reflection_from_bytes, slang_category_and_type_to_wgpu},
 };
 
 const USAGE: &str = "usage: shader_dispatch_replay CAPTURE_DIR SHADER.spv SHADER.reflect.json \
-     [--also CAPTURE_DIR SHADER.spv SHADER.reflect.json]... [--out DIR]";
+     [--also CAPTURE_DIR SHADER.spv SHADER.reflect.json]... [--out DIR] \
+     | --memory-probe SHADER_DIR [SUBSTRING] | --host-bench N SHADER_DIR KEY...";
 
 fn digest(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| {
@@ -323,11 +324,292 @@ fn memory_probe(root: &str, filter: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// One kernel of `--host-bench`: its pipeline and two bind groups over
+/// distinct dummy buffers, so consecutive dispatches rebind as in the compiler.
+struct BenchKernel {
+    key: String,
+    pipeline: wgpu::ComputePipeline,
+    bind_groups: [wgpu::BindGroup; 2],
+    dynamic_offsets: Vec<u32>,
+    bindings: usize,
+    _buffers: Vec<wgpu::Buffer>,
+}
+
+impl BenchKernel {
+    fn load(
+        device: &wgpu::Device,
+        cache: Option<&wgpu::PipelineCache>,
+        root: &str,
+        key: &str,
+    ) -> Result<Self> {
+        let reflection =
+            parse_reflection_from_bytes(&fs::read(Path::new(root).join(format!("{key}.reflect.json")))?)
+                .map_err(anyhow::Error::msg)?;
+        let entry = reflection
+            .entry_points
+            .iter()
+            .find(|entry| entry.stage.as_deref() == Some("compute"))
+            .ok_or_else(|| anyhow!("{key}: no compute entry point"))?;
+        if entry.program_layout.as_ref().is_some_and(|layout| layout.parameters.len() > 1) {
+            return Err(anyhow!("{key}: more than one bind group"));
+        }
+        let parameters = match entry.program_layout.as_ref() {
+            Some(layout) => layout.parameters.iter().flat_map(|set| set.parameters.iter()).collect(),
+            None => reflection.parameters.iter().collect::<Vec<_>>(),
+        };
+        let mut bindings = Vec::new();
+        let mut dynamic_offsets = Vec::new();
+        for parameter in parameters {
+            let (Some(ty), Some(index)) = (
+                slang_category_and_type_to_wgpu(parameter, &parameter.ty),
+                parameter.binding.index,
+            ) else {
+                continue;
+            };
+            if matches!(ty, wgpu::BindingType::Buffer { has_dynamic_offset: true, .. }) {
+                dynamic_offsets.push(0);
+            }
+            bindings.push(index);
+        }
+        let pipeline = probe_pipeline(device, cache, root, key)?
+            .ok_or_else(|| anyhow!("{key}: no pipeline"))?;
+        let layout = pipeline.get_bind_group_layout(0);
+        let mut buffers = Vec::new();
+        let mut group = |label: &str| {
+            let entries = bindings
+                .iter()
+                .map(|&binding| {
+                    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some(label),
+                        size: 16 << 10,
+                        usage: wgpu::BufferUsages::STORAGE
+                            | wgpu::BufferUsages::UNIFORM
+                            | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    buffers.push(buffer.clone());
+                    (binding, buffer)
+                })
+                .collect::<Vec<_>>();
+            let entries = entries
+                .iter()
+                .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                    binding: *binding,
+                    resource: buffer.as_entire_binding(),
+                })
+                .collect::<Vec<_>>();
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &layout,
+                entries: &entries,
+            })
+        };
+        let bind_groups = [group("bench a"), group("bench b")];
+        Ok(Self {
+            key: key.to_owned(),
+            pipeline,
+            bind_groups,
+            dynamic_offsets,
+            bindings: bindings.len(),
+            _buffers: buffers,
+        })
+    }
+}
+
+/// How the dispatches of one `--host-bench` measurement are recorded.
+#[derive(Clone, Copy, Debug)]
+enum BenchShape {
+    /// One compute pass; set_pipeline, set_bind_group and a direct dispatch each.
+    Direct,
+    /// As `Direct`, with an indirect dispatch of zeroed arguments.
+    Indirect,
+    /// As `Direct`, with every dispatch in a compute pass of its own.
+    PassPerDispatch,
+    /// One pass; the first kernel's pipeline and bind group set once.
+    DispatchOnly,
+}
+
+/// Records `count` dispatches cycling through `kernels` and returns the host
+/// microseconds per dispatch spent recording, finishing and submitting, and
+/// the wall time until the GPU finished.
+fn bench_once(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    kernels: &[&BenchKernel],
+    args: &wgpu::Buffer,
+    shape: BenchShape,
+    count: usize,
+) -> Result<[f64; 4]> {
+    let mut encoder = device.create_command_encoder(&Default::default());
+    let started = Instant::now();
+    let dispatch = |compute: &mut wgpu::ComputePass<'_>, index: usize| {
+        if !matches!(shape, BenchShape::DispatchOnly) {
+            let kernel = kernels[index % kernels.len()];
+            compute.set_pipeline(&kernel.pipeline);
+            compute.set_bind_group(
+                0,
+                &kernel.bind_groups[(index / kernels.len()) % 2],
+                &kernel.dynamic_offsets,
+            );
+        }
+        match shape {
+            BenchShape::Indirect => compute.dispatch_workgroups_indirect(args, 0),
+            _ => compute.dispatch_workgroups(0, 1, 1),
+        }
+    };
+    match shape {
+        BenchShape::PassPerDispatch => {
+            for index in 0..count {
+                let mut compute = encoder.begin_compute_pass(&Default::default());
+                dispatch(&mut compute, index);
+            }
+        }
+        _ => {
+            let mut compute = encoder.begin_compute_pass(&Default::default());
+            if matches!(shape, BenchShape::DispatchOnly) {
+                compute.set_pipeline(&kernels[0].pipeline);
+                compute.set_bind_group(0, &kernels[0].bind_groups[0], &kernels[0].dynamic_offsets);
+            }
+            for index in 0..count {
+                dispatch(&mut compute, index);
+            }
+        }
+    }
+    let recorded = Instant::now();
+    let commands = encoder.finish();
+    let finished = Instant::now();
+    queue.submit(Some(commands));
+    let submitted = Instant::now();
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .map_err(|err| anyhow!("host bench did not finish: {err}"))?;
+    let done = Instant::now();
+    let per = |from: Instant, to: Instant| to.duration_since(from).as_secs_f64() * 1e6 / count as f64;
+    Ok([
+        per(started, recorded),
+        per(recorded, finished),
+        per(finished, submitted),
+        per(submitted, done),
+    ])
+}
+
+/// `--host-bench N SHADER_DIR KEY...` measures what recording a compute
+/// dispatch costs the host in wgpu alone, without the compiler: N dispatches
+/// (of zero workgroups, so the GPU runs only the barriers between them) are
+/// recorded, finished and submitted on a fresh device, each set of them
+/// cycling through the KEYs' pipelines with two bind groups apiece over
+/// dummy buffers. It reports the median microseconds per dispatch of seven
+/// runs for each `BenchShape`, for every KEY alone and for all KEYs in turn,
+/// once with wgpu's indirect-dispatch validation (the compiler's setting)
+/// and once without it.
+fn host_bench(count: usize, root: &str, keys: &[String]) -> Result<()> {
+    let gpu = device::global_result().map_err(|err| anyhow!(err.to_string()))?;
+    let cache_data = device::pipeline_cache_for(&gpu.device).and_then(|cache| cache.get_data());
+    for indirect_validation in [true, false] {
+        let mut flags = wgpu::InstanceFlags::from_build_config();
+        flags.remove(
+            wgpu::InstanceFlags::DEBUG
+                | wgpu::InstanceFlags::VALIDATION
+                | wgpu::InstanceFlags::GPU_BASED_VALIDATION,
+        );
+        flags.set(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL, indirect_validation);
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            flags,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        }))
+        .map_err(|err| anyhow!("no adapter: {err}"))?;
+        let features = wgpu::Features::PASSTHROUGH_SHADERS
+            | (adapter.features() & wgpu::Features::PIPELINE_CACHE);
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("host_bench"),
+            required_features: features,
+            required_limits: adapter.limits(),
+            // SAFETY: passthrough SPIR-V, as in the compiler's device.
+            experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
+            memory_hints: wgpu::MemoryHints::default(),
+            trace: wgpu::Trace::default(),
+        }))
+        .map_err(|err| anyhow!("request bench device: {err}"))?;
+        let cache = features.contains(wgpu::Features::PIPELINE_CACHE).then(|| unsafe {
+            device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+                label: Some("host_bench"),
+                data: cache_data.as_deref(),
+                fallback: true,
+            })
+        });
+        let kernels = keys
+            .iter()
+            .map(|key| BenchKernel::load(&device, cache.as_ref(), root, key))
+            .collect::<Result<Vec<_>>>()?;
+        let args = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("bench dispatch arguments"),
+            size: 256,
+            usage: wgpu::BufferUsages::INDIRECT
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&args, 0, &[0; 256]);
+        let mut sets = kernels.iter().map(|kernel| vec![kernel]).collect::<Vec<_>>();
+        sets.push(kernels.iter().collect());
+        for set in &sets {
+            let name = if set.len() == 1 { set[0].key.clone() } else { "all".to_owned() };
+            let bindings = set.iter().map(|kernel| kernel.bindings).sum::<usize>() as f64
+                / set.len() as f64;
+            for shape in [
+                BenchShape::Direct,
+                BenchShape::Indirect,
+                BenchShape::PassPerDispatch,
+                BenchShape::DispatchOnly,
+            ] {
+                // The first run also zero-fills the dummy buffers.
+                bench_once(&device, &queue, set, &args, shape, count)?;
+                let mut runs = (0..7)
+                    .map(|_| bench_once(&device, &queue, set, &args, shape, count))
+                    .collect::<Result<Vec<_>>>()?;
+                let mut median = |part: usize| {
+                    runs.sort_by(|a, b| a[part].total_cmp(&b[part]));
+                    (runs[runs.len() / 2][part] * 1000.0).round() / 1000.0
+                };
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "indirect_validation": indirect_validation,
+                        "kernels": name,
+                        "bindings": bindings,
+                        "shape": format!("{shape:?}"),
+                        "dispatches": count,
+                        "record_us": median(0),
+                        "finish_us": median(1),
+                        "submit_us": median(2),
+                        "gpu_wait_us": median(3),
+                    })
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.first().map(String::as_str) == Some("--memory-probe") {
         let root = args.get(1).ok_or_else(|| anyhow!(USAGE))?;
         return memory_probe(root, args.get(2).map(String::as_str));
+    }
+    if args.first().map(String::as_str) == Some("--host-bench") {
+        let count = args
+            .get(1)
+            .and_then(|count| count.parse().ok())
+            .ok_or_else(|| anyhow!(USAGE))?;
+        let root = args.get(2).ok_or_else(|| anyhow!(USAGE))?;
+        return host_bench(count, root, &args[3..]);
     }
     let out = match args.iter().position(|arg| arg == "--out") {
         Some(at) => {

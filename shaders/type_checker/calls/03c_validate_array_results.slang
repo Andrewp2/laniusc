@@ -67,6 +67,8 @@ StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> call_return_generic_slot;
 
 RWStructuredBuffer<uint> status;
+// The status words before the final validation passes.
+StructuredBuffer<uint> status_prior;
 RWStructuredBuffer<uint> call_return_type;
 
 static const uint INVALID = 0xffffffffu;
@@ -557,14 +559,23 @@ ArrayCheck prepare_let(uint node, uint4 bounded)
     return check;
 }
 
+// A call result mismatch, unless an error already recorded inside the call
+// explains it (an argument that does not match its parameter, such as a
+// length that does not fit): that error is the diagnostic.
+void record_result_error(ArrayCheck check, uint token, uint detail)
+{
+    HirCore call = compact_hir_core[check.call_node];
+    if (!language_error_recorded_within(status_prior, call.token_start, call.token_end))
+        record_min_token_error(status, token, ERR_ASSIGN_MISMATCH, detail);
+}
+
 void finish_let(ArrayCheck check, uint3 ids)
 {
     uint callee_token = check.callee_token;
     if (check.mode == CHECK_LET_CHECKED)
     {
         if (!same_id(ids.x, ids.y))
-            record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
-                TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
+            record_result_error(check, callee_token, TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
         return;
     }
     if (check.mode == CHECK_LET_GENERIC)
@@ -574,8 +585,7 @@ void finish_let(ArrayCheck check, uint3 ids)
             call_result_instance[check.call_node] = check.other;
             return;
         }
-        record_min_token_error(status, callee_token, ERR_ASSIGN_MISMATCH,
-            TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
+        record_result_error(check, callee_token, TY_ARRAY_BASE * 256u + call_return_type[callee_token]);
         return;
     }
     if (check.mode != CHECK_LET_DECLARED) return;
@@ -584,10 +594,7 @@ void finish_let(ArrayCheck check, uint3 ids)
     if (check.actual != INVALID && same_id(ids.x, ids.z))
         return;
 
-    record_min_token_error(
-        status,
-        valid_token(callee_token) ? callee_token : check.decl_token,
-        ERR_ASSIGN_MISMATCH,
+    record_result_error(check, valid_token(callee_token) ? callee_token : check.decl_token,
         TY_ARRAY_BASE * 256u + check.actual_ty);
 }
 
@@ -652,11 +659,7 @@ void finish_argument(ArrayCheck check, uint3 ids)
     if (same_id(substituted, ids.y))
         return;
 
-    record_min_token_error(
-        status,
-        check.callee_token,
-        ERR_ASSIGN_MISMATCH,
-        TY_ARRAY_BASE * 256u + TY_UNKNOWN);
+    record_result_error(check, check.callee_token, TY_ARRAY_BASE * 256u + TY_UNKNOWN);
 }
 
 [shader("compute")]

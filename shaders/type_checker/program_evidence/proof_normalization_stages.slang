@@ -238,6 +238,46 @@ EvidenceStatus pps_validate_normalization<Source : IWorkNormalizationSource>(uin
         pev_ok() : pev_invalid(1u, work, PPS_WORK);
 }
 
+// The rows pps_emit_normalization reserves for one request Work of this
+// source kind, from the same source decode and measuring transform, writing
+// nothing (phases 67 and 68). Other rows count nothing, nor do rows emission
+// rejects: emission reports those.
+bool pps_measure_normalization<Source : IWorkNormalizationSource>(uint work,
+    out uint nodes, out uint edges, out uint roots)
+{
+    nodes = 0u; edges = 0u; roots = 0u;
+    uint4 key; uint4 selected; uint4 completion; uint4 source;
+    if (!pps_work_read(work, key, selected, completion, source)) return false;
+    if (key.z != PPS_WORK_REQUEST || source.x != Source.kind() ||
+        key.y != PEV_INVALID || source.w != PEV_INVALID) return false;
+    uint owner; bool require_closed; uint4 predicate; uint4 arguments;
+    EvidenceStatus status = pps_normalization_source(work, key, completion, source,
+        owner, require_closed, predicate, arguments);
+    if (status.state != PEV_VALID) return false;
+    uint root_count = arguments.y + 1u;
+    ProofNormalizationReservation empty = (ProofNormalizationReservation)0;
+    bool valid = true;
+    [loop]
+    for (uint ordinal = 0u; ordinal < root_count; ordinal++)
+    {
+        uint2 input = uint2(0u, 0u); uint2 unused; bool closed;
+        ProofNormalizationCounts count = (ProofNormalizationCounts)0;
+        if (valid)
+            valid = pev_read_root(pps_normalization_input_root(predicate, arguments, ordinal), input);
+        if (valid)
+            valid = Source.transform(input, source.z, owner, pps_normalization_domain(ordinal),
+                false, empty, unused, closed, count).state == PEV_VALID;
+        if (valid) valid = pps_normalization_add(nodes, count.nodes);
+        if (valid) valid = pps_normalization_add(edges, count.edges);
+    }
+    roots = root_count;
+    return valid;
+}
+public bool pps_measure_original_work(uint work, out uint nodes, out uint edges, out uint roots)
+{ return pps_measure_normalization<OriginalWorkNormalizationSource>(work, nodes, edges, roots); }
+public bool pps_measure_prerequisite_work(uint work, out uint nodes, out uint edges, out uint roots)
+{ return pps_measure_normalization<PrerequisiteWorkNormalizationSource>(work, nodes, edges, roots); }
+
 public EvidenceStatus pps_normalize_original_work(uint work)
 { return pps_emit_normalization<OriginalWorkNormalizationSource>(work); }
 public EvidenceStatus pps_normalize_prerequisite_work(uint work)

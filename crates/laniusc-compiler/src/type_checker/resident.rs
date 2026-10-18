@@ -345,6 +345,12 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
         let status_readback = readback_u32s(device, "rb.type_check.resident.status", 4);
+        let status_prior = typed_storage_u32_rw(
+            device,
+            "type_check.resident.status_prior",
+            4,
+            wgpu::BufferUsages::COPY_DST,
+        );
         let call_inference_state = typed_storage_u32_rw(
             device,
             "type_check.calls.inference_state",
@@ -373,6 +379,7 @@ impl GpuTypeChecker {
             empty_dependency_words,
             status_buf,
             status_readback,
+            status_prior,
             call_inference_state,
             call_inference_readback,
             canonical_counts_readback,
@@ -380,9 +387,11 @@ impl GpuTypeChecker {
             preflight_graph,
             canonical_scale: std::sync::atomic::AtomicU32::new(1),
             resident_workspace: Mutex::new(None),
+            resident_capacity_floor: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
             semantic_interface_buffers: CapacityBufferCache::default(),
+            unit_facts_read_plans: Default::default(),
         })
     }
 
@@ -401,7 +410,8 @@ impl GpuTypeChecker {
     /// already hold that slot, so dropping it here frees nothing. It would
     /// only make the next job allocate a new slot, which changes the
     /// type-check input fingerprint and rebuilds the whole resident
-    /// workspace (about 190 ms on the 1 MB daemon job).
+    /// workspace (about 190 ms on the 1 MB daemon job). The capacity floor
+    /// stays too, so the replacement is sized for every earlier job.
     pub(crate) fn release_frontend_bound_workspace(&self) {
         *self
             .current_semantic_artifact
@@ -412,6 +422,11 @@ impl GpuTypeChecker {
             .lock()
             .expect("GpuTypeChecker.resident_workspace poisoned") = None;
         self.semantic_interface_buffers.clear();
+        // The plans name this workspace's allocations, which are gone.
+        self.unit_facts_read_plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     pub(crate) fn dependency_interface_pages(
@@ -601,10 +616,21 @@ impl GpuTypeChecker {
             .as_ref()
             .map(|state| !state.can_reuse_for(cache_key))
             .unwrap_or(true);
+        // A released workspace leaves its capacities as the floor, so a
+        // replacement after a lexer or parser replacement still covers the
+        // larger units of earlier jobs.
         let allocation = resident_workspace_guard
             .as_ref()
-            .map(|state| state.cache_key.grow_to_cover(cache_key))
-            .unwrap_or(cache_key);
+            .map(|state| state.cache_key)
+            .or_else(|| {
+                *self
+                    .resident_capacity_floor
+                    .lock()
+                    .expect("GpuTypeChecker.resident_capacity_floor poisoned")
+            })
+            .map(|previous| previous.grow_to_cover(cache_key))
+            .unwrap_or_else(|| cache_key.first_allocation())
+            .bucketed();
         let resident_cache_trace =
             crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
         if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
@@ -693,6 +719,10 @@ impl GpuTypeChecker {
             let mut state = state?;
             state.resettable_buffers = resettable_buffers;
             *resident_workspace_guard = Some(state);
+            *self
+                .resident_capacity_floor
+                .lock()
+                .expect("GpuTypeChecker.resident_capacity_floor poisoned") = Some(allocation);
         }
         Ok(needs_rebuild)
     }
@@ -757,9 +787,9 @@ impl GpuTypeChecker {
                 .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_library_id()),
             canonical_unit_id: dependency_pages
                 .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_unit_id()),
+            // Written with the workspace's allocation below.
+            workspace_token_rows: 0,
         };
-        self.params_buf
-            .write(queue, 0, &type_check_params_bytes(&params));
         self.status_buf.write(queue, 0, &status_init_bytes());
         let dependency_types_present =
             dependency_pages.is_some_and(GpuDependencyInterfacePages::has_type_references);
@@ -794,6 +824,19 @@ impl GpuTypeChecker {
             queue,
             (generic_body::BODY_IMPL_BINDING_ROW * 16) as u64,
             &binding_bytes,
+        );
+        // So is the continuation header: only an instance-copy replay maps
+        // files past its template to the modules they continue.
+        let continuations = hir_items
+            .body_specialization
+            .map(CheckedBodySpecializationBatch::continuation_words)
+            .unwrap_or_else(|| generic_body::continuation_words(0, &[]));
+        let continuation_bytes: Vec<u8> =
+            continuations.into_iter().flat_map(u32::to_le_bytes).collect();
+        self.body_specialization_inputs.write(
+            queue,
+            (generic_body::BODY_CONTINUATION_ROW * 16) as u64,
+            &continuation_bytes,
         );
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
@@ -835,6 +878,13 @@ impl GpuTypeChecker {
             let bind_groups = resident_workspace_guard
                 .as_ref()
                 .expect("resident type-check state must exist");
+            // A workspace retained from a larger job keeps its token rows.
+            let params = TypeCheckParams {
+                workspace_token_rows: bind_groups.cache_key.token_capacity.max(1),
+                ..params
+            };
+            self.params_buf
+                .write(queue, 0, &type_check_params_bytes(&params));
             *self
                 .current_semantic_artifact
                 .lock()
@@ -1627,6 +1677,9 @@ impl GpuTypeChecker {
                         .record_claims(encoder, &pattern_pages)?;
                 }
                 if aggregates_required {
+                    // 03a4b's final invocations skip a mismatch that an error
+                    // already recorded inside the call explains.
+                    bind_groups.calls.status_prior.record(encoder);
                     bind_groups.calls.contextual_result_requests.record(encoder)?;
                     bind_groups.calls.environment_admission.record_context(
                         encoder,
@@ -1973,6 +2026,7 @@ impl GpuTypeChecker {
                 // after inference has stopped producing new facts.
                 self.call_inference_state.write(queue, 0, &[0; 8]);
                 if aggregates_required {
+                    bind_groups.calls.status_prior.record(encoder);
                     bind_groups
                         .calls
                         .contextual_result_requests
@@ -2006,8 +2060,14 @@ impl GpuTypeChecker {
                     .finalize_value_enum_calls
                     .record_as(encoder, VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.name)?;
             }
-            if generic_call_claim_passes_required(parser_feature_flags) || dependency_types_present
-            {
+            let claim_validation =
+                generic_call_claim_passes_required(parser_feature_flags) || dependency_types_present;
+            if claim_validation || arrays_required {
+                // 03a7 and 03c skip a missing binding or a mismatched result
+                // that an error already recorded inside the call explains.
+                bind_groups.calls.status_prior.record(encoder);
+            }
+            if claim_validation {
                 bind_groups
                     .calls
                     .generic_claim_validation

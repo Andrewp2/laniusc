@@ -9,6 +9,7 @@ pub(crate) fn print_timer_trace(
     if stamps.len() < 2 {
         return;
     }
+    let _span = crate::gpu::trace::HostSpan::new("host.trace", "trace.timer_events");
     let min_ms = std::env::var("LANIUS_GPU_COMPILE_TIMING_MIN_MS")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())

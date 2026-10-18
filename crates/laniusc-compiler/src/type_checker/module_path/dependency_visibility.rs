@@ -191,6 +191,7 @@ pub(in crate::type_checker) fn create(
         path_capacity,
         namespace: 0,
         hir_capacity: inputs.hir_node_capacity.max(1),
+        token_capacity: inputs.token_capacity.max(1),
     };
     let params = uniform_from_val(
         device,

@@ -85,7 +85,7 @@ static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HIR_FN = 3u;
-static const uint LANGUAGE_SYMBOL_COUNT = 72u;
+static const uint LANGUAGE_SYMBOL_COUNT = 73u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;

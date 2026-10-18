@@ -122,6 +122,53 @@ impl ProofStoreSession {
         Ok(upload)
     }
 
+    /// Mid-solve growth of the active submission's layout to `capacities`,
+    /// keeping the first `rows[table]` rows of every table (its reserved
+    /// prefix, accepted and pending alike) at their new offsets. `header` is
+    /// the directory the solver last read back while the GPU was idle; the
+    /// returned upload rewrites only its offsets and capacities, so every
+    /// counter and the status words carry over unchanged.
+    pub fn regrow(
+        &mut self,
+        capacities: [u32; PROOF_STORE_TABLES],
+        rows: &[u32; PROOF_STORE_TABLES],
+        header: &[u32],
+    ) -> Result<ProofStoreUpload> {
+        ensure!(header.len() == PROOF_STORE_FIXED_WORDS as usize, "proof regrowth needs the fixed directory");
+        let old = &self.layout;
+        let mut slices = [ProofStoreSlice::default(); PROOF_STORE_TABLES];
+        let mut word_count = PROOF_STORE_FIXED_WORDS;
+        let mut header = header.to_vec();
+        let mut copies = Vec::new();
+        for table in 0..PROOF_STORE_TABLES {
+            let capacity = capacities[table];
+            let previous = old.slices[table];
+            ensure!(capacity != INVALID && capacity >= previous.capacity && rows[table] <= previous.capacity,
+                "proof regrowth shrinks a table or keeps rows beyond it");
+            if capacity != 0 {
+                slices[table] = ProofStoreSlice { offset: word_count, capacity };
+                word_count = add(word_count, mul(capacity, PROOF_STORE_WIDTHS[table], "proof table")?, "proof arena")?;
+            }
+            let base = PROOF_STORE_DIRECTORY as usize + table * 6;
+            ensure!(header[base] == previous.offset && header[base + 2] == previous.capacity,
+                "proof regrowth directory differs from the owned layout");
+            header[base] = slices[table].offset;
+            header[base + 2] = slices[table].capacity;
+            if rows[table] != 0 && previous.offset != slices[table].offset {
+                copies.push(ArenaCopy {
+                    from_word: previous.offset,
+                    to_word: slices[table].offset,
+                    word_count: mul(rows[table], PROOF_STORE_WIDTHS[table], "regrown proof rows")?,
+                });
+            }
+        }
+        let layout = ProofStoreLayout {
+            epoch: old.epoch, arena_id: old.arena_id, serial: old.serial, slices, word_count,
+        };
+        self.layout = layout.clone();
+        Ok(ProofStoreUpload { layout, header, copies })
+    }
+
     /// Private capability boundary. The dispatcher reads this complete header
     /// and status from this session's exact owned buffer,
     /// after catalog/batch/context/call acceptance, in the same readback batch.

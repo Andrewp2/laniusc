@@ -113,6 +113,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint raw_link = expr_record(node, HIR_EXPR_RECORD_LEFT);
+    uint last_binary = INVALID;
     for (uint hop = 0u; hop < LOCAL_LINK_SPAN && valid_node(raw_link) && raw_link != node; ++hop)
     {
         uint linked_start = hir_token_pos[raw_link];
@@ -124,12 +125,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint linked_form = expr_record(raw_link, HIR_EXPR_RECORD_FORM);
             if (binary_form(linked_form))
+            {
                 next = expr_record(raw_link, HIR_EXPR_RECORD_LEFT);
+                last_binary = raw_link;
+            }
         }
         raw_link = next == node ? INVALID : next;
     }
 
-    uint dense_link = valid_node(raw_link) ? hir_node_dense_id[raw_link] : INVALID;
+    // A chain that outlives the walk continues at the left operand of the
+    // last binary row visited. That operand can be a layered production with
+    // no semantic row: the first tail's left operand is its layer's first
+    // child. Link to the last binary row instead. Its own seed starts at that
+    // operand and covers the rest of the chain.
+    uint dense_link = valid_node(raw_link) && valid_node(last_binary)
+        ? hir_node_dense_id[last_binary] : INVALID;
     publish(
         row,
         valid_semantic_row(dense_link) && dense_link != row ? dense_link : INVALID,

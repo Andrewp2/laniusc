@@ -118,6 +118,28 @@ pub fn record_host_span(lane: &str, name: &str, start: Instant, end: Instant) {
     record_span_between("host", lane, name, start, end);
 }
 
+/// A host span from its creation to its drop, recorded only while tracing,
+/// so early returns still close it.
+pub(crate) struct HostSpan {
+    lane: &'static str,
+    name: &'static str,
+    start: Option<Instant>,
+}
+
+impl HostSpan {
+    pub(crate) fn new(lane: &'static str, name: &'static str) -> Self {
+        Self { lane, name, start: enabled().then(Instant::now) }
+    }
+}
+
+impl Drop for HostSpan {
+    fn drop(&mut self) {
+        if let Some(start) = self.start {
+            record_host_span(self.lane, self.name, start, Instant::now());
+        }
+    }
+}
+
 /// Records a GPU-duration span relative to a host anchor instant.
 pub fn record_gpu_span(
     lane: &str,

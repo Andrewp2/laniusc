@@ -30,6 +30,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     let inference_readback: LaniusBuffer<u32> =
         typed_buffer_from_resources(resources, "call_inference_readback")?;
     let status: LaniusBuffer<u32> = typed_buffer_from_resources(resources, "status")?;
+    let status_prior: LaniusBuffer<u32> = typed_buffer_from_resources(resources, "status_prior")?;
     let optional_generic = |name, kernel, dispatch| {
         if generic_param_record_passes_required(parser_feature_flags) || has_dependency_interfaces {
             ComputeOperation::indirect(
@@ -382,6 +383,17 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             "call_inference_readback",
             &inference_readback,
             8,
+            16,
+        )?,
+        status_prior: crate::gpu::operations::CopyBufferOperation::new(
+            graph,
+            compiler_graph::CALLS_STATUS_PRIOR_PASS,
+            "status",
+            &status,
+            0,
+            "status_prior",
+            &status_prior,
+            0,
             16,
         )?,
         infer_array_generics: ComputeOperation::direct_spec(

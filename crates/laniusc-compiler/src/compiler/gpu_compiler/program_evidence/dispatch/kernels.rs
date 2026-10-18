@@ -3,7 +3,7 @@ use std::num::NonZeroU64;
 use anyhow::{Result, anyhow, ensure};
 
 use super::{
-    super::{abi::Span, catalog::FrozenCatalog},
+    super::{abi::Span, catalog::FrozenCatalog, proof_store::PROOF_STORE_TABLES},
     BatchPlan,
     arena::Arena,
 };
@@ -188,7 +188,7 @@ pub(super) fn record_phase_with_proof(
     proof: Option<ProofResources<'_>>,
 ) -> Result<()> {
     record_phase_with_resources(
-        device, encoder, pass, phase, span, threads, catalog, input, output, proof, None, None,
+        device, encoder, pass, phase, span, threads, catalog, input, output, proof, None, None, None,
     )
 }
 
@@ -205,6 +205,7 @@ fn record_phase_with_resources(
     proof: Option<ProofResources<'_>>,
     recipes: Option<&Arena>,
     layout_work: Option<&Arena>,
+    demand: Option<&LaniusBuffer<u32>>,
 ) -> Result<()> {
     ensure!(
         pass.thread_group_size == [threads, 1, 1],
@@ -319,6 +320,9 @@ fn record_phase_with_resources(
         }
         if let Some(scratch) = &scratch {
             resources.push(("thread_scratch", scratch.as_entire_binding()));
+        }
+        if let Some(demand) = demand {
+            resources.push(("program_evidence_proof_demand", demand.as_entire_binding()));
         }
         let bindings = passes_core::bind_group::create_bind_group_from_bindings(
             device,
@@ -625,6 +629,10 @@ const ASSUMPTION_PROOFS: &str = "type_checker/program_evidence/entries/59_admit_
 const PROOF_EDGE_ROWS: &str = "type_checker/program_evidence/entries/59_admit_proof_edge_rows";
 /// The GPU planner of recorded solver rounds (proof_solver_wave.slang).
 const WAVE_PLAN_PHASE: u32 = 70;
+/// Normalization row counts (proof_demand.slang): original Works (phase 41)
+/// and prerequisite Works (phase 42).
+pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
+pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
@@ -757,6 +765,16 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         256,
     ),
     (
+        COUNT_ORIGINAL_NORMALIZATION,
+        "type_checker/program_evidence/entries/67_count_original_normalization",
+        256,
+    ),
+    (
+        COUNT_PREREQUISITE_NORMALIZATION,
+        "type_checker/program_evidence/entries/68_count_prerequisite_normalization",
+        256,
+    ),
+    (
         WAVE_PLAN_PHASE,
         "type_checker/program_evidence/entries/70_plan_solver_wave",
         1,
@@ -809,7 +827,7 @@ impl ProofKernels {
     ) -> Result<()> {
         ensure!(
             !matches!(phase, SELECTION_PHASE | SUBSTITUTION_PHASE | IMPLEMENTATION_PROOF_PHASE
-                | WAVE_PLAN_PHASE),
+                | WAVE_PLAN_PHASE | COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
             "proof stage {phase} records through its own recorder"
         );
         let index = PROOF_KEYS
@@ -817,6 +835,39 @@ impl ProofKernels {
             .position(|(entry, _, _)| *entry == phase)
             .ok_or_else(|| anyhow::anyhow!("unregistered proof stage {phase}"))?;
         self.record_index(device, encoder, index, span, catalog, input, output, proof)
+    }
+    /// Counts the rows the next normalization of `span` reserves (phase 67
+    /// for original Works, 68 for prerequisite Works) into a zeroed demand
+    /// table, one word per proof-store table, which it returns.
+    pub fn record_normalization_count(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        phase: u32,
+        span: Span,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<LaniusBuffer<u32>> {
+        ensure!(
+            matches!(phase, COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
+            "proof stage {phase} is not a normalization count"
+        );
+        // One shared role: the solver reads each count back before it
+        // records the next one, so the queued zero write never races a use.
+        let demand = catalog.workspace().shared("program_evidence.proof_demand").buffer(
+            PROOF_STORE_TABLES as u32,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            Some(&[0; PROOF_STORE_TABLES]),
+        )?;
+        let index = PROOF_KEYS
+            .iter()
+            .position(|(entry, _, _)| *entry == phase)
+            .ok_or_else(|| anyhow::anyhow!("unregistered proof stage {phase}"))?;
+        record_phase_with_resources(device, encoder, &self.passes[index], phase, span,
+            PROOF_KEYS[index].2, catalog, input, output, Some(proof), None, None, Some(&demand))?;
+        Ok(demand)
     }
     /// INTERIM (P7): work selection runs as four dispatches per chunk of at
     /// most THREAD_SCRATCH_SLOTS work rows, so no kernel inlines more than
@@ -1446,7 +1497,7 @@ impl RecipeKernels {
         ensure!(self.passes.len() == schedule.len(), "recipe kernel/schedule inventory differs");
         for (pass, (phase, count, threads)) in self.passes.iter().zip(schedule) {
             record_phase_with_resources(device, encoder, pass, phase, Span::new(0, count)?,
-                threads, storage, input, output, None, Some(recipes), None)?;
+                threads, storage, input, output, None, Some(recipes), None, None)?;
         }
         Ok(())
     }
@@ -1463,7 +1514,7 @@ impl NativeLayoutKernel {
         catalog: &Arena, input: &Arena, output: &Arena, proof: ProofResources<'_>,
         recipes: &Arena, work: &Arena) -> Result<()> {
         record_phase_with_resources(device, encoder, &self.pass, 5, Span::new(0, 1)?, 1,
-            catalog, input, output, Some(proof), Some(recipes), Some(work))
+            catalog, input, output, Some(proof), Some(recipes), Some(work), None)
     }
 }
 

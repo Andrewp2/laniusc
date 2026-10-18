@@ -487,6 +487,10 @@ pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
 pub(super) const CALLS_INFERENCE_STATUS_READBACK_PASS: &str =
     "type_check.calls.inference.status.readback";
+/// The status words as the follow-on checks find them (03a4b's final
+/// invocations, 03a7 and 03c): an error already recorded inside a call
+/// explains that call's missing binding or mismatched result.
+pub(super) const CALLS_STATUS_PRIOR_PASS: &str = "type_check.calls.status_prior";
 pub(super) const CALL_INFERENCE_ROUND_FACTOR: u32 = 64;
 /// The language's call inference depth limit (like Rust's recursion_limit;
 /// docs/compiler-semantic-contracts.md): inference may take at most this many
@@ -3942,6 +3946,7 @@ fn build_graph(
     graph_resources!(graph, External {
         _status as "status" in Bytes => 16;
         _status_readback as "status_readback" in Bytes => 16;
+        status_prior as "status_prior" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
         call_inference_readback as "call_inference_readback" in Calls => 24;
     });
@@ -5657,6 +5662,16 @@ fn build_graph(
     CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
+    // Recorded before each 03a4b invocation and before the final validation
+    // passes (resident.rs).
+    graph.add_buffer_copy_pass(
+        CALLS_STATUS_PRIOR_PASS,
+        CompilerPhase::TypeCheck,
+        "status",
+        _status,
+        "status_prior",
+        status_prior,
+    )?;
     CALLS_CONTEXTUAL_RESULT_REQUESTS.register_kernel(&mut graph, kernels)?;
     CALLS_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(

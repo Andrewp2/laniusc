@@ -1067,6 +1067,18 @@ Complete argument, receiver, and result environments supply bindings; signature
 uses cannot redefine which slots are required. Imported native compilation now
 reports missing bindings with source-labeled `LNC0006` during checking.
 
+An argument that does not match its parameter is the diagnostic for its call.
+Claim emission (03a1) records it at the argument; an array length that does
+not fit its constant parameter's type says so, with the type (`LNC0006`, "this
+array's length does not fit `u8`, ..."). The follow-on checks (03a4b's final
+invocations, 03a7 and 03c) skip a missing binding or a mismatched result when
+a language error recorded before them lies inside the call's tokens. A
+compiler-boundary report there does not count: in `same(short, long)` with
+`N` bound to 2 and 3, result materialization (03e) reports the unbound result
+at `same` first, and 03a7 and 03c still record the mismatch. They read a copy
+of the status words made between dispatches (`status_prior`), so the first
+diagnostic does not depend on the order lanes record in.
+
 That gate reports 209 passes and two retained inline-array borrowing
 failures out of 211 tests. The new rejection matrix reaches slot 31 independently
 in both domains; valid compound/constant method programs and all existing

@@ -15,7 +15,7 @@ use crate::gpu::{
 };
 
 mod link;
-pub(crate) use link::{GpuX86LinkInput, GpuX86MissingSymbolDefinition};
+pub(crate) use link::{GpuX86LinkInput, GpuX86MissingSymbolDefinition, X86_LINK_NO_ENTRY_OBJECT};
 
 mod object;
 pub(crate) use object::{
