@@ -38,6 +38,9 @@ RWStructuredBuffer<uint> type_instance_len_payload;
 RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_ref_tag;
 RWStructuredBuffer<uint> type_instance_arg_ref_payload;
+RWStructuredBuffer<uint> external_type_library_id;
+RWStructuredBuffer<uint> external_type_unit_id;
+RWStructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
@@ -153,8 +156,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             // Each call owns its callee token. Keep the declaration instance
             // immutable so other calls can retain a different environment.
+            // An imported nominal type has no local declaration token; its
+            // (library, unit, local) triple is its identity, so the copy
+            // keeps it (the late canonical stage interns this row by it).
             type_instance_kind[token] = 1u;
             type_instance_decl_token[token] = type_instance_decl_token[original];
+            external_type_library_id[token] = external_type_library_id[original];
+            external_type_unit_id[token] = external_type_unit_id[original];
+            external_type_local_index[token] = external_type_local_index[original];
             type_instance_arg_count[token] = arguments;
             type_instance_len_kind[token] = type_instance_len_kind[original];
             type_instance_len_payload[token] = type_instance_len_payload[original];

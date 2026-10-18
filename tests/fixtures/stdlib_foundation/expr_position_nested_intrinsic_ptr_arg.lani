@@ -1,0 +1,9 @@
+// expect: 0
+// Expression form and position: an intrinsic call as the ptr argument of an imported generic call.
+module app::main;
+import core::mem;
+fn main() -> i32 {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("Az"), 2);
+    if (bytes[1] != 122) { return 1; }
+    return 0;
+}

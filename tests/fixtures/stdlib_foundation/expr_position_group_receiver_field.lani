@@ -1,0 +1,9 @@
+// expect: 0
+// Expression form and position: a parenthesized name as a member receiver: (w).v.
+module app::main;
+struct W { v: i32 }
+fn main() -> i32 {
+    let w: W = W { v: 7 };
+    if ((w).v != 7) { return 1; }
+    return 0;
+}

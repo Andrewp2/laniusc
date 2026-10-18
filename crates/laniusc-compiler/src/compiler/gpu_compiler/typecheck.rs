@@ -839,9 +839,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                 self.type_checker
                     .finish_semantic_interface(device, queue, identity)
                     .map_err(|err| {
-                        CompileError::GpuFrontend(format!(
-                            "semantic-interface readback failed: {err}"
-                        ))
+                        semantic_interface_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &recorded.diagnostic_tokens,
+                            &recorded.hir,
+                            diagnostic_files,
+                            err,
+                        )
                     })
             })
             .transpose()?;
@@ -2327,12 +2332,53 @@ impl PendingOriginalUnit {
         &self.facts
     }
 
+    /// Keep this original for a later build of the same unit (the
+    /// pending-original cache). The retained value is still pending.
+    pub(super) fn retain(&self) -> RetainedPendingOriginal {
+        RetainedPendingOriginal {
+            unit: std::sync::Arc::new(self.unit.clone()),
+            facts: self.facts.clone(),
+        }
+    }
+
     pub(super) fn finish(
         self,
         admission: program_evidence::ValidatedOriginalUnit,
     ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<program_evidence::AdmittedCall>)> {
         let calls = admission.check_original_unit(&self.facts)?;
         Ok((self.unit, calls))
+    }
+}
+
+#[cfg(test)]
+impl PendingOriginalUnit {
+    pub(super) fn from_unit_for_test(unit: CompiledSourcePackUnit) -> Self {
+        Self { facts: OriginalUnitFacts::from_unit(&unit), unit }
+    }
+}
+
+/// A pending original retained across builds by the pending-original cache
+/// (unit_cache.rs). Like `PendingOriginalUnit` it exposes no unit or object
+/// and no conversion into a compiled cache value: it re-enters a build only as
+/// a new `PendingOriginalUnit`, which that build's program admission must
+/// release. The new wrapper shares this facts snapshot, so its catalog
+/// inputs are exactly the original compilation's.
+#[derive(Clone)]
+pub(super) struct RetainedPendingOriginal {
+    unit: std::sync::Arc<CompiledSourcePackUnit>,
+    facts: OriginalUnitFacts,
+}
+
+impl RetainedPendingOriginal {
+    pub(super) fn pending(&self) -> PendingOriginalUnit {
+        PendingOriginalUnit { unit: self.unit.as_ref().clone(), facts: self.facts.clone() }
+    }
+
+    /// The unit's charge plus the facts snapshot's own interface copy; the
+    /// snapshot's other fields share the unit's allocations.
+    pub(super) fn resident_byte_len(&self) -> usize {
+        self.unit.resident_byte_len()
+            .saturating_add(super::unit_cache::interface_resident_bytes(self.facts.interface()))
     }
 }
 
@@ -2861,6 +2907,61 @@ fn lowering_error_to_compile_error_for_source_pack(
         ));
     }
     CompileError::Diagnostic(diagnostic)
+}
+
+/// A rejected type in the unit's exported interface names the type and its
+/// span; other export failures keep their phase error.
+fn semantic_interface_error_to_compile_error_for_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    tokens: &DiagnosticTokenBuffer,
+    hir: &crate::parser::buffers::GpuHirView,
+    files: &[DiagnosticSourceFile],
+    error: anyhow::Error,
+) -> CompileError {
+    let phase_error =
+        |error: &anyhow::Error| CompileError::GpuFrontend(format!("semantic-interface readback failed: {error}"));
+    let Some(failure) = error.downcast_ref::<crate::type_checker::SemanticInterfaceExportFailure>() else {
+        return phase_error(&error);
+    };
+    let Some(root) = failure.type_topology_root() else {
+        return phase_error(&error);
+    };
+    let Some((file, token)) = read_hir_token_start_for_diagnostic(device, queue, hir, root)
+        .ok()
+        .and_then(|token| {
+            read_single_token_from_buffer(device, queue, &tokens.buffer, tokens.byte_size, token).ok()
+        })
+        .and_then(|token| {
+            source_pack_nearest_file_for_global_span(files, token.start).map(|file| (file, token))
+        })
+    else {
+        return phase_error(&error);
+    };
+    let start = file.local_start_for_global(token.start);
+    let name = file
+        .source
+        .get(start..start.saturating_add(token.len).min(file.source.len()))
+        .unwrap_or("");
+    let label = diagnostic_label_from_source_span(
+        &file.path,
+        &file.source,
+        start,
+        token.len,
+        "the exported interface has no form for this type",
+    );
+    CompileError::Diagnostic(
+        Diagnostic::error(
+            "LNC0057",
+            format!("internal compiler error: cannot export type `{name}` in this unit's public interface"),
+        )
+        .with_primary_label(label)
+        .with_note(format!(
+            "semantic-interface type export rejected HIR {root} (detail {})",
+            failure.detail
+        ))
+        .with_help("a private type cannot appear in a public item; make the type `pub` or the item private"),
+    )
 }
 
 fn lowering_error_to_compile_error_without_source(error: anyhow::Error) -> CompileError {
@@ -3826,7 +3927,7 @@ fn trait_impl_diagnostic(
         ),
         15 => (
             "trait impl header contains an unknown trait argument type",
-            "resolve every trait argument to a complete type pattern using parameters owned by this impl",
+            "resolve every trait argument to a complete type pattern using parameters owned by this impl; constant trait arguments are not supported yet",
         ),
         16 => (
             "generic executable trait methods are not supported here",

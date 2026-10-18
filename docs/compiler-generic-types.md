@@ -1694,7 +1694,11 @@ to replace the source application's type. Final validation compares complete
 references and retains accepted bindings for native specialization, including
 parameters unused in the signature and body. Conflicting type evidence reports
 `LNC0006`; malformed arity or unsupported argument kinds report source-labeled
-`LNC0027` before ELF publication.
+`LNC0027` before ELF publication. A named constant operand declared with another
+scalar than its constant parameter (a `u32` constant for a `u64` parameter, an
+`f32` constant for an `f64` parameter) is conflicting type evidence and reports
+`LNC0006` at the operand; an integer literal operand outside the parameter's
+range reports `LNC0069` at the literal.
 
 The tests execute scalars, strings, references, borrowed string slices, nested
 nominal/array applications, nested zero-sized arrays, result-only explicit

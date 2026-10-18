@@ -1,0 +1,10 @@
+// expect: 0
+// Expression form and position: a match as a generic argument.
+module app::main;
+fn keep<T>(value: T) -> T { return value; }
+enum Pick { Left, Right }
+fn main() -> i32 {
+    let p: Pick = Right;
+    if (keep(match (p) { Left -> 1, Right -> 2 }) != 2) { return 1; }
+    return 0;
+}

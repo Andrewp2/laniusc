@@ -47,7 +47,7 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-// A type, a literal, or a signed literal (`-5`, `+0.0`), as in the canonical
+// A type, a literal, or a negated literal (`-5`, `-0.0`), as in the canonical
 // type-argument passes.
 bool argument_value_kind(uint kind)
 { return kind == HIR_TYPE || kind == 23u || kind == 17u; }

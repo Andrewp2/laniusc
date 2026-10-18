@@ -1225,7 +1225,8 @@ fn main()->i32 { if (keep(false)) { return 1; } return 0; }
                 .expect_err(&format!("{label}: invalid bound must reject before executable output"));
             let diagnostic = error.to_public_diagnostic();
             if label == "direct constant trait operand remains unsupported" {
-                assert_eq!(diagnostic.code, "LNC0016", "{label}: {error:?}");
+                // The impl header `impl Sized<2> for bool` is rejected first.
+                assert_eq!(diagnostic.code, "LNC0021", "{label}: {error:?}");
             } else {
                 assert!(matches!(diagnostic.code.as_str(), "LNC0007" | "LNC0008" | "LNC0021"),
                     "{label}: expected a source contract rejection: {error:?}");
@@ -1895,7 +1896,7 @@ fn ordinary_trait_methods_execute_alongside_generic_value_calls() {
         r#"
 module app::main;
 trait Hash<T> { fn hash(value: T) -> u32; }
-impl Hash<i32> for i32 { fn hash(value: i32) -> u32 { return value; } }
+impl Hash<i32> for i32 { fn hash(value: i32) -> u32 { return value as u32; } }
 fn keep<T>(value: T) -> T { return value; }
 fn main() -> i32 {
     if (i32::hash(keep(-1)) != 4294967295) { return 1; }
@@ -10823,16 +10824,26 @@ fn main() -> i32 { return go(21); }
 }
 
 #[test]
-fn generic_bound_member_calls_reject_unroutable_implementations() {
-    // A generic implementation needs its own call environment, which the
-    // symbolic selection cannot have produced; it rejects instead of routing.
-    reject_trait_program("generic implementation", r#"
+fn generic_bound_member_calls_route_to_generic_implementations() {
+    // Replay routes the member to the implementation the instance's evidence
+    // selected, and binds that implementation's own parameter from the
+    // subject (methods/09_route_bound_members).
+    execute_with_status("generic implementation", r#"
 trait Read { fn read(&self) -> i32; }
 struct Box<U> { v: U, n: i32 }
 impl<U> Read for Box<U> { fn read(&self) -> i32 { return self.n; } }
 fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
-fn main() -> i32 { return via(Box { v: true, n: 0 }); }
-"#, "LNC0027");
+fn main() -> i32 { return via(Box { v: true, n: 42 }); }
+"#, b"", 42);
+    // The implementation's own prerequisite is part of the bound's proof.
+    reject_trait_program("generic implementation prerequisite", r#"
+trait Mark {}
+trait Read { fn read(&self) -> i32; }
+struct Box<U> { v: U, n: i32 }
+impl<U> Read for Box<U> where U: Mark { fn read(&self) -> i32 { return self.n; } }
+fn via<T>(value: T) -> i32 where T: Read { return value.read(); }
+fn main() -> i32 { return via(Box { v: true, n: 42 }); }
+"#, "LNC0008");
 }
 
 
@@ -11402,7 +11413,7 @@ fn float_constant_operands_reject_named_scalar_mismatch() {
     reject_trait_program(
         "named f32 cannot bind an f64 constant parameter",
         include_str!("fixtures/stdlib_foundation/typed_float_constants/reject_named_width.lani"),
-        "LNC0027",
+        "LNC0006",
     );
 }
 

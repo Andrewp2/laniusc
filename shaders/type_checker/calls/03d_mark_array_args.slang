@@ -91,7 +91,7 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_FLOAT = 27u;
-static const uint HIR_EXPR_INDEX = 28u;
+static const uint HIR_EXPR_INDEX = 26u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
