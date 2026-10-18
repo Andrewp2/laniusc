@@ -302,10 +302,12 @@ impl GpuCompiler<'_> {
                     let pending_unit = self
                         .compile_authorized_body_specialization(&request)
                         .await
+                        .inspect_err(|_| trace.failed(&run.keys, &pending))
                         .map_err(&recursion)?;
                     let compiled = std::time::Instant::now();
-                    let (replay, checked) =
-                        request.finish(pending_unit).map_err(|error| recursion(native_program_error(error)))?;
+                    let (replay, checked) = request.finish(pending_unit)
+                        .inspect_err(|_| trace.failed(&run.keys, &pending))
+                        .map_err(|error| recursion(native_program_error(error)))?;
                     let replay_calls = checked.calls;
                     let finished = std::time::Instant::now();
                     crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
@@ -626,6 +628,21 @@ impl SpecializationTrace {
                 "[specialization]   depth={} decl={} key={} args={:?} consts={:?}",
                 body.origin.depth, body.target.2, &blake3::hash(key).to_hex()[..12],
                 call.arguments, call.constants,
+            );
+        }
+    }
+
+    /// The bodies of a run whose replay failed. A run that succeeds prints
+    /// them in `replay`, after its compile.
+    fn failed(&self, keys: &[Vec<u8>], pending: &BTreeMap<Vec<u8>, PendingBody>) {
+        if !self.enabled { return; }
+        for key in keys {
+            let body = &pending[key];
+            let call = body.admitted.checked_call();
+            eprintln!(
+                "[specialization] failed depth={} target={:?} key={} args={:?} consts={:?} witnesses={:?}",
+                body.origin.depth, body.target, &blake3::hash(key).to_hex()[..12],
+                call.arguments, call.constants, body.witnesses,
             );
         }
     }
