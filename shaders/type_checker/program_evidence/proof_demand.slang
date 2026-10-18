@@ -1,8 +1,10 @@
 // Exact row demand of the next normalization, counted before it reserves
-// anything. The host reads it with the solver's counter readback that
-// precedes the normalization and grows the proof store in place first
+// anything. The stepped host reads it with the solver's counter readback
+// that precedes the normalization and grows the proof store in place first
 // (dispatch/mod.rs, run_solver_attempt), so the reservations never fail for
-// capacity. One word per proof-store table; the host zeroes it per count.
+// capacity; the host zeroes it per count. In GPU-planned rounds the round
+// planner checks it instead (proof_solver_wave.slang, psw_demand_fits).
+// One word per proof-store table.
 import type_checker.program_evidence.proof_store_abi;
 
 public RWStructuredBuffer<uint> program_evidence_proof_demand;

@@ -12,6 +12,7 @@ import type_checker.program_evidence.abi;
 import type_checker.program_evidence.catalog_io;
 import type_checker.program_evidence.batch_io;
 import type_checker.program_evidence.proof_store_abi;
+import type_checker.program_evidence.proof_demand;
 
 // Solver state, host-initialized every solver attempt.
 public RWStructuredBuffer<uint> program_evidence_wave;
@@ -60,6 +61,7 @@ public static const uint PSW_STOPPED = 1u;  // the batch or the store stopped bu
 public static const uint PSW_DONE = 2u;     // quiescent
 public static const uint PSW_FAULT = 3u;
 public static const uint PSW_OVERFLOW = 4u; // a span needs more chunk steps than recorded
+public static const uint PSW_GROW = 5u;     // the next normalization's rows do not fit
 // Fault details: dispatch/mod.rs maps each to the host's former error.
 public static const uint PSW_FAULT_IDENTITY = 1u;
 public static const uint PSW_FAULT_LAYOUT = 2u;
@@ -133,6 +135,24 @@ bool psw_running()
     return true;
 }
 
+// The stepped host's growth test after a counted Work admission: every
+// table must fit the rows the next normalization reserves (proof_demand).
+// A fitting count is consumed here; otherwise the host grows the store in
+// place, zeroes the count, and this point plans again.
+bool psw_demand_fits()
+{
+    bool fits = true;
+    for (uint table = 0u; table < PPS_TABLES; table++)
+    {
+        uint4 span; uint accepted;
+        pps_descriptor(table, span, accepted);
+        fits = (program_evidence_proof_demand[table] <= span.z - span.y) && fits;
+    }
+    if (fits)
+        for (uint table = 0u; table < PPS_TABLES; table++) program_evidence_proof_demand[table] = 0u;
+    return fits;
+}
+
 // The spans of one point: the host loop's decisions between two readbacks.
 void psw_plan_spans(uint point)
 {
@@ -169,6 +189,14 @@ void psw_plan_spans(uint point)
         if (work_cursor > work) { psw_fault(PSW_FAULT_CURSOR); return; }
         if (work_cursor == work) return;
         if (requirement_cursor > requirements) { psw_fault(PSW_FAULT_CURSOR); return; }
+        if (!psw_demand_fits())
+        {
+            program_evidence_wave[PSW_STOP] = PSW_GROW;
+            program_evidence_wave[PSW_OVERFLOW_POINT] = PSW_POINT_ROUND;
+            program_evidence_wave[PSW_OVERFLOW_ROWS] =
+                max(work - work_cursor, requirements - requirement_cursor);
+            return;
+        }
         program_evidence_wave[PSW_WORK_ACTIVE] = 1u;
         program_evidence_wave[PSW_WORK_FIRST] = work_cursor;
         program_evidence_wave[PSW_WORK_COUNT] = work - work_cursor;
