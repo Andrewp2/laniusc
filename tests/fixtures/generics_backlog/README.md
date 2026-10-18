@@ -54,6 +54,14 @@ Not probes here:
   LNC0006 at the inner call when the program is compiled (P10 group A, owned
   by P4). It blocks the set_char/map_char_u32 allocation-failure fixtures and
   their i32 counterparts.
+- A generic declaration that contains itself by value,
+  `struct Node<T> { value: T, next: Node<T> }`, is accepted while nothing
+  instantiates it (a compile exits normally). It should be rejected with
+  LNC0006 "recursive type has infinite size", as the non-generic cases are
+  since 4528e7b6. The check lives in the native layout walker (01c), which
+  sees only instantiated layouts. Not a probe because the expected result is a
+  rejection rather than exit 42 (docs/compiler-generic-types.md, "Recursive
+  by-value types").
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
