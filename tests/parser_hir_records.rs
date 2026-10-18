@@ -5978,6 +5978,107 @@ fn main() -> i32 {
     );
 }
 
+/// Compact match arms are contiguous per match, in arm order, and every node
+/// inside an arm pattern is pattern syntax whose parent chain reaches that
+/// match. The checker and lowering find a pattern through this chain, since
+/// a match nested in an earlier arm puts the table out of source order.
+#[test]
+fn parser_compact_match_arms_are_contiguous_and_patterns_climb_to_their_match() {
+    let nested = r#"
+enum Inner { Pair(i32, i32), Empty }
+enum Outer { Wrapped(Inner), Other }
+fn pick(value: Outer, flag: bool, n: i32) -> i32 {
+    let first: i32 = match (value) {
+        Outer::Wrapped(Inner::Pair(left, right)) -> match (flag) {
+            true -> left,
+            false -> match (n) { 0 -> right, _ -> left + right },
+        },
+        Wrapped(Empty) -> match (n) { 1 -> 10, _ -> 11 },
+        Other -> 1,
+    };
+    return match (match (flag) { true -> 1, false -> 2 }) {
+        1 -> first,
+        _ -> n,
+    };
+}
+fn main() -> i32 { return 0; }
+"#;
+    let sources = [
+        nested,
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+    ];
+    let pattern_kinds = [
+        HIR_NODE_TYPE,
+        HIR_NODE_UNARY_EXPR,
+        HIR_NODE_NAME_EXPR,
+        HIR_NODE_LITERAL_EXPR,
+        HIR_NODE_PATH_EXPR,
+    ];
+    for (index, source) in sources.iter().enumerate() {
+        let parsed = parse_resident_source(source);
+        assert!(parsed.ll1.accepted, "source {index} should parse");
+        let core = &parsed.hir_canonical_core_words;
+        let count = parsed.hir_canonical_count as usize;
+        let kind = |node: usize| core[node * 4];
+        let parent = |node: usize| core[node * 4 + 1];
+        let span = |node: usize| (core[node * 4 + 2], core[node * 4 + 3]);
+        let owners = &parsed.hir_compact_match_arm_owner;
+        let arms = owners.len();
+        assert!(arms > 0, "source {index} should have match arms");
+
+        let mut finished = std::collections::HashSet::new();
+        let mut row = 0;
+        while row < arms {
+            let owner = owners[row];
+            assert!(
+                finished.insert(owner),
+                "source {index}: match {owner} has a second arm range at row {row}"
+            );
+            assert_eq!(kind(owner as usize), HIR_NODE_MATCH_EXPR);
+            let mut ordinal = 0;
+            while row < arms && owners[row] == owner {
+                assert_eq!(
+                    parsed.hir_compact_match_arm_ordinal[row], ordinal,
+                    "source {index}: arm row {row} of match {owner}"
+                );
+                ordinal += 1;
+                row += 1;
+            }
+        }
+
+        for row in 0..arms {
+            let owner = owners[row];
+            let pattern = parsed.hir_compact_match_arm_pattern[row] as usize;
+            assert_eq!(
+                parent(pattern),
+                owner,
+                "source {index}: the pattern of arm row {row} is a child of its match"
+            );
+            let (start, end) = span(pattern);
+            for node in 0..count {
+                let (node_start, node_end) = span(node);
+                if node_start < start || node_end > end {
+                    continue;
+                }
+                let mut current = node;
+                loop {
+                    assert!(
+                        pattern_kinds.contains(&kind(current)),
+                        "source {index}: node {current} (kind {}) inside the pattern of arm row {row} is not pattern syntax",
+                        kind(current)
+                    );
+                    if parent(current) == owner {
+                        break;
+                    }
+                    current = parent(current) as usize;
+                    assert!(current < count, "source {index}: node {node} climbs out of the HIR");
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn parser_compact_hir_accepts_generic_enum_match_payload_expressions() {
     let source = r#"

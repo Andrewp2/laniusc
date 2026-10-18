@@ -2742,6 +2742,33 @@ fn main() -> bool {
 }
 
 #[test]
+fn x86_executes_a_nested_match_followed_by_another_outer_arm() {
+    // The inner match's arms come between the outer match's arms in source
+    // order; each match's compact arm rows must still be contiguous.
+    let header = "enum Opt<T> { Some(T), None }\nfn both(a: Opt<i32>, b: Opt<i32>) -> i32 {\n";
+    let main = "fn main() -> i32 {\n    let a: Opt<i32> = Some(40);\n    let b: Opt<i32> = Some(2);\n    return both(a, b);\n}\n";
+    for (name, body, expected) in [
+        (
+            "nested_first_arm",
+            "    return match (a) { Some(x) -> match (b) { Some(y) -> x + y, None -> x }, None -> 0 };\n",
+            42,
+        ),
+        (
+            "nested_wildcard",
+            "    return match (a) { Some(x) -> match (x) { _ -> x }, None -> 0 };\n",
+            40,
+        ),
+        (
+            "nested_in_let",
+            "    let r: i32 = match (b) { Some(y) -> match (a) { None -> 2, Some(x) -> x - y }, None -> 1 };\n    return r;\n",
+            38,
+        ),
+    ] {
+        assert_source_exit(name, &format!("{header}{body}}}\n{main}"), expected);
+    }
+}
+
+#[test]
 fn x86_executes_short_circuit_chains_longer_than_the_span_walk() {
     // A left-nested `||` chain past 32 operators. Each operator's span must
     // start at the first operand, or the outer operator's opening rows sort

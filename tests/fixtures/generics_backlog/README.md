@@ -44,8 +44,6 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   rejects it with LNC0017 "operation is not implemented by the x86 backend"
   at 1:59. `let n: usize = N; n as i32` and `(len as usize) == N` work.
   Blocks no module.
-- b08: a match expression as a match arm value. LNC0016 "syntax error" at
-  3:12. A helper function works around it (core::pair::zip). Blocks none.
 - b09: the array repeat expression `[10; 4]`. LNC0016 at 2:30 ("expected `]`
   or `,`, found `;`"). Generic fixed-capacity containers take their backing
   array from the caller instead. Blocks none.
@@ -76,7 +74,8 @@ Not probes here:
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
-P10 found (x1..x5) are the directory probes m00..m05.
+P10 found (x1..x5) are the directory probes m00..m05; b08 (a match expression
+as the value of an arm that other arms follow) is p43.
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with
