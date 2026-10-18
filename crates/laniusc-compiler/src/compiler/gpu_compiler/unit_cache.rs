@@ -927,14 +927,17 @@ mod tests {
 
     #[test]
     fn pending_original_cache_evicts_to_its_budget() {
+        let mut value = unit(0);
+        value.interface.name_bytes = vec![0; 4096];
+        // Room for the unit alone, not for the facts snapshot's interface copy.
         let mut cache = PendingOriginalCache {
-            maximum_bytes: std::mem::size_of::<CompiledUnitCacheKey>() + unit(0).resident_byte_len(),
+            maximum_bytes: std::mem::size_of::<CompiledUnitCacheKey>() + value.resident_byte_len(),
             ..PendingOriginalCache::pending_default()
         };
         let key = |source: &str| CompiledUnitCacheKey::new(
             SourcePackArtifactTarget::X86_64, 0, 0, &[source.into()], &[],
         ).unwrap();
-        cache.insert(key("module a;"), PendingOriginalUnit::from_unit_for_test(unit(0)).retain());
+        cache.insert(key("module a;"), PendingOriginalUnit::from_unit_for_test(value).retain());
         assert_eq!(cache.stats().entries, 0, "the facts' interface copy exceeds the budget");
         assert_eq!(cache.stats().resident_bytes, 0);
         assert_eq!(cache.stats().evictions, 1);
