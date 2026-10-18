@@ -345,6 +345,12 @@ impl GpuTypeChecker {
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
         let status_readback = readback_u32s(device, "rb.type_check.resident.status", 4);
+        let status_prior = typed_storage_u32_rw(
+            device,
+            "type_check.resident.status_prior",
+            4,
+            wgpu::BufferUsages::COPY_DST,
+        );
         let call_inference_state = typed_storage_u32_rw(
             device,
             "type_check.calls.inference_state",
@@ -373,6 +379,7 @@ impl GpuTypeChecker {
             empty_dependency_words,
             status_buf,
             status_readback,
+            status_prior,
             call_inference_state,
             call_inference_readback,
             canonical_counts_readback,
@@ -1619,6 +1626,9 @@ impl GpuTypeChecker {
                         .record_claims(encoder, &pattern_pages)?;
                 }
                 if aggregates_required {
+                    // 03a4b's final invocations skip a mismatch that an error
+                    // already recorded inside the call explains.
+                    bind_groups.calls.status_prior.record(encoder);
                     bind_groups.calls.contextual_result_requests.record(encoder)?;
                     bind_groups.calls.environment_admission.record_context(
                         encoder,
@@ -1965,6 +1975,7 @@ impl GpuTypeChecker {
                 // after inference has stopped producing new facts.
                 self.call_inference_state.write(queue, 0, &[0; 8]);
                 if aggregates_required {
+                    bind_groups.calls.status_prior.record(encoder);
                     bind_groups
                         .calls
                         .contextual_result_requests
@@ -1998,8 +2009,14 @@ impl GpuTypeChecker {
                     .finalize_value_enum_calls
                     .record_as(encoder, VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.name)?;
             }
-            if generic_call_claim_passes_required(parser_feature_flags) || dependency_types_present
-            {
+            let claim_validation =
+                generic_call_claim_passes_required(parser_feature_flags) || dependency_types_present;
+            if claim_validation || arrays_required {
+                // 03a7 and 03c skip a missing binding or a mismatched result
+                // that an error already recorded inside the call explains.
+                bind_groups.calls.status_prior.record(encoder);
+            }
+            if claim_validation {
                 bind_groups
                     .calls
                     .generic_claim_validation

@@ -3412,7 +3412,10 @@ fn assign_mismatch_looks_like_invalid_member_access(
     detail: u32,
 ) -> bool {
     const TY_VOID: u32 = 1;
-    detail != 0 && detail % 256 == TY_VOID && span_is_dotted_member(source, start)
+    detail != 0
+        && super::helpers::count_fit_scalar(detail).is_none()
+        && detail % 256 == TY_VOID
+        && span_is_dotted_member(source, start)
 }
 
 fn span_is_dotted_member(source: &str, start: usize) -> bool {

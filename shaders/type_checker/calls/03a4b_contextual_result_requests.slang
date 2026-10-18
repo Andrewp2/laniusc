@@ -59,6 +59,8 @@ StructuredBuffer<uint> call_inference_result_payload;
 RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> status;
+// The status words before this final invocation.
+StructuredBuffer<uint> status_prior;
 
 static const uint INVALID = 0xffffffffu;
 [ForceInline]
@@ -89,6 +91,17 @@ uint callee_token(uint call)
     token = compact_hir_payload[callee].d;
     if (!valid_token(token)) token = compact_hir_core[callee].token_start;
     return valid_token(token) ? token : INVALID;
+}
+
+// The final invocation's result mismatch, unless an error already recorded
+// inside the call explains it (an argument that does not match its
+// parameter, such as a length that does not fit): that error is the
+// diagnostic.
+void record_result_mismatch(uint call)
+{
+    HirCore core = compact_hir_core[call];
+    if (call_inference_state[0u] == 0u && !language_error_recorded_within(status_prior, core.token_start, core.token_end))
+        record_min_token_error(status, core.token_start, 3u, 0u);
 }
 
 [shader("compute")]
@@ -135,8 +148,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // A raw view has no typed input from which to infer its element. The
         // receiving context owns its complete result, as for an empty array.
         if (tag == 3u && type_instance_kind[expected] == 3u) call_result_instance[call] = expected;
-        else if (call_inference_state[0u] == 0u)
-            record_min_token_error(status, compact_hir_core[call].token_start, 3u, 0u);
+        else record_result_mismatch(call);
         return;
     }
     SourceSlots slots;
@@ -184,8 +196,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Parameter contexts can still change while their enclosing call's
         // argument facts settle. A failed provisional comparison publishes
         // nothing; the final invocation diagnoses against the closed facts.
-        if (call_inference_state[0u] == 0u)
-            record_min_token_error(status, compact_hir_core[call].token_start, 3u, 0u);
+        record_result_mismatch(call);
         return;
     }
     // A row another lane is writing settles in a later round.

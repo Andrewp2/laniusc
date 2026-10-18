@@ -355,6 +355,8 @@ pub struct GpuTypeChecker {
     empty_dependency_words: LaniusBuffer<u32>,
     status_buf: LaniusBuffer<u32>,
     status_readback: LaniusBuffer<u32>,
+    /// The status words as the follow-on call checks find them.
+    status_prior: LaniusBuffer<u32>,
     call_inference_state: LaniusBuffer<u32>,
     call_inference_readback: LaniusBuffer<u32>,
     /// Host-visible `ct_counts` after each canonical interning batch.

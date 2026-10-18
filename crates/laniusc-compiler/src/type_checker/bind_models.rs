@@ -184,6 +184,9 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) inference_readback: crate::gpu::operations::CopyBufferOperation,
     pub(in crate::type_checker) inference_status_readback:
         crate::gpu::operations::CopyBufferOperation,
+    /// Status words for the follow-on checks; recorded before each 03a4b
+    /// invocation and before the final validation passes.
+    pub(in crate::type_checker) status_prior: crate::gpu::operations::CopyBufferOperation,
     pub(in crate::type_checker) infer_array_generics: ComputeOperation,
     pub(in crate::type_checker) validate_array_results: ComputeOperation,
     pub(in crate::type_checker) mark_array_args: ComputeOperation,
