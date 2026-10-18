@@ -352,6 +352,11 @@ result.
   - if a round resolved nothing (a cycle) or the round limit
     `CT_MAX_ROUNDS = 64` is reached, the next round is *final*, and a final
     round turns pending candidates into `CT_UNKNOWN`.
+  - When the round limit (not a cycle) made the round final, a source row
+    that is still pending is deeper than the documented 64 levels. `01_intern`
+    records the limit boundary at its token (LNC0047, detail 2), so the
+    program is rejected there instead of by a later mismatch on the unknown
+    type. Generated rows have no source token and only become unknown.
 - **The host records batches.** It records `CANONICAL_ROUNDS_PER_BATCH = 8`
   rounds, then copies `ct_counts` to a host-visible buffer.
   - It reads one done flag per batch: the pending count and the overflow bits.
