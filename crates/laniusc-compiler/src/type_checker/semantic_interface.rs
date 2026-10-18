@@ -17,6 +17,44 @@ pub(super) use crate::compiler::PREDICATE_U32S as PREDICATE_WORDS;
 pub(super) use crate::compiler::IMPLEMENTATION_U32S as IMPLEMENTATION_WORDS;
 pub(super) use crate::compiler::IMPLEMENTATION_METHOD_BINDING_U32S as IMPLEMENTATION_METHOD_BINDING_WORDS;
 
+/// Type-topology failure flag: word 1 is the HIR root of the rejected type and
+/// word 2 its detail (interface/type_topology/checked_types.slang).
+pub const SEMANTIC_INTERFACE_TYPE_TOPOLOGY_FAILURE: u32 = 0x8000;
+
+/// The GPU interface exporter's status packet when it rejects the unit.
+#[derive(Clone, Copy, Debug)]
+pub struct SemanticInterfaceExportFailure {
+    /// Failure flags (word 0).
+    pub status: u32,
+    /// Minimum reported row; a HIR node for the type-topology flag (word 1).
+    pub row: u32,
+    /// Minimum reported detail (word 2).
+    pub detail: u32,
+    /// Word 3.
+    pub extra: u32,
+}
+
+impl SemanticInterfaceExportFailure {
+    /// The rejected type's HIR root when only the type-topology flag is set,
+    /// so word 1 is not shared with another failure's row domain.
+    pub fn type_topology_root(&self) -> Option<u32> {
+        (self.status == SEMANTIC_INTERFACE_TYPE_TOPOLOGY_FAILURE && self.row != u32::MAX)
+            .then_some(self.row)
+    }
+}
+
+impl std::fmt::Display for SemanticInterfaceExportFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "semantic-interface GPU export failed: status=0x{:08x}, detail={}, name_id={}, name_len={}",
+            self.status, self.row, self.detail, self.extra
+        )
+    }
+}
+
+impl std::error::Error for SemanticInterfaceExportFailure {}
+
 #[derive(Clone, Copy)]
 struct ActiveHirDomain<'a> {
     count: &'a LaniusBuffer<u32>,
@@ -1997,9 +2035,12 @@ impl GpuTypeChecker {
         recorded.metadata_readback.unmap();
         let [byte_len, status, detail, name_id, name_len] = metadata;
         if status != 0 {
-            return Err(anyhow::anyhow!(
-                "semantic-interface GPU export failed: status=0x{status:08x}, detail={detail}, name_id={name_id}, name_len={name_len}"
-            ));
+            return Err(anyhow::Error::new(SemanticInterfaceExportFailure {
+                status,
+                row: detail,
+                detail: name_id,
+                extra: name_len,
+            }));
         }
         let byte_len = byte_len as usize;
         if byte_len > recorded.artifact_capacity {

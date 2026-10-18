@@ -18,6 +18,15 @@ StructuredBuffer<uint> predicate_method_contract_owner_count;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> public_decl_index_by_local;
 StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<uint> compact_type_arg_count;
+StructuredBuffer<HirTypeArg> compact_type_args;
+StructuredBuffer<HirRange> compact_type_arg_ranges;
+StructuredBuffer<uint> semantic_type_ref_tag_by_hir;
+StructuredBuffer<uint> semantic_type_ref_payload_by_hir;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> decl_id_by_name_token;
 RWStructuredBuffer<uint> interface_implementation_flag;
 RWStructuredBuffer<uint> interface_implementation_argument_count;
 RWStructuredBuffer<uint> interface_status;
@@ -27,6 +36,48 @@ void fail(uint row, uint detail)
     atomic_u32_or(interface_status, 0u, 131072u);
     atomic_u32_min(interface_status, 1u, row);
     atomic_u32_min(interface_status, 2u, detail);
+}
+// A HIR type whose checked type is a local nominal with no public declaration.
+// The interface names local nominals by public index (type_topology
+// 12_type_records), so it cannot spell this one.
+bool private_nominal(uint node)
+{
+    if (semantic_type_ref_tag_by_hir[node] != 3u) return false;
+    uint instance = semantic_type_ref_payload_by_hir[node];
+    uint rows; uint stride;
+    type_instance_kind.GetDimensions(rows, stride);
+    if (instance >= rows || type_instance_kind[instance] != 1u) return false;
+    uint declaration = type_instance_decl_token[instance];
+    if (declaration >= gParams.token_capacity) return false;
+    uint source = decl_id_by_name_token[declaration];
+    return source >= gParams.decl_capacity || public_decl_index_by_local[source] == INVALID;
+}
+// Whether the HIR subtree at `root` writes a private nominal type.
+bool names_private_type(uint root, uint active)
+{
+    if (root >= active) return false;
+    uint end = min(compact_hir_links[root].subtree_end, active);
+    bool found = false;
+    for (uint node = root; node < end; node++)
+        found = found || (compact_hir_core[node].kind == 5u && private_nominal(node));
+    return found;
+}
+// Whether the impl head (subject, trait path and trait arguments) names a type
+// the interface cannot export. Such an impl is usable only where the type is
+// visible, so it stays out of the interface; the program catalog admits it
+// from the checked unit's contracts as a private implementation.
+bool head_names_private_type(uint subject, uint bound, uint active)
+{
+    if (names_private_type(subject, active)) return true;
+    if (bound >= active) return false;
+    if (names_private_type(bound, active)) return true;
+    HirRange range = compact_type_arg_ranges[bound];
+    uint total = min(compact_type_arg_count[0u], gParams.hir_capacity);
+    if (range.count > 32u || range.start > total || range.count > total - range.start) return false;
+    bool found = false;
+    for (uint ordinal = 0u; ordinal < range.count; ordinal++)
+        found = found || names_private_type(compact_type_args[range.start + ordinal].value, active);
+    return found;
 }
 [shader("compute")][numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -47,6 +98,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (marked == 0u) return;
         if (predicate_status[owner] != 0u || subject >= active || compact_hir_core[subject].kind != 5u)
         { fail(row, 3u); return; }
+        if (names_private_type(subject, active)) return;
         interface_implementation_flag[row] = 1u;
         return;
     }
@@ -63,6 +115,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         compact_hir_payload[owner].b != bound || compact_hir_payload[owner].c != subject ||
         compact_hir_core[subject].kind != 5u)
     { fail(row, 3u); return; }
+    if (head_names_private_type(subject, bound, active)) return;
     uint reference = predicate_bound_reference[owner];
     uint required_methods = INVALID;
     if (trait_reference_is_dependency(reference))
@@ -81,6 +134,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         { fail(row, 4u); return; }
         required_methods = predicate_method_contract_owner_count[trait_hir];
     }
+    // A private local trait: the interface cannot name it either.
+    else if (reference < gParams.decl_capacity) return;
     else { fail(row, 5u); return; }
     // Inherited impl parameters have their own exported scope. Method rows
     // retain composed counts; required-member bindings retain exact targets.
