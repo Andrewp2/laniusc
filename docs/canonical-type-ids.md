@@ -358,12 +358,30 @@ result.
     program is rejected there instead of by a later mismatch on the unknown
     type. Generated rows have no source token and only become unknown.
 - **The host records batches.** It records `CANONICAL_ROUNDS_PER_BATCH = 8`
-  rounds, then copies `ct_counts` to a host-visible buffer.
-  - It reads one done flag per batch: the pending count and the overflow bits.
-  - It records another batch only while candidates are pending, so the number
-    of rounds is the maximum candidate height (usually under 8, so there is
-    one readback per stage).
-  - Empty indirect rounds dispatch zero workgroups.
+  rounds (`CT_ROUNDS_PER_BATCH`), then copies `ct_counts` to a host-visible
+  buffer. Empty indirect rounds dispatch zero workgroups.
+  - The close of a batch's last round sets the sticky
+    `CT_COUNT_BATCH_PENDING` word while candidates remain. It is not an
+    overflow bit, because consumers read any `CT_COUNT_OVERFLOW` bit as a
+    capacity failure.
+  - **Deferred (the default).** Each stage records one batch and submits it
+    without waiting; the submit keeps host buffer writes recorded after the
+    stage ordered after it. `finish_recorded_check` maps the counters copied
+    by the last stage together with the job's status. If
+    `CT_COUNT_BATCH_PENDING` or a retrying overflow bit is set, the check
+    selects the synchronous recording, and the compiler records the whole job
+    again (`DeferredParserFinish::RetryWithSynchronousCanonical`). A
+    recording that stopped on a rejection (call inference that did not
+    converge) reads the counters copied before its last wait and is recorded
+    again the same way. The check that follows a synchronous recording
+    switches back to deferred.
+  - **Synchronous** (after a deferred retry, and with
+    `LANIUS_TRACE_CANONICAL` or `LANIUS_DEBUG_VALIDATE_CANONICAL`). The host
+    reads one done flag per batch, the pending count and the overflow bits,
+    and records another batch only while candidates are pending. So the
+    number of rounds is the maximum candidate height, and the round limit
+    and the overflow retry below apply.
+  - Candidate heights are usually under 8, so deferred jobs rarely retry.
 
 ### Stages: dependency pages, early, body and late
 
@@ -412,7 +430,7 @@ Each job interns into one table, so an ID stays valid for the whole job.
   records it right after `body_specialization.bindings`, then restarts the
   substitution state (`substitution.body.clear`, `substitution.body.seed`),
   so the body passes after it read the IDs of the specialized rows. It
-  costs those jobs one readback when its rounds fit one batch; other jobs
+  costs those jobs one more batch (a submit when deferred); other jobs
   record nothing new.
 - **Body replay re-interns.** A replay job (`body_specialization_inputs`
   has a type or constant argument) rewrites rows and constants after the
@@ -442,7 +460,7 @@ Each job interns into one table, so an ID stays valid for the whole job.
   That pass is recorded later (inside inference), so registering it after
   the canonical passes keeps its workspace from sharing storage with the
   canonical tables.
-- Each page costs one readback when its rounds fit one batch.
+- Each page costs one batch (a submit when deferred).
 - Call environments (`CT_ENV`) are interned by the substitution passes
   (`shaders/type_checker/substitution/`, `substitution_passes.rs`) once
   per inference round, after the early stage; they are not candidates.
@@ -497,7 +515,9 @@ On a retrying bit (`CANONICAL_RETRY_OVERFLOW_BITS`):
 3. It records the job again.
 
 At scale 64 the tables hold the worst-case bounds, so an overflow there is a
-broken invariant and fails the job.
+broken invariant and fails the job. A deferred job finds its overflow at its
+check and is recorded again synchronously first, so these steps happen in
+that recording.
 
 Debug variables:
 
@@ -506,7 +526,10 @@ Debug variables:
   bound, so a large `n` can fail at scale 64 on a valid job. On generics
   matrix probe p04, `n` = 12 passes after 4 retries and `n` = 14 fails.
 - `LANIUS_TRACE_CANONICAL=1` prints the use per batch. Its `records=` count
-  excludes the 32 preseeded records.
+  excludes the 32 preseeded records. It records every job synchronously.
+- `LANIUS_CANONICAL_SYNCHRONOUS=1` records every job synchronously.
+- `LANIUS_TRACE_CANONICAL_RETRY=1` prints each deferred job that is recorded
+  again synchronously, with the reason.
 
 What stays capacity-sized:
 

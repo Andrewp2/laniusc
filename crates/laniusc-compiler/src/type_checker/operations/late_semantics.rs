@@ -525,9 +525,10 @@ impl SemanticProjectionOperations {
 /// later producers added. The early, body and late stages first re-arm the
 /// candidates that are still empty or unknown. Each stage records round 0, then
 /// batches of frontier rounds (indirect dispatches sized on the GPU); every
-/// batch ends with a copy of the interning counters, and the host records
-/// another batch only while candidates are pending, so the number of rounds
-/// is the maximum candidate height.
+/// batch ends with a copy of the interning counters. A deferred job records
+/// one batch per stage; a synchronous one records another batch only while
+/// candidates are pending, so the number of rounds is the maximum candidate
+/// height (`record_canonical_types`).
 pub(in crate::type_checker) struct CanonicalTypeOperations {
     clear: ComputeOperation,
     rearm: ComputeOperation,

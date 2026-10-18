@@ -2,6 +2,8 @@
 // becomes the next round's input and its indirect dispatch arguments are
 // written. A round that resolved nothing (a cycle) or the round limit makes
 // the next round final, which turns every pending candidate into UNKNOWN.
+// The close of a batch's last round latches CT_COUNT_BATCH_PENDING while
+// candidates remain.
 import type_checker.canonical.canonical_api;
 
 RWStructuredBuffer<uint> canonical_round_args;
@@ -18,6 +20,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool limit = produced != 0u && round + 2u >= CT_MAX_ROUNDS;
     if (stalled || limit) ct_counts[CT_COUNT_FINAL] = 1u;
     if (limit && !stalled) ct_counts[CT_COUNT_OVERFLOW] |= CT_OVERFLOW_ROUNDS;
+    // The last round of a batch left candidates pending (or final).
+    if (produced != 0u && (round + 1u) % CT_ROUNDS_PER_BATCH == 0u) ct_counts[CT_COUNT_BATCH_PENDING] = 1u;
     ct_counts[CT_COUNT_PENDING] = produced;
     // The next round appends to the list this round read.
     ct_counts[CT_COUNT_FRONTIER + (round & 1u)] = 0u;

@@ -53,6 +53,10 @@ enum DeferredParserFinish<T> {
     Complete(T),
     RetryWithTreeCapacity(u32),
     RetryAfterLexerBoundary,
+    /// The type check's canonical stages, recorded without readbacks, need
+    /// more rounds or capacity; the type checker records the next attempt
+    /// with them.
+    RetryWithSynchronousCanonical,
 }
 
 fn parser_shape_key_for_source(path: &Path) -> blake3::Hash {
@@ -406,8 +410,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         let (type_check, typecheck_hir) = recorded.recorded;
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
-        self.type_checker
-            .finish_recorded_check(device, &type_check)
+        let checked = self.type_checker.finish_recorded_check(device, &type_check);
+        if matches!(&checked, Err(err) if err.requests_canonical_rerecord()) {
+            return Ok(DeferredParserFinish::RetryWithSynchronousCanonical);
+        }
+        checked
             .map_err(|err| {
                 type_check_error_to_compile_error_for_source(
                     device,
@@ -852,8 +859,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         finish_timer.stamp("parser_status");
         let recorded = deferred.recorded;
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
-        self.type_checker
-            .finish_recorded_check(device, &recorded.type_check)
+        let checked = self
+            .type_checker
+            .finish_recorded_check(device, &recorded.type_check);
+        if matches!(&checked, Err(err) if err.requests_canonical_rerecord()) {
+            return Ok(DeferredParserFinish::RetryWithSynchronousCanonical);
+        }
+        checked
             .map_err(|err| {
                 type_check_error_to_compile_error_for_source_pack(
                     device,
@@ -1474,6 +1486,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 DeferredParserFinish::RetryAfterLexerBoundary => {
                     require_lexer_boundary = true;
                 }
+                DeferredParserFinish::RetryWithSynchronousCanonical => {}
             }
         }
     }
@@ -2073,6 +2086,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     DeferredParserFinish::RetryAfterLexerBoundary => {
                         require_lexer_boundary = true;
                     }
+                    DeferredParserFinish::RetryWithSynchronousCanonical => {}
                 }
                 continue;
             }
@@ -2130,6 +2144,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 DeferredParserFinish::RetryAfterLexerBoundary => {
                     unreachable!("source-pack path does not yet record speculative lexer metadata")
                 }
+                DeferredParserFinish::RetryWithSynchronousCanonical => {}
             }
         }
     }
