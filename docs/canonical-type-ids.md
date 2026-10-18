@@ -92,6 +92,14 @@ memo table keyed by `(env, t)`:
 - **intern** (bottom-up, by height): build the substituted record from the
   children's results and intern it as above.
 
+The memo (`ct_subst_memo`) is an open-addressing table with at most 64
+probes per key. A lane claims a slot with a tag of its key, and a lane that
+meets its own tag leaves the entry to the claimer, so the lanes that
+substitute one `(env, t)` at once (every call of one instantiation) share
+one slot. An untagged claim gave each racing lane a slot of its own; a hot
+instantiation then filled 64 consecutive slots and overflowed the memo
+(`CT_OVERFLOW_SUBST_MEMO`) at every capacity scale.
+
 Field types of a nominal application are `subst(C, field_decl_type)`.
 Monomorphization closure (today's `03e1` expansion) is the fixpoint
 "request every field of every new closed nominal ID" until no new IDs
