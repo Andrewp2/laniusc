@@ -871,7 +871,8 @@ impl GpuTypeChecker {
             type_topology.implementation_argument_capacity,
             type_topology.implementation_method_binding_capacity,
             name_byte_capacity,
-        )?;
+        )
+        .map(retained_artifact_capacity)?;
         if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
             eprintln!(
                 "[gpu_compile_host_timer] semantic_interface.capacity: tokens={token_capacity} modules={module_capacity} module_segments={module_segment_capacity} declarations={declaration_capacity} types={} edges={} members={} names={} artifact_bytes={artifact_capacity}",
@@ -2081,6 +2082,19 @@ impl GpuTypeChecker {
     }
 }
 
+/// The smallest step a retained artifact allocation grows by.
+const ARTIFACT_CAPACITY_GRANULE: usize = 64 << 10;
+
+/// Rounds the artifact's byte capacity up to a step of at least 64 KiB and
+/// at most an eighth of the request. The table capacities follow token and
+/// HIR counts, so two jobs in the same source bucket can differ by a few
+/// rows. Without the step, each such job would allocate new artifact words
+/// and a new readback buffer and bind group.
+fn retained_artifact_capacity(required: usize) -> usize {
+    let granule = (required.max(1).next_power_of_two() / 16).max(ARTIFACT_CAPACITY_GRANULE);
+    required.max(1).next_multiple_of(granule)
+}
+
 fn semantic_interface_artifact_capacity(
     module_capacity: u32,
     module_segment_capacity: u32,
@@ -2133,4 +2147,28 @@ fn initialized_u32_buffer(
     extra_usage: wgpu::BufferUsages,
 ) -> LaniusBuffer<u32> {
     cache.initialized_u32(device, queue, label, words, extra_usage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ARTIFACT_CAPACITY_GRANULE, retained_artifact_capacity};
+
+    #[test]
+    fn artifact_capacity_covers_its_request_in_bounded_steps() {
+        // Small interfaces share one 64 KiB allocation.
+        for required in [1, 40_000, 40_100] {
+            assert_eq!(
+                retained_artifact_capacity(required),
+                ARTIFACT_CAPACITY_GRANULE
+            );
+        }
+        // Larger ones step by a sixteenth of the next power of two.
+        let mib = 1usize << 20;
+        assert_eq!(retained_artifact_capacity(mib + 1), mib + (128 << 10));
+        for required in [1, 4095, 65_537, mib - 1, mib, 3 * mib + 7, 40 * mib + 3] {
+            let capacity = retained_artifact_capacity(required);
+            assert!(capacity >= required);
+            assert!(capacity - required < (required / 8).max(ARTIFACT_CAPACITY_GRANULE));
+        }
+    }
 }
