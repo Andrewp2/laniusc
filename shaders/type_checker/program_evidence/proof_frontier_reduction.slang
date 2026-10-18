@@ -142,6 +142,6 @@ public EvidenceStatus pps_publish_root(uint link)
         return pev_invalid(70u, root.x, work);
     if (!pev_output_evidence(root.x, uint4(high.w, obligation.y, obligation.z, completion.z),
         uint4(key.y, obligation.x, root.x, 0u))) return pev_invalid(1u, root.x, 5u);
-    pev_obligation_status(root.x, high.w, 0u, root.x, completion.z, PEV_INVALID, 0u, 0u);
+    pev_obligation_proven(root.x, high.w, completion.z, proof.x, proof.w);
     return pev_ok();
 }
