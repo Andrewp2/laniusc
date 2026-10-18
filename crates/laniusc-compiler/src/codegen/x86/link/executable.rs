@@ -23,6 +23,21 @@ use crate::{
 
 const RELOCATION_RECORD_BYTES_PER_COLUMN: usize = 16;
 const RELOCATION_BATCH_BYTES_PER_COLUMN: usize = 4 * 1024 * 1024;
+/// Page resources grow in these steps, not to each job's exact size, so a
+/// daemon job whose page is a little larger than the last keeps the retained
+/// page graph, its buffers and its bind groups.
+const PAGE_BYTE_CAPACITY_GRANULE: usize = 64 << 10;
+const PAGE_RELOCATION_CAPACITY_GRANULE: usize = 1024;
+
+/// `required` rounded up to `granule`, but never past `limit` unless
+/// `required` itself is.
+fn retained_page_capacity(required: usize, granule: usize, limit: usize) -> usize {
+    required
+        .max(1)
+        .next_multiple_of(granule)
+        .min(limit & !3usize)
+        .max(required)
+}
 
 pub(crate) struct X86ExecutablePageGraph {
     output_capacity: usize,
@@ -335,13 +350,20 @@ impl GpuX86Linker {
                 .read_rodata_range(page.rodata_input.clone())
                 .map_err(anyhow::Error::msg)?;
             let sources_read = started.elapsed();
-            let text_input =
-                self.reusable_input_bytes(device, queue, "codegen.x86.link.page.text", &text_bytes);
-            let rodata_input = self.reusable_input_bytes(
+            let input_limit = device.limits().max_storage_buffer_binding_size as usize;
+            let text_input = self.reusable_input_bytes_with_capacity(
+                device,
+                queue,
+                "codegen.x86.link.page.text",
+                &text_bytes,
+                retained_page_capacity(text_bytes.len(), PAGE_BYTE_CAPACITY_GRANULE, input_limit),
+            );
+            let rodata_input = self.reusable_input_bytes_with_capacity(
                 device,
                 queue,
                 "codegen.x86.link.page.rodata",
                 &rodata_bytes,
+                retained_page_capacity(rodata_bytes.len(), PAGE_BYTE_CAPACITY_GRANULE, input_limit),
             );
             let inputs_uploaded = started.elapsed();
             let elf_params = self.reusable_uniform_u32(
@@ -365,10 +387,13 @@ impl GpuX86Linker {
                     page.output_len,
                 ],
             );
-            let max_relocations_per_batch = max_relocation_batch_records(
-                device.limits().max_storage_buffer_binding_size as usize,
-            )?
-            .min(page.relocation_indices.len().max(1));
+            let binding_limit = device.limits().max_storage_buffer_binding_size as usize;
+            let max_relocations_per_batch =
+                max_relocation_batch_records(binding_limit)?.min(retained_page_capacity(
+                    page.relocation_indices.len(),
+                    PAGE_RELOCATION_CAPACITY_GRANULE,
+                    usize::MAX,
+                ));
             let relocation_a = self.reusable_storage_u32(
                 device,
                 "codegen.x86.link.page.relocation_a",
@@ -427,9 +452,21 @@ impl GpuX86Linker {
                 *graph_guard = Some(X86ExecutablePageGraph::new(
                     self,
                     device,
-                    page_capacity,
-                    text_bytes.len(),
-                    rodata_bytes.len(),
+                    retained_page_capacity(
+                        page_capacity,
+                        PAGE_BYTE_CAPACITY_GRANULE,
+                        binding_limit,
+                    ),
+                    retained_page_capacity(
+                        text_bytes.len(),
+                        PAGE_BYTE_CAPACITY_GRANULE,
+                        binding_limit,
+                    ),
+                    retained_page_capacity(
+                        rodata_bytes.len(),
+                        PAGE_BYTE_CAPACITY_GRANULE,
+                        binding_limit,
+                    ),
                     max_relocations_per_batch,
                     relocation_batch_count,
                 )?);

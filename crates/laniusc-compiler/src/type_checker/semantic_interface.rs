@@ -491,7 +491,14 @@ impl GpuTypeChecker {
                 anyhow::anyhow!("semantic-interface name-reference capacity overflows u32")
             })?;
         let declaration_capacity = decl_capacity;
-        let name_byte_capacity = source_len
+        // Size the name bytes from the source allocation, which the lexer
+        // keeps in 4 KiB buckets, not from this job's length. A job whose
+        // source is a few bytes longer then reuses the retained name and
+        // artifact buffers and their bind groups.
+        let source_byte_capacity = u32::try_from(source_bytes.size())
+            .unwrap_or(u32::MAX)
+            .max(source_len);
+        let name_byte_capacity = source_byte_capacity
             .checked_mul(2)
             .ok_or_else(|| anyhow::anyhow!("semantic-interface name-byte capacity overflows u32"))?
             .checked_add(u32::try_from(LANGUAGE_SYMBOL_BYTES.len()).unwrap_or(u32::MAX))
