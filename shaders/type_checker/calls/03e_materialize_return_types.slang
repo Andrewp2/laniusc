@@ -8,7 +8,7 @@ import hir_records;
 import status;
 import dependency_interface;
 import semantic_interface_layout;
-import type_checker.checked_pattern_use;
+import hir_match_patterns;
 import type_checker.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_call_environment;
@@ -109,8 +109,8 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
         if (path >= min(path_count_out[0u], gParams.n_hir_nodes) ||
             path_owner_hir[path] != call || resolved_dependency_value_metadata[path * 4u] != 9u ||
             module_value_path_call_head[token] != 0u ||
-            checked_token_in_match_pattern(token, hir_count(), compact_hir_core,
-                compact_match_arm_count, compact_match_arms)) return CT_NONE;
+            hir_node_in_match_pattern(call, hir_count(), compact_hir_core,
+                compact_hir_payload, compact_match_arm_count, compact_match_arms)) return CT_NONE;
     }
     if (record)
     {

@@ -439,6 +439,8 @@ pub struct ResidentParseResult {
     pub hir_canonical_count: u32,
     pub hir_canonical_dense_to_raw: Vec<u32>,
     pub hir_canonical_raw_to_dense: Vec<u32>,
+    /// Dense HirCore rows as words: kind, parent, token start, token end.
+    pub hir_canonical_core_words: Vec<u32>,
     pub hir_param_range_start: Vec<u32>,
     pub hir_param_range_count: Vec<u32>,
     pub hir_type_arg_range_start: Vec<u32>,

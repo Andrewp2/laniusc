@@ -110,7 +110,8 @@ uint classify(uint prod)
         return HIR_PARAM;
     if (prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF ||
         prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF ||
-        prod == PROD_TYPE_ARRAY_LEN_NAME || prod == PROD_CAST_TYPE_NAME)
+        prod == PROD_TYPE_ARRAY_LEN_NAME || prod == PROD_CAST_TYPE_NAME ||
+        prod == PROD_TYPE_NEVER)
         return HIR_TYPE;
     if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK ||
         prod == PROD_BLOCK || prod == PROD_IF_BLOCK)

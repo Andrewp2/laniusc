@@ -30,8 +30,6 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   rejects it with LNC0017 "operation is not implemented by the x86 backend"
   at 1:59. `let n: usize = N; n as i32` and `(len as usize) == N` work.
   Blocks no module.
-- b08: a match expression as a match arm value. LNC0016 "syntax error" at
-  3:12. A helper function works around it (core::pair::zip). Blocks none.
 - b09: the array repeat expression `[10; 4]`. LNC0016 at 2:30 ("expected `]`
   or `,`, found `;`"). Generic fixed-capacity containers take their backing
   array from the caller instead. Blocks none.
@@ -61,6 +59,13 @@ Not probes here:
   LNC0006 at the inner call when the program is compiled (P10 group A, owned
   by P4). It blocks the set_char/map_char_u32 allocation-failure fixtures and
   their i32 counterparts.
+- A local type that shadows an imported variant's owner, `import
+  core::choices; enum Choice<T> { Local(T) }` then `Choice::Imported(42)` or
+  `Choice<i32>::Imported(42)`, is rejected with LNC0027 "call resolution
+  failed" instead of the LNC0005 or LNC0042 that
+  qualified_enum_variants_bind_qualifier_scope_before_members
+  (tests/compiler_generic_types_execution.rs) expects. Present on 656fd44e;
+  the test's accepted forms run and return 42.
 
 Passed and moved to the matrix: b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
@@ -68,7 +73,8 @@ P10 found (x1..x5) are the directory probes m00..m05. b03 (a generic trait's
 method through `S: Get<T>`, on `Slot<i32>` and `Slot<Rec>`) is p43; the
 static member `T::same(a, b)` through `T: Same<T>` is p44; a self method
 through `T: Conv<i32>` is p45; a const-generic impl's method through
-`S: Size` on `Buf<i32, 3>` is p46.
+`S: Size` on `Buf<i32, 3>` is p46. b08 (a match expression as the value of
+an arm that other arms follow) is p48.
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with

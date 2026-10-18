@@ -56,6 +56,9 @@ groupshared uint group_feature_flags[256];
 
 #include "token_relations.slang"
 
+static const uint TK_NOT = 19u;
+static const uint TK_RETURN_NEVER = 197u;
+
 bool semantic_token_ends_primary(uint kind)
 {
     return kind == TK_IDENT ||
@@ -521,7 +524,13 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
         return semantic_assign_kind_for(parser_i, count);
     if (raw_kind == TK_ARROW)
         return semantic_arrow_kind_for(parser_i, count);
-    bool sign = raw_kind == TK_PLUS || raw_kind == TK_MINUS;
+    // A `!` right after a return arrow is the never type, not logical not.
+    // The arrow before a match arm's `!flag` is a match arrow, so arm bodies
+    // keep their unary operator.
+    if (raw_kind == TK_NOT && raw_kind_at(parser_i - 1u, count) == TK_ARROW &&
+        semantic_arrow_kind_for(parser_i - 1u, count) == TK_RETURN_ARROW)
+        return TK_RETURN_NEVER;
+    bool sign =raw_kind == TK_PLUS || raw_kind == TK_MINUS;
     if (raw_kind != TK_LPAREN && raw_kind != TK_RPAREN && raw_kind != TK_COMMA && !sign &&
         raw_kind != TK_AMPERSAND)
         return raw_kind;
