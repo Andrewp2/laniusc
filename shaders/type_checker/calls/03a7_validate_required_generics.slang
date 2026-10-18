@@ -252,7 +252,8 @@ void validate_required_generic(uint requirement_i)
                 constant_slot, kind, value))
         {
             call_return_type[callee_i] = TY_UNKNOWN;
-            record_error(callee_i, ERR_MISSING_CONSTANT_BINDING, constant_slot);
+            if (!explicit_application_operand_diagnosed(callee_i))
+                record_error(callee_i, ERR_MISSING_CONSTANT_BINDING, constant_slot);
         }
         return;
     }
@@ -262,7 +263,8 @@ void validate_required_generic(uint requirement_i)
         return;
 
     call_return_type[callee_i] = TY_UNKNOWN;
-    if (slot_status == REQUIRED_SLOT_TOUCHED_UNKNOWN)
+    if (slot_status == REQUIRED_SLOT_TOUCHED_UNKNOWN ||
+        explicit_application_operand_diagnosed(callee_i))
         return;
 
     record_error(

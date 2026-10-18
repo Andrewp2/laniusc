@@ -304,9 +304,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         { call_explicit_application_status[token] = 4u; return; }
         if (constant)
         {
-            if (!bind_scoped_explicit_constant_operand(KernelTypeRefs(), KernelBodyNames(),
-                arguments.start + ordinal, type_const_param_scalar_by_token[parameter.name_token]))
-            { call_explicit_application_status[token] = 3u; return; }
+            uint scalar = type_const_param_scalar_by_token[parameter.name_token];
+            uint reason = bind_scoped_explicit_constant_operand(KernelTypeRefs(), KernelBodyNames(),
+                arguments.start + ordinal, scalar);
+            if (reason != EXPLICIT_OPERAND_BOUND)
+            {
+                call_explicit_application_status[token] = explicit_operand_failure_status(reason,
+                    ordinal, scalar);
+                return;
+            }
             constant_seen |= 1u << slot;
         }
         else seen |= 1u << slot;

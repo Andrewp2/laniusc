@@ -53,9 +53,15 @@ public void bind_dependency_explicit_application<TypeRefs : IExplicitOperandType
         { call_explicit_application_status[token] = 4u; return; }
         if (constant)
         {
-            if (!bind_explicit_constant_operand(type_refs, arguments.start + ordinal,
-                dependency_const_member_scalar(row)))
-            { call_explicit_application_status[token] = 3u; return; }
+            uint scalar = dependency_const_member_scalar(row);
+            uint reason = bind_scoped_explicit_constant_operand(type_refs, ModuleScopeOperandNames(),
+                arguments.start + ordinal, scalar);
+            if (reason != EXPLICIT_OPERAND_BOUND)
+            {
+                call_explicit_application_status[token] = explicit_operand_failure_status(reason,
+                    ordinal, scalar);
+                return;
+            }
             constant_seen |= 1u << slot;
         }
         else seen |= 1u << slot;

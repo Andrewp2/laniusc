@@ -12,6 +12,7 @@ import fixed.compact_method;
 import gpu_index;
 import status;
 import type_checker.checked_array_counts;
+import type_checker.array_extent_literal;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 struct TokenIn { uint kind; uint start; uint len; };
@@ -44,6 +45,7 @@ static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint ERR_INVALID_ARRAY_LENGTH = 22u;
+static const uint ERR_INTEGER_LITERAL_RANGE = 24u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -117,8 +119,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         !checked_source_array_length_valid(type_instance_len_kind[token],
             type_instance_len_payload[token], gParams.n_tokens))
     {
+        // An integer literal extent outside u32 is a range error at the
+        // literal (array_extent_literal.slang), not an invalid length type.
+        uint literal = array_extent_range_literal(node, active_hir_count(), compact_hir_core,
+            compact_hir_payload);
         uint anchor = compact_hir_payload[node].c;
-        record_min_token_error(status, valid_token(anchor) ? anchor : token, ERR_INVALID_ARRAY_LENGTH, 0u);
+        if (valid_token(literal))
+            record_min_token_error(status, literal, ERR_INTEGER_LITERAL_RANGE, SCALAR_U32);
+        else
+            record_min_token_error(status, valid_token(anchor) ? anchor : token, ERR_INVALID_ARRAY_LENGTH, 0u);
         return;
     }
 
