@@ -128,6 +128,21 @@ bool is_constant_operand_root(uint prod)
         prod == PROD_GENERIC_ARGUMENT_FLOAT;
 }
 
+// `+N` forwards to its magnitude and keeps no canonical row of its own, so
+// the magnitude literal is that argument's row. `-N` keeps its unary row.
+uint argument_row(uint root)
+{
+    return valid_node(root) && node_kind[root] == PROD_GENERIC_ARGUMENT_POSITIVE
+        ? first_child_node(root) : root;
+}
+
+bool is_positive_magnitude(uint node)
+{
+    uint root = parent_node(node);
+    return valid_node(root) && node_kind[root] == PROD_GENERIC_ARGUMENT_POSITIVE &&
+        first_child_node(root) == node;
+}
+
 uint arg_from_container(uint container)
 {
     if (!valid_node(container) || !is_type_arg_container(node_kind[container]))
@@ -137,7 +152,7 @@ uint arg_from_container(uint container)
         node_kind[arg] == PROD_GENERIC_ARGUMENT_CONSTANT))
         arg = first_child_node(arg);
     return valid_node(arg) && (hir_kind[arg] == HIR_TYPE ||
-        is_constant_operand_root(node_kind[arg])) ? arg : INVALID;
+        is_constant_operand_root(node_kind[arg])) ? argument_row(arg) : INVALID;
 }
 
 uint previous_arg_for_after_comma(uint container)
@@ -229,7 +244,7 @@ uint first_arg_for_type_owner(uint owner)
         node_kind[first] == PROD_GENERIC_ARGUMENT_CONSTANT))
         first = first_child_node(first);
     return valid_node(first) && (hir_kind[first] == HIR_TYPE ||
-        is_constant_operand_root(node_kind[first])) ? first : INVALID;
+        is_constant_operand_root(node_kind[first])) ? argument_row(first) : INVALID;
 }
 
 [shader("compute")]
@@ -247,16 +262,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_type_arg_rank_a[node] = 0u;
     hir_type_arg_previous[node] = INVALID;
 
-    if (!valid_node(node) || (hir_kind[node] != HIR_TYPE &&
-        !is_constant_operand_root(node_kind[node])))
+    if (!valid_node(node) || argument_row(node) != node)
         return;
+    // A positive magnitude takes its wrapper's place in the argument list.
+    bool positive = is_positive_magnitude(node);
+    if (hir_kind[node] != HIR_TYPE && !is_constant_operand_root(node_kind[node]) && !positive)
+        return;
+    uint root = positive ? parent_node(node) : node;
 
-    uint container = parent_node(node);
+    uint container = parent_node(root);
     if (valid_node(container) && (node_kind[container] == PROD_GENERIC_ARGUMENT_TYPE ||
         node_kind[container] == PROD_GENERIC_ARGUMENT_CONSTANT))
         container = parent_node(container);
     uint prod = valid_node(container) ? node_kind[container] : INVALID;
-    uint path_owner = owner_seed_for_path_arg(node, container);
+    uint path_owner = owner_seed_for_path_arg(root, container);
     uint owner = valid_node(path_owner) ? path_owner
         : owner_seed_for_arg_container(container);
     if (valid_node(owner))

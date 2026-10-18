@@ -40,7 +40,7 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     uint seed = hir_type_arg_owner[raw];
     uint owner = seed < gCanonical.raw_capacity ? hir_type_arg_application_owner[seed] : INVALID;
     uint head = mapped(seed);
-    // A type, a literal, or a signed literal (`-5`, `+0.0`), as in mark.slang.
+    // A type, a literal, or a negated literal (`-5`, `-0.0`), as in mark.slang.
     if ((hir_kind[raw] != 5u && hir_kind[raw] != 23u && hir_kind[raw] != 17u) ||
         owner >= gCanonical.raw_capacity || owner == raw ||
         head >= gCanonical.canonical_capacity || hir_type_arg_rank[raw] >= family_flag[head]) return;

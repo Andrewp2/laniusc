@@ -23,7 +23,8 @@ import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_constants;
 __exported import type_checker.substitution.ct_spare;
 
-// Memo slots: x = env, y = term, z = result (0 until written), w = claim.
+// Memo slots: x = env, y = term, z = result (0 until written), w = the
+// claimer's key tag (0 while free).
 // Power-of-two length; cleared to zero once per job.
 public globallycoherent RWStructuredBuffer<uint4> ct_subst_memo;
 // Substitution and realization counters; see CT_SUBST_COUNT_*.
@@ -64,10 +65,12 @@ uint memo_capacity()
     return count;
 }
 
-uint memo_start(uint env, uint term)
+// The key's hash: the start slot (x) and its claim tag (y, never 0).
+uint2 memo_key(uint env, uint term)
 {
     uint2 hash = ct_hash_word(ct_hash_word(CT_HASH_SEED, env), term);
-    return (hash.x ^ (hash.y * 0x27d4eb2du)) & (memo_capacity() - 1u);
+    return uint2((hash.x ^ (hash.y * 0x27d4eb2du)) & (memo_capacity() - 1u),
+        ((hash.y ^ (hash.x * 0x9e3779b1u)) | 1u));
 }
 
 // The memoized result of (env, term), or CT_PENDING. Acquire: the result's
@@ -76,12 +79,13 @@ public uint ct_subst_memo_find(uint env, uint term)
 {
     uint capacity = memo_capacity();
     if (capacity == 0u) return CT_PENDING;
-    uint slot = memo_start(env, term);
+    uint2 key = memo_key(env, term);
+    uint slot = key.x;
     for (uint probe = 0u; probe < CT_SUBST_PROBE_LIMIT; probe++)
     {
         uint4 entry = ct_subst_memo[slot];
         if (entry.w == 0u) return CT_PENDING;
-        if (entry.z != 0u && entry.x == env && entry.y == term)
+        if (entry.w == key.y && entry.z != 0u && entry.x == env && entry.y == term)
         {
             DeviceMemoryBarrier();
             return entry.z;
@@ -91,17 +95,24 @@ public uint ct_subst_memo_find(uint env, uint term)
     return CT_PENDING;
 }
 
-// Record (env, term) -> result. An entry is claimed, its key written, then
-// (release) its result; readers ignore an entry whose result is still 0.
+// Record (env, term) -> result. A slot is claimed with the key's tag, its key
+// written, then (release) its result; readers ignore an entry whose result is
+// still 0. Many lanes substitute one (env, term) at once (every call of one
+// instantiation), and a key has one result (interning gives it one ID): a
+// lane that meets its own tag leaves the entry to the lane that claimed it,
+// so a key takes one slot however many lanes race on it. Only the claimer
+// writes a slot. A tag shared by another key whose entry is still being
+// written costs this key its entry, and a later lookup builds it again.
 public bool ct_subst_memo_insert(uint env, uint term, uint result)
 {
     uint capacity = memo_capacity();
     if (capacity == 0u) return false;
-    uint slot = memo_start(env, term);
+    uint2 key = memo_key(env, term);
+    uint slot = key.x;
     for (uint probe = 0u; probe < CT_SUBST_PROBE_LIMIT; probe++)
     {
         uint claim;
-        InterlockedCompareExchange(ct_subst_memo[slot].w, 0u, 1u, claim);
+        InterlockedCompareExchange(ct_subst_memo[slot].w, 0u, key.y, claim);
         if (claim == 0u)
         {
             ct_subst_memo[slot].x = env;
@@ -110,8 +121,11 @@ public bool ct_subst_memo_insert(uint env, uint term, uint result)
             ct_subst_memo[slot].z = result;
             return true;
         }
-        uint4 entry = ct_subst_memo[slot];
-        if (entry.z != 0u && entry.x == env && entry.y == term) return true;
+        if (claim == key.y)
+        {
+            uint4 entry = ct_subst_memo[slot];
+            if (entry.z == 0u || (entry.x == env && entry.y == term)) return true;
+        }
         slot = (slot + 1u) & (capacity - 1u);
     }
     ct_subst_flag(CT_SUBST_OVERFLOW_MEMO);
