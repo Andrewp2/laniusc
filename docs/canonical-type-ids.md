@@ -756,7 +756,9 @@ uint ct_match<S : ICtSlots>(S slots, uint pattern0, uint actual0,
 - **No stack, no lane array.** A shape pass checks heads and closed children
   and collects the slot masks. Then one pass per bound slot folds that
   slot's occurrences. Each pass walks the pattern by re-descending from the
-  root along a packed child path (5 bits per level, depth 24). The child
+  root along a packed child path: 5 bits per level in three uint4
+  registers, deep enough for any interned type (height at most 64,
+  `CT_MAX_ROUNDS`), so a match never fails for depth alone. The child
   selection is a helper that returns the next open child: slangc 2026.2
   miscompiles a loop that carries a sentinel out of a `break`.
 - **Deviations from the scoped engines.** A cast in a pattern's array length
