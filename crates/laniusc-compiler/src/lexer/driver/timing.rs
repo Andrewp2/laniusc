@@ -24,6 +24,7 @@ pub(crate) fn print_timer_trace(
         crate::gpu::timer::gpu_clock_calibration().filter(|cal| stamps[0].ticks >= cal.ticks);
     let tick_ms = |ticks: u64| ticks as f64 * period_ns as f64 / 1_000_000.0;
     let mut last = stamps[0].ticks;
+    let mut last_label = stamps[0].label.as_str();
     let mut total = 0.0f64;
     for sample in stamps.iter().skip(1) {
         let label = &sample.label;
@@ -34,6 +35,7 @@ pub(crate) fn print_timer_trace(
                 // A stamp that never executed: nothing to place.
                 total += dt_ms;
                 last = value;
+                last_label = label.as_str();
                 continue;
             }
             Some(cal) => (cal.host, tick_ms(last - cal.ticks)),
@@ -47,7 +49,13 @@ pub(crate) fn print_timer_trace(
             } else {
                 "gpu_compile_timer"
             };
-            eprintln!("[{timer_kind}] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
+            // A gap runs from this timer's previous stamp, which may sit before
+            // other lanes' submissions (lowering records under its own timer).
+            if submission_gap {
+                eprintln!("[{timer_kind}] {label}: {dt_ms:.3}ms (total {total:.3}ms) since {last_label}");
+            } else {
+                eprintln!("[{timer_kind}] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
+            }
         }
         if submission_gap {
             crate::gpu::trace::record_gpu_submission_gap(
@@ -72,6 +80,7 @@ pub(crate) fn print_timer_trace(
             );
         }
         last = value;
+        last_label = label.as_str();
     }
 }
 
