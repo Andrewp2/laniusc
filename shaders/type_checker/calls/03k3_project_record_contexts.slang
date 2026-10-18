@@ -357,8 +357,11 @@ void infer_record_field_constraints(uint node, uint declaration)
         // them until the next dispatch; unknown fields can settle in a later
         // round. Constants merge with the literal's prior claims.
         uint3 words = ct_words(environment);
-        uint outcome = ct_publish_context<CtNoClaims>(node, token, environment, words.y, words.z,
-            count_mask, 0u, interned, request);
+        uint prior_types = call_context_arg_mask[node];
+        uint prior_constants = call_context_constant_mask[node];
+        bool changed;
+        uint outcome = ct_publish_context_changes<CtNoClaims>(node, token, environment, words.y, words.z,
+            count_mask, 0u, interned, request, changed);
         if (outcome == CT_PUBLISH_INTERN) continue;
         if (outcome == CT_PUBLISH_BUSY) return;
         if (outcome != CT_PUBLISHED)
@@ -370,6 +373,13 @@ void infer_record_field_constraints(uint node, uint declaration)
         call_context_constant_mask[node] = words.z;
         call_context_owner_by_token[token] = node;
         struct_lit_context_decl_token[node] = imported ? INVALID : declaration;
+        // The context reaches the literal's call environment only through
+        // the next round's claims, which materialize it. A changed context
+        // is therefore this round's progress; without it, a literal whose
+        // field types settle last (an outer generic literal over an inferred
+        // inner one) would end the rounds unmaterialized.
+        if (changed || prior_types != words.y || prior_constants != words.z)
+        { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
         return;
     }
 }
