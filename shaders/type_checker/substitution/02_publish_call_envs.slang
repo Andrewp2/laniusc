@@ -48,16 +48,34 @@ bool valid_token(uint token) { return token < gParams.n_tokens; }
 // The low `count` bits.
 uint low_bits(uint count) { return count == 0u ? 0u : 0xffffffffu >> (32u - min(count, 32u)); }
 
+// The type and constant slots the call's result context binds
+// (contextual_call_environment.slang).
+uint2 context_masks(uint token)
+{
+    uint capacity; uint stride;
+    call_context_owner_by_token.GetDimensions(capacity, stride);
+    if (token >= capacity) return uint2(0u, 0u);
+    uint call = call_context_owner_by_token[token];
+    call_context_arg_mask.GetDimensions(capacity, stride);
+    uint types = call < capacity ? call_context_arg_mask[call] : 0u;
+    call_context_constant_mask.GetDimensions(capacity, stride);
+    uint constants = call < capacity ? call_context_constant_mask[call] : 0u;
+    return uint2(types, constants);
+}
+
 // The candidate type and constant slots of a call: its callee's composed
 // arity (a method's own parameters and its impl's) once the callee is
 // resolved, else every slot. A non-generic call then publishes the empty
-// environment without visiting a slot.
+// environment without visiting a slot. A trait's required member reached
+// through a bound (methods/07a, dependencies/15b) also has the trait's
+// slots, which its header does not declare: the bound's trait arguments
+// are its context.
 uint2 candidate_masks(uint token)
 {
     if (call_dependency_library_id[token] == INVALID && !valid_token(call_fn_index[token]))
         return uint2(0xffffffffu, 0xffffffffu);
     uint2 counts = required_callable_generic_counts(token);
-    return uint2(low_bits(counts.x), low_bits(counts.y));
+    return uint2(low_bits(counts.x), low_bits(counts.y)) | context_masks(token);
 }
 
 // Numeric literals can receive context within their category; named values,
