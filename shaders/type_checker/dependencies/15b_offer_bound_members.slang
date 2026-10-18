@@ -41,9 +41,12 @@ struct Params
     uint path_capacity;
     uint namespace;
     uint hir_capacity;
-    uint token_capacity;
 };
 ConstantBuffer<Params> gParams;
+// The type-check params packet (bind_groups.rs), which the producers use as
+// gParams. It is rewritten for every job.
+struct TypeCheckLookupParams { uint n_tokens; uint source_len; uint n_hir_nodes; };
+ConstantBuffer<TypeCheckLookupParams> gTypeCheckParams;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
@@ -104,11 +107,11 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-// The unit's token capacity. The generic-parameter lookup is hashed modulo
-// a multiple of it (00b2), so a lookup must use the same capacity; a token
-// buffer's bound row count can exceed it, and the visibility capacity can
-// too.
-uint token_capacity() { return gParams.token_capacity; }
+// This job's token capacity. 00b2 hashes the generic-parameter lookup modulo
+// a multiple of it, so a lookup must use the same value. The workspace
+// allocation (the visibility packet's capacities, a token buffer's extent)
+// is larger when a smaller job reuses it.
+uint token_capacity() { return gTypeCheckParams.n_tokens; }
 
 #define LEXICAL_HIR_CAPACITY gParams.hir_capacity
 #define LEXICAL_TOKEN_CAPACITY token_capacity()
