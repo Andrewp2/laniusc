@@ -391,6 +391,7 @@ impl GpuTypeChecker {
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
             semantic_interface_buffers: CapacityBufferCache::default(),
+            unit_facts_read_plans: Default::default(),
         })
     }
 
@@ -421,6 +422,11 @@ impl GpuTypeChecker {
             .lock()
             .expect("GpuTypeChecker.resident_workspace poisoned") = None;
         self.semantic_interface_buffers.clear();
+        // The plans name this workspace's allocations, which are gone.
+        self.unit_facts_read_plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     pub(crate) fn dependency_interface_pages(
@@ -623,7 +629,8 @@ impl GpuTypeChecker {
                     .expect("GpuTypeChecker.resident_capacity_floor poisoned")
             })
             .map(|previous| previous.grow_to_cover(cache_key))
-            .unwrap_or(cache_key);
+            .unwrap_or_else(|| cache_key.first_allocation())
+            .bucketed();
         let resident_cache_trace =
             crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
         if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)

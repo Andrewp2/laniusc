@@ -362,6 +362,7 @@ impl GatherLease {
                     source: output,
                     source_offset: u64::from(*word) * 4,
                     byte_len: region.byte_len,
+                    allocation: None,
                 },
                 None => *region,
             })

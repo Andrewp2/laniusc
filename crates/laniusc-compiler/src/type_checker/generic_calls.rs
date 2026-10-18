@@ -31,7 +31,7 @@ use crate::{
     gpu::{
         buffers::{LaniusBuffer, TrackedBufferView},
         compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
-        readback::{PagedReadback, ReadbackRegion, ReadbackRows, WordRead},
+        readback::{PagedReadback, PlanBuffers, ReadPlan, ReadbackRegion, ReadbackRows, WordRead},
     },
     parser::passes::hir::{
         item::fields::{
@@ -857,6 +857,77 @@ pub(crate) fn dependency_method_requirements(
     let types = method.method_type_parameter_count();
     let constants = method.method_constant_parameter_count();
     (types <= 32 && constants <= 32).then_some((types, constants))
+}
+
+/// Read plans of recent unit-facts runs, by their counts and kind. A run
+/// whose counts and kind match an earlier run's fetches that run's dependent
+/// reads with its first dependent read (see [`ReadPlan`]), so it costs two
+/// round trips instead of one per dependent step. The plans name buffers by
+/// allocation identity only.
+#[derive(Default)]
+pub(crate) struct UnitFactsReadPlans {
+    plans: Vec<(UnitFactsPlanKey, ReadPlan)>,
+}
+
+impl UnitFactsReadPlans {
+    /// A narrow job runs unit facts three times (the original unit and two
+    /// replays); a few units of headroom keep a source pack's plans.
+    const CAPACITY: usize = 8;
+
+    fn take(&mut self, key: &UnitFactsPlanKey) -> Option<ReadPlan> {
+        let index = self.plans.iter().position(|(planned, _)| planned == key)?;
+        Some(self.plans.remove(index).1)
+    }
+
+    fn insert(&mut self, key: UnitFactsPlanKey, plan: ReadPlan) {
+        self.plans.retain(|(planned, _)| *planned != key);
+        if self.plans.len() == Self::CAPACITY {
+            self.plans.remove(0);
+        }
+        self.plans.push((key, plan));
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.plans.clear();
+    }
+}
+
+/// The counts round's words and what kind of unit the run reads.
+#[derive(Clone, PartialEq, Eq)]
+struct UnitFactsPlanKey {
+    counts: Vec<u32>,
+    interface_exported: bool,
+    template_contracts: bool,
+    first_copy_row: Option<u32>,
+}
+
+/// Ends a run's plan replay and keeps its reads as the plan for its key.
+struct UnitFactsPlanRecorder<'a> {
+    readback: &'a PagedReadback,
+    plans: &'a std::sync::Mutex<UnitFactsReadPlans>,
+    key: UnitFactsPlanKey,
+}
+
+impl Drop for UnitFactsPlanRecorder<'_> {
+    fn drop(&mut self) {
+        let Some((plan, stats)) = self.readback.finish_read_plan() else {
+            return;
+        };
+        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            eprintln!(
+                "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={}",
+                plan.len(),
+                stats.answered,
+                stats.read,
+                stats.fetched,
+                stats.fetched_words,
+            );
+        }
+        self.plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(self.key.clone(), plan);
+    }
 }
 
 /// Trace spans for the unit snapshot's stages, so the host work between its
@@ -1757,10 +1828,12 @@ impl CheckedTypeReadback {
 /// Every batch is read as one flat word vector and decoded by offset, and
 /// every lookup table is a sorted vector: a replay of a 1 MB program decodes
 /// ~8k calls, so per-row allocations and tree lookups dominated its time.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn read_unit_facts(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     readback_buffers: &crate::gpu::buffers::CapacityBufferCache,
+    read_plans: &std::sync::Mutex<UnitFactsReadPlans>,
     semantic: &OwnedGpuSemanticArtifact,
     interface_exported: bool,
     template_contracts: Option<&CheckedUnitContracts>,
@@ -1810,6 +1883,25 @@ pub(super) fn read_unit_facts(
     }
     let counts = batch.read(&readback, device, queue, "generic call counts")?;
     timer.stamp("counts");
+    // Every later read depends on these counts. The GPU work that wrote the
+    // retained rows has finished and nothing below records GPU work, so an
+    // earlier run's plan with the same counts can be fetched in one round.
+    let plan_key = UnitFactsPlanKey {
+        counts: counts.clone(),
+        interface_exported,
+        template_contracts: template_contracts.is_some(),
+        first_copy_row: instance_copies.and_then(|batch| batch.copy_first_row()),
+    };
+    let plan = read_plans
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take(&plan_key);
+    readback.begin_read_plan(PlanBuffers::new(semantic.retained_buffers()), plan);
+    let _plan_recorder = UnitFactsPlanRecorder {
+        readback: &readback,
+        plans: read_plans,
+        key: plan_key,
+    };
     // Inactive producer families may share reused scratch. Current job flags,
     // not previous buffer contents, determine whether those counts are valid.
     let count = |index: usize, valid: bool| if valid { counts[index] as usize } else { 0 };
@@ -2857,6 +2949,7 @@ impl super::GpuTypeChecker {
             device,
             queue,
             &self.semantic_interface_buffers,
+            &self.unit_facts_read_plans,
             &semantic,
             interface_exported,
             template_contracts,
@@ -3151,6 +3244,30 @@ pub(crate) fn scope_generic_type_identities(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_facts_read_plans_keep_the_latest_plans_by_key() {
+        let key = |count: u32| UnitFactsPlanKey {
+            counts: vec![count, 7],
+            interface_exported: true,
+            template_contracts: false,
+            first_copy_row: None,
+        };
+        let mut plans = UnitFactsReadPlans::default();
+        for count in 0..10 {
+            plans.insert(key(count), ReadPlan::default());
+        }
+        plans.insert(key(9), ReadPlan::default());
+        assert_eq!(plans.plans.len(), UnitFactsReadPlans::CAPACITY);
+        assert!(plans.take(&key(0)).is_none() && plans.take(&key(1)).is_none());
+        let mut replay = key(9);
+        replay.first_copy_row = Some(3);
+        assert!(plans.take(&replay).is_none());
+        // A run takes its plan; the run's own reads replace it.
+        assert!(plans.take(&key(9)).is_some());
+        assert!(plans.take(&key(9)).is_none());
+        assert!(plans.take(&key(2)).is_some());
+    }
 
     fn parameter(domain: CheckedParameterDomain, source_ordinal: u32) -> CheckedGenericParameter {
         CheckedGenericParameter {

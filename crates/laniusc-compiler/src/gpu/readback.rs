@@ -1,6 +1,9 @@
 use anyhow::{Result, anyhow};
 
 mod gather;
+mod plan;
+
+pub(crate) use plan::{PlanBuffers, ReadPlan, ReplayStats};
 
 use super::{
     buffers::{LaniusBuffer, readback_bytes},
@@ -12,6 +15,8 @@ use super::{
 /// daemon residency therefore depends on the page size, not worst-case output.
 pub(crate) struct PagedReadback {
     staging: LaniusBuffer<u8>,
+    /// The read plan replay of one decoder run, if one is running.
+    replay: std::sync::Mutex<Option<plan::PlanReplay>>,
     #[cfg(test)]
     map_wait_override: Option<ReadbackMapWait>,
 }
@@ -50,6 +55,8 @@ pub(crate) struct ReadbackRegion<'a> {
     source: &'a wgpu::Buffer,
     source_offset: u64,
     byte_len: usize,
+    /// The source's allocation identity, which a read plan keys on.
+    allocation: Option<u64>,
 }
 
 impl<'a> ReadbackRegion<'a> {
@@ -71,6 +78,7 @@ impl<'a> ReadbackRegion<'a> {
             source: &source.buffer,
             source_offset: source.absolute_offset(source_offset),
             byte_len,
+            allocation: source.allocation_id(),
         })
     }
 
@@ -88,6 +96,7 @@ pub(crate) struct ReadbackRowsColumn<'a> {
     base: u64,
     stride_words: usize,
     width_words: usize,
+    allocation: Option<u64>,
 }
 
 impl ReadbackRowsColumn<'_> {
@@ -144,6 +153,7 @@ impl<'a> ReadbackRows<'a> {
             base,
             stride_words,
             width_words,
+            allocation: source.allocation_id(),
         });
         Ok(self)
     }
@@ -165,6 +175,7 @@ impl<'a> ReadbackRows<'a> {
 }
 
 /// One part of a word readback ([`PagedReadback::read_words`]).
+#[derive(Clone)]
 pub(crate) enum WordRead<'a> {
     Region(ReadbackRegion<'a>),
     Rows(ReadbackRows<'a>),
@@ -193,6 +204,7 @@ impl PagedReadback {
         let page_bytes = page_bytes.max(4).next_multiple_of(4);
         Self {
             staging: readback_bytes(device, label, page_bytes, page_bytes),
+            replay: std::sync::Mutex::new(None),
             #[cfg(test)]
             map_wait_override: None,
         }
@@ -201,6 +213,7 @@ impl PagedReadback {
     pub(crate) fn from_staging(staging: LaniusBuffer<u8>) -> Self {
         Self {
             staging,
+            replay: std::sync::Mutex::new(None),
             #[cfg(test)]
             map_wait_override: None,
         }
@@ -328,7 +341,46 @@ impl PagedReadback {
     /// thousands of rows costs one record per row, and the copies that
     /// continue each other in their source (the whole image, usually) are
     /// one copy.
+    ///
+    /// While a read plan replay runs ([`Self::begin_read_plan`]), a read the
+    /// plan's fetch holds is answered from it without a round trip.
     pub(crate) fn read_words(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        reads: &[WordRead<'_>],
+        label: &str,
+    ) -> Result<Vec<u32>> {
+        let mut replay = self.replay.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match replay.as_mut() {
+            Some(replay) => {
+                replay.read(reads, |reads| self.read_words_now(device, queue, reads, label))
+            }
+            None => self.read_words_now(device, queue, reads, label),
+        }
+    }
+
+    /// Starts a read plan replay ([`plan`]): the next word read that is not
+    /// answered also fetches every read of `plan` whose buffers are in
+    /// `buffers`, and later reads are answered from that fetch. Only a
+    /// decoder whose planned buffers no GPU work writes until
+    /// [`Self::finish_read_plan`] may replay a plan.
+    pub(crate) fn begin_read_plan(&self, buffers: PlanBuffers, plan: Option<ReadPlan>) {
+        *self.replay.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(plan::PlanReplay::new(buffers, plan));
+    }
+
+    /// Ends the replay; returns the word reads made since it began, which are
+    /// the next run's plan, and what the replay did.
+    pub(crate) fn finish_read_plan(&self) -> Option<(ReadPlan, ReplayStats)> {
+        self.replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .map(plan::PlanReplay::finish)
+    }
+
+    fn read_words_now(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -603,6 +655,7 @@ impl<'a> Pieces<'a> {
             source,
             source_offset: offset,
             byte_len,
+            allocation: None,
         });
         self.words.push(word);
     }
@@ -949,6 +1002,69 @@ mod lifecycle_tests {
         assert!(
             ReadbackRows::new(&[171]).column(&first, 0, 12, 1, "past the view").is_err(),
             "a row past the view is rejected"
+        );
+        assert!(pollster::block_on(validation.pop()).is_none());
+    }
+
+    /// A replayed plan fetches its reads with the first read it does not
+    /// answer, answers the rest from that fetch with the current contents,
+    /// and still reads anything outside the plan.
+    #[test]
+    fn gpu_read_plan_replay_answers_planned_reads_from_one_fetch() {
+        let gpu = device::global();
+        let first = storage_source(&gpu.device, &gpu.queue, 5);
+        let second = storage_source(&gpu.device, &gpu.queue, 91);
+        let readback = PagedReadback::new(&gpu.device, "readback plan page", 4096);
+        let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let buffers = || PlanBuffers::new([(&first).into(), (&second).into()]);
+        let indices = (0..90u32).map(|i| (i * 13) % 120).collect::<Vec<_>>();
+        let counts = || WordRead::Region(ReadbackRegion::from_buffer(&first, 64, 8, "counts").unwrap());
+        let rows = || {
+            WordRead::Rows(
+                ReadbackRows::new(&indices)
+                    .column(&second, 1, 6, 2, "rows")
+                    .unwrap()
+                    .column(&first, 0, 2, 1, "rows")
+                    .unwrap(),
+            )
+        };
+        let tail = || WordRead::Region(ReadbackRegion::from_buffer(&second, 4000, 400, "tail").unwrap());
+        let read = |reads: &[WordRead<'_>], label| {
+            readback.read_words(&gpu.device, &gpu.queue, reads, label).unwrap()
+        };
+
+        readback.begin_read_plan(buffers(), None);
+        let expected = [read(&[counts()], "counts"), read(&[rows(), tail()], "rows")];
+        let (plan, stats) = readback.finish_read_plan().unwrap();
+        assert_eq!((plan.len(), stats.read, stats.answered), (3, 2, 0));
+
+        // The next run sees new contents in the planned ranges.
+        let changed = (0..8192u32).map(|i| (i as u8).wrapping_mul(7)).collect::<Vec<_>>();
+        second.write(&gpu.queue, 0, &changed);
+        readback.begin_read_plan(buffers(), Some(plan));
+        let fresh_counts = read(&[counts()], "counts");
+        let fresh_rows = read(&[rows(), tail()], "rows");
+        let outside = read(
+            &[WordRead::Region(ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap())],
+            "outside",
+        );
+        let (plan, stats) = readback.finish_read_plan().unwrap();
+        assert_eq!(fresh_counts, expected[0]);
+        assert_ne!(fresh_rows, expected[1]);
+        assert_eq!(plan.len(), 4);
+        assert_eq!((stats.read, stats.answered, stats.fetched), (2, 2, 2));
+        assert!(readback.finish_read_plan().is_none());
+
+        // Without a replay the same reads come straight from the GPU.
+        assert_eq!(read(&[rows(), tail()], "rows"), fresh_rows);
+        assert_eq!(
+            outside,
+            read(
+                &[WordRead::Region(
+                    ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap()
+                )],
+                "outside",
+            )
         );
         assert!(pollster::block_on(validation.pop()).is_none());
     }
