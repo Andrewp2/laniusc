@@ -28,7 +28,8 @@ RWStructuredBuffer<uint> status;
 
 // A literal's expected array: a checked row (`row`), or a struct-literal
 // field whose declared row `field` is substituted under its scope instance
-// `scope` by canonical ID, `layers` array levels above the literal.
+// `scope` by canonical ID, `layers` array levels above the literal. A slice
+// context expects no length, so it leaves `row` INVALID.
 struct LiteralExpectation
 {
     uint row;
@@ -39,9 +40,9 @@ struct LiteralExpectation
     uint layers;
 }
 
-// expected_array_literal_instance's ascent from (`root`, `layers`). It stops
-// at a field context that needs a lookup; with `after_field` the first level
-// resumes after that context.
+// expected_literal_sequence_instance's ascent from (`root`, `layers`). It
+// stops at a field context that needs a lookup; with `after_field` the first
+// level resumes after that context.
 LiteralExpectation ascend_literal(uint node, uint root, uint layers, bool after_field)
 {
     LiteralExpectation expectation;
@@ -71,11 +72,11 @@ LiteralExpectation ascend_literal(uint node, uint root, uint layers, bool after_
         }
         expected = context == DECLARED_CONTEXT_REFERENCE && reference.x == TYPE_REF_INSTANCE
             ? reference.y : INVALID;
-        if (valid_instance(expected) && type_instance_kind[expected] == TYPE_INSTANCE_ARRAY) break;
+        if (sequence_instance(expected)) break;
         if (root != node && call_inference_result_tag[root] == TYPE_REF_INSTANCE)
         {
             expected = call_inference_result_payload[root];
-            if (valid_instance(expected) && type_instance_kind[expected] == TYPE_INSTANCE_ARRAY) break;
+            if (sequence_instance(expected)) break;
         }
         uint parent = compact_hir_core[root].parent;
         if (!valid_hir(parent) || compact_hir_core[parent].kind != HIR_ARRAY_EXPR) return expectation;
@@ -83,7 +84,7 @@ LiteralExpectation ascend_literal(uint node, uint root, uint layers, bool after_
     }
     for (uint i = 0u; i < layers; i++)
     {
-        if (!valid_instance(expected) || type_instance_kind[expected] != TYPE_INSTANCE_ARRAY ||
+        if (!sequence_instance(expected) ||
             type_instance_elem_ref_tag[expected] != TYPE_REF_INSTANCE) return expectation;
         expected = type_instance_elem_ref_payload[expected];
     }
@@ -92,12 +93,19 @@ LiteralExpectation ascend_literal(uint node, uint root, uint layers, bool after_
     return expectation;
 }
 
-// The array `layers` element levels below canonical type `id`, or CT_NONE.
+// An array or slice canonical type: either gives a literal its element type.
+bool canonical_sequence(uint id)
+{
+    return ct_kind(id) == CT_KIND_ARRAY || ct_kind(id) == CT_KIND_SLICE;
+}
+
+// The array `layers` element levels below canonical type `id`, or CT_NONE
+// (also for a slice there: it expects no length).
 uint descend_canonical_array(uint id, uint layers)
 {
     for (uint i = 0u; i < layers; i++)
     {
-        if (ct_kind(id) != CT_KIND_ARRAY) return CT_NONE;
+        if (!canonical_sequence(id)) return CT_NONE;
         id = ct_arg(id, 0u);
         if (!ct_is_record(id)) return CT_NONE;
     }
@@ -206,9 +214,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 CtSpare substitution = ct_spare_none();
                 uint substituted = ct_is_resolved(ids.x) && ct_is_record(ids.y)
                     ? ct_subst(CheckedSlots(), ids.y, ids.x, true, substitution) : CT_UNKNOWN;
-                if (ct_kind(substituted) != CT_KIND_ARRAY)
+                if (!canonical_sequence(substituted))
                 {
-                    // No substituted array: resume after the field context.
+                    // No substituted array or slice: resume after the field context.
                     ascent_root = expectation.root;
                     ascent_layers = expectation.layers;
                     continue;

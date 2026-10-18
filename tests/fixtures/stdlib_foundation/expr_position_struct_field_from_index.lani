@@ -1,0 +1,11 @@
+// expect: 0
+// Expression form and position: an array element as a struct-literal field value.
+module app::main;
+struct Inner { x: i32 }
+struct Outer { inner: Inner }
+fn main() -> i32 {
+    let arr: [Inner; 2] = [Inner { x: 1 }, Inner { x: 2 }];
+    let o: Outer = Outer { inner: arr[1] };
+    if (o.inner.x != 2) { return 1; }
+    return 0;
+}

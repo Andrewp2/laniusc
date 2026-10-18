@@ -1,0 +1,8 @@
+// expect: 0
+// Expression form and position: a u8 remainder as a u8 argument.
+module app::main;
+fn take(b: u8) -> i32 { if (b != 4) { return 1; } return 0; }
+fn main() -> i32 {
+    let b: u8 = 200;
+    return take(b % 7);
+}
