@@ -63,9 +63,14 @@ pub struct GpuTimestampSample {
 /// Default minimum span duration printed by timing helpers.
 pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.2;
 
-/// Query capacity for one compiler phase timer. Exhaustion is a hard
-/// profiling error so captures can never silently omit kernel events.
-pub const COMPILE_QUERY_CAPACITY: u32 = 4_096;
+/// Most timestamps one compiler phase timer holds. A phase timer adds WGPU
+/// query sets (4,096 queries each) only as it fills them, so this bounds a
+/// re-recorded job, not the usual one: a job whose memo overflows is recorded
+/// again at double scale (1, 2, 4) under the same timer, and a generic 1 MB
+/// stdlib unit then stamps more than one set. Past this bound the timer stops
+/// stamping and counts the stamps it drops (`operation_timestamps_dropped`),
+/// which fails the profiled job's coverage check instead of the daemon.
+pub const COMPILE_QUERY_CAPACITY: u32 = 64 * wgpu::QUERY_SET_MAX_QUERIES;
 
 /// Most timestamps one job timing session holds. A session spans a whole job,
 /// whose dispatch count grows with the program: a generic 1 MB unit with 184
@@ -137,6 +142,8 @@ struct GpuTimerRecordingState {
     /// every phase timer, and phase timers may nest inside it.
     job_session: bool,
     stamp_metadata: Vec<(String, GpuCompilerPhase)>,
+    /// Whether this timer has logged that it is full and dropping stamps.
+    dropped_warned: bool,
 }
 
 /// Installs one timer at the generic GPU-operation recording boundary.
@@ -192,6 +199,7 @@ impl GpuTimer {
                 operation_capture_enabled: false,
                 job_session: false,
                 stamp_metadata: vec![],
+                dropped_warned: false,
             })),
         }
     }
@@ -250,7 +258,13 @@ impl GpuTimer {
                 .next
                 .saturating_sub(1);
         }
-        stamp_recording(&self.recording, enc, label)
+        stamp_recording(&self.recording, enc, label).unwrap_or_else(|| {
+            self.recording
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .next
+                .saturating_sub(1)
+        })
     }
 
     /// Resets the timer.
@@ -428,8 +442,9 @@ pub(crate) fn stamp_active_operation(encoder: &mut wgpu::CommandEncoder, label: 
                 OPERATION_TIMESTAMPS_DROPPED.fetch_add(1, Ordering::Relaxed);
                 return;
             }
-            stamp_recording(&recording, encoder, label.into());
-            OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
+            if stamp_recording(&recording, encoder, label.into()).is_some() {
+                OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
+            }
         }
     });
 }
@@ -464,7 +479,9 @@ pub(crate) fn stamp_active_operation_in_pass(
                     .timestamps_inside_passes,
                 "batched GPU operation timing requires TIMESTAMP_QUERY_INSIDE_PASSES"
             );
-            let (query_set, index) = reserve_timestamp(&recording, label.into());
+            let Some((query_set, index)) = reserve_timestamp(&recording, label.into()) else {
+                return;
+            };
             pass.write_timestamp(&query_set, index);
             OPERATION_TIMESTAMP_COUNT.fetch_add(1, Ordering::Relaxed);
         }
@@ -627,28 +644,37 @@ impl GpuJobTimingSession {
     }
 }
 
+/// Writes one timestamp, or returns None when the timer is full and dropped it.
 fn stamp_recording(
     recording: &Arc<Mutex<GpuTimerRecordingState>>,
     encoder: &mut wgpu::CommandEncoder,
     label: String,
-) -> u32 {
-    let (query_set, index) = reserve_timestamp(recording, label);
+) -> Option<u32> {
+    let (query_set, index) = reserve_timestamp(recording, label)?;
     encoder.write_timestamp(&query_set, index);
-    index
+    Some(index)
 }
 
+/// Reserves the next query. A full timer drops the stamp and counts it, so a
+/// profiled job fails its timestamp coverage check rather than panicking.
 fn reserve_timestamp(
     recording: &Arc<Mutex<GpuTimerRecordingState>>,
     label: String,
-) -> (wgpu::QuerySet, u32) {
+) -> Option<(wgpu::QuerySet, u32)> {
     let mut recording = recording
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert!(
-        recording.next < recording.capacity,
-        "GPU operation timing query capacity {} exhausted while recording `{label}`; increase the timer capacity instead of silently dropping GPU events",
-        recording.capacity,
-    );
+    if recording.next >= recording.capacity {
+        OPERATION_TIMESTAMPS_DROPPED.fetch_add(1, Ordering::Relaxed);
+        if !recording.dropped_warned {
+            recording.dropped_warned = true;
+            warn!(
+                "GPU timing query capacity {} exhausted while recording `{label}`; later stamps of this timer are dropped and the job's timestamp coverage check fails",
+                recording.capacity,
+            );
+        }
+        return None;
+    }
     let index = recording.next;
     let set = (index / recording.queries_per_set) as usize;
     if set == recording.query_sets.len() {
@@ -658,10 +684,10 @@ fn reserve_timestamp(
     recording.next += 1;
     let phase = recording.phase;
     recording.stamp_metadata.push((label, phase));
-    (
+    Some((
         recording.query_sets[set].clone(),
         index % recording.queries_per_set,
-    )
+    ))
 }
 
 fn create_query_set(device: &wgpu::Device, queries: u32) -> wgpu::QuerySet {
@@ -759,5 +785,71 @@ mod tests {
         gpu.queue.submit(Some(encoder.finish()));
         let stamps = timer.try_read(&gpu.device).expect("read the stamps kept");
         assert_eq!(stamps.len(), 3);
+    }
+
+    /// A compiler phase timer of `capacity` queries, or None when the
+    /// adapter cannot write timestamps between commands.
+    fn phase_timer(capacity: u32) -> Option<(&'static crate::gpu::device::GpuDevice, GpuTimer)> {
+        let gpu = crate::gpu::device::global();
+        let needed =
+            wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        if !gpu.device.features().contains(needed) {
+            return None;
+        }
+        let timer = GpuTimer::new(&gpu.device, &gpu.queue, capacity, GpuCompilerPhase::Lowering);
+        Some((gpu, timer))
+    }
+
+    /// A re-recorded job (memo overflow, scale 1 → 2 → 4) stamps more than
+    /// one query set under the same phase timer.
+    #[test]
+    fn physical_gpu_phase_timer_stamps_past_one_query_set() {
+        let Some((gpu, mut timer)) = phase_timer(COMPILE_QUERY_CAPACITY) else {
+            return;
+        };
+        let stamps_recorded = wgpu::QUERY_SET_MAX_QUERIES + 100;
+        let mut encoder = encoder(gpu);
+        for stamp in 0..stamps_recorded {
+            timer.stamp(&mut encoder, format!("stamp{stamp}"));
+        }
+        timer.resolve(&mut encoder);
+        gpu.queue.submit(Some(encoder.finish()));
+        let stamps = timer.try_read(&gpu.device).expect("read the phase timer's timestamps");
+
+        assert_eq!(timer.recording.lock().unwrap().query_sets.len(), 2);
+        assert_eq!(stamps.len(), stamps_recorded as usize);
+        for (index, stamp) in stamps.iter().enumerate() {
+            assert_eq!(stamp.label, format!("stamp{index}"));
+        }
+        assert!(stamps[0].ticks > 0);
+        assert!(
+            stamps.windows(2).all(|pair| pair[0].ticks <= pair[1].ticks),
+            "timestamps out of order across query sets"
+        );
+    }
+
+    /// A full phase timer drops and counts stamps instead of panicking.
+    #[test]
+    fn physical_gpu_full_phase_timer_counts_the_stamps_it_drops() {
+        let Some((gpu, mut timer)) = phase_timer(3) else {
+            return;
+        };
+        let dropped_before = operation_timestamps_dropped();
+        let mut encoder = encoder(gpu);
+        for stamp in 0..5 {
+            timer.stamp(&mut encoder, format!("stamp{stamp}"));
+        }
+        {
+            let _capture = timer.capture_operations();
+            stamp_active_operation(&mut encoder, "operation");
+        }
+        assert_eq!(operation_timestamps_dropped() - dropped_before, 3);
+        timer.resolve(&mut encoder);
+        gpu.queue.submit(Some(encoder.finish()));
+        let stamps = timer.try_read(&gpu.device).expect("read the stamps kept");
+        assert_eq!(
+            stamps.iter().map(|stamp| stamp.label.as_str()).collect::<Vec<_>>(),
+            ["stamp0", "stamp1", "stamp2"]
+        );
     }
 }
