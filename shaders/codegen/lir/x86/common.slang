@@ -66,6 +66,14 @@ uint x86_aggregate_value_word_count(OptIrNodeCore core,
     return core.value_word_count;
 }
 
+// The value of `let x: T;` for an aggregate T: an address row, then one
+// fill row that zeroes its storage.
+bool x86_zero_aggregate(OptIrNodeCore core, OptIrNodeOperands operands)
+{
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW &&
+        operands.c == SEMANTIC_LIR_AGGREGATE_ZERO && operands.b == 0u;
+}
+
 bool x86_direct_array_pair(OptIrNodeCore core)
 {
     return (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
@@ -280,6 +288,7 @@ uint x86_lir_count(OptIrNodeCore core, OptIrNodeOperands operands)
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
         (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
         return NATIVE_SLICE_WORDS;
+    if (x86_zero_aggregate(core, operands)) return 2u;
     return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW
         ? 1u + core.value_word_count
         : 1u;

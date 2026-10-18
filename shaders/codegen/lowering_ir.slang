@@ -800,6 +800,11 @@ static const uint X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS = 43u;
 // Guaranteed invalid instruction for a non-exhaustive match path.
 // IR_OPCODE
 static const uint X86_LIR_OP_TRAP = 44u;
+// Zero operand C frame words, from this row's slot upward in slot order
+// (rep stosq). It follows the address row of a zero aggregate, or replaces
+// the word copies of a declaration store whose source is one.
+// IR_OPCODE
+static const uint X86_LIR_OP_AGGREGATE_FILL = 50u;
 // Compiler intrinsic lowered to the native runtime's shared signed-decimal
 // printer. Its argument arrives through the ordinary CALL_ARG ABI rows.
 // IR_OPCODE
@@ -1057,6 +1062,9 @@ static const uint X86_LIR_METADATA_INDEX_AGGREGATE_COPY = 0x00100000u;
 // the remaining bits contain the checked variant ordinal.
 static const uint SEMANTIC_LIR_AGGREGATE_ENUM = 0x80000000u;
 static const uint SEMANTIC_LIR_AGGREGATE_TAG_MASK = 0x7fffffffu;
+// Otherwise arrays use 0 and struct literals 1. ZERO is an aggregate with no
+// elements whose every word is zero: the value of `let x: T;`.
+static const uint SEMANTIC_LIR_AGGREGATE_ZERO = 2u;
 
 // A value location is either a target-row stack home or a physical x86 GPR.
 // Stack payloads remain global target rows; the artifact emitter translates
