@@ -121,7 +121,8 @@ bool direct_packed_i32_array(uint semantic_row, uint semantic_count)
     // packed layout that every i32-array consumer expects.
     if (x86_zero_aggregate(core, operands)) return core.type_id == 131u;
     if (opt_ir_op(core) != SEMANTIC_LIR_OP_AGGREGATE_NEW ||
-        operands.c != 0u || operands.b == 0u)
+        (operands.c != 0u && operands.c != SEMANTIC_LIR_AGGREGATE_REPEAT) ||
+        operands.b == 0u)
         return false;
     uint element_total = semantic_lir_aggregate_element_total[0u];
     if (operands.a >= element_total) return false;
@@ -630,7 +631,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
         element.word_count = 0u;
         element.slice_array_length = INVALID;
         uint element_total = semantic_lir_aggregate_element_total[0u];
-        for (uint element_i = 0u; element_i < args.b; element_i += 1u)
+        // `[value; count]`: every element is the one value element. Word
+        // `word` is word `word % width` of the element starting at
+        // `word - word % width`.
+        bool repeat = args.c == SEMANTIC_LIR_AGGREGATE_REPEAT;
+        if (repeat && args.b == 1u && args.a < element_total)
+        {
+            SemanticLirAggregateElement value_element = semantic_lir_aggregate_elements[args.a];
+            if (value_element.word_offset == 0u && value_element.word_count != 0u &&
+                value_element.word_count != INVALID)
+            {
+                element = value_element;
+                element.word_offset = word - word % value_element.word_count;
+            }
+        }
+        for (uint element_i = 0u; !repeat && element_i < args.b; element_i += 1u)
         {
             uint element_row = args.a + element_i;
             if (element_row < args.a || element_row >= element_total)

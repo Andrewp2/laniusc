@@ -150,7 +150,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint expected = ct_subst(SourceSlots(), environment, pattern, true, spare);
     for (uint level = depth; level != 0u && ct_is_resolved(expected); level--)
     {
-        uint length = compact_array_element_count[nested_literal(node, level - 1u)];
+        uint nested = nested_literal(node, level - 1u);
+        uint length = hir_array_literal_length(compact_hir_core, compact_hir_payload, hir_count(),
+            nested, compact_array_element_count[nested]);
         uint count = cc_intern_count(length, spare.record);
         expected = ct_is_resolved(count)
             ? ct_intern_small(CT_KIND_ARRAY, 2u, uint3(0u, 0u, 0u), uint2(expected, count),

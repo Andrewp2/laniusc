@@ -93,6 +93,38 @@ Lowering:
 There is no definite-assignment check: a read before any assignment reads
 zero.
 
+## Array repeat literals (2026-10-18)
+
+`[value; count]` is a `[T; count]` whose every element is `value`, evaluated
+once. The count is an integer literal from 0 to 4294967294. A named constant,
+a negative count or a float is a parse error (LNC0016). `[a, b; n]` is
+rejected with LNC0006 at the `;`: a repeat has exactly one value before it.
+
+Parsing and HIR:
+
+- `03_pair_pse.slang` retags a `;` whose nearest open bracket is an array
+  literal's `[` (with no nearer paren or brace) to `ArraySemicolon`.
+  `kinds.slang` retags the integer right after it to `ArrayRepeatCount`. The
+  distinct count token keeps the LLP pair before `]` unique, so the grammar
+  can reuse `array_elems_tail` (`array_repeat`, `array_repeat_count` at the
+  end of `grammar/lanius.bnf`).
+- The canonical array-literal record (`core.slang`) marks a repeat in payload
+  A: `HIR_ARRAY_REPEAT`, `HIR_ARRAY_REPEAT_ZERO` when the value is a literal
+  0, `false` or `'\0'`, or `HIR_ARRAY_REPEAT_AFTER_LIST` for `[a, b; n]`.
+  Payload B is the count's HIR literal, and C its token.
+- `hir_array_literal_length` (`hir_records.slang`) gives the length every
+  checker pass uses: the count for a repeat, the element count otherwise.
+
+Lowering:
+
+- A zero repeat lowers exactly like `let x: [T; N];`: an `AGGREGATE_NEW`
+  with no elements and `SEMANTIC_LIR_AGGREGATE_ZERO`, so x86 emits one
+  `rep stosq` and Wasm takes fresh bump-heap memory.
+- Any other repeat is an `AGGREGATE_NEW` with its one element and
+  `SEMANTIC_LIR_AGGREGATE_REPEAT` in operand C. x86 writes that element's
+  words into every slot (`x86/scatter.slang`), one init row per word. Wasm
+  marks the row unsupported and fails with its generic LNC0057 for now.
+
 ## Borrowed receivers that are not places (2026-10-15)
 
 A `&self` method can be called on a value with no storage of its own, such as

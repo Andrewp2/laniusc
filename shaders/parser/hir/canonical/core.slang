@@ -22,6 +22,8 @@ StructuredBuffer<uint> hir_canonical_end_blocks;
 StructuredBuffer<uint> hir_canonical_end_top;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
@@ -102,6 +104,7 @@ static const uint HIR_IMPL = 35u;
 static const uint HIR_IMPL_INHERENT = 1u;
 static const uint HIR_IMPL_TRAIT = 2u;
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_FALSE = 5u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_CHAR = 29u;
 static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
@@ -218,6 +221,49 @@ uint expression_id(uint raw)
     if (mapped == INVALID)
         mapped = dense_id(raw);
     return mapped != INVALID ? mapped : semantic_id(raw);
+}
+
+// The repeat tail of the array literal `raw`, or INVALID. A repeat tail
+// ends its element list, and the literal's subtree (an exclusive preorder
+// end) ends with it: the tail node, then its count node, which has no
+// nonterminal children. A literal that ends in a nested literal ends with its
+// own list's end node instead.
+uint array_repeat_tail(uint raw)
+{
+    uint end = valid_raw(raw) ? subtree_end[raw] : INVALID;
+    if (end == INVALID || end > gCanonical.raw_capacity || end < raw + 3u) return INVALID;
+    uint tail = end - 2u;
+    return node_kind[tail] == PROD_ARRAY_REPEAT &&
+        node_kind[end - 1u] == PROD_ARRAY_REPEAT_COUNT ? tail : INVALID;
+}
+
+// True when the repeat tail `tail` of literal `raw` follows its first
+// element, as in `[value; count]`, rather than a later one (`[a, b; n]`).
+bool array_repeat_follows_first_element(uint raw, uint tail)
+{
+    uint some = first_child[raw];
+    if (!valid_raw(some) || node_kind[some] != PROD_ARRAY_SOME) return false;
+    uint value = first_child[some];
+    return valid_raw(value) && next_sibling[value] == tail;
+}
+
+// True when the value of the repeat literal `raw` (its first element) is an
+// integer or char literal 0 or `false`. Called once the repeat tail follows
+// the first element, so that element exists.
+bool array_repeat_value_is_zero(uint raw)
+{
+    uint value = first_child[first_child[raw]];
+    uint root = valid_raw(value) ? hir_expr_result_root_node[value] : INVALID;
+    if (!valid_raw(root)) root = value;
+    if (!valid_raw(root) || hir_kind[root] != HIR_LITERAL_EXPR) return false;
+    uint dense = dense_id(root);
+    if (dense >= gCanonical.canonical_capacity) return false;
+    uint form = hir_expr_record[dense * 4u];
+    if (form == HIR_EXPR_FALSE) return true;
+    if (form != HIR_EXPR_INT && form != HIR_EXPR_CHAR) return false;
+    uint literal_row = gCanonical.records_use_token_rows != 0u ? hir_token_pos[root] : root;
+    uint2 magnitude = hir_expr_int_value[literal_row];
+    return magnitude.x == 0u && magnitude.y == 0u;
 }
 
 uint context_id(uint encoded)
@@ -417,6 +463,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (core.kind == HIR_ARRAY_EXPR)
     {
+        uint tail = array_repeat_tail(raw);
+        if (tail != INVALID)
+        {
+            uint count = tail + 1u;
+            bool first = array_repeat_follows_first_element(raw, tail);
+            payload.a = !first ? HIR_ARRAY_REPEAT_AFTER_LIST
+                : array_repeat_value_is_zero(raw) ? HIR_ARRAY_REPEAT_ZERO : HIR_ARRAY_REPEAT;
+            payload.b = dense_id(count);
+            // The `;` of a misplaced repeat, else the count literal.
+            payload.c = hir_token_pos[first ? count : tail];
+        }
         payload.d = context_id(hir_canonical_context_stmt[row]);
     }
     else if (core.kind == HIR_STRUCT_LITERAL_EXPR)

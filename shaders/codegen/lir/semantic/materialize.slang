@@ -1764,19 +1764,26 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     else if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         bool array = hir.kind == HIR_ARRAY_EXPR;
+        // `[value; count]` keeps its one element row; a zero value needs no
+        // element at all, so it lowers as the zero aggregate of its type.
+        bool zero_repeat = array && payload.a == HIR_ARRAY_REPEAT_ZERO;
+        bool repeat = array && hir_array_is_repeat(hir, payload);
         bool enum_constructor = semantic_call_kind[node] == 5u;
         operands.a = array ? compact_array_element_start[node]
             : enum_constructor
                 ? compact_array_element_row_count[0u] + compact_field_count[0u] +
                     (hir.kind == HIR_CALL_EXPR ? payload.b : 0u)
                 : compact_array_element_row_count[0u] + payload.b;
-        operands.b = array ? compact_array_element_owner_count[node]
+        operands.b = zero_repeat ? 0u
+            : array ? compact_array_element_owner_count[node]
             : enum_constructor && hir.kind != HIR_CALL_EXPR ? 0u : payload.c;
         // High bit distinguishes a tagged enum aggregate; low bits contain
         // the checked declaration ordinal. Struct literals retain their
         // existing nonzero marker and arrays retain zero.
         operands.c = enum_constructor
             ? SEMANTIC_LIR_AGGREGATE_ENUM | semantic_call_target[node]
+            : zero_repeat ? SEMANTIC_LIR_AGGREGATE_ZERO
+            : repeat ? SEMANTIC_LIR_AGGREGATE_REPEAT
             : array ? 0u : 1u;
     }
     else if (op == SEMANTIC_LIR_OP_LOAD && (hir.kind == HIR_MEMBER_EXPR || assignment_field))

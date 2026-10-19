@@ -3495,6 +3495,21 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("`as` converts between integer and floating-point types, from bool or char to an integer type, and from u8 to char"),
         ),
+        // Details 1 and 2: array repeat expressions `[value; count]`.
+        GpuTypeCheckCode::InvalidArrayLength if detail == 1 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "array repeat count does not fit in u32",
+                ))
+                .with_note("the count of `[value; count]` is an integer literal from 0 to 4294967294"),
+        ),
+        GpuTypeCheckCode::InvalidArrayLength if detail == 2 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "an array repeat has exactly one value before `;`",
+                ))
+                .with_note("write `[value; count]` to repeat one value, or list every element as `[a, b, c]`"),
+        ),
         GpuTypeCheckCode::InvalidArrayLength => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
                 .with_primary_label(diagnostic_label_from_source_span(

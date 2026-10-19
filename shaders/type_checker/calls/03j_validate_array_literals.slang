@@ -137,12 +137,16 @@ void validate_literal(uint row, uint expected, bool canonical, uint array)
             expected_count);
     }
     uint actual = call_inference_result_payload[row];
+    uint literal_length = hir_array_literal_length(compact_hir_core, compact_hir_payload,
+        active_hir_count(), row, compact_array_element_count[row]);
+    // A repeat without a length has 03i's diagnostic at its count or `;`.
+    if (literal_length == INVALID) return;
     if (call_inference_result_tag[row] != TYPE_REF_INSTANCE || !valid_instance(actual) ||
         type_instance_kind[actual] != TYPE_INSTANCE_ARRAY ||
         !checked_source_array_length_matches_count(type_instance_len_kind[actual],
-            type_instance_len_payload[actual], compact_array_element_count[row], gParams.n_tokens) ||
+            type_instance_len_payload[actual], literal_length, gParams.n_tokens) ||
         (present && !length_valid) ||
-        (closed_expected && expected_count != compact_array_element_count[row]))
+        (closed_expected && expected_count != literal_length))
         record_min_token_error(status, compact_hir_core[row].token_start, 3u, 0u);
 }
 

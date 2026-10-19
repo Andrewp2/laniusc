@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2460,
+    "cells": 2480,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2460,
+    "cells": 2480,
     "conflicts": []
   },
   "ll1_runtime": {
-    "nonterminals": 149,
+    "nonterminals": 150,
     "start_nonterminal": "file",
-    "predict_cells": 29502,
-    "rhs_symbols": 578
+    "predict_cells": 30000,
+    "rhs_symbols": 581
   },
   "ll1_predictions": [
     {
@@ -357,6 +357,12 @@
       "production": 150
     },
     {
+      "nonterminal": "add_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 150
+    },
+    {
       "nonterminal": "andexpr",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -606,6 +612,12 @@
       "nonterminal": "andexpr_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 123
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 123
     },
     {
@@ -921,6 +933,12 @@
       "production": 181
     },
     {
+      "nonterminal": "array_elems_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 316
+    },
+    {
       "nonterminal": "array_elems_tail_after_comma",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -1039,6 +1057,12 @@
       "lookahead": "PathColon",
       "lookahead_id": 114,
       "production": 289
+    },
+    {
+      "nonterminal": "array_repeat_count",
+      "lookahead": "ArrayRepeatCount",
+      "lookahead_id": 199,
+      "production": 317
     },
     {
       "nonterminal": "assign",
@@ -1278,6 +1302,12 @@
       "nonterminal": "assign_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 117
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 117
     },
     {
@@ -1551,6 +1581,12 @@
       "production": 132
     },
     {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 132
+    },
+    {
       "nonterminal": "bit_or",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -1806,6 +1842,12 @@
       "nonterminal": "bit_or_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 126
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 126
     },
     {
@@ -2070,6 +2112,12 @@
       "nonterminal": "bit_xor_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 129
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 129
     },
     {
@@ -2715,6 +2763,12 @@
       "production": 308
     },
     {
+      "nonterminal": "cast_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 309
+    },
+    {
       "nonterminal": "cast_type",
       "lookahead": "CastTypeIdent",
       "lookahead_id": 196,
@@ -3000,6 +3054,12 @@
       "nonterminal": "cast_type_path_tail",
       "lookahead": "As",
       "lookahead_id": 195,
+      "production": 314
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 314
     },
     {
@@ -3306,6 +3366,12 @@
       "nonterminal": "compare_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 142
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 142
     },
     {
@@ -4008,6 +4074,12 @@
       "nonterminal": "equality_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 136
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 136
     },
     {
@@ -5007,6 +5079,12 @@
       "production": 297
     },
     {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 297
+    },
+    {
       "nonterminal": "module_item",
       "lookahead": "Module",
       "lookahead_id": 97,
@@ -5361,6 +5439,12 @@
       "production": 155
     },
     {
+      "nonterminal": "mul_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 155
+    },
+    {
       "nonterminal": "orexpr",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -5604,6 +5688,12 @@
       "nonterminal": "orexpr_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 120
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 120
     },
     {
@@ -6042,6 +6132,12 @@
       "nonterminal": "path_tail",
       "lookahead": "As",
       "lookahead_id": 195,
+      "production": 51
+    },
+    {
+      "nonterminal": "path_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 51
     },
     {
@@ -6639,6 +6735,12 @@
       "production": 164
     },
     {
+      "nonterminal": "postfix_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 164
+    },
+    {
       "nonterminal": "primary",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -6996,6 +7098,12 @@
       "nonterminal": "primary_ident_tail",
       "lookahead": "As",
       "lookahead_id": 195,
+      "production": 274
+    },
+    {
+      "nonterminal": "primary_ident_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 274
     },
     {
@@ -7614,6 +7722,12 @@
       "nonterminal": "shift_tail",
       "lookahead": "ExprSemicolon",
       "lookahead_id": 169,
+      "production": 146
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
       "production": 146
     },
     {
@@ -12327,6 +12441,27 @@
       "arity": 0,
       "rhs": [
         "'ReturnNever'"
+      ]
+    },
+    {
+      "id": 316,
+      "line": 403,
+      "lhs": "array_elems_tail",
+      "tag": "array_repeat",
+      "arity": 1,
+      "rhs": [
+        "'ArraySemicolon'",
+        "array_repeat_count"
+      ]
+    },
+    {
+      "id": 317,
+      "line": 404,
+      "lhs": "array_repeat_count",
+      "tag": "array_repeat_count",
+      "arity": 0,
+      "rhs": [
+        "'ArrayRepeatCount'"
       ]
     }
   ]

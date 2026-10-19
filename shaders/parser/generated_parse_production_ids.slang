@@ -317,3 +317,5 @@ static const uint PROD_CAST_TYPE_PATH_IDENT = 312u;
 static const uint PROD_CAST_TYPE_PATH_MORE = 313u;
 static const uint PROD_CAST_TYPE_PATH_END = 314u;
 static const uint PROD_TYPE_NEVER = 315u;
+static const uint PROD_ARRAY_REPEAT = 316u;
+static const uint PROD_ARRAY_REPEAT_COUNT = 317u;

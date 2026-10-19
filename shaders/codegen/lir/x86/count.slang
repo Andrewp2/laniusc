@@ -307,7 +307,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (row >= element_total) break;
             words += semantic_lir_aggregate_elements[row].word_count;
         }
+        // `[value; count]` initializes exactly the array's words; its one
+        // element row is wider than an empty array.
         operation_rows = x86_zero_aggregate(core, operands) ? 2u
+            : operands.c == SEMANTIC_LIR_AGGREGATE_REPEAT ? 1u + core.value_word_count
             : 1u + max(core.value_word_count, words);
     }
     if (x86_lir_opcode(core) == X86_LIR_OP_FIELD_STORE &&
