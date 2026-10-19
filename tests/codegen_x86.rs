@@ -9302,7 +9302,6 @@ fn x86_stores_wide_struct_literal_through_dynamic_typed_slice_index() {
 }
 
 #[test]
-#[ignore = "known gap: compiles but the ELF crashes; test or miscompile TBD, owner P12"]
 fn x86_loads_field_after_multiword_fields_through_dynamic_slice_index() {
     let sources = [
         include_str!("../verified_compiler/src/verified/host.lani"),
