@@ -312,9 +312,13 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
     }
     if (!valid_hir(stmt.b))
     {
+        // A scalar return type has no return-type token; its written
+        // return-type node marks it explicit (main may omit one).
+        bool explicit_scalar_return =
+            valid_hir(compact_fn_return_type[fn]) && known_scalar(expected);
         if (expected != TY_VOID &&
             (expected_ref_tag != TYPE_REF_INVALID || known_scalar(expected)) &&
-            valid_token(call_return_type_token[fn_token]))
+            (valid_token(call_return_type_token[fn_token]) || explicit_scalar_return))
         {
             record_min_token_error(
                 status,

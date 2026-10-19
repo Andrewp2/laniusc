@@ -36,11 +36,16 @@ StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> call_intrinsic_tag;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<uint> call_arg_row_start;
+StructuredBuffer<uint> call_arg_row_count;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_STMT = 7u;
 static const uint HIR_IF_STMT = 10u;
+static const uint HIR_WHILE_STMT = 11u;
 static const uint HIR_BREAK_STMT = 12u;
 static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_EXPR = 14u;
@@ -49,6 +54,7 @@ static const uint HIR_UNARY_EXPR = 17u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_STMT_IF = 3u;
+static const uint HIR_STMT_WHILE = 6u;
 static const uint HIR_STMT_FOR = 7u;
 static const uint HIR_EXPR_NOT = 6u;
 static const uint HIR_EXPR_EQ = 7u;
@@ -96,6 +102,10 @@ static const uint ERR_FLOAT_LITERAL = 25u;
 static const uint ERR_COMPUTED_FLOAT_CONSTANT = 26u;
 static const uint ERR_INVALID_CAST = 27u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
+static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 
 [ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
@@ -129,6 +139,59 @@ bool numeric_operand_ok(uint ty)
 }
 
 bool integer_operand_ok(uint ty) { return assignable_to_int(ty); }
+
+uint raw_parts_callee_token(uint call)
+{
+    uint callee = compact_hir_payload[call].a;
+    uint token = INVALID;
+    if (valid_hir(callee))
+    {
+        HirPayload payload = compact_hir_payload[callee];
+        token = compact_hir_core[callee].kind == HIR_MEMBER_EXPR ? payload.c : payload.d;
+        if (token >= gParams.n_tokens) token = compact_hir_core[callee].token_start;
+    }
+    if (token >= gParams.n_tokens) token = compact_hir_core[call].token_start;
+    return token < gParams.n_tokens ? token : INVALID;
+}
+
+uint raw_parts_argument(uint call, uint ordinal)
+{
+    uint start = call_arg_row_start[call];
+    if (start == INVALID || ordinal >= call_arg_row_count[call]) return INVALID;
+    uint row = start + ordinal;
+    return row < active_hir_count() ? call_arg_row_node[row] : INVALID;
+}
+
+// slice_from_raw_parts(data, length): data is a ptr (or the null constant 0)
+// and length an integer. The intrinsics have no parameter types to check
+// against, so a bool length or an integer address otherwise compiles.
+void validate_raw_parts_call(uint node, HirCore core)
+{
+    if (core.kind != HIR_CALL_EXPR) return;
+    uint callee = raw_parts_callee_token(node);
+    if (callee == INVALID) return;
+    uint intrinsic = call_intrinsic_tag[callee];
+    if (intrinsic != INTRINSIC_I32_SLICE_FROM_RAW_PARTS &&
+        intrinsic != INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
+        return;
+    uint data = raw_parts_argument(node, 0u);
+    uint data_ty = scalar_type(data);
+    bool null_constant = false;
+    if (valid_hir(data))
+    {
+        HirPayload data_payload = compact_hir_payload[data];
+        null_constant = data_payload.a == HIR_EXPR_INT &&
+            data_payload.b == 0u && data_payload.c == 0u;
+    }
+    if (data_ty != TY_UNKNOWN && data_ty != TY_POINTER && !null_constant)
+        record_min_token_error(status, compact_hir_core[data].token_start,
+            ERR_ASSIGN_MISMATCH, TY_POINTER * 256u + data_ty);
+    uint length = raw_parts_argument(node, 1u);
+    uint length_ty = scalar_type(length);
+    if (!assignable_to_int(length_ty))
+        record_min_token_error(status, compact_hir_core[length].token_start,
+            ERR_ASSIGN_MISMATCH, TY_INT * 256u + length_ty);
+}
 bool equality_operand_ok(uint ty)
 {
     return ty == TY_UNKNOWN || (!is_array_type(ty) && ty != TY_STRING);
@@ -496,14 +559,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     validate_float_literal(node, core, payload);
     validate_computed_float_constant(node, core, payload);
     validate_direct_range(node, core, payload);
+    validate_raw_parts_call(node, core);
     if (core.kind == HIR_INDEX_EXPR) validate_index(node, payload);
     if (core.kind == HIR_BINARY_EXPR)
     {
         if (payload.a == HIR_EXPR_CAST) validate_cast(node, payload);
         else validate_binary(node, payload);
     }
-    if (core.kind == HIR_IF_STMT ||
-        (core.kind == HIR_STMT && payload.a == HIR_STMT_IF))
+    if (core.kind == HIR_IF_STMT || core.kind == HIR_WHILE_STMT ||
+        (core.kind == HIR_STMT &&
+         (payload.a == HIR_STMT_IF || payload.a == HIR_STMT_WHILE)))
         record_bool_mismatch(payload.b, scalar_type(payload.b));
 
     if (core.kind != HIR_EXPR && core.kind != HIR_BINARY_EXPR &&

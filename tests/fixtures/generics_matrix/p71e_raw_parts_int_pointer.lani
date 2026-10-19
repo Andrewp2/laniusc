@@ -1,0 +1,7 @@
+// expect: error LNC0006
+// slice_from_raw_parts takes a ptr; an integer address is not one.
+fn main() -> i32 {
+    let address: i32 = 7;
+    let values: [i32] = slice_from_raw_parts(address, 2);
+    return values[0];
+}

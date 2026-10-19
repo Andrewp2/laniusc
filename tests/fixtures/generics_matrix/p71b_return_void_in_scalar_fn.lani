@@ -1,0 +1,9 @@
+// expect: error LNC0006
+// `return;` in a function that returns i32 has no value to return.
+fn pick() -> i32 {
+    return;
+}
+
+fn main() -> i32 {
+    return pick();
+}
