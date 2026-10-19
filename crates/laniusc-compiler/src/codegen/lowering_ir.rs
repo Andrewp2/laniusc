@@ -10599,9 +10599,12 @@ mod tests {
         assert_eq!(std::mem::size_of::<WasmLirFunction>(), 56);
         assert_eq!(std::mem::size_of::<WasmModuleLayout>(), 64);
         assert_eq!(std::mem::size_of::<X86ArtifactLayout>(), 48);
+        // 21 uint fields, in the order of CheckedCallArtifact in
+        // shaders/checked_semantic_artifact.slang, ending with
+        // symbolic_type_environment.
         assert_eq!(
             std::mem::size_of::<crate::type_checker::GpuCheckedCallArtifact>(),
-            80
+            84
         );
     }
 
