@@ -22,6 +22,26 @@ either fails. It needs only a checkout and the binary.
 
 The exit status is 1 when a case outside the list fails, or the compiler
 itself does not build.
+
+Known gap (2026-10-18): every case fails. The vc-built compiler.elf exits 10
+(lowering failure) even on `fn main() -> i32 { return 7; }`. The cause is that
+vc hard-codes record sizes for two-word slices; fix it by deriving them from
+core::mem::size_of. Slices are now three words (data, length, stride), so a
+raw view of any record that holds a slice is read at the wrong offsets. The
+first failure is prepare_catalogs in lowering/program_transport.lani, at
+`tree.node_count != nodes_in_unit`. Suspect constants, each of which needs
+checking against its record's fields:
+  verified/syntax_tree.lani      TREE_BYTES = 6 * FIELD_BYTES (Tree is 8 words)
+  lowering/aliases.lani          CATALOG_RECORD_BYTES = 6 * NATIVE_FIELD_BYTES
+  lowering/declarations.lani     the Catalog of Table rows
+  verified/token.lani            TokenTable views ({data: [TokenRow], ...})
+  lowering/unit_context.lani     UnitContext rows
+  backend/constant_index.lani    ROW_BYTES = 6 * FIELD_BYTES
+  backend/function_index.lani    FUNCTION_BYTES / PARAMETER_BYTES
+  ir/type_catalog.lani, ir/symbol_catalog.lani, ir/constant_catalog.lani
+                                 *_BYTES = N * SLOT_BYTES
+89 vc structs contain a slice field. --compile-only is the gate step until
+vc is updated.
 """
 import argparse
 import ctypes
