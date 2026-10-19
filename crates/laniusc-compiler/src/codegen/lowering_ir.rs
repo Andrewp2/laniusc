@@ -4028,7 +4028,6 @@ fn lowering_compiler_graph_builder(
             histogram: "lir.opt.access_radix_histogram",
             bucket_prefix: "lir.opt.access_radix_bucket_prefix",
             bucket_total: "lir.opt.access_radix_bucket_total",
-            bucket_base: "lir.opt.access_radix_bucket_base",
         },
     )?;
     let opt_access_group_start_flag = graph.add_resource(workspace(
@@ -4157,7 +4156,6 @@ fn lowering_compiler_graph_builder(
             histogram: "lir.opt.ssa.demand_radix_histogram",
             bucket_prefix: "lir.opt.ssa.demand_radix_bucket_prefix",
             bucket_total: "lir.opt.ssa.demand_radix_bucket_total",
-            bucket_base: "lir.opt.ssa.demand_radix_bucket_base",
         },
     )?;
     // Radix sorting first produces a permutation because the sparse closure
@@ -4371,7 +4369,6 @@ fn lowering_compiler_graph_builder(
             histogram: "lir.opt.ssa.use_radix_histogram",
             bucket_prefix: "lir.opt.ssa.use_radix_bucket_prefix",
             bucket_total: "lir.opt.ssa.use_radix_bucket_total",
-            bucket_base: "lir.opt.ssa.use_radix_bucket_base",
         },
     )?;
     let opt_ssa_use_group_start_flag = graph.add_resource(workspace(
@@ -11886,7 +11883,6 @@ mod tests {
                 "codegen/lir/optimization/access_sort_histogram",
             ),
             ("lir.opt.access.sort.prefix.a", "radix/bucket_prefix"),
-            ("lir.opt.access.sort.bases.a", "radix/bucket_bases"),
             (
                 "lir.opt.access.sort.scatter.a",
                 "codegen/lir/optimization/access_sort_scatter",
@@ -11896,7 +11892,6 @@ mod tests {
                 "codegen/lir/optimization/access_sort_histogram",
             ),
             ("lir.opt.access.sort.prefix.b", "radix/bucket_prefix"),
-            ("lir.opt.access.sort.bases.b", "radix/bucket_bases"),
             (
                 "lir.opt.access.sort.scatter.b",
                 "codegen/lir/optimization/access_sort_scatter",
@@ -12081,7 +12076,6 @@ mod tests {
                 "codegen/lir/optimization/access_sort_histogram",
             ),
             ("lir.opt.access.sort.prefix.a", "radix/bucket_prefix"),
-            ("lir.opt.access.sort.bases.a", "radix/bucket_bases"),
             (
                 "lir.opt.access.sort.scatter.a",
                 "codegen/lir/optimization/access_sort_scatter",
@@ -12091,7 +12085,6 @@ mod tests {
                 "codegen/lir/optimization/access_sort_histogram",
             ),
             ("lir.opt.access.sort.prefix.b", "radix/bucket_prefix"),
-            ("lir.opt.access.sort.bases.b", "radix/bucket_bases"),
             (
                 "lir.opt.access.sort.scatter.b",
                 "codegen/lir/optimization/access_sort_scatter",

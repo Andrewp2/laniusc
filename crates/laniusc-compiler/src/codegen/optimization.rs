@@ -423,13 +423,11 @@ pub(super) const OPT_IR_ACCESS_RADIX_SORT: RadixSortDefinition = RadixSortDefini
         order_to_temporary: RadixSortGraphStepPasses {
             histogram: "lir.opt.access.sort.histogram.a",
             bucket_prefix: "lir.opt.access.sort.prefix.a",
-            bucket_bases: "lir.opt.access.sort.bases.a",
             scatter: "lir.opt.access.sort.scatter.a",
         },
         temporary_to_order: RadixSortGraphStepPasses {
             histogram: "lir.opt.access.sort.histogram.b",
             bucket_prefix: "lir.opt.access.sort.prefix.b",
-            bucket_bases: "lir.opt.access.sort.bases.b",
             scatter: "lir.opt.access.sort.scatter.b",
         },
     },
@@ -444,7 +442,6 @@ pub(super) const OPT_IR_ACCESS_RADIX_SORT: RadixSortDefinition = RadixSortDefini
         histogram: "lir.opt.access_radix_histogram",
         bucket_prefix: "lir.opt.access_radix_bucket_prefix",
         bucket_total: "lir.opt.access_radix_bucket_total",
-        bucket_base: "lir.opt.access_radix_bucket_base",
     },
     dispatch_args: "lir.opt.access_radix_dispatch_args",
 };
@@ -457,13 +454,11 @@ pub(super) const OPT_IR_SSA_DEMAND_RADIX_SORT: RadixSortDefinition = RadixSortDe
         order_to_temporary: RadixSortGraphStepPasses {
             histogram: "lir.opt.ssa.demands.sort.histogram.a",
             bucket_prefix: "lir.opt.ssa.demands.sort.prefix.a",
-            bucket_bases: "lir.opt.ssa.demands.sort.bases.a",
             scatter: "lir.opt.ssa.demands.sort.scatter.a",
         },
         temporary_to_order: RadixSortGraphStepPasses {
             histogram: "lir.opt.ssa.demands.sort.histogram.b",
             bucket_prefix: "lir.opt.ssa.demands.sort.prefix.b",
-            bucket_bases: "lir.opt.ssa.demands.sort.bases.b",
             scatter: "lir.opt.ssa.demands.sort.scatter.b",
         },
     },
@@ -478,7 +473,6 @@ pub(super) const OPT_IR_SSA_DEMAND_RADIX_SORT: RadixSortDefinition = RadixSortDe
         histogram: "lir.opt.ssa.demand_radix_histogram",
         bucket_prefix: "lir.opt.ssa.demand_radix_bucket_prefix",
         bucket_total: "lir.opt.ssa.demand_radix_bucket_total",
-        bucket_base: "lir.opt.ssa.demand_radix_bucket_base",
     },
     dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
 };
@@ -491,13 +485,11 @@ pub(super) const OPT_IR_SSA_USE_RADIX_SORT: RadixSortDefinition = RadixSortDefin
         order_to_temporary: RadixSortGraphStepPasses {
             histogram: "lir.opt.ssa.uses.sort.histogram.a",
             bucket_prefix: "lir.opt.ssa.uses.sort.prefix.a",
-            bucket_bases: "lir.opt.ssa.uses.sort.bases.a",
             scatter: "lir.opt.ssa.uses.sort.scatter.a",
         },
         temporary_to_order: RadixSortGraphStepPasses {
             histogram: "lir.opt.ssa.uses.sort.histogram.b",
             bucket_prefix: "lir.opt.ssa.uses.sort.prefix.b",
-            bucket_bases: "lir.opt.ssa.uses.sort.bases.b",
             scatter: "lir.opt.ssa.uses.sort.scatter.b",
         },
     },
@@ -512,7 +504,6 @@ pub(super) const OPT_IR_SSA_USE_RADIX_SORT: RadixSortDefinition = RadixSortDefin
         histogram: "lir.opt.ssa.use_radix_histogram",
         bucket_prefix: "lir.opt.ssa.use_radix_bucket_prefix",
         bucket_total: "lir.opt.ssa.use_radix_bucket_total",
-        bucket_base: "lir.opt.ssa.use_radix_bucket_base",
     },
     dispatch_args: "lir.opt.ssa.use_radix_dispatch_args",
 };
@@ -2603,7 +2594,6 @@ impl GpuOptimizationStage {
                 bucket_prefix: RadixDispatchDomain::Direct(
                     RADIX_BUCKET_COUNT * RADIX_ROWS_PER_BLOCK,
                 ),
-                bucket_bases: RadixDispatchDomain::Direct(RADIX_BUCKET_COUNT),
             },
             |key_step| AccessRadixParams {
                 item_capacity: access_capacity,
@@ -2816,7 +2806,6 @@ impl GpuOptimizationStage {
                 bucket_prefix: RadixDispatchDomain::Direct(
                     RADIX_BUCKET_COUNT * RADIX_ROWS_PER_BLOCK,
                 ),
-                bucket_bases: RadixDispatchDomain::Direct(RADIX_BUCKET_COUNT),
             },
             |key_step| AccessRadixParams {
                 item_capacity: demand_capacity,
@@ -3184,7 +3173,6 @@ impl GpuOptimizationStage {
                 bucket_prefix: RadixDispatchDomain::Direct(
                     RADIX_BUCKET_COUNT * RADIX_ROWS_PER_BLOCK,
                 ),
-                bucket_bases: RadixDispatchDomain::Direct(RADIX_BUCKET_COUNT),
             },
             |key_step| UseRadixParams {
                 item_capacity: use_capacity,

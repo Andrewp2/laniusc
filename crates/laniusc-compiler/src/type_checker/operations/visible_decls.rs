@@ -71,7 +71,6 @@ impl VisibleDeclSort {
                 small: RadixDispatchDomain::Direct(256),
                 rows: row_dispatch,
                 bucket_prefix: RadixDispatchDomain::Direct(RADIX_U8_BUCKET_COUNT * 256),
-                bucket_bases: RadixDispatchDomain::Direct(256),
             },
             params,
         )?;

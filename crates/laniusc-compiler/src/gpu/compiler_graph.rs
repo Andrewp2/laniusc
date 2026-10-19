@@ -2474,7 +2474,6 @@ pub trait CompilerGraphFragment {
 pub struct RadixSortGraphStepPasses {
     pub histogram: &'static str,
     pub bucket_prefix: &'static str,
-    pub bucket_bases: &'static str,
     pub scatter: &'static str,
 }
 
@@ -2486,15 +2485,13 @@ pub struct RadixSortGraphPasses {
 }
 
 impl RadixSortGraphPasses {
-    pub fn names(self) -> [&'static str; 8] {
+    pub fn names(self) -> [&'static str; 6] {
         [
             self.order_to_temporary.histogram,
             self.order_to_temporary.bucket_prefix,
-            self.order_to_temporary.bucket_bases,
             self.order_to_temporary.scatter,
             self.temporary_to_order.histogram,
             self.temporary_to_order.bucket_prefix,
-            self.temporary_to_order.bucket_bases,
             self.temporary_to_order.scatter,
         ]
     }
@@ -2516,7 +2513,6 @@ pub struct RadixSortGraphResources {
     pub histogram: ResourceId,
     pub bucket_prefix: ResourceId,
     pub bucket_total: ResourceId,
-    pub bucket_base: ResourceId,
 }
 
 /// Stable graph names for storage internal to a radix sort.
@@ -2528,7 +2524,6 @@ pub struct RadixSortGraphResourceNames {
     pub histogram: &'static str,
     pub bucket_prefix: &'static str,
     pub bucket_total: &'static str,
-    pub bucket_base: &'static str,
 }
 
 /// Graph-owned arrays which exist independently of a radix sort's selected
@@ -2572,7 +2567,6 @@ fn validate_radix_sort_resources(
         resources.histogram,
         resources.bucket_prefix,
         resources.bucket_total,
-        resources.bucket_base,
     ]
     .into_iter()
     .chain(resources.keys.iter().map(|key| key.resource))
@@ -2623,7 +2617,7 @@ fn radix_sort_step_passes(
         PassAccess::read("radix_order_in", input),
         PassAccess::indirect(name(r.dispatch_args), r.dispatch_args),
         PassAccess::read("radix_block_bucket_prefix", r.bucket_prefix),
-        PassAccess::read("radix_bucket_base", r.bucket_base),
+        PassAccess::read("radix_bucket_total", r.bucket_total),
         PassAccess::write("radix_order_out", output),
     ]);
     vec![
@@ -2642,15 +2636,6 @@ fn radix_sort_step_passes(
                 PassAccess::read("radix_block_histogram", r.histogram),
                 PassAccess::write("radix_block_bucket_prefix", r.bucket_prefix),
                 PassAccess::write("radix_bucket_total", r.bucket_total),
-            ],
-        },
-        PassDesc {
-            name: passes.bucket_bases,
-            phase,
-            dispatch_domain,
-            accesses: vec![
-                PassAccess::read("radix_bucket_total", r.bucket_total),
-                PassAccess::write("radix_bucket_base", r.bucket_base),
             ],
         },
         PassDesc {
@@ -2755,7 +2740,6 @@ impl CompilerGraphFragment for RadixSortPairGraph {
             self.left.histogram,
             self.left.bucket_prefix,
             self.left.bucket_total,
-            self.left.bucket_base,
         ];
         let right_mutable = [
             self.right.order,
@@ -2763,7 +2747,6 @@ impl CompilerGraphFragment for RadixSortPairGraph {
             self.right.histogram,
             self.right.bucket_prefix,
             self.right.bucket_total,
-            self.right.bucket_base,
         ];
         if let Some(resource) = left_mutable
             .into_iter()
@@ -3689,12 +3672,6 @@ impl CompilerGraphBuilder {
             bucket_bytes,
             WorkspaceUsageClass::Storage,
         )?;
-        let bucket_base = storage(
-            names.bucket_base,
-            domain,
-            bucket_bytes,
-            WorkspaceUsageClass::Storage,
-        )?;
         Ok(RadixSortGraphResources {
             count,
             count_binding: self.resources[count.index()].name,
@@ -3712,7 +3689,6 @@ impl CompilerGraphBuilder {
             histogram,
             bucket_prefix,
             bucket_total,
-            bucket_base,
         })
     }
 
@@ -3770,7 +3746,6 @@ impl CompilerGraphBuilder {
             (names.histogram, histogram_bytes),
             (names.bucket_prefix, histogram_bytes),
             (names.bucket_total, bucket_bytes),
-            (names.bucket_base, bucket_bytes),
         ] {
             self.add_storage(name, domain, ResourceClass::Workspace, bytes)?;
         }
@@ -5995,7 +5970,6 @@ mod tests {
                     histogram: "sort.histogram",
                     bucket_prefix: "sort.bucket_prefix",
                     bucket_total: "sort.bucket_total",
-                    bucket_base: "sort.bucket_base",
                 },
             )
             .unwrap();
@@ -6022,13 +5996,11 @@ mod tests {
                     order_to_temporary: RadixSortGraphStepPasses {
                         histogram: "sort.a.histogram",
                         bucket_prefix: "sort.a.prefix",
-                        bucket_bases: "sort.a.bases",
                         scatter: "sort.a.scatter",
                     },
                     temporary_to_order: RadixSortGraphStepPasses {
                         histogram: "sort.b.histogram",
                         bucket_prefix: "sort.b.prefix",
-                        bucket_bases: "sort.b.bases",
                         scatter: "sort.b.scatter",
                     },
                 },
@@ -6057,7 +6029,7 @@ mod tests {
             graph.repeated_regions(),
             &[RepeatedPassRegion {
                 first_pass: graph.pass_id("sort.a.histogram").unwrap(),
-                pass_count: 8,
+                pass_count: 6,
                 iterations: 3,
             }]
         );
@@ -6123,7 +6095,6 @@ mod tests {
                     histogram: "pair.histogram",
                     bucket_prefix: "pair.bucket_prefix",
                     bucket_total: "pair.bucket_total",
-                    bucket_base: "pair.bucket_base",
                 },
             )
             .unwrap();
@@ -6131,13 +6102,11 @@ mod tests {
             order_to_temporary: RadixSortGraphStepPasses {
                 histogram: prefix,
                 bucket_prefix: "pair.a.prefix",
-                bucket_bases: "pair.a.bases",
                 scatter: "pair.a.scatter",
             },
             temporary_to_order: RadixSortGraphStepPasses {
                 histogram: "pair.b.histogram",
                 bucket_prefix: "pair.b.prefix",
-                bucket_bases: "pair.b.bases",
                 scatter: "pair.b.scatter",
             },
         };
@@ -6177,7 +6146,6 @@ mod tests {
         let histogram = add("odd.histogram", ResourceClass::Workspace);
         let bucket_prefix = add("odd.bucket_prefix", ResourceClass::Workspace);
         let bucket_total = add("odd.bucket_total", ResourceClass::Workspace);
-        let bucket_base = add("odd.bucket_base", ResourceClass::Workspace);
         let result = builder
             .add_fragment(RadixSortGraph {
                 phase: CompilerPhase::TypeCheck,
@@ -6188,13 +6156,11 @@ mod tests {
                     order_to_temporary: RadixSortGraphStepPasses {
                         histogram: "odd.a.histogram",
                         bucket_prefix: "odd.a.prefix",
-                        bucket_bases: "odd.a.bases",
                         scatter: "odd.a.scatter",
                     },
                     temporary_to_order: RadixSortGraphStepPasses {
                         histogram: "odd.b.histogram",
                         bucket_prefix: "odd.b.prefix",
-                        bucket_bases: "odd.b.bases",
                         scatter: "odd.b.scatter",
                     },
                 },
@@ -6212,7 +6178,6 @@ mod tests {
                     histogram,
                     bucket_prefix,
                     bucket_total,
-                    bucket_base,
                 },
             })
             .unwrap();

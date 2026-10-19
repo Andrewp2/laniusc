@@ -68,13 +68,11 @@ macro_rules! radix_sort_graph_passes {
             order_to_temporary: RadixSortGraphStepPasses {
                 histogram: concat!($label, ".histogram.a"),
                 bucket_prefix: concat!($label, ".prefix.a"),
-                bucket_bases: concat!($label, ".bases.a"),
                 scatter: concat!($label, ".scatter.a"),
             },
             temporary_to_order: RadixSortGraphStepPasses {
                 histogram: concat!($label, ".histogram.b"),
                 bucket_prefix: concat!($label, ".prefix.b"),
-                bucket_bases: concat!($label, ".bases.b"),
                 scatter: concat!($label, ".scatter.b"),
             },
         }
@@ -472,7 +470,6 @@ pub(super) const VISIBLE_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
         histogram: "hir_visible_decl_key_radix_block_histogram",
         bucket_prefix: "hir_visible_decl_key_radix_block_bucket_prefix",
         bucket_total: "hir_visible_decl_key_radix_bucket_total",
-        bucket_base: "hir_visible_decl_key_radix_bucket_base",
     },
     dispatch_args: "hir_visible_decl_key_radix_dispatch_args",
 };
@@ -790,7 +787,6 @@ pub(super) const MODULE_DECL_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefi
         histogram: "module_path_key_radix_block_histogram",
         bucket_prefix: "module_path_key_radix_block_bucket_prefix",
         bucket_total: "module_path_key_radix_bucket_total",
-        bucket_base: "module_path_key_radix_bucket_base",
     },
     dispatch_args: "decl_key_radix_dispatch_args",
 };
@@ -3327,7 +3323,6 @@ fn build_graph(
             _module_path_key_radix_block_histogram as "module_path_key_radix_block_histogram" in Declarations => module_path_key_radix_rows * 4;
             _module_path_key_radix_block_bucket_prefix as "module_path_key_radix_block_bucket_prefix" in Declarations => module_path_key_radix_rows * 4;
             _module_path_key_radix_bucket_total as "module_path_key_radix_bucket_total" in Declarations => u64::from(RADIX_U8_BUCKET_COUNT) * 4;
-            _module_path_key_radix_bucket_base as "module_path_key_radix_bucket_base" in Declarations => u64::from(RADIX_U8_BUCKET_COUNT) * 4;
         });
     }
 
@@ -3911,7 +3906,6 @@ fn build_graph(
             histogram: "hir_visible_decl_key_radix_block_histogram",
             bucket_prefix: "hir_visible_decl_key_radix_block_bucket_prefix",
             bucket_total: "hir_visible_decl_key_radix_bucket_total",
-            bucket_base: "hir_visible_decl_key_radix_bucket_base",
         },
     )?;
     let _hir_visible_decl_key_order = visible_decl_sort_resources.order;
@@ -7213,7 +7207,6 @@ mod tests {
             resource("module_path_key_radix_block_histogram"),
             resource("module_path_key_radix_block_bucket_prefix"),
             resource("module_path_key_radix_bucket_total"),
-            resource("module_path_key_radix_bucket_base"),
         ];
         for resource in name_workspace {
             assert_eq!(
@@ -7323,7 +7316,6 @@ mod tests {
             resource("module_path_key_radix_block_histogram"),
             resource("module_path_key_radix_block_bucket_prefix"),
             resource("module_path_key_radix_bucket_total"),
-            resource("module_path_key_radix_bucket_base"),
         ];
         let module_radix_start = module_radix_region.first_pass;
         let module_radix_end_name = if module_radix_steps % 2 != 0 {
@@ -7442,9 +7434,6 @@ mod tests {
                 .unwrap(),
             graph
                 .resource_id("hir_visible_decl_key_radix_bucket_total")
-                .unwrap(),
-            graph
-                .resource_id("hir_visible_decl_key_radix_bucket_base")
                 .unwrap(),
             graph.resource_id("hir_visible_decl_scope_tree").unwrap(),
         ];
