@@ -54,6 +54,8 @@ pub mod string;
 pub mod structs;
 /// Type form, type-path, type-argument, and alias passes.
 pub mod types;
+/// Per-round state for the GPU early exit of bounded relation walks.
+pub mod walk_state;
 
 /// Number of input links followed by one bounded relation-walk dispatch.
 pub(crate) const BOUNDED_WALK_LINKS_PER_STEP: u32 = 16;

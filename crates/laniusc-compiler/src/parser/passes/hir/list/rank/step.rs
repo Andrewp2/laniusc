@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
+use crate::parser::passes::hir::walk_state::HirWalk;
 use crate::{
     gpu::{
         buffers::LaniusBuffer,
@@ -44,7 +45,7 @@ impl HirListRankStepOperation {
             let label = if step % 2 == 0 { labels.0 } else { labels.1 };
             let (owner_in, link_in, rank_in, owner_out, link_out, rank_out) =
                 relation.for_step(step);
-            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
                 ("gHirListRank".into(), params.as_entire_binding()),
                 (
                     "tree_count_status".into(),
@@ -69,6 +70,7 @@ impl HirListRankStepOperation {
                 ("list_link_out".into(), link_out.as_entire_binding()),
                 ("list_rank_out".into(), rank_out.as_entire_binding()),
             ]);
+            resources.extend(buffers.hir_walk_bindings(HirWalk::ListRank(invocation), step));
             let cache_identity = format!("{label}.{step}");
             let bind_group = cache
                 .reflected_for_graph_invocation(

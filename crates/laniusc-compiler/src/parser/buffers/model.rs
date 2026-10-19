@@ -1049,6 +1049,12 @@ pub struct ParserBuffers {
     pub hir_expr_name_role: LaniusBuffer<u32>,
     pub hir_expr_result_root_node: LaniusBuffer<u32>,
     pub hir_expr_result_root_scratch_node: LaniusBuffer<u32>,
+    /// Round regions for the early exit of bounded relation walks.
+    pub hir_walk_state: LaniusBuffer<u32>,
+    /// Per (walk, round) word indices into `hir_walk_state`.
+    pub hir_walk_rounds: crate::gpu::buffers::DynamicUniformBuffer<
+        crate::parser::passes::hir::walk_state::HirWalkRound,
+    >,
     pub hir_binary_span_link_a: LaniusBuffer<u32>,
     pub hir_binary_span_link_b: LaniusBuffer<u32>,
     pub hir_binary_span_start_a: LaniusBuffer<u32>,

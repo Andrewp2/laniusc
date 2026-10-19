@@ -2,7 +2,9 @@
 //
 // The expression-field pass publishes the local edge relation. This pass
 // materializes its transitive result root without exposing wrapper chains to
-// consumers.
+// consumers. Rounds after the walk converges return at once (hir_walk_state).
+
+import hir_walk_state;
 
 struct Params
 {
@@ -16,6 +18,10 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_expr_result_root_in;
 
 RWStructuredBuffer<uint> hir_expr_result_root_out;
+ConstantBuffer<HirWalkRound> gHirWalkRound;
+RWStructuredBuffer<uint> hir_walk_state;
+
+groupshared uint g_walk_changed;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -39,19 +45,18 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+// Advances one node and reports whether its output differs from its input.
+bool advance(uint node)
 {
-    uint node = linear_thread_id(dtid);
     if (node >= active_node_count())
-        return;
+        return false;
 
-    uint root = hir_expr_result_root_in[node];
+    uint start = hir_expr_result_root_in[node];
+    uint root = start;
     if (!valid_node(root))
     {
         hir_expr_result_root_out[node] = INVALID;
-        return;
+        return start != INVALID;
     }
 
     for (uint hop = 0u; hop < LINKS_PER_STEP; ++hop)
@@ -62,4 +67,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
         root = next;
     }
     hir_expr_result_root_out[node] = root;
+    return root != start;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID, uint group_thread: SV_GroupIndex)
+{
+    uint node = linear_thread_id(dtid);
+    hir_walk_mark_ran(hir_walk_state, gHirWalkRound, node);
+    if (hir_walk_round_redundant(hir_walk_state, gHirWalkRound))
+        return;
+
+    if (group_thread == 0u)
+        g_walk_changed = 0u;
+    GroupMemoryBarrierWithGroupSync();
+    if (advance(node))
+        g_walk_changed = 1u;
+    GroupMemoryBarrierWithGroupSync();
+    if (group_thread == 0u && g_walk_changed != 0u)
+        hir_walk_mark_changed(hir_walk_state, gHirWalkRound);
 }
