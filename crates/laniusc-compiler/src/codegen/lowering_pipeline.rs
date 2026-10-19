@@ -351,6 +351,12 @@ fn phase_reset_trace() -> bool {
 pub(crate) struct GpuLoweringWorkspaceCache {
     target: LoweringTarget,
     current: Mutex<Option<Arc<GpuLoweringPipeline>>>,
+    /// The capacities of the workspace `release` dropped. The next workspace
+    /// covers them, as the lexer and type-check workspaces keep their floors
+    /// across a frontend replacement. Without it a job whose units have
+    /// different shapes (a template replay is a few tokens beside a 1.4 MB
+    /// original) reallocates the multi-gigabyte workspace on the next job.
+    floor: Mutex<Option<LoweringCapacities>>,
 }
 
 /// The split the lowering submits its semantic stage and optimizer with,
@@ -403,6 +409,7 @@ impl GpuLoweringWorkspaceCache {
         Self {
             target,
             current: Mutex::new(None),
+            floor: Mutex::new(None),
         }
     }
 
@@ -435,9 +442,24 @@ impl GpuLoweringWorkspaceCache {
         {
             return Ok(Arc::clone(pipeline));
         }
-        let capacities = current.as_ref().map_or(required, |pipeline| {
-            pipeline.capacities.grow_to_cover(required)
-        });
+        let floor = *self.floor.lock().expect("lowering workspace floor poisoned");
+        let capacities = current.as_ref().map(|pipeline| pipeline.capacities).or(floor)
+            .map_or(required, |previous| previous.grow_to_cover(required));
+        if crate::gpu::env::env_bool_truthy("LANIUS_LOWERING_CACHE_TRACE", false) {
+            let reason = current.as_ref().map_or("empty".to_string(), |pipeline| {
+                format!(
+                    "covers={} kind_same={} upstream_same={} semantic_same={}",
+                    pipeline.capacities.covers(required),
+                    pipeline.artifact_kind == artifact_kind,
+                    pipeline.upstream_signature == upstream_signature,
+                    pipeline.semantic_input_signature == semantic_input_signature,
+                )
+            });
+            eprintln!(
+                "[lowering.cache] rebuild {reason} source={source_bytes} tokens={tokens} hir={hir_nodes} required={required:?} previous={:?}",
+                current.as_ref().map(|pipeline| pipeline.capacities)
+            );
+        }
         // Reflected bind groups in the old pipeline own every lowering arena.
         // Destroy that complete identity graph before allocating its
         // replacement; otherwise a small capacity increase transiently makes
@@ -477,11 +499,24 @@ impl GpuLoweringWorkspaceCache {
             .ok_or_else(|| format!("{target} lowering workspace is not initialized"))
     }
 
+    /// Drops the workspace for a frontend replacement; the next one keeps
+    /// at least its capacities.
     pub(crate) fn release(&self) {
-        *self
+        let released = self
             .current
             .lock()
-            .expect("lowering workspace cache poisoned") = None;
+            .expect("lowering workspace cache poisoned")
+            .take();
+        if let Some(released) = released {
+            let mut floor = self.floor.lock().expect("lowering workspace floor poisoned");
+            *floor = Some(floor.map_or(released.capacities, |floor| floor.grow_to_cover(released.capacities)));
+        }
+    }
+
+    /// Drops the workspace and its floor (the daemon's memory-pressure trim).
+    pub(crate) fn trim(&self) {
+        self.release();
+        *self.floor.lock().expect("lowering workspace floor poisoned") = None;
     }
 
     #[cfg(test)]
