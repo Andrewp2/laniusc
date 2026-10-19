@@ -1,0 +1,13 @@
+module app::main;
+
+import gen::lib;
+
+// Integer literals in arithmetic on imported usize constants take usize,
+// in a call argument and in a usize local (2 * 18 + 6).
+fn main() -> i32 {
+    let size: usize = gen::lib::bytes(
+        2 * gen::lib::RECORD_BYTES + gen::lib::ALIGNMENT, gen::lib::ALIGNMENT);
+    let words: usize = 4 * gen::lib::RECORD_BYTES;
+    if (words != 72) { return 1; }
+    return size as i32;
+}
