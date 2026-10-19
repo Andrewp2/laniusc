@@ -1407,6 +1407,8 @@ fn build_graph(
     let tree_rows = u64::from(capacity.tree_capacity.max(1));
     let bracket_blocks = u64::from(capacity.bracket_blocks.max(1));
     let tree_blocks = u64::from(capacity.tree_node_blocks.max(1));
+    let scan_rows = tree_rows.max(input_token_rows);
+    let scan_blocks = tree_blocks.max(input_token_rows.div_ceil(256));
     let prefix_blocks = u64::from(capacity.tree_prefix_blocks.max(1));
     let bracket_leaf_base = capacity.bracket_blocks.max(1).next_power_of_two();
     let prefix_leaf_base = capacity.tree_prefix_blocks.max(1).next_power_of_two();
@@ -1615,25 +1617,28 @@ fn build_graph(
             tree_rows * 4,
         ),
         ("hir_semantic_flag", ResourceDomain::RawNodes, tree_rows * 4),
+        // The semantic scan scratch also serves the canonical compaction
+        // scans, which run over the canonical (token) capacity. That can
+        // exceed the raw tree capacity when the token capacity has headroom.
         (
             "hir_semantic_local_prefix",
             ResourceDomain::RawNodes,
-            tree_rows * 4,
+            scan_rows * 4,
         ),
         (
             "hir_semantic_block_sum",
             ResourceDomain::RawNodes,
-            tree_blocks * 4,
+            scan_blocks * 4,
         ),
         (
             "hir_semantic_block_prefix_a",
             ResourceDomain::RawNodes,
-            tree_blocks * 4,
+            scan_blocks * 4,
         ),
         (
             "hir_semantic_block_prefix_b",
             ResourceDomain::RawNodes,
-            tree_blocks * 4,
+            scan_blocks * 4,
         ),
         ("hir_node_dense_id", ResourceDomain::RawNodes, tree_rows * 4),
         (
