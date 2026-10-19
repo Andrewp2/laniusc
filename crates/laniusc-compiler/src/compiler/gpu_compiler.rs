@@ -93,6 +93,12 @@ struct CachedParserShape {
 struct ParserShapeCache {
     entries: std::collections::HashMap<blake3::Hash, CachedParserShape>,
     clock: u64,
+    /// Speculative frontend runs discarded for more tokens or other features
+    /// than the cached shape, and parses rerun for a larger tree.
+    #[cfg(test)]
+    lexer_boundary_retries: u64,
+    #[cfg(test)]
+    tree_capacity_retries: u64,
 }
 
 impl ParserShapeCache {
@@ -568,6 +574,81 @@ mod tests {
             .expect("spawn lowering job bounds check")
             .join()
             .expect("lowering job bounds check panicked");
+    }
+
+    #[test]
+    fn physical_gpu_warm_shape_headroom_covers_edits_and_retries_past_it() {
+        std::thread::Builder::new()
+            .name("parser shape headroom".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_warm_shape_headroom)
+            .expect("spawn parser shape headroom check")
+            .join()
+            .expect("parser shape headroom check panicked");
+    }
+
+    // A cold job records its parser shape with token headroom, so a warm edit
+    // that adds a few tokens runs speculatively to completion. An edit that
+    // adds more tokens than the headroom, in the same source bytes (code
+    // where the original had a comment), still compiles correctly through
+    // the lexer-boundary retry.
+    fn run_warm_shape_headroom() {
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::all(),
+        ))
+        .expect("initialize compiler");
+        let filler: String = (0..600)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}\n"))
+            .collect();
+        // 13 tokens each: 10,400 tokens, more than the headroom's one to two
+        // allocation buckets.
+        let extra: String = (0..800)
+            .map(|index| format!("fn g{index}(x: i32) -> i32 {{ return x; }}\n"))
+            .collect();
+        assert!(
+            extra.len() > 4,
+            "the extra functions replace a comment of the same length"
+        );
+        let comment = format!("//{}\n", "x".repeat(extra.len() - 3));
+        assert_eq!(comment.len(), extra.len());
+        let main = "fn main() -> i32 { return f7(35); }\n";
+        let base = format!("{filler}{comment}{main}");
+        let small_edit = format!("{filler}{comment}fn main() -> i32 {{ return f7(35) + 0; }}\n");
+        let outgrown = format!("{filler}{extra}{main}");
+        assert!(small_edit.len() < base.len() + 64);
+        assert_eq!(outgrown.len(), base.len());
+        let retries = || {
+            let cache = compiler
+                .parser_shape_cache
+                .lock()
+                .expect("compiler.parser_shape_cache poisoned");
+            (cache.lexer_boundary_retries, cache.tree_capacity_retries)
+        };
+        let run = |case: &str, source: &str, expected_retries: (u64, u64)| {
+            let before = retries();
+            let artifact = pollster::block_on(compiler.compile_source_to_x86_64(source))
+                .unwrap_or_else(|error| panic!("{case}: x86 compile: {error}"));
+            let after = retries();
+            assert_eq!(
+                (after.0 - before.0, after.1 - before.1),
+                expected_retries,
+                "{case}: (lexer-boundary, tree-capacity) retries"
+            );
+            assert_lowered_program_result(
+                LoweringTarget::X86_64,
+                &format!("headroom-{case}"),
+                &artifact,
+                42,
+            );
+        };
+        run("cold", &base, (0, 0));
+        run("identical", &base, (0, 0));
+        run("small_edit", &small_edit, (0, 0));
+        run("outgrown", &outgrown, (1, 0));
+        run("outgrown_again", &outgrown, (0, 0));
+        run("back_to_base", &base, (0, 0));
     }
 
     #[test]
