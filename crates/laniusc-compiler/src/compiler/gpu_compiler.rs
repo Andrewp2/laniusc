@@ -686,6 +686,10 @@ mod tests {
             }
         }
 
+        // Fresh artifacts come from built grids; the poisoned jobs below
+        // turn job-sized grids on.
+        let _guard = PoisonGuard;
+        TEST_JOB_SIZED_DIRECT_OPS.store(0, Ordering::Relaxed);
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
             gpu,
@@ -813,7 +817,6 @@ mod tests {
         release();
         let fresh_rich_wasm = wasm(&rich_wasm);
 
-        let _guard = PoisonGuard;
         TEST_JOB_SIZED_DIRECT_OPS.store(1, Ordering::Relaxed);
         for word in [1u32, u32::MAX] {
             TEST_PHASE_RESET_POISON.store(u64::from(word), Ordering::Relaxed);
