@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
+use crate::parser::passes::hir::walk_state::HirWalk;
 use crate::{
     gpu::passes_core::{BindGroupCache, PassData},
     parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
@@ -110,7 +111,7 @@ impl HirEnumVariantRankStepPass {
             )
         };
 
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+        let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gHirEnum".into(),
                 buffers.hir_enum_match_fields_params.as_entire_binding(),
@@ -184,6 +185,7 @@ impl HirEnumVariantRankStepPass {
                 payload_rank_out.as_entire_binding(),
             ),
         ]);
+        resources.extend(buffers.hir_walk_bindings(HirWalk::EnumVariantRank, step));
 
         let label = if final_unpaired_step {
             A_TO_B_FINAL

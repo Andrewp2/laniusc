@@ -91,6 +91,7 @@ pub(in crate::parser) const SOURCE_FILE_TOKEN_END_CLEAR: &str =
 pub(in crate::parser) const HIR_TYPE_PATH_LEAF_LINK_B_CLEAR: &str =
     "parser.hir_type_path_leaf_link_b.clear";
 pub(in crate::parser) const TOKEN_FILE_ID_CLEAR: &str = "parser.token_file_id.clear";
+pub(in crate::parser) const HIR_WALK_STATE_CLEAR: &str = "parser.hir_walk_state.clear";
 pub(in crate::parser) const TOKEN_FILE_ID_COPY: &str = "parser.token_file_id.copy";
 pub(in crate::parser) const JOB_STORAGE_RESET: &str = "parser.workspace.clear_job_storage";
 pub(in crate::parser) const STACK_EFFECT_CLEAR: &str = "parser.stack_effect.clear";
@@ -118,6 +119,7 @@ pub(in crate::parser) struct ParserClearOperations {
     hir_expr_name_role: ClearBufferOperation,
     source_file_token_end: ClearBufferOperation,
     hir_type_path_leaf_link_b: ClearBufferOperation,
+    hir_walk_state: ClearBufferOperation,
     hir_type_arg_owner_b: ClearBufferOperation,
     hir_type_arg_link_b: ClearBufferOperation,
     hir_type_arg_rank_b: ClearBufferOperation,
@@ -183,6 +185,10 @@ impl ParserClearOperations {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         self.hir_type_path_leaf_link_b.record(encoder);
+    }
+
+    pub(in crate::parser) fn record_hir_walk_state(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.hir_walk_state.record(encoder);
     }
 
     pub(in crate::parser) fn record_hir_type_arg_secondary_rows(
@@ -764,6 +770,11 @@ impl ParserCompilerGraph {
                 &buffers.hir_type_path_leaf_link_b,
                 0,
                 u64::from(buffers.tree_capacity) * 4,
+            )?,
+            hir_walk_state: clear(
+                HIR_WALK_STATE_CLEAR,
+                "hir_walk_state",
+                &buffers.hir_walk_state,
             )?,
             hir_type_arg_owner_b: clear_tree_range(
                 hir::TYPE_ARG_OWNER_B_CLEAR,
@@ -1878,6 +1889,12 @@ fn build_graph(
         "hir_expr_result_root_scratch_node",
         ResourceDomain::HirNodes,
         tree_rows * 4,
+    )?;
+    workspace(
+        &mut graph,
+        "hir_walk_state",
+        ResourceDomain::HirNodes,
+        crate::parser::passes::hir::walk_state::HIR_WALK_STATE_BYTES,
     )?;
     for (name, bytes) in [
         ("source_file_token_end", input_token_rows * 4),
@@ -3205,6 +3222,13 @@ fn build_graph(
         ],
     )?;
     indirect(&mut graph, "hir_type_fields", "tree_active_dispatch_args")?;
+    // One clear per HIR run, before the first walk that uses the early exit.
+    clear(
+        &mut graph,
+        HIR_WALK_STATE_CLEAR,
+        CompilerPhase::Hir,
+        &[("hir_walk_state", "hir_walk_state")],
+    )?;
     let type_path_leaf_steps =
         crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity) as usize;
     for (step, &name) in HIR_TYPE_PATH_LEAF_STEPS

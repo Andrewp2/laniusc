@@ -1422,6 +1422,8 @@ impl ParserBuffers {
         let hir_expr_result_root_node = graph_buffer!(u32, "hir_expr_result_root_node");
         let hir_expr_result_root_scratch_node =
             graph_buffer!(u32, "hir_expr_result_root_scratch_node");
+        let hir_walk_state = graph_buffer!(u32, "hir_walk_state");
+        let hir_walk_rounds = super::passes::hir::walk_state::hir_walk_rounds(device);
         let hir_binary_span_link_a = graph_buffer!(u32, "hir_binary_span_link_a");
         let hir_binary_span_start_a = graph_buffer!(u32, "hir_binary_span_start_a");
         // The seed fills both ping-pong buffers, so B always has a lifetime.
@@ -2368,6 +2370,8 @@ impl ParserBuffers {
             hir_expr_name_role,
             hir_expr_result_root_node,
             hir_expr_result_root_scratch_node,
+            hir_walk_state,
+            hir_walk_rounds,
             hir_binary_span_link_a,
             hir_binary_span_link_b,
             hir_binary_span_start_a,

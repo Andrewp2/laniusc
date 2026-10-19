@@ -597,6 +597,15 @@ impl<T> DynamicUniformBuffer<T> {
         })
     }
 
+    /// A static binding of record `index`, for layouts without dynamic offsets.
+    pub fn record_binding(&self, index: usize) -> wgpu::BindingResource<'_> {
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &self.buffer,
+            offset: self.buffer.byte_offset + u64::from(self.dynamic_offset(index)),
+            size: Some(self.binding_size),
+        })
+    }
+
     pub fn dynamic_offset(&self, index: usize) -> u32 {
         assert!(index < self.count, "dynamic uniform index out of bounds");
         self.stride

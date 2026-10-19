@@ -387,6 +387,7 @@ impl GpuParser {
                         .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_fields");
                 }
+                bufs.clear_operations().record_hir_walk_state(ctx.encoder);
                 self.passes.hir_type_path_leaf_step.record_steps_indirect(
                     ctx.device,
                     ctx.encoder,
