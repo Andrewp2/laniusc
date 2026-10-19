@@ -14,11 +14,14 @@ Per workload the daemon compiles:
   edit 1..N      the original sources with one app function body changed.
 
 Edit k picks the k-th module entry that main calls (`part = CALLEE(seed); print(part);`),
-spread over main with a stride, and rewrites every `return EXPR;` in that function's body to
-`return ((EXPR) + k) & 4095;`. Each edit starts from the original sources, so consecutive edit
-jobs differ in two function bodies (the previous edit is undone). The printed line for that
-entry becomes (old + k) & 4095 and the final total line is recomputed from the parts, so the
-expected stdout stays exact. The edit needs main's `print(part)` / `total = (total + part) &
+spread over main with a stride. Odd edits insert tokens: every `return EXPR;` in that
+function's body becomes `return ((EXPR) + k) & 4095;`. Even edits delete tokens: the whole
+body becomes `return V;`, V being the entry's printed value plus k (masked), when main calls
+the entry once (otherwise the edit inserts). Each edit starts from the original sources, so
+consecutive edit jobs differ in two function bodies (the previous edit is undone) and the
+token count goes up and down from job to job. The printed line for that entry becomes
+(old + k) & 4095 and the final total line is recomputed from the parts, so the expected
+stdout stays exact. The edit needs main's `print(part)` / `total = (total + part) &
 4095` shape, which all three generators write; other workloads (or `"run": false` ones) report
 edit mode as unsupported.
 
@@ -132,22 +135,29 @@ class EditPlan:
         if span is None:
             raise RuntimeError(f"cannot find fn {name} in {path}")
         delta = k % MASK or 1
-        body = text[span[0]:span[1]].split("\n")
-        changed = 0
-        for i, line in enumerate(body):
-            m = RETURN_RE.match(line)
-            if m:
-                body[i] = f"{m.group(1)}return (({m.group(2)}) + {delta}) & {MASK};{m.group(3)}"
-                changed += 1
-        if not changed:
-            raise RuntimeError(f"fn {name} has no single-line return to edit")
-        path.write_text(text[:span[0]] + "\n".join(body) + text[span[1]:])
         parts = list(self.lines[:-1])
-        for j, c in enumerate(self.callees):
-            if c == callee:
-                parts[j] = (parts[j] + delta) & MASK
+        if k % 2 == 0 and self.callees.count(callee) == 1:
+            value = (parts[index] + delta) & MASK
+            path.write_text(text[:span[0]] + f"{{\n    return {value};\n}}" + text[span[1]:])
+            parts[index] = value
+            label = f"{callee}={value}"
+        else:
+            body = text[span[0]:span[1]].split("\n")
+            changed = 0
+            for i, line in enumerate(body):
+                m = RETURN_RE.match(line)
+                if m:
+                    body[i] = f"{m.group(1)}return (({m.group(2)}) + {delta}) & {MASK};{m.group(3)}"
+                    changed += 1
+            if not changed:
+                raise RuntimeError(f"fn {name} has no single-line return to edit")
+            path.write_text(text[:span[0]] + "\n".join(body) + text[span[1]:])
+            for j, c in enumerate(self.callees):
+                if c == callee:
+                    parts[j] = (parts[j] + delta) & MASK
+            label = f"{callee}+{delta}"
         expected = "".join(f"{v}\n" for v in parts + [sum(parts) & MASK])
-        return [path], expected, f"{callee}+{delta}"
+        return [path], expected, label
 
     def pristine(self, path: pathlib.Path) -> str:
         if path not in self.files:
