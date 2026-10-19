@@ -395,6 +395,9 @@ impl CompiledSourcePackUnit {
                 .saturating_add(std::mem::size_of::<crate::type_checker::CheckedOwnerSpans>())
                 .saturating_add(spans.resident_bytes());
         }
+        if let Some(closure) = &self.instance_closure {
+            bytes = bytes.saturating_add(closure.resident_bytes());
+        }
         bytes = bytes.saturating_add(
             self.x86_call_hirs
                 .len()
@@ -858,6 +861,7 @@ mod tests {
         CompiledSourcePackUnit {
             body_native_layouts: None,
             owner_spans: None,
+            instance_closure: None,
             interface: GpuSemanticInterfaceArtifact {
                 version: crate::compiler::GPU_SEMANTIC_INTERFACE_VERSION,
                 library_id,

@@ -11,7 +11,13 @@ use std::{
 };
 
 use super::{
-    program_evidence::{AdmittedCall, NativeProgramSession, ReplayScope, native_program_error},
+    program_evidence::{
+        AdmittedCall,
+        NativeProgramSession,
+        ReplayScope,
+        instance_closure_enabled,
+        native_program_error,
+    },
     typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
     *,
 };
@@ -118,6 +124,10 @@ impl GpuCompiler<'_> {
         let mut trace = SpecializationTrace::new();
         let batch_limit = replay_batch_limit();
         let instance_copies = instance_copies_enabled();
+        // Bodies the instance closure scheduled ahead of their parent's
+        // replay, and every key a scan patched (to find unused predictions).
+        let mut closure = ClosureIntake::default();
+        let mut patched_keys = BTreeSet::<Vec<u8>>::new();
         // Breadth-first rounds: scan every context of the frontier, then
         // replay the round's new environments with compatible scopes of one
         // template unit sharing a frontend run, then patch the round's calls.
@@ -238,6 +248,14 @@ impl GpuCompiler<'_> {
                 }
             }
             host_span("scan", scan_started);
+            if round_start == 0 && instance_closure_enabled() {
+                let closure_started = std::time::Instant::now();
+                closure.schedule(units, &program, &defined_identities, &specializations, &mut pending);
+                host_span("closure", closure_started);
+            }
+            if trace.enabled {
+                eprintln!("[specialization] round contexts={round_start}..{round_end} new_bodies={}", pending.len());
+            }
             // Group by template unit, then pack compatible scopes greedily in
             // key order (deterministic: keys are canonical environments).
             let mut by_unit = BTreeMap::<(u32, u32), Vec<Vec<u8>>>::new();
@@ -463,12 +481,131 @@ impl GpuCompiler<'_> {
                     symbol_index,
                     &specializations[&key].0,
                 )?;
+                if !closure.keys.is_empty() { patched_keys.insert(key); }
             }
             host_span("patch", patch_started);
             round_start = round_end;
         }
         trace.finish(specializations.len(), specialized_text_bytes);
+        closure.finish(units, &patched_keys, trace.enabled)?;
         Ok(objects)
+    }
+}
+
+/// The instance closure's bodies (D1): each original unit's closed
+/// instances of depth 2 and deeper, scheduled in the first round beside the
+/// bodies its calls reach directly, so a chain of N levels replays in fewer
+/// rounds. A body is still published only through its own GPU-admitted
+/// origin call; a prediction no scan uses costs one unused body, never a
+/// wrong binary.
+#[derive(Default)]
+struct ClosureIntake {
+    keys: BTreeSet<Vec<u8>>,
+    /// The session's decoded / closed / appended / concrete counts.
+    stages: [usize; 4],
+    /// Origins that were already scheduled, had a tag-only definition, or
+    /// could not be keyed.
+    known: usize,
+    skipped: usize,
+}
+
+impl ClosureIntake {
+    fn schedule(
+        &mut self,
+        units: &[&CompiledSourcePackUnit],
+        program: &NativeProgramSession,
+        defined_identities: &BTreeMap<(u32, u32), HashSet<&[u8]>>,
+        specializations: &BTreeMap<Vec<u8>, (Vec<u8>, Vec<u32>)>,
+        pending: &mut BTreeMap<Vec<u8>, PendingBody>,
+    ) {
+        self.stages = program.instance_closure_stats();
+        let mut seen = BTreeSet::new();
+        for unit in units {
+            let (owner_library, owner_unit) = (unit.interface.library_id, unit.interface.unit_id);
+            if !seen.insert((owner_library, owner_unit)) { continue; }
+            for (depth, admitted) in program.instance_closure_origins([owner_library, owner_unit]) {
+                let call = admitted.checked_call();
+                let Some(target) = native_target(call.target, owner_library, owner_unit) else {
+                    self.skipped += 1;
+                    continue;
+                };
+                let identity = declaration_identity(target.0, target.1, target.2);
+                if defined_identities.get(&(target.0, target.1))
+                    .is_none_or(|defined| defined.contains(identity.as_slice()))
+                    || *depth >= MAX_INSTANTIATION_DEPTH
+                {
+                    self.skipped += 1;
+                    continue;
+                }
+                let Ok(Some((key, layouts))) = checked_replay_environment(call, owner_library, owner_unit) else {
+                    self.skipped += 1;
+                    continue;
+                };
+                if specializations.contains_key(&key) || pending.contains_key(&key) {
+                    self.known += 1;
+                    continue;
+                }
+                self.keys.insert(key.clone());
+                pending.insert(key, PendingBody {
+                    admitted: admitted.clone(),
+                    target,
+                    recursive: false,
+                    origin: EntryOrigin { depth: *depth, parent: None, target },
+                    witnesses: vec![layouts],
+                });
+            }
+        }
+    }
+
+    /// Trace the closure and, under `LANIUS_CHECK_INSTANCE_CLOSURE=1`, fail
+    /// when a scheduled body was never called.
+    fn finish(
+        &self,
+        units: &[&CompiledSourcePackUnit],
+        patched_keys: &BTreeSet<Vec<u8>>,
+        trace: bool,
+    ) -> Result<(), CompileError> {
+        let unused = self.keys.iter().filter(|key| !patched_keys.contains(*key)).collect::<Vec<_>>();
+        if trace {
+            // found, edges, GPU-skipped edges, dropped; then flags and errors.
+            let mut totals = [0u64; 4];
+            let (mut flags, mut errors) = (0u32, 0usize);
+            let mut rejects = [0u32; 6];
+            for unit in units {
+                let Some(closure) = &unit.instance_closure else { continue };
+                for (total, value) in totals.iter_mut()
+                    .zip([closure.found, closure.edges, closure.skipped, closure.dropped])
+                {
+                    *total += u64::from(value);
+                }
+                flags |= closure.flags;
+                for (total, value) in rejects.iter_mut().zip(closure.rejects) { *total += value; }
+                errors += usize::from(closure.error.is_some());
+            }
+            eprintln!(
+                "[specialization] closure found={} edges={} gpu_skipped={} dropped={} flags={flags:#x} errors={errors} rejects={rejects:?} decoded/closed/appended/concrete={:?} scheduled={} known={} skipped={} unused={}",
+                totals[0], totals[1], totals[2], totals[3], self.stages,
+                self.keys.len(), self.known, self.skipped, unused.len(),
+            );
+            // Both fall back to the replay rounds (fail closed): a frontier
+            // left at the level limit drops the unit's whole closure (it may be
+            // polymorphic recursion); an export still busy after its retries
+            // drops only that instance.
+            if flags & 8 != 0 {
+                eprintln!("[specialization]   closure ignored: a frontier reached the level limit; the replay rounds find its instances");
+            }
+            if rejects[0] != 0 {
+                eprintln!("[specialization]   closure export failed for {} instances; the replay rounds find them", rejects[0]);
+            }
+            for key in &unused {
+                eprintln!("[specialization]   unused closure key={}", &blake3::hash(key).to_hex()[..12]);
+            }
+        }
+        if !unused.is_empty() && crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INSTANCE_CLOSURE", false) {
+            return Err(CompileError::GpuCodegen(format!(
+                "instance closure scheduled {} bodies no call uses", unused.len())));
+        }
+        Ok(())
     }
 }
 

@@ -927,6 +927,13 @@ impl GpuTypeChecker {
         });
         // The status words when call inference stopped on a recorded error.
         let mut inference_error = None;
+        // An original unit with an interface and generic syntax records the
+        // instance closure; its unit facts read the closure back.
+        let instance_closure = hir_items.semantic_interface_required
+            && hir_items.body_specialization.is_none()
+            && generic_call_claim_passes_required(parser_feature_flags)
+            // LANIUS_INSTANCE_CLOSURE=0 (A/B runs) leaves the closure out.
+            && crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true);
         let canonical_synchronous = canonical_stages_synchronous(
             self.canonical_synchronous
                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -955,6 +962,7 @@ impl GpuTypeChecker {
                     parser_feature_flags,
                     dependency_interfaces.is_some(),
                     hir_items.semantic_interface_required,
+                    instance_closure,
                 )?);
             let module_path = &bind_groups.module_path;
             let canonical_scale = bind_groups.cache_key.canonical_scale;
@@ -2343,6 +2351,12 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .generic_call_results
                 .record(encoder)?;
+            if instance_closure {
+                bind_groups.semantic_projection.instance_closure.record(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.instance_closure.done");
+                }
+            }
             record_canonical_types(
                 device,
                 queue,

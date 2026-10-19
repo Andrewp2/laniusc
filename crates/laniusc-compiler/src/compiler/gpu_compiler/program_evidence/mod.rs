@@ -21,6 +21,7 @@ pub(super) use native_session::{
     ReplayScope,
     ValidatedOriginalUnit,
     ValidatedReplayRequest,
+    instance_closure_enabled,
     native_program_error,
 };
 pub(super) use packet::{

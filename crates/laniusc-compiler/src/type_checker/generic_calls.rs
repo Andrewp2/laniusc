@@ -183,6 +183,9 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "semantic_predicate_subject_parameter_token_by_hir",
     "retained_owner_span_count",
     "retained_owner_spans",
+    "instance_closure_counts",
+    "instance_closure_instances",
+    "instance_closure_refs",
 ];
 
 /// These facts are produced by the separate interface-export graph. The
@@ -253,6 +256,8 @@ pub(super) struct RetainedGenericCallInputs {
     call_facts_active: bool,
     contract_facts_active: bool,
     method_facts_active: bool,
+    /// This job recorded the instance closure (resident.rs).
+    instance_closure_active: bool,
 }
 
 impl RetainedGenericCallInputs {
@@ -261,6 +266,7 @@ impl RetainedGenericCallInputs {
         hir: &crate::parser::buffers::GpuHirView,
         parser_feature_flags: u32,
         dependency_interfaces_present: bool,
+        instance_closure_active: bool,
     ) -> Result<Self> {
         let mut buffers = RETAINED_INPUTS
             .iter()
@@ -314,6 +320,7 @@ impl RetainedGenericCallInputs {
             contract_facts_active: parser_feature_flags
                 & crate::lexer::features::PARSER_FEATURE_PREDICATES
                 != 0,
+            instance_closure_active,
         })
     }
 
@@ -691,6 +698,49 @@ impl CheckedGenericConstant {
             value: CheckedGenericConstantValue::count_literal(value),
         }
     }
+}
+
+/// The concrete bodies the GPU instance closure (shaders/type_checker/closure)
+/// found at depth 2 and deeper in an original unit. Each is the call that
+/// instantiates it: its template call, inside the parent body, with the
+/// instance's own closed arguments. Empty when the closure did not run or
+/// left a frontier at its level limit.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CheckedInstanceClosure {
+    pub instances: Vec<CheckedClosureInstance>,
+    /// Instances the GPU found at any depth, and its IC_FLAG_* bits.
+    pub found: u32,
+    pub flags: u32,
+    /// Linked edges, and edges without a closed instance (trace only).
+    pub edges: u32,
+    pub skipped: u32,
+    /// Exported instances whose arity disagrees with their template call.
+    pub dropped: u32,
+    /// Rows the decode skipped (trace only): not exported, depth < 2, no
+    /// argument block, bad shape, arguments past the read table, template
+    /// call not retained.
+    pub rejects: [u32; 6],
+    /// Why the readback failed, when it did.
+    pub error: Option<String>,
+}
+
+impl CheckedInstanceClosure {
+    /// Heap and inline bytes, for the unit caches' budgets.
+    pub(crate) fn resident_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(self.instances.capacity()
+                .saturating_mul(std::mem::size_of::<CheckedClosureInstance>()))
+            .saturating_add(self.instances.iter()
+                .map(|instance| instance.call.resident_argument_bytes())
+                .fold(0, usize::saturating_add))
+            .saturating_add(self.error.as_ref().map_or(0, String::capacity))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CheckedClosureInstance {
+    pub depth: u32,
+    pub call: CheckedGenericCall,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1881,6 +1931,16 @@ pub(super) fn read_unit_facts(
     ] {
         batch.push(inputs.buffer(name), 0, 1, name)?;
     }
+    // The closure ran in this original job only; its counters ride along.
+    let closure_active = inputs.instance_closure_active
+        && interface_exported
+        && template_contracts.is_none()
+        && instance_copies.is_none();
+    let closure_counts = closure_active
+        .then(|| batch.push(inputs.buffer("instance_closure_counts"), 0,
+            super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize,
+            "instance closure counts"))
+        .transpose()?;
     let counts = batch.read(&readback, device, queue, "generic call counts")?;
     timer.stamp("counts");
     // Every later read depends on these counts. The GPU work that wrote the
@@ -2349,6 +2409,7 @@ pub(super) fn read_unit_facts(
             contracts,
             call_owners: Vec::new(),
             native_call_owners: Vec::new(),
+            instance_closure: CheckedInstanceClosure::default(),
         });
     }
     // Without generic parameters (type or constant) no local callee is
@@ -2925,12 +2986,146 @@ pub(super) fn read_unit_facts(
         .map(|(owner, _)| *owner)
         .collect();
     timer.stamp("owners");
+    // The closure is an optimization: a decode failure only loses it.
+    let instance_closure = match closure_counts {
+        Some(start) => read_instance_closure(&readback, device, queue, inputs,
+            &counts[start..start + super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize],
+            &call_ids, &calls, &mut types)
+            .unwrap_or_else(|error| CheckedInstanceClosure {
+                error: Some(format!("{error:#}")),
+                ..Default::default()
+            }),
+        None => CheckedInstanceClosure::default(),
+    };
+    timer.stamp("instance_closure");
     Ok(CheckedUnitFacts {
         generic_calls: calls.into_iter().flatten().collect(),
         contracts,
         call_owners,
         native_call_owners,
+        instance_closure,
     })
+}
+
+/// IC_FLAG_DEPTH (instance_closure.slang): a frontier was left at the
+/// level limit, so the closure is ignored.
+const INSTANCE_CLOSURE_FLAG_DEPTH: u32 = 8;
+const INSTANCE_CLOSURE_EXPORTED: u32 = 1;
+
+/// Decode the instance closure (shaders/type_checker/closure): every
+/// exported instance of depth 2 or deeper, as its template call (the call
+/// inside the parent body that reaches it) with the instance's own
+/// arguments. `counts` are the closure's counter words.
+#[allow(clippy::too_many_arguments)]
+fn read_instance_closure(
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    inputs: &RetainedGenericCallInputs,
+    counts: &[u32],
+    call_ids: &[u32],
+    calls: &[Option<CheckedGenericCall>],
+    types: &mut CheckedTypeReadback,
+) -> Result<CheckedInstanceClosure> {
+    let &[length, _, _, _, flags, argument_words, edges, skipped] = counts else {
+        return Err(anyhow!("instance closure counters are truncated"));
+    };
+    let table = inputs.buffer("instance_closure_instances");
+    let length = (length as usize).min(table.byte_size / 32);
+    let mut closure = CheckedInstanceClosure {
+        found: length as u32,
+        flags,
+        edges,
+        skipped,
+        ..Default::default()
+    };
+    if length == 0 || flags & INSTANCE_CLOSURE_FLAG_DEPTH != 0 {
+        return Ok(closure);
+    }
+    let refs_buffer = inputs.buffer("instance_closure_refs");
+    let ref_words = (argument_words as usize).min(refs_buffer.byte_size / 8) * 2;
+    let mut batch = WordBatch::default();
+    let rows = batch.push(table, 0, length * 8, "instance closure")?;
+    let refs_start = (ref_words != 0)
+        .then(|| batch.push(refs_buffer, 0, ref_words, "instance closure arguments"))
+        .transpose()?;
+    let words = batch.read(readback, device, queue, "instance closure")?;
+    let instances = &words[rows..rows + length * 8];
+    let refs = refs_start.map_or(&[][..], |start| &words[start..start + ref_words]);
+    let operand = |index: usize| (refs[index * 2], refs[index * 2 + 1]);
+    // (depth, template call position, argument base, type count, arity)
+    let mut kept = Vec::new();
+    let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false);
+    for row in instances.chunks_exact(8) {
+        let &[_, _, depth, _, base, template, status, shape] = row else { unreachable!() };
+        let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
+        let reject = if status != INSTANCE_CLOSURE_EXPORTED { Some(0) }
+            else if depth < 2 { Some(1) }
+            else if base == INVALID { Some(2) }
+            else if type_count > arity { Some(3) }
+            else if (base as usize + arity) * 2 > ref_words { Some(4) }
+            else { None };
+        let position = reject.is_none()
+            .then(|| call_ids.binary_search(&template).ok().filter(|&position| calls[position].is_some()))
+            .flatten();
+        if debug {
+            eprintln!("[instance-closure] row={row:?} ref_words={ref_words} reject={reject:?} template_retained={:?} template_generic={:?}",
+                call_ids.binary_search(&template).is_ok(),
+                call_ids.binary_search(&template).ok().map(|position| calls[position].is_some()));
+        }
+        match (reject, position) {
+            (Some(reason), _) => closure.rejects[reason] += 1,
+            (None, None) => closure.rejects[5] += 1,
+            (None, Some(position)) => kept.push((depth, position, base as usize, type_count, arity)),
+        }
+    }
+    let type_roots = kept.iter()
+        .flat_map(|&(_, _, base, type_count, _)| (base..base + type_count).map(operand))
+        .collect::<Vec<_>>();
+    types.prefetch_types(readback, device, queue, inputs, &type_roots)?;
+    let constant_roots = kept.iter()
+        .flat_map(|&(_, _, base, type_count, arity)| (base + type_count..base + arity).map(operand))
+        .collect::<Vec<_>>();
+    types.prefetch_constants(readback, device, queue, inputs, &constant_roots)?;
+    for (depth, position, base, type_count, arity) in kept {
+        let template = calls[position].as_ref().expect("kept template call");
+        if template.required_generic_parameters != Some(type_count as u32)
+            || template.required_constant_parameters != Some((arity - type_count) as u32)
+        {
+            closure.dropped += 1;
+            continue;
+        }
+        let mut arguments = Vec::with_capacity(type_count);
+        for slot in 0..type_count {
+            let (tag, payload) = operand(base + slot);
+            let ty = match types.get(&(tag, payload)) {
+                Some(ty) => ty.clone(),
+                None => read_type(readback, device, queue, inputs, tag, payload, types)?,
+            };
+            arguments.push(CheckedGenericArgument { slot: slot as u32, ty });
+        }
+        let constants = (0..arity - type_count)
+            .map(|slot| {
+                let (kind, payload) = operand(base + type_count + slot);
+                CheckedGenericConstant { slot: slot as u32, value: types.constant(kind, payload) }
+            })
+            .collect();
+        closure.instances.push(CheckedClosureInstance {
+            depth,
+            call: CheckedGenericCall {
+                arguments,
+                constants,
+                ..template.clone()
+            },
+        });
+    }
+    // The table is in lane order; admission and its packet rows must not be.
+    closure.instances.sort_by_cached_key(|instance| (
+        instance.call.call_hir,
+        instance.depth,
+        format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
+    ));
+    Ok(closure)
 }
 
 impl super::GpuTypeChecker {

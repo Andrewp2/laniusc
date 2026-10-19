@@ -1,0 +1,11 @@
+// expect: 42
+// A finite chain of 7 generic levels: deeper than the instance closure reaches, so the closure is ignored and the replay rounds compile it.
+struct Box<T> { inner: T }
+fn l0<T>(value: T) -> T { return value; }
+fn l1<T>(value: T) -> T { return l0(Box { inner: value }).inner; }
+fn l2<T>(value: T) -> T { return l1(Box { inner: value }).inner; }
+fn l3<T>(value: T) -> T { return l2(Box { inner: value }).inner; }
+fn l4<T>(value: T) -> T { return l3(Box { inner: value }).inner; }
+fn l5<T>(value: T) -> T { return l4(Box { inner: value }).inner; }
+fn l6<T>(value: T) -> T { return l5(Box { inner: value }).inner; }
+fn main() -> i32 { return l6(40) + l6(2); }

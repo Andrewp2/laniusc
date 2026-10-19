@@ -1024,6 +1024,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             checked_contracts: unit_facts.contracts,
             checked_call_owners: unit_facts.call_owners,
             native_call_owners: unit_facts.native_call_owners,
+            instance_closure: unit_facts.instance_closure,
             x86_call_hirs,
         }))
     }
@@ -2299,6 +2300,7 @@ struct OriginalUnitSnapshot {
     template_source_paths: std::sync::Arc<[Option<PathBuf>]>,
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
     owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
+    instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
 }
 
 impl OriginalUnitFacts {
@@ -2313,6 +2315,7 @@ impl OriginalUnitFacts {
                 template_source_paths: unit.template_source_paths.clone(),
                 template_dependency_pages: unit.template_dependency_pages.clone(),
                 owner_spans: unit.owner_spans.clone(),
+                instance_closure: unit.instance_closure.clone(),
             }),
         }
     }
@@ -2353,6 +2356,11 @@ impl OriginalUnitFacts {
 
     pub(super) fn owner_spans(&self) -> Option<&gpu_type_checker::CheckedOwnerSpans> {
         self.snapshot.owner_spans.as_deref()
+    }
+
+    /// The GPU instance closure of this original unit, when it ran.
+    pub(super) fn instance_closure(&self) -> Option<&gpu_type_checker::CheckedInstanceClosure> {
+        self.snapshot.instance_closure.as_deref()
     }
 }
 
@@ -2675,6 +2683,13 @@ fn finish_source_pack_unit(
         library_id,
         unit_id,
     );
+    for instance in &mut artifacts.instance_closure.instances {
+        gpu_type_checker::scope_generic_type_identities(
+            std::slice::from_mut(&mut instance.call),
+            library_id,
+            unit_id,
+        );
+    }
     artifacts
         .checked_contracts
         .scope_source_unit(library_id, unit_id);
@@ -2732,8 +2747,12 @@ fn finish_source_pack_unit(
             "retained calls do not have exactly one checked owner row each".into(),
         ));
     }
+    let closure = &artifacts.instance_closure;
+    let instance_closure = (closure.found != 0 || closure.error.is_some())
+        .then(|| std::sync::Arc::new(std::mem::take(&mut artifacts.instance_closure)));
     Ok(CompiledSourcePackUnit {
         owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
+        instance_closure,
         interface,
         object,
         template_sources,
@@ -2759,6 +2778,7 @@ struct CheckedSourcePackArtifacts {
     checked_contracts: gpu_type_checker::CheckedUnitContracts,
     checked_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     native_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
+    instance_closure: gpu_type_checker::CheckedInstanceClosure,
     x86_call_hirs: Vec<u32>,
 }
 
@@ -2771,6 +2791,9 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// Byte spans of this original unit's copyable generic bodies; None for
     /// a replay or a unit whose spans were not retained.
     pub(in crate::compiler) owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
+    /// The GPU instance closure of an original unit (D1); None for a replay
+    /// or a unit without generic calls.
+    pub(in crate::compiler) instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
     pub(in crate::compiler) generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,
