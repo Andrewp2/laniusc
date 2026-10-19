@@ -93,6 +93,7 @@ impl ClearBuffersOperation {
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for buffer in &self.buffers {
+            crate::gpu::encoder_chunks::note_access(encoder, &buffer.buffer, buffer.byte_offset, buffer.byte_size as u64, "clear");
             encoder.clear_buffer(
                 &buffer.buffer,
                 buffer.byte_offset,
@@ -171,6 +172,7 @@ impl ResetGraphAllocationsOperation {
                 0,
                 "compiler reset range is not copy-aligned"
             );
+            crate::gpu::encoder_chunks::note_access(encoder, &buffer.buffer, 0, byte_size, "reset clear");
             encoder.clear_buffer(&buffer.buffer, 0, Some(byte_size));
             cleared = cleared.saturating_add(byte_size);
         }
@@ -264,6 +266,7 @@ impl EmptyRelationsOperation {
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for count in &self.count_headers {
             debug_assert_eq!(count.byte_size, std::mem::size_of::<u32>());
+            crate::gpu::encoder_chunks::note_access(encoder, &count.buffer, count.byte_offset, count.byte_size as u64, "count clear");
             encoder.clear_buffer(
                 &count.buffer,
                 count.byte_offset,
@@ -329,6 +332,13 @@ impl ClearBufferOperation {
             return;
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
+        crate::gpu::encoder_chunks::note_access(
+            encoder,
+            &self.buffer.buffer,
+            self.buffer.byte_offset,
+            self.buffer.byte_size as u64,
+            "clear",
+        );
         encoder.clear_buffer(
             &self.buffer.buffer,
             self.buffer.byte_offset,
@@ -451,6 +461,8 @@ impl CopyBuffersOperation {
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for (source, destination, size) in &self.copies {
+            crate::gpu::encoder_chunks::note_access(encoder, &source.buffer, source.byte_offset, *size, "copy source");
+            crate::gpu::encoder_chunks::note_access(encoder, &destination.buffer, destination.byte_offset, *size, "copy destination");
             encoder.copy_buffer_to_buffer(
                 &source.buffer,
                 source.byte_offset,
@@ -635,6 +647,20 @@ impl CopyBufferOperation {
             return;
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
+        crate::gpu::encoder_chunks::note_access(
+            encoder,
+            &self.source,
+            self.source_base_offset + self.source_offset,
+            size,
+            "copy source",
+        );
+        crate::gpu::encoder_chunks::note_access(
+            encoder,
+            &self.destination.buffer,
+            self.destination.byte_offset + self.destination_offset,
+            size,
+            "copy destination",
+        );
         encoder.copy_buffer_to_buffer(
             &self.source,
             self.source_base_offset + self.source_offset,

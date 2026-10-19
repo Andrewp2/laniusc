@@ -762,7 +762,9 @@ impl<T> LaniusBuffer<T> {
             end <= self.byte_size as u64,
             "GPU buffer upload exceeds its logical view"
         );
-        queue.write_buffer(&self.buffer, self.absolute_offset(relative_offset), data);
+        let absolute = self.absolute_offset(relative_offset);
+        crate::gpu::encoder_chunks::note_queue_write(&self.buffer, absolute, data.len() as u64);
+        queue.write_buffer(&self.buffer, absolute, data);
     }
 
     /// Clears bytes relative to this logical view. `None` clears only the rest
@@ -780,6 +782,13 @@ impl<T> LaniusBuffer<T> {
         assert!(
             end <= self.byte_size as u64,
             "GPU buffer clear exceeds its logical view"
+        );
+        crate::gpu::encoder_chunks::note_access(
+            encoder,
+            &self.buffer,
+            self.absolute_offset(relative_offset),
+            size,
+            "clear",
         );
         encoder.clear_buffer(
             &self.buffer,
@@ -805,6 +814,20 @@ impl<T> LaniusBuffer<T> {
         assert!(
             destination_offset.saturating_add(size) <= destination.byte_size as u64,
             "GPU buffer copy exceeds its destination view"
+        );
+        crate::gpu::encoder_chunks::note_access(
+            encoder,
+            &self.buffer,
+            self.absolute_offset(source_offset),
+            size,
+            "copy source",
+        );
+        crate::gpu::encoder_chunks::note_access(
+            encoder,
+            &destination.buffer,
+            destination.absolute_offset(destination_offset),
+            size,
+            "copy destination",
         );
         encoder.copy_buffer_to_buffer(
             &self.buffer,

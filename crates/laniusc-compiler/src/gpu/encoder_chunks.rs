@@ -23,10 +23,21 @@
 //! `LANIUS_ENCODER_CHUNK_DISPATCHES` sets the cut size (default 96).
 //! Validation scopes disable it: their error scopes belong to the recording
 //! thread.
+//!
+//! The write-order check ([`note_queue_write`]) records which buffer ranges
+//! each cut chunk accesses (bound by its dispatches, cleared or copied) and
+//! flags a `Queue::write_buffer` that touches one before the chunk's
+//! submission. Today that write still reaches the chunk (the chunk is
+//! submitted with its encoder); a chunk submitted when it is cut would miss
+//! it. Unit tests and debug builds run the check and print what it flags;
+//! `LANIUS_ENCODER_CHUNK_WRITE_CHECK=1` runs it in any build and also lists
+//! every write of the scope, with a per-scope summary, and `=panic` makes a
+//! flagged write panic.
 
 use std::{
     cell::RefCell,
-    sync::{Mutex, OnceLock, mpsc},
+    collections::HashMap,
+    sync::{Arc, LazyLock, Mutex, OnceLock, mpsc},
 };
 
 struct FinishJob {
@@ -132,6 +143,7 @@ struct Chunking {
     label: &'static str,
     pending: Vec<mpsc::Receiver<FinishedChunk>>,
     dispatches_at_cut: u64,
+    check: Option<WriteCheck>,
 }
 
 thread_local! {
@@ -174,6 +186,7 @@ impl ChunkedEncoding {
                 label,
                 pending: Vec::new(),
                 dispatches_at_cut: crate::gpu::passes_core::recorded_compute_dispatch_count(),
+                check: write_check_mode().map(|_| WriteCheck::default()),
             });
             true
         });
@@ -187,6 +200,14 @@ impl Drop for ChunkedEncoding {
             return;
         }
         let state = CHUNKING.with(|state| state.borrow_mut().take());
+        if let Some(Chunking { label, check: Some(check), .. }) = &state {
+            if write_check_mode() == Some(WriteCheckMode::Report) {
+                eprintln!(
+                    "[encoder_chunks] write_check: scope={label} writes={} writes_after_cut={} hazards={} chunk_accesses={} submits={}",
+                    check.writes, check.writes_after_cut, check.hazards, check.accesses_cut, check.submits,
+                );
+            }
+        }
         let pending = state.map_or(0, |state| state.pending.len());
         // An early error return abandons the recording with its chunks.
         // Otherwise a chunk left here was never submitted with its encoder.
@@ -235,6 +256,9 @@ fn cut_after(encoder: &mut wgpu::CommandEncoder, min_dispatches: u64) {
         }
         let chunk_dispatches = dispatches.saturating_sub(chunking.dispatches_at_cut);
         chunking.dispatches_at_cut = dispatches;
+        if let Some(check) = chunking.check.as_mut() {
+            check.cut();
+        }
         let next = chunking
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -267,6 +291,10 @@ pub(crate) fn take(encoder: &wgpu::CommandEncoder) -> Vec<wgpu::CommandBuffer> {
             Some(chunking) if chunking.encoder == address(encoder) => {
                 chunking.dispatches_at_cut =
                     crate::gpu::passes_core::recorded_compute_dispatch_count();
+                // Everything recorded so far goes in this submit.
+                if let Some(check) = chunking.check.as_mut() {
+                    check.submitted();
+                }
                 (chunking.label, std::mem::take(&mut chunking.pending))
             }
             _ => ("", Vec::new()),
@@ -302,6 +330,256 @@ pub(crate) fn take(encoder: &wgpu::CommandEncoder) -> Vec<wgpu::CommandBuffer> {
         );
     }
     chunks
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WriteCheckMode {
+    /// Flagged writes panic.
+    Panic,
+    /// Flagged writes, every write of the scope and a summary are printed.
+    Report,
+    /// Flagged writes are printed (unit tests and debug builds).
+    Flag,
+}
+
+fn write_check_mode() -> Option<WriteCheckMode> {
+    static MODE: OnceLock<Option<WriteCheckMode>> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        match std::env::var("LANIUS_ENCODER_CHUNK_WRITE_CHECK").ok().as_deref().map(str::trim) {
+            Some("1" | "report" | "true") => Some(WriteCheckMode::Report),
+            Some("panic") => Some(WriteCheckMode::Panic),
+            Some("0" | "false") => None,
+            _ if cfg!(any(debug_assertions, test)) => Some(WriteCheckMode::Flag),
+            _ => None,
+        }
+    })
+}
+
+/// A buffer range one recorded command accesses.
+#[derive(Clone)]
+struct Access {
+    start: u64,
+    end: u64,
+    what: Arc<str>,
+}
+
+/// Buffer ranges accessed since the last cut, and by chunks cut since the
+/// encoder's last submission, keyed by [`buffer_key`].
+#[derive(Default)]
+struct WriteCheck {
+    since_cut: Vec<(u64, Access)>,
+    cut: HashMap<u64, Vec<Access>>,
+    accesses_cut: u64,
+    writes: u64,
+    writes_after_cut: u64,
+    hazards: u64,
+    submits: u64,
+}
+
+impl WriteCheck {
+    fn cut(&mut self) {
+        self.accesses_cut += self.since_cut.len() as u64;
+        for (buffer, access) in self.since_cut.drain(..) {
+            self.cut.entry(buffer).or_default().push(access);
+        }
+    }
+
+    fn submitted(&mut self) {
+        self.since_cut.clear();
+        self.cut.clear();
+        self.submits += 1;
+    }
+}
+
+/// Bind group handle hash -> the (buffer, start, end) ranges it binds,
+/// recorded at creation while the check runs. Keyed by hash, not by handle,
+/// so the check keeps no bind group (or its buffers) alive; a handle reused
+/// after a drop is re-recorded when it is created.
+static BIND_GROUP_RANGES: LazyLock<Mutex<HashMap<u64, Arc<[(u64, u64, u64)]>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn handle_hash<T: std::hash::Hash>(handle: &T) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    handle.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// A tracked allocation's id, or else the buffer handle's hash with the top
+/// bit set.
+fn buffer_key(buffer: &wgpu::Buffer) -> u64 {
+    if let Some((id, _, _)) = crate::gpu::buffers::tracked_buffer_identity(buffer) {
+        return id & !(1 << 63);
+    }
+    handle_hash(buffer) | (1 << 63)
+}
+
+fn buffer_name(buffer: &wgpu::Buffer) -> String {
+    crate::gpu::buffers::tracked_buffer_identity(buffer)
+        .map_or_else(|| "<untracked>".to_owned(), |(_, label, _)| label.to_string())
+}
+
+/// Records the buffer ranges a new bind group binds (only while the check
+/// runs).
+pub(crate) fn note_bind_group(bind_group: &wgpu::BindGroup, entries: &[wgpu::BindGroupEntry<'_>]) {
+    if write_check_mode().is_none() {
+        return;
+    }
+    let mut ranges = Vec::new();
+    let mut push = |binding: &wgpu::BufferBinding<'_>| {
+        let end = binding.size.map_or_else(
+            || binding.buffer.size(),
+            |size| binding.offset.saturating_add(size.get()),
+        );
+        ranges.push((buffer_key(binding.buffer), binding.offset, end));
+    };
+    for entry in entries {
+        match &entry.resource {
+            wgpu::BindingResource::Buffer(binding) => push(binding),
+            wgpu::BindingResource::BufferArray(bindings) => bindings.iter().for_each(&mut push),
+            _ => {}
+        }
+    }
+    BIND_GROUP_RANGES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(handle_hash(bind_group), ranges.into());
+}
+
+fn with_check(f: impl FnOnce(&mut WriteCheck, &'static str)) {
+    if write_check_mode().is_none() {
+        return;
+    }
+    CHUNKING.with(|state| {
+        if let Some(chunking) = state.borrow_mut().as_mut() {
+            let label = chunking.label;
+            if let Some(check) = chunking.check.as_mut() {
+                f(check, label);
+            }
+        }
+    });
+}
+
+/// A dispatch recorded on this thread inside a chunked scope: the ranges its
+/// bind groups bind (whole buffers under dynamic offsets) and its indirect
+/// arguments.
+pub(crate) fn note_dispatch<'a>(
+    bind_groups: impl IntoIterator<Item = &'a wgpu::BindGroup>,
+    dynamic_offsets: bool,
+    indirect: Option<(&wgpu::Buffer, u64)>,
+    label: &str,
+) {
+    if write_check_mode().is_none()
+        || !CHUNKING.with(|state| state.borrow().as_ref().is_some_and(|c| c.check.is_some()))
+    {
+        return;
+    }
+    let what: Arc<str> = Arc::from(format!("dispatch {label}"));
+    let mut accesses = Vec::new();
+    {
+        let ranges = BIND_GROUP_RANGES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for bind_group in bind_groups {
+            let Some(bound) = ranges.get(&handle_hash(bind_group)) else {
+                // Created before the check ran: treat as unknown.
+                accesses.push((u64::MAX, Access { start: 0, end: u64::MAX, what: what.clone() }));
+                continue;
+            };
+            for &(buffer, start, end) in bound.iter() {
+                let (start, end) = if dynamic_offsets { (0, u64::MAX) } else { (start, end) };
+                accesses.push((buffer, Access { start, end, what: what.clone() }));
+            }
+        }
+    }
+    if let Some((buffer, offset)) = indirect {
+        accesses.push((buffer_key(buffer), Access { start: offset, end: offset + 12, what }));
+    }
+    with_check(|check, _| check.since_cut.extend(accesses));
+}
+
+/// A clear or copy recorded into `encoder`, when it is the registered one.
+pub(crate) fn note_access(
+    encoder: &wgpu::CommandEncoder,
+    buffer: &wgpu::Buffer,
+    start: u64,
+    len: u64,
+    what: &'static str,
+) {
+    if write_check_mode().is_none() {
+        return;
+    }
+    let registered = CHUNKING.with(|state| {
+        state
+            .borrow()
+            .as_ref()
+            .is_some_and(|chunking| chunking.encoder == address(encoder) && chunking.check.is_some())
+    });
+    if registered {
+        let key = buffer_key(buffer);
+        with_check(|check, _| {
+            check.since_cut.push((key, Access { start, end: start.saturating_add(len), what: Arc::from(what) }))
+        });
+    }
+}
+
+/// A `Queue::write_buffer` on this thread: flags it when a chunk cut since
+/// the encoder's last submission accesses the written range.
+pub(crate) fn note_queue_write(buffer: &wgpu::Buffer, start: u64, len: u64) {
+    let Some(mode) = write_check_mode() else {
+        return;
+    };
+    let Some((message, count)) = queue_write_hazard(buffer, start, len) else {
+        return;
+    };
+    match mode {
+        WriteCheckMode::Panic => panic!("{message}"),
+        _ if count <= 40 => eprintln!("{message}"),
+        _ => {}
+    }
+}
+
+/// Counts a write inside a chunked scope and describes it, with the scope's
+/// hazard count, when it touches a range a cut, unsubmitted chunk accesses.
+fn queue_write_hazard(buffer: &wgpu::Buffer, start: u64, len: u64) -> Option<(String, u64)> {
+    let end = start.saturating_add(len);
+    let key = buffer_key(buffer);
+    let mut found = None;
+    let mut listed = None;
+    with_check(|check, label| {
+        check.writes += 1;
+        let after_cut = !check.cut.is_empty();
+        if write_check_mode() == Some(WriteCheckMode::Report) {
+            listed = Some((label, check.submits, after_cut));
+        }
+        if !after_cut {
+            return;
+        }
+        check.writes_after_cut += 1;
+        let overlapping = [key, u64::MAX]
+            .iter()
+            .filter_map(|key| check.cut.get(key))
+            .flatten()
+            .find(|access| access.start < end && start < access.end);
+        if let Some(access) = overlapping {
+            check.hazards += 1;
+            found = Some((label, access.what.clone(), check.hazards, check.submits));
+        }
+    });
+    if let Some((label, submits, after_cut)) = listed {
+        eprintln!(
+            "[encoder_chunks] write: scope={label} buffer={} range={start}..{end} submits_before={submits} after_cut={after_cut}",
+            buffer_name(buffer),
+        );
+    }
+    let (label, what, count, submits) = found?;
+    Some((
+        format!(
+            "[encoder_chunks] write after cut: scope={label} buffer={} range={start}..{end} submits_before={submits} is accessed by an unsubmitted earlier chunk ({what})",
+            buffer_name(buffer),
+        ),
+        count,
+    ))
 }
 
 #[cfg(test)]
@@ -358,6 +636,37 @@ mod tests {
         crate::gpu::passes_core::submit_all_with_progress(queue, "encoder_chunks.test", commands);
         assert_eq!(read_word(gpu, &first), 2);
         assert_eq!(read_word(gpu, &second), 2);
+    }
+
+    /// The write-order check flags a write to a range that a cut, unsubmitted
+    /// chunk accesses, and nothing else.
+    #[test]
+    fn a_write_into_an_unsubmitted_chunk_is_flagged() {
+        if !enabled() || write_check_mode().is_none() {
+            return;
+        }
+        let gpu = crate::gpu::device::global();
+        let device = &*gpu.device;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("encoder_chunks.test.checked"),
+            size: 16,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let _scope = ChunkedEncoding::begin(device, &encoder, "encoder_chunks.test");
+        note_access(&encoder, &buffer, 0, 8, "copy source");
+        assert!(queue_write_hazard(&buffer, 0, 8).is_none(), "the access is not cut yet");
+        cut_after(&mut encoder, 0);
+        assert!(queue_write_hazard(&buffer, 8, 8).is_none(), "disjoint from the chunk's access");
+        drop(take(&encoder));
+        assert!(queue_write_hazard(&buffer, 0, 8).is_none(), "the chunk was submitted");
+        note_access(&encoder, &buffer, 4, 4, "clear");
+        cut_after(&mut encoder, 0);
+        let (message, _) = queue_write_hazard(&buffer, 0, 8).expect("the cut chunk clears 4..8");
+        assert!(message.contains("write after cut") && message.contains("(clear)"), "{message}");
+        drop(take(&encoder));
+        drop(encoder.finish());
     }
 
     /// Only the registered encoder is cut, and scopes do not nest.

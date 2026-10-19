@@ -970,6 +970,12 @@ pub(crate) fn defer_compute_direct_with_offsets(
     operation_label: &str,
 ) -> bool {
     tally_bindings(pass, operation_label);
+    crate::gpu::encoder_chunks::note_dispatch(
+        [bind_group],
+        !dynamic_offsets.is_empty(),
+        None,
+        operation_label,
+    );
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Direct(groups);
         debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
@@ -1009,6 +1015,12 @@ pub(crate) fn defer_compute_indirect(
     operation_label: &str,
 ) -> bool {
     tally_bindings(pass, operation_label);
+    crate::gpu::encoder_chunks::note_dispatch(
+        [bind_group],
+        !dynamic_offsets.is_empty(),
+        Some((dispatch_args, dispatch_offset)),
+        operation_label,
+    );
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
         debug_capture_select(operation_label, pass, bind_group, dynamic_offsets, launch);
@@ -1047,6 +1059,12 @@ pub(crate) fn defer_compute_direct_bind_groups(
     operation_label: &str,
 ) -> bool {
     tally_bindings(pass, operation_label);
+    crate::gpu::encoder_chunks::note_dispatch(
+        bind_groups.iter().map(|group| &**group),
+        false,
+        None,
+        operation_label,
+    );
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Direct(groups);
         debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
@@ -1084,6 +1102,12 @@ pub(crate) fn defer_compute_indirect_bind_groups(
     operation_label: &str,
 ) -> bool {
     tally_bindings(pass, operation_label);
+    crate::gpu::encoder_chunks::note_dispatch(
+        bind_groups.iter().map(|group| &**group),
+        false,
+        Some((dispatch_args, dispatch_offset)),
+        operation_label,
+    );
     if debug_operation_skipped() {
         let launch = CaptureLaunch::Indirect(dispatch_args, dispatch_offset);
         debug_capture_select(operation_label, pass, &bind_groups[0], &[], launch);
@@ -2867,6 +2891,7 @@ pub mod bind_group {
             entries,
         });
         crate::gpu::dispatch_capture::record_bind_group(&bind_group, entries);
+        crate::gpu::encoder_chunks::note_bind_group(&bind_group, entries);
         add_timing(&BIND_GROUP_WGPU_CREATE_NS, create_started);
         let cache_insert_started = bind_group_timing_enabled().then(Instant::now);
         if let (Some(cache), Some(identity)) = (cache, identity) {
