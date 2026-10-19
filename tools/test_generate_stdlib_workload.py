@@ -124,6 +124,26 @@ class ProgramTests(unittest.TestCase):
         self.assertNotIn("core::set::Key for", default)
         self.assertIn("pub impl core::set::Key for", backlog)
 
+    def test_string_helpers_put_literals_in_generic_bodies_only_when_asked(self):
+        import generate_stdlib_workload as generator
+
+        workload = build_workload(7, 200, kinds_for(False))
+        plain = render_single_file(workload)
+        try:
+            generator.STRING_HELPERS = 3
+            with_strings = render_single_file(workload)
+        finally:
+            generator.STRING_HELPERS = 0
+
+        self.assertNotIn('"', plain)
+        self.assertEqual(render_single_file(workload), plain)
+        audits = re.findall(r"^fn (\w+_audit\d)<T>\(value: T, code: i32\) -> i32 \{$", with_strings, re.M)
+        self.assertEqual(len(audits), 3 * len(workload.areas))
+        for name in audits:
+            self.assertEqual(with_strings.count(f"total = {name}("), 1)
+        self.assertEqual(with_strings.count('"') % 2, 0)
+        self.assertGreaterEqual(with_strings.count('"') // 2, 2 * len(audits))
+
     def test_probes_cover_every_kind_with_an_expectation(self):
         with tempfile.TemporaryDirectory() as directory:
             kinds = kinds_for(False)
