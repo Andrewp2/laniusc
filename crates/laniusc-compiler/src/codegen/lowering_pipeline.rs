@@ -251,6 +251,20 @@ fn full_clears() -> bool {
 /// Whether the job-sized direct lowering operations (`JobSized`) record the
 /// job's grid; `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps every workspace's built
 /// grid, for A/B runs.
+fn validate_copy_replays() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_LIR_VALIDATE_REPLAYS", false))
+}
+
+/// Whether the optimizer records its validation-only dispatches for a job.
+/// An instance-copy replay (`ReplaySelection::CopiesFrom`) recompiles copies
+/// of bodies the original compile already validated, so it leaves them out
+/// unless `LANIUS_LIR_VALIDATE_REPLAYS=1`; every other job validates. The
+/// choice depends only on the job's selection, never on earlier jobs.
+fn validates_structure(selection: super::lowering::ReplaySelection<'_>) -> bool {
+    !matches!(selection, super::lowering::ReplaySelection::CopiesFrom(_)) || validate_copy_replays()
+}
+
 fn job_sized_direct_ops() -> bool {
     #[cfg(test)]
     {
@@ -936,7 +950,7 @@ impl GpuLoweringPipeline {
             );
         }
         self.optimizer
-            .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job))?;
+            .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job), true)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -1028,8 +1042,13 @@ impl GpuLoweringPipeline {
                 timer.as_deref_mut(),
             );
         }
-        self.optimizer
-            .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job))?;
+        self.optimizer.record_for_job(
+            encoder,
+            timer.as_deref_mut(),
+            jump_pairs,
+            self.sized_job(job),
+            validates_structure(selection),
+        )?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,

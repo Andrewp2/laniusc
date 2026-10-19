@@ -61,6 +61,9 @@ class Daemon:
 
     def __init__(self):
         env = dict(os.environ, LANIUS_READBACK_TIMEOUT_MS=args.readback_timeout_ms)
+        # Instance-copy replays skip the optimizer's validation-only passes by
+        # default; the matrix validates them (set it to 0 to time the default).
+        env.setdefault("LANIUS_LIR_VALIDATE_REPLAYS", "1")
         argv = command
         self.unit = None
         if use_scope:
