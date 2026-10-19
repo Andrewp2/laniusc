@@ -20,6 +20,7 @@
 import integer_words;
 import primitive_types;
 import hir_records;
+import status;
 
 public StructuredBuffer<uint> compact_hir_count;
 public StructuredBuffer<HirCore> compact_hir_core;
@@ -28,6 +29,8 @@ public StructuredBuffer<uint> compact_hir_expr_parent;
 public StructuredBuffer<uint> compact_expr_scalar_type;
 public RWStructuredBuffer<uint2> semantic_value_const_by_hir;
 public RWStructuredBuffer<uint> semantic_value_const_present_by_hir;
+// Type-check status: a checked arithmetic failure is ERR_CONSTANT_OVERFLOW.
+public RWStructuredBuffer<uint> status;
 
 public static const uint CONST_PRESENT = 0x80000000u;
 // A constant reference resolved in the current round (00b); present from
@@ -37,6 +40,7 @@ public static const uint CONST_STAGED = 0x08000000u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_BINARY_EXPR = 16u;
 static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NOT = 6u;
 static const uint HIR_EXPR_EQ = 7u;
@@ -73,46 +77,139 @@ uint scalar_type(uint node, uint hir_count)
     return node < hir_count ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : 0u;
 }
 
-bool evaluate_unary(uint form, uint2 operand, uint operand_type, out uint2 result)
+// Evaluation outcomes. Integer arithmetic is checked, as in Rust constant
+// evaluation: a result that does not fit the operation's type, and a
+// division by zero, are compile errors at the operator (LNC0074), never a
+// wrapped value. Shifts check only their amount.
+static const uint FOLD_NONE = 0u;
+static const uint FOLD_OK = 1u;
+static const uint FOLD_OVERFLOW = 2u;
+static const uint FOLD_DIVIDE_BY_ZERO = 3u;
+static const uint ERR_CONSTANT_OVERFLOW = 29u;
+
+// A literal leaf holds its unsigned magnitude, possibly behind forwards:
+// `-2147483648` negates a magnitude that no i32 holds on its own.
+bool literal_magnitude(uint node, uint hir_count)
+{
+    uint current = node;
+    for (uint depth = 0u; depth < 4u && current < hir_count; depth++)
+    {
+        HirCore core = compact_hir_core[current];
+        if (core.kind == HIR_LITERAL_EXPR) return true;
+        HirPayload payload = compact_hir_payload[current];
+        if (core.kind != HIR_EXPR || payload.a != HIR_EXPR_FORWARD) return false;
+        current = payload.b;
+    }
+    return false;
+}
+
+uint evaluate_unary(uint form, uint2 operand, uint operand_type, bool magnitude, out uint2 result)
 {
     result = uint2(0u, 0u);
-    if (form == HIR_EXPR_NOT) { result.x = integer_words_zero(operand) ? 1u : 0u; return true; }
-    if (form != HIR_EXPR_NEG) return false;
+    if (form == HIR_EXPR_NOT) { result.x = integer_words_zero(operand) ? 1u : 0u; return FOLD_OK; }
+    if (form != HIR_EXPR_NEG) return FOLD_NONE;
     if (scalar_is_float(operand_type))
     {
         result = operand;
         if (operand_type == SCALAR_F64) result.y ^= 0x80000000u;
         else result.x ^= 0x80000000u;
-        return true;
+        return FOLD_OK;
     }
     uint bits = scalar_integer_bits(operand_type);
-    if (bits == 0u) return false;
+    if (bits == 0u) return FOLD_NONE;
+    if (magnitude)
+    {
+        if (!integer_words_magnitude_fits(operand, operand_type, true)) return FOLD_OVERFLOW;
+    }
+    else
+    {
+        operand = integer_words_normalize(operand, bits);
+        // Unsigned: only zero negates. Signed: the minimum has no negation.
+        bool minimum = scalar_is_signed_integer(operand_type) &&
+            all(operand == integer_words_shift_left(uint2(1u, 0u), bits - 1u));
+        if ((!scalar_is_signed_integer(operand_type) && !integer_words_zero(operand)) || minimum)
+            return FOLD_OVERFLOW;
+    }
     result = integer_words_normalize(integer_words_negate(operand), bits);
-    return true;
+    return FOLD_OK;
 }
 
-bool evaluate_binary(uint form, uint2 lhs, uint2 rhs, uint operand_type, out uint2 result)
+// Checked add, subtract and multiply of two normalized operands.
+uint checked_arithmetic(uint form, uint2 lhs, uint2 rhs, uint operand_type, uint bits, out uint2 result)
+{
+    result = uint2(0u, 0u);
+    bool signed_integer = scalar_is_signed_integer(operand_type);
+    bool lhs_negative = signed_integer && integer_words_negative(lhs, bits);
+    bool rhs_negative = signed_integer && integer_words_negative(rhs, bits);
+    if (form == HIR_EXPR_MUL)
+    {
+        // Multiply magnitudes; a 64-bit product that wraps fails the
+        // division check, and the sign decides the limit.
+        uint2 lhs_magnitude = lhs_negative ? integer_words_negate(integer_words_sign_extend(lhs, bits)) : lhs;
+        uint2 rhs_magnitude = rhs_negative ? integer_words_negate(integer_words_sign_extend(rhs, bits)) : rhs;
+        uint2 product = integer_words_multiply(lhs_magnitude, rhs_magnitude);
+        uint2 quotient; uint2 remainder;
+        if (!integer_words_zero(lhs_magnitude) &&
+            (!integer_words_divide_unsigned(product, lhs_magnitude, quotient, remainder) ||
+             any(quotient != rhs_magnitude) || !integer_words_zero(remainder)))
+            return FOLD_OVERFLOW;
+        bool negative = (lhs_negative != rhs_negative) && !integer_words_zero(product);
+        if (!integer_words_magnitude_fits(product, operand_type, negative)) return FOLD_OVERFLOW;
+        result = integer_words_normalize(negative ? integer_words_negate(product) : product, bits);
+        return FOLD_OK;
+    }
+    bool add = form == HIR_EXPR_ADD;
+    uint2 wide_lhs = signed_integer ? integer_words_sign_extend(lhs, bits) : lhs;
+    uint2 wide_rhs = signed_integer ? integer_words_sign_extend(rhs, bits) : rhs;
+    uint2 wide = add ? integer_words_add(wide_lhs, wide_rhs) : integer_words_sub(wide_lhs, wide_rhs);
+    result = integer_words_normalize(wide, bits);
+    bool overflow;
+    if (bits < 64u)
+    {
+        // Exact in 64 bits: the result fits iff it survives normalization.
+        overflow = signed_integer ? any(integer_words_sign_extend(result, bits) != wide)
+                                  : any(result != wide);
+    }
+    else if (signed_integer)
+    {
+        bool result_negative = integer_words_negative(result, 64u);
+        overflow = add ? (lhs_negative == rhs_negative && result_negative != lhs_negative)
+                       : (lhs_negative != rhs_negative && result_negative != lhs_negative);
+    }
+    else
+    {
+        overflow = add ? integer_words_less(result, lhs) : integer_words_less(lhs, rhs);
+    }
+    return overflow ? FOLD_OVERFLOW : FOLD_OK;
+}
+
+uint evaluate_binary(uint form, uint2 lhs, uint2 rhs, uint operand_type, out uint2 result)
 {
     result = uint2(0u, 0u);
     // Native GPU floats do not establish portable IEEE constant semantics.
     // Admission rejects this pending evaluator explicitly; never publish zero.
-    if (scalar_is_float(operand_type)) return false;
-    uint bits = scalar_integer_bits(operand_type);
+    if (scalar_is_float(operand_type)) return FOLD_NONE;
+    uint integer_bits = scalar_integer_bits(operand_type);
+    uint bits = integer_bits;
     if (bits == 0u && (operand_type == SCALAR_BOOL || operand_type == SCALAR_CHAR)) bits = 32u;
-    if (bits == 0u) return false;
+    if (bits == 0u) return FOLD_NONE;
     bool signed_integer = scalar_is_signed_integer(operand_type);
     lhs = integer_words_normalize(lhs, bits);
     // Shift counts have their own checked integer width; never truncate one
     // to the operation width before its full-value range check.
     bool shift = form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
     if (!shift) rhs = integer_words_normalize(rhs, bits);
-    if (form == HIR_EXPR_ADD) result = integer_words_add(lhs, rhs);
-    else if (form == HIR_EXPR_SUB) result = integer_words_sub(lhs, rhs);
-    else if (form == HIR_EXPR_MUL) result = integer_words_multiply(lhs, rhs);
-    else if (form == HIR_EXPR_DIV || form == HIR_EXPR_MOD)
+    if (form == HIR_EXPR_ADD || form == HIR_EXPR_SUB || form == HIR_EXPR_MUL)
+        return integer_bits == 0u ? FOLD_NONE
+            : checked_arithmetic(form, lhs, rhs, operand_type, integer_bits, result);
+    if (form == HIR_EXPR_DIV || form == HIR_EXPR_MOD)
     {
         uint2 quotient; uint2 remainder;
-        if (integer_words_divide(lhs, rhs, operand_type, quotient, remainder) != 0u) return false;
+        uint failure = integer_words_divide(lhs, rhs, operand_type, quotient, remainder);
+        // 103: division by zero; 104: the signed minimum divided by -1.
+        if (failure == 103u) return FOLD_DIVIDE_BY_ZERO;
+        if (failure == 104u) return FOLD_OVERFLOW;
+        if (failure != 0u) return FOLD_NONE;
         result = form == HIR_EXPR_DIV ? quotient : remainder;
     }
     else if (form == HIR_EXPR_AND) result.x = uint(!integer_words_zero(lhs) && !integer_words_zero(rhs));
@@ -122,7 +219,7 @@ bool evaluate_binary(uint form, uint2 lhs, uint2 rhs, uint operand_type, out uin
     else if (form == HIR_EXPR_BIT_AND) result = lhs & rhs;
     else if (shift)
     {
-        if (rhs.y != 0u || rhs.x >= bits) return false;
+        if (rhs.y != 0u || rhs.x >= bits) return FOLD_NONE;
         result = form == HIR_EXPR_SHL ? integer_words_shift_left(lhs, rhs.x)
             : signed_integer ? integer_words_arithmetic_shift_right(lhs, rhs.x, bits)
             : integer_words_shift_right(lhs, rhs.x);
@@ -134,11 +231,18 @@ bool evaluate_binary(uint form, uint2 lhs, uint2 rhs, uint operand_type, out uin
         result.x = form == HIR_EXPR_EQ ? uint(equal) : form == HIR_EXPR_NE ? uint(!equal) :
             form == HIR_EXPR_LT ? uint(less) : form == HIR_EXPR_GT ? uint(!less && !equal) :
             form == HIR_EXPR_LE ? uint(less || equal) : uint(!less);
-        return true;
+        return FOLD_OK;
     }
-    else return false;
+    else return FOLD_NONE;
     result = integer_words_normalize(result, bits);
-    return true;
+    return FOLD_OK;
+}
+
+// A checked failure is a compile error at the operator node.
+void report_fold_failure(uint node, uint outcome)
+{
+    record_min_token_error(status, compact_hir_core[node].token_start, ERR_CONSTANT_OVERFLOW,
+        outcome == FOLD_DIVIDE_BY_ZERO ? 2u : 1u);
 }
 
 // Folds the parents of `node`, which just became present: forwards and
@@ -158,9 +262,16 @@ public void const_fold_propagate(uint node, uint hir_count)
             parent_payload.b == current)
         {
             uint2 result = semantic_value_const_by_hir[current];
-            if (parent_payload.a != HIR_EXPR_FORWARD &&
-                !evaluate_unary(parent_payload.a, result, scalar_type(current, hir_count), result))
-                return;
+            if (parent_payload.a != HIR_EXPR_FORWARD)
+            {
+                uint outcome = evaluate_unary(parent_payload.a, result, scalar_type(current, hir_count),
+                    literal_magnitude(current, hir_count), result);
+                if (outcome != FOLD_OK)
+                {
+                    if (outcome != FOLD_NONE) report_fold_failure(parent, outcome);
+                    return;
+                }
+            }
             semantic_value_const_by_hir[parent] = result;
             InterlockedExchange(semantic_value_const_present_by_hir[parent], CONST_PRESENT);
             current = parent;
@@ -175,13 +286,17 @@ public void const_fold_propagate(uint node, uint hir_count)
         InterlockedOr(semantic_value_const_present_by_hir[parent], ready, prior);
         if ((prior & ready) != 0u || (prior | ready) != BOTH_READY) return;
         uint2 result;
-        if (!evaluate_binary(
-                parent_payload.a,
-                semantic_value_const_by_hir[parent_payload.b],
-                semantic_value_const_by_hir[parent_payload.c],
-                scalar_type(parent_payload.b, hir_count),
-                result))
+        uint outcome = evaluate_binary(
+            parent_payload.a,
+            semantic_value_const_by_hir[parent_payload.b],
+            semantic_value_const_by_hir[parent_payload.c],
+            scalar_type(parent_payload.b, hir_count),
+            result);
+        if (outcome != FOLD_OK)
+        {
+            if (outcome != FOLD_NONE) report_fold_failure(parent, outcome);
             return;
+        }
         semantic_value_const_by_hir[parent] = result;
         InterlockedExchange(semantic_value_const_present_by_hir[parent], CONST_PRESENT);
         current = parent;

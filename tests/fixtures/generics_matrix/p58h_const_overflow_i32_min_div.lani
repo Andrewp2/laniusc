@@ -1,0 +1,4 @@
+// expect: error LNC0074
+const MIN: i32 = -2147483648;
+const X: i32 = MIN / -1;
+fn main() -> i32 { return 42; }

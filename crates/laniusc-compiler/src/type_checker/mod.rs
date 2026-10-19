@@ -150,6 +150,7 @@ pub enum GpuTypeCheckCode {
     MissingConstantBinding,
     GenericInstantiationBoundary,
     RecursiveType,
+    ConstantOverflow,
     Unknown(u32),
 }
 
@@ -183,6 +184,7 @@ impl GpuTypeCheckCode {
             26 => Self::ComputedFloatConstant,
             27 => Self::InvalidCast,
             28 => Self::RecursiveType,
+            29 => Self::ConstantOverflow,
             other => Self::Unknown(other),
         }
     }
@@ -216,6 +218,7 @@ impl GpuTypeCheckCode {
             Self::InvalidCast => "invalid cast".to_string(),
             Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
             Self::RecursiveType => "recursive type has infinite size".to_string(),
+            Self::ConstantOverflow => "constant evaluation overflows its type".to_string(),
             Self::GenericInstantiationBoundary => {
                 "generic type instantiation reached a compiler boundary".to_string()
             }

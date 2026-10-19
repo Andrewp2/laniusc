@@ -1,0 +1,4 @@
+// expect: error LNC0074
+const A: i64 = 4294967296;
+const X: i64 = A * A;
+fn main() -> i32 { return 42; }

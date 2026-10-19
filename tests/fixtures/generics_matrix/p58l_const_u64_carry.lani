@@ -1,0 +1,6 @@
+const CARRY: u64 = 4294967295 + 1;
+const PRODUCT: u64 = 4294967295 * 4294967297;
+fn main() -> i32 {
+    if (CARRY != 4294967296 || PRODUCT != 18446744073709551615) { return 1; }
+    return 42;
+}

@@ -3445,6 +3445,14 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("a value of this type contains itself by value; hold the inner value through a reference or a slice instead"),
         ),
+        GpuTypeCheckCode::ConstantOverflow => CompileError::Diagnostic(
+            Diagnostic::error("LNC0074", "constant evaluation overflows its type")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len,
+                    "this operation's result does not fit the constant's type",
+                ))
+                .with_note("constants are evaluated at compile time with checked arithmetic; widen the constant's type or change the expression"),
+        ),
         GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
                 .with_primary_label(diagnostic_label_from_source_span(
