@@ -1509,13 +1509,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<(), CompileError> {
+        // Export the interface as x86 compilation does (library 0, unit 0),
+        // so check reports its errors too, such as LNC0075.
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
             source_paths,
-            None,
+            Some(0),
             0,
             DependencyInterfacePages::Flat(&[]),
-            false,
+            true,
             None,
             None,
         )
