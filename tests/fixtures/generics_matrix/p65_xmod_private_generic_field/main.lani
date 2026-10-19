@@ -1,0 +1,9 @@
+module app::main;
+
+import gen::lib;
+
+fn main() -> i32 {
+    let h: gen::lib::Holder<i32> = gen::lib::hold(5);
+    let g: gen::lib::Holder<i32> = h;
+    return gen::lib::score(g);
+}

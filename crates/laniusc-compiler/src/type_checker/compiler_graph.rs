@@ -4590,6 +4590,7 @@ fn build_graph(
     }
     TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
+    INTERFACE_HIDDEN_DECLS_MAP.register_kernel(&mut graph, kernels)?;
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
     let (substitution_records, substitution_argument_words) =

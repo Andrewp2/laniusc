@@ -719,6 +719,7 @@ impl GpuTypeChecker {
         identity_resources.buffer("decl_name_id", inputs.decl_name_id);
         identity_resources.buffer("decl_namespace", inputs.decl_namespace);
         identity_resources.buffer("decl_kind", inputs.decl_kind);
+        identity_resources.buffer("decl_visibility", inputs.decl_visibility);
         identity_resources.buffer("decl_parent_type_decl", inputs.decl_parent_type_decl);
         identity_resources.buffer("decl_hir_node", inputs.decl_hir_node);
         identity_resources.buffer("compact_const_value", hir.compact_const_value);
@@ -1322,6 +1323,7 @@ impl GpuTypeChecker {
             "decl_count_out" => inputs.decl_count_out,
             "decl_id_by_name_token" => inputs.decl_id_by_name_token,
             "decl_kind" => inputs.decl_kind,
+            "decl_visibility" => inputs.decl_visibility,
             "decl_parent_type_decl" => inputs.decl_parent_type_decl,
             "external_type_library_id" => inputs.external_type_library_id,
             "external_type_unit_id" => inputs.external_type_unit_id,

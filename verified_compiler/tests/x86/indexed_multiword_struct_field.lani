@@ -8,10 +8,13 @@ struct Row {
     count: i32,
 }
 
+// A Row is 7 eight-byte words: two 3-word slices (data, length, stride)
+// and the count. Its words descend, so element zero's pointer is the
+// highest word of the 2-row block.
 fn main() -> i32 {
-    let memory: ptr = verified::host::alloc(2 * 5 * 8, 8);
+    let memory: ptr = verified::host::alloc(2 * 7 * 8, 8);
     if (memory == 0) { return 1; }
-    let first_row: ptr = memory + 2 * 5 * 8 - 8;
+    let first_row: ptr = memory + 2 * 7 * 8 - 8;
     let rows: [Row] = slice_from_raw_parts(first_row, 2);
     let empty_pointer: ptr = 0;
     let empty: [i32] = slice_from_raw_parts(empty_pointer, 0);

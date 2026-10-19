@@ -1182,6 +1182,12 @@ impl GpuTypeChecker {
                 .bind_groups
                 .project_type_instances
                 .record(encoder)?;
+            // Hidden interface indices exist before anything keys a local
+            // nominal (canonical early stage below).
+            module_path
+                .bind_groups
+                .map_hidden_interface_decls
+                .record(encoder)?;
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
             if let Some(dependency_visibility) = &module_path.dependency_visibility {

@@ -5,6 +5,9 @@ StructuredBuffer<uint> interface_type_reverse_prefix;
 StructuredBuffer<uint> interface_type_edge_prefix;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> public_decl_index_by_local;
+StructuredBuffer<uint> public_decl_local_id;
+StructuredBuffer<uint> decl_kind;
+StructuredBuffer<uint> decl_visibility;
 StructuredBuffer<uint> interface_member_index_by_generic_row;
 StructuredBuffer<uint> interface_member_total;
 StructuredBuffer<uint> interface_member_words;
@@ -21,7 +24,26 @@ uint parameter_member(uint root, uint parameter, uint kind)
         interface_member_words[member * SEMANTIC_INTERFACE_MEMBER_WORDS + 1u] != (kind == 1u ? 2u : 3u)) return INVALID;
     return member;
 }
-bool emit_type(uint root, uint index, uint2 ref, uint kind, uint first_edge, uint children)
+static const uint EXPORT_TYPE_REJECTED = 4u;
+// A private type in a public signature: LNC0075 on the host.
+static const uint EXPORT_PRIVATE_IN_SIGNATURE = 7u;
+static const uint HIR_ITEM_KIND_STRUCT = 6u;
+static const uint HIR_ITEM_KIND_ENUM = 7u;
+// Whether a root's owner exposes it as a signature: a public function,
+// constant or alias, or a method. Fields and variant payloads of exported
+// types, and every root of a hidden type, are layout and may name hidden
+// types.
+bool signature_root(uint root)
+{
+    uint owner = interface_type_seed_owner[root];
+    if ((owner & 0x80000000u) != 0u) return true;
+    uint local = owner < gParams.decl_capacity ? public_decl_local_id[owner] : INVALID;
+    if (local >= gParams.decl_capacity) return false;
+    uint kind = decl_kind[local];
+    return decl_visibility[local] == 1u && kind != HIR_ITEM_KIND_STRUCT && kind != HIR_ITEM_KIND_ENUM;
+}
+// 0, or the export failure detail.
+uint emit_type(uint root, uint index, uint2 ref, uint kind, uint first_edge, uint children)
 {
     uint base = index * 9u;
     for (uint word = 0u; word < 9u; word++) interface_types[base + word] = 0u;
@@ -32,7 +54,7 @@ bool emit_type(uint root, uint index, uint2 ref, uint kind, uint first_edge, uin
     else if (kind == 9u)
     {
         uint3 value;
-        if (!checked_constant_atom_value(ref.y, value) || !constant_value_is_valid(value)) return false;
+        if (!checked_constant_atom_value(ref.y, value) || !constant_value_is_valid(value)) return EXPORT_TYPE_REJECTED;
         interface_types[base + 1u] = value.x;
         interface_types[base + 6u] = value.y;
         interface_types[base + 7u] = value.z;
@@ -41,13 +63,13 @@ bool emit_type(uint root, uint index, uint2 ref, uint kind, uint first_edge, uin
     {
         uint target;
         uint2 child;
-        if (children != 1u || !checked_export_projection(ref.y, target, child)) return false;
+        if (children != 1u || !checked_export_projection(ref.y, target, child)) return EXPORT_TYPE_REJECTED;
         interface_types[base + 1u] = target;
     }
     else if (kind == 2u || kind == 8u)
     {
         uint member = parameter_member(root, ref.y, kind == 2u ? 1u : 2u);
-        if (member == INVALID) return false;
+        if (member == INVALID) return EXPORT_TYPE_REJECTED;
         interface_types[base + 1u] = member;
     }
     else if (kind == 3u)
@@ -59,6 +81,9 @@ bool emit_type(uint root, uint index, uint2 ref, uint kind, uint first_edge, uin
             uint source = decl_id_by_name_token[declaration];
             local = source < gParams.decl_capacity ? public_decl_index_by_local[source] : INVALID;
             library = gParams.library_id; unit = gParams.unit_id;
+            if (source < gParams.decl_capacity &&
+                (local == INVALID || decl_visibility[source] != 1u) && signature_root(root))
+                return EXPORT_PRIVATE_IN_SIGNATURE;
         }
         else
         {
@@ -66,12 +91,12 @@ bool emit_type(uint root, uint index, uint2 ref, uint kind, uint first_edge, uin
             unit = external_type_unit_id[ref.y];
             local = external_type_local_index[ref.y];
         }
-        if (library == INVALID || unit == INVALID || local == INVALID) return false;
+        if (library == INVALID || unit == INVALID || local == INVALID) return EXPORT_TYPE_REJECTED;
         interface_types[base + 1u] = library;
         interface_types[base + 2u] = local;
         interface_types[base + 8u] = unit;
     }
-    return true;
+    return 0u;
 }
 // A root owns a disjoint interval. Preorder traversal assigns descending type
 // indices, retaining the format's contiguous reverse-preorder trees.
@@ -112,8 +137,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 interface_type_edge_written[edge] = 1u;
             }
             edge_start[depth] = edge_cursor; edge_cursor += children;
-            if (!emit_type(root, index, ref, kind, edge_start[depth], children))
-                { checked_export_fail(root, 4u); return; }
+            uint rejected = emit_type(root, index, ref, kind, edge_start[depth], children);
+            if (rejected != 0u) { checked_export_fail(root, rejected); return; }
             level[depth] = export_level_visit(level[depth], children);
         }
         uint next = export_level_next(level[depth]);

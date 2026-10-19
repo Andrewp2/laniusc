@@ -2987,6 +2987,9 @@ fn lowering_error_to_compile_error_for_source_pack(
     CompileError::Diagnostic(diagnostic)
 }
 
+/// Export failure detail of a private type in a public signature.
+const SEMANTIC_INTERFACE_PRIVATE_TYPE_IN_SIGNATURE: u32 = 7;
+
 /// A rejected type in the unit's exported interface names the type and its
 /// span; other export failures keep their phase error.
 fn semantic_interface_error_to_compile_error_for_source_pack(
@@ -3038,6 +3041,23 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
         .source
         .get(start..start.saturating_add(token.len).min(file.source.len()))
         .unwrap_or("");
+    // Detail 7 (type_topology/12_type_records): a public function, constant,
+    // alias or method signature names a private type of this unit.
+    if failure.detail == SEMANTIC_INTERFACE_PRIVATE_TYPE_IN_SIGNATURE {
+        let label = diagnostic_label_from_source_span(
+            &file.path,
+            &file.source,
+            start,
+            token.len,
+            "this type is private to its module",
+        );
+        return CompileError::Diagnostic(
+            Diagnostic::error("LNC0075", format!("private type in public interface: `{name}`"))
+                .with_primary_label(label)
+                .with_note("a public signature is part of its module's interface, and importers cannot name a private type")
+                .with_help("make the type `pub`, or make the item private"),
+        );
+    }
     let label = diagnostic_label_from_source_span(
         &file.path,
         &file.source,

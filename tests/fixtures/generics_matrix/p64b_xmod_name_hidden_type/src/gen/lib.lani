@@ -1,0 +1,14 @@
+module gen::lib;
+
+enum Mode {
+    Low,
+    High,
+}
+
+pub struct Outer {
+    mode: Mode,
+}
+
+pub fn make() -> Outer {
+    return Outer { mode: High };
+}

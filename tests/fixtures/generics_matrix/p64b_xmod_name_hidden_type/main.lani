@@ -1,0 +1,10 @@
+// expect: error LNC0007
+module app::main;
+
+import gen::lib;
+
+fn main() -> i32 {
+    let o: gen::lib::Outer = gen::lib::make();
+    let m: gen::lib::Mode = gen::lib::Mode::Low;
+    return 42;
+}
