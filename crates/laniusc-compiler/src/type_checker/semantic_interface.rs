@@ -2065,8 +2065,10 @@ impl GpuTypeChecker {
             byte_len,
             "semantic-interface artifact",
         )?;
+        let parse_span = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.from_bytes");
         let artifact = GpuSemanticInterfaceArtifact::from_bytes(&bytes)
             .map_err(|reason| anyhow::anyhow!("invalid GPU semantic interface: {reason}"))?;
+        drop(parse_span);
         if artifact.library_id != recorded.expected_library_id
             || artifact.unit_id != recorded.expected_unit_id
         {

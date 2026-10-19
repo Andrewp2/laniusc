@@ -377,7 +377,10 @@ impl GpuSemanticInterfaceArtifact {
         validate_contract_owner_capacity("implementation", self.implementations.len())?;
         checked_u32_len("name byte", self.name_bytes.len())?;
 
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.identities");
         self.validate_identities()?;
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.declarations");
         // Declaration local indices are assigned by the GPU public-declaration
         // compaction pass.  That order is the stable identity order consumed
         // dependency lookup; it need not be grouped by module because every
@@ -418,7 +421,11 @@ impl GpuSemanticInterfaceArtifact {
                 ));
             }
         }
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.implementation_ranges");
         self.validate_implementation_ranges()?;
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.types");
         let mut type_subtree_starts = Vec::with_capacity(self.types.len());
         for (index, ty) in self.types.iter().enumerate() {
             let Some(kind) = GpuSemanticInterfaceTypeKind::from_u32(ty.kind) else {
@@ -577,6 +584,8 @@ impl GpuSemanticInterfaceArtifact {
                 _ => {}
             }
         }
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.members");
         for (index, member) in self.members.iter().enumerate() {
             if GpuSemanticInterfaceMemberKind::from_u32(member.kind).is_none() {
                 return Err(format!(
@@ -659,10 +668,20 @@ impl GpuSemanticInterfaceArtifact {
                 ));
             }
         }
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.nominal_operand_domains");
         self.validate_nominal_operand_domains()?;
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.trait_headers");
         self.validate_trait_headers()?;
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.parameter_scopes");
         self.validate_parameter_scopes()?;
+        drop(stage);
+        let stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.implementations");
         self.validate_implementations()?;
+        drop(stage);
+        let _stage = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.validate.predicates");
         self.validate_predicates()
     }
 
@@ -1404,6 +1423,7 @@ impl GpuSemanticInterfaceArtifact {
             ));
         }
 
+        let decode_span = crate::gpu::trace::HostSpan::new("host.semantic_interface", "semantic_interface.decode");
         let mut modules = Vec::with_capacity(module_count);
         for _ in 0..module_count {
             modules.push(GpuSemanticInterfaceModuleRecord {
@@ -1544,6 +1564,7 @@ impl GpuSemanticInterfaceArtifact {
             implementation_method_bindings,
             name_bytes,
         };
+        drop(decode_span);
         artifact.validate()?;
         Ok(artifact)
     }
