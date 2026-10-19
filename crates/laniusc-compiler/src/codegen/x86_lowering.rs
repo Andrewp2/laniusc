@@ -866,10 +866,13 @@ impl GpuX86LirStage {
         self.artifact.record_emit(encoder, page_id)
     }
 
+    /// `sized_job` gives the object projection's direct operations the job's
+    /// grids (`JobSized`).
     pub(crate) fn record_after_target_pages(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
+        sized_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         self.artifact
             .record_extra_emits(encoder, self.pages.len())?;
@@ -877,7 +880,7 @@ impl GpuX86LirStage {
             self.object
                 .as_ref()
                 .context("x86 object projection was not allocated for this lowering job")?
-                .record_projection(encoder)
+                .record_projection(encoder, sized_job)
         } else {
             self.artifact.record_length_readback(encoder)
         }

@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
+    job_sized::JobSized,
     lowering::{GpuSemanticLirView, lowering_allocations_with_semantic},
     lowering_ir::{
         LoweringCapacities,
@@ -540,6 +541,68 @@ pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
 
 const RADIX_ROWS_PER_BLOCK: u32 = 256;
 const RADIX_BUCKET_COUNT: u32 = 256;
+
+/// Element counts of the optimizer's direct operations for given
+/// capacities (`JobSized`). Each is the count `GpuOptimizationStage::new`
+/// builds the operation with; the build checks that they agree.
+mod opt_extent {
+    use super::LoweringCapacities;
+
+    pub(super) fn semantic(c: LoweringCapacities) -> u32 {
+        c.semantic_instructions.max(1)
+    }
+    pub(super) fn hir(c: LoweringCapacities) -> u32 {
+        c.hir_nodes.max(1)
+    }
+    pub(super) fn block(c: LoweringCapacities) -> u32 {
+        c.optimization_block_capacity()
+    }
+    pub(super) fn edge(c: LoweringCapacities) -> u32 {
+        c.optimization_edge_capacity()
+    }
+    pub(super) fn dominator_tour_arc(c: LoweringCapacities) -> u32 {
+        block(c).saturating_mul(2)
+    }
+    pub(super) fn region(c: LoweringCapacities) -> u32 {
+        c.optimization_region_capacity()
+    }
+    pub(super) fn metadata(c: LoweringCapacities) -> u32 {
+        c.parameters.max(c.local_capacity()).max(1)
+    }
+    pub(super) fn access(c: LoweringCapacities) -> u32 {
+        c.optimization_access_capacity()
+    }
+    pub(super) fn access_group(c: LoweringCapacities) -> u32 {
+        c.optimization_access_group_capacity()
+    }
+    pub(super) fn declaration_block(c: LoweringCapacities) -> u32 {
+        c.optimization_declaration_block_capacity()
+    }
+    pub(super) fn demand(c: LoweringCapacities) -> u32 {
+        c.optimization_ssa_demand_capacity()
+    }
+    pub(super) fn ssa_value_mark(c: LoweringCapacities) -> u32 {
+        c.semantic_instructions.max(demand(c)).max(1)
+    }
+    pub(super) fn value(c: LoweringCapacities) -> u32 {
+        c.optimization_value_capacity()
+    }
+    pub(super) fn ssa_operand(c: LoweringCapacities) -> u32 {
+        c.semantic_instructions
+            .max(c.call_arguments)
+            .max(c.aggregate_elements)
+            .max(1)
+    }
+    pub(super) fn incoming(c: LoweringCapacities) -> u32 {
+        c.optimization_ssa_incoming_capacity()
+    }
+    pub(super) fn ssa_validation(c: LoweringCapacities) -> u32 {
+        ssa_operand(c).max(incoming(c))
+    }
+    pub(super) fn use_rows(c: LoweringCapacities) -> u32 {
+        c.optimization_use_capacity()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct OptIrAccessRadixLayout {
@@ -1143,140 +1206,142 @@ impl OptimizationTraceRun<'_> {
 
 pub(crate) struct GpuOptimizationStage {
     failure_trace: Option<OptimizationFailureTrace>,
-    project: ComputeOperation,
-    structure_mark: ComputeOperation,
+    project: JobSized,
+    structure_mark: JobSized,
     block_scan: PrefixScanOperation,
-    structure_scatter: ComputeOperation,
-    structure_finalize: ComputeOperation,
-    structure_edge_mark: ComputeOperation,
+    structure_scatter: JobSized,
+    structure_finalize: JobSized,
+    structure_edge_mark: JobSized,
     edge_scan: PrefixScanOperation,
-    structure_edge_scatter: ComputeOperation,
-    predecessor_clear: ComputeOperation,
-    predecessor_count: ComputeOperation,
+    structure_edge_scatter: JobSized,
+    predecessor_clear: JobSized,
+    predecessor_count: JobSized,
     predecessor_scan: PrefixScanOperation,
-    predecessor_prepare: ComputeOperation,
-    predecessor_scatter: ComputeOperation,
-    predecessor_validate: ComputeOperation,
-    structure_function_init: ComputeOperation,
-    structure_function_reduce: ComputeOperation,
-    structure_function_finalize: ComputeOperation,
+    predecessor_prepare: JobSized,
+    predecessor_scatter: JobSized,
+    predecessor_validate: JobSized,
+    structure_function_init: JobSized,
+    structure_function_reduce: JobSized,
+    structure_function_finalize: JobSized,
     reachability_clear: ClearBuffersOperation,
-    reachability_seed: ComputeOperation,
+    reachability_seed: JobSized,
     reachability_close: ComputeOperation,
-    reachability_validate: ComputeOperation,
-    dominator_clear: ComputeOperation,
-    dominator_count: ComputeOperation,
-    dominator_seed: ComputeOperation,
+    reachability_validate: JobSized,
+    dominator_clear: JobSized,
+    dominator_count: JobSized,
+    dominator_seed: JobSized,
     dominator_resolve: ComputeOperation,
-    dominator_validate: ComputeOperation,
-    dominator_child_clear: ComputeOperation,
-    dominator_child_count: ComputeOperation,
+    dominator_validate: JobSized,
+    dominator_child_clear: JobSized,
+    dominator_child_count: JobSized,
     dominator_child_scan: PrefixScanOperation,
-    dominator_child_prepare: ComputeOperation,
-    dominator_child_scatter: ComputeOperation,
-    dominator_child_validate: ComputeOperation,
-    dominator_tour_child_rows_clear: ComputeOperation,
-    dominator_tour_child_rows: ComputeOperation,
-    dominator_tour_init: ComputeOperation,
-    dominator_tour_a_to_b: ComputeOperation,
-    dominator_tour_b_to_a: ComputeOperation,
-    dominator_tour_finalize: ComputeOperation,
-    dominator_preorder_inverse_clear: ComputeOperation,
-    dominator_preorder_inverse_scatter: ComputeOperation,
-    dominator_preorder_validate: ComputeOperation,
-    dominator_depth_init: ComputeOperation,
-    dominator_depth_a_to_b: ComputeOperation,
-    dominator_depth_b_to_a: ComputeOperation,
-    dominator_depth_finalize: ComputeOperation,
-    dominator_depth_validate: ComputeOperation,
-    region_mark: ComputeOperation,
+    dominator_child_prepare: JobSized,
+    dominator_child_scatter: JobSized,
+    dominator_child_validate: JobSized,
+    dominator_tour_child_rows_clear: JobSized,
+    dominator_tour_child_rows: JobSized,
+    dominator_tour_init: JobSized,
+    dominator_tour_a_to_b: JobSized,
+    dominator_tour_b_to_a: JobSized,
+    dominator_tour_finalize: JobSized,
+    dominator_preorder_inverse_clear: JobSized,
+    dominator_preorder_inverse_scatter: JobSized,
+    dominator_preorder_validate: JobSized,
+    dominator_depth_init: JobSized,
+    dominator_depth_a_to_b: JobSized,
+    dominator_depth_b_to_a: JobSized,
+    dominator_depth_finalize: JobSized,
+    dominator_depth_validate: JobSized,
+    region_mark: JobSized,
     region_scan: PrefixScanOperation,
-    region_function_clear: ComputeOperation,
-    region_scatter: ComputeOperation,
-    region_parent_init: ComputeOperation,
-    region_parent_a_to_b: ComputeOperation,
-    region_parent_b_to_a: ComputeOperation,
-    region_finalize: ComputeOperation,
-    region_function_finalize: ComputeOperation,
+    region_function_clear: JobSized,
+    region_scatter: JobSized,
+    region_parent_init: JobSized,
+    region_parent_a_to_b: JobSized,
+    region_parent_b_to_a: JobSized,
+    region_finalize: JobSized,
+    region_function_finalize: JobSized,
+    /// Not job-sized: the interval-stabbing tree puts its leaves at the
+    /// built semantic capacity, so a job's leaves lie past twice its own rows.
     region_ownership_clear: ComputeOperation,
-    region_ownership_ranges: ComputeOperation,
-    region_ownership_nodes: ComputeOperation,
-    region_ownership_blocks: ComputeOperation,
-    region_validate_edges: ComputeOperation,
-    access_mark: ComputeOperation,
+    region_ownership_ranges: JobSized,
+    region_ownership_nodes: JobSized,
+    region_ownership_blocks: JobSized,
+    region_validate_edges: JobSized,
+    access_mark: JobSized,
     access_scan: PrefixScanOperation,
-    access_scatter: ComputeOperation,
-    access_metadata: ComputeOperation,
-    access_validate: ComputeOperation,
+    access_scatter: JobSized,
+    access_metadata: JobSized,
+    access_validate: JobSized,
     access_sort: RadixSortOperation<AccessRadixParams>,
-    access_sort_validate: ComputeOperation,
-    access_group_mark: ComputeOperation,
+    access_sort_validate: JobSized,
+    access_group_mark: JobSized,
     access_group_scan: PrefixScanOperation,
-    declaration_block_mark: ComputeOperation,
+    declaration_block_mark: JobSized,
     declaration_block_scan: PrefixScanOperation,
-    access_group_scatter: ComputeOperation,
-    declaration_block_scatter: ComputeOperation,
-    access_group_finalize: ComputeOperation,
+    access_group_scatter: JobSized,
+    declaration_block_scatter: JobSized,
+    access_group_finalize: JobSized,
     access_local_definitions: ComputeOperation,
-    access_local_definitions_validate: ComputeOperation,
-    declaration_block_finalize: ComputeOperation,
-    declaration_block_validate: ComputeOperation,
-    demand_seed_mark: ComputeOperation,
+    access_local_definitions_validate: JobSized,
+    declaration_block_finalize: JobSized,
+    declaration_block_validate: JobSized,
+    demand_seed_mark: JobSized,
     demand_seed_scan: PrefixScanOperation,
-    demand_seed_scatter: ComputeOperation,
-    demand_seed_validate: ComputeOperation,
+    demand_seed_scatter: JobSized,
+    demand_seed_validate: JobSized,
     demand_work_clear: ClearBuffersOperation,
     demand_closure_prepare: ComputeOperation,
-    demand_seed_publish: ComputeOperation,
+    demand_seed_publish: JobSized,
     demand_close: ComputeOperation,
     demand_sort_prepare: ComputeOperation,
     demand_sort: RadixSortOperation<AccessRadixParams>,
-    demand_validate: ComputeOperation,
-    demand_materialize: ComputeOperation,
-    demand_commit: ComputeOperation,
-    block_argument_mark: ComputeOperation,
+    demand_validate: JobSized,
+    demand_materialize: JobSized,
+    demand_commit: JobSized,
+    block_argument_mark: JobSized,
     block_argument_scan: PrefixScanPairOperation,
-    block_argument_scatter: ComputeOperation,
-    block_argument_validate: ComputeOperation,
+    block_argument_scatter: JobSized,
+    block_argument_validate: JobSized,
     demand_alias_worker_clear: ClearBuffersOperation,
     demand_alias_resolve: ComputeOperation,
-    demand_alias_validate: ComputeOperation,
+    demand_alias_validate: JobSized,
     block_argument_user_count_clear: ClearBuffersOperation,
-    block_argument_user_count: ComputeOperation,
+    block_argument_user_count: JobSized,
     block_argument_user_scan: PrefixScanOperation,
     block_argument_user_cursor_clear: ClearBuffersOperation,
-    block_argument_user_scatter: ComputeOperation,
+    block_argument_user_scatter: JobSized,
     trivial_block_argument_work_clear: ClearBuffersOperation,
-    trivial_block_argument_init: ComputeOperation,
+    trivial_block_argument_init: JobSized,
     trivial_block_argument_propagate: ComputeOperation,
-    trivial_block_argument_finalize: ComputeOperation,
-    trivial_block_argument_validate: ComputeOperation,
-    ssa_value_mark: ComputeOperation,
+    trivial_block_argument_finalize: JobSized,
+    trivial_block_argument_validate: JobSized,
+    ssa_value_mark: JobSized,
     ssa_value_scan: PrefixScanPairOperation,
-    ssa_value_scatter: ComputeOperation,
-    ssa_value_validate: ComputeOperation,
-    ssa_value_resolve_init: ComputeOperation,
-    ssa_value_resolve_reads: ComputeOperation,
-    ssa_value_resolve_a_to_b: ComputeOperation,
-    ssa_value_resolve_b_to_a: ComputeOperation,
-    ssa_value_resolve_finalize: ComputeOperation,
-    ssa_value_resolve_validate: ComputeOperation,
-    ssa_operand_rewrite: ComputeOperation,
-    ssa_operand_validate: ComputeOperation,
-    ssa_incoming_rewrite: ComputeOperation,
-    ssa_dominance_validate: ComputeOperation,
-    ssa_use_mark: ComputeOperation,
+    ssa_value_scatter: JobSized,
+    ssa_value_validate: JobSized,
+    ssa_value_resolve_init: JobSized,
+    ssa_value_resolve_reads: JobSized,
+    ssa_value_resolve_a_to_b: JobSized,
+    ssa_value_resolve_b_to_a: JobSized,
+    ssa_value_resolve_finalize: JobSized,
+    ssa_value_resolve_validate: JobSized,
+    ssa_operand_rewrite: JobSized,
+    ssa_operand_validate: JobSized,
+    ssa_incoming_rewrite: JobSized,
+    ssa_dominance_validate: JobSized,
+    ssa_use_mark: JobSized,
     ssa_use_scan: PrefixScanPairOperation,
     ssa_aggregate_use_scan: PrefixScanOperation,
-    ssa_use_scatter: ComputeOperation,
-    ssa_use_validate: ComputeOperation,
+    ssa_use_scatter: JobSized,
+    ssa_use_validate: JobSized,
     ssa_use_sort: RadixSortOperation<UseRadixParams>,
-    ssa_use_sort_validate: ComputeOperation,
-    ssa_use_group_mark: ComputeOperation,
+    ssa_use_sort_validate: JobSized,
+    ssa_use_group_mark: JobSized,
     ssa_use_group_scan: PrefixScanOperation,
-    ssa_use_group_scatter: ComputeOperation,
-    ssa_use_group_finalize: ComputeOperation,
-    ssa_use_group_validate: ComputeOperation,
+    ssa_use_group_scatter: JobSized,
+    ssa_use_group_finalize: JobSized,
+    ssa_use_group_validate: JobSized,
     _params: LaniusBuffer<ProjectionParams>,
     _access_params: LaniusBuffer<AccessParams>,
     _access_radix_validate_params: LaniusBuffer<AccessRadixParams>,
@@ -1970,7 +2035,7 @@ impl GpuOptimizationStage {
         resources.register_graph_bindings(graph, &graph_bindings);
         semantic.register(graph, &mut resources)?;
         let pass = kernels.kernel("codegen/lir/optimization/project");
-        let project = ComputeOperation::direct_with_uniform(
+        let project = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -1978,8 +2043,8 @@ impl GpuOptimizationStage {
             pass,
             &params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let structure_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let structure_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -1987,10 +2052,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_mark"),
             &params,
             capacities.semantic_instructions.max(1),
-        )?;
+        )?, opt_extent::semantic, capacities)?;
         let block_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_BLOCK_SCAN)?;
-        let structure_scatter = ComputeOperation::direct_with_uniform(
+        let structure_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -1998,8 +2063,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_scatter"),
             &params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let structure_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let structure_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2007,8 +2072,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_finalize"),
             &params,
             block_capacity,
-        )?;
-        let structure_edge_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let structure_edge_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2016,10 +2081,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_edge_mark"),
             &params,
             block_capacity,
-        )?;
+        )?, opt_extent::block, capacities)?;
         let edge_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_EDGE_SCAN)?;
-        let structure_edge_scatter = ComputeOperation::direct_with_uniform(
+        let structure_edge_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2027,8 +2092,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_edge_scatter"),
             &params,
             block_capacity,
-        )?;
-        let predecessor_clear = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let predecessor_clear = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2036,8 +2101,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_predecessor_clear"),
             &params,
             block_capacity,
-        )?;
-        let predecessor_count = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let predecessor_count = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2045,10 +2110,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_predecessor_count"),
             &params,
             edge_capacity,
-        )?;
+        )?, opt_extent::edge, capacities)?;
         let predecessor_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_PREDECESSOR_SCAN)?;
-        let predecessor_prepare = ComputeOperation::direct_with_uniform(
+        let predecessor_prepare = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2056,8 +2121,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_predecessor_prepare"),
             &params,
             block_capacity,
-        )?;
-        let predecessor_scatter = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let predecessor_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2065,8 +2130,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_predecessor_scatter"),
             &params,
             edge_capacity,
-        )?;
-        let predecessor_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::edge, capacities)?;
+        let predecessor_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2074,8 +2139,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_predecessor_validate"),
             &params,
             block_capacity,
-        )?;
-        let structure_function_init = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let structure_function_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2083,8 +2148,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_function_init"),
             &params,
             capacities.hir_nodes.max(1),
-        )?;
-        let structure_function_reduce = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::hir, capacities)?;
+        let structure_function_reduce = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2092,8 +2157,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_function_reduce"),
             &params,
             block_capacity,
-        )?;
-        let structure_function_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let structure_function_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2101,7 +2166,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_function_finalize"),
             &params,
             capacities.hir_nodes.max(1),
-        )?;
+        )?, opt_extent::hir, capacities)?;
         let reachability_clear = ClearBuffersOperation::new(
             &(graph, &allocations),
             "lir.opt.reachability.clear",
@@ -2113,7 +2178,7 @@ impl GpuOptimizationStage {
                 ),
             ],
         )?;
-        let reachability_seed = ComputeOperation::direct_with_uniform(
+        let reachability_seed = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2121,7 +2186,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_reachability_seed"),
             &params,
             capacities.hir_nodes.max(1),
-        )?;
+        )?, opt_extent::hir, capacities)?;
         let reachability_close = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2132,7 +2197,7 @@ impl GpuOptimizationStage {
             // The kernel's 32 persistent workgroups of 32 lanes.
             32 * 32,
         )?;
-        let reachability_validate = ComputeOperation::direct_with_uniform(
+        let reachability_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2140,8 +2205,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_reachability_validate"),
             &params,
             block_capacity,
-        )?;
-        let dominator_clear = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_clear = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2149,8 +2214,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_clear"),
             &params,
             block_capacity,
-        )?;
-        let dominator_count = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_count = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2158,8 +2223,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_count"),
             &params,
             edge_capacity,
-        )?;
-        let dominator_seed = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::edge, capacities)?;
+        let dominator_seed = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2167,7 +2232,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_seed"),
             &params,
             block_capacity,
-        )?;
+        )?, opt_extent::block, capacities)?;
         let dominator_resolve = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2178,7 +2243,7 @@ impl GpuOptimizationStage {
             // The kernel's 32 persistent workgroups of 32 lanes.
             32 * 32,
         )?;
-        let dominator_validate = ComputeOperation::direct_with_uniform(
+        let dominator_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2186,8 +2251,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_validate"),
             &params,
             block_capacity,
-        )?;
-        let dominator_child_clear = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_child_clear = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2195,8 +2260,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_child_clear"),
             &params,
             block_capacity,
-        )?;
-        let dominator_child_count = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_child_count = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2204,14 +2269,14 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_child_count"),
             &params,
             block_capacity,
-        )?;
+        )?, opt_extent::block, capacities)?;
         let dominator_child_scan = PrefixScanOperation::from_spec(
             device,
             kernels,
             &resources,
             OPT_IR_DOMINATOR_CHILD_SCAN,
         )?;
-        let dominator_child_prepare = ComputeOperation::direct_with_uniform(
+        let dominator_child_prepare = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2219,8 +2284,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_child_prepare"),
             &params,
             block_capacity,
-        )?;
-        let dominator_child_scatter = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_child_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2228,8 +2293,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_child_scatter"),
             &params,
             block_capacity,
-        )?;
-        let dominator_child_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_child_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2237,8 +2302,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_child_validate"),
             &params,
             block_capacity,
-        )?;
-        let dominator_tour_child_rows_clear = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_tour_child_rows_clear = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2246,8 +2311,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_tour_child_rows_clear"),
             &params,
             block_capacity,
-        )?;
-        let dominator_tour_child_rows = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_tour_child_rows = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2255,8 +2320,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_tour_child_rows"),
             &params,
             block_capacity,
-        )?;
-        let dominator_tour_init = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_tour_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2264,8 +2329,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_tour_init"),
             &params,
             dominator_tour_arc_capacity,
-        )?;
-        let dominator_tour_a_to_b = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::dominator_tour_arc, capacities)?;
+        let dominator_tour_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2273,8 +2338,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_tour_step"),
             &params,
             dominator_tour_arc_capacity,
-        )?;
-        let dominator_tour_b_to_a = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::dominator_tour_arc, capacities)?;
+        let dominator_tour_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2282,8 +2347,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_tour_step"),
             &params,
             dominator_tour_arc_capacity,
-        )?;
-        let dominator_tour_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::dominator_tour_arc, capacities)?;
+        let dominator_tour_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2291,8 +2356,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_tour_finalize"),
             &params,
             block_capacity,
-        )?;
-        let dominator_preorder_inverse_clear = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_preorder_inverse_clear = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2300,8 +2365,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_preorder_inverse_clear"),
             &params,
             block_capacity,
-        )?;
-        let dominator_preorder_inverse_scatter = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_preorder_inverse_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2309,8 +2374,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_preorder_inverse_scatter"),
             &params,
             block_capacity,
-        )?;
-        let dominator_preorder_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_preorder_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2318,8 +2383,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_preorder_validate"),
             &params,
             block_capacity,
-        )?;
-        let dominator_depth_init = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_depth_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2327,8 +2392,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_depth_init"),
             &params,
             block_capacity,
-        )?;
-        let dominator_depth_a_to_b = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_depth_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2336,8 +2401,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_depth_step"),
             &params,
             block_capacity,
-        )?;
-        let dominator_depth_b_to_a = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_depth_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2345,8 +2410,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_depth_step"),
             &params,
             block_capacity,
-        )?;
-        let dominator_depth_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_depth_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2354,8 +2419,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_depth_finalize"),
             &params,
             block_capacity,
-        )?;
-        let dominator_depth_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let dominator_depth_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2363,8 +2428,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_dominator_depth_validate"),
             &params,
             block_capacity,
-        )?;
-        let region_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let region_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2372,10 +2437,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_mark"),
             &params,
             capacities.semantic_instructions.max(1),
-        )?;
+        )?, opt_extent::semantic, capacities)?;
         let region_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_REGION_SCAN)?;
-        let region_function_clear = ComputeOperation::direct_with_uniform(
+        let region_function_clear = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2383,8 +2448,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_function_clear"),
             &params,
             capacities.hir_nodes.max(1),
-        )?;
-        let region_scatter = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::hir, capacities)?;
+        let region_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2392,8 +2457,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_scatter"),
             &params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let region_parent_init = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let region_parent_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2401,8 +2466,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_parent_init"),
             &params,
             region_capacity,
-        )?;
-        let region_parent_a_to_b = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::region, capacities)?;
+        let region_parent_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2410,8 +2475,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_parent_step"),
             &params,
             region_capacity,
-        )?;
-        let region_parent_b_to_a = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::region, capacities)?;
+        let region_parent_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2419,8 +2484,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_parent_step"),
             &params,
             region_capacity,
-        )?;
-        let region_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::region, capacities)?;
+        let region_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2428,8 +2493,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_finalize"),
             &params,
             region_capacity,
-        )?;
-        let region_function_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::region, capacities)?;
+        let region_function_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2437,7 +2502,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_function_finalize"),
             &params,
             capacities.hir_nodes.max(1),
-        )?;
+        )?, opt_extent::hir, capacities)?;
         let region_ownership_clear = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2447,7 +2512,7 @@ impl GpuOptimizationStage {
             &params,
             capacities.semantic_instructions.max(1).saturating_mul(2),
         )?;
-        let region_ownership_ranges = ComputeOperation::direct_with_uniform(
+        let region_ownership_ranges = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2455,8 +2520,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_ownership_ranges"),
             &params,
             region_capacity,
-        )?;
-        let region_ownership_nodes = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::region, capacities)?;
+        let region_ownership_nodes = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2464,8 +2529,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_ownership_nodes"),
             &params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let region_ownership_blocks = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let region_ownership_blocks = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2473,8 +2538,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_ownership_blocks"),
             &params,
             block_capacity,
-        )?;
-        let region_validate_edges = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::block, capacities)?;
+        let region_validate_edges = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2482,8 +2547,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/structure_region_validate_edges"),
             &params,
             edge_capacity,
-        )?;
-        let access_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::edge, capacities)?;
+        let access_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2491,10 +2556,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_mark"),
             &access_params,
             capacities.semantic_instructions.max(1),
-        )?;
+        )?, opt_extent::semantic, capacities)?;
         let access_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_ACCESS_SCAN)?;
-        let access_scatter = ComputeOperation::direct_with_uniform(
+        let access_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2502,12 +2567,12 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_scatter"),
             &access_params,
             capacities.semantic_instructions.max(1),
-        )?;
+        )?, opt_extent::semantic, capacities)?;
         let metadata_capacity = capacities
             .parameters
             .max(capacities.local_capacity())
             .max(1);
-        let access_metadata = ComputeOperation::direct_with_uniform(
+        let access_metadata = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2515,8 +2580,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_metadata"),
             &access_params,
             metadata_capacity,
-        )?;
-        let access_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::metadata, capacities)?;
+        let access_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2524,7 +2589,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_validate"),
             &access_params,
             access_capacity,
-        )?;
+        )?, opt_extent::access, capacities)?;
         let access_sort = OPT_IR_ACCESS_RADIX_SORT.operation(
             device,
             kernels,
@@ -2557,7 +2622,7 @@ impl GpuOptimizationStage {
                 key_step: 0,
             },
         );
-        let access_sort_validate = ComputeOperation::direct_with_uniform(
+        let access_sort_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2565,8 +2630,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_sort_validate"),
             &access_radix_validate_params,
             access_capacity,
-        )?;
-        let access_group_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::access, capacities)?;
+        let access_group_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2574,10 +2639,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_group_mark"),
             &access_params,
             access_capacity,
-        )?;
+        )?, opt_extent::access, capacities)?;
         let access_group_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_ACCESS_GROUP_SCAN)?;
-        let declaration_block_mark = ComputeOperation::direct_with_uniform(
+        let declaration_block_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2585,14 +2650,14 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_declaration_block_mark"),
             &access_params,
             access_capacity,
-        )?;
+        )?, opt_extent::access, capacities)?;
         let declaration_block_scan = PrefixScanOperation::from_spec(
             device,
             kernels,
             &resources,
             OPT_IR_DECLARATION_BLOCK_SCAN,
         )?;
-        let access_group_scatter = ComputeOperation::direct_with_uniform(
+        let access_group_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2600,8 +2665,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_group_scatter"),
             &access_params,
             access_capacity,
-        )?;
-        let declaration_block_scatter = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::access, capacities)?;
+        let declaration_block_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2609,8 +2674,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_declaration_block_scatter"),
             &access_params,
             access_capacity,
-        )?;
-        let access_group_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::access, capacities)?;
+        let access_group_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2618,7 +2683,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_group_finalize"),
             &access_params,
             access_group_capacity,
-        )?;
+        )?, opt_extent::access_group, capacities)?;
         let access_local_definitions = ComputeOperation::indirect(
             device,
             &(graph, &allocations),
@@ -2627,7 +2692,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_local_definitions"),
             &access_group_dispatch_args,
         )?;
-        let access_local_definitions_validate = ComputeOperation::direct_with_uniform(
+        let access_local_definitions_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2635,8 +2700,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_local_definitions_validate"),
             &access_params,
             access_capacity,
-        )?;
-        let declaration_block_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::access, capacities)?;
+        let declaration_block_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2644,8 +2709,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_declaration_block_finalize"),
             &access_params,
             declaration_block_capacity,
-        )?;
-        let declaration_block_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::declaration_block, capacities)?;
+        let declaration_block_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2653,8 +2718,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/access_declaration_block_validate"),
             &access_params,
             declaration_block_capacity,
-        )?;
-        let demand_seed_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::declaration_block, capacities)?;
+        let demand_seed_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2662,14 +2727,14 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_seed_mark"),
             &access_params,
             declaration_block_capacity,
-        )?;
+        )?, opt_extent::declaration_block, capacities)?;
         let demand_seed_scan = PrefixScanOperation::from_spec(
             device,
             kernels,
             &resources,
             OPT_IR_SSA_DEMAND_SEED_SCAN,
         )?;
-        let demand_seed_scatter = ComputeOperation::direct_with_uniform(
+        let demand_seed_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2677,8 +2742,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_seed_scatter"),
             &access_params,
             declaration_block_capacity,
-        )?;
-        let demand_seed_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::declaration_block, capacities)?;
+        let demand_seed_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2686,7 +2751,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_seed_validate"),
             &access_params,
             declaration_block_capacity,
-        )?;
+        )?, opt_extent::declaration_block, capacities)?;
         let demand_work_clear = ClearBuffersOperation::new(
             &(graph, &allocations),
             "lir.opt.ssa.demands.work_clear",
@@ -2708,7 +2773,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_closure_prepare"),
             1,
         )?;
-        let demand_seed_publish = ComputeOperation::direct_with_uniform(
+        let demand_seed_publish = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2716,7 +2781,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_seed_publish"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let demand_close = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2760,7 +2825,7 @@ impl GpuOptimizationStage {
                 key_step,
             },
         )?;
-        let demand_validate = ComputeOperation::direct_with_uniform(
+        let demand_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2768,8 +2833,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_validate"),
             &ssa_params,
             demand_capacity,
-        )?;
-        let demand_materialize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::demand, capacities)?;
+        let demand_materialize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2777,8 +2842,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_materialize"),
             &ssa_params,
             demand_capacity,
-        )?;
-        let demand_commit = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::demand, capacities)?;
+        let demand_commit = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2786,8 +2851,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_commit"),
             &ssa_params,
             demand_capacity,
-        )?;
-        let block_argument_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::demand, capacities)?;
+        let block_argument_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2795,14 +2860,14 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_block_argument_mark"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let block_argument_scan = PrefixScanPairOperation::from_spec(
             device,
             kernels,
             &resources,
             OPT_IR_SSA_BLOCK_ARGUMENT_SCAN,
         )?;
-        let block_argument_scatter = ComputeOperation::direct_with_uniform(
+        let block_argument_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2810,8 +2875,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_block_argument_scatter"),
             &ssa_params,
             demand_capacity,
-        )?;
-        let block_argument_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::demand, capacities)?;
+        let block_argument_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2819,7 +2884,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_block_argument_validate"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let demand_alias_worker_clear = ClearBuffersOperation::new(
             &(graph, &allocations),
             "lir.opt.ssa.demand_aliases.worker_clear",
@@ -2837,7 +2902,7 @@ impl GpuOptimizationStage {
             &ssa_params,
             LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT.saturating_mul(256),
         )?;
-        let demand_alias_validate = ComputeOperation::direct_with_uniform(
+        let demand_alias_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2845,7 +2910,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_demand_alias_validate"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let block_argument_user_count_clear = ClearBuffersOperation::new(
             &(graph, &allocations),
             "lir.opt.ssa.block_argument_users.count_clear",
@@ -2854,7 +2919,7 @@ impl GpuOptimizationStage {
                 (&ssa_block_argument_user_count).into(),
             ))],
         )?;
-        let block_argument_user_count = ComputeOperation::direct_with_uniform(
+        let block_argument_user_count = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2862,7 +2927,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_block_argument_user_count"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let block_argument_user_scan = PrefixScanOperation::from_spec(
             device,
             kernels,
@@ -2877,7 +2942,7 @@ impl GpuOptimizationStage {
                 (&ssa_block_argument_user_count).into(),
             ))],
         )?;
-        let block_argument_user_scatter = ComputeOperation::direct_with_uniform(
+        let block_argument_user_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2885,7 +2950,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_block_argument_user_scatter"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let trivial_block_argument_work_clear = ClearBuffersOperation::new(
             &(graph, &allocations),
             "lir.opt.ssa.trivial_block_arguments.work_clear",
@@ -2894,7 +2959,7 @@ impl GpuOptimizationStage {
                 (("opt_ir_ssa_work_queue", (&ssa_work_queue).into())),
             ],
         )?;
-        let trivial_block_argument_init = ComputeOperation::direct_with_uniform(
+        let trivial_block_argument_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2902,7 +2967,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_trivial_block_argument_init"),
             &ssa_params,
             demand_capacity,
-        )?;
+        )?, opt_extent::demand, capacities)?;
         let trivial_block_argument_propagate = ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2913,7 +2978,7 @@ impl GpuOptimizationStage {
             LoweringCapacities::OPTIMIZATION_SSA_WORKER_COUNT
                 .saturating_mul(LoweringCapacities::OPTIMIZATION_SSA_QUEUE_WORKGROUP_SIZE),
         )?;
-        let trivial_block_argument_finalize = ComputeOperation::direct_with_uniform(
+        let trivial_block_argument_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2921,8 +2986,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_trivial_block_argument_finalize"),
             &ssa_params,
             demand_capacity,
-        )?;
-        let trivial_block_argument_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::demand, capacities)?;
+        let trivial_block_argument_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2930,8 +2995,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_trivial_block_argument_validate"),
             &ssa_params,
             demand_capacity,
-        )?;
-        let ssa_value_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::demand, capacities)?;
+        let ssa_value_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2939,10 +3004,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_mark"),
             &ssa_value_params,
             capacities.semantic_instructions.max(demand_capacity).max(1),
-        )?;
+        )?, opt_extent::ssa_value_mark, capacities)?;
         let ssa_value_scan =
             PrefixScanPairOperation::from_spec(device, kernels, &resources, OPT_IR_SSA_VALUE_SCAN)?;
-        let ssa_value_scatter = ComputeOperation::direct_with_uniform(
+        let ssa_value_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2950,8 +3015,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_scatter"),
             &ssa_value_params,
             value_capacity,
-        )?;
-        let ssa_value_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::value, capacities)?;
+        let ssa_value_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2959,8 +3024,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_validate"),
             &ssa_value_params,
             value_capacity,
-        )?;
-        let ssa_value_resolve_init = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::value, capacities)?;
+        let ssa_value_resolve_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2968,8 +3033,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_resolve_init"),
             &ssa_value_params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let ssa_value_resolve_reads = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let ssa_value_resolve_reads = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2977,8 +3042,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_resolve_reads"),
             &ssa_value_params,
             access_capacity,
-        )?;
-        let ssa_value_resolve_a_to_b = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::access, capacities)?;
+        let ssa_value_resolve_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2986,8 +3051,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_resolve_step"),
             &ssa_value_params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let ssa_value_resolve_b_to_a = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let ssa_value_resolve_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -2995,8 +3060,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_resolve_step"),
             &ssa_value_params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let ssa_value_resolve_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let ssa_value_resolve_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3004,8 +3069,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_resolve_finalize"),
             &ssa_value_params,
             capacities.semantic_instructions.max(1),
-        )?;
-        let ssa_value_resolve_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::semantic, capacities)?;
+        let ssa_value_resolve_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3013,13 +3078,13 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_value_resolve_validate"),
             &ssa_value_params,
             access_capacity,
-        )?;
+        )?, opt_extent::access, capacities)?;
         let ssa_operand_capacity = capacities
             .semantic_instructions
             .max(capacities.call_arguments)
             .max(capacities.aggregate_elements)
             .max(1);
-        let ssa_operand_rewrite = ComputeOperation::direct_with_uniform(
+        let ssa_operand_rewrite = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3027,8 +3092,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_operand_rewrite"),
             &ssa_value_params,
             ssa_operand_capacity,
-        )?;
-        let ssa_operand_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::ssa_operand, capacities)?;
+        let ssa_operand_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3036,8 +3101,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_operand_validate"),
             &ssa_value_params,
             ssa_operand_capacity,
-        )?;
-        let ssa_incoming_rewrite = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::ssa_operand, capacities)?;
+        let ssa_incoming_rewrite = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3045,14 +3110,14 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_incoming_rewrite"),
             &ssa_value_params,
             incoming_capacity,
-        )?;
+        )?, opt_extent::incoming, capacities)?;
         let ssa_validation_capacity = capacities
             .semantic_instructions
             .max(capacities.call_arguments)
             .max(capacities.aggregate_elements)
             .max(incoming_capacity)
             .max(1);
-        let ssa_dominance_validate = ComputeOperation::direct_with_uniform(
+        let ssa_dominance_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3060,8 +3125,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_dominance_validate"),
             &ssa_value_params,
             ssa_validation_capacity,
-        )?;
-        let ssa_use_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::ssa_validation, capacities)?;
+        let ssa_use_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3073,7 +3138,7 @@ impl GpuOptimizationStage {
                 .max(capacities.call_arguments)
                 .max(capacities.aggregate_elements)
                 .max(1),
-        )?;
+        )?, opt_extent::ssa_operand, capacities)?;
         let ssa_use_scan =
             PrefixScanPairOperation::from_spec(device, kernels, &resources, OPT_IR_SSA_USE_SCAN)?;
         let ssa_aggregate_use_scan = PrefixScanOperation::from_spec(
@@ -3088,7 +3153,7 @@ impl GpuOptimizationStage {
             .max(capacities.aggregate_elements)
             .max(incoming_capacity)
             .max(1);
-        let ssa_use_scatter = ComputeOperation::direct_with_uniform(
+        let ssa_use_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3096,8 +3161,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_scatter"),
             &ssa_value_params,
             ssa_use_dispatch_capacity,
-        )?;
-        let ssa_use_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::ssa_validation, capacities)?;
+        let ssa_use_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3105,7 +3170,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_validate"),
             &ssa_value_params,
             ssa_use_dispatch_capacity,
-        )?;
+        )?, opt_extent::ssa_validation, capacities)?;
         let ssa_use_sort = OPT_IR_SSA_USE_RADIX_SORT.operation(
             device,
             kernels,
@@ -3138,7 +3203,7 @@ impl GpuOptimizationStage {
                 key_step: 0,
             },
         );
-        let ssa_use_sort_validate = ComputeOperation::direct_with_uniform(
+        let ssa_use_sort_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3146,8 +3211,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_sort_validate"),
             &ssa_use_radix_validate_params,
             use_capacity,
-        )?;
-        let ssa_use_group_mark = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::use_rows, capacities)?;
+        let ssa_use_group_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3155,10 +3220,10 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_group_mark"),
             &ssa_value_params,
             use_capacity,
-        )?;
+        )?, opt_extent::use_rows, capacities)?;
         let ssa_use_group_scan =
             PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_SSA_USE_GROUP_SCAN)?;
-        let ssa_use_group_scatter = ComputeOperation::direct_with_uniform(
+        let ssa_use_group_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3166,8 +3231,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_group_scatter"),
             &ssa_value_params,
             use_capacity,
-        )?;
-        let ssa_use_group_finalize = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::use_rows, capacities)?;
+        let ssa_use_group_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3175,8 +3240,8 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_group_finalize"),
             &ssa_value_params,
             value_capacity,
-        )?;
-        let ssa_use_group_validate = ComputeOperation::direct_with_uniform(
+        )?, opt_extent::value, capacities)?;
+        let ssa_use_group_validate = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
             &resources,
@@ -3184,7 +3249,7 @@ impl GpuOptimizationStage {
             kernels.kernel("codegen/lir/optimization/ssa_use_group_validate"),
             &ssa_value_params,
             use_capacity,
-        )?;
+        )?, opt_extent::use_rows, capacities)?;
 
         let failure_trace = std::env::var_os("LANIUS_TRACE_OPTIMIZATION_FAILURE").map(|_| {
             macro_rules! trace_column {
@@ -3458,21 +3523,25 @@ impl GpuOptimizationStage {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn record(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.record_with_jump_pairs(encoder, timer, self.jump_pairs)
+        self.record_for_job(encoder, timer, self.jump_pairs, None)
     }
 
     /// Records the optimizer with a job's pointer-jump pairs
-    /// (`LoweringCapacities::job_jump_pairs`), capped at the built ones.
-    pub(crate) fn record_with_jump_pairs(
+    /// (`LoweringCapacities::job_jump_pairs`), capped at the built ones, and
+    /// its direct operations' grids for the job's capacities
+    /// (`LoweringCapacities::for_job`; `None` keeps the built grids).
+    pub(crate) fn record_for_job(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
         jump_pairs: LoweringJumpPairs,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
         let jump_pairs = jump_pairs.min(self.jump_pairs);
         if let Some(timer) = timer.as_deref_mut() {
@@ -3490,143 +3559,143 @@ impl GpuOptimizationStage {
                 }
             };
         }
-        self.project.record(encoder)?;
+        self.project.record_job(encoder, job)?;
         trace_checkpoint!("project", None);
-        self.structure_mark.record(encoder)?;
+        self.structure_mark.record_job(encoder, job)?;
         trace_checkpoint!("structure_mark", None);
         self.block_scan.record(encoder)?;
         trace_checkpoint!("block_scan", None);
-        self.structure_scatter.record(encoder)?;
+        self.structure_scatter.record_job(encoder, job)?;
         trace_checkpoint!("structure_scatter", None);
-        self.structure_finalize.record(encoder)?;
+        self.structure_finalize.record_job(encoder, job)?;
         trace_checkpoint!("structure_finalize", None);
-        self.structure_edge_mark.record(encoder)?;
+        self.structure_edge_mark.record_job(encoder, job)?;
         trace_checkpoint!("structure_edge_mark", None);
         self.edge_scan.record(encoder)?;
         trace_checkpoint!("edge_scan", None);
-        self.structure_edge_scatter.record(encoder)?;
+        self.structure_edge_scatter.record_job(encoder, job)?;
         trace_checkpoint!("structure_edge_scatter", None);
-        self.predecessor_clear.record(encoder)?;
+        self.predecessor_clear.record_job(encoder, job)?;
         trace_checkpoint!("predecessor_clear", None);
-        self.predecessor_count.record(encoder)?;
+        self.predecessor_count.record_job(encoder, job)?;
         trace_checkpoint!("predecessor_count", None);
         self.predecessor_scan.record(encoder)?;
         trace_checkpoint!("predecessor_scan", None);
-        self.predecessor_prepare.record(encoder)?;
+        self.predecessor_prepare.record_job(encoder, job)?;
         trace_checkpoint!("predecessor_prepare", None);
-        self.predecessor_scatter.record(encoder)?;
+        self.predecessor_scatter.record_job(encoder, job)?;
         trace_checkpoint!("predecessor_scatter", None);
-        self.predecessor_validate.record(encoder)?;
+        self.predecessor_validate.record_job(encoder, job)?;
         trace_checkpoint!("predecessor_validate", None);
-        self.structure_function_init.record(encoder)?;
+        self.structure_function_init.record_job(encoder, job)?;
         trace_checkpoint!("structure_function_init", None);
-        self.structure_function_reduce.record(encoder)?;
+        self.structure_function_reduce.record_job(encoder, job)?;
         trace_checkpoint!("structure_function_reduce", None);
-        self.structure_function_finalize.record(encoder)?;
+        self.structure_function_finalize.record_job(encoder, job)?;
         trace_checkpoint!("structure_function_finalize", None);
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Structure);
         }
         self.reachability_clear.record(encoder);
         trace_checkpoint!("reachability_clear", None);
-        self.reachability_seed.record(encoder)?;
+        self.reachability_seed.record_job(encoder, job)?;
         trace_checkpoint!("reachability_seed", None);
         self.reachability_close.record(encoder)?;
         trace_checkpoint!("reachability_close", None);
-        self.reachability_validate.record(encoder)?;
+        self.reachability_validate.record_job(encoder, job)?;
         trace_checkpoint!("reachability_validate", None);
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Reachability);
         }
-        self.dominator_clear.record(encoder)?;
+        self.dominator_clear.record_job(encoder, job)?;
         trace_checkpoint!("dominator_clear", None);
-        self.dominator_count.record(encoder)?;
+        self.dominator_count.record_job(encoder, job)?;
         trace_checkpoint!("dominator_count", None);
-        self.dominator_seed.record(encoder)?;
+        self.dominator_seed.record_job(encoder, job)?;
         trace_checkpoint!("dominator_seed", None);
         self.dominator_resolve.record(encoder)?;
         trace_checkpoint!("dominator_resolve", None);
-        self.dominator_validate.record(encoder)?;
+        self.dominator_validate.record_job(encoder, job)?;
         trace_checkpoint!("dominator_validate", None);
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Dominators);
         }
-        self.dominator_child_clear.record(encoder)?;
+        self.dominator_child_clear.record_job(encoder, job)?;
         trace_checkpoint!("dominator_child_clear", None);
-        self.dominator_child_count.record(encoder)?;
+        self.dominator_child_count.record_job(encoder, job)?;
         trace_checkpoint!("dominator_child_count", None);
         self.dominator_child_scan.record(encoder)?;
         trace_checkpoint!("dominator_child_scan", None);
-        self.dominator_child_prepare.record(encoder)?;
+        self.dominator_child_prepare.record_job(encoder, job)?;
         trace_checkpoint!("dominator_child_prepare", None);
-        self.dominator_child_scatter.record(encoder)?;
+        self.dominator_child_scatter.record_job(encoder, job)?;
         trace_checkpoint!("dominator_child_scatter", None);
-        self.dominator_child_validate.record(encoder)?;
+        self.dominator_child_validate.record_job(encoder, job)?;
         trace_checkpoint!("dominator_child_validate", None);
-        self.dominator_tour_child_rows_clear.record(encoder)?;
+        self.dominator_tour_child_rows_clear.record_job(encoder, job)?;
         trace_checkpoint!("dominator_tour_child_rows_clear", None);
-        self.dominator_tour_child_rows.record(encoder)?;
+        self.dominator_tour_child_rows.record_job(encoder, job)?;
         trace_checkpoint!("dominator_tour_child_rows", None);
-        self.dominator_tour_init.record(encoder)?;
+        self.dominator_tour_init.record_job(encoder, job)?;
         trace_checkpoint!("dominator_tour_init", None);
         for trace_iteration in 0..jump_pairs.dominator_tour {
-            self.dominator_tour_a_to_b.record(encoder)?;
+            self.dominator_tour_a_to_b.record_job(encoder, job)?;
             trace_checkpoint!("dominator_tour_a_to_b", Some(trace_iteration));
-            self.dominator_tour_b_to_a.record(encoder)?;
+            self.dominator_tour_b_to_a.record_job(encoder, job)?;
             trace_checkpoint!("dominator_tour_b_to_a", Some(trace_iteration));
         }
-        self.dominator_tour_finalize.record(encoder)?;
+        self.dominator_tour_finalize.record_job(encoder, job)?;
         trace_checkpoint!("dominator_tour_finalize", None);
-        self.dominator_preorder_inverse_clear.record(encoder)?;
+        self.dominator_preorder_inverse_clear.record_job(encoder, job)?;
         trace_checkpoint!("dominator_preorder_inverse_clear", None);
-        self.dominator_preorder_inverse_scatter.record(encoder)?;
+        self.dominator_preorder_inverse_scatter.record_job(encoder, job)?;
         trace_checkpoint!("dominator_preorder_inverse_scatter", None);
-        self.dominator_preorder_validate.record(encoder)?;
+        self.dominator_preorder_validate.record_job(encoder, job)?;
         trace_checkpoint!("dominator_preorder_validate", None);
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Preorder);
         }
-        self.dominator_depth_init.record(encoder)?;
+        self.dominator_depth_init.record_job(encoder, job)?;
         trace_checkpoint!("dominator_depth_init", None);
         for trace_iteration in 0..jump_pairs.dominator_depth {
-            self.dominator_depth_a_to_b.record(encoder)?;
+            self.dominator_depth_a_to_b.record_job(encoder, job)?;
             trace_checkpoint!("dominator_depth_a_to_b", Some(trace_iteration));
-            self.dominator_depth_b_to_a.record(encoder)?;
+            self.dominator_depth_b_to_a.record_job(encoder, job)?;
             trace_checkpoint!("dominator_depth_b_to_a", Some(trace_iteration));
         }
-        self.dominator_depth_finalize.record(encoder)?;
+        self.dominator_depth_finalize.record_job(encoder, job)?;
         trace_checkpoint!("dominator_depth_finalize", None);
-        self.dominator_depth_validate.record(encoder)?;
+        self.dominator_depth_validate.record_job(encoder, job)?;
         trace_checkpoint!("dominator_depth_validate", None);
-        self.region_mark.record(encoder)?;
+        self.region_mark.record_job(encoder, job)?;
         trace_checkpoint!("region_mark", None);
         self.region_scan.record(encoder)?;
         trace_checkpoint!("region_scan", None);
-        self.region_function_clear.record(encoder)?;
+        self.region_function_clear.record_job(encoder, job)?;
         trace_checkpoint!("region_function_clear", None);
-        self.region_scatter.record(encoder)?;
+        self.region_scatter.record_job(encoder, job)?;
         trace_checkpoint!("region_scatter", None);
-        self.region_parent_init.record(encoder)?;
+        self.region_parent_init.record_job(encoder, job)?;
         trace_checkpoint!("region_parent_init", None);
         for trace_iteration in 0..jump_pairs.region_parent {
-            self.region_parent_a_to_b.record(encoder)?;
+            self.region_parent_a_to_b.record_job(encoder, job)?;
             trace_checkpoint!("region_parent_a_to_b", Some(trace_iteration));
-            self.region_parent_b_to_a.record(encoder)?;
+            self.region_parent_b_to_a.record_job(encoder, job)?;
             trace_checkpoint!("region_parent_b_to_a", Some(trace_iteration));
         }
-        self.region_finalize.record(encoder)?;
+        self.region_finalize.record_job(encoder, job)?;
         trace_checkpoint!("region_finalize", None);
-        self.region_function_finalize.record(encoder)?;
+        self.region_function_finalize.record_job(encoder, job)?;
         trace_checkpoint!("region_function_finalize", None);
         self.region_ownership_clear.record(encoder)?;
         trace_checkpoint!("region_ownership_clear", None);
-        self.region_ownership_ranges.record(encoder)?;
+        self.region_ownership_ranges.record_job(encoder, job)?;
         trace_checkpoint!("region_ownership_ranges", None);
-        self.region_ownership_nodes.record(encoder)?;
+        self.region_ownership_nodes.record_job(encoder, job)?;
         trace_checkpoint!("region_ownership_nodes", None);
-        self.region_ownership_blocks.record(encoder)?;
+        self.region_ownership_blocks.record_job(encoder, job)?;
         trace_checkpoint!("region_ownership_blocks", None);
-        self.region_validate_edges.record(encoder)?;
+        self.region_validate_edges.record_job(encoder, job)?;
         trace_checkpoint!("region_validate_edges", None);
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Regions);
@@ -3634,52 +3703,52 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");
         }
-        self.access_mark.record(encoder)?;
+        self.access_mark.record_job(encoder, job)?;
         trace_checkpoint!("access_mark", None);
         self.access_scan.record(encoder)?;
         trace_checkpoint!("access_scan", None);
-        self.access_metadata.record(encoder)?;
+        self.access_metadata.record_job(encoder, job)?;
         trace_checkpoint!("access_metadata", None);
-        self.access_scatter.record(encoder)?;
+        self.access_scatter.record_job(encoder, job)?;
         trace_checkpoint!("access_scatter", None);
-        self.access_validate.record(encoder)?;
+        self.access_validate.record_job(encoder, job)?;
         trace_checkpoint!("access_validate", None);
         self.access_sort.record(encoder)?;
         trace_checkpoint!("access_sort", None);
-        self.access_sort_validate.record(encoder)?;
+        self.access_sort_validate.record_job(encoder, job)?;
         trace_checkpoint!("access_sort_validate", None);
-        self.access_group_mark.record(encoder)?;
+        self.access_group_mark.record_job(encoder, job)?;
         trace_checkpoint!("access_group_mark", None);
         self.access_group_scan.record(encoder)?;
         trace_checkpoint!("access_group_scan", None);
-        self.access_group_scatter.record(encoder)?;
+        self.access_group_scatter.record_job(encoder, job)?;
         trace_checkpoint!("access_group_scatter", None);
-        self.access_group_finalize.record(encoder)?;
+        self.access_group_finalize.record_job(encoder, job)?;
         trace_checkpoint!("access_group_finalize", None);
         self.access_local_definitions.record(encoder)?;
         trace_checkpoint!("access_local_definitions", None);
-        self.access_local_definitions_validate.record(encoder)?;
+        self.access_local_definitions_validate.record_job(encoder, job)?;
         trace_checkpoint!("access_local_definitions_validate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.accesses.done");
         }
-        self.declaration_block_mark.record(encoder)?;
+        self.declaration_block_mark.record_job(encoder, job)?;
         trace_checkpoint!("declaration_block_mark", None);
         self.declaration_block_scan.record(encoder)?;
         trace_checkpoint!("declaration_block_scan", None);
-        self.declaration_block_scatter.record(encoder)?;
+        self.declaration_block_scatter.record_job(encoder, job)?;
         trace_checkpoint!("declaration_block_scatter", None);
-        self.declaration_block_finalize.record(encoder)?;
+        self.declaration_block_finalize.record_job(encoder, job)?;
         trace_checkpoint!("declaration_block_finalize", None);
-        self.declaration_block_validate.record(encoder)?;
+        self.declaration_block_validate.record_job(encoder, job)?;
         trace_checkpoint!("declaration_block_validate", None);
-        self.demand_seed_mark.record(encoder)?;
+        self.demand_seed_mark.record_job(encoder, job)?;
         trace_checkpoint!("demand_seed_mark", None);
         self.demand_seed_scan.record(encoder)?;
         trace_checkpoint!("demand_seed_scan", None);
-        self.demand_seed_scatter.record(encoder)?;
+        self.demand_seed_scatter.record_job(encoder, job)?;
         trace_checkpoint!("demand_seed_scatter", None);
-        self.demand_seed_validate.record(encoder)?;
+        self.demand_seed_validate.record_job(encoder, job)?;
         trace_checkpoint!("demand_seed_validate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_seeds.done");
@@ -3691,7 +3760,7 @@ impl GpuOptimizationStage {
         }
         self.demand_closure_prepare.record(encoder)?;
         trace_checkpoint!("demand_closure_prepare", None);
-        self.demand_seed_publish.record(encoder)?;
+        self.demand_seed_publish.record_job(encoder, job)?;
         trace_checkpoint!("demand_seed_publish", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_closure.publish.done");
@@ -3708,22 +3777,22 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_closure.sort.done");
         }
-        self.demand_validate.record(encoder)?;
+        self.demand_validate.record_job(encoder, job)?;
         trace_checkpoint!("demand_validate", None);
-        self.demand_materialize.record(encoder)?;
+        self.demand_materialize.record_job(encoder, job)?;
         trace_checkpoint!("demand_materialize", None);
-        self.demand_commit.record(encoder)?;
+        self.demand_commit.record_job(encoder, job)?;
         trace_checkpoint!("demand_commit", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_closure.done");
         }
-        self.block_argument_mark.record(encoder)?;
+        self.block_argument_mark.record_job(encoder, job)?;
         trace_checkpoint!("block_argument_mark", None);
         self.block_argument_scan.record(encoder)?;
         trace_checkpoint!("block_argument_scan", None);
-        self.block_argument_scatter.record(encoder)?;
+        self.block_argument_scatter.record_job(encoder, job)?;
         trace_checkpoint!("block_argument_scatter", None);
-        self.block_argument_validate.record(encoder)?;
+        self.block_argument_validate.record_job(encoder, job)?;
         trace_checkpoint!("block_argument_validate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.block_arguments.done");
@@ -3732,27 +3801,27 @@ impl GpuOptimizationStage {
         trace_checkpoint!("demand_alias_worker_clear", None);
         self.demand_alias_resolve.record(encoder)?;
         trace_checkpoint!("demand_alias_resolve", None);
-        self.demand_alias_validate.record(encoder)?;
+        self.demand_alias_validate.record_job(encoder, job)?;
         trace_checkpoint!("demand_alias_validate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_aliases.done");
         }
         self.block_argument_user_count_clear.record(encoder);
         trace_checkpoint!("block_argument_user_count_clear", None);
-        self.block_argument_user_count.record(encoder)?;
+        self.block_argument_user_count.record_job(encoder, job)?;
         trace_checkpoint!("block_argument_user_count", None);
         self.block_argument_user_scan.record(encoder)?;
         trace_checkpoint!("block_argument_user_scan", None);
         self.block_argument_user_cursor_clear.record(encoder);
         trace_checkpoint!("block_argument_user_cursor_clear", None);
-        self.block_argument_user_scatter.record(encoder)?;
+        self.block_argument_user_scatter.record_job(encoder, job)?;
         trace_checkpoint!("block_argument_user_scatter", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.block_argument_users.done");
         }
         self.trivial_block_argument_work_clear.record(encoder);
         trace_checkpoint!("trivial_block_argument_work_clear", None);
-        self.trivial_block_argument_init.record(encoder)?;
+        self.trivial_block_argument_init.record_job(encoder, job)?;
         trace_checkpoint!("trivial_block_argument_init", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.trivial_block_arguments.init.done");
@@ -3765,42 +3834,42 @@ impl GpuOptimizationStage {
                 "optimization.trivial_block_arguments.propagate.done",
             );
         }
-        self.trivial_block_argument_finalize.record(encoder)?;
+        self.trivial_block_argument_finalize.record_job(encoder, job)?;
         trace_checkpoint!("trivial_block_argument_finalize", None);
-        self.trivial_block_argument_validate.record(encoder)?;
+        self.trivial_block_argument_validate.record_job(encoder, job)?;
         trace_checkpoint!("trivial_block_argument_validate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.trivial_block_arguments.done");
         }
-        self.ssa_value_mark.record(encoder)?;
+        self.ssa_value_mark.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_mark", None);
         self.ssa_value_scan.record(encoder)?;
         trace_checkpoint!("ssa_value_scan", None);
-        self.ssa_value_scatter.record(encoder)?;
+        self.ssa_value_scatter.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_scatter", None);
-        self.ssa_value_validate.record(encoder)?;
+        self.ssa_value_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_validate", None);
-        self.ssa_value_resolve_init.record(encoder)?;
+        self.ssa_value_resolve_init.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_resolve_init", None);
-        self.ssa_value_resolve_reads.record(encoder)?;
+        self.ssa_value_resolve_reads.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_resolve_reads", None);
         for trace_iteration in 0..jump_pairs.ssa_value_link {
-            self.ssa_value_resolve_a_to_b.record(encoder)?;
+            self.ssa_value_resolve_a_to_b.record_job(encoder, job)?;
             trace_checkpoint!("ssa_value_resolve_a_to_b", Some(trace_iteration));
-            self.ssa_value_resolve_b_to_a.record(encoder)?;
+            self.ssa_value_resolve_b_to_a.record_job(encoder, job)?;
             trace_checkpoint!("ssa_value_resolve_b_to_a", Some(trace_iteration));
         }
-        self.ssa_value_resolve_finalize.record(encoder)?;
+        self.ssa_value_resolve_finalize.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_resolve_finalize", None);
-        self.ssa_value_resolve_validate.record(encoder)?;
+        self.ssa_value_resolve_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_resolve_validate", None);
-        self.ssa_operand_rewrite.record(encoder)?;
+        self.ssa_operand_rewrite.record_job(encoder, job)?;
         trace_checkpoint!("ssa_operand_rewrite", None);
-        self.ssa_operand_validate.record(encoder)?;
+        self.ssa_operand_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_operand_validate", None);
-        self.ssa_incoming_rewrite.record(encoder)?;
+        self.ssa_incoming_rewrite.record_job(encoder, job)?;
         trace_checkpoint!("ssa_incoming_rewrite", None);
-        self.ssa_dominance_validate.record(encoder)?;
+        self.ssa_dominance_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_dominance_validate", None);
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Ssa);
@@ -3808,29 +3877,29 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.ssa_values.done");
         }
-        self.ssa_use_mark.record(encoder)?;
+        self.ssa_use_mark.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_mark", None);
         self.ssa_use_scan.record(encoder)?;
         trace_checkpoint!("ssa_use_scan", None);
         self.ssa_aggregate_use_scan.record(encoder)?;
         trace_checkpoint!("ssa_aggregate_use_scan", None);
-        self.ssa_use_scatter.record(encoder)?;
+        self.ssa_use_scatter.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_scatter", None);
-        self.ssa_use_validate.record(encoder)?;
+        self.ssa_use_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_validate", None);
         self.ssa_use_sort.record(encoder)?;
         trace_checkpoint!("ssa_use_sort", None);
-        self.ssa_use_sort_validate.record(encoder)?;
+        self.ssa_use_sort_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_sort_validate", None);
-        self.ssa_use_group_mark.record(encoder)?;
+        self.ssa_use_group_mark.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_group_mark", None);
         self.ssa_use_group_scan.record(encoder)?;
         trace_checkpoint!("ssa_use_group_scan", None);
-        self.ssa_use_group_scatter.record(encoder)?;
+        self.ssa_use_group_scatter.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_group_scatter", None);
-        self.ssa_use_group_finalize.record(encoder)?;
+        self.ssa_use_group_finalize.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_group_finalize", None);
-        self.ssa_use_group_validate.record(encoder)?;
+        self.ssa_use_group_validate.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_group_validate", None);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.ssa_uses.done");
