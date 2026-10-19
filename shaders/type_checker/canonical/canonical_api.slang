@@ -93,11 +93,19 @@ public static const uint CT_COUNT_UNIT = 9u;
 // (dependencies/14a), so its 03_rearm re-arms every interned candidate;
 // round 0 of 01_intern clears it.
 public static const uint CT_COUNT_EARLY_REARM = 10u;
+// Nonzero: some stage of this job still had pending candidates after a
+// batch of CT_ROUNDS_PER_BATCH rounds (02_round_args). Kept until the job's
+// clear. A job recorded without counter readbacks records one batch per
+// stage, so the host records it again with readbacks when this is set. It
+// is not an overflow bit: CT_COUNT_OVERFLOW != 0 means capacity failure.
+public static const uint CT_COUNT_BATCH_PENDING = 11u;
 public static const uint CT_COUNT_WORDS = 16u;
 
 // Interning rounds per job: a candidate still pending at the limit becomes
 // UNKNOWN and sets CT_OVERFLOW_ROUNDS (the old walkers capped depth at 64).
 public static const uint CT_MAX_ROUNDS = 64u;
+// Rounds of one recorded batch (CANONICAL_ROUNDS_PER_BATCH on the host).
+public static const uint CT_ROUNDS_PER_BATCH = 8u;
 
 public static const uint CT_OVERFLOW_TABLE = 1u;
 public static const uint CT_OVERFLOW_RECORDS = 2u;

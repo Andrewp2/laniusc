@@ -110,8 +110,8 @@ pub fn append(catalog: Catalog, signature: FunctionSignature,
     }
     let bytes: i32 = ir::body_events::allocation_bytes(event_count);
     if (bytes <= 0) { return -1; }
-    let memory: ptr = verified::host::alloc(bytes,
-        ir::body_events::ALIGNMENT);
+    let memory: ptr = verified::host::alloc(bytes as usize,
+        ir::body_events::ALIGNMENT as usize);
     if (memory == 0) { return -1; }
     let owned: ir::body_events::Region =
         ir::body_events::from_raw_parts(memory, event_count);

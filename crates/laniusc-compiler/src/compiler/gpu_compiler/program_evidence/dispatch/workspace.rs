@@ -17,6 +17,25 @@ use crate::gpu::buffers::{CapacityBufferCache, LaniusBuffer};
 struct PhysicalWorkspace {
     buffers: CapacityBufferCache,
     next_slots: HashMap<String, u64>,
+    params: ParamsRing,
+}
+
+/// Records of one params-ring page.
+const PARAMS_PAGE_RECORDS: u64 = 256;
+/// Bytes of one dispatch parameter block (8 words).
+const PARAMS_BLOCK_BYTES: u64 = 32;
+
+/// The session's dispatch parameter blocks, one aligned record each, bound
+/// through a dynamic uniform offset. Pages never move or shrink, so one bind
+/// group per page serves every record in it; a session that records more
+/// blocks adds pages (sized from the blocks pushed). A record is written when
+/// it is pushed, so the next submit applies it before any command that reads
+/// it, and no record is reused within a session.
+#[derive(Default)]
+struct ParamsRing {
+    pages: Vec<wgpu::Buffer>,
+    stride: u64,
+    next: u64,
 }
 
 #[derive(Default)]
@@ -57,6 +76,7 @@ impl EvidenceWorkspacePool {
             .expect("evidence workspace pool poisoned");
         let mut workspace = idle.workspace.take().unwrap_or_default();
         workspace.next_slots.clear();
+        workspace.params.next = 0;
         WorkspaceLease {
             owner: Arc::new(LeaseOwner {
                 pool: self.owner.clone(),
@@ -152,6 +172,40 @@ impl WorkspaceLease {
         }
     }
 
+    /// Writes one 8-word parameter block into this session's params ring and
+    /// returns its page and the record's dynamic offset. Bind the page at
+    /// offset 0 with size [`params_block_size`].
+    pub(super) fn push_params(&self, words: &[u32; 8]) -> Result<(wgpu::Buffer, u32)> {
+        let device = self.device();
+        let mut owner = self
+            .owner
+            .workspace
+            .lock()
+            .expect("evidence workspace poisoned");
+        let ring = &mut owner.as_mut().expect("live evidence workspace lease").params;
+        if ring.stride == 0 {
+            let alignment = u64::from(device.limits().min_uniform_buffer_offset_alignment.max(1));
+            ring.stride = PARAMS_BLOCK_BYTES.next_multiple_of(alignment);
+        }
+        let page = usize::try_from(ring.next / PARAMS_PAGE_RECORDS)?;
+        let offset = (ring.next % PARAMS_PAGE_RECORDS) * ring.stride;
+        if page == ring.pages.len() {
+            ring.pages.push(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("program_evidence.params_ring"),
+                size: PARAMS_PAGE_RECORDS * ring.stride,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+        let mut bytes = [0u8; PARAMS_BLOCK_BYTES as usize];
+        for (chunk, word) in bytes.chunks_exact_mut(4).zip(words) {
+            chunk.copy_from_slice(&word.to_le_bytes());
+        }
+        self.queue().write_buffer(&ring.pages[page], offset, &bytes);
+        ring.next += 1;
+        Ok((ring.pages[page].clone(), u32::try_from(offset)?))
+    }
+
     pub(super) fn initialized(
         &self,
         label: &str,
@@ -161,6 +215,11 @@ impl WorkspaceLease {
     ) -> Result<LaniusBuffer<u32>> {
         self.reserve(label)?.buffer(words, usage, contents)
     }
+}
+
+/// The bound size of one params-ring record.
+pub(super) fn params_block_size() -> std::num::NonZeroU64 {
+    std::num::NonZeroU64::new(PARAMS_BLOCK_BYTES).expect("nonzero parameter block")
 }
 
 /// A persistent physical role within a session. Arena growth replaces this

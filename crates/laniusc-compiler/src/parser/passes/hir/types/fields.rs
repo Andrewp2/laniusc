@@ -29,6 +29,8 @@ pub const HIR_TYPE_FORM_ARRAY: u32 = 2;
 pub const HIR_TYPE_FORM_SLICE: u32 = 3;
 /// Reference type form.
 pub const HIR_TYPE_FORM_REF: u32 = 4;
+/// Never type form (`-> !`): a leaf row with no operand, length or path.
+pub const HIR_TYPE_FORM_NEVER: u32 = 5;
 
 /// Fills type records and seeds the independent type-path leaf relation.
 pub struct HirTypeFieldsPass {

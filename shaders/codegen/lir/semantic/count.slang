@@ -1,6 +1,7 @@
 import native_value_layout;
 import checked_semantic_artifact;
 import hir_records;
+import hir_match_patterns;
 import codegen.lir.semantic.common;
 import codegen.lir.semantic.match_recipe;
 import codegen.lir.semantic.loop_recipe;
@@ -98,27 +99,11 @@ uint match_payload_for_pattern(uint node)
             ? LIR_INVALID : lo;
 }
 
+// Pattern syntax is matched against, never evaluated.
 bool match_pattern_syntax(uint node, uint hir_count)
 {
-    uint token = compact_hir_core[node].token_start;
-    uint lo = 0u;
-    uint hi = active_match_arm_count();
-    while (lo < hi)
-    {
-        uint mid = lo + (hi - lo) / 2u;
-        uint pattern = compact_match_arms[mid].pattern;
-        uint start = pattern < hir_count
-            ? compact_hir_core[pattern].token_start : 0xffffffffu;
-        if (start <= token) lo = mid + 1u;
-        else hi = mid;
-    }
-    if (lo == 0u) return false;
-    uint pattern = compact_match_arms[lo - 1u].pattern;
-    if (pattern >= hir_count) return false;
-    HirCore span = compact_hir_core[pattern];
-    HirCore candidate = compact_hir_core[node];
-    return candidate.token_start >= span.token_start &&
-        candidate.token_end <= span.token_end;
+    return hir_node_in_match_pattern(node, hir_count, compact_hir_core,
+        compact_hir_payload, compact_match_arm_count, compact_match_arms);
 }
 
 // Combine the retained expected passing mode with the complete source type.

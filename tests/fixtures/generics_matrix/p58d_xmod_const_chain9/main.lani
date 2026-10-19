@@ -1,0 +1,8 @@
+// expect: error LNC0057
+module app::main;
+
+import gen::chain;
+
+fn main() -> i32 {
+    return gen::chain::C9;
+}

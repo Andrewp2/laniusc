@@ -1,0 +1,8 @@
+// expect: LNC0006
+// A local struct where std::vec_char expects VecChar: a match.
+module app::main;
+import std::vec_char;
+struct Q { n: i32 }
+struct H { q: Q }
+enum Pick { Left, Right }
+fn main() -> i32 { let a: Q = Q { n: 1 }; let p: Pick = Right; return std::vec_char::len(match (p) { Left -> a, Right -> a }); }

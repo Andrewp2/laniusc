@@ -36,7 +36,8 @@ pub(super) const TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 pub(super) const TYPECHECK_CALL_ARG_SLOT_STRIDE: usize = 4;
 pub(super) const TYPECHECK_RADIX_U8_BUCKET_COUNT: usize = 256;
 pub(super) const TYPECHECK_NAME_HASH_TABLE_ROWS_PER_BLOCK: usize = 257;
-pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 67;
+pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize =
+    laniusc_compiler::type_checker::LANGUAGE_SYMBOL_COUNT as usize;
 pub(super) const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
 
 pub(super) const PARALLEL_PASS_CONTRACT_SCHEMA: &str = "lanius.parallel-pass-contracts.v1";

@@ -189,6 +189,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call.receiver_matched_ref_payload = INVALID;
     call.receiver_parameter_ref_tag = 0u;
     call.receiver_parameter_ref_payload = INVALID;
+    call.symbolic_type_environment = 0u;
     {
         uint callee = compact_hir_payload[row].a;
         uint callee_token = callee_token_for_call(row);

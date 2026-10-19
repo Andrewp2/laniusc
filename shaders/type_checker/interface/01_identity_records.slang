@@ -189,8 +189,9 @@ void write_decl(uint dst, uint decl, uint name_ref)
         semantic_value_const_present_by_hir[value_hir] == 0x80000000u;
     if (kind == 3u && !constant_present)
     {
-        // A constant that did not evaluate is not an executable zero.
-        atomic_u32_or(interface_status, 0u, 4096u);
+        // A constant that did not evaluate is not an executable zero
+        // (SEMANTIC_INTERFACE_CONSTANT_NOT_EVALUATED on the host).
+        atomic_u32_or(interface_status, 0u, 0x4000u);
         atomic_u32_min(interface_status, 1u, dst);
     }
     uint2 constant = constant_present ? semantic_value_const_by_hir[value_hir] : uint2(0u, 0u);

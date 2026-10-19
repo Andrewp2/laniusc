@@ -1,0 +1,8 @@
+// expect: LNC0006
+// A local struct where std::vec_char expects VecChar: the parenthesized imported result bound to a local struct.
+module app::main;
+import std::vec_char;
+struct Q { n: i32 }
+struct H { q: Q }
+enum Pick { Left, Right }
+fn main() -> i32 { let q: Q = (std::vec_char::new()); return 0; }

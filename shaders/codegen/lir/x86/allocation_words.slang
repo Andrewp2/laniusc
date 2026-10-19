@@ -301,7 +301,8 @@ uint spill_word_count(uint row, uint total, uint function_total)
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC)
         return (operands.a == INTRINSIC_I32_ARRAY_DATA_PTR ||
                 operands.a == INTRINSIC_I32_SLICE_DATA_PTR ||
-                operands.a == INTRINSIC_STRING_DATA_PTR) ? 1u :
+                operands.a == INTRINSIC_STRING_DATA_PTR ||
+                operands.a == INTRINSIC_SLICE_STRIDE) ? 1u :
             intrinsic_slice_from_raw_parts(operands.a) ?
                 1u + NATIVE_SLICE_WORDS : 0u;
     return produces_scalar_value(op) ? 1u : 0u;

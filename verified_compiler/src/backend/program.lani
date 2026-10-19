@@ -174,8 +174,8 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
         || (!native_mode
             && constant_count > (length - position)
                 / backend::literal::CONSTANT_HEADER_WORDS)) { return -1; }
-    let constant_memory: ptr = verified::host::alloc(constant_bytes,
-        backend::constant_index::ALIGNMENT);
+    let constant_memory: ptr = verified::host::alloc(constant_bytes as usize,
+        backend::constant_index::ALIGNMENT as usize);
     if (constant_memory == 0) { return -1; }
     let constants: backend::constant_index::Table;
     if (native_mode) {
@@ -205,8 +205,8 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     let function_bytes: i32 = backend::function_index::allocation_bytes(
         function_requirements);
     if (function_bytes <= 0) { return -1; }
-    let function_memory: ptr = verified::host::alloc(function_bytes,
-        backend::function_index::ALIGNMENT);
+    let function_memory: ptr = verified::host::alloc(function_bytes as usize,
+        backend::function_index::ALIGNMENT as usize);
     if (function_memory == 0) { return -1; }
     let functions: backend::function_index::Table =
         backend::function_index::from_raw_parts(function_memory,
@@ -234,8 +234,8 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     state[0].entry_index = entry;
     let layout_bytes: i32 = backend::layout_index::allocation_bytes(required);
     if (layout_bytes <= 0) { return -1; }
-    let layout_memory: ptr = verified::host::alloc(layout_bytes,
-        backend::layout_index::ALIGNMENT);
+    let layout_memory: ptr = verified::host::alloc(layout_bytes as usize,
+        backend::layout_index::ALIGNMENT as usize);
     if (layout_memory == 0) { return -1; }
     let layout: backend::layout_index::Table =
         backend::layout_index::from_raw_parts(layout_memory, required);

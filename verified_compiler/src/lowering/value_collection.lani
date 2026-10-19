@@ -53,7 +53,7 @@ fn name_index(capacity: i32) -> NameIndex {
     if (capacity <= 0 || capacity > verified::host::I32_MAX
         / NAME_ENTRY_BYTES) { return empty; }
     let entries_memory: ptr = verified::host::alloc(
-        capacity * NAME_ENTRY_BYTES, 8);
+        (capacity * NAME_ENTRY_BYTES) as usize, 8);
     let buckets_memory: ptr = verified::host::alloc_i32(NAME_BUCKETS);
     if (entries_memory == 0 || buckets_memory == 0) { return empty; }
     let entries: [NameEntry] = slice_from_raw_parts(

@@ -121,6 +121,7 @@ use laniusc_compiler::{
             },
             types::fields::{
                 HIR_TYPE_FORM_ARRAY,
+                HIR_TYPE_FORM_NEVER,
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
                 HIR_TYPE_FORM_REF,
@@ -1975,6 +1976,107 @@ fn hir_descendant_of_kind(
         }
         false
     })
+}
+
+#[test]
+fn parser_semantic_kinds_tag_only_a_bang_after_a_return_arrow_as_never() {
+    for arrow in ["->", "=>"] {
+        // Function, extern and trait-method return arrows declare `!`; a
+        // match arm's arrow (either spelling) keeps logical not.
+        let source = format!(
+            "fn halt() -> ! {{ return halt(); }}\n\
+             extern \"lanius_std\" fn abort() -> !;\n\
+             trait Stop {{ fn stop(self) -> !; }}\n\
+             fn pick(flag: bool) -> bool {{\n\
+                 return match (flag) {{ true {arrow} !flag, false {arrow} !(flag) }};\n\
+             }}\n\
+             fn flip(flag: bool) -> bool {{ return !flag; }}\n"
+        );
+        let kinds = parser_semantic_token_kinds_for_source(&source);
+        assert_eq!(
+            count_kind(&kinds, TokenKind::ReturnNever),
+            3,
+            "{arrow}: {:?}",
+            token_kind_names(&kinds)
+        );
+        assert_eq!(
+            count_kind(&kinds, TokenKind::Not),
+            3,
+            "{arrow}: {:?}",
+            token_kind_names(&kinds)
+        );
+        for (index, &kind) in kinds.iter().enumerate() {
+            if kind == TokenKind::ReturnNever as u32 {
+                assert_eq!(kinds[index - 1], TokenKind::ReturnArrow as u32, "{arrow}");
+            }
+        }
+    }
+}
+
+#[test]
+fn parser_hir_never_return_type_is_a_leaf_type_row() {
+    let parsed = parse_resident_source(
+        "fn halt() -> ! {\n    return halt();\n}\n\nextern \"lanius_std\" fn abort() -> !;\n\nfn main() -> i32 {\n    return 0;\n}\n",
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "a never return type must parse: pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+    let mut functions = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == HIR_NODE_FN
+                && matches!(
+                    parsed.hir_item_kind[node],
+                    HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN
+                ))
+            .then_some(node)
+        })
+        .collect::<Vec<_>>();
+    functions.sort_by_key(|&node| parsed.hir_token_pos[node]);
+    assert_eq!(functions.len(), 3);
+    for (function, label) in functions[..2].iter().zip(["halt", "abort"]) {
+        let return_type =
+            assert_valid_hir_node_index(&parsed, parsed.hir_fn_return_type_node[*function], label);
+        assert_eq!(parsed.hir_kind[return_type], HIR_NODE_TYPE, "{label}");
+        assert_eq!(
+            parsed.hir_type_form[return_type], HIR_TYPE_FORM_NEVER,
+            "{label}"
+        );
+        assert_eq!(
+            parsed.hir_token_end[return_type],
+            parsed.hir_token_pos[return_type] + 1,
+            "{label}: the never type spans its `!` token"
+        );
+    }
+    let main_return = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_fn_return_type_node[functions[2]],
+        "main",
+    );
+    assert_eq!(parsed.hir_type_form[main_return], HIR_TYPE_FORM_PATH);
+}
+
+#[test]
+fn parser_rejects_never_outside_a_return_type() {
+    for source in [
+        "fn main() -> i32 {\n    let x: ! = main();\n    return 0;\n}\n",
+        "fn take(value: !) -> i32 {\n    return 0;\n}\n",
+        "fn main() -> &! {\n    return main();\n}\n",
+    ] {
+        let err = common::type_check_source_with_timeout(source)
+            .expect_err("`!` is a type only right after a return arrow");
+        let diagnostic = err.to_public_diagnostic();
+        assert_eq!(
+            diagnostic.code,
+            "LNC0016",
+            "{source}: {}",
+            diagnostic.render()
+        );
+    }
 }
 
 #[test]
@@ -5874,6 +5976,107 @@ fn main() -> i32 {
             parsed.hir_compact_match_arm_pattern[1],
         ]
     );
+}
+
+/// Compact match arms are contiguous per match, in arm order, and every node
+/// inside an arm pattern is pattern syntax whose parent chain reaches that
+/// match. The checker and lowering find a pattern through this chain, since
+/// a match nested in an earlier arm puts the table out of source order.
+#[test]
+fn parser_compact_match_arms_are_contiguous_and_patterns_climb_to_their_match() {
+    let nested = r#"
+enum Inner { Pair(i32, i32), Empty }
+enum Outer { Wrapped(Inner), Other }
+fn pick(value: Outer, flag: bool, n: i32) -> i32 {
+    let first: i32 = match (value) {
+        Outer::Wrapped(Inner::Pair(left, right)) -> match (flag) {
+            true -> left,
+            false -> match (n) { 0 -> right, _ -> left + right },
+        },
+        Wrapped(Empty) -> match (n) { 1 -> 10, _ -> 11 },
+        Other -> 1,
+    };
+    return match (match (flag) { true -> 1, false -> 2 }) {
+        1 -> first,
+        _ -> n,
+    };
+}
+fn main() -> i32 { return 0; }
+"#;
+    let sources = [
+        nested,
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+    ];
+    let pattern_kinds = [
+        HIR_NODE_TYPE,
+        HIR_NODE_UNARY_EXPR,
+        HIR_NODE_NAME_EXPR,
+        HIR_NODE_LITERAL_EXPR,
+        HIR_NODE_PATH_EXPR,
+    ];
+    for (index, source) in sources.iter().enumerate() {
+        let parsed = parse_resident_source(source);
+        assert!(parsed.ll1.accepted, "source {index} should parse");
+        let core = &parsed.hir_canonical_core_words;
+        let count = parsed.hir_canonical_count as usize;
+        let kind = |node: usize| core[node * 4];
+        let parent = |node: usize| core[node * 4 + 1];
+        let span = |node: usize| (core[node * 4 + 2], core[node * 4 + 3]);
+        let owners = &parsed.hir_compact_match_arm_owner;
+        let arms = owners.len();
+        assert!(arms > 0, "source {index} should have match arms");
+
+        let mut finished = std::collections::HashSet::new();
+        let mut row = 0;
+        while row < arms {
+            let owner = owners[row];
+            assert!(
+                finished.insert(owner),
+                "source {index}: match {owner} has a second arm range at row {row}"
+            );
+            assert_eq!(kind(owner as usize), HIR_NODE_MATCH_EXPR);
+            let mut ordinal = 0;
+            while row < arms && owners[row] == owner {
+                assert_eq!(
+                    parsed.hir_compact_match_arm_ordinal[row], ordinal,
+                    "source {index}: arm row {row} of match {owner}"
+                );
+                ordinal += 1;
+                row += 1;
+            }
+        }
+
+        for row in 0..arms {
+            let owner = owners[row];
+            let pattern = parsed.hir_compact_match_arm_pattern[row] as usize;
+            assert_eq!(
+                parent(pattern),
+                owner,
+                "source {index}: the pattern of arm row {row} is a child of its match"
+            );
+            let (start, end) = span(pattern);
+            for node in 0..count {
+                let (node_start, node_end) = span(node);
+                if node_start < start || node_end > end {
+                    continue;
+                }
+                let mut current = node;
+                loop {
+                    assert!(
+                        pattern_kinds.contains(&kind(current)),
+                        "source {index}: node {current} (kind {}) inside the pattern of arm row {row} is not pattern syntax",
+                        kind(current)
+                    );
+                    if parent(current) == owner {
+                        break;
+                    }
+                    current = parent(current) as usize;
+                    assert!(current < count, "source {index}: node {node} climbs out of the HIR");
+                }
+            }
+        }
+    }
 }
 
 #[test]

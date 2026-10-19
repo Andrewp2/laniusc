@@ -1,0 +1,9 @@
+module gen::sizes;
+
+pub const A: i32 = 8;
+pub const B: i32 = A * 4;
+pub const C: i32 = (B - A) / 2 + -(A - 10);
+
+pub fn total() -> i32 {
+    return B + C - 4;
+}

@@ -192,6 +192,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
         }
     }
+    if (replay == 0u && row < count && compact_hir_core[row].kind == 19u &&
+        semantic_calls_by_hir[row].symbolic_type_environment != 0u)
+    {
+        // `size_of<T>()` in `fn bytes<T>() -> i32`: the signature and locals
+        // are concrete, but the callee needs the caller's concrete T. Only a
+        // replay of this body can request that instance. Outside a generic
+        // environment there is no replay, so the body is never withheld; a
+        // replay is the body's only instance, so it is never withheld there.
+        uint encoded_function = semantic_enclosing_fn_by_hir[row];
+        if (encoded_function != 0u && encoded_function - 1u < count &&
+            function_has_generic_environment(encoded_function - 1u, count))
+            InterlockedAnd(semantic_function_flag[encoded_function - 1u], 0u);
+    }
     // A constant parameter may have a fully concrete scalar type while its
     // value is still symbolic. Body closure therefore requires both checked
     // type layouts and bindings for every consumed constant parameter.

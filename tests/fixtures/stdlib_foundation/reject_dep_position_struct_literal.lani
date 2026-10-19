@@ -1,0 +1,8 @@
+// expect: LNC0006
+// A local struct where std::vec_char expects VecChar: a struct literal.
+module app::main;
+import std::vec_char;
+struct Q { n: i32 }
+struct H { q: Q }
+enum Pick { Left, Right }
+fn main() -> i32 { return std::vec_char::len(Q { n: 1 }); }

@@ -8,6 +8,9 @@ import gpu_index;
 import checked_semantic_artifact;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.explicit_call_environment;
+import type_checker.concrete_type_equality;
+import type_checker.concrete_type_closure;
+import type_checker.constant_atoms_identity;
 
 struct Params
 {
@@ -45,9 +48,117 @@ RWStructuredBuffer<uint> type_instance_arg_row_start;
 StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+// Accepted explicit and contextual type arguments of each call HIR row.
+StructuredBuffer<uint> call_context_arg_mask;
+StructuredBuffer<uint> call_context_ref_tag;
+StructuredBuffer<uint> call_context_ref_payload;
 RWStructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 
 static const uint INVALID = 0xffffffffu;
+
+// The checked type graph over this pass's writable instance columns.
+struct CallTypeArgumentGraph : ITypeStructureGraph
+{
+    static uint metadata(uint instance, uint field)
+    {
+        switch (field)
+        {
+        case 0u: return type_instance_kind[instance];
+        case 2u: return type_instance_arg_count[instance];
+        case 3u: return type_instance_elem_ref_tag[instance];
+        case 4u: return type_instance_elem_ref_payload[instance];
+        case 5u: return type_instance_len_kind[instance];
+        case 6u: return type_instance_len_payload[instance];
+        default: return INVALID;
+        }
+    }
+    // checked_instance_argument over this pass's writable instance columns.
+    static bool argument(uint instance, uint slot, out uint tag, out uint payload)
+    {
+        tag = 0u; payload = INVALID;
+        uint capacity; uint stride;
+        type_instance_arg_count.GetDimensions(capacity, stride);
+        if (instance >= capacity || slot >= type_instance_arg_count[instance]) return false;
+        uint start = type_instance_arg_row_start[instance];
+        type_instance_arg_row_ref_tag.GetDimensions(capacity, stride);
+        uint total = min(type_instance_arg_row_count_out[0u], capacity);
+        if (start < total && slot < total - start)
+        {
+            tag = type_instance_arg_row_ref_tag[start + slot];
+            payload = type_instance_arg_row_ref_payload[start + slot];
+        }
+        if (tag == 0u)
+        {
+            uint tokens;
+            type_generic_param_slot_by_token.GetDimensions(tokens, stride);
+            start = type_instance_arg_start[instance];
+            type_instance_arg_ref_tag.GetDimensions(capacity, stride);
+            if (slot >= 32u || (instance < tokens && slot >= 4u) ||
+                start >= capacity || slot >= capacity - start) return false;
+            tag = type_instance_arg_ref_tag[start + slot];
+            payload = type_instance_arg_ref_payload[start + slot];
+        }
+        return tag != 0u && payload != INVALID;
+    }
+}
+
+// The token that owns the call's explicit application and claims.
+uint callee_application_token(uint row, uint count)
+{
+    uint callee = compact_hir_payload[row].a;
+    if (callee >= count) return INVALID;
+    uint token = compact_hir_core[callee].kind == 21u
+        ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
+    if (token >= gParams.n_tokens) token = compact_hir_core[callee].token_start;
+    return token < gParams.n_tokens ? token : INVALID;
+}
+
+// Whether the call applies a type argument that this run leaves open: a
+// lexical parameter, or an instance that still contains one. 03a8 publishes
+// the explicit arguments into the context snapshot only after this pass, so
+// they are read from the source-owned explicit environment instead. Codegen
+// reads the flag only for the original generic body, never in a replay.
+bool call_type_environment_is_symbolic(uint row, uint token)
+{
+    uint capacity; uint stride;
+    call_explicit_application_status.GetDimensions(capacity, stride);
+    uint owner = token < gParams.n_tokens ? checked_call_application_owner(token) : INVALID;
+    uint explicit_mask = owner < capacity && call_explicit_application_status[owner] == 1u
+        ? call_explicit_environment[owner].z : 0u;
+    call_context_arg_mask.GetDimensions(capacity, stride);
+    uint context_mask = row < capacity ? call_context_arg_mask[row] : 0u;
+    call_context_ref_tag.GetDimensions(capacity, stride);
+    uint instances;
+    type_instance_kind.GetDimensions(instances, stride);
+    for (uint step = 0u; step < 64u && (explicit_mask | context_mask) != 0u; step++)
+    {
+        uint tag = 0u; uint payload = INVALID;
+        if (explicit_mask != 0u)
+        {
+            uint slot = firstbitlow(explicit_mask);
+            explicit_mask &= explicit_mask - 1u;
+            if (!checked_explicit_environment_argument(0x80000000u | token, slot, tag, payload))
+                continue;
+        }
+        else
+        {
+            uint slot = firstbitlow(context_mask);
+            context_mask &= context_mask - 1u;
+            uint cell = row * 32u + slot;
+            if (cell >= capacity) break;
+            tag = call_context_ref_tag[cell];
+            payload = call_context_ref_payload[cell];
+        }
+        if (tag == 2u) return true;
+        if (tag == 3u && (payload >= instances ||
+            !concrete_instance_is_closed<CallTypeArgumentGraph, CheckedSourceConstantGraph,
+                CheckedSourceConstantEnvironment>(payload, instances, gParams.n_tokens)))
+            return true;
+    }
+    return false;
+}
 
 bool accepted_argument(uint token, uint slot, out uint tag, out uint payload)
 {
@@ -89,6 +200,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
     if (row >= count || compact_hir_core[row].kind != 19u) return;
     CheckedCallArtifact call = semantic_calls_by_hir[row];
+    uint token = callee_application_token(row, count);
+    // Read before this pass writes any substituted result instance below.
+    uint symbolic = call_type_environment_is_symbolic(row, token) ? 1u : 0u;
+    if (call.symbolic_type_environment != symbolic)
+    {
+        call.symbolic_type_environment = symbolic;
+        semantic_calls_by_hir[row] = call;
+    }
     // Imported calls were checked against the caller's symbolic T before
     // replay. Resolve that accepted reference after the caller environment is
     // applied, just as local call claims are resolved below. This is needed
@@ -107,11 +226,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
     }
     if (call.callable_kind != 1u || call.target_token >= gParams.n_tokens) return;
-    uint callee = compact_hir_payload[row].a;
-    if (callee >= count) return;
-    uint token = compact_hir_core[callee].kind == 21u
-        ? compact_hir_payload[callee].c : compact_hir_payload[callee].d;
-    if (token >= gParams.n_tokens) token = compact_hir_core[callee].token_start;
     if (token >= gParams.n_tokens) return;
     uint tag; uint payload;
     uint slot = call_return_generic_slot[call.target_token];

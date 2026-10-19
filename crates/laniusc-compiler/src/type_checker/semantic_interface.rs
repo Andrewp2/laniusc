@@ -20,6 +20,11 @@ pub(super) use crate::compiler::IMPLEMENTATION_METHOD_BINDING_U32S as IMPLEMENTA
 /// Type-topology failure flag: word 1 is the HIR root of the rejected type and
 /// word 2 its detail (interface/type_topology/checked_types.slang).
 pub const SEMANTIC_INTERFACE_TYPE_TOPOLOGY_FAILURE: u32 = 0x8000;
+/// A public constant's initializer has no folded value
+/// (interface/01_identity_records.slang): it is not a supported constant
+/// expression, or it refers to other constants more than
+/// `LOCAL_CONST_FOLD_ROUNDS` levels deep.
+pub const SEMANTIC_INTERFACE_CONSTANT_NOT_EVALUATED: u32 = 0x4000;
 
 /// The GPU interface exporter's status packet when it rejects the unit.
 #[derive(Clone, Copy, Debug)]
@@ -40,6 +45,11 @@ impl SemanticInterfaceExportFailure {
     pub fn type_topology_root(&self) -> Option<u32> {
         (self.status == SEMANTIC_INTERFACE_TYPE_TOPOLOGY_FAILURE && self.row != u32::MAX)
             .then_some(self.row)
+    }
+
+    /// Whether a public constant's initializer did not fold.
+    pub fn constant_not_evaluated(&self) -> bool {
+        self.status & SEMANTIC_INTERFACE_CONSTANT_NOT_EVALUATED != 0
     }
 }
 

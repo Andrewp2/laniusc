@@ -192,9 +192,9 @@ fn main() -> i32 {
         transport_allocation, transport_capacity);
     let backend_work:[i32];
     {
-        let bytes: usize = backend::image_boundary::WORK_CAPACITY
-            * verified::host::I32_BYTES;
-        let alignment: usize = backend::image_boundary::WORK_ALIGNMENT;
+        let bytes: usize = (backend::image_boundary::WORK_CAPACITY
+            * verified::host::I32_BYTES) as usize;
+        let alignment: usize = backend::image_boundary::WORK_ALIGNMENT as usize;
         let allocation: ptr = verified::host::alloc(bytes, alignment);
         if (allocation == 0) { return exit_code(AllocationFailed); }
         backend_work = verified::host::i32_slice_from_raw_parts(
@@ -234,8 +234,8 @@ fn main() -> i32 {
     let bundle_word_count: i32 = lowering::program_transport::bundle_words(unit_count);
     if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
     let bundle_memory: ptr = verified::host::alloc(
-        bundle_word_count * verified::host::I32_BYTES,
-        lowering::program_transport::BUNDLE_ALIGNMENT);
+        (bundle_word_count * verified::host::I32_BYTES) as usize,
+        lowering::program_transport::BUNDLE_ALIGNMENT as usize);
     if (bundle_memory == 0) { return exit_code(AllocationFailed); }
     let bundle: lowering::program_transport::Bundle =
         lowering::program_transport::from_raw_parts(bundle_memory,
@@ -262,7 +262,7 @@ fn main() -> i32 {
                     & verified::host::BYTE_MASK;
                 path_word += 1;
             }
-            let handle: i32 = verified::host::open_read(path_pointer, path_length);
+            let handle: i32 = verified::host::open_read(path_pointer, path_length as usize);
             if (handle <= -1) { return exit_code(OpenFailed); }
             let source_length: i32 = verified::byte_io::read_file(
                 handle, source,
@@ -473,7 +473,7 @@ fn main() -> i32 {
             if (verified::certificate_output_native::pack_in_place_raw(
                 verified::host::i32_slice_data_ptr(extraction_workspace),
                 certificate_length) <= -1) { return exit_code(CertificatePackingFailed); }
-            let certificate_size: usize = certificate_length;
+            let certificate_size: usize = certificate_length as usize;
             if (verified::host::write_stdout(
                 verified::host::i32_slice_data_ptr(extraction_workspace),
                 certificate_size) != certificate_length) { return exit_code(CertificateWriteFailed); }
@@ -490,7 +490,7 @@ fn main() -> i32 {
                     * verified::host::BITS_PER_BYTE));
             byte += 1;
         }
-        let output_size: usize = emitted;
+        let output_size: usize = emitted as usize;
         if (verified::host::write_stdout(
             verified::host::i32_slice_data_ptr(extraction_workspace), output_size)
             != emitted) { return exit_code(OutputFailed); }

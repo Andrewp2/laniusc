@@ -362,7 +362,7 @@ pub fn emit(tree: ir::body_tree::Tree, types: ir::type_catalog::Table,
         let functions: [ir::symbol_catalog::Ref] = names.functions;
         unit = functions[function_index].unit;
     }
-    let memory: ptr = verified::host::alloc(VIEW_BYTES, 8);
+    let memory: ptr = verified::host::alloc(VIEW_BYTES as usize, 8);
     if (memory == 0) { return -1; }
     let views: [View] = slice_from_raw_parts(memory + VIEW_BYTES - 8, 1);
     views[0] = View { tree: tree, types: types, names: names,
@@ -736,7 +736,7 @@ pub fn emit_surface(tree: ir::body_tree::Tree,
         return -1;
     }
     let functions: [ir::symbol_catalog::Ref] = names.functions;
-    let memory: ptr = verified::host::alloc(VIEW_BYTES, 8);
+    let memory: ptr = verified::host::alloc(VIEW_BYTES as usize, 8);
     if (memory == 0) { return -1; }
     let views: [View] = slice_from_raw_parts(memory + VIEW_BYTES - 8, 1);
     views[0] = View { tree: tree, types: types, names: names,

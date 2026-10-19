@@ -53,6 +53,10 @@ enum DeferredParserFinish<T> {
     Complete(T),
     RetryWithTreeCapacity(u32),
     RetryAfterLexerBoundary,
+    /// The type check's canonical stages, recorded without readbacks, need
+    /// more rounds or capacity; the type checker records the next attempt
+    /// with them.
+    RetryWithSynchronousCanonical,
 }
 
 fn parser_shape_key_for_source(path: &Path) -> blake3::Hash {
@@ -448,8 +452,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         let (type_check, typecheck_hir) = recorded.recorded;
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
-        self.type_checker
-            .finish_recorded_check(device, &type_check)
+        let checked = self.type_checker.finish_recorded_check(device, &type_check);
+        if matches!(&checked, Err(err) if err.requests_canonical_rerecord()) {
+            return Ok(DeferredParserFinish::RetryWithSynchronousCanonical);
+        }
+        checked
             .map_err(|err| {
                 type_check_error_to_compile_error_for_source(
                     device,
@@ -896,8 +903,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         finish_timer.stamp("parser_status");
         let recorded = deferred.recorded;
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
-        self.type_checker
-            .finish_recorded_check(device, &recorded.type_check)
+        let checked = self
+            .type_checker
+            .finish_recorded_check(device, &recorded.type_check);
+        if matches!(&checked, Err(err) if err.requests_canonical_rerecord()) {
+            return Ok(DeferredParserFinish::RetryWithSynchronousCanonical);
+        }
+        checked
             .map_err(|err| {
                 type_check_error_to_compile_error_for_source_pack(
                     device,
@@ -1520,6 +1532,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     self.note_parser_retry(ParserRetry::LexerBoundary);
                     require_lexer_boundary = true;
                 }
+                DeferredParserFinish::RetryWithSynchronousCanonical => {}
             }
         }
     }
@@ -2121,6 +2134,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         self.note_parser_retry(ParserRetry::LexerBoundary);
                         require_lexer_boundary = true;
                     }
+                    DeferredParserFinish::RetryWithSynchronousCanonical => {}
                 }
                 continue;
             }
@@ -2179,6 +2193,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 DeferredParserFinish::RetryAfterLexerBoundary => {
                     unreachable!("source-pack path does not yet record speculative lexer metadata")
                 }
+                DeferredParserFinish::RetryWithSynchronousCanonical => {}
             }
         }
     }
@@ -2989,6 +3004,23 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
     let Some(failure) = error.downcast_ref::<crate::type_checker::SemanticInterfaceExportFailure>() else {
         return phase_error(&error);
     };
+    if failure.constant_not_evaluated() {
+        return CompileError::Diagnostic(
+            Diagnostic::error(
+                "LNC0057",
+                "a public constant's initializer did not evaluate at compile time",
+            )
+            .with_note(format!(
+                "a constant may refer to other constants at most {} levels deep, and only integer, `bool` and `char` operators fold (semantic-interface status 0x{:08x}, declaration {})",
+                crate::type_checker::LOCAL_CONST_FOLD_ROUNDS,
+                failure.status,
+                failure.row,
+            ))
+            .with_help(
+                "shorten the chain of constants that refer to each other, or write the value as a literal",
+            ),
+        );
+    }
     let Some(root) = failure.type_topology_root() else {
         return phase_error(&error);
     };
@@ -3452,6 +3484,13 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("declare the array length parameter with an integer type such as usize"),
         ),
+        GpuTypeCheckCode::RecursiveType => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "recursive type has infinite size",
+                ))
+                .with_note("a value of this type contains itself by value; hold the inner value through a reference or a slice instead"),
+        ),
         GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
                 .with_primary_label(diagnostic_label_from_source_span(
@@ -3846,8 +3885,8 @@ fn trait_bound_diagnostic(
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_INVALID_SUBJECT => (
             "LNC0008",
             "unsatisfied trait bound",
-            "trait bound subject must be a type generic parameter",
-            "use a declared type parameter as the bound subject; const generic parameters and undeclared names cannot carry trait bounds here",
+            "trait bound subject must be a type generic parameter or a scalar type",
+            "use a declared type parameter as the bound subject, or a scalar type such as bool; const generic parameters, record types and undeclared names cannot carry trait bounds here",
         ),
         GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_BOUND_NOT_TRAIT => (
             "LNC0008",

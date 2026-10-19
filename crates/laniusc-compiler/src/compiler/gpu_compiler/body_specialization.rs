@@ -249,17 +249,27 @@ impl GpuCompiler<'_> {
                 // A body with a retained declaration span replays as a
                 // renamed copy, which shares a run with any other copy.
                 // Polymorphic recursion replays alone, so a failure is its own.
+                // A recursive body still replays as a copy when it can: an
+                // original-scope replay rewrites the template method's own
+                // rows, so a call in it that routes back to the same generic
+                // impl (Twice<T>::area on a Twice<Rect> field) would find
+                // only the rewritten, closed receiver pattern.
                 // A copy run's entries are in copy rank order (the template's
                 // last file, then continuation files by file), so keys are
                 // sorted by rank, stably: within a rank they stay in key order.
                 let mut ranked = Vec::with_capacity(keys.len());
                 for key in keys {
                     let body = &pending[&key];
-                    let rank = if instance_copies && !body.recursive {
+                    let rank = if instance_copies {
                         program.instance_copy_rank(&body.admitted).map_err(native_program_error)?
                     } else {
                         None
                     };
+                    if trace.enabled && rank.is_none() && instance_copies && !body.recursive {
+                        let why = program.instance_copy_miss(&body.admitted).map_err(native_program_error)?;
+                        let (library, unit, declaration) = body.target;
+                        eprintln!("[specialization]   original unit={library}:{unit} decl={declaration}: {why}");
+                    }
                     ranked.push((rank, key));
                 }
                 ranked.sort_by_key(|(rank, _)| rank.unwrap_or(0));

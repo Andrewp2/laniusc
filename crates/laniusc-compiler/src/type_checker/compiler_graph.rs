@@ -480,8 +480,12 @@ pub(super) const SCOPE_HIR_PASS: &str = "type_check.scope.hir";
 pub(super) const SEMANTIC_ARTIFACT_PROJECT_PASS: &str = "type_check.semantic_artifact.project";
 pub(super) const SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS: &str =
     "type_check.semantic_artifact.local_const_literals";
+pub(super) const SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS: &str =
+    "type_check.semantic_artifact.local_const_fold_round";
 pub(super) const SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS: &str =
     "type_check.semantic_artifact.local_const_references";
+pub(super) const SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS: &str =
+    "type_check.semantic_artifact.local_const_fold_publish";
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
@@ -4111,6 +4115,12 @@ fn build_graph(
         _type_semantic_count_out as "type_semantic_count_out" in HirNodes => 4;
         _type_semantic_row_by_ordinal as "type_semantic_row_by_ordinal" in HirNodes => hir_rows * 4;
     });
+    // Constant reference rounds (semantic/artifact/const_fold.slang): the
+    // round counter and staged count, and each round's workgroups.
+    graph_resources!(graph, Workspace {
+        local_const_fold_state in HirNodes => 8;
+        local_const_fold_dispatch_args in DispatchArguments [StorageIndirect] => 12;
+    });
     graph.add_kernel_initializer_by_name(
         HIR_ACTIVE_DISPATCH_PASS,
         CompilerPhase::TypeCheck,
@@ -6610,6 +6620,18 @@ fn build_graph(
             "compact_expr_scalar_type" => final_scalar: Read,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+            "local_const_fold_state" => local_const_fold_state: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00a1_local_const_fold_round",
+        reflected_bindings![
+            "local_const_fold_state" => local_const_fold_state: ReadWrite,
+            "local_const_fold_dispatch_args" => local_const_fold_dispatch_args: Write,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -6619,13 +6641,43 @@ fn build_graph(
         kernels,
         "type_checker/semantic/artifact/00b_local_const_references",
         reflected_bindings![
+            "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
+            "compact_expr_scalar_type" => final_scalar: Read,
             "compact_const_value" => _compact_const_value: Read,
             "decl_id_by_name_token" => decl_id_by_name_token: Read,
             "decl_kind" => decl_kind: Read,
             "decl_hir_node" => _decl_hir_node: Read,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+            "local_const_fold_state" => local_const_fold_state: ReadWrite,
         ],
+    )?;
+    graph.add_indirect_dispatch(
+        SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS,
+        "local_const_fold_dispatch_args",
+    )?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00b2_local_const_fold_publish",
+        reflected_bindings![
+            "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
+            "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
+            "compact_expr_scalar_type" => final_scalar: Read,
+            "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
+            "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+        ],
+    )?;
+    graph.add_indirect_dispatch(
+        SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
+        "local_const_fold_dispatch_args",
+    )?;
+    graph.repeat_pass_range(
+        super::LOCAL_CONST_FOLD_ROUNDS,
+        SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
+        SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
     )?;
     CALLS_EXPLICIT_APPLICATIONS_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
@@ -7175,8 +7227,10 @@ mod tests {
                 "semantic-interface export retains this compact source-name row through the graph output boundary",
             );
         }
+        // The reference rounds repeat, so their reads stay live to the end
+        // of the last round.
         let local_const_reference_projection = graph
-            .pass_id(SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS)
+            .pass_id(SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS)
             .unwrap();
         assert_eq!(
             graph

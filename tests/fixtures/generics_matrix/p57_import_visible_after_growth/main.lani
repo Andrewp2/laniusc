@@ -1,0 +1,18 @@
+// Unqualified type and value names imported from a local module, checked in
+// a job that runs after the stdlib's larger job has grown the workspace. The
+// import-visible lookup must probe with the capacity it was built with.
+module app::main;
+
+import core::cmp;
+import gen::count;
+
+fn same<T>(left: T, right: T) -> bool where T: core::cmp::Eq<T> {
+    return T::eq(left, right);
+}
+
+fn main() -> i32 {
+    let start: Counter = Counter { value: 38 };
+    let next: Counter = bump(start);
+    if (!same(next.get(), 40)) { return 1; }
+    return next.get() + 2;
+}

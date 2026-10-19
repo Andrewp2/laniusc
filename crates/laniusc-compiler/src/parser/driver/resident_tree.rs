@@ -201,6 +201,7 @@ struct ResidentTreeReadbacks {
     hir_canonical_count: U32Readback,
     hir_canonical_dense_to_raw: U32Readback,
     hir_canonical_raw_to_dense: U32Readback,
+    hir_canonical_core: U32Readback,
     hir_param_ranges: U32Readback,
     hir_type_arg_ranges: U32Readback,
     hir_path_type_arg_ranges: U32Readback,
@@ -732,6 +733,11 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_canonical_raw_to_dense",
                 bufs.hir_canonical_raw_to_dense.byte_size,
+            ),
+            hir_canonical_core: rb(
+                device,
+                "rb.parser.resident_tree.hir_canonical_core",
+                bufs.hir_core.byte_size,
             ),
             hir_param_ranges: rb(
                 device,
@@ -1400,6 +1406,11 @@ impl ResidentTreeReadbacks {
             &bufs.hir_canonical_alias_to_dense,
             bufs.hir_canonical_alias_to_dense.byte_size as u64,
         );
+        self.hir_canonical_core.copy_from(
+            encoder,
+            &bufs.hir_core,
+            bufs.hir_core.byte_size as u64,
+        );
         self.hir_param_ranges.copy_from(
             encoder,
             &bufs.hir_param_ranges,
@@ -1686,6 +1697,7 @@ impl ResidentTreeReadbacks {
         self.hir_canonical_count.map();
         self.hir_canonical_dense_to_raw.map();
         self.hir_canonical_raw_to_dense.map();
+        self.hir_canonical_core.map();
         self.hir_param_ranges.map();
         self.hir_type_arg_ranges.map();
         self.hir_path_type_arg_ranges.map();
@@ -2272,6 +2284,9 @@ impl ResidentTreeReadbacks {
                 .hir_canonical_dense_to_raw
                 .read_words(compact_array_capacity)?,
             hir_canonical_raw_to_dense: self.hir_canonical_raw_to_dense.read_words(tree_len)?,
+            hir_canonical_core_words: self
+                .hir_canonical_core
+                .read_words_padded(compact_array_capacity.saturating_mul(4), u32::MAX)?,
             hir_param_range_start,
             hir_param_range_count,
             hir_type_arg_range_start,

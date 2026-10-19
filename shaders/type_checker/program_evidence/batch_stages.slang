@@ -45,6 +45,14 @@ public void pev_batch_reduce_calls(uint local)
     uint4 low; uint4 high;
     if (!pev_read4(15u, call, 0u, low) || !pev_read4(15u, call, 4u, high))
     { pev_batch_failure(pev_invalid(1u, call, 15u)); return; }
+    // A call of a soft context (context word 7 = 1) whose obligation has no
+    // finite derivation (result 3) is refuted: status 8, naming its first such
+    // obligation, and the batch goes on. Every other failure stays terminal,
+    // and a refuted call still passes the input checks below.
+    uint soft_word = 0u;
+    bool soft = pev_word(13u, low.x, 7u, soft_word) && soft_word == 1u;
+    uint refuted = PEV_INVALID; uint refuted_detail = 0u;
+    uint refuted_required = 0u; uint refuted_available = 0u;
     bool hypothesis = false;
     for (uint i = 0u; i < high.z; i++)
     {
@@ -53,7 +61,13 @@ public void pev_batch_reduce_calls(uint local)
             !pev_output_read(3u, obligation, 1u, detail) ||
             !pev_output_read(3u, obligation, 5u, required) || !pev_output_read(3u, obligation, 6u, available))
         { pev_call_status(call, 4u, 1u, obligation, 0u, 0u); pev_batch_failure(pev_invalid(1u, call, obligation)); return; }
-        if (state != 1u && state != 2u)
+        bool soft_refuted = soft && state == 3u;
+        if (soft_refuted && refuted == PEV_INVALID)
+        {
+            refuted = obligation; refuted_detail = detail;
+            refuted_required = required; refuted_available = available;
+        }
+        if (!soft_refuted && state != 1u && state != 2u)
         {
             // Selection failures retain their exact per-obligation result. A
             // missing/unprocessed selector result is an orchestration failure.
@@ -89,7 +103,10 @@ public void pev_batch_reduce_calls(uint local)
         pev_call_status(call, 4u, 10u, PEV_INVALID, 0u, 0u);
         pev_batch_failure(pev_invalid(10u, call, high.x)); return;
     }
-    pev_call_status(call, closed && !hypothesis ? 1u : 2u, 0u, PEV_INVALID, 0u, 0u);
+    if (refuted != PEV_INVALID)
+        pev_call_status(call, 8u, refuted_detail, refuted, refuted_required, refuted_available);
+    else
+        pev_call_status(call, closed && !hypothesis ? 1u : 2u, 0u, PEV_INVALID, 0u, 0u);
 }
 public void pev_batch_finish()
 {

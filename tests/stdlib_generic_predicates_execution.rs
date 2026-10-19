@@ -347,10 +347,8 @@ fn imported_option_payload_layouts_round_trip() {
     }
 }
 
-// A payload that contains itself has no finite layout and must never compile.
-// TODO(P12): the rejection is LNC0017 "x86 callee function lost its checked
-// aggregate result layout"; it should become a proper infinite-size layout
-// diagnostic, and this test should then assert that code.
+// A payload that contains itself by value has no finite size. The type
+// checker reports it at the declaration, before native layout.
 #[test]
 fn imported_option_rejects_a_cyclic_payload() {
     let entry = common::TempArtifact::new("laniusc_option_layout", "cyclic", Some("lani"));
@@ -360,13 +358,20 @@ fn imported_option_rejects_a_cyclic_payload() {
     );
     let path = entry.path().to_path_buf();
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let result = common::run_gpu_codegen_with_timeout("cyclic payload", move || {
+    let error = common::run_gpu_codegen_with_timeout("cyclic payload", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(
             &path,
             &root.join("stdlib"),
         ))
-    });
-    assert!(result.is_err(), "a cyclic payload layout compiled");
+    })
+    .expect_err("a cyclic payload layout compiled");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0006", "{error:?}");
+    let label = diagnostic
+        .primary_label
+        .as_ref()
+        .expect("the recursive type diagnostic labels the declaration");
+    assert_eq!(label.message, "recursive type has infinite size", "{error:?}");
 }
 
 #[test]

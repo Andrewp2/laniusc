@@ -57,14 +57,14 @@ pub fn decode(records: [i32], record_words: i32, offsets: [i32],
         node += 1;
     }
     let node_memory: ptr = verified::host::alloc(
-        node_count * verified::syntax_tree::NODE_BYTES,
-        verified::syntax_tree::ALIGNMENT);
+        (node_count * verified::syntax_tree::NODE_BYTES) as usize,
+        verified::syntax_tree::ALIGNMENT as usize);
     let child_bytes: i32 = verified::syntax_tree::CHILD_BYTES;
     if (children > 0) {
         child_bytes = children * verified::syntax_tree::CHILD_BYTES;
     }
-    let child_memory: ptr = verified::host::alloc(child_bytes,
-        verified::syntax_tree::ALIGNMENT);
+    let child_memory: ptr = verified::host::alloc(child_bytes as usize,
+        verified::syntax_tree::ALIGNMENT as usize);
     if (node_memory == 0 || child_memory == 0) { return invalid; }
     let native_nodes: [verified::syntax_tree::Node] =
         slice_from_raw_parts(node_memory

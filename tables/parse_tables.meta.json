@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2415,
+    "cells": 2460,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2415,
+    "cells": 2460,
     "conflicts": []
   },
   "ll1_runtime": {
     "nonterminals": 149,
     "start_nonterminal": "file",
-    "predict_cells": 29353,
-    "rhs_symbols": 577
+    "predict_cells": 29502,
+    "rhs_symbols": 578
   },
   "ll1_predictions": [
     {
@@ -2157,6 +2157,12 @@
       "production": 251
     },
     {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
+      "production": 251
+    },
+    {
       "nonterminal": "bound_type_args_opt",
       "lookahead": "TypeAliasAssign",
       "lookahead_id": 110,
@@ -3585,6 +3591,12 @@
       "production": 232
     },
     {
+      "nonterminal": "enum_type_params_opt",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
+      "production": 232
+    },
+    {
       "nonterminal": "enum_variant",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -3612,6 +3624,12 @@
       "nonterminal": "enum_variant_fields_opt",
       "lookahead": "TypeAmpersand",
       "lookahead_id": 144,
+      "production": 217
+    },
+    {
+      "nonterminal": "enum_variant_fields_opt",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
       "production": 217
     },
     {
@@ -3648,6 +3666,12 @@
       "nonterminal": "enum_variant_fields_tail_after_comma",
       "lookahead": "TypeAmpersand",
       "lookahead_id": 144,
+      "production": 220
+    },
+    {
+      "nonterminal": "enum_variant_fields_tail_after_comma",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
       "production": 220
     },
     {
@@ -4273,6 +4297,12 @@
       "lookahead": "ConstantArgumentMinus",
       "lookahead_id": 193,
       "production": 295
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
+      "production": 294
     },
     {
       "nonterminal": "generic_argument_magnitude",
@@ -6102,6 +6132,12 @@
       "nonterminal": "path_type_arg_tail_after_comma",
       "lookahead": "ConstantArgumentMinus",
       "lookahead_id": 193,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
       "production": 54
     },
     {
@@ -8109,6 +8145,12 @@
       "production": 230
     },
     {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
+      "production": 230
+    },
+    {
       "nonterminal": "type_args_opt",
       "lookahead": "ParamRParen",
       "lookahead_id": 77,
@@ -8359,6 +8401,12 @@
       "lookahead": "TypeAmpersand",
       "lookahead_id": 144,
       "production": 285
+    },
+    {
+      "nonterminal": "type_expr",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
+      "production": 315
     },
     {
       "nonterminal": "type_param_bound_list",
@@ -12270,6 +12318,16 @@
       "tag": "cast_type_path_end",
       "arity": 0,
       "rhs": []
+    },
+    {
+      "id": 315,
+      "line": 392,
+      "lhs": "type_expr",
+      "tag": "type_never",
+      "arity": 0,
+      "rhs": [
+        "'ReturnNever'"
+      ]
     }
   ]
 }

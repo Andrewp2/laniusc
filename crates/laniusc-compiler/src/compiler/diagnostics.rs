@@ -2806,6 +2806,11 @@ fn expected_syntax_terminal_description(kind: u32) -> String {
         return "end of input".to_string();
     }
 
+    // The parser offers `!` in every type position, but accepts it only as a
+    // return type. Say so, since the `!` it found elsewhere is the same text.
+    if kind == TokenKind::ReturnNever as u32 {
+        return "`!` (as a return type)".to_string();
+    }
     let Some(kind) = TokenKind::from_u32(kind).map(canonical_expected_token_kind) else {
         return format!("token #{kind}");
     };
@@ -5465,6 +5470,15 @@ mod tests {
         assert_eq!(
             expected_syntax_terminal_description(TokenKind::LetIdent as u32),
             "identifier"
+        );
+        assert_eq!(
+            expected_syntax_terminal_description(TokenKind::ReturnNever as u32),
+            "`!` (as a return type)"
+        );
+        assert_eq!(
+            expected_syntax_terminal_list(&[TokenKind::TypeIdent as u32, TokenKind::ReturnNever as u32])
+                .as_deref(),
+            Some("identifier or `!` (as a return type)")
         );
     }
 

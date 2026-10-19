@@ -137,7 +137,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint LANGUAGE_SYMBOL_COUNT = 73u;
+static const uint LANGUAGE_SYMBOL_COUNT = 74u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -191,9 +191,19 @@ uint active_path_count()
     return min(path_count_out[0], gParams.n_hir_nodes);
 }
 
+// 09e builds the import-visible table with the module-path packet's capacity.
+// That is the workspace allocation's capacity (the key buffers' extent), not
+// this job's token count, and a lookup must probe modulo the same capacity.
+uint import_visible_type_capacity()
+{
+    uint capacity; uint stride;
+    import_visible_type_key_module_id.GetDimensions(capacity, stride);
+    return capacity;
+}
+
 uint active_import_visible_type_count()
 {
-    return min(import_visible_type_count_out[0], gParams.n_tokens);
+    return min(import_visible_type_count_out[0], import_visible_type_capacity());
 }
 
 uint active_decl_count()
@@ -378,7 +388,7 @@ uint find_imported_type_decl(uint module_id, uint name_id)
         module_id,
         name_id,
         active_import_visible_type_count(),
-        gParams.n_tokens,
+        import_visible_type_capacity(),
         import_visible_type_key_module_id,
         import_visible_type_key_name_id,
         import_visible_type_key_to_decl_id,

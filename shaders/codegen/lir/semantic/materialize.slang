@@ -142,30 +142,6 @@ uint match_payload_for_pattern(uint node)
             ? LIR_INVALID : lo;
 }
 
-uint match_arm_for_result_node(uint node, uint hir_count)
-{
-    uint token = compact_hir_core[node].token_start;
-    uint lo = 0u;
-    uint hi = active_match_arm_count();
-    while (lo < hi)
-    {
-        uint mid = lo + (hi - lo) / 2u;
-        uint result = compact_match_arms[mid].result;
-        uint start = result < hir_count
-            ? compact_hir_core[result].token_start : 0xffffffffu;
-        if (start <= token) lo = mid + 1u;
-        else hi = mid;
-    }
-    if (lo == 0u) return LIR_INVALID;
-    uint arm_row = lo - 1u;
-    uint result = compact_match_arms[arm_row].result;
-    if (result >= hir_count) return LIR_INVALID;
-    HirCore span = compact_hir_core[result];
-    HirCore candidate = compact_hir_core[node];
-    return candidate.token_start >= span.token_start &&
-        candidate.token_end <= span.token_end ? arm_row : LIR_INVALID;
-}
-
 bool scalar_match_pattern(uint pattern, uint hir_count)
 {
     if (pattern >= hir_count) return false;

@@ -2274,6 +2274,49 @@ pub fn make_pass_data_from_shader_key_with_dynamic_uniforms(
     Ok(relabel_pass_data(retained, label))
 }
 
+/// Like [`make_pass_data_from_shader_key_with_dynamic_uniforms`], with only the
+/// `candidates` that the shader declares as uniform buffers made dynamic: a
+/// family of kernels can share one list although some optimize a block out.
+/// The declared subset is read from the reflection once per shader.
+pub fn make_pass_data_from_shader_key_with_declared_dynamic_uniforms(
+    device: &wgpu::Device,
+    label: &str,
+    entry: &str,
+    shader: &str,
+    candidates: &[&'static str],
+) -> Result<PassData> {
+    type Declared = HashMap<(String, Vec<&'static str>), Vec<&'static str>>;
+    static DECLARED: std::sync::OnceLock<std::sync::Mutex<Declared>> = std::sync::OnceLock::new();
+    let key = (shader.to_owned(), candidates.to_vec());
+    let cached = DECLARED
+        .get_or_init(Default::default)
+        .lock()
+        .expect("declared dynamic uniforms poisoned")
+        .get(&key)
+        .cloned();
+    let declared = match cached {
+        Some(declared) => declared,
+        None => {
+            let path = crate::shader_artifacts::artifact_path(&format!("{shader}.reflect.json"));
+            let bytes = std::fs::read(&path)
+                .map_err(|err| anyhow!("read shader reflection {}: {err}", path.display()))?;
+            let reflection = parse_reflection_from_bytes(&bytes).map_err(anyhow::Error::msg)?;
+            let declared = candidates
+                .iter()
+                .copied()
+                .filter(|name| validate_dynamic_uniforms(&reflection, &[name]).is_ok())
+                .collect::<Vec<_>>();
+            DECLARED
+                .get_or_init(Default::default)
+                .lock()
+                .expect("declared dynamic uniforms poisoned")
+                .insert(key, declared.clone());
+            declared
+        }
+    };
+    make_pass_data_from_shader_key_with_dynamic_uniforms(device, label, entry, shader, &declared)
+}
+
 /// Builds `PassData` from explicit SPIR-V and reflection artifact names.
 pub fn make_pass_data_from_shader_artifacts(
     device: &wgpu::Device,
@@ -2903,6 +2946,15 @@ pub mod bind_group {
         Ok(create_or_reuse_buffer_bind_group(
             device, label, layout, set_index, &entries,
         ))
+    }
+
+    /// The binding index of the resource named `name` in `set_index`, when the
+    /// shader declares it.
+    pub fn binding_index(pass: &PassData, set_index: usize, name: &str) -> Option<u32> {
+        reflected_parameters_for_set(&pass.reflection, set_index)
+            .iter()
+            .find(|parameter| parameter.name == name && parameter.ty.kind.is_some())
+            .and_then(|parameter| parameter.binding.index)
     }
 
     /// Whether the pass's reflection declares a bound resource named `name` in

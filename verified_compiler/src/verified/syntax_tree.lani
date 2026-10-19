@@ -200,10 +200,10 @@ pub fn materialize_native(parsed: verified::parser::ParseResult,
         return invalid;
     }
     let node_memory: ptr = verified::host::alloc(
-        shape.nodes * NODE_BYTES, ALIGNMENT);
+        (shape.nodes * NODE_BYTES) as usize, ALIGNMENT as usize);
     let child_bytes: i32 = CHILD_BYTES;
     if (shape.children > 0) { child_bytes = shape.children * CHILD_BYTES; }
-    let child_memory: ptr = verified::host::alloc(child_bytes, ALIGNMENT);
+    let child_memory: ptr = verified::host::alloc(child_bytes as usize, ALIGNMENT as usize);
     if (node_memory == 0 || child_memory == 0) { return invalid; }
     let output: Tree = Tree {
         nodes: node_view(node_memory, shape.nodes),

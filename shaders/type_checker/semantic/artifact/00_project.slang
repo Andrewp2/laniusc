@@ -4,6 +4,7 @@ import parser.token_features;
 import type_checker.calls.explicit_call_environment;
 import type_checker.semantic.artifact.constant_reference;
 import type_checker.type.instances.generic_param_lookup;
+import type_checker.predicates.scalar_subject;
 import gpu_index;
 
 // Projection columns are sparse by their compact semantic domain. Value,
@@ -77,6 +78,7 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
+StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<int> if_depth;
 StructuredBuffer<uint> compact_expr_scalar_type;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -183,6 +185,10 @@ uint host_service_for_function(HirPayload payload)
     return INVALID;
 }
 
+// A subject column value with this bit is a scalar subject's type code, not a
+// parameter declaration token (checked_contracts.rs reads both).
+static const uint SEMANTIC_PREDICATE_SCALAR_SUBJECT_BIT = 0x80000000u;
+
 void project_accepted_bound_subject(uint row, uint hir_count)
 {
     uint count = min(compact_predicate_count[0u], hir_count);
@@ -208,12 +214,21 @@ void project_accepted_bound_subject(uint row, uint hir_count)
     // Resolve the accepted subject lexically only after establishing that domain;
     // its declaration token preserves shadowing independently of binding slots.
     uint parameter_count = min(generic_param_count_out[0u], gParams.n_tokens);
-    if (parameter_count == 0u) return;
-    uint parameter = lexical_parameter_row(bound, subject, 1u);
-    if (parameter >= parameter_count) return;
-    uint declaration_token = generic_param_token[parameter];
-    if (valid_token(declaration_token))
-        semantic_predicate_subject_parameter_token_by_hir[bound] = declaration_token;
+    uint parameter = parameter_count != 0u ? lexical_parameter_row(bound, subject, 1u) : INVALID;
+    if (parameter < parameter_count)
+    {
+        uint declaration_token = generic_param_token[parameter];
+        if (valid_token(declaration_token))
+            semantic_predicate_subject_parameter_token_by_hir[bound] = declaration_token;
+        return;
+    }
+    // A scalar subject (`where bool: Inner<[i32; M]>`) names no parameter.
+    // Its type code is published with SEMANTIC_PREDICATE_SCALAR_SUBJECT_BIT.
+    uint code = predicate_scalar_subject_code(subject, name_id_by_token,
+        language_type_code_by_name_id);
+    if (code != INVALID)
+        semantic_predicate_subject_parameter_token_by_hir[bound] =
+            SEMANTIC_PREDICATE_SCALAR_SUBJECT_BIT | code;
 }
 
 [shader("compute")]
