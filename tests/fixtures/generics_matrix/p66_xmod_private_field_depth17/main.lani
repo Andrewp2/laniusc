@@ -1,0 +1,9 @@
+module app::main;
+
+import gen::lib;
+
+fn main() -> i32 {
+    let t: gen::lib::Top = gen::lib::make();
+    let u: gen::lib::Top = t;
+    return gen::lib::depth(u);
+}

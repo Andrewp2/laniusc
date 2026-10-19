@@ -326,6 +326,7 @@ impl GpuSemanticInterfaceIdentityArtifact {
             implementation_arguments: Vec::new(),
             implementation_method_bindings: Vec::new(),
             name_bytes: self.name_bytes.clone(),
+            closure_summary: None,
         };
         partial.validate_identities()
     }
@@ -351,6 +352,10 @@ pub struct GpuSemanticInterfaceArtifact {
     pub implementation_arguments: Vec<u32>,
     pub implementation_method_bindings: Vec<GpuSemanticInterfaceImplementationMethodBindingRecord>,
     pub name_bytes: Vec<u8>,
+    /// The unit's closure summary (D1b), host-only: dependents upload it to
+    /// find their instances' deeper library bodies. It is no part of the
+    /// encoded interface, its identity or its version.
+    pub(crate) closure_summary: Option<std::sync::Arc<crate::type_checker::ClosureSummary>>,
 }
 
 impl GpuSemanticInterfaceArtifact {
@@ -1237,6 +1242,15 @@ impl GpuSemanticInterfaceArtifact {
         Ok(())
     }
 
+    /// Succeeds exactly when [`Self::to_bytes`] does, without serializing:
+    /// to_bytes fails only in validate (which also bounds every count it
+    /// writes) or in its encoded length.
+    pub fn check_serializable(&self) -> Result<(), String> {
+        self.validate()?;
+        encoded_byte_len(self)?;
+        Ok(())
+    }
+
     /// Serializes the interface into its bounded little-endian binary format.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
@@ -1543,6 +1557,7 @@ impl GpuSemanticInterfaceArtifact {
             implementation_arguments,
             implementation_method_bindings,
             name_bytes,
+            closure_summary: None,
         };
         artifact.validate()?;
         Ok(artifact)
@@ -1844,6 +1859,7 @@ mod tests {
             implementation_arguments: Vec::new(),
             implementation_method_bindings: Vec::new(),
             name_bytes,
+            closure_summary: None,
         }
     }
 

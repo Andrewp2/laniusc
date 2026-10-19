@@ -1,0 +1,26 @@
+module gen::lib;
+
+enum Mode {
+    Low,
+    High(i32),
+}
+
+pub struct Outer {
+    mode: Mode,
+    base: i32,
+}
+
+pub fn make(base: i32) -> Outer {
+    return Outer { mode: High(1), base: base };
+}
+
+pub fn keep<T>(value: T) -> T {
+    return value;
+}
+
+pub fn tag(o: Outer) -> i32 {
+    return match (o.mode) {
+        Low => 0,
+        High(v) => v,
+    };
+}

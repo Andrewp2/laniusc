@@ -12,7 +12,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint declaration = dtid.x + dtid.y * 16776960u;
     if (declaration >= dependency_declaration_count()) return;
     uint base = declaration * 14u;
-    if (dependency_declaration_word(base + 6u) != 9u) return;
+    // Variants of a hidden enum are not nameable (flags word 11, bit 0).
+    if (dependency_declaration_word(base + 6u) != 9u || (dependency_declaration_word(base + 11u) & 1u) != 0u) return;
     uint parent = dependency_declaration_word(base + 10u);
     if (parent >= dependency_declaration_count() || dependency_declaration_word(parent * 14u + 6u) != 7u) return;
     uint mask = gParams.lookup_capacity - 1u;

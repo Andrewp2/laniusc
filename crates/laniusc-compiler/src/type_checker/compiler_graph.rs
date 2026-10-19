@@ -4590,10 +4590,15 @@ fn build_graph(
     }
     TYPE_PATHS_PROJECT_AFTER_PROJECTED_ALIASES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_PROJECT.register_kernel(&mut graph, kernels)?;
+    INTERFACE_HIDDEN_DECLS_MAP.register_kernel(&mut graph, kernels)?;
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
     let (substitution_records, substitution_argument_words) =
         super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
+    let (closure_records, closure_argument_words) =
+        super::instance_closure_passes::closure_canonical_extra(hir_rows);
+    let (dependency_closure_records, dependency_closure_argument_words) =
+        super::instance_closure_passes::closure_dependency_canonical_extra();
     let canonical_records = super::canonical_passes::register_canonical_passes(
         &mut graph,
         kernels,
@@ -4606,8 +4611,10 @@ fn build_graph(
             dependency_rows: u64::from(dependency_capacity.constant_type_rows),
             dependency_page_rows: dependency_type_rows,
             scale: canonical_scale,
-            extra_records: substitution_records,
-            extra_argument_words: substitution_argument_words,
+            extra_records: substitution_records + closure_records + dependency_closure_records,
+            extra_argument_words: substitution_argument_words
+                + closure_argument_words
+                + dependency_closure_argument_words,
         },
     )?;
     // Substitution state, cleared ahead of the dependency pages: imported
@@ -6492,6 +6499,18 @@ fn build_graph(
         kernels,
         "type_checker/semantic/artifact/00c_generic_call_results",
         &[],
+    )?;
+    // The instance closure of an original job reads the final call
+    // environments and realizes its instances' arguments as checked rows,
+    // ahead of the late canonical stage like the call results' own.
+    super::instance_closure_passes::register_instance_closure_passes(
+        &mut graph,
+        kernels,
+        hir_rows,
+        reflected_bindings![
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+        ],
     )?;
     super::canonical_passes::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
     // Rows the inference rounds created are interned only by the late stage;

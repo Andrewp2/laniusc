@@ -1024,6 +1024,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             checked_contracts: unit_facts.contracts,
             checked_call_owners: unit_facts.call_owners,
             native_call_owners: unit_facts.native_call_owners,
+            instance_closure: unit_facts.instance_closure,
             x86_call_hirs,
         }))
     }
@@ -1640,6 +1641,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             SourcePackArtifactTarget::X86_64,
             library_id,
             unit_id,
+            true,
         )?;
         Ok(PendingOriginalUnit {
             facts: OriginalUnitFacts::from_unit(&unit),
@@ -1921,6 +1923,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             target,
             library_id,
             unit_id,
+            body_specialization.is_none(),
         )?;
         if let Some(input) = body_specialization {
             // Definition contracts belong to the checked template. Concrete
@@ -2299,6 +2302,7 @@ struct OriginalUnitSnapshot {
     template_source_paths: std::sync::Arc<[Option<PathBuf>]>,
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
     owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
+    instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
 }
 
 impl OriginalUnitFacts {
@@ -2313,6 +2317,7 @@ impl OriginalUnitFacts {
                 template_source_paths: unit.template_source_paths.clone(),
                 template_dependency_pages: unit.template_dependency_pages.clone(),
                 owner_spans: unit.owner_spans.clone(),
+                instance_closure: unit.instance_closure.clone(),
             }),
         }
     }
@@ -2353,6 +2358,11 @@ impl OriginalUnitFacts {
 
     pub(super) fn owner_spans(&self) -> Option<&gpu_type_checker::CheckedOwnerSpans> {
         self.snapshot.owner_spans.as_deref()
+    }
+
+    /// The GPU instance closure of this original unit, when it ran.
+    pub(super) fn instance_closure(&self) -> Option<&gpu_type_checker::CheckedInstanceClosure> {
+        self.snapshot.instance_closure.as_deref()
     }
 }
 
@@ -2645,6 +2655,7 @@ fn finish_source_pack_unit(
     target: SourcePackArtifactTarget,
     library_id: u32,
     unit_id: u32,
+    original: bool,
 ) -> Result<CompiledSourcePackUnit, CompileError> {
     let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit");
     let template_source_paths: std::sync::Arc<[Option<PathBuf>]> = match source_paths {
@@ -2654,7 +2665,7 @@ fn finish_source_pack_unit(
         )),
         None => vec![None; template_sources.len()].into(),
     };
-    let interface = artifacts.semantic_interface.ok_or_else(|| {
+    let mut interface = artifacts.semantic_interface.ok_or_else(|| {
         CompileError::GpuFrontend("compiled source-pack unit produced no semantic interface".into())
     })?;
     let object = match target {
@@ -2675,6 +2686,13 @@ fn finish_source_pack_unit(
         library_id,
         unit_id,
     );
+    for instance in &mut artifacts.instance_closure.instances {
+        gpu_type_checker::scope_generic_type_identities(
+            std::slice::from_mut(&mut instance.call),
+            library_id,
+            unit_id,
+        );
+    }
     artifacts
         .checked_contracts
         .scope_source_unit(library_id, unit_id);
@@ -2732,8 +2750,30 @@ fn finish_source_pack_unit(
             "retained calls do not have exactly one checked owner row each".into(),
         ));
     }
+    // An original unit's closure summary (D1b) rides on its interface for
+    // its dependents. A unit whose summary cannot be built has none, which
+    // its dependents treat as an absent summary.
+    if original {
+        match gpu_type_checker::ClosureSummary::build(
+            [library_id, unit_id],
+            &artifacts.generic_calls,
+            &artifacts.checked_call_owners,
+            &artifacts.checked_contracts,
+        ) {
+            Ok(summary) => interface.closure_summary = Some(std::sync::Arc::new(summary)),
+            Err(error) => {
+                if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
+                    eprintln!("[instance-closure] unit {library_id}:{unit_id} has no summary: {error}");
+                }
+            }
+        }
+    }
+    let closure = &artifacts.instance_closure;
+    let instance_closure = (closure.found != 0 || closure.error.is_some())
+        .then(|| std::sync::Arc::new(std::mem::take(&mut artifacts.instance_closure)));
     Ok(CompiledSourcePackUnit {
         owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
+        instance_closure,
         interface,
         object,
         template_sources,
@@ -2759,6 +2799,7 @@ struct CheckedSourcePackArtifacts {
     checked_contracts: gpu_type_checker::CheckedUnitContracts,
     checked_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     native_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
+    instance_closure: gpu_type_checker::CheckedInstanceClosure,
     x86_call_hirs: Vec<u32>,
 }
 
@@ -2771,6 +2812,9 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// Byte spans of this original unit's copyable generic bodies; None for
     /// a replay or a unit whose spans were not retained.
     pub(in crate::compiler) owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
+    /// The GPU instance closure of an original unit (D1); None for a replay
+    /// or a unit without generic calls.
+    pub(in crate::compiler) instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
     pub(in crate::compiler) interface: crate::compiler::GpuSemanticInterfaceArtifact,
     pub(in crate::compiler) object: CompiledSourcePackObject,
     pub(in crate::compiler) generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,
@@ -2943,6 +2987,9 @@ fn lowering_error_to_compile_error_for_source_pack(
     CompileError::Diagnostic(diagnostic)
 }
 
+/// Export failure detail of a private type in a public signature.
+const SEMANTIC_INTERFACE_PRIVATE_TYPE_IN_SIGNATURE: u32 = 7;
+
 /// A rejected type in the unit's exported interface names the type and its
 /// span; other export failures keep their phase error.
 fn semantic_interface_error_to_compile_error_for_source_pack(
@@ -2994,6 +3041,23 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
         .source
         .get(start..start.saturating_add(token.len).min(file.source.len()))
         .unwrap_or("");
+    // Detail 7 (type_topology/12_type_records): a public function, constant,
+    // alias or method signature names a private type of this unit.
+    if failure.detail == SEMANTIC_INTERFACE_PRIVATE_TYPE_IN_SIGNATURE {
+        let label = diagnostic_label_from_source_span(
+            &file.path,
+            &file.source,
+            start,
+            token.len,
+            "this type is private to its module",
+        );
+        return CompileError::Diagnostic(
+            Diagnostic::error("LNC0075", format!("private type in public interface: `{name}`"))
+                .with_primary_label(label)
+                .with_note("a public signature is part of its module's interface, and importers cannot name a private type")
+                .with_help("make the type `pub`, or make the item private"),
+        );
+    }
     let label = diagnostic_label_from_source_span(
         &file.path,
         &file.source,

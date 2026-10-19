@@ -26,6 +26,10 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
+// Declaration flags word: a hidden type (interface/public_decls/02_hidden)
+// is reachable by identity, never by name.
+static const uint DECL_FLAGS_WORD = 11u;
+static const uint DECL_FLAG_HIDDEN = 1u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -56,7 +60,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint declaration_i = dependency_visible_decl[visible_i];
     if (declaration_i >= dependency_declaration_count() ||
-        dependency_visible_owner_module[visible_i] == INVALID)
+        dependency_visible_owner_module[visible_i] == INVALID ||
+        (dependency_declaration_word(declaration_i * DECL_WORDS + DECL_FLAGS_WORD) & DECL_FLAG_HIDDEN) != 0u)
         return;
     uint mask = gParams.lookup_capacity - 1u;
     uint slot = visible_hash(visible_i) & mask;

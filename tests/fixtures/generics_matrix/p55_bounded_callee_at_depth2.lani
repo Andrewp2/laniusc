@@ -1,0 +1,12 @@
+// expect: 42
+// A bounded generic reached only at depth 2: the instance closure admits it
+// with its bound proven in the same evidence batch, so it joins round 1.
+trait Key { fn key(&self) -> i32; }
+struct Id { value: i32 }
+impl Key for Id { fn key(&self) -> i32 { return self.value; } }
+fn position<T: Key>(item: T, limit: i32) -> i32 {
+    if (item.key() < limit) { return item.key(); }
+    return limit;
+}
+fn insert<T: Key>(item: T) -> i32 { return position(item, 100) + 2; }
+fn main() -> i32 { return insert(Id { value: 40 }); }

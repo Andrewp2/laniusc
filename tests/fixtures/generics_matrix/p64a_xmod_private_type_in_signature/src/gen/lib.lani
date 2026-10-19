@@ -1,0 +1,13 @@
+module gen::lib;
+
+struct Secret {
+    value: i32,
+}
+
+pub fn leak() -> Secret {
+    return Secret { value: 42 };
+}
+
+pub fn peek(s: Secret) -> i32 {
+    return s.value;
+}

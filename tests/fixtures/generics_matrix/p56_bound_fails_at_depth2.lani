@@ -1,0 +1,13 @@
+// expect: error LNC0008
+// The bound of a depth-2 callee fails only for one instance: the closure's
+// soft context is refuted and demoted, and the replay rounds report the
+// unsatisfied bound at the inner call as before.
+trait Area { fn area(&self) -> i32; }
+struct Square { side: i32 }
+struct Circle { radius: i32 }
+impl Area for Square { fn area(&self) -> i32 { return self.side * self.side; } }
+fn measure<T: Area>(shape: T) -> i32 { return shape.area(); }
+fn outer<T>(shape: T) -> i32 { return measure(shape); }
+fn main() -> i32 {
+    return outer(Square { side: 2 }) + outer(Circle { radius: 1 });
+}

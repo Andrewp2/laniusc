@@ -37,7 +37,7 @@ use super::{
     GpuX86RelocatableObjectLayout,
     GpuX86RelocationTargetKind,
 };
-use crate::codegen::GpuLinkByteSource;
+use crate::codegen::{GpuLinkByteSource, retained_column_with_capacity};
 
 pub(super) const X86_LINK_SYMBOL_IDENTITY_BYTES: usize = 12;
 
@@ -132,11 +132,24 @@ impl GpuX86LinkInput {
         }
         checked_u32_count("object", source_objects.len())?;
 
+        // Size every flat column once: growing a multi-megabyte text column
+        // object by object reallocates and copies it several times.
+        let total = |len: fn(&GpuX86RelocatableObject) -> usize| {
+            source_objects.iter().map(|object| len(object)).sum::<usize>()
+        };
         let mut input = Self::empty(
-            GpuLinkByteSource::resident("x86 link text bytes", Vec::new()),
-            GpuLinkByteSource::resident("x86 link rodata bytes", Vec::new()),
+            GpuLinkByteSource::resident(
+                "x86 link text bytes",
+                retained_column_with_capacity(total(|object| object.text.len())),
+            ),
+            GpuLinkByteSource::resident(
+                "x86 link rodata bytes",
+                retained_column_with_capacity(total(|object| object.rodata.len())),
+            ),
         );
         input.objects.reserve(source_objects.len());
+        input.relocations.reserve(total(|object| object.relocations.len()));
+        input.symbols.reserve(total(|object| object.symbols.len()));
 
         for (object_index, object) in source_objects.iter().copied().enumerate() {
             input.append_object(object_index, object)?;
@@ -316,10 +329,26 @@ impl GpuX86LinkInput {
         self.rodata.len()
     }
 
+    #[cfg(test)]
     pub(super) fn read_text_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
         self.text.read_range(range)
     }
 
+    pub(super) fn read_text_range_borrowed(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<std::borrow::Cow<'_, [u8]>, String> {
+        self.text.read_range_borrowed(range)
+    }
+
+    pub(super) fn read_rodata_range_borrowed(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<std::borrow::Cow<'_, [u8]>, String> {
+        self.rodata.read_range_borrowed(range)
+    }
+
+    #[cfg(test)]
     pub(super) fn read_rodata_range(
         &self,
         range: std::ops::Range<usize>,

@@ -19,6 +19,9 @@ mod compiler_graph;
 pub(crate) use compiler_graph::OUTPUTS_LOWERING_BINDS_WRITABLE;
 mod generic_body;
 mod generic_calls;
+mod instance_closure_passes;
+mod closure_summary;
+pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
 mod owner_spans;
 pub(crate) use owner_spans::{CheckedImplHeader, CheckedOwnerSpan, CheckedOwnerSpans, CheckedTraitCut};
 mod checked_contracts;
@@ -41,6 +44,7 @@ pub(crate) use generic_calls::{
     CheckedGenericApplicationArgument,
     CheckedGenericArgument,
     CheckedGenericCall,
+    CheckedInstanceClosure,
     CheckedGenericConstant,
     CheckedGenericTarget,
     CheckedGenericType,
@@ -375,6 +379,8 @@ pub struct GpuTypeChecker {
     passes: TypeCheckPasses,
     params_buf: LaniusBuffer<TypeCheckParams>,
     body_specialization_inputs: LaniusBuffer<u32>,
+    /// The job's dependency closure summaries (D1b; closure_summary.rs).
+    closure_summary_inputs: LaniusBuffer<u32>,
     empty_dependency_words: LaniusBuffer<u32>,
     status_buf: LaniusBuffer<u32>,
     status_readback: LaniusBuffer<u32>,
@@ -737,6 +743,8 @@ impl ResidentTypeCheckWorkspace {
         parser_feature_flags: u32,
         dependency_interfaces_present: bool,
         semantic_interface_required: bool,
+        instance_closure: bool,
+        closure_summaries: Option<std::sync::Arc<JobClosureSummaries>>,
     ) -> Result<OwnedGpuSemanticArtifact> {
         let graph = &self.typecheck_graph;
         Ok(OwnedGpuSemanticArtifact {
@@ -802,6 +810,8 @@ impl ResidentTypeCheckWorkspace {
                         hir,
                         parser_feature_flags,
                         dependency_interfaces_present,
+                        instance_closure,
+                        closure_summaries,
                     )
                 })
                 .transpose()?,

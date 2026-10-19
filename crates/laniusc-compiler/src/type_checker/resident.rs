@@ -377,6 +377,11 @@ impl GpuTypeChecker {
             "type_check.body_specialization_inputs",
             &vec![0; generic_body::BODY_INPUT_WORDS],
         );
+        let closure_summary_inputs = storage_ro_from_u32s(
+            device,
+            "type_check.closure_summary_inputs",
+            &vec![0; closure_summary::SUMMARY_INPUT_WORDS],
+        );
         // An absent interface still has a valid, immutable zero-count page.
         // It must never alias workspace columns written by the same shader.
         let empty_dependency_words = storage_ro_from_u32s(
@@ -422,6 +427,7 @@ impl GpuTypeChecker {
             passes,
             params_buf,
             body_specialization_inputs,
+            closure_summary_inputs,
             empty_dependency_words,
             status_buf,
             status_readback,
@@ -927,10 +933,46 @@ impl GpuTypeChecker {
         });
         // The status words when call inference stopped on a recorded error.
         let mut inference_error = None;
+        // An original unit with an interface and generic syntax records the
+        // instance closure; its unit facts read the closure back.
+        let instance_closure = hir_items.semantic_interface_required
+            && hir_items.body_specialization.is_none()
+            && generic_call_claim_passes_required(parser_feature_flags)
+            // LANIUS_INSTANCE_CLOSURE=0 (A/B runs) leaves the closure out.
+            && crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true);
         let canonical_synchronous = canonical_stages_synchronous(
             self.canonical_synchronous
                 .load(std::sync::atomic::Ordering::Relaxed),
         );
+        // The dependency closure (D1b) joins it when a dependency has a
+        // summary: the upload's header is rewritten on every job, so an
+        // earlier job's summaries are unreachable from this one.
+        let closure_summaries = instance_closure
+            .then(|| dependency_pages.and_then(GpuDependencyInterfacePages::closure_summaries).cloned())
+            .flatten();
+        let closure_import_rounds = closure_summaries.as_ref().map_or(0, |summaries| summaries.rounds());
+        match &closure_summaries {
+            Some(summaries) => {
+                for (offset, words) in summaries.sections() {
+                    let bytes: Vec<u8> = words.iter().copied().flat_map(u32::to_le_bytes).collect();
+                    if !bytes.is_empty() {
+                        self.closure_summary_inputs.write(queue, (offset * 4) as u64, &bytes);
+                    }
+                }
+            }
+            None => {
+                let header = [0u8; closure_summary::SUMMARY_HEADER_WORDS * 4];
+                self.closure_summary_inputs.write(queue, 0, &header);
+            }
+        }
+        if let Some(pages) = dependency_pages.filter(|pages| pages.interfaces_without_summary() != 0) {
+            if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
+                eprintln!(
+                    "[instance-closure] dependency without summary: {} interfaces",
+                    pages.interfaces_without_summary()
+                );
+            }
+        }
         {
             let resident_workspace_guard = self
                 .resident_workspace
@@ -955,6 +997,8 @@ impl GpuTypeChecker {
                     parser_feature_flags,
                     dependency_interfaces.is_some(),
                     hir_items.semantic_interface_required,
+                    instance_closure,
+                    closure_summaries.clone(),
                 )?);
             let module_path = &bind_groups.module_path;
             let canonical_scale = bind_groups.cache_key.canonical_scale;
@@ -1137,6 +1181,12 @@ impl GpuTypeChecker {
             module_path
                 .bind_groups
                 .project_type_instances
+                .record(encoder)?;
+            // Hidden interface indices exist before anything keys a local
+            // nominal (canonical early stage below).
+            module_path
+                .bind_groups
+                .map_hidden_interface_decls
                 .record(encoder)?;
             let canonical = &bind_groups.semantic_projection.canonical_types;
             canonical.record_clear(encoder)?;
@@ -2343,6 +2393,15 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .generic_call_results
                 .record(encoder)?;
+            if instance_closure {
+                bind_groups
+                    .semantic_projection
+                    .instance_closure
+                    .record(encoder, closure_import_rounds)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.instance_closure.done");
+                }
+            }
             record_canonical_types(
                 device,
                 queue,
