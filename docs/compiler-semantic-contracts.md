@@ -1,5 +1,47 @@
 # Compiler semantic contracts
 
+## `<` after a path in an expression (2026-10-18)
+
+In a value expression, `path < ...` opens generic arguments only when the
+matching `>` is directly followed by one of these:
+
+- `(`: a call or a variant constructor, `gen::a::make<i32>(5)`;
+- `::`: a further path segment, `Maybe<i32>::Nothing`, `Vec<T>::new()`;
+- a struct literal's `{`: `Pair<i32> { left: 1, right: 2 }`.
+
+The match must also be in the same parenthesis, bracket, brace and
+statement. Otherwise the `<` is a comparison, whatever precedes the
+identifier. So `gen::a::LIMIT < 7`, `f(a, b < c)`, `[x < y]`,
+`Local { v: x < y }` and a match arm `A => x < LIMIT` are all comparisons.
+
+This is C#'s lookahead rule with a smaller follow set. `)`, `,`, `;` and
+`>` are left out on purpose: a generic path that is not called, constructed
+or qualified further is never a value in Lanius. Including them would only
+make sources such as `g(a < b, c > d)` ambiguous. A `<` nested inside an
+application's arguments, as in `f<Vec<i32>>(x)` or `f<A, B<C>>(x)`, is a
+type argument because an enclosing `<` passes the rule. The one ambiguity
+the rule accepts is the C# one: `g(a < b, c > (d))` is a generic call.
+
+Type positions are not value expressions and keep their own rules:
+annotations, return types, generic parameter lists, bounds, impl heads,
+type aliases, array types and enum payloads.
+
+If a syntax error comes right after `ident<...>` that fails the rule, the
+LNC0016 help explains it. For example, `let f: i32 = gen::a::id<i32>;` is
+read as `(id < i32) > ;`.
+
+Implementation: `direct_semantic_lt_kind_for` in
+`shaders/parser/tokens/to/angle_kinds.slang`, together with
+`value_path_type_arguments_have_tail` (the raw angle match) and
+`inside_value_application` (enclosing raw `<`s, at most 32 levels). Impl
+heads (`impl Trait for X<T>`) keep their type rule. A comparison's `<` never
+closes, so its raw angle depth stays open. `bound_context` in
+`token_relations.slang` therefore accepts only a `:` or `+` in the same
+statement as the angle; otherwise `let c: bool = gen::a::LIMIT < y;` would make
+a later `t + 1` a bound `+`. Before
+2026-10-18, a `<` after `ident` was a type argument whenever a `:`, `::`,
+`,`, `<`, `&` or `->` preceded the identifier.
+
 ## Zero-initialized declarations (2026-10-18)
 
 `let x: T;`, a binding with a type and no initializer, gives `x` storage whose

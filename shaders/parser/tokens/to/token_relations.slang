@@ -367,6 +367,12 @@ bool bound_context(uint parser_i, uint count)
     uint open_i;
     if (!matching_raw_angle_open_before(parser_i, count, open_i))
         return false;
+    // A comparison's `<` never closes, so its raw angle depth stays open over
+    // later statements. A generic parameter list and its bounds lie within one
+    // statement context (the statement event scan records its start), so an
+    // angle opened in an earlier statement cannot own this `:` or `+`.
+    if (statement_context_kind[open_i] != statement_context_kind[parser_i - 1u])
+        return false;
 
     return raw_angle_open_can_contain_bound_colon(open_i + 1u, count);
 }

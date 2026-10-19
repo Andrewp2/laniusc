@@ -117,6 +117,29 @@ bool value_path_type_arguments_have_tail(uint open_i, uint count)
     return tail && value_path_arguments_share_container(open_i, close_i);
 }
 
+// The raw `<` that encloses the raw `<` at open_i, or INVALID.
+uint enclosing_raw_angle_open(uint open_i, uint count)
+{
+    uint parent;
+    return matching_raw_angle_open_before(open_i + 1u, count, parent) ? parent : INVALID;
+}
+
+// Whether the raw `<` at open_i lies inside the generic arguments of a value
+// application: some enclosing raw `<` passes the application tail check.
+// Each hop is O(1) (token_enclosing_open); 32 levels of nested generic
+// arguments bound the walk. The loop carries only a call result.
+bool inside_value_application(uint open_i, uint count)
+{
+    uint at = enclosing_raw_angle_open(open_i, count);
+    for (uint hop = 0u; hop < 32u; ++hop)
+    {
+        if (at >= count) return false;
+        if (value_path_type_arguments_have_tail(at, count)) return true;
+        at = enclosing_raw_angle_open(at, count);
+    }
+    return false;
+}
+
 uint direct_semantic_lt_kind_for(uint parser_i, uint count)
 {
     uint prev_raw = raw_kind_at(parser_i - 1u, count);
@@ -148,11 +171,20 @@ uint direct_semantic_lt_kind_for(uint parser_i, uint count)
     {
         return TK_TYPE_ARG_LT;
     }
-    if (prev_raw == TK_IDENT && value_expression_context_before(parser_i, count) &&
-        (prev2_raw == TK_COLON || prev2_raw == TK_PATH_COLON ||
-         (parser_i != 0u && value_path_type_arguments_have_tail(parser_i - 1u, count))))
+    // In a value expression, `ident <` opens generic arguments only when its
+    // matching `>` is directly followed by `(`, `::` or a struct literal's
+    // `{`, whatever precedes the identifier (C#-style lookahead). Otherwise
+    // it is a comparison, as in `gen::a::LIMIT < 7` or `f(a, b < c)`, unless
+    // it sits inside another application's arguments, where it is a type.
+    // An impl head (`impl Trait for X<T>`) is a type position even though its
+    // `for` reads as a statement context.
+    if (prev_raw == TK_IDENT && !impl_type_context_before(parser_i, count) &&
+        value_expression_context_before(parser_i, count))
     {
-        return TK_PATH_TYPE_ARG_LT;
+        uint open_i = parser_i - 1u;
+        if (value_path_type_arguments_have_tail(open_i, count))
+            return TK_PATH_TYPE_ARG_LT;
+        return inside_value_application(open_i, count) ? TK_TYPE_ARG_LT : TK_LT;
     }
     if (prev_raw == TK_IDENT &&
         (prev2_raw == TK_COLON || prev2_raw == TK_ARROW || prev2_raw == TK_AMPERSAND ||
