@@ -7,11 +7,13 @@
 # One test per line: test binary, test name, owner, reason.
 # Baseline: compiler_generic_types_execution at 5268ccec, whole binary
 # (ulimit -c 0, LANIUS_PROCESS_TEST_TIMEOUT_MS=5000): 481 tests, 7 failures.
+# The same 7 on 44de87da. The five constant tests are four separate causes
+# (P13 triage, 2026-10-18); none involves module constants (P3's fold).
 
-compiler_generic_types_execution  constant_length_inference_executes_all_32_slots_locally_and_imported  TBD  constant-generic family, triage pending (P13)
-compiler_generic_types_execution  explicit_constant_arguments_reject_kind_and_arity_errors  TBD  constant-generic family, triage pending (P13)
-compiler_generic_types_execution  explicit_constant_arguments_reject_noninteger_parameter_types  TBD  constant-generic family, triage pending (P13)
-compiler_generic_types_execution  generic_constant_values_execute_with_declared_types_and_lexical_scope  TBD  constant-generic family, triage pending (P13)
-compiler_generic_types_execution  generic_constant_values_reject_noninteger_array_lengths  TBD  constant-generic family, triage pending (P13)
+compiler_generic_types_execution  constant_length_inference_executes_all_32_slots_locally_and_imported  TBD  inference loses a binding when a header has more than 32 generics in all (T + 32 constants, or T, U + 31; 32 constants alone pass)
+compiler_generic_types_execution  explicit_constant_arguments_reject_kind_and_arity_errors  TBD  stale row: 4294967295 is no longer a reserved payload (typed constant atoms); length<4294967295>() runs and returns it
+compiler_generic_types_execution  explicit_constant_arguments_reject_noninteger_parameter_types  TBD  stamp<1>() on const N: bool reports LNC0027 (kind) instead of LNC0006 (scalar conflict)
+compiler_generic_types_execution  generic_constant_values_execute_with_declared_types_and_lexical_scope  TBD  stale test: N * 10 + M with M: u32 is u32 + usize, the case 8a512e68 fixed in its method twin; passes with (M as usize)
+compiler_generic_types_execution  generic_constant_values_reject_noninteger_array_lengths  TBD  [i32; N] with const N: bool reaches LNC0047 at native layout instead of LNC0006
 compiler_generic_types_execution  qualified_enum_variants_bind_qualifier_scope_before_members  TBD  not triaged
 compiler_generic_types_execution  typed_array_receiver_executes_through_adjusted_borrow  TBD  not triaged
