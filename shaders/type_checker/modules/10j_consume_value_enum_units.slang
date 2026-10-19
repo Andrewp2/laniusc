@@ -4,7 +4,7 @@ import type_checker.argument_context;
 import type_checker.checked_type_graph;
 import type_checker.checked_canonical;
 import type_checker.canonical.canonical_candidates;
-import type_checker.checked_pattern_use;
+import hir_match_patterns;
 import status;
 
 // GPU HIR enum unit-variant consumer.
@@ -174,9 +174,9 @@ bool unit_family_matches(uint2 reference, uint declaration, uint token, bool imp
 
 void publish_unit_reference(uint path, uint token, uint declaration, bool imported, bool generic)
 {
-    if (checked_token_in_match_pattern(token, active_hir_count(), compact_hir_core,
-        compact_match_arm_count, compact_match_arms)) return;
     uint node = path_owner_hir[path];
+    if (hir_node_in_match_pattern(node, active_hir_count(), compact_hir_core,
+        compact_hir_payload, compact_match_arm_count, compact_match_arms)) return;
     uint2 reference = uint2(3u, declaration);
     uint qualifier = resolved_value_type_qualifier_token[path];
     uint2 parent_reference = qualifier < gParams.n_tokens
@@ -263,8 +263,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool generic = imported_kind == 11u;
     if (imported)
     {
-        if (checked_token_in_match_pattern(owner_token, active_hir_count(), compact_hir_core,
-            compact_match_arm_count, compact_match_arms)) return;
+        if (hir_node_in_match_pattern(path_owner_hir[path_i], active_hir_count(), compact_hir_core,
+            compact_hir_payload, compact_match_arm_count, compact_match_arms)) return;
         if (imported_kind == 10u)
         {
             module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;

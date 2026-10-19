@@ -135,7 +135,12 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) compact_aggregate_requests: ComputeOperation,
     pub(in crate::type_checker) artifact: ComputeOperation,
     pub(in crate::type_checker) local_const_literals: ComputeOperation,
+    /// One constant reference round: size, resolve, publish
+    /// (semantic/artifact/const_fold.slang), recorded LOCAL_CONST_FOLD_ROUNDS
+    /// times.
+    pub(in crate::type_checker) local_const_fold_round: ComputeOperation,
     pub(in crate::type_checker) local_const_references: ComputeOperation,
+    pub(in crate::type_checker) local_const_fold_publish: ComputeOperation,
 }
 
 impl SemanticProjectionOperations {
@@ -164,6 +169,8 @@ impl SemanticProjectionOperations {
             graph,
             compiler_graph::SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS,
         )?;
+        let local_const_fold_dispatch_args: LaniusBuffer<u32> =
+            typed_buffer_from_resources(resources, "local_const_fold_dispatch_args")?;
         let semantic_expr_ref_tag_by_hir: LaniusBuffer<u32> =
             typed_buffer_from_resources(resources, "semantic_expr_ref_tag_by_hir")?;
         let semantic_expr_ref_payload_by_hir: LaniusBuffer<u32> =
@@ -516,9 +523,29 @@ impl SemanticProjectionOperations {
                 compiler_graph::SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,
                 "type_checker/semantic/artifact/00a_local_const_literals",
             )?,
-            local_const_references: direct(
+            local_const_fold_round: ComputeOperation::direct(
+                device,
+                graph,
+                resources,
+                compiler_graph::SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
+                &passes.kernel("type_checker/semantic/artifact/00a1_local_const_fold_round"),
+                1,
+            )?,
+            local_const_references: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
                 compiler_graph::SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS,
-                "type_checker/semantic/artifact/00b_local_const_references",
+                &passes.kernel("type_checker/semantic/artifact/00b_local_const_references"),
+                &local_const_fold_dispatch_args,
+            )?,
+            local_const_fold_publish: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
+                &passes.kernel("type_checker/semantic/artifact/00b2_local_const_fold_publish"),
+                &local_const_fold_dispatch_args,
             )?,
         })
     }
@@ -534,9 +561,10 @@ impl SemanticProjectionOperations {
 /// later producers added. The early, body and late stages first re-arm the
 /// candidates that are still empty or unknown. Each stage records round 0, then
 /// batches of frontier rounds (indirect dispatches sized on the GPU); every
-/// batch ends with a copy of the interning counters, and the host records
-/// another batch only while candidates are pending, so the number of rounds
-/// is the maximum candidate height.
+/// batch ends with a copy of the interning counters. A deferred job records
+/// one batch per stage; a synchronous one records another batch only while
+/// candidates are pending, so the number of rounds is the maximum candidate
+/// height (`record_canonical_types`).
 pub(in crate::type_checker) struct CanonicalTypeOperations {
     clear: ComputeOperation,
     rearm: ComputeOperation,

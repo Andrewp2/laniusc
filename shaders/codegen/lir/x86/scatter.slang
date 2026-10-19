@@ -117,6 +117,9 @@ bool direct_packed_i32_array(uint semantic_row, uint semantic_count)
     if (semantic_row >= semantic_count) return false;
     OptIrNodeCore core = opt_ir_core[semantic_row];
     OptIrNodeOperands operands = opt_ir_operands[semantic_row];
+    // A zero aggregate has no elements; an i32 array of them uses the
+    // packed layout that every i32-array consumer expects.
+    if (x86_zero_aggregate(core, operands)) return core.type_id == 131u;
     if (opt_ir_op(core) != SEMANTIC_LIR_OP_AGGREGATE_NEW ||
         operands.c != 0u || operands.b == 0u)
         return false;
@@ -134,6 +137,28 @@ bool packed_i32_array_source(uint row, uint count)
     if (row >= count) return false;
     return x86_array_storage_kind(opt_ir_core[row], direct_packed_i32_array(row, count))
         == X86_STORAGE_PACKED_I32;
+}
+
+// The row after an aggregate's address row zeroes its `words` storage
+// slots, which begin at this row's own frame slot.
+void write_fill(uint page_row, uint row, uint semantic_row, uint source_hir,
+                uint words, bool valid)
+{
+    X86LirCore core;
+    core.source_hir = source_hir;
+    core.local_ordinal = 0u;
+    core.op = X86_LIR_OP_AGGREGATE_FILL;
+    core.result_or_target = row;
+    X86LirOperands operands;
+    operands.a = 0u;
+    operands.b = 0u;
+    operands.c = words;
+    operands.metadata = 0u;
+    target_lir_core[page_row] = core;
+    target_lir_operands[page_row] = operands;
+    target_semantic_origin[page_row] = semantic_row;
+    target_lir_flags[page_row] = valid && words <= 0x0fffffffu
+        ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
 }
 
 void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir, uint abi_row,
@@ -511,6 +536,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     uint op = x86_lir_opcode(source);
     uint copy_words = 0u;
+    bool zero_source = false;
     bool store_array_pair = false;
     bool store_direct_array_pair = false;
     // Match count.slang: only declaration stores expand into aggregate-copy
@@ -533,6 +559,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (!store_direct_array_pair &&
             (x86_semantic_type_is_aggregate(source) || value_words != 0u))
             copy_words = max(source.value_word_count, value_words);
+        zero_source = copy_words != 0u && x86_zero_aggregate(value_core, value_operands);
     }
     uint index_copy_words = 0u;
     bool index_direct_array_pair = false;
@@ -549,6 +576,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             index_copy_words = max(source.value_word_count,
                 max(call_words, x86_aggregate_value_word_count(
                     value_core, value_operands)));
+    }
+    if (zero_source && operation_row != 0u)
+    {
+        // The source is all zero: zero the destination's storage in place.
+        write_fill(page_row, row, semantic_row, source_hir, copy_words,
+            operation_row == 1u);
+        return;
     }
     if (copy_words != 0u && operation_row != 0u)
     {
@@ -571,6 +605,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         target_semantic_origin[page_row] = semantic_row;
         target_lir_flags[page_row] = args.b < gParams.semantic_capacity &&
             operation_row <= copy_words ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
+        return;
+    }
+    if (x86_zero_aggregate(source, args) && operation_row != 0u)
+    {
+        write_fill(page_row, row, semantic_row, source_hir,
+            source.value_word_count, operation_row == 1u);
         return;
     }
     if (opt_ir_op(source) == SEMANTIC_LIR_OP_AGGREGATE_NEW && operation_row != 0u)
@@ -819,6 +859,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         args.a != INTRINSIC_I32_ARRAY_DATA_PTR &&
         args.a != INTRINSIC_I32_SLICE_DATA_PTR &&
         args.a != INTRINSIC_STRING_DATA_PTR &&
+        args.a != INTRINSIC_SLICE_STRIDE &&
         !intrinsic_slice_from_raw_parts(args.a))
         flags = TARGET_LIR_FLAG_UNSUPPORTED;
     // Imported calls can carry a canonical aggregate width after their
@@ -926,10 +967,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
              (args.a == INTRINSIC_I32_ARRAY_DATA_PTR ||
               args.a == INTRINSIC_I32_SLICE_DATA_PTR ||
-              args.a == INTRINSIC_STRING_DATA_PTR))
+              args.a == INTRINSIC_STRING_DATA_PTR ||
+              args.a == INTRINSIC_SLICE_STRIDE))
     {
+        // The argument's words arrive in RDI, RSI and RDX. The data
+        // pointers are the first word; a view's byte stride is the third,
+        // which operand a = 2 selects.
         op = X86_LIR_OP_INTRINSIC_IDENTITY;
-        a = 0u; b = 0u; c = 0u;
+        a = args.a == INTRINSIC_SLICE_STRIDE ? 2u : 0u; b = 0u; c = 0u;
     }
     else if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
              intrinsic_slice_from_raw_parts(args.a))

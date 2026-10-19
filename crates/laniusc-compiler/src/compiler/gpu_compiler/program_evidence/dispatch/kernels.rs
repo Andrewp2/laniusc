@@ -1,5 +1,3 @@
-use std::num::NonZeroU64;
-
 use anyhow::{Result, anyhow, ensure};
 
 use super::{
@@ -53,7 +51,7 @@ impl CatalogKernels {
     pub fn load(device: &wgpu::Device) -> Result<Self> {
         let passes = CATALOG_KEYS
             .iter()
-            .map(|key| passes_core::make_pass_data_from_shader_key(device, key, "main", key))
+            .map(|key| passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
     }
@@ -167,12 +165,100 @@ pub(super) fn record_phase(
     )
 }
 
+/// Host time of the current check's dispatch recording (LANIUS_DEBUG_SOLVER_WAVES
+/// solve lines): parameter blocks, bind groups, pass recording, in ns, and the
+/// recorded dispatch count.
+pub(super) mod record_timing {
+    use std::cell::Cell;
+    thread_local! {
+        pub static PARAMS_NS: Cell<u64> = const { Cell::new(0) };
+        pub static BIND_NS: Cell<u64> = const { Cell::new(0) };
+        pub static PASS_NS: Cell<u64> = const { Cell::new(0) };
+        pub static WAIT_NS: Cell<u64> = const { Cell::new(0) };
+        pub static SUBMIT_NS: Cell<u64> = const { Cell::new(0) };
+        pub static DISPATCHES: Cell<u64> = const { Cell::new(0) };
+    }
+    pub fn add(counter: &'static std::thread::LocalKey<Cell<u64>>, since: std::time::Instant) {
+        let ns = since.elapsed().as_nanos() as u64;
+        counter.with(|cell| cell.set(cell.get() + ns));
+    }
+    pub fn reset() {
+        for counter in [&PARAMS_NS, &BIND_NS, &PASS_NS, &WAIT_NS, &SUBMIT_NS, &DISPATCHES] {
+            counter.with(|cell| cell.set(0));
+        }
+    }
+    /// `rec_params=…ms rec_bind=…ms rec_pass=…ms submit=…ms wait=…ms dispatches=N`.
+    pub fn summary() -> String {
+        let ms = |counter: &'static std::thread::LocalKey<Cell<u64>>| counter.with(|cell| cell.get()) as f64 / 1e6;
+        format!(
+            "rec_params={:.3}ms rec_bind={:.3}ms rec_pass={:.3}ms submit={:.3}ms wait={:.3}ms dispatches={}",
+            ms(&PARAMS_NS),
+            ms(&BIND_NS),
+            ms(&PASS_NS),
+            ms(&SUBMIT_NS),
+            ms(&WAIT_NS),
+            DISPATCHES.with(|cell| cell.get()),
+        )
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct ProofResources<'a> {
     pub storage: &'a Arena,
     pub epoch: u64,
     pub arena_id: u64,
     pub serial: u32,
+}
+
+/// The per-dispatch parameter blocks. Every evidence pass binds the ones it
+/// declares with a dynamic offset, so one bind group serves every dispatch of
+/// a pass over the same arenas and params-ring page.
+const PARAMS_BLOCKS: [&str; 2] = ["program_evidence_params", "proof_store_params"];
+
+/// LANIUS_PEV_PARAMS_RING=0 gives every dispatch its own parameter buffers
+/// (and so its own bind group) again, for A/B timing.
+fn params_ring_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_PEV_PARAMS_RING", true))
+}
+
+/// The dynamic offsets of a pass's parameter blocks in binding order (the
+/// order WGPU applies them): `offsets[i]` belongs to `PARAMS_BLOCKS[i]`, and a
+/// block the pass does not declare is skipped.
+fn params_offsets(pass: &PassData, offsets: [u32; 2]) -> Vec<u32> {
+    let mut declared = PARAMS_BLOCKS
+        .iter()
+        .zip(offsets)
+        .filter_map(|(name, offset)| {
+            passes_core::bind_group::binding_index(pass, 0, name).map(|index| (index, offset))
+        })
+        .collect::<Vec<_>>();
+    declared.sort_unstable_by_key(|&(index, _)| index);
+    declared.into_iter().map(|(_, offset)| offset).collect()
+}
+
+/// One parameter block's buffer and dynamic offset: a params-ring record, or
+/// (LANIUS_PEV_PARAMS_RING=0) a workspace slot of its own.
+fn params_block(catalog: &Arena, label: &str, words: [u32; 8]) -> Result<(wgpu::Buffer, u32)> {
+    let workspace = catalog.workspace();
+    if params_ring_enabled() {
+        return workspace.push_params(&words);
+    }
+    let buffer = workspace.initialized(label, 8, wgpu::BufferUsages::UNIFORM, Some(&words))?;
+    owned_params_block(&buffer)
+}
+
+/// A parameter block in a buffer of its own, bound through its dynamic offset.
+fn owned_params_block(buffer: &LaniusBuffer<u32>) -> Result<(wgpu::Buffer, u32)> {
+    Ok((buffer.buffer.clone(), u32::try_from(buffer.byte_offset)?))
+}
+
+fn params_binding(buffer: &wgpu::Buffer) -> wgpu::BindingResource<'_> {
+    wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+        buffer,
+        offset: 0,
+        size: Some(super::workspace::params_block_size()),
+    })
 }
 
 pub(super) fn record_phase_with_proof(
@@ -218,6 +304,7 @@ fn record_phase_with_resources(
     if span.count == 0 {
         return Ok(());
     }
+    let mut started = std::time::Instant::now();
     let limits = device.limits();
     ensure!(
         threads <= limits.max_compute_invocations_per_workgroup
@@ -268,27 +355,23 @@ fn record_phase_with_resources(
             recipes.map_or(0, |recipes| recipes.logical_words),
             layout_work.map_or(0, |work| work.logical_words),
         ];
-        let uniform = catalog.workspace().initialized(
-            "program_evidence.params",
-            8,
-            wgpu::BufferUsages::UNIFORM,
-            Some(&params),
-        )?;
+        let (uniform, uniform_offset) = params_block(catalog, "program_evidence.params", params)?;
         // Some phases optimize an unused resource out. The existing reflected
         // constructor selects active names and rejects unknown required names.
         // These four resources are always distinct physical allocations.
         let proof_uniform = if let Some(proof) = proof {
-            Some(catalog.workspace().initialized(
-                "program_evidence.proof_params",
-                8,
-                wgpu::BufferUsages::UNIFORM,
-                Some(&proof_params_words(proof, phase)),
-            )?)
+            Some(params_block(catalog, "program_evidence.proof_params", proof_params_words(proof, phase))?)
         } else {
             None
         };
+        let offsets = params_offsets(
+            pass,
+            [uniform_offset, proof_uniform.as_ref().map_or(0, |(_, offset)| *offset)],
+        );
+        record_timing::add(&record_timing::PARAMS_NS, started);
+        started = std::time::Instant::now();
         let mut resources = vec![
-            ("program_evidence_params", uniform.as_entire_binding()),
+            ("program_evidence_params", params_binding(&uniform)),
             (
                 "program_evidence_catalog",
                 catalog.buffer.as_entire_binding(),
@@ -303,10 +386,7 @@ fn record_phase_with_resources(
             ));
             resources.push((
                 "proof_store_params",
-                proof_uniform
-                    .as_ref()
-                    .expect("proof parameters")
-                    .as_entire_binding(),
+                params_binding(&proof_uniform.as_ref().expect("proof parameters").0),
             ));
         }
         if let Some(recipes) = recipes {
@@ -331,7 +411,12 @@ fn record_phase_with_resources(
             0,
             &resources,
         )?;
-        dispatch_pass(encoder, pass, &bindings, Launch::Direct((count.div_ceil(threads), 1, 1)));
+        record_timing::add(&record_timing::BIND_NS, started);
+        started = std::time::Instant::now();
+        dispatch_pass(encoder, pass, &bindings, &offsets, Launch::Direct((count.div_ceil(threads), 1, 1)));
+        record_timing::add(&record_timing::PASS_NS, started);
+        record_timing::DISPATCHES.with(|cell| cell.set(cell.get() + 1));
+        started = std::time::Instant::now();
         done += count;
     }
     Ok(())
@@ -358,6 +443,7 @@ fn dispatch_pass(
     encoder: &mut wgpu::CommandEncoder,
     pass: &PassData,
     bindings: &wgpu::BindGroup,
+    offsets: &[u32],
     launch: Launch<'_>,
 ) {
     passes_core::flush_deferred_compute(encoder);
@@ -371,7 +457,7 @@ fn dispatch_pass(
         &pass.shader_id,
         pass,
         bindings,
-        &[],
+        offsets,
         capture_launch,
     );
     {
@@ -383,7 +469,7 @@ fn dispatch_pass(
             },
         );
         compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, Some(bindings), &[]);
+        compute.set_bind_group(0, Some(bindings), offsets);
         passes_core::record_compute_dispatch();
         if !crate::gpu::passes_core::debug_operation_skipped() {
             match launch {
@@ -470,11 +556,11 @@ impl BatchKernels {
         );
         let passes = BATCH_KEYS
             .iter()
-            .map(|key| passes_core::make_pass_data_from_shader_key(device, key, "main", key))
+            .map(|key| passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS))
             .collect::<Result<Vec<_>>>()?;
         let admit_rows = BATCH_ADMISSION_KEYS
             .iter()
-            .map(|(_, key)| passes_core::make_pass_data_from_shader_key(device, key, "main", key))
+            .map(|(_, key)| passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes, admit_rows })
     }
@@ -633,6 +719,13 @@ const WAVE_PLAN_PHASE: u32 = 70;
 /// and prerequisite Works (phase 42).
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
+/// Commit stages that run as one 256-lane workgroup: the lanes audit
+/// together, then lane 0 publishes (or reruns the serial stage). Like the
+/// one-thread stages, they take only the one-row span (0, 1).
+const GROUP_STAGES: &[u32] = &[45, 47, 55];
+fn single_dispatch(phase: u32, threads: u32) -> bool {
+    threads == 1 || GROUP_STAGES.contains(&phase)
+}
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
@@ -659,20 +752,22 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/program_evidence/entries/44_validate_prerequisite_normalization",
         256,
     ),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         45,
         "type_checker/program_evidence/entries/45_commit_normalized_terms",
-        1,
+        256,
     ),
     (
         46,
         "type_checker/program_evidence/entries/46_hash_normalized_goals",
         256,
     ),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         47,
         "type_checker/program_evidence/entries/47_commit_normalized_goals",
-        1,
+        256,
     ),
     (
         48,
@@ -717,10 +812,11 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (54, WALK_ROOTS, 256),
     (54, WALK_BINDINGS, 256),
     (54, BINDING_ROWS, 256),
+    // One 256-lane workgroup over the one-row span (0, 1).
     (
         55,
         "type_checker/program_evidence/entries/55_commit_substitutions",
-        1,
+        256,
     ),
     (
         56,
@@ -789,7 +885,7 @@ impl ProofKernels {
         let passes = PROOF_KEYS
             .iter()
             .map(|(_, key, _)| {
-                passes_core::make_pass_data_from_shader_key(device, key, "main", key)
+                passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS)
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
@@ -854,13 +950,7 @@ impl ProofKernels {
             matches!(phase, COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
             "proof stage {phase} is not a normalization count"
         );
-        // One shared role: the solver reads each count back before it
-        // records the next one, so the queued zero write never races a use.
-        let demand = catalog.workspace().shared("program_evidence.proof_demand").buffer(
-            PROOF_STORE_TABLES as u32,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            Some(&[0; PROOF_STORE_TABLES]),
-        )?;
+        let demand = proof_demand(catalog)?;
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
@@ -1017,7 +1107,7 @@ impl ProofKernels {
     ) -> Result<()> {
         let (phase, _, threads) = PROOF_KEYS[index];
         ensure!(
-            threads != 1 || (span.first == 0 && span.count == 1),
+            !single_dispatch(phase, threads) || (span.first == 0 && span.count == 1),
             "singleton proof stage needs exactly one dispatch"
         );
         record_phase_with_proof(
@@ -1056,6 +1146,7 @@ pub(super) mod wave {
     pub const DONE: u32 = 2;
     pub const FAULT: u32 = 3;
     pub const OVERFLOW: u32 = 4;
+    pub const GROW: u32 = 5;
     pub const FAULT_IDENTITY: u32 = 1;
     pub const FAULT_LAYOUT: u32 = 2;
     pub const FAULT_RECEIPT: u32 = 3;
@@ -1148,7 +1239,13 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
     };
     use WaveSpan::*;
     Ok(match point {
-        WavePoint::FirstWork => vec![(FirstWork, vec![stage(49)?]), (FirstOne, vec![stage(50)?])],
+        // Each Work admission counts the next normalization's rows, as the
+        // stepped loop does (GpuProgramEvidence::admit_counted_work).
+        WavePoint::FirstWork => vec![
+            (FirstWork, vec![stage(49)?]),
+            (FirstOne, vec![stage(50)?]),
+            (FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]),
+        ],
         WavePoint::Round => {
             // ProofKernels::record_normalization, 51, 52, 57, record_selection.
             let mut groups = Vec::new();
@@ -1168,7 +1265,11 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             (SelectedOne, vec![stage(55)?]),
             (SelectedWork, vec![stage(56)?]),
         ],
-        WavePoint::Expanded => vec![(ExpandedWork, vec![stage(49)?]), (ExpandedOne, vec![stage(50)?])],
+        WavePoint::Expanded => vec![
+            (ExpandedWork, vec![stage(49)?]),
+            (ExpandedOne, vec![stage(50)?]),
+            (ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]),
+        ],
         WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
         WavePoint::Emitted => vec![
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
@@ -1185,6 +1286,17 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
 /// Words per step slot: whole uniform-offset alignments, at least the slot.
 pub(super) fn wave_slot_words(device: &wgpu::Device) -> u32 {
     (device.limits().min_uniform_buffer_offset_alignment / 4).max(SLOT_MIN_WORDS)
+}
+
+/// The zeroed normalization demand table (proof_demand.slang). One shared
+/// role: the solver reads each count back before the next zeroing is
+/// queued, so the queued write never races a use.
+pub(super) fn proof_demand(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
+    catalog.workspace().shared("program_evidence.proof_demand").buffer(
+        PROOF_STORE_TABLES as u32,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        Some(&[0; PROOF_STORE_TABLES]),
+    )
 }
 
 /// The solver state of one attempt, planned and read only by the GPU
@@ -1204,6 +1316,8 @@ pub(super) fn wave_state(device: &wgpu::Device, catalog: &Arena) -> Result<Laniu
 struct WaveStep {
     pass: usize,
     bindings: wgpu::BindGroup,
+    /// Dynamic offsets of its parameter blocks (`params_offsets`).
+    offsets: Vec<u32>,
     /// None: the planner, one thread. Some: the byte offset of the step's
     /// indirect arguments in the slot buffer.
     indirect: Option<u64>,
@@ -1253,12 +1367,14 @@ impl ProofKernels {
         points: &[WavePoint],
         chunks: u32,
         state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
         catalog: &Arena,
         input: &Arena,
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<WaveTemplate> {
         ensure!((1..=WAVE_MAX_CHUNKS).contains(&chunks), "solver wave chunk count {chunks}");
+        let started = std::time::Instant::now();
         let stride = wave_slot_words(device);
         // (pass, phase, span, chunk, recorded rows of the span) per slot.
         let mut slots: Vec<(usize, u32, WaveSpan, u32, u32)> = Vec::new();
@@ -1275,7 +1391,7 @@ impl ProofKernels {
                 for chunk in 1..=span_chunks {
                     for &(index, phase) in &steps {
                         ensure!(
-                            PROOF_KEYS[index].2 != 1 || span.is_one(),
+                            !single_dispatch(phase, PROOF_KEYS[index].2) || span.is_one(),
                             "singleton proof stage needs exactly one dispatch"
                         );
                         slots.push((index, phase, span, chunk, limit));
@@ -1321,27 +1437,19 @@ impl ProofKernels {
         }
         let proof_uniforms = phases
             .iter()
-            .map(|&phase| workspace.initialized(
-                "program_evidence.proof_params",
-                8,
-                wgpu::BufferUsages::UNIFORM,
-                Some(&proof_params_words(proof, phase)),
-            ))
+            .map(|&phase| params_block(catalog, "program_evidence.proof_params", proof_params_words(proof, phase)))
             .collect::<Result<Vec<_>>>()?;
         let proof_uniform = |phase: u32| {
             &proof_uniforms[phases.iter().position(|entry| *entry == phase).expect("phase block")]
         };
         let plan = proof_key_index("type_checker/program_evidence/entries/70_plan_solver_wave")?;
         let slot_bytes = u64::from(stride) * 4;
-        let params_size = NonZeroU64::new(32).expect("nonzero parameter block");
         let mut steps = Vec::with_capacity(slots.len() + segments.len());
         for (point, first, end) in segments {
-            let params = workspace.initialized(
+            let (params, params_offset) = params_block(
+                catalog,
                 "program_evidence.params",
-                8,
-                wgpu::BufferUsages::UNIFORM,
-                Some(&[0, 1, catalog.logical_words, input.logical_words, output.logical_words,
-                    WAVE_PLAN_PHASE, 0, 0]),
+                [0, 1, catalog.logical_words, input.logical_words, output.logical_words, WAVE_PLAN_PHASE, 0, 0],
             )?;
             let plan_params = workspace.initialized(
                 "program_evidence.solver_wave_plan",
@@ -1350,16 +1458,17 @@ impl ProofKernels {
                 Some(&[point as u32, u32::try_from(first)?, u32::try_from(end)?, 0]),
             )?;
             let resources = [
-                ("program_evidence_params", params.as_entire_binding()),
+                ("program_evidence_params", params_binding(&params)),
                 ("program_evidence_catalog", catalog.buffer.as_entire_binding()),
                 ("program_evidence_batch", input.buffer.as_entire_binding()),
                 ("program_evidence_output", output.buffer.as_entire_binding()),
                 ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
-                ("proof_store_params", proof_uniform(WAVE_PLAN_PHASE).as_entire_binding()),
+                ("proof_store_params", params_binding(&proof_uniform(WAVE_PLAN_PHASE).0)),
                 ("thread_scratch", scratch.as_entire_binding()),
                 ("program_evidence_wave", state.as_entire_binding()),
                 ("program_evidence_wave_slots", slot_buffer.as_entire_binding()),
                 ("program_evidence_wave_plan", plan_params.as_entire_binding()),
+                ("program_evidence_proof_demand", demand.as_entire_binding()),
             ];
             let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                 device,
@@ -1368,25 +1477,20 @@ impl ProofKernels {
                 0,
                 &resources,
             )?;
-            steps.push(WaveStep { pass: plan, bindings, indirect: None });
+            let offsets = params_offsets(&self.passes[plan], [params_offset, proof_uniform(WAVE_PLAN_PHASE).1]);
+            steps.push(WaveStep { pass: plan, bindings, offsets, indirect: None });
             for slot in first..end {
                 let (index, phase, _, _, _) = slots[slot];
                 let offset = slot_buffer.absolute_offset(slot as u64 * slot_bytes);
                 let resources = [
-                    (
-                        "program_evidence_params",
-                        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: &slot_buffer.buffer,
-                            offset,
-                            size: Some(params_size),
-                        }),
-                    ),
+                    ("program_evidence_params", params_binding(&slot_buffer.buffer)),
                     ("program_evidence_catalog", catalog.buffer.as_entire_binding()),
                     ("program_evidence_batch", input.buffer.as_entire_binding()),
                     ("program_evidence_output", output.buffer.as_entire_binding()),
                     ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
-                    ("proof_store_params", proof_uniform(phase).as_entire_binding()),
+                    ("proof_store_params", params_binding(&proof_uniform(phase).0)),
                     ("thread_scratch", scratch.as_entire_binding()),
+                    ("program_evidence_proof_demand", demand.as_entire_binding()),
                 ];
                 let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                     device,
@@ -1395,14 +1499,17 @@ impl ProofKernels {
                     0,
                     &resources,
                 )?;
+                let offsets = params_offsets(&self.passes[index], [u32::try_from(offset)?, proof_uniform(phase).1]);
                 steps.push(WaveStep {
                     pass: index,
                     bindings,
+                    offsets,
                     indirect: Some(offset + u64::from(SLOT_ARGS) * 4),
                 });
             }
         }
         let dispatches = steps.len();
+        record_timing::add(&record_timing::BIND_NS, started);
         Ok(WaveTemplate { slots: slot_buffer, steps, chunks, dispatches })
     }
 
@@ -1411,12 +1518,20 @@ impl ProofKernels {
     /// step cost more than the steps. Operation limits and timers that cannot
     /// stamp inside a pass keep a pass per step.
     pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
+        let started = std::time::Instant::now();
+        let recorded: u64 = templates.iter().map(|template| template.steps.len() as u64).sum();
+        record_timing::DISPATCHES.with(|cell| cell.set(cell.get() + recorded));
+        self.record_wave_steps(encoder, templates);
+        record_timing::add(&record_timing::PASS_NS, started);
+    }
+
+    fn record_wave_steps(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
         if crate::gpu::timer::operation_capture_requires_split_passes()
             || passes_core::debug_operation_limited()
         {
             for template in templates {
                 for step in &template.steps {
-                    dispatch_pass(encoder, &self.passes[step.pass], &step.bindings, step.launch(template));
+                    dispatch_pass(encoder, &self.passes[step.pass], &step.bindings, &step.offsets, step.launch(template));
                 }
             }
             return;
@@ -1434,7 +1549,7 @@ impl ProofKernels {
             for step in &template.steps {
                 let pass = &self.passes[step.pass];
                 compute.set_pipeline(&pass.pipeline);
-                compute.set_bind_group(0, Some(&step.bindings), &[]);
+                compute.set_bind_group(0, Some(&step.bindings), &step.offsets);
                 passes_core::record_compute_dispatch();
                 match step.launch(template) {
                     Launch::Direct(groups) => compute.dispatch_workgroups(groups.0, groups.1, groups.2),
@@ -1472,7 +1587,7 @@ pub(super) struct RecipeKernels {
 impl RecipeKernels {
     pub fn load(device: &wgpu::Device) -> Result<Self> {
         let passes = RECIPE_KEYS.iter()
-            .map(|key| passes_core::make_pass_data_from_shader_key(device, key, "main", key))
+            .map(|key| passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
     }
@@ -1508,7 +1623,7 @@ pub(super) struct NativeLayoutKernel { pass: PassData }
 impl NativeLayoutKernel {
     pub fn load(device: &wgpu::Device) -> Result<Self> {
         let key = "type_checker/program_evidence/native_layout/entries/05_materialize_proof_value";
-        Ok(Self { pass: passes_core::make_pass_data_from_shader_key(device, key, "main", key)? })
+        Ok(Self { pass: passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS)? })
     }
     pub fn record(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder,
         catalog: &Arena, input: &Arena, output: &Arena, proof: ProofResources<'_>,

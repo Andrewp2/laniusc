@@ -1,5 +1,56 @@
 # Compiler semantic contracts
 
+## Zero-initialized declarations (2026-10-18)
+
+`let x: T;`, a binding with a type and no initializer, gives `x` storage whose
+every bit is zero. A later assignment replaces that value, so
+`let x: i32; if (c) { x = 1; } return x;` returns 0 when `c` is false. A
+declaration inside a loop is zeroed again on every iteration.
+
+The zero value of each type:
+
+- integers, `isize` and `usize`: 0;
+- `bool`: false; `char`: `'\0'`; `f32` and `f64`: +0.0; `ptr`: null;
+- a fixed array of these, such as `[i32; 1024]`, or a local struct: every word
+  is zero.
+
+A `str`, a reference, a slice or an enum at the top level is rejected as
+unsupported, because its zero bits are not a value or would silently pick the
+first variant. x86 reports LNC0017 at the declaration. Wasm rejects it too,
+but only with its generic LNC0057 (see
+`tests/fixtures/known_gaps_codegen_wasm.txt`). Fields and elements are not
+checked. A struct with a `str` field gets the empty string, with a null data
+pointer; one with a reference field gets a null reference. A struct imported
+from another module is rejected for now.
+
+Lowering:
+
+- `semantic_lir_is_zero_let` (`codegen/lir/semantic/common.slang`) gives the
+  statement two rows at its first token: the zero value, then the
+  `VALUE_SET`. If the declaration's address is taken, the `VALUE_SET` becomes
+  a `PLACE_STORE`.
+- The zero value is a `CONST_*` with zero operands for scalars. For
+  aggregates it is an `AGGREGATE_NEW` with no elements and
+  `SEMANTIC_LIR_AGGREGATE_ZERO` in operand C (`zero_initializer_op` in
+  `materialize.slang`). A type with no zero value still gets a `CONST_I32`
+  producer, so the store keeps a value edge for SSA construction, and both
+  rows carry `SEMANTIC_LIR_FLAG_UNSUPPORTED`.
+- Both targets fail closed on that flag. x86 scatter and Wasm scatter mark
+  every row carrying `SEMANTIC_LIR_FLAG_UNSUPPORTED` or `..._FOR_ITERABLE` as
+  an unsupported target row. Neither lowers a placeholder.
+- x86 lowers the zero aggregate to its address row and one
+  `X86_LIR_OP_AGGREGATE_FILL`. That instruction zeroes the storage slots with
+  `push rdi; lea rdi; mov ecx; xor eax; rep stosq; pop rdi`, covering both the
+  native and the packed `i32` layouts.
+- A declaration store whose source is a zero aggregate fills its own storage
+  instead of copying word by word. Its target rows therefore do not grow with
+  the array length.
+- Wasm allocates the aggregate from its bump heap. That memory is never
+  reused, so it is already zero, and no stores are emitted.
+
+There is no definite-assignment check: a read before any assignment reads
+zero.
+
 ## Borrowed receivers that are not places (2026-10-15)
 
 A `&self` method can be called on a value with no storage of its own, such as
@@ -1256,7 +1307,7 @@ Counts, retained logs, and remaining language/runtime dependencies are in
 | Expected expression context | `argument_context.slang`, `declared_expression_context.slang`, `calls/03k_project_argument_contexts.slang`, `calls/array_shape_context.slang`, `calls/03k1_project_literal_contexts.slang`, `calls/03k3_project_record_contexts.slang`, `array_literal_expected.slang` | Expressions consume retained complete parameter patterns and declaration/return/field context. Eligible scalar/array integer literals, bare records, and match arms receive context in both inference facts and final semantic types; known values and explicit applications retain their actual types. |
 | Lexical parameter identity and substitution | `type/instances/lexical_parameter_lookup.slang`, `match/ct_match.slang`, `calls/checked_constant_environment.slang`, `type_checker/generic_calls.rs`, `compiler/semantic_interface.rs` | Declaration uses, structural length constraints, export/import, required binding checks, retention, and replay preserve exact parameter ownership and separate type/constant domains. |
 | Accepted result environments | `calls/contextual_call_environment.slang`, `calls/03a4b_contextual_result_requests.slang`, `dependencies/08a_validate_call_results.slang` | Declaration result matching publishes independent type/constant masks and references. Expected-context readers prefer these facts; argument-only readers preserve actual argument evidence. Final validation compares accepted call results and checks every argument against the closed environment. |
-| Constant value facts and body closure | `visible/04_hir_names.slang`, `type/instances/01f_decl_refs.slang`, `semantic/artifact/00b_local_const_references.slang`, `codegen/lir/semantic/function_templates.slang` | Value lookup preserves lexical declaration identity and declared types. Bound values execute; symbolic constant uses keep bodies pending until concrete replay. Mutation and noninteger array lengths reject explicitly. |
+| Constant value facts and body closure | `visible/04_hir_names.slang`, `type/instances/01f_decl_refs.slang`, `semantic/artifact/const_fold.slang`, `semantic/artifact/00b_local_const_references.slang`, `codegen/lir/semantic/function_templates.slang` | Value lookup preserves lexical declaration identity and declared types. Bound values execute; symbolic constant uses keep bodies pending until concrete replay. Mutation and noninteger array lengths reject explicitly. Constant initializers fold on the GPU in `LOCAL_CONST_FOLD_ROUNDS` (8) deterministic rounds, so a constant may refer to other constants (local or imported) 8 levels deep; a public constant that does not fold fails the interface export with a named `LNC0057` message, never as zero. |
 | Concrete value layout and native storage capabilities | `concrete_value_layout.slang`, `codegen/lir/semantic/concrete_struct_layout.slang`, `codegen/lir/x86/storage_layout.slang` | Field ranges, copies, address generation, byte counting, and emission consume concrete widths and explicit storage conventions. Incompatible borrowing rejects before ELF publication. |
 | Expression completion and effect order | `codegen/lir/semantic/materialize.slang`, parser-owned compact expression forest and match-arm records | Producers finish before consuming calls and effects. Structured control recipes share completion boundaries; sibling effects follow source order. SSA validation remains enabled. |
 | Finalized native frame layout | `codegen/lir/x86/frame_layout.slang`, `codegen/lir/x86/location_common.slang` | Byte counting, emission, and relocation placement share frame and result-move widths. The resource graph retains function metadata and saved-register masks through relocation publication. |

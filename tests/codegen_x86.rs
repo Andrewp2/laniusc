@@ -885,6 +885,107 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_executes_lets_without_initializers_as_zero() {
+    // `let x: T;` is zero-initialized storage: scalars read 0 (false, '\0',
+    // 0.0), and every word of an array or struct is zero. A later
+    // assignment still replaces the zero.
+    for (name, source, expected) in [
+        (
+            "zero_scalars",
+            "fn main() -> i32 {\n    let a: i32;\n    let b: i64;\n    let c: bool;\n    let d: f64;\n    let e: u8;\n    let f: f32;\n    let g: char;\n    let h: u64;\n    if (b != 0 || c || d != 0.0 || e != 0 || f != 0.0 || g != '\\0' || h != 0) { return 1; }\n    return a + 42;\n}\n",
+            42,
+        ),
+        (
+            "zero_then_assigned",
+            "fn pick(flag: bool) -> i32 {\n    let x: i32;\n    if (flag) { x = 40; }\n    return x;\n}\nfn main() -> i32 { return pick(true) + pick(false) + 2; }\n",
+            42,
+        ),
+        (
+            "zero_i32_array",
+            "fn main() -> i32 {\n    let words: [i32; 4];\n    words[2] = 40;\n    return words[0] + words[1] + words[2] + words[3] + 2;\n}\n",
+            42,
+        ),
+        (
+            "zero_large_array",
+            "fn main() -> i32 {\n    let big: [i32; 1024];\n    let total: i32 = 0;\n    let i: i32 = 0;\n    while (i < 1024) { total = total + big[i]; i = i + 1; }\n    big[1023] = 42;\n    return total + big[1023];\n}\n",
+            42,
+        ),
+        (
+            "zero_struct",
+            "struct Pair { left: i32, right: i64 }\nfn main() -> i32 {\n    let p: Pair;\n    if (p.right != 0) { return 1; }\n    p.left = 42;\n    return p.left;\n}\n",
+            42,
+        ),
+        (
+            "zero_each_iteration",
+            "fn main() -> i32 {\n    let total: i32 = 0;\n    let i: i32 = 0;\n    while (i < 3) {\n        let cell: [i32; 2];\n        let n: i32;\n        total = total + cell[0] + cell[1] + n;\n        cell[0] = 9;\n        n = 5;\n        i = i + 1;\n    }\n    return total + 42;\n}\n",
+            42,
+        ),
+        (
+            "zero_array_copied",
+            "fn sum(values: [i32; 3]) -> i32 { return values[0] + values[1] + values[2]; }\nfn main() -> i32 {\n    let a: [i32; 3];\n    let b: [i32; 3] = a;\n    a[0] = 7;\n    return sum(b) + 42;\n}\n",
+            42,
+        ),
+    ] {
+        assert_source_exit(name, source, expected);
+    }
+}
+
+#[test]
+fn x86_rejects_lets_without_initializers_of_types_without_a_zero_value() {
+    // A str, an enum or a reference has no zero value: reject the
+    // declaration at its source instead of storing placeholder bits.
+    for (name, declaration) in [
+        ("zero_str", "    let s: str;"),
+        ("zero_enum", "    let e: E;"),
+        ("zero_ref", "    let r: &i32;"),
+    ] {
+        let source = format!(
+            "enum E {{ A, B(i32) }}\nfn main() -> i32 {{\n{declaration}\n    return 0;\n}}\n"
+        );
+        let error = common::run_gpu_codegen_with_timeout(name, move || {
+            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+        })
+        .expect_err("a declaration without a zero value must be rejected");
+        match error {
+            CompileError::Diagnostic(diagnostic) => {
+                assert_eq!(diagnostic.code, "LNC0017", "{name}: {}", diagnostic.render());
+                assert_eq!(
+                    diagnostic
+                        .primary_label
+                        .as_ref()
+                        .and_then(|label| label.source_line.as_deref()),
+                    Some(declaration),
+                    "{name}: {}",
+                    diagnostic.render()
+                );
+            }
+            other => panic!("{name}: expected a source-spanned rejection, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn x86_executes_an_uninitialized_array_passed_to_its_data_pointer() {
+    // stdlib-foundation item 25: stack storage for a buffer.
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("fixtures/stdlib_foundation/repro_uninitialized_array_data_ptr.lani"),
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 uninitialized array data pointer", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("an uninitialized fixed array should compile as zeroed storage");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 uninitialized array data pointer",
+        "x86_uninitialized_array_data_ptr",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
 fn x86_executes_void_main_return_as_zero_exit() {
     assert_source_exit(
         "void_main_return",
@@ -2792,6 +2893,33 @@ fn main() -> bool {
 "#,
         0,
     );
+}
+
+#[test]
+fn x86_executes_a_nested_match_followed_by_another_outer_arm() {
+    // The inner match's arms come between the outer match's arms in source
+    // order; each match's compact arm rows must still be contiguous.
+    let header = "enum Opt<T> { Some(T), None }\nfn both(a: Opt<i32>, b: Opt<i32>) -> i32 {\n";
+    let main = "fn main() -> i32 {\n    let a: Opt<i32> = Some(40);\n    let b: Opt<i32> = Some(2);\n    return both(a, b);\n}\n";
+    for (name, body, expected) in [
+        (
+            "nested_first_arm",
+            "    return match (a) { Some(x) -> match (b) { Some(y) -> x + y, None -> x }, None -> 0 };\n",
+            42,
+        ),
+        (
+            "nested_wildcard",
+            "    return match (a) { Some(x) -> match (x) { _ -> x }, None -> 0 };\n",
+            40,
+        ),
+        (
+            "nested_in_let",
+            "    let r: i32 = match (b) { Some(y) -> match (a) { None -> 2, Some(x) -> x - y }, None -> 1 };\n    return r;\n",
+            38,
+        ),
+    ] {
+        assert_source_exit(name, &format!("{header}{body}}}\n{main}"), expected);
+    }
 }
 
 #[test]

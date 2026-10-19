@@ -240,6 +240,12 @@ void publish_trait_self_reference(uint node, uint token)
     type_generic_param_slot_by_token[token] = slot;
     type_expr_ref_tag[token] = TYPE_REF_GENERIC_PARAM;
     type_expr_ref_payload[token] = owner;
+    // The identity token reads like a parameter's declaration token: a
+    // declaration return of `Self` names it as the return type token
+    // (calls/02_functions), and semantic/artifact/00_calls reads its
+    // reference there.
+    type_expr_ref_tag[owner] = TYPE_REF_GENERIC_PARAM;
+    type_expr_ref_payload[owner] = owner;
 }
 
 [shader("compute")]

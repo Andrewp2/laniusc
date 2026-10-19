@@ -238,6 +238,40 @@ impl NativeProgramSession {
             .and_then(|span| InstanceSources::copy_rank(facts.template_sources(), span)))
     }
 
+    /// Why `instance_copy_rank` is None for an origin, for the
+    /// specialization trace. A body without a retained span is a trait
+    /// member or a trait-impl method with no inherent rendering, named by
+    /// its implementation's self type when it has one.
+    pub fn instance_copy_miss(&mut self, origin: &AdmittedCall) -> Result<String> {
+        use crate::type_checker::CheckedGenericType as Type;
+        self.ready()?;
+        let (_, snapshot, owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
+        let facts = &self.catalog.snapshots[snapshot as usize].original_facts;
+        let Some(spans) = facts.owner_spans() else {
+            return Ok("the unit kept no owner spans".into());
+        };
+        if let Some(span) = spans.get(owner_hir) {
+            return Ok(InstanceSources::copy_miss(facts.template_sources(), span).unwrap_or("copyable").into());
+        }
+        let unit = [facts.interface().library_id, facts.interface().unit_id];
+        let subject = facts.checked_contracts().implementations.iter()
+            .find(|implementation| implementation.method_bindings.iter().any(|binding| binding.method_hir == owner_hir))
+            .map(|implementation| match &implementation.subject {
+                Type::Scalar(_) => "scalar",
+                Type::Parameter(_) => "type parameter",
+                Type::Slice(_) => "slice",
+                Type::Reference(_) => "reference",
+                Type::Array { .. } => "array",
+                Type::Nominal { identity, .. } if identity.unit() == unit => "local nominal",
+                Type::Nominal { .. } => "foreign nominal",
+                Type::Unresolved { .. } => "unresolved",
+            });
+        Ok(match subject {
+            Some(kind) => format!("no span: trait-impl method, {kind} self type"),
+            None => "no span: not a trait-impl method".into(),
+        })
+    }
+
     /// Like `prepare_replay_batch`, but every origin replays a renamed copy of
     /// its body appended after the template text, so origins may share one
     /// lexical scope. Each copy is checked under its origin's own context.

@@ -218,19 +218,60 @@ fn submit_and_read_u32s(
     crate::gpu::passes_core::submit_with_progress(queue, label, recorded.finish());
     let slice = readback.slice(..);
     crate::gpu::passes_core::map_readback_blocking(device, &slice, label)?;
-    let words = slice
-        .get_mapped_range()
-        .chunks_exact(4)
-        .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte word")))
-        .collect();
+    let words = read_u32_words_mapped(&slice);
     readback.unmap();
     Ok(words)
 }
 
-/// Interns canonical type identities (docs/canonical-type-ids.md): the first
-/// batch of rounds, then one more batch per counter readback that still
-/// reports pending candidates. The GPU's round limit finalizes every
-/// candidate within the last batch.
+/// The words of a mapped readback slice.
+fn read_u32_words_mapped(slice: &wgpu::BufferSlice<'_>) -> Vec<u32> {
+    slice
+        .get_mapped_range()
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte word")))
+        .collect()
+}
+
+/// Submits the recorded work without waiting for it.
+fn submit_recorded(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+) {
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("type-check-canonical-encoder"),
+    });
+    let recorded = std::mem::replace(encoder, next);
+    crate::gpu::timer::stamp_active_submission_begin(encoder, label);
+    crate::gpu::passes_core::submit_with_progress(queue, label, recorded.finish());
+}
+
+/// Whether this job's canonical stages read their counters after every batch.
+/// Tracing and validation read them, and `LANIUS_CANONICAL_SYNCHRONOUS=1`
+/// selects it for every job (an A/B of the deferred recording in one
+/// binary); otherwise only a re-record does.
+fn canonical_stages_synchronous(requested: bool) -> bool {
+    requested
+        || crate::gpu::env::env_bool_truthy("LANIUS_CANONICAL_SYNCHRONOUS", false)
+        || crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false)
+        || canonical_passes::canonical_validation_enabled()
+}
+
+/// Interns canonical type identities (docs/canonical-type-ids.md).
+///
+/// Without `synchronous`, the stage records one batch of rounds and submits
+/// it without waiting: the counters reach the host with the job's status
+/// (`finish_recorded_check`), and a stage that left candidates pending after
+/// the batch (`CT_COUNT_BATCH_PENDING`) or overflowed makes the check record
+/// the job again synchronously. The submit keeps host buffer writes recorded
+/// after the stage ordered after it, as the synchronous stage does.
+///
+/// With `synchronous`, the first batch is followed by one more batch per
+/// counter readback that still reports pending candidates. The GPU's round
+/// limit finalizes every candidate within the last batch.
+#[allow(clippy::too_many_arguments)]
 fn record_canonical_types(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -240,8 +281,13 @@ fn record_canonical_types(
     counts_readback: &LaniusBuffer<u32>,
     validation_readback: &LaniusBuffer<u32>,
     canonical_scale: u32,
+    synchronous: bool,
 ) -> Result<()> {
     canonical.record_first_batch(encoder, stage)?;
+    if !synchronous {
+        submit_recorded(device, queue, encoder, "type_check.canonical");
+        return Ok(());
+    }
     let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
     let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
     for batch in 0..batches {
@@ -386,6 +432,7 @@ impl GpuTypeChecker {
             canonical_validation_readback,
             preflight_graph,
             canonical_scale: std::sync::atomic::AtomicU32::new(1),
+            canonical_synchronous: std::sync::atomic::AtomicBool::new(false),
             resident_workspace: Mutex::new(None),
             resident_capacity_floor: Mutex::new(None),
             current_semantic_artifact: Mutex::new(None),
@@ -477,7 +524,18 @@ impl GpuTypeChecker {
         // canonical scale. Its inputs are the retained lexer, parser and
         // dependency buffers, which type checking only reads; the work the
         // abandoned attempt submitted wrote only the replaced workspace.
+        //
+        // A job whose canonical stages were recorded without readbacks finds
+        // out at its check (`finish_recorded_check`). When its recording
+        // stopped on a rejection instead (call inference that did not
+        // converge, say), the counters its stages copied before the last wait
+        // decide the same way, and the job is recorded again here
+        // synchronously, on the same workspace.
         loop {
+            let deferred = !canonical_stages_synchronous(
+                self.canonical_synchronous
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            );
             let result = self.record_resident_token_buffer_with_hir_impl_on_gpu(
                 device,
                 queue,
@@ -495,6 +553,12 @@ impl GpuTypeChecker {
                 timer.as_deref_mut(),
                 &mut release_workspace_consumers,
             );
+            if deferred
+                && matches!(result, Err(GpuTypeCheckError::Rejected { .. }))
+                && self.deferred_canonical_retry(device).is_some()
+            {
+                continue;
+            }
             let Err(GpuTypeCheckError::Gpu(error)) = &result else {
                 return result;
             };
@@ -870,6 +934,10 @@ impl GpuTypeChecker {
             && generic_call_claim_passes_required(parser_feature_flags)
             // LANIUS_INSTANCE_CLOSURE=0 (A/B runs) leaves the closure out.
             && crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true);
+        let canonical_synchronous = canonical_stages_synchronous(
+            self.canonical_synchronous
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
         {
             let resident_workspace_guard = self
                 .resident_workspace
@@ -1097,6 +1165,7 @@ impl GpuTypeChecker {
                         &self.canonical_counts_readback,
                         &self.canonical_validation_readback,
                         canonical_scale,
+                        canonical_synchronous,
                     )
                 };
                 let record_projection = |encoder: &mut wgpu::CommandEncoder| {
@@ -1304,6 +1373,7 @@ impl GpuTypeChecker {
                 &self.canonical_counts_readback,
                 &self.canonical_validation_readback,
                 canonical_scale,
+                canonical_synchronous,
             )?;
             bind_groups.calls.substitution.record_job_start(encoder)?;
             if let Some(index) = &bind_groups.type_instances.index_closed_applications {
@@ -2254,6 +2324,7 @@ impl GpuTypeChecker {
                             &self.canonical_counts_readback,
                             &self.canonical_validation_readback,
                             canonical_scale,
+                            canonical_synchronous,
                         )?;
                         if let Some(timer) = timer.as_deref_mut() {
                             timer.stamp(encoder, "typecheck.canonical.body.done");
@@ -2295,6 +2366,7 @@ impl GpuTypeChecker {
                 &self.canonical_counts_readback,
                 &self.canonical_validation_readback,
                 canonical_scale,
+                canonical_synchronous,
             )?;
             bind_groups.semantic_projection.late_row_seed.record(encoder)?;
             bind_groups.semantic_projection.native_word_memo_clear.record(encoder);
@@ -2371,14 +2443,15 @@ impl GpuTypeChecker {
                 bind_groups.semantic_projection.owner_spans_clear.record(encoder);
                 bind_groups.semantic_projection.owner_spans.record(encoder)?;
             }
-            bind_groups
-                .semantic_projection
-                .local_const_literals
-                .record(encoder)?;
-            bind_groups
-                .semantic_projection
-                .local_const_references
-                .record(encoder)?;
+            let semantic_projection = &bind_groups.semantic_projection;
+            semantic_projection.local_const_literals.record(encoder)?;
+            // Constant reference rounds; a round after one that staged no
+            // constant dispatches no workgroups (const_fold.slang).
+            for _ in 0..super::LOCAL_CONST_FOLD_ROUNDS {
+                semantic_projection.local_const_fold_round.record(encoder)?;
+                semantic_projection.local_const_references.record(encoder)?;
+                semantic_projection.local_const_fold_publish.record(encoder)?;
+            }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }
@@ -2391,18 +2464,97 @@ impl GpuTypeChecker {
             bind_groups.status_readback.record(encoder);
         }
         host_timer.stamp("status_readback_recorded");
-        Ok(RecordedTypeCheck { inference_error })
+        Ok(RecordedTypeCheck {
+            inference_error,
+            canonical_deferred: !canonical_synchronous,
+        })
+    }
+
+    /// Selects the synchronous canonical recording for the next job and
+    /// returns the error that asks the caller to record this job again.
+    fn request_synchronous_canonical(&self, counts: &[u32]) -> GpuTypeCheckError {
+        let retry = canonical_passes::CanonicalSynchronousRetry {
+            batch_pending: counts[canonical_passes::CANONICAL_COUNT_BATCH_PENDING] != 0,
+            overflow: counts[canonical_passes::CANONICAL_COUNT_OVERFLOW],
+        };
+        if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL_RETRY", false) {
+            eprintln!("[typecheck.canonical] {retry}; recording the job again");
+        }
+        self.canonical_synchronous
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        GpuTypeCheckError::Gpu(anyhow::Error::new(retry))
+    }
+
+    /// Whether a job recorded without canonical readbacks has to be recorded
+    /// again, read from the counters its stages copied so far. Used when the
+    /// recording itself stopped, after its last wait.
+    fn deferred_canonical_retry(&self, device: &wgpu::Device) -> Option<GpuTypeCheckError> {
+        let slice = self.canonical_counts_readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(
+            device,
+            &slice,
+            "type_check.canonical.counts",
+        )
+        .ok()?;
+        let counts = read_u32_words_mapped(&slice);
+        self.canonical_counts_readback.unmap();
+        canonical_passes::canonical_deferred_retry_required(&counts)
+            .then(|| self.request_synchronous_canonical(&counts))
     }
 
     /// Reads the recorded status buffer and converts GPU status words to an
     /// accepted result or a typed rejection.
+    ///
+    /// A job recorded without canonical readbacks reads its canonical
+    /// counters first. When a stage left candidates pending or overflowed,
+    /// the check returns an error for which
+    /// `GpuTypeCheckError::requests_canonical_rerecord` holds, and the next
+    /// recording of the job is synchronous.
     pub fn finish_recorded_check(
         &self,
         device: &wgpu::Device,
         recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
-        crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.status")?;
+        if !recorded.canonical_deferred {
+            // This synchronous job read its canonical counters per batch. The
+            // next job (often a body replay of the same program) stays
+            // synchronous while this one still needed more than one batch in
+            // some stage, so a deep program pays the re-record once.
+            let counts_slice = self.canonical_counts_readback.slice(..);
+            let counts_map = crate::gpu::passes_core::begin_readback_map(
+                &counts_slice,
+                "type_check.canonical.counts",
+            );
+            let status_map =
+                crate::gpu::passes_core::begin_readback_map(&slice, "type_check.status");
+            crate::gpu::passes_core::finish_readback_map_blocking(device, counts_map)?;
+            crate::gpu::passes_core::finish_readback_map_blocking(device, status_map)?;
+            let counts = read_u32_words_mapped(&counts_slice);
+            self.canonical_counts_readback.unmap();
+            self.canonical_synchronous.store(
+                counts[canonical_passes::CANONICAL_COUNT_BATCH_PENDING] != 0,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        } else {
+            // One wait covers both maps: the job's last canonical stage
+            // copied its counters ahead of the status copy.
+            let counts_slice = self.canonical_counts_readback.slice(..);
+            let counts_map = crate::gpu::passes_core::begin_readback_map(
+                &counts_slice,
+                "type_check.canonical.counts",
+            );
+            let status_map =
+                crate::gpu::passes_core::begin_readback_map(&slice, "type_check.status");
+            crate::gpu::passes_core::finish_readback_map_blocking(device, counts_map)?;
+            crate::gpu::passes_core::finish_readback_map_blocking(device, status_map)?;
+            let counts = read_u32_words_mapped(&counts_slice);
+            self.canonical_counts_readback.unmap();
+            if canonical_passes::canonical_deferred_retry_required(&counts) {
+                self.status_readback.unmap();
+                return Err(self.request_synchronous_canonical(&counts));
+            }
+        }
         let mapped = slice.get_mapped_range();
         let words = read_status_words(&mapped)?;
         drop(mapped);

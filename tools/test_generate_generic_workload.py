@@ -65,6 +65,20 @@ class ProjectTests(unittest.TestCase):
             self.assertIn(f"import gen::{module};", main)
             self.assertTrue(sources[path].startswith(f"module gen::{module};"))
 
+    def test_area_modules_only_import_earlier_areas(self):
+        # Seed 20 with the full profile picked records of later areas, and the
+        # project failed with an import cycle (LNC0002).
+        workload = build_workload(20, 928, kinds_for(False), acyclic_areas=True)
+        sources = render_project(workload)
+        order = {area.name: area.index for area in workload.areas}
+        for path, text in sources.items():
+            module = Path(path).stem
+            if module not in order:
+                continue
+            for imported in re.findall(r"(?m)^import gen::(\w+);", text):
+                if imported in order:
+                    self.assertLess(order[imported], order[module], f"{module} imports {imported}")
+
 
 class ProbeTests(unittest.TestCase):
     def test_every_probe_states_a_matrix_exit_code(self):

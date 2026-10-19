@@ -95,6 +95,7 @@ impl GpuX86ArtifactStage {
         let target_capacity = capacities.target_instructions.max(1);
         let emit_capacity = target_capacity.max(capacities.source_bytes.max(1).div_ceil(4));
         let artifact_capacity = capacities.artifact_bytes.max(4).next_multiple_of(4);
+        debug_assert_eq!(artifact_capacity.div_ceil(4), Self::clear_words(capacities));
         let byte_lengths = alias_u32("lir.x86.byte_lengths", target_capacity)?;
         let byte_offsets = alias_u32("lir.x86.byte_offsets", target_capacity)?;
         let body_length = alias_u32("lir.x86.body_length", 1)?;
@@ -389,8 +390,22 @@ impl GpuX86ArtifactStage {
         Ok(())
     }
 
-    pub(crate) fn record_clear(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.clear.record(encoder)
+    /// The artifact words the clear zeroes for `capacities`.
+    pub(crate) fn clear_words(capacities: LoweringCapacities) -> u32 {
+        capacities.artifact_bytes.max(4).next_multiple_of(4).div_ceil(4)
+    }
+
+    /// Zeroes the artifact words, all of them or only those of the job's
+    /// capacities (`job`, never more than the built ones).
+    pub(crate) fn record_clear(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
+    ) -> Result<()> {
+        match job {
+            Some(job) => self.clear.record_elements(encoder, Self::clear_words(job)),
+            None => self.clear.record(encoder),
+        }
     }
 
     pub(crate) fn record_emit(
@@ -432,7 +447,7 @@ impl GpuX86ArtifactStage {
     fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.record_byte_count(encoder, 0)?;
         self.record_layout_after_byte_counts(encoder)?;
-        self.record_clear(encoder)?;
+        self.record_clear(encoder, None)?;
         self.record_emit(encoder, 0)?;
         self.record_extra_emits(encoder, 1)?;
         self.record_length_readback(encoder)?;

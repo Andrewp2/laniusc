@@ -25,6 +25,9 @@ use crate::parser::passes::hir::item::fields::{HIR_ITEM_KIND_ENUM, HIR_ITEM_KIND
 const INVALID: u32 = u32::MAX;
 const TRAIT_KIND: u32 = 10;
 const TYPE_HIR_KIND: u32 = 5;
+/// semantic/artifact/00_project: a predicate subject column value with this
+/// bit is a scalar subject's type code, not a parameter declaration token.
+const SCALAR_SUBJECT_BIT: u32 = 0x8000_0000;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CheckedUnitFacts {
@@ -715,13 +718,25 @@ pub(super) fn read_contracts(
                 fact[7] == row[1] && matches!(fact[5], 0 | 1),
                 "predicate {index} has inconsistent subject or public alias metadata"
             );
-            let parameter = types
-                .parameter(fact[4])
-                .ok_or_else(|| anyhow!("predicate {index} has no canonical subject parameter"))?;
-            ensure!(
-                parameter.identity.domain == super::generic_calls::CheckedParameterDomain::Type,
-                "predicate {index} has a non-type subject parameter"
-            );
+            let subject = if fact[4] != INVALID && fact[4] & SCALAR_SUBJECT_BIT != 0 {
+                // semantic/artifact/00_project: `where bool: Inner<..>`.
+                let code = fact[4] & !SCALAR_SUBJECT_BIT;
+                ensure!(
+                    crate::primitive_types::is_known(code),
+                    "predicate {index} has an unknown scalar subject"
+                );
+                CheckedGenericType::Scalar(code)
+            } else {
+                let parameter = types.parameter(fact[4]).ok_or_else(|| {
+                    anyhow!("predicate {index} has no canonical subject parameter")
+                })?;
+                ensure!(
+                    parameter.identity.domain
+                        == super::generic_calls::CheckedParameterDomain::Type,
+                    "predicate {index} has a non-type subject parameter"
+                );
+                CheckedGenericType::Parameter(parameter)
+            };
             ensure!(
                 fact[5] == 0 || fact[6] != INVALID,
                 "predicate {index} has an invalid public row alias"
@@ -732,7 +747,7 @@ pub(super) fn read_contracts(
                 owner,
                 public_index: (fact[5] == 1).then_some(fact[6]),
                 trait_identity,
-                subject: CheckedGenericType::Parameter(parameter),
+                subject,
                 arguments,
             });
         } else {

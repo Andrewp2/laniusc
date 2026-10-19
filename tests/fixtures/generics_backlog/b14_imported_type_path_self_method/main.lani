@@ -1,0 +1,17 @@
+// A self method called through a path on an imported type, Counter::get(next).
+module app::main;
+
+import core::cmp;
+import gen::count;
+
+fn same<T>(left: T, right: T) -> bool where T: core::cmp::Eq<T> {
+    return T::eq(left, right);
+}
+
+fn main() -> i32 {
+    let start: Counter = Counter { value: 38 };
+    let next: Counter = bump(start);
+    let value: i32 = Counter::get(next);
+    if (!same(value, 40)) { return 1; }
+    return value + 2;
+}

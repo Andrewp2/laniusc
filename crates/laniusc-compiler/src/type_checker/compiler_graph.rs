@@ -480,8 +480,12 @@ pub(super) const SCOPE_HIR_PASS: &str = "type_check.scope.hir";
 pub(super) const SEMANTIC_ARTIFACT_PROJECT_PASS: &str = "type_check.semantic_artifact.project";
 pub(super) const SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS: &str =
     "type_check.semantic_artifact.local_const_literals";
+pub(super) const SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS: &str =
+    "type_check.semantic_artifact.local_const_fold_round";
 pub(super) const SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS: &str =
     "type_check.semantic_artifact.local_const_references";
+pub(super) const SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS: &str =
+    "type_check.semantic_artifact.local_const_fold_publish";
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
 pub(super) const CALLS_INFERENCE_READBACK_PASS: &str = "type_check.calls.inference.readback";
@@ -4111,6 +4115,12 @@ fn build_graph(
         _type_semantic_count_out as "type_semantic_count_out" in HirNodes => 4;
         _type_semantic_row_by_ordinal as "type_semantic_row_by_ordinal" in HirNodes => hir_rows * 4;
     });
+    // Constant reference rounds (semantic/artifact/const_fold.slang): the
+    // round counter and staged count, and each round's workgroups.
+    graph_resources!(graph, Workspace {
+        local_const_fold_state in HirNodes => 8;
+        local_const_fold_dispatch_args in DispatchArguments [StorageIndirect] => 12;
+    });
     graph.add_kernel_initializer_by_name(
         HIR_ACTIVE_DISPATCH_PASS,
         CompilerPhase::TypeCheck,
@@ -6624,6 +6634,18 @@ fn build_graph(
             "compact_expr_scalar_type" => final_scalar: Read,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+            "local_const_fold_state" => local_const_fold_state: Write,
+        ],
+    )?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00a1_local_const_fold_round",
+        reflected_bindings![
+            "local_const_fold_state" => local_const_fold_state: ReadWrite,
+            "local_const_fold_dispatch_args" => local_const_fold_dispatch_args: Write,
         ],
     )?;
     graph.add_kernel_pass_by_name(
@@ -6633,13 +6655,43 @@ fn build_graph(
         kernels,
         "type_checker/semantic/artifact/00b_local_const_references",
         reflected_bindings![
+            "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
+            "compact_expr_scalar_type" => final_scalar: Read,
             "compact_const_value" => _compact_const_value: Read,
             "decl_id_by_name_token" => decl_id_by_name_token: Read,
             "decl_kind" => decl_kind: Read,
             "decl_hir_node" => _decl_hir_node: Read,
             "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
             "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+            "local_const_fold_state" => local_const_fold_state: ReadWrite,
         ],
+    )?;
+    graph.add_indirect_dispatch(
+        SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS,
+        "local_const_fold_dispatch_args",
+    )?;
+    graph.add_kernel_pass_by_name(
+        SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/semantic/artifact/00b2_local_const_fold_publish",
+        reflected_bindings![
+            "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
+            "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
+            "compact_expr_scalar_type" => final_scalar: Read,
+            "semantic_value_const_by_hir" => semantic_value_const_by_hir: ReadWrite,
+            "semantic_value_const_present_by_hir" => semantic_value_const_present_by_hir: ReadWrite,
+        ],
+    )?;
+    graph.add_indirect_dispatch(
+        SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
+        "local_const_fold_dispatch_args",
+    )?;
+    graph.repeat_pass_range(
+        super::LOCAL_CONST_FOLD_ROUNDS,
+        SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
+        SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
     )?;
     CALLS_EXPLICIT_APPLICATIONS_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
@@ -6692,12 +6744,87 @@ fn build_graph(
     ])?;
     // Exact pass accesses are also the arena co-binding source of truth.
     graph.add_registered_pass_arena_conflicts();
+    // Lowering's co-bindings are not passes of this graph. It binds these
+    // outputs writable next to read-only checked outputs, so they must not
+    // share a physical arena with any of them.
+    graph.isolate_resource_arenas(OUTPUTS_LOWERING_BINDS_WRITABLE)?;
     graph.build()
 }
+
+/// Checked outputs that lowering binds read-write. Their canonical shader
+/// declaration (shaders/type_checker/constant_atoms.slang) is a
+/// RWStructuredBuffer, so every reader binds them writable.
+pub(crate) const OUTPUTS_LOWERING_BINDS_WRITABLE: &[&str] =
+    &["checked_constant_atoms", "checked_constant_projections"];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Lowering binds these outputs writable beside read-only checked outputs
+    // (see OUTPUTS_LOWERING_BINDS_WRITABLE), so no other slot may share their
+    // physical arena.
+    #[test]
+    fn outputs_lowering_binds_writable_get_arenas_of_their_own() {
+        let kernels =
+            crate::gpu::kernels::KernelCatalog::load_prefixes(&["type_checker", "scan", "radix"])
+                .unwrap();
+        let graph = build_graph(
+            1024,
+            4096,
+            4,
+            4096,
+            1024,
+            768,
+            768,
+            10_000,
+            DependencyWorkspaceCapacity {
+                visible_rows: 16,
+                lookup_rows: 32,
+                type_rows: 2,
+                constant_type_rows: 2,
+                declaration_rows: 16,
+            },
+            1,
+            u32::MAX,
+            false,
+            &kernels,
+        )
+        .unwrap();
+        let layout = graph.workspace_arena_layout(&wgpu::Limits::default()).unwrap();
+        let slot_of = |name: &str| {
+            graph
+                .workspace_plan()
+                .assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap_or_else(|| panic!("{name} has no workspace slot"))
+                .slot
+        };
+        let arena_of = |slot: u32| {
+            layout
+                .placements
+                .iter()
+                .find(|placement| placement.slot == slot)
+                .unwrap()
+                .arena
+        };
+        for name in OUTPUTS_LOWERING_BINDS_WRITABLE {
+            let slot = slot_of(name);
+            let arena = arena_of(slot);
+            let sharing = layout
+                .placements
+                .iter()
+                .filter(|placement| placement.arena == arena && placement.slot != slot)
+                .map(|placement| placement.slot)
+                .collect::<Vec<_>>();
+            assert!(sharing.is_empty(), "{name} shares arena {arena} with slots {sharing:?}");
+        }
+        assert_ne!(
+            arena_of(slot_of("checked_constant_atoms")),
+            arena_of(slot_of("semantic_member_field_ordinal_by_hir"))
+        );
+    }
 
     #[test]
     fn dependency_ping_pong_bindings_protect_their_actual_resources() {
@@ -7114,8 +7241,10 @@ mod tests {
                 "semantic-interface export retains this compact source-name row through the graph output boundary",
             );
         }
+        // The reference rounds repeat, so their reads stay live to the end
+        // of the last round.
         let local_const_reference_projection = graph
-            .pass_id(SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS)
+            .pass_id(SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS)
             .unwrap();
         assert_eq!(
             graph

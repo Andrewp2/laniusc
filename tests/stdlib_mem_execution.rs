@@ -11,6 +11,7 @@ fn memory_helpers_and_slice_intrinsics_execute_on_x86() {
         "core_mem_intrinsics",
         "core_mem_typed_slice_intrinsic",
         "core_mem_generic_slice",
+        "core_mem_size_of",
         "repro_generic_slice_return_context",
     ] {
         let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
@@ -50,7 +51,11 @@ fn generic_slice_constructor_rejects_invalid_lengths_and_indices() {
         {
             use std::os::unix::process::ExitStatusExt;
 
-            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            let output = if expected_signal.is_some() {
+                common::run_x86_64_elf_output_expecting_signal(name, name, &bytes)
+            } else {
+                common::run_x86_64_elf_output(name, name, &bytes)
+            };
             assert_eq!(output.status.code(), expected_code, "{name}: {output:?}");
             assert_eq!(
                 output.status.signal(),
@@ -70,6 +75,7 @@ fn every_public_memory_function_has_a_runtime_case() {
     let metadata = include_str!("fixtures/stdlib_foundation/core_mem_metadata.lani");
     let values = include_str!("fixtures/stdlib_foundation/core_mem_values.lani");
     let generic_slice = include_str!("fixtures/stdlib_foundation/core_mem_generic_slice.lani");
+    let size_of = include_str!("fixtures/stdlib_foundation/core_mem_size_of.lani");
     let mut covered = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -79,12 +85,16 @@ fn every_public_memory_function_has_a_runtime_case() {
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .next()
             .expect("memory function has a name");
+        // A call can name its type arguments: `core::mem::size_of<T>()`.
         let call = format!("core::mem::{name}(");
+        let applied = format!("core::mem::{name}<");
         assert!(
-            metadata.contains(&call) || values.contains(&call) || generic_slice.contains(&call),
+            [metadata, values, generic_slice, size_of]
+                .iter()
+                .any(|case| case.contains(&call) || case.contains(&applied)),
             "{call} lacks a runtime case"
         );
         covered += 1;
     }
-    assert_eq!(covered, 19);
+    assert_eq!(covered, 21);
 }

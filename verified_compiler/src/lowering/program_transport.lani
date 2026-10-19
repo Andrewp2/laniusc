@@ -326,24 +326,24 @@ fn prepare_catalogs(bundle: Bundle,
     let token_catalog: verified::token::TokenTable = bundle.tokens;
     let trees: [verified::syntax_tree::Tree] = bundle.trees.data;
     let alias_catalog: lowering::aliases::Table = bundle.aliases;
-    let alias_work_bytes: usize = BUNDLE_ALIAS_WORK_RECORDS
-        * lowering::aliases::WORK_RECORD_BYTES;
-    let alias_work_alignment: usize = lowering::aliases::WORK_ALIGNMENT;
+    let alias_work_bytes: usize = (BUNDLE_ALIAS_WORK_RECORDS
+        * lowering::aliases::WORK_RECORD_BYTES) as usize;
+    let alias_work_alignment: usize = lowering::aliases::WORK_ALIGNMENT as usize;
     let alias_work_memory:ptr = verified::host::alloc(
         alias_work_bytes, alias_work_alignment);
     let alias_stack_memory:ptr = verified::host::alloc_i32(
         BUNDLE_ALIAS_WORK_RECORDS);
     let alias_scratch_memory:ptr = verified::host::alloc(
-        BUNDLE_TOKEN_CAP * verified::host::I32_BYTES,
-        lowering::aliases::SYMBOL_ALIGNMENT);
+        (BUNDLE_TOKEN_CAP * verified::host::I32_BYTES) as usize,
+        lowering::aliases::SYMBOL_ALIGNMENT as usize);
     let alias_result_memory:ptr = verified::host::alloc(
-        lowering::aliases::RESOLUTION_RECORD_BYTES,
-        lowering::aliases::WORK_ALIGNMENT);
+        lowering::aliases::RESOLUTION_RECORD_BYTES as usize,
+        lowering::aliases::WORK_ALIGNMENT as usize);
     // Surface type nodes are extraction scratch, not per-unit catalog data.
     // Each extraction resets its count, so one workspace serves every unit.
     let type_arena_memory:ptr = verified::host::alloc(
-        verified::surface_type::allocation_bytes(TYPE_ARENA_NODE_CAPACITY),
-        verified::surface_type::ALIGNMENT);
+        (verified::surface_type::allocation_bytes(TYPE_ARENA_NODE_CAPACITY)) as usize,
+        verified::surface_type::ALIGNMENT as usize);
     if (alias_work_memory == 0 || alias_stack_memory == 0
         || alias_scratch_memory == 0 || alias_result_memory == 0
         || type_arena_memory == 0) { return -1; }
@@ -572,25 +572,25 @@ fn lower_signatures(bundle: Bundle,
     let alias_catalog: lowering::aliases::Table = bundle.aliases;
     let status:[PipelineStatus] = status_view(status_pointer);
     let type_output_memory:ptr = verified::host::alloc(
-        lowering::types::result_allocation_bytes(TYPE_ARENA_NODE_CAPACITY),
-        lowering::types::RESULT_ALIGNMENT);
+        (lowering::types::result_allocation_bytes(TYPE_ARENA_NODE_CAPACITY)) as usize,
+        lowering::types::RESULT_ALIGNMENT as usize);
     let type_scratch_memory:ptr = verified::host::alloc(
-        verified::surface_type::allocation_bytes(TYPE_ARENA_NODE_CAPACITY),
-        verified::surface_type::ALIGNMENT);
+        (verified::surface_type::allocation_bytes(TYPE_ARENA_NODE_CAPACITY)) as usize,
+        verified::surface_type::ALIGNMENT as usize);
     let resolution_scratch_memory:ptr = verified::host::alloc(
-        BUNDLE_RESOLUTION_ROW_CAP * lowering::types::RESOLUTION_RECORD_BYTES,
-        lowering::types::RESOLUTION_ALIGNMENT);
+        (BUNDLE_RESOLUTION_ROW_CAP * lowering::types::RESOLUTION_RECORD_BYTES) as usize,
+        lowering::types::RESOLUTION_ALIGNMENT as usize);
     let alias_path_memory:ptr = verified::host::alloc_i32(BUNDLE_TOKEN_CAP);
     let declaration_scratch_memory:ptr = verified::host::alloc(
-        BUNDLE_DECL_CAP * verified::host::I32_BYTES,
-        lowering::declarations::ALIGNMENT);
+        (BUNDLE_DECL_CAP * verified::host::I32_BYTES) as usize,
+        lowering::declarations::ALIGNMENT as usize);
     let allocation_scratch_memory:ptr = verified::host::alloc(
-        BUNDLE_ALLOCATION_CAP * verified::host::I32_BYTES,
-        lowering::allocation::ALIGNMENT);
+        (BUNDLE_ALLOCATION_CAP * verified::host::I32_BYTES) as usize,
+        lowering::allocation::ALIGNMENT as usize);
     let expression_memory: ptr = verified::host::alloc(
-        verified::surface_expr::allocation_bytes(
-            CONSTANT_EXPRESSION_NODE_CAPACITY),
-        verified::surface_expr::ALIGNMENT);
+        (verified::surface_expr::allocation_bytes(
+            CONSTANT_EXPRESSION_NODE_CAPACITY)) as usize,
+        verified::surface_expr::ALIGNMENT as usize);
     let binding_memory: ptr = verified::host::alloc_i32(
         CONSTANT_EXPRESSION_NODE_CAPACITY);
     let writer_table: lowering::signature_index::Table = writer.table;
@@ -721,28 +721,28 @@ fn lower_bodies(input: BodyInputs) -> i32 {
         [lowering::unit_descriptor::UnitDescriptor] = transport_table.data;
     let status:[PipelineStatus] = status_view(status_pointer);
     let value_scratch_memory:ptr = verified::host::alloc(
-        BUNDLE_VALUE_ROW_CAP * lowering::value_catalog::RECORD_BYTES,
-        lowering::value_catalog::ALIGNMENT);
+        (BUNDLE_VALUE_ROW_CAP * lowering::value_catalog::RECORD_BYTES) as usize,
+        lowering::value_catalog::ALIGNMENT as usize);
     let type_scratch_memory:ptr = verified::host::alloc(
-        verified::surface_type::allocation_bytes(TYPE_ARENA_NODE_CAPACITY),
-        verified::surface_type::ALIGNMENT);
+        (verified::surface_type::allocation_bytes(TYPE_ARENA_NODE_CAPACITY)) as usize,
+        verified::surface_type::ALIGNMENT as usize);
     let resolution_scratch_memory:ptr = verified::host::alloc(
-        BUNDLE_RESOLUTION_ROW_CAP * lowering::types::RESOLUTION_RECORD_BYTES,
-        lowering::types::RESOLUTION_ALIGNMENT);
+        (BUNDLE_RESOLUTION_ROW_CAP * lowering::types::RESOLUTION_RECORD_BYTES) as usize,
+        lowering::types::RESOLUTION_ALIGNMENT as usize);
     let expression_memory:ptr = verified::host::alloc(
-        verified::surface_expr::allocation_bytes(
-            EXPRESSION_NODE_CAPACITY),
-        verified::surface_expr::ALIGNMENT);
+        (verified::surface_expr::allocation_bytes(
+            EXPRESSION_NODE_CAPACITY)) as usize,
+        verified::surface_expr::ALIGNMENT as usize);
     let expression_kind_code_memory: ptr =
         verified::host::alloc_i32(EXPRESSION_NODE_CAPACITY);
     let expression_kind_depth_memory: ptr =
         verified::host::alloc_i32(EXPRESSION_NODE_CAPACITY);
     let type_output_memory:ptr = verified::host::alloc(
-        lowering::types::result_allocation_bytes(TYPE_ARENA_NODE_CAPACITY),
-        lowering::types::RESULT_ALIGNMENT);
+        (lowering::types::result_allocation_bytes(TYPE_ARENA_NODE_CAPACITY)) as usize,
+        lowering::types::RESULT_ALIGNMENT as usize);
     let event_memory: ptr = verified::host::alloc(
-        ir::body_events::allocation_bytes(BODY_EVENT_CAPACITY),
-        ir::body_events::ALIGNMENT);
+        (ir::body_events::allocation_bytes(BODY_EVENT_CAPACITY)) as usize,
+        ir::body_events::ALIGNMENT as usize);
     let alias_work_memory:ptr = verified::host::alloc_i32(BUNDLE_TOKEN_CAP);
     if (value_scratch_memory == 0 || type_scratch_memory == 0
         || resolution_scratch_memory == 0 || expression_memory == 0
@@ -991,16 +991,16 @@ pub fn lower_units(bundle: Bundle,
         || unit_count <= 0 || unit_count > BUNDLE_UNIT_LIMIT
         || bundle_words(unit_count) <= 0) { return failure(-1); }
     let declarations_memory:ptr = verified::host::alloc(
-        unit_count * BUNDLE_DECL_CAP * verified::host::I32_BYTES,
-        lowering::declarations::ALIGNMENT);
+        (unit_count * BUNDLE_DECL_CAP * verified::host::I32_BYTES) as usize,
+        lowering::declarations::ALIGNMENT as usize);
     let allocated_memory:ptr = verified::host::alloc(
-        unit_count * BUNDLE_ALLOCATION_CAP * verified::host::I32_BYTES,
-        lowering::allocation::ALIGNMENT);
+        (unit_count * BUNDLE_ALLOCATION_CAP * verified::host::I32_BYTES) as usize,
+        lowering::allocation::ALIGNMENT as usize);
     let transport_memory:ptr = verified::host::alloc(
-        unit_count * lowering::unit_descriptor::RECORD_BYTES,
-        lowering::unit_descriptor::ALIGNMENT);
-    let status_memory:ptr = verified::host::alloc(STATUS_RECORD_BYTES,
-        STATUS_FIELD_BYTES);
+        (unit_count * lowering::unit_descriptor::RECORD_BYTES) as usize,
+        lowering::unit_descriptor::ALIGNMENT as usize);
+    let status_memory:ptr = verified::host::alloc(STATUS_RECORD_BYTES as usize,
+        STATUS_FIELD_BYTES as usize);
     if (declarations_memory == 0 || allocated_memory == 0
         || transport_memory == 0
         || status_memory == 0) { return failure(-1); }
@@ -1018,11 +1018,11 @@ pub fn lower_units(bundle: Bundle,
         signature_capacity(bundle, allocated_for_signatures);
     let bytes: i32 = lowering::signature_index::allocation_bytes(required);
     if (bytes <= 0) { return failure(-1); }
-    let index_memory: ptr = verified::host::alloc(bytes,
-        lowering::signature_index::ALIGNMENT);
+    let index_memory: ptr = verified::host::alloc(bytes as usize,
+        lowering::signature_index::ALIGNMENT as usize);
     let cursor_memory: ptr = verified::host::alloc(
-        lowering::signature_index::WRITER_BYTES,
-        lowering::signature_index::ALIGNMENT);
+        lowering::signature_index::WRITER_BYTES as usize,
+        lowering::signature_index::ALIGNMENT as usize);
     if (index_memory == 0 || cursor_memory == 0) { return failure(-1); }
     let index_storage: lowering::signature_index::Table =
         lowering::signature_index::from_raw_parts(index_memory, required);
@@ -1040,8 +1040,8 @@ pub fn lower_units(bundle: Bundle,
     let body_catalog_bytes: i32 =
         ir::body_catalog::allocation_bytes(required.entries);
     if (body_catalog_bytes <= 0) { return failure(-1); }
-    let typed_body_memory: ptr = verified::host::alloc(body_catalog_bytes,
-        ir::body_catalog::ALIGNMENT);
+    let typed_body_memory: ptr = verified::host::alloc(body_catalog_bytes as usize,
+        ir::body_catalog::ALIGNMENT as usize);
     if (typed_body_memory == 0) { return failure(-1); }
     let typed_bodies: ir::body_catalog::Catalog =
         ir::body_catalog::from_raw_parts(typed_body_memory,
@@ -1102,8 +1102,8 @@ pub fn lower_units(bundle: Bundle,
     let function_bytes: i32 = ir::function_catalog::allocation_bytes(
         function_count, parameter_count);
     if (function_bytes <= 0) { return failure(-1); }
-    let function_memory: ptr = verified::host::alloc(function_bytes,
-        ir::function_catalog::ALIGNMENT);
+    let function_memory: ptr = verified::host::alloc(function_bytes as usize,
+        ir::function_catalog::ALIGNMENT as usize);
     if (function_memory == 0) { return failure(-1); }
     let functions: ir::function_catalog::Table =
         ir::function_catalog::from_raw_parts(function_memory,

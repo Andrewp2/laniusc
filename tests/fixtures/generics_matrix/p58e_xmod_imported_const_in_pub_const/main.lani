@@ -1,0 +1,7 @@
+module app::main;
+
+import gen::more;
+
+fn main() -> i32 {
+    return gen::more::D;
+}

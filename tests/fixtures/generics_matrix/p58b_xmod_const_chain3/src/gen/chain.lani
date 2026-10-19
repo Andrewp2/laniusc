@@ -1,0 +1,6 @@
+module gen::chain;
+
+pub const C0: i32 = 39;
+pub const C1: i32 = C0 * 2 - C0 + 1;
+pub const C2: i32 = C1 * 2 - C1 + 1;
+pub const C3: i32 = C2 * 2 - C2 + 1;

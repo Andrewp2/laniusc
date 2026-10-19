@@ -104,9 +104,19 @@ bool valid_token(uint token)
     return token != INVALID && token < active_token_count();
 }
 
+// 09e builds the import-visible table with the module-path packet's capacity.
+// That is the workspace allocation's capacity (the key buffers' extent), not
+// this job's token count, and a lookup must probe modulo the same capacity.
+uint import_visible_capacity()
+{
+    uint capacity; uint stride;
+    import_visible_value_key_module_id.GetDimensions(capacity, stride);
+    return capacity;
+}
+
 uint active_import_visible_count()
 {
-    return min(import_visible_value_count_out[0], gParams.n_tokens);
+    return min(import_visible_value_count_out[0], import_visible_capacity());
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -220,7 +230,7 @@ uint find_import_visible_decl(uint module_id, uint name_id)
         module_id,
         name_id,
         active_import_visible_count(),
-        gParams.n_tokens,
+        import_visible_capacity(),
         import_visible_value_key_module_id,
         import_visible_value_key_name_id,
         import_visible_value_key_to_decl_id,

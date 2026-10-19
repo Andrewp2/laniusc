@@ -49,6 +49,7 @@ fn is_known_hir_type_form(form: u32) -> bool {
             | HIR_TYPE_FORM_ARRAY
             | HIR_TYPE_FORM_SLICE
             | HIR_TYPE_FORM_REF
+            | HIR_TYPE_FORM_NEVER
     )
 }
 
@@ -717,6 +718,15 @@ pub fn validate_hir_type_records_with_node_kinds(
                 } else {
                     require_no_len(row, label)?;
                 }
+            }
+            HIR_TYPE_FORM_NEVER => {
+                require_type_owner(row, "never type record")?;
+                if type_value_nodes[row] != INVALID || type_path_leaf_nodes[row] != INVALID {
+                    return Err(anyhow!(
+                        "parser HIR type row {row} published never type record with an operand or path leaf"
+                    ));
+                }
+                require_no_len(row, "never type record")?;
             }
             other => {
                 return Err(anyhow!(

@@ -112,6 +112,38 @@ pub(super) const CANONICAL_VALIDATION_WORDS: usize = 41;
 pub(super) const CANONICAL_COUNT_PENDING: usize = 2;
 pub(super) const CANONICAL_COUNT_OVERFLOW: usize = 3;
 pub(super) const CANONICAL_COUNT_ROUND: usize = 4;
+/// Nonzero when a stage still had pending candidates after a batch
+/// (`CT_COUNT_BATCH_PENDING`); kept until the job's clear.
+pub(super) const CANONICAL_COUNT_BATCH_PENDING: usize = 11;
+
+/// Whether a job recorded with one batch per stage and no readbacks must be
+/// recorded again with readbacks: some stage left candidates pending, or a
+/// capacity overflowed (the synchronous recording grows the table).
+pub(super) fn canonical_deferred_retry_required(counts: &[u32]) -> bool {
+    counts[CANONICAL_COUNT_BATCH_PENDING] != 0
+        || counts[CANONICAL_COUNT_OVERFLOW] & CANONICAL_RETRY_OVERFLOW_BITS != 0
+}
+
+/// A job recorded without canonical readbacks has to be recorded again with
+/// them (`canonical_deferred_retry_required`). The type checker has already
+/// selected the synchronous recording for the next job.
+#[derive(Debug)]
+pub(crate) struct CanonicalSynchronousRetry {
+    pub batch_pending: bool,
+    pub overflow: u32,
+}
+
+impl std::fmt::Display for CanonicalSynchronousRetry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "canonical interning needs counter readbacks (pending after one batch: {}, overflow {:#x})",
+            self.batch_pending, self.overflow,
+        )
+    }
+}
+
+impl std::error::Error for CanonicalSynchronousRetry {}
 /// `CT_OVERFLOW_*` bits a larger table fixes: the slot table, the records,
 /// the argument words, the substitution memo (16, `CT_OVERFLOW_SUBST_MEMO`)
 /// and the frontier lists (32). `CT_OVERFLOW_ROUNDS` (8)

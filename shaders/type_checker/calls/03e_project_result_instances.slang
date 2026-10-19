@@ -1,6 +1,8 @@
 import hir_records;
 
-// Seed complete declaration-side result references by dense call-site ID.
+// Seed complete declaration-side result references by dense call-site ID,
+// and the synthesized slot of a call whose declared return is a scalar (unit
+// when the function declares no return type).
 //
 // This pass runs after direct, qualified, and method call resolution. Every
 // compound return carries its checked type graph, including element types and
@@ -25,11 +27,17 @@ StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> fn_hir_by_decl_token;
+StructuredBuffer<uint> compact_fn_return_type;
 RWStructuredBuffer<uint> call_result_instance;
+RWStructuredBuffer<uint> call_inference_result_tag;
+RWStructuredBuffer<uint> call_inference_result_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint SCALAR_UNIT = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -88,7 +96,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint token = callee_token(call);
     uint fn = valid_token(token) ? call_fn_index[token] : INVALID;
-    if (!valid_token(fn) || fn_return_ref_tag[fn] != TYPE_REF_INSTANCE)
+    if (!valid_token(fn)) return;
+    // A scalar return does not depend on the callee's environment: it is the
+    // call's synthesized type before inference, as 03e would publish it.
+    uint fn_node = fn_hir_by_decl_token[fn];
+    bool unit = fn_return_ref_tag[fn] == 0u && valid_hir(fn_node) &&
+        !valid_hir(compact_fn_return_type[fn_node]);
+    if (fn_return_ref_tag[fn] == TYPE_REF_SCALAR || unit)
+    {
+        uint scalar = unit ? SCALAR_UNIT : fn_return_ref_payload[fn];
+        if (scalar == 0u || scalar == INVALID) return;
+        call_inference_result_tag[call] = TYPE_REF_SCALAR;
+        call_inference_result_payload[call] = scalar;
+        return;
+    }
+    if (fn_return_ref_tag[fn] != TYPE_REF_INSTANCE)
         return;
 
     uint instance = fn_return_ref_payload[fn];
