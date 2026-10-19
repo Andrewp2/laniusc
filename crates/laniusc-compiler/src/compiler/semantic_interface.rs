@@ -1251,6 +1251,12 @@ impl GpuSemanticInterfaceArtifact {
         Ok(())
     }
 
+    /// The part of [`Self::check_serializable`] after validate: whether the
+    /// encoded length fits. For an interface whose validate already passed.
+    pub fn check_encoded_len(&self) -> Result<(), String> {
+        encoded_byte_len(self).map(|_| ())
+    }
+
     /// Serializes the interface into its bounded little-endian binary format.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         self.validate()?;

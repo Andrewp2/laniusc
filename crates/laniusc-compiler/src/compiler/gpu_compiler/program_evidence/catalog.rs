@@ -228,7 +228,7 @@ impl FrozenCatalog {
                 source_paths: input.facts.template_source_paths().clone(),
                 dependency_pages: input.facts.template_dependency_pages().clone(),
                 interface_bytes: {
-                    input.facts.interface().check_serializable().map_err(|e| anyhow!(e))?;
+                    input.facts.check_interface_serializable().map_err(|e| anyhow!(e))?;
                     std::sync::OnceLock::new()
                 },
                 original_calls: input.facts.generic_calls().clone(),
