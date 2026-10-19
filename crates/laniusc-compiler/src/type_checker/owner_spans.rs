@@ -9,6 +9,8 @@ use crate::gpu::readback::{PagedReadback, ReadbackRegion};
 
 /// Words per GPU record (see 04_owner_spans.slang).
 const OWNER_SPAN_WORDS: usize = 11;
+/// Words per body record (see 04_owner_spans.slang).
+const BODY_SPAN_WORDS: usize = 7;
 const INVALID: u32 = u32::MAX;
 
 /// One copyable generic body: a top-level function, a method of an
@@ -65,6 +67,65 @@ pub(crate) struct CheckedOwnerSpans {
     /// Sorted by function HIR. A row whose span the GPU could not complete
     /// has no entry: that body replays in its original scope.
     pub spans: Vec<CheckedOwnerSpan>,
+    /// Every function body no other function encloses, in source order,
+    /// for declarations-only instance templates. None when the record table
+    /// overflowed or a record was malformed: copies then replay against
+    /// the full template.
+    pub bodies: Option<Vec<CheckedBodySpan>>,
+}
+
+/// One function body of the template (kernel 04_owner_spans): its block's
+/// interior is the tokens strictly between `open_token` and `close_token`
+/// and the rows in `(block_hir, subtree_end)`. Bytes are global offsets of
+/// the braces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CheckedBodySpan {
+    pub function_hir: u32,
+    pub block_hir: u32,
+    pub subtree_end: u32,
+    pub open_token: u32,
+    pub close_token: u32,
+    pub open_byte: u32,
+    pub close_byte: u32,
+}
+
+impl CheckedBodySpan {
+    /// Tokens a blanked body leaves out.
+    pub(crate) fn interior_tokens(&self) -> u32 {
+        self.close_token - self.open_token - 1
+    }
+
+    /// Rows a blanked body leaves out: its block row stays, empty.
+    pub(crate) fn interior_rows(&self) -> u32 {
+        self.subtree_end - self.block_hir - 1
+    }
+}
+
+/// Decode body records (any order) into source order. None unless the
+/// bodies are disjoint and increase together in rows, tokens and bytes.
+pub(crate) fn body_spans_from_records(hir_count: u32, words: &[u32]) -> Option<Vec<CheckedBodySpan>> {
+    if words.len() % BODY_SPAN_WORDS != 0 {
+        return None;
+    }
+    let mut bodies = words.chunks_exact(BODY_SPAN_WORDS).map(|record| CheckedBodySpan {
+        function_hir: record[0],
+        block_hir: record[1],
+        subtree_end: record[2],
+        open_token: record[3],
+        close_token: record[4],
+        open_byte: record[5],
+        close_byte: record[6],
+    }).collect::<Vec<_>>();
+    bodies.sort_by_key(|body| body.block_hir);
+    let well_formed = bodies.iter().all(|body| {
+        body.function_hir < body.block_hir && body.block_hir < body.subtree_end
+            && body.subtree_end <= hir_count && body.open_token < body.close_token
+            && body.open_byte < body.close_byte
+    }) && bodies.windows(2).all(|pair| {
+        pair[0].subtree_end <= pair[1].block_hir && pair[0].close_token < pair[1].open_token
+            && pair[0].close_byte < pair[1].open_byte
+    });
+    well_formed.then_some(bodies)
 }
 
 impl CheckedOwnerSpans {
@@ -77,6 +138,7 @@ impl CheckedOwnerSpans {
 
     pub(crate) fn resident_bytes(&self) -> usize {
         self.spans.capacity() * std::mem::size_of::<CheckedOwnerSpan>()
+            + self.bodies.as_ref().map_or(0, |bodies| bodies.capacity() * std::mem::size_of::<CheckedBodySpan>())
     }
 
     /// Decode GPU records (any order). Malformed spans are dropped; a
@@ -120,7 +182,7 @@ impl CheckedOwnerSpans {
             spans.windows(2).all(|pair| pair[0].function_hir < pair[1].function_hir),
             "owner span rows are not unique"
         );
-        Ok(Self { hir_count, spans })
+        Ok(Self { hir_count, spans, bodies: None })
     }
 }
 
@@ -154,25 +216,32 @@ impl super::GpuTypeChecker {
             &[
                 ReadbackRegion::from_buffer(inputs.buffer("retained_owner_span_count"), 0, 4, "owner span count")?,
                 ReadbackRegion::from_buffer(inputs.buffer("compact_hir_count"), 0, 4, "HIR count")?,
+                ReadbackRegion::from_buffer(inputs.buffer("retained_body_span_count"), 0, 4, "body span count")?,
             ],
             "owner span counts",
         )?;
         let count = super::generic_calls::words(&counts[0])[0] as usize;
         let hir_count = super::generic_calls::words(&counts[1])[0];
+        let body_count = super::generic_calls::words(&counts[2])[0] as usize;
         let records = inputs.buffer("retained_owner_spans");
         if count > records.byte_size / 4 / OWNER_SPAN_WORDS {
             return Ok(None);
         }
         if count == 0 {
-            return Ok(Some(CheckedOwnerSpans { hir_count, spans: Vec::new() }));
+            return Ok(Some(CheckedOwnerSpans { hir_count, spans: Vec::new(), bodies: None }));
         }
-        let bytes = readback.read_regions(
-            device,
-            queue,
-            &[ReadbackRegion::from_buffer(records, 0, count * OWNER_SPAN_WORDS * 4, "owner spans")?],
-            "owner spans",
-        )?;
-        CheckedOwnerSpans::from_records(hir_count, &super::generic_calls::words(&bytes[0])).map(Some)
+        let body_records = inputs.buffer("retained_body_spans");
+        let bodies_fit = body_count != 0 && body_count <= body_records.byte_size / 4 / BODY_SPAN_WORDS;
+        let mut regions = vec![ReadbackRegion::from_buffer(records, 0, count * OWNER_SPAN_WORDS * 4, "owner spans")?];
+        if bodies_fit {
+            regions.push(ReadbackRegion::from_buffer(body_records, 0, body_count * BODY_SPAN_WORDS * 4, "body spans")?);
+        }
+        let bytes = readback.read_regions(device, queue, &regions, "owner spans")?;
+        let mut spans = CheckedOwnerSpans::from_records(hir_count, &super::generic_calls::words(&bytes[0]))?;
+        if bodies_fit {
+            spans.bodies = body_spans_from_records(hir_count, &super::generic_calls::words(&bytes[1]));
+        }
+        Ok(Some(spans))
     }
 }
 

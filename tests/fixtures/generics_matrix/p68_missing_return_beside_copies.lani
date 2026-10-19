@@ -1,0 +1,10 @@
+// expect: error LNC0006
+// A non-void function without a return beside generic bodies that replay
+// as instance copies. Copy replays skip the return check for a
+// declarations-only template's rows; the template's own check still
+// reports this function.
+fn keep<T>(value: T) -> T { return value; }
+fn broken(value: i32) -> i32 { let doubled = value + value; }
+fn main() -> i32 {
+    return keep(40) + keep(2);
+}

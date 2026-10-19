@@ -378,6 +378,10 @@ pub(crate) struct CheckedBodySpecializationBatch {
     /// template file it continues (set_continuation_files).
     continuation_first_file: u32,
     continued_files: Vec<u32>,
+    /// The template's function bodies were left out of this copy replay
+    /// (`TemplateBlanking`): 705.w carries bit 31, and returns/03_validate
+    /// skips the template's rows. Holds the template tokens left out.
+    declarations_only: Option<u32>,
 }
 
 impl CheckedBodySpecializationBatch {
@@ -395,6 +399,7 @@ impl CheckedBodySpecializationBatch {
             impl_bindings: Vec::new(),
             continuation_first_file: 0,
             continued_files: Vec::new(),
+            declarations_only: None,
         };
         ensure!(batch.try_push(entry)?, "one body specialization exceeds the packet capacity");
         Ok(batch)
@@ -521,6 +526,60 @@ impl CheckedBodySpecializationBatch {
             }
         }
         Ok(aliases)
+    }
+
+    /// This batch in the copy space of a declarations-only template:
+    /// every identity of the template unit converted by `map`, the first
+    /// copy row `first_copy_row`, and the declarations-only flag set, with
+    /// the `removed_tokens` the template leaves out. An instance-copy batch
+    /// only.
+    pub(crate) fn declarations_only(
+        &self,
+        map: &super::TemplateIdentityMap<'_>,
+        first_copy_row: u32,
+        removed_tokens: u32,
+    ) -> Result<Self> {
+        ensure!(self.copy_first_row != 0, "only an instance-copy batch has a declarations-only template");
+        ensure!(first_copy_row != 0 && first_copy_row < 0x8000_0000, "invalid declarations-only copy row");
+        let mut entries = self.entries.iter().cloned().map(|mut entry| {
+            for argument in &mut entry.arguments {
+                map.ty(&mut argument.ty)?;
+            }
+            for constant in &mut entry.constants {
+                map.constant(&mut constant.value)?;
+            }
+            Ok(entry)
+        }).collect::<Result<Vec<_>>>()?.into_iter();
+        let mut batch = Self::single(entries.next().expect("nonempty batch"))?;
+        for entry in entries {
+            ensure!(batch.try_push(entry)?, "a declarations-only batch exceeds the packet capacity");
+        }
+        let owners = self.copy_owners.iter().map(|&(function, implementation)| {
+            Ok((map.row(function)?, implementation.map(|row| map.row(row)).transpose()?))
+        }).collect::<Result<Vec<_>>>()?;
+        batch.set_instance_copies(first_copy_row, owners)?;
+        batch.set_continuation_files(self.continuation_first_file, self.continued_files.clone())?;
+        let bindings = self.impl_bindings.iter().map(|&binding| {
+            let mut binding = binding;
+            // A trait of the replayed unit is named by its member symbol.
+            if binding.trait_unit == [u32::MAX; 2] {
+                binding.required_symbol = map.symbol(binding.required_symbol)?;
+            }
+            map.qualified_symbol(&mut binding.target)?;
+            Ok(binding)
+        }).collect::<Result<Vec<_>>>()?;
+        batch.set_impl_bindings(bindings)?;
+        batch.declarations_only = Some(removed_tokens);
+        Ok(batch)
+    }
+
+    pub(crate) fn is_declarations_only(&self) -> bool {
+        self.declarations_only.is_some()
+    }
+
+    /// The template tokens a declarations-only batch's template leaves out.
+    pub(crate) fn declarations_only_removed_tokens(&self) -> Option<u32> {
+        self.declarations_only
     }
 
     /// The first HIR row of the instance copies, for an instance-copy batch.
@@ -655,7 +714,8 @@ impl CheckedBodySpecializationBatch {
             }
         };
         words[BODY_CONSTANT_START + 2] = copy_word(&self.entries[0]);
-        words[BODY_CONSTANT_START + 3] = self.copy_first_row;
+        words[BODY_CONSTANT_START + 3] = self.copy_first_row
+            | if self.declarations_only.is_some() { 0x8000_0000 } else { 0 };
         for index in 1..self.entries.len() {
             let entry = &self.entries[index];
             let base = (table + (index - 1) * BODY_ENTRY_ROWS) * 4;

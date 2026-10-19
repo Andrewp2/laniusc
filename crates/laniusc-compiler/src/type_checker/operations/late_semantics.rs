@@ -199,10 +199,15 @@ impl SemanticProjectionOperations {
         let body_field_closure_at = std::cell::Cell::new(0usize);
         let owner_span_count: LaniusBuffer<u32> =
             typed_buffer_from_resources(resources, "retained_owner_span_count")?;
+        let body_span_count: LaniusBuffer<u32> =
+            typed_buffer_from_resources(resources, "retained_body_span_count")?;
         let owner_spans_clear = crate::gpu::operations::ClearBuffersOperation::new(
             graph,
             compiler_graph::SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
-            &[("retained_owner_span_count", (&owner_span_count).into())],
+            &[
+                ("retained_owner_span_count", (&owner_span_count).into()),
+                ("retained_body_span_count", (&body_span_count).into()),
+            ],
         )?;
         Ok(Self {
             body_specialization: [

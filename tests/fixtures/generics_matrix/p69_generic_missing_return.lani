@@ -1,0 +1,7 @@
+// expect: error LNC0006
+// A generic body without a return: its template check, and the check of
+// its instance copy, report it.
+fn keep<T>(value: T) -> T { let copy = value; }
+fn main() -> i32 {
+    return keep(42);
+}

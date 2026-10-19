@@ -42,9 +42,20 @@ RWStructuredBuffer<uint> retained_owner_span_count;
 // the self type's declaration name. Impl fields are INVALID for a top-level
 // function, trait fields INVALID outside a trait impl.
 RWStructuredBuffer<uint> retained_owner_spans;
+// Function bodies, for declarations-only instance templates: one record per
+// body block of a function no other function encloses, BODY_SPAN_WORDS
+// words in atomic order (the host sorts): function row, block row, the
+// block's subtree end (exclusive), `{` token, `}` token, `{` byte, `}` byte.
+// A copy replay blanks the bytes between the braces of every template body,
+// so its rows and tokens are the template's minus each body's interior.
+StructuredBuffer<HirLinks> compact_hir_links;
+RWStructuredBuffer<uint> retained_body_span_count;
+RWStructuredBuffer<uint> retained_body_spans;
 
 static const uint INVALID = 0xffffffffu;
 static const uint OWNER_SPAN_WORDS = 11u;
+static const uint BODY_SPAN_WORDS = 7u;
+static const uint HIR_BLOCK = 6u;
 static const uint HIR_FN = 3u;
 static const uint HIR_FILE = 1u;
 static const uint HIR_ITEM = 2u;
@@ -150,6 +161,44 @@ bool trait_impl_cut(uint impl_row, uint count, uint tokens,
     return cut_start < cut_end;
 }
 
+// The body block of a function no other function encloses. Its interior,
+// the tokens strictly between its braces and the rows of its subtree past
+// the block row, is what a declarations-only template leaves out.
+void record_body(uint row, HirCore core, uint count)
+{
+    uint fn_row = core.parent;
+    if (fn_row >= count || fn_row >= row || compact_hir_core[fn_row].kind != HIR_FN) return;
+    uint node = compact_hir_core[fn_row].parent;
+    for (uint depth = 0u; depth < count && node < count; depth++)
+    {
+        if (compact_hir_core[node].kind == HIR_FN) return;
+        uint parent = compact_hir_core[node].parent;
+        if (parent == INVALID || parent >= node) break;
+        node = parent;
+    }
+    uint tokens = active_tokens();
+    uint open = core.token_start;
+    uint close = core.token_end == INVALID || core.token_end == 0u ? INVALID : core.token_end - 1u;
+    if (open >= tokens || close >= tokens || close <= open) return;
+    uint links; uint stride;
+    compact_hir_links.GetDimensions(links, stride);
+    uint end = row < links ? compact_hir_links[row].subtree_end : INVALID;
+    if (end == INVALID || end <= row || end > count) return;
+    uint slot;
+    InterlockedAdd(retained_body_span_count[0u], 1u, slot);
+    uint words;
+    retained_body_spans.GetDimensions(words, stride);
+    if (slot >= words / BODY_SPAN_WORDS) return;
+    uint base = slot * BODY_SPAN_WORDS;
+    retained_body_spans[base] = fn_row;
+    retained_body_spans[base + 1u] = row;
+    retained_body_spans[base + 2u] = end;
+    retained_body_spans[base + 3u] = open;
+    retained_body_spans[base + 4u] = close;
+    retained_body_spans[base + 5u] = token_words[open].start;
+    retained_body_spans[base + 6u] = token_words[close].start;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID)
@@ -160,6 +209,11 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint count = min(min(compact_hir_count[0u], gParams.n_hir_nodes), hir_rows);
     if (row >= count) return;
     HirCore core = compact_hir_core[row];
+    if (core.kind == HIR_BLOCK)
+    {
+        record_body(row, core, count);
+        return;
+    }
     if (core.kind != HIR_FN || !has_generic_environment(row, count)) return;
     HirPayload payload = compact_hir_payload[row];
     bool other_container;
