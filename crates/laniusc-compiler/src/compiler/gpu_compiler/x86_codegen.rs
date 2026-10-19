@@ -1707,6 +1707,97 @@ fn main() -> i32 { return support::math::seven(); }
         }
     }
 
+    /// A cold unit's parser shape can carry more tokens than the unit has:
+    /// shape headroom, or a warm shape kept after an edit shortened the file.
+    /// Neither a unit's interface nor a consumer checked against it may
+    /// depend on that.
+    #[test]
+    fn dependency_interfaces_do_not_depend_on_parser_token_headroom() {
+        use std::sync::atomic::Ordering;
+
+        use crate::{compiler::GpuSemanticInterfaceArtifact, parser::driver::TEST_WARM_SHAPE_HEADROOM};
+
+        struct HeadroomGuard;
+        impl Drop for HeadroomGuard {
+            fn drop(&mut self) {
+                TEST_WARM_SHAPE_HEADROOM.store(u8::MAX, Ordering::Relaxed);
+            }
+        }
+        let _guard = HeadroomGuard;
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let mut salt = 0usize;
+        let mut compile = |headroom: bool,
+                           source: &str,
+                           library_id: u32,
+                           pages: Vec<Vec<GpuSemanticInterfaceArtifact>>| {
+            TEST_WARM_SHAPE_HEADROOM.store(u8::from(headroom), Ordering::Relaxed);
+            // Distinct bytes per call keep each content-keyed parser shape cold.
+            salt += 1;
+            let source = format!("{source}{}", "\n".repeat(salt));
+            pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+                vec![source].into(),
+                library_id,
+                0,
+                pages.into(),
+                SourcePackArtifactTarget::X86_64,
+            ))
+        };
+        fn interface_differences(
+            label: &str,
+            off: &GpuSemanticInterfaceArtifact,
+            on: &GpuSemanticInterfaceArtifact,
+        ) -> Vec<String> {
+            let mut differences = Vec::new();
+            macro_rules! field {
+                ($($name:ident),*) => {$(
+                    if off.$name != on.$name {
+                        differences.push(format!(
+                            "{label}.{}: headroom off {:?}\n    headroom on  {:?}",
+                            stringify!($name), off.$name, on.$name,
+                        ));
+                    }
+                )*};
+            }
+            field!(
+                version, library_id, unit_id, modules, module_segments, declarations, types,
+                type_edges, members, predicates, predicate_arguments, implementations,
+                implementation_arguments, implementation_method_bindings, name_bytes
+            );
+            differences
+        }
+        let inner_source = "module lib::inner; pub struct Boxed<T> { value: T, code: i32 }";
+        let outer_source = "module lib::outer; import lib::inner; pub struct Wrap<T> { child: lib::inner::Boxed<T>, marker: i32 }";
+        let helper_source = "module lib::extract; import lib::inner; import lib::outer; pub fn take<T>(value: lib::outer::Wrap<T>) -> T { return value.child.value; }";
+        let mut problems = Vec::new();
+        let inner = [false, true].map(|headroom| {
+            compile(headroom, inner_source, 10, Vec::new())
+                .expect("compile inner record")
+                .interface
+        });
+        problems.extend(interface_differences("inner", &inner[0], &inner[1]));
+        let outer = [false, true].map(|headroom| {
+            let pages = vec![vec![inner[usize::from(headroom)].clone()]];
+            compile(headroom, outer_source, 11, pages)
+                .expect("compile outer record")
+                .interface
+        });
+        problems.extend(interface_differences("outer", &outer[0], &outer[1]));
+        for dependencies in [false, true] {
+            for headroom in [false, true] {
+                let at = usize::from(dependencies);
+                let pages = vec![vec![inner[at].clone(), outer[at].clone()]];
+                if let Err(error) = compile(headroom, helper_source, 14, pages) {
+                    let error = format!("{error:?}");
+                    problems.push(format!(
+                        "helper (dependencies compiled with headroom {dependencies}, helper with {headroom}): {}",
+                        &error[..error.len().min(600)],
+                    ));
+                }
+            }
+        }
+        assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
+
     #[test]
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn dependency_pages_preserve_record_fields_and_generic_body_replay() {

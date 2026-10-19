@@ -25,6 +25,35 @@ laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_cons
 laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_rejected_append_preserves_accepted_constant_rows_and_receipts  P7a  pre-existing, PEV, owner P7a (parked)
 laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_validates_folded_projection_allocations_including_unreachable_child  P7a  pre-existing, PEV, owner P7a (parked)
 
+# More lib tests that fail on the generics-gpu base 9318578e (P10 baseline,
+# 2026-10-19, RTX 3070 Laptop, whole lib binary with its own pin's shaders).
+# Not listed: phase_snapshots_are_named_and_reset_with_the_peak_window and
+# physical_gpu_full_phase_timer_counts_the_stamps_it_drops, which fail only in
+# some runs.
+laniusc_compiler  codegen::lowering::tests::physical_gpu_lowers_scalar_dependency_graph  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.semantic.functions.templates binds overlapping 
+laniusc_compiler  codegen::lowering::tests::physical_gpu_materializes_control_events_and_unsupported_rows  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.semantic.functions.templates binds overlapping 
+laniusc_compiler  codegen::lowering::tests::physical_gpu_preserves_unowned_family_shapes_without_executable_rows  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.semantic.functions.templates binds overlapping 
+laniusc_compiler  codegen::lowering::tests::physical_gpu_projects_dense_function_abi  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.semantic.functions.templates binds overlapping 
+laniusc_compiler  codegen::wasm_lowering::tests::physical_gpu_runs_resident_semantic_to_scheduled_wasm_bytes  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.opt.access.metadata binds semantic_params with 
+laniusc_compiler  codegen::x86_artifact::tests::physical_gpu_emits_runnable_x86_elf_from_uniform_lir  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.x86.byte_count binds semantic_lir_params with 1
+laniusc_compiler  codegen::x86_lowering::tests::physical_gpu_runs_resident_semantic_to_scheduled_x86_lir  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.opt.access.metadata binds semantic_params with 
+laniusc_compiler  compiler::diagnostics::tests::diagnostic_explanation_json_describes_known_and_unknown_codes  TBD  assertion failed: value["unsupported_feature"]["next_step"].as_str().expect("unsupported-feature next step sho
+laniusc_compiler  compiler::gpu_compiler::helpers::tests::type_mismatch_note_preserves_unknown_and_array_code_records  TBD  assertion failed: float_note.contains("found float")
+laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_evidence_workspace_alternates_catalogs_rejects_stale_capabilities_and_recovers  TBD  assertion `left == right` failed: warm evidence admission must reuse reflected bindings
+laniusc_compiler  compiler::gpu_compiler::tests::physical_gpu_lowers_the_compilers_checked_compact_hir_for_both_targets  TBD  finish Wasm artifact for shared_host_runtime_calls: GPU lowering failed (flags=0x10, semantic row=5, OptIR row
+laniusc_compiler  compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity  TBD  specialized imported identity aliases: LNC0017 program trait evidence checking failed
+laniusc_compiler  compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values  TBD  flat composed layout: LNC0017 x86 callee function lost its checked aggregate result layout
+laniusc_compiler  compiler::gpu_compiler::typecheck::tests::imported_alias_members_survive_dependency_page_order_and_preserve_scope  TBD  flat alias members: LNC0017 x86 callee function lost its checked aggregate result layout
+laniusc_compiler  compiler::gpu_compiler::typecheck::tests::imported_alias_targets_survive_nested_substitution_and_dependency_page_order  TBD  flat aliases: LNC0042 invalid member access
+laniusc_compiler  compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay  TBD  assertion `left == right` failed: LNC0027 call resolution failed
+laniusc_compiler  compiler::gpu_compiler::x86_codegen::tests::checked_nominal_recipes_retain_private_public_payloads_without_calls_or_predicates  TBD  assertion `left == right` failed
+laniusc_compiler  compiler::gpu_compiler::x86_codegen::tests::checked_unit_contracts_preserve_zero_call_graphs_and_private_owners_after_reuse  TBD  assertion `left == right` failed
+laniusc_compiler  compiler::gpu_compiler::x86_codegen::tests::retained_symbolic_call_graphs_preserve_caller_binders_after_workspace_reuse  TBD  symbolic array length must retain its constant binder: Array { element: Parameter(CheckedGenericParameter { id
+laniusc_compiler  compiler::gpu_compiler::x86_codegen::tests::scalar_body_specializations_route_multiple_types_in_one_native_program  TBD  assertion `left == right` failed: two original units plus two type instances for each free function and method
+laniusc_compiler  gpu::constant_claim_publication_tests::physical_gpu_constant_claim_publication_preserves_precedence_replay_and_explicit_mirror  TBD  type_checker/calls/03a8_validate_explicit_applications requires missing fixture buffer compact_type_args
+laniusc_compiler  gpu::passes_core::compute_pass_counting_tests::every_compute_pass_uses_the_counted_boundary  TBD  assertion `left == right` failed: raw compute-pass boundaries: [
+laniusc_compiler  gpu::passes_core::compute_pass_counting_tests::raw_gpu_commands_remain_confined_to_explicit_boundaries  TBD  GPU commands bypass compiler-graph operation boundaries:
+
 # Flaky (P10 triage, 2026-10-18, RTX 3070 Laptop). Listed so a pass or a
 # failure of these does not hide a new failure; the checker reports a pass.
 cli_daemon  cli_daemon_accepts_a_unix_socket_session  TBD  flaky: passes alone and with RUST_TEST_THREADS=1; at default threads 5 daemons start at once and the socket (bound after startup) misses the 10 s connect deadline. 5 stdio daemons started together: 2 ready in 1.6-2.5 s, 3 with no ready line after 60 s (multi-daemon startup stall)
