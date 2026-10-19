@@ -933,23 +933,27 @@ impl GpuTypeChecker {
         });
         // The status words when call inference stopped on a recorded error.
         let mut inference_error = None;
-        // An original unit with an interface and generic syntax records the
-        // instance closure; its unit facts read the closure back.
-        let instance_closure = hir_items.semantic_interface_required
+        // An original unit with an interface records the instance closure
+        // when it has generic syntax, or when a dependency has a closure
+        // summary (D1b): an app that only calls library generics, with no
+        // generic syntax of its own, still roots their library chains. Its
+        // unit facts read the closure back.
+        let closure_allowed = hir_items.semantic_interface_required
             && hir_items.body_specialization.is_none()
-            && generic_call_claim_passes_required(parser_feature_flags)
             // LANIUS_INSTANCE_CLOSURE=0 (A/B runs) leaves the closure out.
             && crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true);
         let canonical_synchronous = canonical_stages_synchronous(
             self.canonical_synchronous
                 .load(std::sync::atomic::Ordering::Relaxed),
         );
-        // The dependency closure (D1b) joins it when a dependency has a
-        // summary: the upload's header is rewritten on every job, so an
-        // earlier job's summaries are unreachable from this one.
-        let closure_summaries = instance_closure
+        // The dependency closure joins it when a dependency has a summary:
+        // the upload's header is rewritten on every job, so an earlier job's
+        // summaries are unreachable from this one.
+        let closure_summaries = closure_allowed
             .then(|| dependency_pages.and_then(GpuDependencyInterfacePages::closure_summaries).cloned())
             .flatten();
+        let instance_closure = closure_allowed
+            && (generic_call_claim_passes_required(parser_feature_flags) || closure_summaries.is_some());
         let closure_import_rounds = closure_summaries.as_ref().map_or(0, |summaries| summaries.rounds());
         match &closure_summaries {
             Some(summaries) => {
@@ -964,6 +968,17 @@ impl GpuTypeChecker {
                 let header = [0u8; closure_summary::SUMMARY_HEADER_WORDS * 4];
                 self.closure_summary_inputs.write(queue, 0, &header);
             }
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
+            eprintln!(
+                "[instance-closure] gate closure={instance_closure} interface={} specialization={} \
+                 type_args={} dependency_pages={} summaries={} import_rounds={closure_import_rounds}",
+                hir_items.semantic_interface_required,
+                hir_items.body_specialization.is_some(),
+                generic_call_claim_passes_required(parser_feature_flags),
+                dependency_pages.is_some(),
+                closure_summaries.is_some(),
+            );
         }
         if let Some(pages) = dependency_pages.filter(|pages| pages.interfaces_without_summary() != 0) {
             if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {

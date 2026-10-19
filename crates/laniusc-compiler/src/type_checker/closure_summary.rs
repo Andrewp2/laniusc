@@ -410,6 +410,13 @@ impl ClosureSummary {
         *hasher.finalize().as_bytes()
     }
 
+    /// Counts for LANIUS_DEBUG_INSTANCE_CLOSURE.
+    pub(crate) fn describe(&self) -> String {
+        let incomplete = self.fns.iter().filter(|function| !function.complete).count();
+        format!("fns={} incomplete={incomplete} edges={} nodes={}",
+            self.fns.len(), self.edges.len(), self.nodes.len())
+    }
+
     /// Heap and inline bytes, for the unit caches' budgets.
     pub(crate) fn resident_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
