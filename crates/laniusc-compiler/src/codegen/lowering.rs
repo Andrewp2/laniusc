@@ -2288,14 +2288,12 @@ mod tests {
                 storage_ro_from_bytes,
                 storage_ro_from_u32s,
                 storage_rw_for_array,
-                tracked_buffer_allocation_stats,
             },
             compiler_graph::CompilerGraphWorkspace,
             device,
             passes_core::{
                 make_pass_data_from_shader_key,
                 map_readback_blocking,
-                pipeline_creation_count,
             },
             scan::hierarchical_scan_levels,
         },
@@ -3155,21 +3153,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(radix_layout.steps, 4);
-        let pipelines_before = pipeline_creation_count();
-        let buffers_before = tracked_buffer_allocation_stats();
-        let passes_before = crate::gpu::passes_core::recorded_compute_pass_count();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.resident_schedule.encoder"),
             });
         sorter.record(&mut encoder).unwrap();
-        let passes_after = crate::gpu::passes_core::recorded_compute_pass_count();
+        let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
         let hierarchy_levels = hierarchical_scan_levels(count.div_ceil(256)).len();
         let passes_per_digit = 3 + 2 * hierarchy_levels as u64;
-        assert_eq!(passes_after - passes_before, 4 * passes_per_digit);
-        assert_eq!(pipeline_creation_count(), pipelines_before);
-        assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
+        assert_eq!(activity.compute_passes, 4 * passes_per_digit);
+        assert_eq!(
+            (activity.pipelines, activity.buffers_created, activity.buffers_released),
+            (0, 0, 0),
+            "recording the scheduler creates no pipelines or buffers"
+        );
 
         let readback = readback_bytes(
             &gpu.device,

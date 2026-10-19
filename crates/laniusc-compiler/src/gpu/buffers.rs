@@ -473,6 +473,9 @@ impl BufferAllocationLedger {
         label: impl Into<Arc<str>>,
     ) -> Arc<Self> {
         BUFFER_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        crate::gpu::passes_core::note_thread_gpu_activity(|activity| {
+            activity.buffers_created += 1
+        });
         let label = label.into();
         *BUFFER_CREATIONS_BY_LABEL
             .lock()
@@ -515,6 +518,9 @@ impl Drop for BufferAllocationLedger {
                 .remove(buffer);
         }
         LIVE_BUFFER_ALLOCATIONS.fetch_sub(1, Ordering::Relaxed);
+        crate::gpu::passes_core::note_thread_gpu_activity(|activity| {
+            activity.buffers_released += 1
+        });
         LIVE_BUFFER_BYTES.fetch_sub(self.bytes, Ordering::Relaxed);
         RELEASED_BUFFER_BYTES.fetch_add(self.bytes, Ordering::Relaxed);
         let mut labels = LIVE_BUFFER_BYTES_BY_LABEL
@@ -1459,6 +1465,30 @@ mod tests {
 
     static ALLOCATION_LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Runs `body` in a child test process that runs only `test` (its path
+    /// below this module), so the process-wide peak window and residency
+    /// timeline see no allocations from concurrently running GPU tests. The
+    /// child runs `body` itself; the parent asserts that it passed.
+    fn in_own_process(test: &str, body: impl FnOnce()) {
+        const CHILD: &str = "LANIUS_ISOLATED_LEDGER_TEST";
+        if std::env::var_os(CHILD).is_some() {
+            body();
+            return;
+        }
+        let name = format!("gpu::buffers::tests::{test}");
+        let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([name.as_str(), "--exact", "--test-threads=1"])
+            .env(CHILD, "1")
+            .output()
+            .expect("run the isolated test process");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "isolated {name} failed:\n{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
     fn grown_resident_capacity_keeps_covering_sizes_and_pads_growth() {
         assert_eq!(grown_resident_capacity(500, 400), 500);
@@ -1471,7 +1501,16 @@ mod tests {
 
     #[test]
     fn allocation_peak_window_starts_at_live_baseline_and_tracks_high_water_mark() {
-        let _guard = ALLOCATION_LEDGER_TEST_LOCK.lock().unwrap();
+        in_own_process(
+            "allocation_peak_window_starts_at_live_baseline_and_tracks_high_water_mark",
+            check_allocation_peak_window,
+        );
+    }
+
+    fn check_allocation_peak_window() {
+        let _guard = ALLOCATION_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let baseline = tracked_buffer_allocation_stats();
         assert_eq!(reset_tracked_buffer_allocation_peaks(), baseline);
         assert_eq!(tracked_buffer_allocation_peak_stats(), baseline);
@@ -1538,7 +1577,16 @@ mod tests {
 
     #[test]
     fn residency_timeline_records_physical_allocation_lifetime() {
-        let _guard = ALLOCATION_LEDGER_TEST_LOCK.lock().unwrap();
+        in_own_process(
+            "residency_timeline_records_physical_allocation_lifetime",
+            check_residency_timeline,
+        );
+    }
+
+    fn check_residency_timeline() {
+        let _guard = ALLOCATION_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         begin_tracked_buffer_residency_timeline(true);
         let baseline = tracked_buffer_allocation_stats();
         let ledger = BufferAllocationLedger::new(77, "test.buffer-timeline");

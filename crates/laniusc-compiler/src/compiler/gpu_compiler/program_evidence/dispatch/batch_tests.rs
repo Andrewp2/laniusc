@@ -1311,14 +1311,14 @@ fn gpu_evidence_workspace_alternates_catalogs_rejects_stale_capabilities_and_rec
     drop((gpu, packet));
 
     for iteration in 0..3 {
-        let before_buffers = crate::gpu::buffers::buffer_creation_count();
-        let before_bindings = passes_core::bind_group_creation_count();
+        let before = passes_core::this_thread_gpu_activity();
         let (mut gpu, mut packet) = batch_job(&compiler, &[&rich]);
         gpu.check(&mut packet).expect("valid program after stale-capability rejection");
         if iteration == 2 {
-            assert_eq!(crate::gpu::buffers::buffer_creation_count(), before_buffers,
+            let activity = passes_core::this_thread_gpu_activity().since(before);
+            assert_eq!(activity.buffers_created, 0,
                 "warm evidence admission must reuse buffers");
-            assert_eq!(passes_core::bind_group_creation_count(), before_bindings,
+            assert_eq!(activity.bind_groups, 0,
                 "warm evidence admission must reuse reflected bindings");
         }
     }
