@@ -532,10 +532,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();
         if let Ok(cache) = &self.wasm_lowering {
-            cache.release();
+            cache.trim();
         }
         if let Ok(cache) = &self.x86_lowering {
-            cache.release();
+            cache.trim();
         }
         if let Ok(linker) = &self.x86_linker {
             linker.release_job_buffers();
