@@ -1,0 +1,24 @@
+module gen::lib;
+
+struct Cell<T> {
+    value: T,
+    count: i32,
+}
+
+impl<T> Cell<T> {
+    fn bump(self) -> i32 {
+        return self.count + 1;
+    }
+}
+
+pub struct Holder<T> {
+    cell: Cell<T>,
+}
+
+pub fn hold<T>(v: T) -> Holder<T> {
+    return Holder { cell: Cell { value: v, count: 40 } };
+}
+
+pub fn score<T>(h: Holder<T>) -> i32 {
+    return h.cell.bump() + 1;
+}

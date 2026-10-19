@@ -1,0 +1,8 @@
+// expect: error LNC0075
+module app::main;
+
+import gen::lib;
+
+fn main() -> i32 {
+    return gen::lib::peek(gen::lib::leak());
+}

@@ -1,0 +1,10 @@
+module app::main;
+
+import gen::lib;
+
+fn main() -> i32 {
+    let a: gen::lib::Outer = gen::lib::make(40);
+    let b: gen::lib::Outer = a;
+    let c: [gen::lib::Outer; 2] = [b, a];
+    return gen::lib::total(c[1]) + gen::lib::tag(b);
+}

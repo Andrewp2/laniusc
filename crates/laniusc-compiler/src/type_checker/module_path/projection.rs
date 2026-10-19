@@ -16,6 +16,8 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) validate_type_paths: ComputeOperation,
     pub(in crate::type_checker) type_aliases: Option<Box<TypeAliasProjection>>,
     pub(in crate::type_checker) project_type_instances: ComputeOperation,
+    /// Hidden interface declarations (interface/public_decls/02_hidden).
+    pub(in crate::type_checker) map_hidden_interface_decls: ComputeOperation,
     pub(in crate::type_checker) mark_value_call_paths: ComputeOperation,
     pub(in crate::type_checker) project_value_paths: ComputeOperation,
     pub(in crate::type_checker) consume_value_calls: ComputeOperation,
@@ -118,6 +120,15 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         passes,
         TYPE_INSTANCES_PROJECT,
         &path_dispatch_args,
+    )?;
+    // One workgroup: the closure loops to its fixed point inside the dispatch.
+    let map_hidden_interface_decls = ComputeOperation::direct_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        INTERFACE_HIDDEN_DECLS_MAP,
+        256,
     )?;
     let mark_value_call_paths = ComputeOperation::direct_spec(
         device,
@@ -234,6 +245,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         validate_type_paths,
         type_aliases,
         project_type_instances,
+        map_hidden_interface_decls,
         mark_value_call_paths,
         project_value_paths,
         consume_value_calls,

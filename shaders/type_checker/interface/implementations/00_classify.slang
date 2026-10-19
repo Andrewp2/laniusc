@@ -17,6 +17,7 @@ StructuredBuffer<uint> predicate_method_validation_status;
 StructuredBuffer<uint> predicate_method_contract_owner_count;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> public_decl_index_by_local;
+StructuredBuffer<uint> decl_visibility;
 StructuredBuffer<uint> type_decl_const_param_count_by_owner_token;
 StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<uint> compact_type_arg_count;
@@ -39,7 +40,9 @@ void fail(uint row, uint detail)
 }
 // A HIR type whose checked type is a local nominal with no public declaration.
 // The interface names local nominals by public index (type_topology
-// 12_type_records), so it cannot spell this one.
+// 12_type_records), so it cannot spell this one. A hidden declaration
+// (public_decls/02_hidden) has an index, but importers cannot name it, so
+// its impls stay private as well.
 bool private_nominal(uint node)
 {
     if (semantic_type_ref_tag_by_hir[node] != 3u) return false;
@@ -50,7 +53,8 @@ bool private_nominal(uint node)
     uint declaration = type_instance_decl_token[instance];
     if (declaration >= gParams.token_capacity) return false;
     uint source = decl_id_by_name_token[declaration];
-    return source >= gParams.decl_capacity || public_decl_index_by_local[source] == INVALID;
+    return source >= gParams.decl_capacity || public_decl_index_by_local[source] == INVALID ||
+        decl_visibility[source] != 1u;
 }
 // Whether the HIR subtree at `root` writes a private nominal type.
 bool names_private_type(uint root, uint active)

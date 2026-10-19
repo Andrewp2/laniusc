@@ -59,6 +59,7 @@ StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_kind;
+StructuredBuffer<uint> decl_visibility;
 StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> compact_const_value;
@@ -85,6 +86,9 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint DECL_WORDS = 14u;
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_ITEM_VIS_PUBLIC = 1u;
+// A private type an exported layout needs (public_decls/02_hidden).
+static const uint DECL_FLAG_HIDDEN = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -182,7 +186,8 @@ void write_decl(uint dst, uint decl, uint name_ref)
     }
     interface_declaration_words[base + 10u] = persisted_owner;
     uint hir = decl_hir_node[decl];
-    interface_declaration_words[base + 11u] = 0u;
+    interface_declaration_words[base + 11u] =
+        decl_visibility[decl] == HIR_ITEM_VIS_PUBLIC ? 0u : DECL_FLAG_HIDDEN;
     uint kind = decl_kind[decl];
     uint value_hir = hir < gParams.hir_capacity ? compact_const_value[hir] : INVALID;
     bool constant_present = kind == 3u && value_hir < gParams.hir_capacity &&

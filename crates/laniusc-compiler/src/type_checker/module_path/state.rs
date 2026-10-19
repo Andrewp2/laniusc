@@ -86,6 +86,7 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) validate_type_paths: ComputeOperation,
     pub(in crate::type_checker) type_aliases: Option<Box<TypeAliasProjection>>,
     pub(in crate::type_checker) project_type_instances: ComputeOperation,
+    pub(in crate::type_checker) map_hidden_interface_decls: ComputeOperation,
     pub(in crate::type_checker) mark_value_call_paths: ComputeOperation,
     pub(in crate::type_checker) project_value_paths: ComputeOperation,
     pub(in crate::type_checker) consume_value_calls: ComputeOperation,

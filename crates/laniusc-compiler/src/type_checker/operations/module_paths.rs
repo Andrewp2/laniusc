@@ -719,6 +719,21 @@ pub(in crate::type_checker) const TYPE_INSTANCES_PROJECT: ReflectedComputeSpec =
 )
 .with_indirect_dispatch("path_dispatch_args");
 
+/// Private types an exported type's fields need become hidden interface
+/// declarations, one workgroup, before the canonical early stage.
+pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_MAP: ReflectedComputeSpec = typecheck_operation!(
+    "type_check.interface.public_decls.hidden",
+    Declarations,
+    "type_checker/interface/public_decls/02_hidden"
+    ; resources [
+        typecheck_resource!("status" => "status", ReadWrite),
+        typecheck_resource!("interface_public_decl_count" => "interface_public_decl_count", ReadWrite),
+        typecheck_resource!("interface_public_decl_local_id" => "interface_public_decl_local_id", ReadWrite),
+        typecheck_resource!("interface_public_decl_index_by_local" => "interface_public_decl_index_by_local", ReadWrite),
+        typecheck_resource!("interface_public_decl_index_by_hir" => "interface_public_decl_index_by_hir", ReadWrite),
+    ]
+);
+
 pub(in crate::type_checker) const VALUE_CALL_PATHS_MARK: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.mark_value_call_paths",
     HirNodes,

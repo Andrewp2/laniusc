@@ -1,0 +1,11 @@
+module app::main;
+
+import gen::lib;
+
+// The importer reads a hidden-typed field, passes it through a library
+// generic, and rebuilds the public struct around it.
+fn main() -> i32 {
+    let a: gen::lib::Outer = gen::lib::make(40);
+    let b: gen::lib::Outer = gen::lib::Outer { mode: gen::lib::keep(a.mode), base: a.base + 1 };
+    return gen::lib::tag(b) + b.base;
+}

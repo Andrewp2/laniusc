@@ -1,0 +1,98 @@
+module gen::lib;
+
+struct S1 {
+    next: S2,
+    w: i32,
+}
+
+struct S2 {
+    next: S3,
+    w: i32,
+}
+
+struct S3 {
+    next: S4,
+    w: i32,
+}
+
+struct S4 {
+    next: S5,
+    w: i32,
+}
+
+struct S5 {
+    next: S6,
+    w: i32,
+}
+
+struct S6 {
+    next: S7,
+    w: i32,
+}
+
+struct S7 {
+    next: S8,
+    w: i32,
+}
+
+struct S8 {
+    next: S9,
+    w: i32,
+}
+
+struct S9 {
+    next: S10,
+    w: i32,
+}
+
+struct S10 {
+    next: S11,
+    w: i32,
+}
+
+struct S11 {
+    next: S12,
+    w: i32,
+}
+
+struct S12 {
+    next: S13,
+    w: i32,
+}
+
+struct S13 {
+    next: S14,
+    w: i32,
+}
+
+struct S14 {
+    next: S15,
+    w: i32,
+}
+
+struct S15 {
+    next: S16,
+    w: i32,
+}
+
+struct S16 {
+    next: S17,
+    w: i32,
+}
+
+struct S17 {
+    next: i32,
+    w: i32,
+}
+
+pub struct Top {
+    first: S1,
+}
+
+pub fn make() -> Top {
+    return Top { first: S1 { next: S2 { next: S3 { next: S4 { next: S5 { next: S6 { next: S7 { next: S8 { next: S9 { next: S10 { next: S11 { next: S12 { next: S13 { next: S14 { next: S15 { next: S16 { next: S17 { next: 25, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 }, w: 1 } };
+}
+
+pub fn depth(t: Top) -> i32 {
+    return t.first.next.next.next.next.next.next.next.next.next.next.next.next.next.next.next.next.next + t.first.w + t.first.next.w + t.first.next.next.w + t.first.next.next.next.w + t.first.next.next.next.next.w + t.first.next.next.next.next.next.w + t.first.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.next.next.next.next.next.w + t.first.next.next.next.next.next.next.next.next.next.next.next.next.next.next.next.next.w;
+}
