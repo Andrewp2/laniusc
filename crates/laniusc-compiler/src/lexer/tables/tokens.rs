@@ -264,6 +264,10 @@ define_token_kinds! {
     CastTypeIdent,
     // parser retag of the `!` right after a return arrow: the never type
     ReturnNever,
+    // parser retag of the `;` inside an array literal: `[value; count]`
+    ArraySemicolon,
+    // parser retag of the integer literal after an ArraySemicolon: the count
+    ArrayRepeatCount,
 }
 
 impl TokenKind {
@@ -285,6 +289,7 @@ impl TokenKind {
             | Self::PathGenericIdent
             | Self::ArrayLengthIdent
             | Self::CastTypeIdent => Self::Ident,
+            Self::ArrayRepeatCount => Self::Int,
             Self::CallLParen
             | Self::GroupLParen
             | Self::ParamLParen
@@ -321,6 +326,7 @@ impl TokenKind {
             | Self::ConstAssign
             | Self::RangeInclusiveAssign => Self::Assign,
             Self::TypeSemicolon
+            | Self::ArraySemicolon
             | Self::TraitMethodSemicolon
             | Self::ImportSemicolon
             | Self::ModuleSemicolon

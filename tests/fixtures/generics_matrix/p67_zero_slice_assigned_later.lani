@@ -1,0 +1,12 @@
+// expect: 7
+// A slice declared without an initializer and assigned later in an inner
+// block, as verified_compiler declares its work buffers.
+fn view(values: [i32]) -> [i32] { return values; }
+fn main() -> i32 {
+    let backing: [i32; 3] = [5, 7, 9];
+    let s: [i32];
+    {
+        s = view(backing);
+    }
+    return s[1];
+}

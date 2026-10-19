@@ -1,9 +1,10 @@
 // Array literals publish the same checked graph consumed by all generic
 // argument matchers. Elements come from an immutable preceding snapshot.
 // A literal's type is the canonical array of its element type and its
-// element count (the count's class, as source arrays are spelled), realized
+// length (the count's class, as source arrays are spelled), realized
 // as a checked row; a literal whose published row already has that ID keeps
-// it, since rows are unique per ID.
+// it, since rows are unique per ID. The length is the element count, or the
+// count of `[value; count]`.
 import hir_records;
 import status;
 import type_checker.mutable_checked_type_graph;
@@ -17,6 +18,7 @@ struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_array_element_count;
 StructuredBuffer<uint> array_literal_element_ref_tag;
 StructuredBuffer<uint> array_literal_element_ref_payload;
@@ -41,7 +43,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint element = ct_intern_checked<CtMutableRows>(tag, payload, spare);
     // An element without a canonical ID yet waits for a later round.
     if (!ct_is_resolved(element) || ct_is_constant(element)) return;
-    uint count = cc_intern_count(compact_array_element_count[node], spare);
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    uint length = hir_array_literal_length(compact_hir_core, compact_hir_payload, hir_count,
+        node, compact_array_element_count[node]);
+    if (length == INVALID)
+    {
+        // Detail 1: `[value; count]` whose count does not fit in u32;
+        // detail 2: a `; count` after a later element, as in `[a, b; n]`.
+        HirPayload literal = compact_hir_payload[node];
+        record_min_token_error(status, literal.c, 22u,
+            literal.a == HIR_ARRAY_REPEAT_AFTER_LIST ? 2u : 1u);
+        return;
+    }
+    uint count = cc_intern_count(length, spare);
     uint array = ct_is_resolved(count)
         ? ct_intern_small(CT_KIND_ARRAY, 2u, uint3(0u, 0u, 0u), uint2(element, count), uint2(INVALID, 0u), spare)
         : CT_UNKNOWN;

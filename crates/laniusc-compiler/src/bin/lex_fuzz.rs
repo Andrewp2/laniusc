@@ -111,6 +111,8 @@ fn kind_from_str(s: &str) -> Option<TokenKind> {
         "TypeArrayLBracket" => TypeArrayLBracket,
         "TypeArrayRBracket" => TypeArrayRBracket,
         "TypeSemicolon" => TypeSemicolon,
+        "ArraySemicolon" => ArraySemicolon,
+        "ArrayRepeatCount" => ArrayRepeatCount,
         "IfLBrace" => IfLBrace,
         "IfRBrace" => IfRBrace,
         _ => return None,

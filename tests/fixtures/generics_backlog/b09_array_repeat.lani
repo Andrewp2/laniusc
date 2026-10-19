@@ -1,4 +1,0 @@
-fn main() -> i32 {
-    let cells: [i32; 4] = [10; 4];
-    return cells[0] + cells[3] + 22;
-}

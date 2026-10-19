@@ -787,6 +787,7 @@ impl ResidentTypeCheckWorkspace {
             external_type_library_id: graph.buffer("external_type_library_id")?,
             external_type_unit_id: graph.buffer("external_type_unit_id")?,
             external_type_local_index: graph.buffer("external_type_local_index")?,
+            imported_layout_kind: graph.buffer("imported_layout_kind")?,
             type_generic_param_slot: graph.buffer("type_generic_param_slot_by_token")?,
             type_const_param_slot: graph.buffer("type_const_param_slot_by_token")?,
             checked_constant_atoms: graph.buffer("checked_constant_atoms")?,
@@ -940,6 +941,9 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     pub external_type_library_id: &'a LaniusBuffer<u32>,
     pub external_type_unit_id: &'a LaniusBuffer<u32>,
     pub external_type_local_index: &'a LaniusBuffer<u32>,
+    /// An imported nominal's declaration kind (6 struct, 7 enum) in the low
+    /// 31 bits; the high bit marks a complete retained layout.
+    pub imported_layout_kind: &'a LaniusBuffer<u32>,
     pub type_generic_param_slot: &'a LaniusBuffer<u32>,
     pub type_const_param_slot: &'a LaniusBuffer<u32>,
     /// Immutable checked constant rows, exposed as four raw words per row.
@@ -1011,6 +1015,7 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     external_type_library_id: LaniusBuffer<u32>,
     external_type_unit_id: LaniusBuffer<u32>,
     external_type_local_index: LaniusBuffer<u32>,
+    imported_layout_kind: LaniusBuffer<u32>,
     type_generic_param_slot: LaniusBuffer<u32>,
     type_const_param_slot: LaniusBuffer<u32>,
     checked_constant_atoms: LaniusBuffer<u32>,
@@ -1068,6 +1073,7 @@ impl OwnedGpuSemanticArtifact {
             (&self.external_type_library_id).into(),
             (&self.external_type_unit_id).into(),
             (&self.external_type_local_index).into(),
+            (&self.imported_layout_kind).into(),
             (&self.type_generic_param_slot).into(),
             (&self.type_const_param_slot).into(),
             (&self.checked_constant_atoms).into(),
@@ -1136,6 +1142,7 @@ impl OwnedGpuSemanticArtifact {
             external_type_library_id: &self.external_type_library_id,
             external_type_unit_id: &self.external_type_unit_id,
             external_type_local_index: &self.external_type_local_index,
+            imported_layout_kind: &self.imported_layout_kind,
             type_generic_param_slot: &self.type_generic_param_slot,
             type_const_param_slot: &self.type_const_param_slot,
             checked_constant_atoms: &self.checked_constant_atoms,

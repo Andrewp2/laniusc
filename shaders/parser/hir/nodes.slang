@@ -164,6 +164,7 @@ uint classify(uint prod)
         prod == PROD_PATTERN_IDENT)
         return HIR_NAME_EXPR;
     if (prod == PROD_INT || prod == PROD_GENERIC_ARGUMENT_INTEGER ||
+        prod == PROD_ARRAY_REPEAT_COUNT ||
         prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_INTEGER ||
         prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_FLOAT ||
         prod == PROD_GENERIC_ARGUMENT_TRUE || prod == PROD_GENERIC_ARGUMENT_FALSE ||

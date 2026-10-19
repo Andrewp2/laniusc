@@ -1065,6 +1065,10 @@ static const uint SEMANTIC_LIR_AGGREGATE_TAG_MASK = 0x7fffffffu;
 // Otherwise arrays use 0 and struct literals 1. ZERO is an aggregate with no
 // elements whose every word is zero: the value of `let x: T;`.
 static const uint SEMANTIC_LIR_AGGREGATE_ZERO = 2u;
+// REPEAT is `[value; count]` with a nonzero value: one element row, the
+// value, stored into every element of the checked array. A repeat of a zero
+// literal lowers as ZERO.
+static const uint SEMANTIC_LIR_AGGREGATE_REPEAT = 3u;
 
 // A value location is either a target-row stack home or a physical x86 GPR.
 // Stack payloads remain global target rows; the artifact emitter translates

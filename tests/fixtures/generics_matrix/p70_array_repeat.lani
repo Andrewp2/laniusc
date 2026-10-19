@@ -1,0 +1,13 @@
+// expect: 42
+// b09: the array repeat `[value; count]`, with a literal count, in a generic
+// body (`[T; 4]` from one `T`) and directly.
+fn fill<T>(value: T) -> [T; 4] {
+    return [value; 4];
+}
+fn main() -> i32 {
+    let cells: [i32; 4] = [10; 4];
+    let flags: [bool; 4] = fill(true);
+    if (!flags[3]) { return 1; }
+    let more = fill(cells[0]);
+    return more[0] + cells[3] + 22;
+}

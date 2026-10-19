@@ -1,4 +1,7 @@
 // Pointer-jump a compact linked list to its owner while summing edge ranks.
+// Rounds after the walk converges return at once (hir_walk_state).
+
+import hir_walk_state;
 
 struct Params
 {
@@ -16,6 +19,10 @@ StructuredBuffer<uint> list_rank_in;
 RWStructuredBuffer<uint> list_owner_out;
 RWStructuredBuffer<uint> list_link_out;
 RWStructuredBuffer<uint> list_rank_out;
+ConstantBuffer<HirWalkRound> gHirWalkRound;
+RWStructuredBuffer<uint> hir_walk_state;
+
+groupshared uint g_walk_changed;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -39,17 +46,16 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+// Advances one worklist row and reports whether its node's output differs
+// from its input.
+bool advance(uint row)
 {
-    uint row = linear_thread_id(dtid);
     if (row >= gHirListRank.n || row >= hir_list_rank_count[0u])
-        return;
+        return false;
 
     uint node = hir_list_rank_node[row];
     if (!valid_node(node))
-        return;
+        return false;
 
     uint owner = list_owner_in[node];
     uint link = list_link_in[node];
@@ -71,7 +77,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
         link = valid_node(ancestor_link) ? ancestor_link : INVALID;
     }
 
-    list_owner_out[node] = valid_node(owner) ? owner : INVALID;
+    uint owner_out = valid_node(owner) ? owner : INVALID;
+    list_owner_out[node] = owner_out;
     list_link_out[node] = link;
     list_rank_out[node] = rank;
+    return owner_out != list_owner_in[node] || link != list_link_in[node] || rank != list_rank_in[node];
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID, uint group_thread: SV_GroupIndex)
+{
+    uint row = linear_thread_id(dtid);
+    hir_walk_mark_ran(hir_walk_state, gHirWalkRound, row);
+    if (hir_walk_round_redundant(hir_walk_state, gHirWalkRound))
+        return;
+
+    if (group_thread == 0u)
+        g_walk_changed = 0u;
+    GroupMemoryBarrierWithGroupSync();
+    if (advance(row))
+        g_walk_changed = 1u;
+    GroupMemoryBarrierWithGroupSync();
+    if (group_thread == 0u && g_walk_changed != 0u)
+        hir_walk_mark_changed(hir_walk_state, gHirWalkRound);
 }

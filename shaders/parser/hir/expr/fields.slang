@@ -598,6 +598,7 @@ void publish_expr(uint i)
         return;
     }
     if (prod == PROD_INT || prod == PROD_GENERIC_ARGUMENT_INTEGER ||
+        prod == PROD_ARRAY_REPEAT_COUNT ||
         prod == PROD_GENERIC_ARGUMENT_MAGNITUDE_INTEGER || prod == PROD_RANGE_START_INT ||
         prod == PROD_RANGE_BOUND_INT || prod == PROD_PATTERN_INT)
     {

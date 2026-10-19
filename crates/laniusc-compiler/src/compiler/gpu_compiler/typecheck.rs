@@ -1571,13 +1571,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<(), CompileError> {
+        // Export the interface as x86 compilation does (library 0, unit 0),
+        // so check reports its errors too, such as LNC0075.
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
             source_paths,
-            None,
+            Some(0),
             0,
             DependencyInterfacePages::Flat(&[]),
-            false,
+            true,
             None,
             None,
         )
@@ -1706,7 +1708,9 @@ impl<'gpu> GpuCompiler<'gpu> {
             true,
         )?;
         Ok(PendingOriginalUnit {
-            facts: OriginalUnitFacts::from_unit(&unit),
+            // This call's finish_semantic_interface decoded the interface
+            // with from_bytes, which validated it.
+            facts: OriginalUnitFacts::from_unit(&unit).with_interface_validated_in_this_job(),
             unit,
         })
     }
@@ -2394,6 +2398,10 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
 #[derive(Clone)]
 pub(super) struct OriginalUnitFacts {
     snapshot: std::sync::Arc<OriginalUnitSnapshot>,
+    /// The interface passed validate earlier in the job that holds these
+    /// facts. Only the pending-original compile sets it, and the
+    /// pending-original cache clears it, so it never crosses into another job.
+    interface_validated_in_this_job: bool,
 }
 
 struct OriginalUnitSnapshot {
@@ -2422,7 +2430,34 @@ impl OriginalUnitFacts {
                 owner_spans: unit.owner_spans.clone(),
                 instance_closure: unit.instance_closure.clone(),
             }),
+            interface_validated_in_this_job: false,
         }
+    }
+
+    fn with_interface_validated_in_this_job(mut self) -> Self {
+        self.interface_validated_in_this_job = true;
+        self
+    }
+
+    /// The same facts for use by a later job, which must validate again.
+    fn for_a_later_job(&self) -> Self {
+        Self { snapshot: self.snapshot.clone(), interface_validated_in_this_job: false }
+    }
+
+    /// Succeeds exactly when `interface().check_serializable()` does. When
+    /// validate already passed on this interface earlier in this job, only
+    /// the encoded length is checked. LANIUS_CHECK_INTERFACE_REVALIDATE=1
+    /// runs validate again anyway and fails if the two results disagree.
+    pub(super) fn check_interface_serializable(&self) -> Result<(), String> {
+        let interface = &self.snapshot.interface;
+        if !self.interface_validated_in_this_job {
+            return interface.check_serializable();
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INTERFACE_REVALIDATE", false) {
+            interface.validate().map_err(|reason| format!(
+                "semantic interface validated in this job no longer validates: {reason}"))?;
+        }
+        interface.check_encoded_len()
     }
 
     /// Admission receipts match this exact immutable snapshot, never numeric
@@ -2498,7 +2533,7 @@ impl PendingOriginalUnit {
     pub(super) fn retain(&self) -> RetainedPendingOriginal {
         RetainedPendingOriginal {
             unit: std::sync::Arc::new(self.unit.clone()),
-            facts: self.facts.clone(),
+            facts: self.facts.for_a_later_job(),
         }
     }
 
@@ -3757,6 +3792,21 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     path, source, start, len, invalid_cast_label(detail),
                 ))
                 .with_note("`as` converts between integer and floating-point types, from bool or char to an integer type, and from u8 to char"),
+        ),
+        // Details 1 and 2: array repeat expressions `[value; count]`.
+        GpuTypeCheckCode::InvalidArrayLength if detail == 1 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "array repeat count does not fit in u32",
+                ))
+                .with_note("the count of `[value; count]` is an integer literal from 0 to 4294967294"),
+        ),
+        GpuTypeCheckCode::InvalidArrayLength if detail == 2 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "type mismatch")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "an array repeat has exactly one value before `;`",
+                ))
+                .with_note("write `[value; count]` to repeat one value, or list every element as `[a, b, c]`"),
         ),
         GpuTypeCheckCode::InvalidArrayLength => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")

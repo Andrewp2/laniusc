@@ -143,7 +143,9 @@ uint active_compact_array_element_count()
 uint compact_array_length(uint array_node)
 {
     return valid_compact_node(array_node)
-        ? compact_array_element_count[array_node]
+        ? hir_array_literal_length(compact_hir_core, compact_hir_payload,
+            min(compact_hir_count[0u], gParams.n_hir_nodes), array_node,
+            compact_array_element_count[array_node])
         : INVALID;
 }
 

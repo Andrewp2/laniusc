@@ -965,6 +965,99 @@ fn x86_rejects_lets_without_initializers_of_types_without_a_zero_value() {
 }
 
 #[test]
+fn x86_executes_array_repeat_literals() {
+    // `[value; count]` repeats one value `count` times. The count is an
+    // integer literal; `[0; N]` (and `[false; N]`) lowers to the same
+    // zeroed storage as `let x: [T; N];`.
+    for (name, source, expected) in [
+        (
+            "repeat_basic",
+            "fn main() -> i32 {\n    let a: [i32; 4] = [7; 4];\n    return a[0] + a[1] + a[2] + a[3] + 14;\n}\n",
+            42,
+        ),
+        (
+            "repeat_zero_large",
+            "fn main() -> i32 {\n    let b = [0; 1024];\n    b[1000] = 5;\n    return b[1000] + b[3] + b[1023] + 37;\n}\n",
+            42,
+        ),
+        (
+            "repeat_bool",
+            "fn main() -> i32 {\n    let flags = [false; 3];\n    let on = [true; 2];\n    if (flags[2]) { return 1; }\n    if (!on[1]) { return 2; }\n    return 42;\n}\n",
+            42,
+        ),
+        (
+            "repeat_nested",
+            "fn main() -> i32 {\n    let m = [[3; 2]; 3];\n    return m[2][1] * 14;\n}\n",
+            42,
+        ),
+        (
+            "repeat_call_value",
+            "fn six() -> i32 { return 6; }\nfn pick(xs: [i32; 7]) -> i32 {\n    return xs[0] + xs[6] + 30;\n}\nfn main() -> i32 {\n    return pick([six(); 7]);\n}\n",
+            42,
+        ),
+        (
+            "repeat_wide_elements",
+            "fn main() -> i32 {\n    let bytes: [u8; 5] = [9; 5];\n    let wide: [i64; 3] = [14; 3];\n    return (bytes[4] as i32) - 9 + (wide[0] + wide[1] + wide[2]) as i32;\n}\n",
+            42,
+        ),
+        (
+            "repeat_one_and_empty",
+            "fn main() -> i32 {\n    let a = [1, 2, 3];\n    let b = [40; 1];\n    let c = [5; 0];\n    return a[1] + b[0];\n}\n",
+            42,
+        ),
+        (
+            "repeat_zero_each_iteration",
+            "fn main() -> i32 {\n    let total: i32 = 0;\n    let i: i32 = 0;\n    while (i < 3) {\n        let cell = [0; 2];\n        total = total + cell[0] + cell[1];\n        cell[0] = 9;\n        i = i + 1;\n    }\n    return total + 42;\n}\n",
+            42,
+        ),
+    ] {
+        assert_source_exit(name, source, expected);
+    }
+}
+
+#[test]
+fn x86_rejects_malformed_array_repeat_literals() {
+    // The count must be an integer literal, the repeat has exactly one value
+    // before `;`, and the repeated array must fit its context.
+    for (name, line, code) in [
+        ("repeat_named_count", "    let a = [0; N];", "LNC0016"),
+        ("repeat_negative_count", "    let a = [1; -1];", "LNC0016"),
+        ("repeat_float_count", "    let a = [1; 2.5];", "LNC0016"),
+        ("repeat_after_list", "    let a = [1, 2; 3];", "LNC0006"),
+        ("repeat_wrong_length", "    let a: [i32; 3] = [0; 4];", "LNC0006"),
+        ("repeat_wrong_type", "    let a: [bool; 2] = [1; 2];", "LNC0006"),
+    ] {
+        let source = format!("const N: i32 = 4;\nfn main() -> i32 {{\n{line}\n    return 0;\n}}\n");
+        let error = common::run_gpu_codegen_with_timeout(name, move || {
+            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+        })
+        .expect_err("a malformed array repeat must be rejected");
+        match error {
+            CompileError::Diagnostic(diagnostic) => {
+                assert_eq!(diagnostic.code, code, "{name}: {}", diagnostic.render());
+                assert_eq!(
+                    diagnostic
+                        .primary_label
+                        .as_ref()
+                        .and_then(|label| label.source_line.as_deref()),
+                    Some(line),
+                    "{name}: {}",
+                    diagnostic.render()
+                );
+                if name == "repeat_after_list" {
+                    assert!(
+                        diagnostic.render().contains("exactly one value before `;`"),
+                        "{name}: {}",
+                        diagnostic.render()
+                    );
+                }
+            }
+            other => panic!("{name}: expected a source-spanned rejection, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn x86_executes_an_uninitialized_array_passed_to_its_data_pointer() {
     // stdlib-foundation item 25: stack storage for a buffer.
     let sources = [

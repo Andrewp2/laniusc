@@ -730,6 +730,24 @@ fn parser_semantic_tokens_close_const_type_before_next_function() {
 }
 
 #[test]
+fn parser_semantic_tokens_retag_array_repeat_semicolons_and_counts() {
+    // `[value; count]`: the `;` directly inside an array-literal bracket is
+    // ArraySemicolon and the integer after it is ArrayRepeatCount. The `;`
+    // of an array type stays TypeSemicolon, and statement semicolons keep
+    // their owners.
+    let kinds = parser_semantic_token_kinds_for_source(
+        "fn main() -> i32 {\n    let a: [[i32; 2]; 3] = [[3; 2]; 3];\n    return a[0][0];\n}\n",
+    );
+    let count = |kind: TokenKind| kinds.iter().filter(|&&k| k == kind as u32).count();
+    assert_eq!(count(TokenKind::ArraySemicolon), 2, "{kinds:?}");
+    assert_eq!(count(TokenKind::ArrayRepeatCount), 2, "{kinds:?}");
+    assert_eq!(count(TokenKind::TypeSemicolon), 2, "{kinds:?}");
+    assert_eq!(count(TokenKind::LetSemicolon), 1, "{kinds:?}");
+    assert_eq!(count(TokenKind::ReturnSemicolon), 1, "{kinds:?}");
+    assert_eq!(count(TokenKind::Semicolon), 0, "{kinds:?}");
+}
+
+#[test]
 fn parser_semantic_semicolons_keep_statement_owner_across_struct_literals() {
     let kinds = parser_semantic_token_kinds_for_source(
         r#"

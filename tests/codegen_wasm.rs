@@ -63,6 +63,41 @@ fn wasm_rejects_lets_without_initializers_of_types_without_a_zero_value() {
 }
 
 #[test]
+fn wasm_executes_zero_array_repeat_with_node() {
+    // `[0; N]` lowers to the same zeroed storage as `let x: [T; N];`.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let b = [0; 1024];
+    let flags = [false; 3];
+    b[1000] = 5;
+    if (flags[2]) { return 1; }
+    return b[1000] + b[3] + b[1023] + 37;
+}
+"#,
+    )
+    .expect("a zero array repeat should compile to WASM");
+
+    let status =
+        common::run_wasm_main_return_with_node("WASM zero array repeat", "zero_array_repeat", &wasm);
+    assert_eq!(status, 42);
+}
+
+#[test]
+fn wasm_rejects_nonzero_array_repeat_until_lowered() {
+    // The Wasm emitter has no repeat-fill lowering yet; it must reject a
+    // nonzero `[value; count]` instead of emitting one element.
+    assert!(
+        common::compile_source_to_wasm_with_timeout(
+            "fn main() -> i32 {\n    let a = [7; 4];\n    return a[3];\n}\n"
+        )
+        .is_err(),
+        "a nonzero array repeat must not compile to WASM yet"
+    );
+}
+
+#[test]
 fn wasm_executes_scalar_constant_return_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

@@ -2597,8 +2597,10 @@ also fixes the imported struct-return relocation path described below.
     `tests/fixtures/stdlib_foundation/repro_uninitialized_array_data_ptr.lani`
     passes an uninitialized `[i32; 4]` to `core::mem::i32_array_data_ptr` and
     runs on x86 (`tests/codegen_x86.rs`). A `[i32; 1024]` declaration lowers
-    to one fill, not a copy per word. Array repeat syntax such as `[0; 1024]`
-    still fails parsing (generics backlog b09). `std::env::current_dir_len`
+    to one fill, not a copy per word. The array repeat `[0; 1024]` (generics
+    backlog b09) lowers to the same fill on x86 and Wasm; a nonzero repeat
+    such as `[7; 4]` runs on x86 and is rejected on Wasm for now.
+    `std::env::current_dir_len`
     could now replace its 4096-byte heap allocation with a stack buffer. It
     still allocates, checks for null and returns `ENV_READ_UNAVAILABLE` on
     failure; the allocation failure is injected in

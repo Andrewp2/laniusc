@@ -1,0 +1,6 @@
+// expect: error LNC0017
+// A reference has no zero value.
+fn main() -> i32 {
+    let r: &i32;
+    return 0;
+}
