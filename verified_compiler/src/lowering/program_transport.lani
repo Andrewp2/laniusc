@@ -158,7 +158,7 @@ fn bundle_trees_base(unit_count: i32) -> i32 {
 }
 fn bundle_descriptors_base(unit_count: i32) -> i32 {
     return bundle_trees_base(unit_count)
-        + unit_count * verified::syntax_tree::TREE_BYTES
+        + unit_count * verified::syntax_tree::tree_bytes()
             / verified::host::I32_BYTES;
 }
 fn tree_catalog(memory: ptr, unit_count: i32)
@@ -216,7 +216,7 @@ fn value_catalog(memory: ptr, unit_count: i32)
 }
 fn bundle_resolutions_base(unit_count: i32) -> i32 {
     return bundle_aliases_base(unit_count)
-        + unit_count * lowering::aliases::CATALOG_RECORD_BYTES
+        + unit_count * lowering::aliases::catalog_record_bytes()
             / verified::host::I32_BYTES;
 }
 fn alias_catalog(memory: ptr, unit_count: i32)

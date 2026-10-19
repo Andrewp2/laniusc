@@ -23,25 +23,22 @@ either fails. It needs only a checkout and the binary.
 The exit status is 1 when a case outside the list fails, or the compiler
 itself does not build.
 
-Known gap (2026-10-18): every case fails. The vc-built compiler.elf exits 10
-(lowering failure) even on `fn main() -> i32 { return 7; }`. The cause is that
-vc hard-codes record sizes for two-word slices; fix it by deriving them from
-core::mem::size_of. Slices are now three words (data, length, stride), so a
-raw view of any record that holds a slice is read at the wrong offsets. The
-first failure is prepare_catalogs in lowering/program_transport.lani, at
-`tree.node_count != nodes_in_unit`. Suspect constants, each of which needs
-checking against its record's fields:
-  verified/syntax_tree.lani      TREE_BYTES = 6 * FIELD_BYTES (Tree is 8 words)
-  lowering/aliases.lani          CATALOG_RECORD_BYTES = 6 * NATIVE_FIELD_BYTES
-  lowering/declarations.lani     the Catalog of Table rows
-  verified/token.lani            TokenTable views ({data: [TokenRow], ...})
-  lowering/unit_context.lani     UnitContext rows
-  backend/constant_index.lani    ROW_BYTES = 6 * FIELD_BYTES
-  backend/function_index.lani    FUNCTION_BYTES / PARAMETER_BYTES
-  ir/type_catalog.lani, ir/symbol_catalog.lani, ir/constant_catalog.lani
-                                 *_BYTES = N * SLOT_BYTES
-89 vc structs contain a slice field. --compile-only is the gate step until
-vc is updated.
+Known gaps (2026-10-19): 71 of 81 pass. vc's three strides for records that
+hold a slice (syntax_tree::Tree, aliases::Catalog, body_catalog::FunctionBody)
+now come from core::mem::size_of, since slices are three words. The 10 FAILs:
+  laniusc accepts an invalid program (vc rejects it):
+    invalid_generic_slice_length (bool length), invalid_generic_slice_pointer
+    (integer pointer), invalid_void_return (`return;` in an i32 fn),
+    invalid_while_condition (`while (1)`)
+  the case assumes two-word slices: backend_descriptor_slice_field (alloc(16)
+    for a one-slice record; the laniusc build reads past it, exit -11)
+  semantics differ: compiler_uninitialized_self_assignment (laniusc zero-fills
+    `let value: i32;`, vc traps on the read)
+  vc lags the language: usize_widening_direct_lean (vc still widens i32 to
+    usize implicitly)
+  vc gaps: match_non_exhaustive_trap (vc lowering rejects, exit 10),
+    typed_slice_intrinsic_call (vc rejects, exit 11), compiler_extern_metadata
+    (vc's close(1) returns 255, laniusc's returns 0)
 """
 import argparse
 import ctypes

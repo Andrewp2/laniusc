@@ -1,5 +1,6 @@
 module ir::body_catalog;
 
+import core::mem;
 import ir::body_events;
 import ir::body_tree;
 import ir::type_ref;
@@ -8,13 +9,8 @@ import verified::host;
 // One native body per Core function. Events are copied once from the reusable
 // lowering arena; their tree index is built once for later consumers.
 const FIELD_BYTES: i32 = 8;
-// Signature: four native slots; indexed tree: eight native slots.
-const RECORD_FIELDS: i32 = 12;
-const RECORD_BYTES: i32 = RECORD_FIELDS * FIELD_BYTES;
 const COUNT_BYTES: i32 = FIELD_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
-pub const MAX_CAPACITY: i32 =
-    (verified::host::I32_MAX - COUNT_BYTES) / RECORD_BYTES;
 
 pub struct FunctionSignature {
     id: i32,
@@ -46,13 +42,20 @@ pub fn empty() -> Catalog {
     };
 }
 
+fn record_bytes() -> i32 {
+    return core::mem::size_of<FunctionBody>() as i32;
+}
+
 pub fn allocation_bytes(capacity: i32) -> i32 {
-    if (capacity <= 0 || capacity > MAX_CAPACITY) { return -1; }
-    return COUNT_BYTES + capacity * RECORD_BYTES;
+    if (capacity <= 0
+        || capacity > (verified::host::I32_MAX - COUNT_BYTES) / record_bytes()) {
+        return -1;
+    }
+    return COUNT_BYTES + capacity * record_bytes();
 }
 
 pub fn from_raw_parts(memory: ptr, capacity: i32) -> Catalog {
-    let first: ptr = memory + capacity * RECORD_BYTES;
+    let first: ptr = memory + capacity * record_bytes();
     let count: [CountCell] = slice_from_raw_parts(memory, 1);
     count[0].value = 0;
     return Catalog {

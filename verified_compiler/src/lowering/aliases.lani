@@ -1,4 +1,5 @@
 module lowering::aliases;
+import core::mem;
 import lowering::declarations;
 import lowering::builtin;
 import ir::type_ref;
@@ -20,7 +21,6 @@ const ALIAS_TARGET_WORDS: i32 = 1 + ir::type_ref::STORAGE_WORDS;
 pub const SYMBOL_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
 pub const SYMBOL_RECORD_BYTES: i32 = (1 + ALIAS_TARGET_WORDS)
     * NATIVE_FIELD_BYTES;
-pub const CATALOG_RECORD_BYTES: i32 = 6 * NATIVE_FIELD_BYTES;
 pub const CATALOG_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
 const FIRST_PATH_TOKEN: i32 = 0;
 const WORK_FIELDS_PER_RECORD: i32 = 3 + ALIAS_TARGET_WORDS;
@@ -71,10 +71,14 @@ pub struct Table {
     count: i32,
 }
 
+pub fn catalog_record_bytes() -> i32 {
+    return core::mem::size_of<Catalog>() as i32;
+}
+
 pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
     let first: ptr = memory;
     if (count > 0) {
-        first = memory + count * CATALOG_RECORD_BYTES
+        first = memory + count * catalog_record_bytes()
             - NATIVE_FIELD_BYTES;
     }
     return Table { data: slice_from_raw_parts(first, count), count: count };
