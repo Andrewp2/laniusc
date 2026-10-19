@@ -1445,6 +1445,10 @@ impl ProofKernels {
         let plan = proof_key_index("type_checker/program_evidence/entries/70_plan_solver_wave")?;
         let slot_bytes = u64::from(stride) * 4;
         let mut steps = Vec::with_capacity(slots.len() + segments.len());
+        // A slot step's bindings depend only on its kernel and phase: its slot
+        // parameters are a dynamic offset into the one slot buffer. So the
+        // steps of one (kernel, phase) share a bind group.
+        let mut slot_bindings: Vec<((usize, u32), wgpu::BindGroup)> = Vec::new();
         for (point, first, end) in segments {
             let (params, params_offset) = params_block(
                 catalog,
@@ -1482,23 +1486,34 @@ impl ProofKernels {
             for slot in first..end {
                 let (index, phase, _, _, _) = slots[slot];
                 let offset = slot_buffer.absolute_offset(slot as u64 * slot_bytes);
-                let resources = [
-                    ("program_evidence_params", params_binding(&slot_buffer.buffer)),
-                    ("program_evidence_catalog", catalog.buffer.as_entire_binding()),
-                    ("program_evidence_batch", input.buffer.as_entire_binding()),
-                    ("program_evidence_output", output.buffer.as_entire_binding()),
-                    ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
-                    ("proof_store_params", params_binding(&proof_uniform(phase).0)),
-                    ("thread_scratch", scratch.as_entire_binding()),
-                    ("program_evidence_proof_demand", demand.as_entire_binding()),
-                ];
-                let bindings = passes_core::bind_group::create_bind_group_from_bindings(
-                    device,
-                    Some("program_evidence.bindings"),
-                    &self.passes[index],
-                    0,
-                    &resources,
-                )?;
+                let shared = slot_bindings
+                    .iter()
+                    .find(|(key, _)| *key == (index, phase))
+                    .map(|(_, bindings)| bindings.clone());
+                let bindings = match shared {
+                    Some(bindings) => bindings,
+                    None => {
+                        let resources = [
+                            ("program_evidence_params", params_binding(&slot_buffer.buffer)),
+                            ("program_evidence_catalog", catalog.buffer.as_entire_binding()),
+                            ("program_evidence_batch", input.buffer.as_entire_binding()),
+                            ("program_evidence_output", output.buffer.as_entire_binding()),
+                            ("program_evidence_proof_store", proof.storage.buffer.as_entire_binding()),
+                            ("proof_store_params", params_binding(&proof_uniform(phase).0)),
+                            ("thread_scratch", scratch.as_entire_binding()),
+                            ("program_evidence_proof_demand", demand.as_entire_binding()),
+                        ];
+                        let bindings = passes_core::bind_group::create_bind_group_from_bindings(
+                            device,
+                            Some("program_evidence.bindings"),
+                            &self.passes[index],
+                            0,
+                            &resources,
+                        )?;
+                        slot_bindings.push(((index, phase), bindings.clone()));
+                        bindings
+                    }
+                };
                 let offsets = params_offsets(&self.passes[index], [u32::try_from(offset)?, proof_uniform(phase).1]);
                 steps.push(WaveStep {
                     pass: index,
