@@ -248,10 +248,9 @@ fn full_clears() -> bool {
     *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_LOWERING_FULL_CLEARS", false))
 }
 
-/// `LANIUS_JOB_SIZED_DIRECT_OPS=1` records the job-sized direct lowering
-/// operations (`JobSized`) over the job's grid instead of the workspace's
-/// built grid. Off by default until every operation's grid is validated
-/// against fresh workspaces, including with the phase-reset poison.
+/// Whether the job-sized direct lowering operations (`JobSized`) record the
+/// job's grid; `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps every workspace's built
+/// grid, for A/B runs.
 fn job_sized_direct_ops() -> bool {
     #[cfg(test)]
     {
@@ -262,7 +261,7 @@ fn job_sized_direct_ops() -> bool {
         }
     }
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_JOB_SIZED_DIRECT_OPS", false))
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_JOB_SIZED_DIRECT_OPS", true))
 }
 
 /// Test override of `LANIUS_JOB_SIZED_DIRECT_OPS`: 0 off, 1 on, anything
@@ -673,8 +672,8 @@ impl GpuLoweringPipeline {
     }
 
     /// The job's capacities when they are below this workspace's, for the
-    /// direct operations whose grids they bound (`JobSized`), when
-    /// `LANIUS_JOB_SIZED_DIRECT_OPS=1` is set.
+    /// direct operations whose grids they bound (`JobSized`), unless
+    /// `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps the built grids.
     fn sized_job(&self, job: LoweringCapacities) -> Option<LoweringCapacities> {
         self.smaller_job(job).filter(|_| job_sized_direct_ops())
     }
@@ -1154,7 +1153,7 @@ impl GpuLoweringPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gpu::{device, passes_core::pipeline_creation_count};
+    use crate::gpu::device;
 
     #[test]
     fn job_totals_past_the_jobs_capacities_fail_as_the_gpu_checks_would() {
@@ -1212,10 +1211,10 @@ mod tests {
                 crate::compiler::GpuCompilerBackends::all(),
             ))
             .unwrap();
-        let pipelines_after_prepare = pipeline_creation_count();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let source = "fn main() -> i32 { return 42; }";
         pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
         pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
-        assert_eq!(pipeline_creation_count(), pipelines_after_prepare);
+        assert_eq!(crate::gpu::passes_core::this_thread_gpu_activity().since(before).pipelines, 0);
     }
 }
