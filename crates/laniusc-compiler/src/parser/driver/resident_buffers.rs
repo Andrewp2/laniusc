@@ -331,12 +331,8 @@ impl GpuParser {
 pub(crate) const WARM_SHAPE_TOKEN_HEADROOM: u32 = ResidentParserAllocation::GRANULARITY;
 
 /// Which headroom a cold job's parser shape gets: (tokens, tree).
-/// `LANIUS_PARSER_SHAPE_HEADROOM` is `1` for both, `tokens` or `tree` for one,
-/// and `0` (the default) for exact shapes. Off by default: with a token
-/// capacity above the job's token count, a cold compile of a project whose
-/// files carry long comments or runs of blanks fails LNC0010 (unresolved
-/// import): some reader, probably in module resolution, still takes the
-/// capacity for the count.
+/// `LANIUS_PARSER_SHAPE_HEADROOM` is `0` for exact shapes, `tokens` or `tree`
+/// for one, and anything else (the default) for both.
 pub(crate) fn warm_shape_headroom() -> (bool, bool) {
     #[cfg(test)]
     {
@@ -348,10 +344,10 @@ pub(crate) fn warm_shape_headroom() -> (bool, bool) {
     }
     static MODE: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
     *MODE.get_or_init(|| match std::env::var("LANIUS_PARSER_SHAPE_HEADROOM").as_deref() {
-        Ok("1" | "on" | "true") => (true, true),
+        Ok("0" | "off" | "false") => (false, false),
         Ok("tokens") => (true, false),
         Ok("tree") => (false, true),
-        _ => (false, false),
+        _ => (true, true),
     })
 }
 
