@@ -3137,11 +3137,53 @@ fn syntax_error_to_compile_error_for_source_span_with_message(
     len: usize,
     message: impl Into<String>,
 ) -> super::CompileError {
-    super::CompileError::Diagnostic(
-        Diagnostic::error("LNC0016", "syntax error").with_primary_label(
-            diagnostic_label_from_source_span(diagnostic_path, source, start, len, message),
-        ),
-    )
+    let mut diagnostic = Diagnostic::error("LNC0016", "syntax error").with_primary_label(
+        diagnostic_label_from_source_span(diagnostic_path, source, start, len, message),
+    );
+    if generic_arguments_without_tail_before(source, start) {
+        diagnostic = diagnostic.with_help(GENERIC_ARGUMENT_TAIL_HELP);
+    }
+    super::CompileError::Diagnostic(diagnostic)
+}
+
+const GENERIC_ARGUMENT_TAIL_HELP: &str = "after a path, `<` opens generic arguments only when \
+     its closing `>` is directly followed by `(`, `::` or `{`; otherwise `<` and `>` are \
+     comparisons";
+
+/// Whether the syntax error at `start` directly follows `ident<...>` that is
+/// not followed by `(`, `::` or `{`. The parser reads such a `<` as a
+/// comparison (the value-context lookahead rule), so the rejection usually
+/// means generic arguments were meant.
+fn generic_arguments_without_tail_before(source: &str, start: usize) -> bool {
+    let bytes = source.as_bytes();
+    let start = start.min(bytes.len());
+    if matches!(bytes.get(start), Some(b'(' | b':' | b'{')) {
+        return false;
+    }
+    let mut at = start;
+    while at > 0 && bytes[at - 1].is_ascii_whitespace() {
+        at -= 1;
+    }
+    if at == 0 || bytes[at - 1] != b'>' {
+        return false;
+    }
+    let mut depth = 0usize;
+    let mut i = at;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'>' => depth += 1,
+            b'<' => {
+                depth -= 1;
+                if depth == 0 {
+                    return i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+                }
+            }
+            b';' | b'{' | b'}' | b'(' | b')' | b'=' | b'\n' => return false,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Source file plus global byte range used for source-pack diagnostics.
@@ -5138,6 +5180,32 @@ mod tests {
             source_pack_nearest_file_for_global_span(&files, eof).expect("nearest source file");
 
         assert_eq!(file.path, PathBuf::from("second.lani"));
+    }
+
+    #[test]
+    fn syntax_error_after_untailed_generic_arguments_explains_the_lookahead_rule() {
+        let source = "fn main() -> i32 {\n    let f: i32 = gen::a::id<i32>;\n    return 0;\n}\n";
+        let start = source.find(">;").unwrap() + 1;
+        assert!(generic_arguments_without_tail_before(source, start));
+        let err = syntax_error_to_compile_error_for_source_span_with_message(
+            Path::new("app.lani"),
+            source,
+            start,
+            1,
+            "expected an expression",
+        );
+        let diagnostic = match err {
+            super::super::CompileError::Diagnostic(diagnostic) => diagnostic,
+            other => panic!("expected structured diagnostic, got {other:?}"),
+        };
+        assert_eq!(diagnostic.help.as_deref(), Some(GENERIC_ARGUMENT_TAIL_HELP));
+        // A comparison, a called application and nested `>>` stay unannotated.
+        let compare = "let c: bool = a < b;\n";
+        assert!(!generic_arguments_without_tail_before(compare, compare.find(';').unwrap()));
+        let called = "let v: i32 = id<i32>(1) +;\n";
+        assert!(!generic_arguments_without_tail_before(called, called.find(';').unwrap()));
+        let nested = "let v = id<Pair<i32>>;\n";
+        assert!(generic_arguments_without_tail_before(nested, nested.find(';').unwrap()));
     }
 
     #[test]

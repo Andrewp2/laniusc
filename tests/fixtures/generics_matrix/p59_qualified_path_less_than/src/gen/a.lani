@@ -1,0 +1,20 @@
+module gen::a;
+
+pub const LIMIT: i32 = 5;
+
+pub struct Pair<T> {
+    left: T,
+    right: T,
+}
+
+pub fn make<T>(v: T) -> Pair<T> {
+    return Pair { left: v, right: v };
+}
+
+pub fn left_of<T>(p: Pair<T>) -> T {
+    return p.left;
+}
+
+pub fn id<T>(v: T) -> T {
+    return v;
+}

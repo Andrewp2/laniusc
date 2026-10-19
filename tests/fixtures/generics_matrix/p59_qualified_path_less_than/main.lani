@@ -1,0 +1,68 @@
+module app::main;
+
+// After a path, `<` opens generic arguments only when its matching `>` is
+// directly followed by `(`, `::` or a struct literal's `{`. Otherwise it is
+// a comparison. Each check below adds to the total; it returns 42.
+
+import gen::a;
+import gen::b;
+
+struct Local<T> {
+    v: T,
+}
+
+enum Choice {
+    A,
+    B,
+}
+
+fn pick(a: i32, b: bool) -> i32 {
+    if (b) {
+        return a;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    let x: i32 = 3;
+    let y: i32 = 4;
+    let t: i32 = 0;
+    // A qualified constant compared on either side.
+    if (gen::a::LIMIT < 7) { t = t + 1; }
+    if ((gen::a::LIMIT < 7)) { t = t + 1; }
+    if (7 > gen::a::LIMIT) { t = t + 1; }
+    if (gen::a::LIMIT < gen::b::MAX) { t = t + 1; }
+    if (x < gen::a::LIMIT && y > 0) { t = t + 1; }
+    if (gen::a::LIMIT > x && gen::b::MAX < 10) { t = t + 1; }
+    let c: bool = gen::a::LIMIT < y;
+    if (!c) { t = t + 1; }
+    // A comparison as a later call argument, an array element, a struct
+    // literal field and a match arm value.
+    t = t + pick(1, x < y);
+    let flags: [bool; 2] = [gen::a::LIMIT < 7, x > y];
+    if (flags[0] && !flags[1]) { t = t + 1; }
+    let lb: Local<bool> = Local { v: x < y };
+    if (lb.v) { t = t + 1; }
+    let ch: Choice = A;
+    let ok: bool = match (ch) {
+        A => x < gen::a::LIMIT,
+        B => false,
+    };
+    if (ok) { t = t + 1; }
+    // Generic arguments still parse: calls, a nested `>>` call, a generic
+    // struct literal, and generic calls compared with each other.
+    let p: gen::a::Pair<i32> = gen::a::make<i32>(5);
+    t = t + gen::a::left_of<i32>(p);
+    t = t + gen::a::id<i32>(4);
+    let p2: gen::a::Pair<i32> = gen::a::id<gen::a::Pair<i32>>(p);
+    t = t + gen::a::left_of<i32>(p2);
+    if (gen::a::id<i32>(x) < gen::a::id<i32>(y)) { t = t + 1; }
+    let l: Local<i32> = Local<i32> { v: 2 };
+    t = t + l.v;
+    // A loop condition.
+    while (x < gen::a::LIMIT) {
+        x = x + 1;
+        t = t + 1;
+    }
+    return t + 12;
+}
