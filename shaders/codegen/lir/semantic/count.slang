@@ -214,8 +214,14 @@ void count_original(uint3 dtid)
             return;
         }
         uint parent = compact_expr_parent[node];
+        // The count of `[value; count]` is constant syntax: the checked
+        // array type carries it, so it has no row of its own. A zero value
+        // has none either: its literal lowers as a zero fill of the array.
         bool owned_syntax = parent < count &&
-            ((compact_hir_core[parent].kind == HIR_CALL_EXPR &&
+            ((hir_array_is_repeat(compact_hir_core[parent], compact_hir_payload[parent]) &&
+              (compact_hir_payload[parent].b == node ||
+               compact_hir_payload[parent].a == HIR_ARRAY_REPEAT_ZERO)) ||
+             (compact_hir_core[parent].kind == HIR_CALL_EXPR &&
               compact_hir_payload[parent].a == node) ||
              ((compact_hir_core[parent].kind == HIR_STMT ||
                compact_hir_core[parent].kind == HIR_ASSIGN_EXPR) &&

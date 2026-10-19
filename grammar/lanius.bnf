@@ -390,3 +390,15 @@ cast_type_path_tail [cast_type_path_end] -> ;
 # after a match arm's arrow is still logical not. The production sits at the
 # end of the file to keep earlier production IDs.
 type_expr [type_never] -> 'ReturnNever';
+
+# ----- Array repeat -----
+# `[value; count]` builds an array whose every element is `value`. The `;`
+# gets its own token kind only when the innermost enclosing delimiter is an
+# array literal's `[`, so a `;` in a block inside the brackets still ends a
+# statement. The count is an integer literal, which the parser retags after
+# that `;`: the pair (count, `]`) then names a unique stack change, as LLP(1,1)
+# parsing requires. The tail is shared by every element (a first-element-only
+# tail would give `]` two stack changes), so the checker rejects `[a, b; n]`.
+# The productions sit at the end of the file to keep earlier production IDs.
+array_elems_tail [array_repeat] -> 'ArraySemicolon' array_repeat_count;
+array_repeat_count [array_repeat_count] -> 'ArrayRepeatCount';

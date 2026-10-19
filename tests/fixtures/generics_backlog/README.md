@@ -13,9 +13,6 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b09: the array repeat expression `[10; 4]`. LNC0016 at 2:30 ("expected `]`
-  or `,`, found `;`"). Generic fixed-capacity containers take their backing
-  array from the caller instead. Blocks none.
 - b11: a diverging match arm, `None -> core::panic::panic()`, in a generic
   function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
   Blocks a generic unwrap or expect; no existing module panics.
@@ -66,7 +63,8 @@ static member `T::same(a, b)` through `T: Same<T>` is p44; a self method
 through `T: Conv<i32>` is p45; a const-generic impl's method through
 `S: Size` on `Buf<i32, 3>` is p46. b07 (a const parameter as a cast operand,
 `N as i32`) is p47. b08 (a match expression as the value of an arm that
-other arms follow) is p48. b10 (`core::mem::size_of<T>()`, directly and from a
+other arms follow) is p48. b09 (the array repeat `[10; 4]`, also
+in a generic body) is p70. b10 (`core::mem::size_of<T>()`, directly and from a
 generic body) is p52; generic allocation-backed buffers over it and
 `core::mem::typed_slice_from_storage` are
 tests/fixtures/stdlib_foundation/core_mem_size_of.lani.

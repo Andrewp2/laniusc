@@ -453,6 +453,8 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
     uint token_i = parser_i - 1u;
     if (bracket_semantic_kind[token_i] == TK_TYPE_SEMICOLON)
         return TK_TYPE_SEMICOLON;
+    if (bracket_semantic_kind[token_i] == TK_ARRAY_SEMICOLON)
+        return TK_ARRAY_SEMICOLON;
     if (in_trait_body_context(parser_i, count))
         return TK_TRAIT_METHOD_SEMICOLON;
     if (extern_fn_signature_context_before(token_i))
@@ -501,6 +503,11 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
             return TK_TRAIT_PUB;
         return TK_PUB;
     }
+    // The count of `[value; count]` is an integer literal with its own kind,
+    // so the array's closing bracket after it has a unique predecessor pair.
+    if (raw_kind == TK_INT && parser_i >= 2u && parser_i - 2u < count &&
+        bracket_semantic_kind[parser_i - 2u] == TK_ARRAY_SEMICOLON)
+        return TK_ARRAY_REPEAT_COUNT;
     if (raw_kind == TK_STRING && statement_context_token_kind(parser_i - 1u) == TK_IMPORT)
         return TK_IMPORT_STRING;
     if (raw_kind == TK_STRING && statement_context_token_kind(parser_i - 1u) == TK_EXTERN)

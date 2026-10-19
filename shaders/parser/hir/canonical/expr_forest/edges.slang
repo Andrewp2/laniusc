@@ -114,6 +114,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // The iterable/range wrapper is control syntax. Its bound
             // expressions remain independent value roots.
             publish_parent(payload.c, row);
+        else if (hir_array_is_repeat(core, payload))
+            // The count of `[value; count]` is constant syntax owned by the
+            // literal, never an element or an evaluated value.
+            publish_parent(payload.b, row);
         else if (core.kind == HIR_CALL_EXPR && valid_hir(payload.a))
             // The callee is owned syntax, not an independently evaluated
             // value. Keeping this edge for paths as well as member chains

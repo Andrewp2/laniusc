@@ -138,6 +138,43 @@ public struct HirArrayElement
     public uint file_id;
 }
 
+// An array literal (kind 24) leaves payload a to c INVALID and keeps its
+// statement context in d. `[value; count]` sets a to HIR_ARRAY_REPEAT, b to
+// the dense row of the count operand and c to the count's first token. Its
+// value is its only element row. When that value is an integer or char
+// literal 0 or `false`, a is HIR_ARRAY_REPEAT_ZERO instead: every word of
+// the array is zero, so lowering needs no value stores. A `; count` after a
+// later element, as in `[a, b; n]`, gives HIR_ARRAY_REPEAT_AFTER_LIST with
+// c at the `;`; the checker rejects it.
+public static const uint HIR_ARRAY_REPEAT = 37u;
+public static const uint HIR_ARRAY_REPEAT_ZERO = 38u;
+public static const uint HIR_ARRAY_REPEAT_AFTER_LIST = 39u;
+
+public bool hir_array_is_repeat(HirCore core, HirPayload payload)
+{
+    return core.kind == 24u &&
+        (payload.a == HIR_ARRAY_REPEAT || payload.a == HIR_ARRAY_REPEAT_ZERO ||
+         payload.a == HIR_ARRAY_REPEAT_AFTER_LIST);
+}
+
+// The length of the array literal `node` with `elements` element rows: for
+// `[value; count]` the count, which must be an integer literal that fits in
+// u32 (0xffffffff otherwise); for any other literal its element count.
+public uint hir_array_literal_length(StructuredBuffer<HirCore> core,
+    StructuredBuffer<HirPayload> payload, uint hir_count, uint node, uint elements)
+{
+    if (node >= hir_count || !hir_array_is_repeat(core[node], payload[node]))
+        return elements;
+    uint count = payload[node].b;
+    if (payload[node].a == HIR_ARRAY_REPEAT_AFTER_LIST ||
+        count >= hir_count || core[count].kind != 23u) return 0xffffffffu;
+    HirPayload literal = payload[count];
+    // Form 3 is an integer literal; b and c hold its magnitude's low and
+    // high words. 0xffffffff stays reserved for the failure value.
+    return literal.a == 3u && literal.c == 0u && literal.b != 0xffffffffu
+        ? literal.b : 0xffffffffu;
+}
+
 public struct HirString
 {
     public uint node;

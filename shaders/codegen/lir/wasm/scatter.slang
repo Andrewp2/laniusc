@@ -103,6 +103,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
     {
         uint element_rows = operands.b * 6u;
+        // `[value; count]` with a nonzero value would store its one element
+        // only once; Wasm has no repeat lowering yet, so it fails visibly.
+        if (operands.c == SEMANTIC_LIR_AGGREGATE_REPEAT)
+            flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         bool tagged_enum = (operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u;
         uint tag_rows = tagged_enum ? 5u : 0u;
         if (local_row < element_rows)

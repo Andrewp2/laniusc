@@ -78,6 +78,7 @@ static const uint TK_ARRAY_COMMA = 83u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_TYPE_SEMICOLON = 87u;
+static const uint TK_ARRAY_SEMICOLON = 198u;
 static const uint TK_MATCH_LBRACE = 119u;
 static const uint TK_STRUCT_LIT_LBRACE = 125u;
 static const uint TK_STRUCT_LIT_RBRACE = 126u;
@@ -276,6 +277,24 @@ bool nearest_bracket_open_kind_before(uint token_i, uint wanted_kind)
         bracket_open_kind(open_i) == wanted_kind;
 }
 
+// A `;` whose innermost enclosing delimiter is an array literal's `[`
+// separates the repeated value from the count in `[value; count]`. A `;` in
+// a block or a parenthesis inside the brackets belongs to that block.
+bool array_repeat_semicolon(uint token_i)
+{
+    uint open_i;
+    if (!nearest_bracket_open_before(token_i, open_i) ||
+        bracket_open_kind(open_i) != TK_ARRAY_LBRACKET)
+        return false;
+    uint count = active_token_count();
+    uint4 enclosing = token_enclosing_open[token_i];
+    if (paren_depth_at(token_i) > 0 && enclosing.x < count && enclosing.x > open_i)
+        return false;
+    if (brace_depth_at(token_i) > 0 && enclosing.y < count && enclosing.y > open_i)
+        return false;
+    return true;
+}
+
 uint close_kind_for_open_kind(uint open_kind)
 {
     if (open_kind == TK_TYPE_ARRAY_LBRACKET)
@@ -311,6 +330,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         if (raw_kind == TK_SEMICOLON &&
             nearest_bracket_open_kind_before(token_i, TK_TYPE_ARRAY_LBRACKET))
             bracket_semantic_kind[token_i] = TK_TYPE_SEMICOLON;
+        if (raw_kind == TK_SEMICOLON && array_repeat_semicolon(token_i))
+            bracket_semantic_kind[token_i] = TK_ARRAY_SEMICOLON;
         return;
     }
 
