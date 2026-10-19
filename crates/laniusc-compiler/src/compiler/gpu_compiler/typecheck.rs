@@ -131,6 +131,9 @@ impl<'a> DependencyInterfacePages<'a> {
 /// The parser token capacity a cold job records: its token count with
 /// headroom (`token_capacity_with_headroom`) within the lexer's token buffer.
 fn cold_token_capacity(token_count: u32, bufs: &crate::lexer::buffers::GpuBuffers) -> u32 {
+    if !crate::parser::driver::warm_shape_headroom().0 {
+        return token_count.max(1);
+    }
     crate::parser::driver::token_capacity_with_headroom(
         token_count,
         u32::try_from(bufs.tokens_out.count).unwrap_or(u32::MAX),
@@ -247,7 +250,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                     .tree_capacity;
                 // A warm edit within the token headroom must also fit the
                 // tree, or it would replace the parser workspace.
-                crate::parser::driver::tree_capacity_with_headroom(measured, input.token_capacity)
+                if crate::parser::driver::warm_shape_headroom().1 {
+                    crate::parser::driver::tree_capacity_with_headroom(
+                        measured,
+                        input.token_capacity,
+                    )
+                } else {
+                    measured
+                }
             }
         };
         host_timer.stamp(match (forced_tree_capacity, reusable_capacity) {

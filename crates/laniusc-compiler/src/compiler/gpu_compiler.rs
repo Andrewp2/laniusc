@@ -599,6 +599,18 @@ mod tests {
     // where the original had a comment), still compiles correctly through
     // the lexer-boundary retry.
     fn run_warm_shape_headroom() {
+        use std::sync::atomic::Ordering;
+
+        use crate::parser::driver::TEST_WARM_SHAPE_HEADROOM;
+
+        struct HeadroomGuard;
+        impl Drop for HeadroomGuard {
+            fn drop(&mut self) {
+                TEST_WARM_SHAPE_HEADROOM.store(u8::MAX, Ordering::Relaxed);
+            }
+        }
+        let _guard = HeadroomGuard;
+        TEST_WARM_SHAPE_HEADROOM.store(1, Ordering::Relaxed);
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
             gpu,

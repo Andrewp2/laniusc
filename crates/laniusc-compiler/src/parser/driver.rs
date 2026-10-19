@@ -33,7 +33,13 @@ pub use results::{
     ResidentParseResult,
     ResidentParserCapacity,
 };
-pub(crate) use resident_buffers::{token_capacity_with_headroom, tree_capacity_with_headroom};
+#[cfg(test)]
+pub(crate) use resident_buffers::TEST_WARM_SHAPE_HEADROOM;
+pub(crate) use resident_buffers::{
+    token_capacity_with_headroom,
+    tree_capacity_with_headroom,
+    warm_shape_headroom,
+};
 pub use support::get_global_parser;
 use support::*;
 use token_frontend::ResidentTokenKindOperations;

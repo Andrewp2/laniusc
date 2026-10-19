@@ -330,20 +330,40 @@ impl GpuParser {
 /// thousand tokens of extra grid.
 pub(crate) const WARM_SHAPE_TOKEN_HEADROOM: u32 = ResidentParserAllocation::GRANULARITY;
 
-/// `LANIUS_PARSER_SHAPE_HEADROOM=0` records exact cold shapes, for A/B runs.
-fn warm_shape_headroom() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_PARSER_SHAPE_HEADROOM", true))
+/// Which headroom a cold job's parser shape gets: (tokens, tree).
+/// `LANIUS_PARSER_SHAPE_HEADROOM` is `1` for both, `tokens` or `tree` for one,
+/// and `0` (the default) for exact shapes. Off by default: with a token
+/// capacity above the job's token count, a dependency-page test compiles a
+/// wrong interface (some reader takes the capacity for the count).
+pub(crate) fn warm_shape_headroom() -> (bool, bool) {
+    #[cfg(test)]
+    {
+        match TEST_WARM_SHAPE_HEADROOM.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => return (false, false),
+            1 => return (true, true),
+            _ => {}
+        }
+    }
+    static MODE: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+    *MODE.get_or_init(|| match std::env::var("LANIUS_PARSER_SHAPE_HEADROOM").as_deref() {
+        Ok("1" | "on" | "true") => (true, true),
+        Ok("tokens") => (true, false),
+        Ok("tree") => (false, true),
+        _ => (false, false),
+    })
 }
+
+/// Test override of `LANIUS_PARSER_SHAPE_HEADROOM`: 0 off, 1 both, anything
+/// else follows the environment.
+#[cfg(test)]
+pub(crate) static TEST_WARM_SHAPE_HEADROOM: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(u8::MAX);
 
 /// The token capacity a cold job records for `token_count` tokens: the
 /// allocation bucket at least `WARM_SHAPE_TOKEN_HEADROOM` past the count,
 /// never past the lexer's token buffer and never below the count.
 pub(crate) fn token_capacity_with_headroom(token_count: u32, token_buffer_capacity: u32) -> u32 {
     let count = token_count.max(1);
-    if !warm_shape_headroom() {
-        return count;
-    }
     ResidentParserAllocation::capacity_bucket(count.saturating_add(WARM_SHAPE_TOKEN_HEADROOM))
         .min(token_buffer_capacity)
         .max(count)
@@ -354,9 +374,6 @@ pub(crate) fn token_capacity_with_headroom(token_count: u32, token_buffer_capaci
 /// allocation, so a warm edit within the token headroom does not overflow
 /// the tree and replace the parser workspace.
 pub(crate) fn tree_capacity_with_headroom(tree_capacity: u32, token_capacity: u32) -> u32 {
-    if !warm_shape_headroom() {
-        return tree_capacity;
-    }
     let tree = u64::from(tree_capacity.max(1));
     let extra = (tree * u64::from(WARM_SHAPE_TOKEN_HEADROOM))
         .div_ceil(u64::from(token_capacity.max(1)));
