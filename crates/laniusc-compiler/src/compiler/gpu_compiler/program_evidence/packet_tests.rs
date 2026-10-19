@@ -43,6 +43,7 @@ fn empty_unit(key: [u32; 2]) -> CompiledSourcePackUnit {
             implementation_arguments: vec![],
             implementation_method_bindings: vec![],
             name_bytes: vec![],
+            closure_summary: None,
         },
         object: CompiledSourcePackObject::X86_64(GpuX86RelocatableObject {
             version: GPU_X86_OBJECT_VERSION,

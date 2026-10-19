@@ -74,12 +74,35 @@ impl NativeProgramSession {
         let mut closure_calls = Vec::new();
         let mut closure_stats = [0usize; 4];
         if instance_closure_enabled() {
-            for (index, snapshot) in catalog.snapshots.iter().enumerate() {
+            // A dependent's instances of a library body (D1b) are that
+            // library snapshot's closure calls, after its own, merged over
+            // the dependents in snapshot order without repeats.
+            let mut dependency_calls = BTreeMap::<[u32; 2], Vec<(CheckedGenericCall, u32)>>::new();
+            let mut dependency_seen = BTreeSet::<([u32; 2], u32, String)>::new();
+            for snapshot in &catalog.snapshots {
                 let Some(closure) = snapshot.original_facts.instance_closure() else { continue };
-                closure_stats[0] += closure.instances.len();
-                let (calls, depths): (Vec<_>, Vec<_>) = closure.instances.iter()
-                    .filter(|instance| instance.call.has_closed_arguments())
-                    .map(|instance| (instance.call.clone(), instance.depth))
+                closure_stats[0] += closure.dependency_instances.len();
+                for instance in &closure.dependency_instances {
+                    if instance.unit == snapshot.unit
+                        || !dependency_seen.insert((instance.unit, instance.call.call_hir,
+                            format!("{:?}{:?}", instance.call.arguments, instance.call.constants)))
+                    {
+                        continue;
+                    }
+                    dependency_calls.entry(instance.unit).or_default()
+                        .push((instance.call.clone(), instance.depth));
+                }
+            }
+            for (index, snapshot) in catalog.snapshots.iter().enumerate() {
+                let local = snapshot.original_facts.instance_closure()
+                    .map_or(&[][..], |closure| closure.instances.as_slice());
+                closure_stats[0] += local.len();
+                let (calls, depths): (Vec<_>, Vec<_>) = local.iter()
+                    .map(|instance| (&instance.call, instance.depth))
+                    .chain(dependency_calls.get(&snapshot.unit).into_iter().flatten()
+                        .map(|(call, depth)| (call, *depth)))
+                    .filter(|(call, _)| call.has_closed_arguments())
+                    .map(|(call, depth)| (call.clone(), depth))
                     .unzip();
                 if calls.is_empty() { continue; }
                 closure_stats[1] += calls.len();

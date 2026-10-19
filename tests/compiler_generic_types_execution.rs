@@ -358,6 +358,17 @@ fn imported_trait_contract_records_preserve_ordinary_generic_execution() {
         &root, b"", 0);
 }
 
+#[test]
+fn dependency_closure_chains_execute_through_library_bodies() {
+    // D1b: library bodies first reached at depth 2 and 3 from the app's
+    // calls, an app-local argument (left to the replays) and a method root.
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/stdlib_compiler_state/closure-deps/stdlib");
+    execute_with_stdlib("dependency closure chains",
+        include_str!("fixtures/stdlib_compiler_state/closure-deps/chains.lani"),
+        &root, b"", 0);
+}
+
 fn imported_trait_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/stdlib_compiler_state/imported-trait-resolution/stdlib")

@@ -1625,6 +1625,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             SourcePackArtifactTarget::X86_64,
             library_id,
             unit_id,
+            true,
         )?;
         Ok(PendingOriginalUnit {
             facts: OriginalUnitFacts::from_unit(&unit),
@@ -1906,6 +1907,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             target,
             library_id,
             unit_id,
+            body_specialization.is_none(),
         )?;
         if let Some(input) = body_specialization {
             // Definition contracts belong to the checked template. Concrete
@@ -2635,6 +2637,7 @@ fn finish_source_pack_unit(
     target: SourcePackArtifactTarget,
     library_id: u32,
     unit_id: u32,
+    original: bool,
 ) -> Result<CompiledSourcePackUnit, CompileError> {
     let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.unit");
     let template_source_paths: std::sync::Arc<[Option<PathBuf>]> = match source_paths {
@@ -2644,7 +2647,7 @@ fn finish_source_pack_unit(
         )),
         None => vec![None; template_sources.len()].into(),
     };
-    let interface = artifacts.semantic_interface.ok_or_else(|| {
+    let mut interface = artifacts.semantic_interface.ok_or_else(|| {
         CompileError::GpuFrontend("compiled source-pack unit produced no semantic interface".into())
     })?;
     let object = match target {
@@ -2728,6 +2731,24 @@ fn finish_source_pack_unit(
         return Err(CompileError::GpuFrontend(
             "retained calls do not have exactly one checked owner row each".into(),
         ));
+    }
+    // An original unit's closure summary (D1b) rides on its interface for
+    // its dependents. A unit whose summary cannot be built has none, which
+    // its dependents treat as an absent summary.
+    if original {
+        match gpu_type_checker::ClosureSummary::build(
+            [library_id, unit_id],
+            &artifacts.generic_calls,
+            &artifacts.checked_call_owners,
+            &artifacts.checked_contracts,
+        ) {
+            Ok(summary) => interface.closure_summary = Some(std::sync::Arc::new(summary)),
+            Err(error) => {
+                if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
+                    eprintln!("[instance-closure] unit {library_id}:{unit_id} has no summary: {error}");
+                }
+            }
+        }
     }
     let closure = &artifacts.instance_closure;
     let instance_closure = (closure.found != 0 || closure.error.is_some())

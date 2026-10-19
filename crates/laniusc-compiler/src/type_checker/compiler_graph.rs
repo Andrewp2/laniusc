@@ -4586,6 +4586,8 @@ fn build_graph(
         super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
     let (closure_records, closure_argument_words) =
         super::instance_closure_passes::closure_canonical_extra(hir_rows);
+    let (dependency_closure_records, dependency_closure_argument_words) =
+        super::instance_closure_passes::closure_dependency_canonical_extra();
     let canonical_records = super::canonical_passes::register_canonical_passes(
         &mut graph,
         kernels,
@@ -4598,8 +4600,10 @@ fn build_graph(
             dependency_rows: u64::from(dependency_capacity.constant_type_rows),
             dependency_page_rows: dependency_type_rows,
             scale: canonical_scale,
-            extra_records: substitution_records + closure_records,
-            extra_argument_words: substitution_argument_words + closure_argument_words,
+            extra_records: substitution_records + closure_records + dependency_closure_records,
+            extra_argument_words: substitution_argument_words
+                + closure_argument_words
+                + dependency_closure_argument_words,
         },
     )?;
     // Substitution state, cleared ahead of the dependency pages: imported
