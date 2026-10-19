@@ -59,3 +59,11 @@ laniusc_compiler  gpu::passes_core::compute_pass_counting_tests::raw_gpu_command
 cli_daemon  cli_daemon_accepts_a_unix_socket_session  TBD  flaky: passes alone and with RUST_TEST_THREADS=1; at default threads 5 daemons start at once and the socket (bound after startup) misses the 10 s connect deadline. 5 stdio daemons started together: 2 ready in 1.6-2.5 s, 3 with no ready line after 60 s (multi-daemon startup stall)
 laniusc_compiler  gpu::readback::lifecycle_tests::gpu_paged_readback_cancels_failed_maps_before_staging_reuse  TBD  flaky under load: reads stale bytes after a cancelled map, possibly a real staging-reuse race
 laniusc_compiler  gpu::readback::gather::tests::gpu_gather_bind_groups_do_not_depend_on_regions  TBD  flaky: bind groups created per thread are 0 or 2 between runs of one build
+
+# type_checker_semantics (P12, 2026-10-19, RTX 3070 Laptop): 249 pass, these 5
+# fail on 813b6dd1 with and without 5ab2ee08's checker changes.
+type_checker_semantics  trait_methods_control::type_checker_accepts_owned_generic_trait_impl_operand_on_gpu  TBD  valid source rejected with LNC0021 (invalid trait implementation)
+type_checker_semantics  type_checker_accepts_array_length_from_fifth_const_generic_slot  TBD  valid source rejected with LNC0006 (type mismatch)
+type_checker_semantics  type_checker_rejects_overlapping_exact_and_generic_inherent_methods  TBD  rejected with LNC0027 "call resolution failed", not the expected "call does not match a resolved function or method"
+type_checker_semantics  type_checker_rejects_under_applied_inherent_impl_receiver_targets_on_gpu  TBD  rejected with LNC0021 "invalid trait implementation", not the expected "inherent impl target has the wrong number of type arguments"
+type_checker_semantics  type_checker_resolves_impl_parameter_before_same_named_nominal_on_gpu  TBD  valid source rejected with LNC0021 (invalid trait implementation)

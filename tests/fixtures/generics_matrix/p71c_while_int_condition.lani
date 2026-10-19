@@ -1,0 +1,7 @@
+// expect: error LNC0006
+// A while condition is bool, like an if condition.
+fn main() -> i32 {
+    let n: i32 = 1;
+    while (n) { n = 0; }
+    return 0;
+}
