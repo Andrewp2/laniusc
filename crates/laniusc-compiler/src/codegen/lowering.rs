@@ -847,6 +847,7 @@ fn register_semantic_inputs<'a>(
         "typecheck.external_type_local_index",
         semantic.external_type_local_index
     );
+    buffer!("typecheck.imported_layout_kind", semantic.imported_layout_kind);
 
     buffer!(
         "typecheck.type_instance_decl_token",
@@ -952,7 +953,7 @@ pub(crate) fn semantic_input_views<'a>(
     semantic: GpuSemanticArtifactView<'a>,
 ) -> Vec<TrackedBufferView<'a>> {
     let mut views = hir.tracked_views();
-    let semantic_views: [TrackedBufferView<'a>; 52] = [
+    let semantic_views: [TrackedBufferView<'a>; 53] = [
         semantic.value_decl_by_hir.into(),
         semantic.value_type_by_hir.into(),
         semantic.value_const_by_hir.into(),
@@ -981,6 +982,7 @@ pub(crate) fn semantic_input_views<'a>(
         semantic.external_type_library_id.into(),
         semantic.external_type_unit_id.into(),
         semantic.external_type_local_index.into(),
+        semantic.imported_layout_kind.into(),
         semantic.type_instance_decl_token.into(),
         semantic.type_instance_arg_count.into(),
         semantic.type_instance_arg_start.into(),
@@ -3692,6 +3694,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,
@@ -4047,6 +4050,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,
@@ -4331,6 +4335,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,
@@ -4615,6 +4620,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,

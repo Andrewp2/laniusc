@@ -1,0 +1,14 @@
+module app::main;
+
+import gen::lib;
+
+// Imported structs declared without an initializer are zero-filled from
+// their imported layout, then assigned.
+fn main() -> i32 {
+    let p: gen::lib::Pair;
+    let w: gen::lib::Wrap<i64>;
+    if (p.left != 0 || p.right != 0 || w.value != 0 || w.count != 0) { return 1; }
+    p = gen::lib::make(30, 2);
+    w = gen::lib::wrap(8);
+    return p.left + (p.right as i32) + (w.value as i32) + w.count;
+}

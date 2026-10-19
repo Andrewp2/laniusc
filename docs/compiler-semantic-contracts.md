@@ -53,17 +53,23 @@ The zero value of each type:
 
 - integers, `isize` and `usize`: 0;
 - `bool`: false; `char`: `'\0'`; `f32` and `f64`: +0.0; `ptr`: null;
-- a fixed array of these, such as `[i32; 1024]`, or a local struct: every word
-  is zero.
+- a fixed array of these, such as `[i32; 1024]`, a local struct, or a struct
+  imported from another module: every word is zero (an imported struct is
+  filled from its imported layout);
+- a slice: (null, 0, 0), a valid empty view. Its length is 0, so every index
+  fails the bounds check, and a later assignment replaces it.
 
-A `str`, a reference, a slice or an enum at the top level is rejected as
-unsupported, because its zero bits are not a value or would silently pick the
-first variant. x86 reports LNC0017 at the declaration. Wasm rejects it too,
-but only with its generic LNC0057 (see
-`tests/fixtures/known_gaps_codegen_wasm.txt`). Fields and elements are not
-checked. A struct with a `str` field gets the empty string, with a null data
-pointer; one with a reference field gets a null reference. A struct imported
-from another module is rejected for now.
+A `str`, a reference or an enum at the top level is rejected as unsupported,
+because its zero bits are not a value or would silently pick the first
+variant. x86 reports LNC0017 at the declaration. Wasm rejects it too, but only
+with its generic LNC0057 (see `tests/fixtures/known_gaps_codegen_wasm.txt`).
+Fields and elements are not checked. A struct with a `str` field gets the
+empty string, with a null data pointer; one with a reference field gets a null
+reference.
+
+Until 2026-10-18 evening, slices and imported structs were rejected too. That
+broke verified_compiler, which declares 16 `[i32]` and 4 imported-struct
+locals without initializers.
 
 Lowering:
 

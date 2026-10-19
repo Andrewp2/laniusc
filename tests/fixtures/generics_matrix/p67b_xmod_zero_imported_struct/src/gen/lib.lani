@@ -1,0 +1,19 @@
+module gen::lib;
+
+pub struct Pair {
+    left: i32,
+    right: i64,
+}
+
+pub struct Wrap<T> {
+    value: T,
+    count: i32,
+}
+
+pub fn make(left: i32, right: i64) -> Pair {
+    return Pair { left: left, right: right };
+}
+
+pub fn wrap(value: i64) -> Wrap<i64> {
+    return Wrap { value: value, count: 2 };
+}
