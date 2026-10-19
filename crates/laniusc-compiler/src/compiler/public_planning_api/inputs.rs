@@ -874,6 +874,22 @@ fn source_root_module_path(source_root: &Path, import_path: &str) -> PathBuf {
     path
 }
 
+/// Whether `old` and `new`, two versions of the source file at `source_path`,
+/// import the same module paths in the same order, so import discovery
+/// (`collect_entry_source_root_paths`) would find the same files. A file
+/// whose imports cannot be read in either version does not match.
+pub(crate) fn source_root_import_paths_match(old: &str, new: &str, source_path: &Path) -> bool {
+    match (
+        leading_path_imports(old, source_path),
+        leading_path_imports(new, source_path),
+    ) {
+        (Ok(old), Ok(new)) => {
+            old.len() == new.len() && old.iter().zip(&new).all(|(old, new)| old.path == new.path)
+        }
+        _ => false,
+    }
+}
+
 fn leading_path_imports(
     source: &str,
     source_path: &Path,
