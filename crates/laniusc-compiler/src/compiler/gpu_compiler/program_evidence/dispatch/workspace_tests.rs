@@ -3,7 +3,7 @@
 
 use super::super::abi::{ArenaCopy, ArenaWrite};
 use super::{arena::Arena, workspace::EvidenceWorkspacePool};
-use crate::gpu::{buffers::buffer_creation_count, device, readback::PagedReadback};
+use crate::gpu::{device, passes_core::this_thread_gpu_activity, readback::PagedReadback};
 
 fn contents(
     readback: &PagedReadback,
@@ -75,7 +75,7 @@ fn gpu_evidence_workspace_reuses_capacity_preserving_transfer_order_and_zero_sta
     let pool = EvidenceWorkspacePool::new(gpu.device.clone(), gpu.queue.clone());
     let readback = PagedReadback::new(&gpu.device, "workspace transfer readback", 128);
     for iteration in 0..4u32 {
-        let before = buffer_creation_count();
+        let before = this_thread_gpu_activity();
         let lease = pool.checkout();
         let mut arena = Arena::empty(&lease, "workspace.transfer").unwrap();
         let mut commands = gpu
@@ -145,8 +145,8 @@ fn gpu_evidence_workspace_reuses_capacity_preserving_transfer_order_and_zero_sta
         arena.buffer.write(&gpu.queue, 32, &[0x5a; 32]);
         if iteration == 3 {
             assert_eq!(
-                buffer_creation_count(),
-                before,
+                this_thread_gpu_activity().since(before).buffers_created,
+                0,
                 "repeated bounded work must not allocate after growth/relocation priming"
             );
         }
