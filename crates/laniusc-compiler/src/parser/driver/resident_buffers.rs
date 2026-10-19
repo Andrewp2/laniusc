@@ -333,8 +333,10 @@ pub(crate) const WARM_SHAPE_TOKEN_HEADROOM: u32 = ResidentParserAllocation::GRAN
 /// Which headroom a cold job's parser shape gets: (tokens, tree).
 /// `LANIUS_PARSER_SHAPE_HEADROOM` is `1` for both, `tokens` or `tree` for one,
 /// and `0` (the default) for exact shapes. Off by default: with a token
-/// capacity above the job's token count, a dependency-page test compiles a
-/// wrong interface (some reader takes the capacity for the count).
+/// capacity above the job's token count, a unit checked against dependency
+/// interfaces goes wrong (some reader takes the capacity for the count), so
+/// warm jobs only keep an exact token capacity for now and token headroom
+/// makes every warm job rerun the cold path.
 pub(crate) fn warm_shape_headroom() -> (bool, bool) {
     #[cfg(test)]
     {

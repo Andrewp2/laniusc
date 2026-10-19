@@ -140,6 +140,15 @@ fn cold_token_capacity(token_count: u32, bufs: &crate::lexer::buffers::GpuBuffer
     )
 }
 
+/// Whether a warm job may keep the cached shape's token capacity. Only an
+/// exact fit is safe for now: with a capacity above the job's token count,
+/// a consumer's type check and lowering go wrong (imported record fields
+/// fail LNC0042, aggregate literals fail LNC0017), so a warm job whose edit
+/// changed the token count reruns the cold path like a lexer-boundary miss.
+fn warm_token_capacity_fits(token_count: u32, token_capacity: u32) -> bool {
+    token_count.max(1) == token_capacity
+}
+
 #[derive(Clone, Copy)]
 enum ParserRetry {
     LexerBoundary,
@@ -1472,7 +1481,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             }
                             let features =
                                 crate::lexer::features::parser_allocation_features(raw_features);
-                            if token_count > shape.token_capacity
+                            if !warm_token_capacity_fits(token_count, shape.token_capacity)
                                 || features != shape.parser_feature_flags
                             {
                                 return Ok(DeferredParserFinish::RetryAfterLexerBoundary);
@@ -2107,7 +2116,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             }
                             let features =
                                 crate::lexer::features::parser_allocation_features(raw_features);
-                            if token_count > shape.token_capacity
+                            if !warm_token_capacity_fits(token_count, shape.token_capacity)
                                 || features != shape.parser_feature_flags
                             {
                                 return Ok(DeferredParserFinish::RetryAfterLexerBoundary);

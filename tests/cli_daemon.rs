@@ -690,3 +690,169 @@ fn cli_daemon_first_wasm_job_creates_no_pipelines_and_runs() {
         common::run_wasm_main_with_node("daemon first Wasm job", "daemon_first_wasm_job", &wasm);
     assert_eq!(stdout, "7\n");
 }
+
+/// One interactive `laniusc daemon --stdio --backend x86_64` session.
+struct DaemonSession {
+    child: ChildGuard,
+    stdin: std::process::ChildStdin,
+    stdout: BufReader<std::process::ChildStdout>,
+}
+
+impl DaemonSession {
+    fn start() -> Self {
+        let mut child = Command::new(laniusc_bin())
+            .arg("daemon")
+            .arg("--stdio")
+            .arg("--backend")
+            .arg("x86_64")
+            .arg("--stdlib-root")
+            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn x86 daemon");
+        let stdin = child.stdin.take().expect("daemon stdin");
+        let stdout = BufReader::new(child.stdout.take().expect("daemon stdout"));
+        let mut session = Self {
+            child: ChildGuard(child),
+            stdin,
+            stdout,
+        };
+        assert_eq!(session.response()["event"], "ready");
+        session
+    }
+
+    fn response(&mut self) -> serde_json::Value {
+        let mut line = String::new();
+        self.stdout
+            .read_line(&mut line)
+            .expect("read daemon response");
+        serde_json::from_str(&line)
+            .unwrap_or_else(|error| panic!("daemon response {line:?}: {error}"))
+    }
+
+    fn compile_project(
+        &mut self,
+        project: &std::path::Path,
+        output: &std::path::Path,
+    ) -> serde_json::Value {
+        let request = serde_json::json!({
+            "id": "compile",
+            "command": "compile",
+            "emit": "x86_64",
+            "input": project.join("main.lani"),
+            "source_root": project.join("src"),
+            "output": output,
+        });
+        writeln!(self.stdin, "{request}").expect("send daemon request");
+        self.stdin.flush().expect("flush daemon request");
+        self.response()
+    }
+
+    fn shutdown(mut self) {
+        let request = serde_json::json!({"id": "shutdown", "command": "shutdown"});
+        writeln!(self.stdin, "{request}").expect("send daemon shutdown");
+        self.stdin.flush().expect("flush daemon shutdown");
+        let _ = self.response();
+        let _ = self.child.0.wait();
+    }
+}
+
+// A warm daemon keeps a project's parser shape between jobs. An edit that
+// removes tokens (padding functions deleted, or turned into spaces so the
+// bytes stay the same) must compile exactly as a fresh daemon compiles the
+// edited files; a shrinking comment, which removes no tokens, is the
+// control. The project reads fields through imported generic records, the
+// shape that went wrong when a warm job's token capacity exceeded its count.
+#[test]
+fn cli_daemon_matches_a_fresh_daemon_after_edits_that_remove_tokens() {
+    let padding: String = (0..60)
+        .map(|index| {
+            format!(
+                "fn pad_{index}(x: i32) -> i32 {{ let y: i32 = x + {index}; return (y * 3 + 1) & 1023; }}\n"
+            )
+        })
+        .collect();
+    let spaces: String = padding
+        .chars()
+        .map(|c| if c == '\n' { c } else { ' ' })
+        .collect();
+    let comment: String = padding.lines().map(|line| format!("// {line}\n")).collect();
+    let extract = "module lib::extract;\nimport lib::inner;\nimport lib::outer;\n\
+        pub fn take<T>(value: lib::outer::Wrap<T>) -> T { return value.child.value; }\n";
+    let main = "module app::main;
+import lib::inner;
+import lib::outer;
+import lib::extract;
+fn main() -> i32 {
+    let original: lib::outer::Wrap<[i32; 2]> = Wrap {
+        child: Boxed { value: [19, 23], code: 7 }, marker: 11
+    };
+    let extracted: [i32; 2] = lib::extract::take(original);
+    extracted[0] = -9;
+    if (original.child.value[0] != 19 || original.child.code != 7 || original.marker != 11) {
+        return 1;
+    }
+    let saved = original;
+    original.child.value[1] = -3;
+    original.child.code = 99;
+    if (saved.child.code != 7 || saved.child.value[1] != 23 || extracted[1] != 23) {
+        return 2;
+    }
+    return saved.child.value[0] + saved.child.value[1];
+}
+";
+    for (edit, big, small) in [
+        ("tokens removed", padding.as_str(), ""),
+        ("tokens turned into spaces", padding.as_str(), spaces.as_str()),
+        ("comment removed", comment.as_str(), ""),
+    ] {
+        let project = common::temp_artifact_path("laniusc_daemon_shrink", edit, None);
+        let lib = project.join("src/lib");
+        fs::create_dir_all(&lib).expect("create shrink project");
+        fs::write(
+            lib.join("inner.lani"),
+            "module lib::inner;\npub struct Boxed<T> { value: T, code: i32 }\n",
+        )
+        .expect("write lib::inner");
+        fs::write(
+            lib.join("outer.lani"),
+            "module lib::outer;\nimport lib::inner;\npub struct Wrap<T> { child: lib::inner::Boxed<T>, marker: i32 }\n",
+        )
+        .expect("write lib::outer");
+        fs::write(project.join("main.lani"), main).expect("write app::main");
+        let extract_path = lib.join("extract.lani");
+        fs::write(&extract_path, format!("{extract}{big}")).expect("write padded lib::extract");
+        let warm = project.join("warm");
+        let fresh = project.join("fresh");
+
+        let mut session = DaemonSession::start();
+        let response = session.compile_project(&project, &warm);
+        assert_eq!(response["ok"], true, "{edit}: padded project: {response}");
+        fs::write(&extract_path, format!("{extract}{small}")).expect("write edited lib::extract");
+        let response = session.compile_project(&project, &warm);
+        assert_eq!(
+            response["ok"], true,
+            "{edit}: warm daemon after the edit: {response}"
+        );
+        session.shutdown();
+
+        let mut session = DaemonSession::start();
+        let response = session.compile_project(&project, &fresh);
+        assert_eq!(response["ok"], true, "{edit}: fresh daemon: {response}");
+        session.shutdown();
+
+        assert!(
+            fs::read(&warm).expect("read warm artifact")
+                == fs::read(&fresh).expect("read fresh artifact"),
+            "{edit}: the warm daemon's artifact differs from a fresh daemon's"
+        );
+        let run = common::short_process_output_with_timeout(
+            format!("run the {edit} artifact"),
+            &mut Command::new(&warm),
+        );
+        assert_eq!(run.status.code(), Some(42), "{edit}: exit status");
+        let _ = fs::remove_dir_all(project);
+    }
+}
