@@ -8,7 +8,7 @@ fn main() -> i32 {
     let sources: [i32] = verified::host::i32_slice_from_raw_parts(
         verified::host::alloc_i32(8), 8);
     let token_memory: ptr = verified::host::alloc(
-        4 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
+        (4 * verified::token::RECORD_BYTES) as usize, verified::token::ALIGNMENT as usize);
     if (token_memory == 0) { return 14; }
     let tokens: verified::token::TokenTable =
         verified::token::from_raw_parts(token_memory, 4);

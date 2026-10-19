@@ -21,8 +21,8 @@ fn write_descriptors(table: lowering::unit_descriptor::Table) -> i32 {
 fn main() -> i32 {
     let record_bytes: i32 = lowering::unit_descriptor::RECORD_BYTES;
     let memory: ptr = verified::host::alloc(
-        2 * record_bytes + lowering::unit_descriptor::ALIGNMENT,
-        lowering::unit_descriptor::ALIGNMENT);
+        (2 * record_bytes + lowering::unit_descriptor::ALIGNMENT) as usize,
+        lowering::unit_descriptor::ALIGNMENT as usize);
     if (memory == 0) { return 2; }
     let guard: [i32] = verified::host::i32_slice_from_raw_parts(memory,
         (2 * record_bytes + lowering::unit_descriptor::ALIGNMENT)

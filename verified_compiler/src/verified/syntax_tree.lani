@@ -1,5 +1,6 @@
 module verified::syntax_tree;
 
+import core::mem;
 import verified::host;
 import verified::parser;
 
@@ -9,7 +10,6 @@ import verified::parser;
 const FIELD_BYTES: i32 = 8;
 pub const NODE_BYTES: i32 = 5 * FIELD_BYTES;
 pub const CHILD_BYTES: i32 = 3 * FIELD_BYTES;
-pub const TREE_BYTES: i32 = 6 * FIELD_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
 
 pub struct Node {
@@ -38,9 +38,13 @@ pub struct Catalog {
     count: i32,
 }
 
+pub fn tree_bytes() -> i32 {
+    return core::mem::size_of<Tree>() as i32;
+}
+
 pub fn catalog_from_raw_parts(memory: ptr, count: i32) -> Catalog {
     let first: ptr = memory;
-    if (count > 0) { first = memory + count * TREE_BYTES - FIELD_BYTES; }
+    if (count > 0) { first = memory + count * tree_bytes() - FIELD_BYTES; }
     return Catalog { data: slice_from_raw_parts(first, count), count: count };
 }
 

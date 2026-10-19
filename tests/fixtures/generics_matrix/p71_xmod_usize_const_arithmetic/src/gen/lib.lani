@@ -1,0 +1,9 @@
+module gen::lib;
+
+pub const FIELD_BYTES: usize = 6;
+pub const RECORD_BYTES: usize = 3 * FIELD_BYTES;
+pub const ALIGNMENT: usize = FIELD_BYTES;
+
+pub fn bytes(size: usize, align: usize) -> usize {
+    return size + align - align;
+}

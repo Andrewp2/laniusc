@@ -1,0 +1,10 @@
+// expect: error LNC0006
+module app::main;
+
+import gen::lib;
+
+// An imported i32 constant stays i32 in arithmetic; a usize parameter does
+// not convert it (the codegen_x86 vc packs hit this at verified::host::alloc).
+fn main() -> i32 {
+    return gen::lib::bytes(4 * gen::lib::RECORD_BYTES) as i32;
+}

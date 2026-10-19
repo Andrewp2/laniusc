@@ -5,8 +5,8 @@ import verified::host;
 
 fn main() -> i32 {
     let memory: ptr = verified::host::alloc(
-        lowering::unit_context::RECORD_BYTES,
-        lowering::unit_context::ALIGNMENT);
+        lowering::unit_context::RECORD_BYTES as usize,
+        lowering::unit_context::ALIGNMENT as usize);
     if (memory == 0) { return 2; }
     let values: [lowering::unit_context::UnitContext] =
         lowering::unit_context::from_raw_parts(memory, 1).data;
