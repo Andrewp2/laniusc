@@ -554,6 +554,7 @@ mod tests {
             implementation_arguments: Vec::new(),
             implementation_method_bindings: Vec::new(),
             name_bytes,
+            closure_summary: None,
         }
     }
 

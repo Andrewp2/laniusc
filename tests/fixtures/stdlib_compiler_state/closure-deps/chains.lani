@@ -1,0 +1,19 @@
+import core::chain;
+
+// App-local: a library body instantiated with it stays with the replays.
+struct Local {
+    value: i32,
+}
+
+fn main() -> i32 {
+    if (core::chain::outer(40) != 40) { return 1; }
+    if (!core::chain::outer(true)) { return 2; }
+    if (core::chain::widen(7) != 5 || core::chain::widen(false) != 5) { return 3; }
+    let local = core::chain::outer(Local { value: 9 });
+    if (local.value != 9) { return 4; }
+    // The annotation also gives this unit generic syntax, which the
+    // closure needs.
+    let boxed: core::chain::Boxed<i32> = core::chain::boxed(3);
+    if (boxed.pick_other(11) != 11) { return 5; }
+    return 0;
+}

@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::Arc;
+
 use crate::compiler::{GpuSemanticInterfaceArtifact, GpuSemanticInterfaceDependencyBatch};
 
 /// GPU-resident canonical interfaces imported by one bounded compilation unit.
@@ -32,6 +34,11 @@ pub(crate) struct GpuDependencyInterfacePages {
     pages: Vec<PackedGpuDependencyInterfacePage>,
     current_library_id: u32,
     current_unit_id: u32,
+    /// The dependencies' closure summaries (D1b), None without any.
+    closure_summaries: Option<Arc<JobClosureSummaries>>,
+    /// Dependencies whose interface carries no summary (deserialized, or
+    /// checked without one): the closure has no rows for their functions.
+    interfaces_without_summary: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -501,9 +508,36 @@ impl GpuDependencyInterfacePages {
             .as_ref()
             .expect("dependency resident state allocated")
             .clone();
-        let pages = Self { state, pages, current_library_id, current_unit_id };
+        let interfaces = interface_pages.iter().flat_map(|page| page.iter());
+        let interfaces_without_summary =
+            interfaces.clone().filter(|interface| interface.closure_summary.is_none()).count();
+        // LANIUS_INSTANCE_CLOSURE_DEPS=0 (A/B runs) leaves the dependency
+        // closure out.
+        let closure_summaries = crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE_DEPS", true)
+            .then(|| JobClosureSummaries::new(
+                [current_library_id, current_unit_id],
+                interfaces.filter_map(|interface| interface.closure_summary.clone()),
+            ))
+            .flatten()
+            .map(Arc::new);
+        let pages = Self {
+            state,
+            pages,
+            current_library_id,
+            current_unit_id,
+            closure_summaries,
+            interfaces_without_summary,
+        };
         pages.write(queue, 0)?;
         Ok(pages)
+    }
+
+    pub(crate) fn closure_summaries(&self) -> Option<&Arc<JobClosureSummaries>> {
+        self.closure_summaries.as_ref()
+    }
+
+    pub(crate) fn interfaces_without_summary(&self) -> usize {
+        self.interfaces_without_summary
     }
 
     pub(crate) fn state(&self) -> &GpuDependencyInterfaceState {
