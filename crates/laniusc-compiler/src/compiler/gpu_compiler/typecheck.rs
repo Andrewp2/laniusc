@@ -2760,7 +2760,12 @@ fn finish_source_pack_unit(
             &artifacts.checked_call_owners,
             &artifacts.checked_contracts,
         ) {
-            Ok(summary) => interface.closure_summary = Some(std::sync::Arc::new(summary)),
+            Ok(summary) => {
+                if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
+                    eprintln!("[instance-closure] unit {library_id}:{unit_id} summary {}", summary.describe());
+                }
+                interface.closure_summary = Some(std::sync::Arc::new(summary));
+            }
             Err(error) => {
                 if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
                     eprintln!("[instance-closure] unit {library_id}:{unit_id} has no summary: {error}");
