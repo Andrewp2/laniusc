@@ -1,0 +1,7 @@
+// expect: error LNC0017
+// An enum's zero bits would silently pick its first variant.
+enum Mode { Low, High(i32) }
+fn main() -> i32 {
+    let m: Mode;
+    return 0;
+}

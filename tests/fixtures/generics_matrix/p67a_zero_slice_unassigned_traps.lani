@@ -1,0 +1,8 @@
+// expect: 101
+// An unassigned slice is the empty view (null, 0, 0): stride 0, length 0,
+// so indexing it fails the bounds check.
+fn main() -> i32 {
+    let s: [i32];
+    if (slice_stride(s) != 0) { return 1; }
+    return s[0];
+}
