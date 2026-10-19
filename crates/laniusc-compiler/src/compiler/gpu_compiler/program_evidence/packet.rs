@@ -515,12 +515,13 @@ impl ProgramPacket {
             let mut appended = Vec::new();
             for (index, call) in facts.iter().enumerate() {
                 let Ok(callable) = this.resolve_target(snapshot, call.target) else { continue };
+                // A bounded callee's predicates join this batch as obligations
+                // of a soft context (word 7 = 1): a refuted bound demotes only
+                // this prediction to the replay rounds, never the batch.
                 let callee_owner = this.catalog.tables.row(4, callable)?[1];
-                if !this.catalog.applicable_predicates(callee_owner)?.is_empty() {
-                    continue;
-                }
+                let class = u32::from(!this.catalog.applicable_predicates(callee_owner)?.is_empty());
                 let context = this.tables.count(13)?;
-                this.tables.push(13, &[snapshot, INVALID, INVALID, 0, 0, 2, INVALID, 0])?;
+                this.tables.push(13, &[snapshot, INVALID, INVALID, 0, 0, 2, INVALID, class])?;
                 ensure!(
                     this.context_call_owners.insert((context, call.call_hir), INVALID).is_none(),
                     "closure context already owns its call"

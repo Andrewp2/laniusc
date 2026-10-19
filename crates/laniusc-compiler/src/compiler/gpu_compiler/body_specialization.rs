@@ -569,8 +569,8 @@ impl ClosureIntake {
         if trace {
             // found, edges, GPU-skipped edges, dropped; then flags and errors.
             let mut totals = [0u64; 4];
-            let (mut flags, mut errors) = (0u32, 0usize);
-            let mut rejects = [0u32; 6];
+            let (mut flags, mut errors, mut dependency) = (0u32, 0usize, 0usize);
+            let mut rejects = [0u32; 7];
             for unit in units {
                 let Some(closure) = &unit.instance_closure else { continue };
                 for (total, value) in totals.iter_mut()
@@ -581,9 +581,10 @@ impl ClosureIntake {
                 flags |= closure.flags;
                 for (total, value) in rejects.iter_mut().zip(closure.rejects) { *total += value; }
                 errors += usize::from(closure.error.is_some());
+                dependency += closure.dependency_instances.len();
             }
             eprintln!(
-                "[specialization] closure found={} edges={} gpu_skipped={} dropped={} flags={flags:#x} errors={errors} rejects={rejects:?} decoded/closed/appended/concrete={:?} scheduled={} known={} skipped={} unused={}",
+                "[specialization] closure found={} edges={} gpu_skipped={} dropped={} flags={flags:#x} errors={errors} rejects={rejects:?} dependency={dependency} decoded/closed/appended/concrete={:?} scheduled={} known={} skipped={} unused={}",
                 totals[0], totals[1], totals[2], totals[3], self.stages,
                 self.keys.len(), self.known, self.skipped, unused.len(),
             );

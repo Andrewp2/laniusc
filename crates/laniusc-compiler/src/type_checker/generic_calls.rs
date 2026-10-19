@@ -258,6 +258,9 @@ pub(super) struct RetainedGenericCallInputs {
     method_facts_active: bool,
     /// This job recorded the instance closure (resident.rs).
     instance_closure_active: bool,
+    /// The dependency summaries its closure read (D1b): the templates of
+    /// its summary instances.
+    closure_summaries: Option<std::sync::Arc<super::JobClosureSummaries>>,
 }
 
 impl RetainedGenericCallInputs {
@@ -267,6 +270,7 @@ impl RetainedGenericCallInputs {
         parser_feature_flags: u32,
         dependency_interfaces_present: bool,
         instance_closure_active: bool,
+        closure_summaries: Option<std::sync::Arc<super::JobClosureSummaries>>,
     ) -> Result<Self> {
         let mut buffers = RETAINED_INPUTS
             .iter()
@@ -321,6 +325,7 @@ impl RetainedGenericCallInputs {
                 & crate::lexer::features::PARSER_FEATURE_PREDICATES
                 != 0,
             instance_closure_active,
+            closure_summaries,
         })
     }
 
@@ -521,6 +526,27 @@ impl CheckedGenericType {
         }
     }
 
+    /// Every nominal is a public type of a unit other than `current` (a
+    /// dependency's type, which that dependency can name too) without a
+    /// local replay anchor.
+    pub(crate) fn names_only_dependencies(&self, current: [u32; 2]) -> bool {
+        match self {
+            Self::Unresolved { .. } | Self::Parameter(_) => false,
+            Self::Scalar(_) => true,
+            Self::Slice(element) | Self::Reference(element) => element.names_only_dependencies(current),
+            Self::Array { element, .. } => element.names_only_dependencies(current),
+            Self::Nominal { identity, arguments, local_replay, .. } => {
+                matches!(identity, CheckedNominalIdentity::Public([library, unit, _])
+                    if [*library, *unit] != current && *library != INVALID && *unit != INVALID)
+                    && local_replay.is_none()
+                    && arguments.iter().all(|argument| match argument {
+                        CheckedGenericApplicationArgument::Type(ty) => ty.names_only_dependencies(current),
+                        CheckedGenericApplicationArgument::Constant(_) => true,
+                    })
+            }
+        }
+    }
+
     pub(crate) fn is_native_ready(&self) -> bool {
         self.is_closed()
             && match self {
@@ -716,10 +742,14 @@ pub(crate) struct CheckedInstanceClosure {
     pub skipped: u32,
     /// Exported instances whose arity disagrees with their template call.
     pub dropped: u32,
+    /// Instances of dependency bodies (D1b): a summary edge of a library
+    /// unit as template, with this job's closed arguments, sorted like
+    /// `instances` within each unit.
+    pub dependency_instances: Vec<CheckedDependencyClosureInstance>,
     /// Rows the decode skipped (trace only): not exported, depth < 2, no
     /// argument block, bad shape, arguments past the read table, template
-    /// call not retained.
-    pub rejects: [u32; 6],
+    /// call not retained, a dependency instance naming this job's types.
+    pub rejects: [u32; 7],
     /// Why the readback failed, when it did.
     pub error: Option<String>,
 }
@@ -733,12 +763,27 @@ impl CheckedInstanceClosure {
             .saturating_add(self.instances.iter()
                 .map(|instance| instance.call.resident_argument_bytes())
                 .fold(0, usize::saturating_add))
+            .saturating_add(self.dependency_instances.capacity()
+                .saturating_mul(std::mem::size_of::<CheckedDependencyClosureInstance>()))
+            .saturating_add(self.dependency_instances.iter()
+                .map(|instance| instance.call.resident_argument_bytes())
+                .fold(0, usize::saturating_add))
             .saturating_add(self.error.as_ref().map_or(0, String::capacity))
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckedClosureInstance {
+    pub depth: u32,
+    pub call: CheckedGenericCall,
+}
+
+/// A closure instance of a dependency's body (D1b): `call` is the library
+/// unit's retained call (its identity, target and span are that unit's)
+/// with the dependent job's closed arguments.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CheckedDependencyClosureInstance {
+    pub unit: [u32; 2],
     pub depth: u32,
     pub call: CheckedGenericCall,
 }
@@ -3007,6 +3052,13 @@ pub(super) fn read_unit_facts(
     })
 }
 
+/// The template of a decoded closure instance: a retained call of this job
+/// (its position), or a dependency summary's edge (D1b).
+enum ClosureTemplate<'a> {
+    Local(usize),
+    Dependency([u32; 2], &'a CheckedGenericCall),
+}
+
 /// IC_FLAG_DEPTH (instance_closure.slang): a frontier was left at the
 /// level limit, so the closure is ignored.
 const INSTANCE_CLOSURE_FLAG_DEPTH: u32 = 8;
@@ -3053,11 +3105,12 @@ fn read_instance_closure(
     let instances = &words[rows..rows + length * 8];
     let refs = refs_start.map_or(&[][..], |start| &words[start..start + ref_words]);
     let operand = |index: usize| (refs[index * 2], refs[index * 2 + 1]);
-    // (depth, template call position, argument base, type count, arity)
+    // (depth, template, argument base, type count, arity)
     let mut kept = Vec::new();
     let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false);
+    let summaries = inputs.closure_summaries.as_deref();
     for row in instances.chunks_exact(8) {
-        let &[_, _, depth, _, base, template, status, shape] = row else { unreachable!() };
+        let &[_, callee, depth, _, base, template_word, status, shape] = row else { unreachable!() };
         let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
         let reject = if status != INSTANCE_CLOSURE_EXPORTED { Some(0) }
             else if depth < 2 { Some(1) }
@@ -3065,18 +3118,24 @@ fn read_instance_closure(
             else if type_count > arity { Some(3) }
             else if (base as usize + arity) * 2 > ref_words { Some(4) }
             else { None };
-        let position = reject.is_none()
-            .then(|| call_ids.binary_search(&template).ok().filter(|&position| calls[position].is_some()))
-            .flatten();
+        // A summary instance's template is a job edge (closure/03b): the
+        // library unit's retained call.
+        let template = reject.is_none().then(|| if callee & super::closure_summary::SUMMARY_TAG != 0 {
+            summaries.and_then(|summaries| summaries.edge_template(template_word))
+                .map(|(unit, call)| ClosureTemplate::Dependency(unit, call))
+        } else {
+            call_ids.binary_search(&template_word).ok()
+                .filter(|&position| calls[position].is_some())
+                .map(ClosureTemplate::Local)
+        }).flatten();
         if debug {
-            eprintln!("[instance-closure] row={row:?} ref_words={ref_words} reject={reject:?} template_retained={:?} template_generic={:?}",
-                call_ids.binary_search(&template).is_ok(),
-                call_ids.binary_search(&template).ok().map(|position| calls[position].is_some()));
+            eprintln!("[instance-closure] row={row:?} ref_words={ref_words} reject={reject:?} template_found={}",
+                template.is_some());
         }
-        match (reject, position) {
+        match (reject, template) {
             (Some(reason), _) => closure.rejects[reason] += 1,
             (None, None) => closure.rejects[5] += 1,
-            (None, Some(position)) => kept.push((depth, position, base as usize, type_count, arity)),
+            (None, Some(template)) => kept.push((depth, template, base as usize, type_count, arity)),
         }
     }
     let type_roots = kept.iter()
@@ -3087,8 +3146,11 @@ fn read_instance_closure(
         .flat_map(|&(_, _, base, type_count, arity)| (base + type_count..base + arity).map(operand))
         .collect::<Vec<_>>();
     types.prefetch_constants(readback, device, queue, inputs, &constant_roots)?;
-    for (depth, position, base, type_count, arity) in kept {
-        let template = calls[position].as_ref().expect("kept template call");
+    for (depth, template, base, type_count, arity) in kept {
+        let (unit, template) = match template {
+            ClosureTemplate::Local(position) => (None, calls[position].as_ref().expect("kept template call")),
+            ClosureTemplate::Dependency(unit, call) => (Some(unit), call),
+        };
         if template.required_generic_parameters != Some(type_count as u32)
             || template.required_constant_parameters != Some((arity - type_count) as u32)
         {
@@ -3110,17 +3172,28 @@ fn read_instance_closure(
                 CheckedGenericConstant { slot: slot as u32, value: types.constant(kind, payload) }
             })
             .collect();
-        closure.instances.push(CheckedClosureInstance {
-            depth,
-            call: CheckedGenericCall {
-                arguments,
-                constants,
-                ..template.clone()
-            },
-        });
+        let call = CheckedGenericCall { arguments, constants, ..template.clone() };
+        let Some(unit) = unit else {
+            closure.instances.push(CheckedClosureInstance { depth, call });
+            continue;
+        };
+        // A library body instantiated with this job's own types needs them
+        // in the library's replay: left to the replays (fail closed).
+        let current = summaries.map_or([INVALID, INVALID], super::JobClosureSummaries::current_unit);
+        if !call.arguments.iter().all(|argument| argument.ty.names_only_dependencies(current)) {
+            closure.rejects[6] += 1;
+            continue;
+        }
+        closure.dependency_instances.push(CheckedDependencyClosureInstance { unit, depth, call });
     }
     // The table is in lane order; admission and its packet rows must not be.
     closure.instances.sort_by_cached_key(|instance| (
+        instance.call.call_hir,
+        instance.depth,
+        format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
+    ));
+    closure.dependency_instances.sort_by_cached_key(|instance| (
+        instance.unit,
         instance.call.call_hir,
         instance.depth,
         format!("{:?}{:?}", instance.call.arguments, instance.call.constants),

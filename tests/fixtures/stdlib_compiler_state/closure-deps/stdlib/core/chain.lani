@@ -1,0 +1,53 @@
+module core::chain;
+
+// Generic chains the app reaches only through this library (D1b): every
+// body below `outer`, `widen` and `Boxed::pick_other` is first found at
+// depth 2 or deeper, from an edge inside this unit.
+pub struct Wrap<T> {
+    value: T,
+}
+
+pub struct Boxed<T> {
+    value: T,
+}
+
+pub fn boxed<T>(value: T) -> Boxed<T> {
+    return Boxed { value: value };
+}
+
+// Depth 3: reached through mid's edge with a nominal argument.
+fn inner<U>(wrapped: Wrap<U>) -> U {
+    return wrapped.value;
+}
+
+// Depth 2 (private callee).
+fn mid<T>(value: T) -> T {
+    let wrapped: Wrap<T> = Wrap { value: value };
+    return inner(wrapped);
+}
+
+pub fn outer<T>(value: T) -> T {
+    return mid(value);
+}
+
+// Depth 2 with a literal constant the caller does not have.
+fn length_of<T, const N: usize>(items: [T; N]) -> usize {
+    return N;
+}
+
+pub fn widen<T>(value: T) -> usize {
+    let items: [T; 4] = [value, value, value, value];
+    return length_of(items) + 1;
+}
+
+// Depth 2 from an impl method: the callee's slots are the method's and the
+// impl's in the opposite order.
+fn first_of<A, B>(left: A, right: B) -> A {
+    return left;
+}
+
+pub impl<T> Boxed<T> {
+    pub fn pick_other<U>(self, other: U) -> U {
+        return first_of(other, self.value);
+    }
+}

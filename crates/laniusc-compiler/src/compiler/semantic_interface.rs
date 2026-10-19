@@ -326,6 +326,7 @@ impl GpuSemanticInterfaceIdentityArtifact {
             implementation_arguments: Vec::new(),
             implementation_method_bindings: Vec::new(),
             name_bytes: self.name_bytes.clone(),
+            closure_summary: None,
         };
         partial.validate_identities()
     }
@@ -351,6 +352,10 @@ pub struct GpuSemanticInterfaceArtifact {
     pub implementation_arguments: Vec<u32>,
     pub implementation_method_bindings: Vec<GpuSemanticInterfaceImplementationMethodBindingRecord>,
     pub name_bytes: Vec<u8>,
+    /// The unit's closure summary (D1b), host-only: dependents upload it to
+    /// find their instances' deeper library bodies. It is no part of the
+    /// encoded interface, its identity or its version.
+    pub(crate) closure_summary: Option<std::sync::Arc<crate::type_checker::ClosureSummary>>,
 }
 
 impl GpuSemanticInterfaceArtifact {
@@ -1552,6 +1557,7 @@ impl GpuSemanticInterfaceArtifact {
             implementation_arguments,
             implementation_method_bindings,
             name_bytes,
+            closure_summary: None,
         };
         artifact.validate()?;
         Ok(artifact)
@@ -1853,6 +1859,7 @@ mod tests {
             implementation_arguments: Vec::new(),
             implementation_method_bindings: Vec::new(),
             name_bytes,
+            closure_summary: None,
         }
     }
 

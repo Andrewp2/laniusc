@@ -138,6 +138,17 @@ fn hash_dependency_interfaces(
         hash_len(content, page.len());
         for interface in page {
             hash_bytes(content, &interface.to_bytes()?);
+            // A dependent's closure (D1b) is as current as the summaries it
+            // read, which the encoded interface does not carry.
+            match &interface.closure_summary {
+                Some(summary) => {
+                    content.update(&[1]);
+                    summary.hash_into(content);
+                }
+                None => {
+                    content.update(&[0]);
+                }
+            }
         }
     }
     Ok(())
@@ -450,6 +461,9 @@ pub(super) fn interface_resident_bytes(interface: &GpuSemanticInterfaceArtifact)
             &interface.implementation_method_bindings,
         ))
         .saturating_add(vector_resident_bytes(&interface.name_bytes))
+        // The closure summary (D1b) is evicted with its original.
+        .saturating_add(interface.closure_summary.as_ref()
+            .map_or(0, |summary| summary.resident_bytes()))
 }
 
 fn vector_resident_bytes<T>(values: &Vec<T>) -> usize {
@@ -878,6 +892,7 @@ mod tests {
                 implementation_arguments: Vec::new(),
                 implementation_method_bindings: Vec::new(),
                 name_bytes: Vec::new(),
+                closure_summary: None,
             },
             object: CompiledSourcePackObject::X86_64(
                 crate::codegen::x86::GpuX86RelocatableObject {

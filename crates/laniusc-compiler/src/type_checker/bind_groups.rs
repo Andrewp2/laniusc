@@ -298,6 +298,10 @@ impl GpuTypeChecker {
             "body_specialization_inputs",
             &self.body_specialization_inputs,
         );
+        resources.buffer(
+            instance_closure_passes::CLOSURE_SUMMARY_INPUTS,
+            &self.closure_summary_inputs,
+        );
         resources.buffer("token_words", token_buf);
         resources.buffer("token_count", token_count_buf);
         resources.buffer("token_file_id", token_file_id_buf);

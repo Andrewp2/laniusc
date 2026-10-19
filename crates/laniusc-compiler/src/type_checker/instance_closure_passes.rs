@@ -27,11 +27,23 @@ pub(super) const INSTANCE_CLOSURE_EXPAND_PASS: &str = "type_check.instance_closu
 pub(super) const INSTANCE_CLOSURE_EXPORT_PASS: &str = "type_check.instance_closure.export";
 pub(super) const INSTANCE_CLOSURE_EXPORT_FINAL_PASS: &str =
     "type_check.instance_closure.export_final";
+pub(super) const INSTANCE_CLOSURE_IMPORT_SUMMARY_PASS: &str =
+    "type_check.instance_closure.import_summary";
+pub(super) const INSTANCE_CLOSURE_MARK_DEPENDENCY_PASS: &str =
+    "type_check.instance_closure.mark_dependency_roots";
+pub(super) const INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS: &str =
+    "type_check.instance_closure.expand_dependency";
 const MARK_KERNEL: &str = "type_checker/closure/01_mark";
 const ADVANCE_KERNEL: &str = "type_checker/closure/02_advance";
 const EXPAND_KERNEL: &str = "type_checker/closure/03_expand";
 const EXPORT_KERNEL: &str = "type_checker/closure/04_export";
 const EXPORT_FINAL_KERNEL: &str = "type_checker/closure/04a_export_final";
+const IMPORT_SUMMARY_KERNEL: &str = "type_checker/closure/00b_import_summary";
+const MARK_DEPENDENCY_KERNEL: &str = "type_checker/closure/01b_mark_dependency_roots";
+const EXPAND_DEPENDENCY_KERNEL: &str = "type_checker/closure/03b_expand_dependency";
+/// The job's dependency closure summaries (D1b; closure_summary.rs).
+pub(super) const CLOSURE_SUMMARY_INPUTS: &str = "closure_summary_inputs";
+const CLOSURE_SUMMARY_CT: &str = "closure_summary_ct";
 
 /// Expansion rounds (`IC_LEVELS` in instance_closure.slang): instances up
 /// to depth `INSTANCE_CLOSURE_LEVELS + 1` are found.
@@ -61,6 +73,15 @@ pub(super) fn closure_canonical_extra(hir_rows: u64) -> (u64, u64) {
     (4 * instances, 2 * ARGUMENTS_PER_INSTANCE * instances)
 }
 
+/// Canonical records and argument words the dependency closure (D1b) adds:
+/// one record per imported summary node, with its children.
+pub(super) fn closure_dependency_canonical_extra() -> (u64, u64) {
+    (
+        super::closure_summary::SUMMARY_MAX_NODES as u64,
+        super::closure_summary::SUMMARY_MAX_ARGS as u64,
+    )
+}
+
 fn storage(
     graph: &mut CompilerGraphBuilder,
     name: &'static str,
@@ -85,6 +106,17 @@ pub(super) fn register_instance_closure_passes(
     storage(graph, "instance_closure_refs", instances * ARGUMENTS_PER_INSTANCE * 8)?;
     let head = storage(graph, "instance_closure_edge_head", hir_rows.max(1) * 4)?;
     storage(graph, "instance_closure_edge_next", hir_rows.max(1) * 4)?;
+    let summary_ct = storage(
+        graph,
+        CLOSURE_SUMMARY_CT,
+        super::closure_summary::SUMMARY_MAX_NODES as u64 * 4,
+    )?;
+    graph.add_storage(
+        CLOSURE_SUMMARY_INPUTS,
+        ResourceDomain::Types,
+        ResourceClass::External,
+        super::closure_summary::SUMMARY_INPUT_WORDS as u64 * 4,
+    )?;
     graph.add_resource(ResourceDesc {
         name: "instance_closure_args",
         domain: ResourceDomain::DispatchArguments,
@@ -100,8 +132,18 @@ pub(super) fn register_instance_closure_passes(
             PassAccess::write("instance_closure_counts", counts),
             PassAccess::write("instance_closure_set", set),
             PassAccess::write("instance_closure_edge_head", head),
+            PassAccess::write(CLOSURE_SUMMARY_CT, summary_ct),
         ],
     })?;
+    // The dependency summaries' nodes intern ahead of the roots (D1b).
+    graph.add_kernel_pass_by_name(
+        INSTANCE_CLOSURE_IMPORT_SUMMARY_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        IMPORT_SUMMARY_KERNEL,
+        &[],
+    )?;
     graph.add_kernel_pass_by_name(
         INSTANCE_CLOSURE_MARK_PASS,
         CompilerPhase::TypeCheck,
@@ -116,6 +158,15 @@ pub(super) fn register_instance_closure_passes(
     graph.mark_pass_bindings_initialize(
         INSTANCE_CLOSURE_MARK_PASS,
         &["instance_closure_instances", "instance_closure_refs", "instance_closure_edge_next"],
+    )?;
+    // Roots into the dependencies' summary functions append after mark's.
+    graph.add_kernel_pass_by_name(
+        INSTANCE_CLOSURE_MARK_DEPENDENCY_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        MARK_DEPENDENCY_KERNEL,
+        &[],
     )?;
     graph.add_kernel_pass_by_name(
         INSTANCE_CLOSURE_ADVANCE_PASS,
@@ -134,11 +185,21 @@ pub(super) fn register_instance_closure_passes(
         &[],
     )?;
     graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_PASS, "instance_closure_args")?;
+    // The same frontier's summary instances expand through their edges.
+    graph.add_kernel_pass_by_name(
+        INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EXPAND_DEPENDENCY_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS, "instance_closure_args")?;
     graph.mark_pass_bindings_initialize(INSTANCE_CLOSURE_ADVANCE_PASS, &["instance_closure_args"])?;
     graph.repeat_pass_range(
         INSTANCE_CLOSURE_LEVELS as u32,
         INSTANCE_CLOSURE_ADVANCE_PASS,
-        INSTANCE_CLOSURE_EXPAND_PASS,
+        INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
     )?;
     for (name, kernel) in [
         (INSTANCE_CLOSURE_EXPORT_PASS, EXPORT_KERNEL),
@@ -158,12 +219,17 @@ pub(super) fn register_instance_closure_passes(
 }
 
 /// The closure of one original job: clear, mark the edges and roots, the
-/// expansion rounds, the closing advance, then the export.
+/// expansion rounds, the closing advance, then the export. A job with
+/// dependency summaries also imports them, roots its calls into them and
+/// expands their instances in every round (D1b).
 pub(in crate::type_checker) struct InstanceClosureOperations {
     clear: crate::gpu::operations::ClearBuffersOperation,
+    import_summary: ComputeOperation,
     mark: ComputeOperation,
+    mark_dependency: ComputeOperation,
     advance: ComputeOperation,
     expand: ComputeOperation,
+    expand_dependency: ComputeOperation,
     export: ComputeOperation,
     export_final: ComputeOperation,
 }
@@ -180,6 +246,7 @@ impl InstanceClosureOperations {
         let counts = buffer("instance_closure_counts")?;
         let set = buffer("instance_closure_set")?;
         let head = buffer("instance_closure_edge_head")?;
+        let summary_ct = buffer(CLOSURE_SUMMARY_CT)?;
         let clear = crate::gpu::operations::ClearBuffersOperation::new(
             graph,
             INSTANCE_CLOSURE_CLEAR_PASS,
@@ -187,6 +254,7 @@ impl InstanceClosureOperations {
                 ("instance_closure_counts", (&counts).into()),
                 ("instance_closure_set", (&set).into()),
                 ("instance_closure_edge_head", (&head).into()),
+                (CLOSURE_SUMMARY_CT, (&summary_ct).into()),
             ],
         )?;
         let direct = |name, kernel, elements| {
@@ -198,9 +266,23 @@ impl InstanceClosureOperations {
         };
         Ok(Self {
             clear,
+            import_summary: direct(
+                INSTANCE_CLOSURE_IMPORT_SUMMARY_PASS,
+                IMPORT_SUMMARY_KERNEL,
+                super::closure_summary::SUMMARY_MAX_NODES as u32,
+            )?,
             mark: direct(INSTANCE_CLOSURE_MARK_PASS, MARK_KERNEL, hir_capacity)?,
+            mark_dependency: direct(
+                INSTANCE_CLOSURE_MARK_DEPENDENCY_PASS,
+                MARK_DEPENDENCY_KERNEL,
+                hir_capacity,
+            )?,
             advance: direct(INSTANCE_CLOSURE_ADVANCE_PASS, ADVANCE_KERNEL, 1)?,
             expand: indirect(INSTANCE_CLOSURE_EXPAND_PASS, EXPAND_KERNEL)?,
+            expand_dependency: indirect(
+                INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
+                EXPAND_DEPENDENCY_KERNEL,
+            )?,
             // The closing advance writes the export's arguments: one lane
             // per appended instance, none when the table is empty.
             export: indirect(INSTANCE_CLOSURE_EXPORT_PASS, EXPORT_KERNEL)?,
@@ -208,12 +290,27 @@ impl InstanceClosureOperations {
         })
     }
 
-    pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+    /// `import_rounds` is the summaries' import depth (0 without any: the
+    /// dependency passes are then not recorded).
+    pub(in crate::type_checker) fn record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        import_rounds: u32,
+    ) -> Result<()> {
         self.clear.record(encoder);
+        for _ in 0..import_rounds {
+            self.import_summary.record(encoder)?;
+        }
         self.mark.record(encoder)?;
+        if import_rounds != 0 {
+            self.mark_dependency.record(encoder)?;
+        }
         for _ in 0..INSTANCE_CLOSURE_LEVELS {
             self.advance.record(encoder)?;
             self.expand.record(encoder)?;
+            if import_rounds != 0 {
+                self.expand_dependency.record(encoder)?;
+            }
         }
         self.advance.record(encoder)?;
         for _ in 0..EXPORT_RETRIES {
