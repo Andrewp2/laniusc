@@ -18,6 +18,17 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // Native originals stay owned here until complete program admission. Their
     // cloneable build handles expose facts and an exact slot, never object bytes.
     pending_originals: Vec<PendingOriginalUnit>,
+    // When set, the link writes the final pages straight into this file
+    // (through a sibling temporary renamed into place) instead of returning
+    // the image as bytes.
+    output_file: Option<std::path::PathBuf>,
+}
+
+/// The linked program: its bytes, or the byte length already written to the
+/// executor's output file.
+pub(super) enum ResidentLinkedOutput {
+    Bytes(Vec<u8>),
+    File(u64),
 }
 
 #[derive(Clone)]
@@ -62,7 +73,15 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
-        Self { compiler, target, pending_originals: Vec::new() }
+        Self { compiler, target, pending_originals: Vec::new(), output_file: None }
+    }
+
+    pub(super) fn with_output_file(
+        compiler: &'compiler GpuCompiler<'gpu>,
+        target: SourcePackArtifactTarget,
+        output: &std::path::Path,
+    ) -> Self {
+        Self { output_file: Some(output.to_path_buf()), ..Self::new(compiler, target) }
     }
 
     async fn compile_unit(
@@ -102,7 +121,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         }
     }
 
-    async fn link(&mut self, handle: ResidentLinkHandle) -> Result<Vec<u8>, CompileError> {
+    async fn link(&mut self, handle: ResidentLinkHandle) -> Result<ResidentLinkedOutput, CompileError> {
         match self.target {
             SourcePackArtifactTarget::X86_64 => {
                 // Require the exact complete pending inventory before moving
@@ -137,14 +156,30 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                     ))
                 })?;
                 let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-                linker
-                    .link_executable(&self.compiler.gpu.device, &self.compiler.gpu.queue, &input)
-                    .map_err(|err| {
-                        super::x86_codegen::x86_source_pack_link_error(
-                            "execute resident x86_64 source-pack linker",
-                            err,
-                        )
-                    })
+                let (device, queue) = (&self.compiler.gpu.device, &self.compiler.gpu.queue);
+                let link_error = |err| {
+                    super::x86_codegen::x86_source_pack_link_error(
+                        "execute resident x86_64 source-pack linker",
+                        err,
+                    )
+                };
+                match &self.output_file {
+                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                        path,
+                        self.target,
+                        |file| {
+                            linker
+                                .link_executable_to_writer(device, queue, &input, file)
+                                .map(|len| len as u64)
+                                .map_err(link_error)
+                        },
+                    )
+                    .map(ResidentLinkedOutput::File),
+                    None => linker
+                        .link_executable(device, queue, &input)
+                        .map(ResidentLinkedOutput::Bytes)
+                        .map_err(link_error),
+                }
             }
             SourcePackArtifactTarget::Wasm => {
                 let objects = handle
@@ -169,13 +204,29 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                     ))
                 })?;
                 let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-                linker
-                    .link_executable(&self.compiler.gpu.device, &self.compiler.gpu.queue, &input)
-                    .map_err(|err| {
-                        source_pack_artifact_store_error(format!(
-                            "execute resident Wasm source-pack linker: {err}"
-                        ))
-                    })
+                let (device, queue) = (&self.compiler.gpu.device, &self.compiler.gpu.queue);
+                let link_error = |err| {
+                    source_pack_artifact_store_error(format!(
+                        "execute resident Wasm source-pack linker: {err}"
+                    ))
+                };
+                match &self.output_file {
+                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                        path,
+                        self.target,
+                        |file| {
+                            linker
+                                .link_executable_to_writer(device, queue, &input, file)
+                                .map(|len| len as u64)
+                                .map_err(link_error)
+                        },
+                    )
+                    .map(ResidentLinkedOutput::File),
+                    None => linker
+                        .link_executable(device, queue, &input)
+                        .map(ResidentLinkedOutput::Bytes)
+                        .map_err(link_error),
+                }
             }
             SourcePackArtifactTarget::Generic => unreachable!("resident target is concrete"),
         }
@@ -186,7 +237,7 @@ impl AsyncPagedArtifactBuildExecutor for ResidentSourcePackExecutor<'_, '_> {
     type LibraryInterfaceArtifact = ResidentSourcePackArtifact;
     type CodegenObjectArtifact = ResidentSourcePackArtifact;
     type LinkHandle = ResidentLinkHandle;
-    type LinkedOutputArtifact = Vec<u8>;
+    type LinkedOutputArtifact = ResidentLinkedOutput;
     type LibraryInterfaceBuildHandle = ResidentLibraryBuildHandle;
     type CodegenObjectBuildHandle = ResidentCodegenBuildHandle;
 
