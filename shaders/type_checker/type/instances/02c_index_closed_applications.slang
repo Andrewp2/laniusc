@@ -12,20 +12,22 @@ RWStructuredBuffer<uint> type_instance_lookup_head;
 RWStructuredBuffer<uint> type_instance_lookup_next;
 RWStructuredBuffer<uint> type_instance_lookup_present;
 StructuredBuffer<uint> type_application_count;
+StructuredBuffer<uint> token_count;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint lane = dtid.x + dtid.y * 16776960u;
-    if (lane >= gParams.n_tokens) return;
+    uint lanes = live_type_row_lanes(gParams.n_tokens, token_count[0u]);
+    if (lane >= lanes) return;
     uint buckets; uint stride;
     type_instance_lookup_head.GetDimensions(buckets, stride);
     uint capacity = checked_type_capacity();
     uint source_rows;
     type_generic_param_slot_by_token.GetDimensions(source_rows, stride);
     uint live = live_type_row_count(gParams.n_tokens, source_rows, capacity, type_application_count[0u]);
-    for (uint index = lane; index < live; index += gParams.n_tokens)
+    for (uint index = lane; index < live; index += lanes)
     {
         uint instance = live_type_row(index, gParams.n_tokens, source_rows);
         if (type_instance_lookup_present[instance] != 0u) continue;

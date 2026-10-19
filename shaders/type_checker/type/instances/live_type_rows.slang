@@ -27,6 +27,17 @@ uint live_type_row_count(uint tokens, uint source_rows, uint capacity, uint gene
     return source + body + min(generated, tail - body);
 }
 
+// The lanes a pass strides by: one per active token, as
+// token_active_dispatch_args launches (hir_active_dispatch_args.slang), from
+// `tokens` (gParams.n_tokens, the workspace's token capacity) and
+// `active_tokens` (token_count[0]). A warm job can keep a capacity above its
+// token count; striding by the capacity then skipped every live row past the
+// launched lanes, generated rows included.
+uint live_type_row_lanes(uint tokens, uint active_tokens)
+{
+    return max(min(tokens, active_tokens), 1u);
+}
+
 // The row of live index `index` (below live_type_row_count): the source rows
 // first, then the body graph and generated rows from `source_rows` on.
 uint live_type_row(uint index, uint tokens, uint source_rows)

@@ -583,22 +583,22 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_warm_shapes_rerun_cold_when_the_token_count_changes() {
+    fn physical_gpu_warm_shape_headroom_covers_edits_and_retries_past_it() {
         std::thread::Builder::new()
-            .name("parser shape token count".into())
+            .name("parser shape headroom".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn(run_warm_shape_token_count)
-            .expect("spawn parser shape token count check")
+            .spawn(run_warm_shape_headroom)
+            .expect("spawn parser shape headroom check")
             .join()
-            .expect("parser shape token count check panicked");
+            .expect("parser shape headroom check panicked");
     }
 
-    // A warm job keeps its cached parser shape only when the token count is
-    // unchanged (`warm_token_capacity_fits`). An edit that adds a few tokens,
-    // one that adds many in the same source bytes (code where the original
-    // had a comment), and one that removes them each run the cold path once
-    // through the lexer-boundary retry, and every result is correct.
-    fn run_warm_shape_token_count() {
+    // A cold job records its parser shape with token headroom, so a warm edit
+    // that adds a few tokens runs speculatively to completion. An edit that
+    // adds more tokens than the headroom, in the same source bytes (code
+    // where the original had a comment), still compiles correctly through
+    // the lexer-boundary retry.
+    fn run_warm_shape_headroom() {
         use std::sync::atomic::Ordering;
 
         use crate::parser::driver::TEST_WARM_SHAPE_HEADROOM;
@@ -610,7 +610,7 @@ mod tests {
             }
         }
         let _guard = HeadroomGuard;
-        TEST_WARM_SHAPE_HEADROOM.store(0, Ordering::Relaxed);
+        TEST_WARM_SHAPE_HEADROOM.store(1, Ordering::Relaxed);
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
             gpu,
@@ -620,7 +620,8 @@ mod tests {
         let filler: String = (0..600)
             .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}\n"))
             .collect();
-        // 13 tokens each: 10,400 tokens.
+        // 13 tokens each: 10,400 tokens, more than the headroom's one to two
+        // allocation buckets.
         let extra: String = (0..800)
             .map(|index| format!("fn g{index}(x: i32) -> i32 {{ return x; }}\n"))
             .collect();
@@ -655,19 +656,17 @@ mod tests {
             );
             assert_lowered_program_result(
                 LoweringTarget::X86_64,
-                &format!("shape-token-count-{case}"),
+                &format!("headroom-{case}"),
                 &artifact,
                 42,
             );
         };
         run("cold", &base, (0, 0));
         run("identical", &base, (0, 0));
-        run("small_edit", &small_edit, (1, 0));
-        run("small_edit_again", &small_edit, (0, 0));
+        run("small_edit", &small_edit, (0, 0));
         run("outgrown", &outgrown, (1, 0));
         run("outgrown_again", &outgrown, (0, 0));
-        run("back_to_base", &base, (1, 0));
-        run("base_again", &base, (0, 0));
+        run("back_to_base", &base, (0, 0));
     }
 
     #[test]

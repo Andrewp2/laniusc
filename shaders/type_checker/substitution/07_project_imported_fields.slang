@@ -36,6 +36,7 @@ RWStructuredBuffer<uint> imported_layout_group_total;
 // [defer missing bindings, number of newly published type facts].
 RWStructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> status;
+StructuredBuffer<uint> token_count;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -92,7 +93,8 @@ bool publish_field(uint id, uint instance, uint target, uint type, inout CtSpare
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint lane = dtid.x + dtid.y * 16776960u;
-    if (lane >= gParams.n_tokens) return;
+    uint lanes = live_type_row_lanes(gParams.n_tokens, token_count[0u]);
+    if (lane >= lanes) return;
     uint capacity; uint stride; uint group_capacity;
     imported_field_ref_tag.GetDimensions(capacity, stride);
     imported_layout_groups.GetDimensions(group_capacity, stride);
@@ -104,7 +106,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint source_rows;
     type_generic_param_slot_by_token.GetDimensions(source_rows, stride);
     for (uint index = lane; index < live_type_row_count(gParams.n_tokens, source_rows,
-        mutable_type_capacity(), type_application_count[0u]); index += gParams.n_tokens)
+        mutable_type_capacity(), type_application_count[0u]); index += lanes)
     {
         uint instance = live_type_row(index, gParams.n_tokens, source_rows);
         if (type_instance_kind[instance] != 1u || type_instance_decl_token[instance] != INVALID ||
