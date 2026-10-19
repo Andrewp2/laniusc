@@ -1713,34 +1713,35 @@ fn main() -> i32 { return support::math::seven(); }
     /// depend on that.
     #[test]
     fn dependency_interfaces_do_not_depend_on_parser_token_headroom() {
-        use std::sync::atomic::Ordering;
+        use crate::{
+            compiler::GpuSemanticInterfaceArtifact,
+            parser::driver::{override_warm_shape_headroom, warm_shape_headroom_override_reads},
+        };
 
-        use crate::{compiler::GpuSemanticInterfaceArtifact, parser::driver::TEST_WARM_SHAPE_HEADROOM};
-
-        struct HeadroomGuard;
-        impl Drop for HeadroomGuard {
-            fn drop(&mut self) {
-                TEST_WARM_SHAPE_HEADROOM.store(u8::MAX, Ordering::Relaxed);
-            }
-        }
-        let _guard = HeadroomGuard;
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
         let mut salt = 0usize;
         let mut compile = |headroom: bool,
                            source: &str,
                            library_id: u32,
                            pages: Vec<Vec<GpuSemanticInterfaceArtifact>>| {
-            TEST_WARM_SHAPE_HEADROOM.store(u8::from(headroom), Ordering::Relaxed);
+            // The override is per thread: the compile must run on this one.
+            let _headroom = override_warm_shape_headroom(u8::from(headroom));
+            let reads = warm_shape_headroom_override_reads();
             // Distinct bytes per call keep each content-keyed parser shape cold.
             salt += 1;
             let source = format!("{source}{}", "\n".repeat(salt));
-            pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            let result = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
                 vec![source].into(),
                 library_id,
                 0,
                 pages.into(),
                 SourcePackArtifactTarget::X86_64,
-            ))
+            ));
+            assert!(
+                warm_shape_headroom_override_reads() > reads,
+                "the compile did not read this thread's headroom override"
+            );
+            result
         };
         fn interface_differences(
             label: &str,

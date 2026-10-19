@@ -340,10 +340,10 @@ pub(crate) const WARM_SHAPE_TOKEN_HEADROOM: u32 = ResidentParserAllocation::GRAN
 pub(crate) fn warm_shape_headroom() -> (bool, bool) {
     #[cfg(test)]
     {
-        match TEST_WARM_SHAPE_HEADROOM.load(std::sync::atomic::Ordering::Relaxed) {
-            0 => return (false, false),
-            1 => return (true, true),
-            _ => {}
+        let mode = TEST_WARM_SHAPE_HEADROOM.with(std::cell::Cell::get);
+        if mode <= 1 {
+            TEST_WARM_SHAPE_HEADROOM_READS.with(|reads| reads.set(reads.get() + 1));
+            return (mode == 1, mode == 1);
         }
     }
     static MODE: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
@@ -355,11 +355,41 @@ pub(crate) fn warm_shape_headroom() -> (bool, bool) {
     })
 }
 
-/// Test override of `LANIUS_PARSER_SHAPE_HEADROOM`: 0 off, 1 both, anything
-/// else follows the environment.
+// Test override of `LANIUS_PARSER_SHAPE_HEADROOM` for compiles on this thread
+// (0 off, 1 both, anything else follows the environment), and how many times
+// a compile on this thread read it. Per thread, so a test that turns headroom
+// on does not turn it on for the tests running beside it.
 #[cfg(test)]
-pub(crate) static TEST_WARM_SHAPE_HEADROOM: std::sync::atomic::AtomicU8 =
-    std::sync::atomic::AtomicU8::new(u8::MAX);
+thread_local! {
+    static TEST_WARM_SHAPE_HEADROOM: std::cell::Cell<u8> = const { std::cell::Cell::new(u8::MAX) };
+    static TEST_WARM_SHAPE_HEADROOM_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Sets this thread's headroom override (0 off, 1 both) until the guard drops.
+#[cfg(test)]
+pub(crate) fn override_warm_shape_headroom(mode: u8) -> WarmShapeHeadroomOverride {
+    WarmShapeHeadroomOverride {
+        previous: TEST_WARM_SHAPE_HEADROOM.with(|cell| cell.replace(mode)),
+    }
+}
+
+/// How many times a compile on this thread has read its headroom override.
+#[cfg(test)]
+pub(crate) fn warm_shape_headroom_override_reads() -> u64 {
+    TEST_WARM_SHAPE_HEADROOM_READS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) struct WarmShapeHeadroomOverride {
+    previous: u8,
+}
+
+#[cfg(test)]
+impl Drop for WarmShapeHeadroomOverride {
+    fn drop(&mut self) {
+        TEST_WARM_SHAPE_HEADROOM.with(|cell| cell.set(self.previous));
+    }
+}
 
 /// The token capacity a cold job records for `token_count` tokens: the
 /// allocation bucket at least `WARM_SHAPE_TOKEN_HEADROOM` past the count,
