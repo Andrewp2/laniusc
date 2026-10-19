@@ -34,7 +34,7 @@ pub use results::{
     ResidentParserCapacity,
 };
 #[cfg(test)]
-pub(crate) use resident_buffers::TEST_WARM_SHAPE_HEADROOM;
+pub(crate) use resident_buffers::{override_warm_shape_headroom, warm_shape_headroom_override_reads};
 pub(crate) use resident_buffers::{
     token_capacity_with_headroom,
     tree_capacity_with_headroom,
