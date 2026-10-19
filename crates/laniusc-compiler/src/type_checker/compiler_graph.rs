@@ -2969,6 +2969,10 @@ fn build_graph(
         // than the generic bodies of any unit; the host refuses an overflow.
         _retained_owner_span_count as "retained_owner_span_count" in Calls => 4;
         _retained_owner_spans as "retained_owner_spans" in Calls => (hir_rows.div_ceil(16) * 44).max(64 * 44);
+        // Function bodies of a declarations-only template: one 28-byte record
+        // per 8 HIR rows; a unit with more bodies keeps its full template.
+        _retained_body_span_count as "retained_body_span_count" in Calls => 4;
+        _retained_body_spans as "retained_body_spans" in Calls => (hir_rows.div_ceil(8) * 28).max(64 * 28);
     });
     graph.add_storage(
         "body_specialization_inputs",
@@ -6609,7 +6613,10 @@ fn build_graph(
         name: SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
         phase: CompilerPhase::TypeCheck,
         dispatch_domain: ResourceDomain::Calls,
-        accesses: vec![PassAccess::write("retained_owner_span_count", _retained_owner_span_count)],
+        accesses: vec![
+            PassAccess::write("retained_owner_span_count", _retained_owner_span_count),
+            PassAccess::write("retained_body_span_count", _retained_body_span_count),
+        ],
     })?;
     graph.add_kernel_pass_by_name(
         SEMANTIC_ARTIFACT_OWNER_SPANS_PASS,
@@ -6620,6 +6627,8 @@ fn build_graph(
         reflected_bindings![
             "retained_owner_span_count" => _retained_owner_span_count: ReadWrite,
             "retained_owner_spans" => _retained_owner_spans: Write,
+            "retained_body_span_count" => _retained_body_span_count: ReadWrite,
+            "retained_body_spans" => _retained_body_spans: Write,
             "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Read,
             "semantic_type_ref_tag_by_hir" => semantic_type_ref_tag_by_hir: Read,
             "semantic_type_ref_payload_by_hir" => semantic_type_ref_payload_by_hir: Read,

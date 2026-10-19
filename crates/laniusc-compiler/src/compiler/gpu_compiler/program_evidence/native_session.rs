@@ -32,6 +32,9 @@ use crate::{
         CheckedBodySpecializationBatch,
         CheckedGenericCall,
         CheckedGenericTarget,
+        CheckedUnitContracts,
+        BlankingDirection,
+        TemplateBlanking,
     },
     codegen::{lowering::ReplaySelection, x86::GpuX86ObjectSection},
 };
@@ -330,7 +333,7 @@ impl NativeProgramSession {
             .original_facts.clone();
         // The copies come only from the frozen template text and the byte
         // spans its own check retained.
-        let instance = if copies {
+        let mut instance = if copies {
             let spans = template.owner_spans()
                 .ok_or_else(|| anyhow!("template retained no owner spans for instance copies"))?;
             let selected = resolved.iter().map(|&(_, _, hir, _)| spans.get(hir).copied()
@@ -340,7 +343,12 @@ impl NativeProgramSession {
             let owners = selected.iter()
                 .map(|span| (span.function_hir, span.enclosing_impl.map(|header| header.hir)))
                 .collect();
-            Some(InstanceRequest { sources: Arc::new(sources), first_copy_row: spans.hir_count, owners })
+            Some(InstanceRequest {
+                sources: Arc::new(sources),
+                first_copy_row: spans.hir_count,
+                owners,
+                declarations_only: None,
+            })
         } else {
             None
         };
@@ -412,6 +420,17 @@ impl NativeProgramSession {
             specialization.set_continuation_files(template_files, instance.sources.continuations.clone())?;
         }
         specialization.set_impl_bindings(bindings)?;
+        if let Some(instance) = instance.as_mut()
+            && (declarations_only_templates_enabled() || declarations_only_templates_checked())
+        {
+            let unit = self.catalog.snapshots[target_snapshot as usize].unit;
+            match DeclarationsOnlyTemplate::build(&template, unit, instance, &specialization, resolved[0].2) {
+                Ok(template) => instance.declarations_only = template.map(Arc::new),
+                Err(error) => if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
+                    eprintln!("[decl-only] unit {}:{} keeps its full template: {error:#}", unit[0], unit[1]);
+                },
+            }
+        }
         // GPU checks each new context against the exact origin environment and
         // retained evidence before the frontend can defer a local-only lookup.
         self.check()?;
@@ -474,6 +493,68 @@ struct InstanceRequest {
     first_copy_row: u32,
     /// Per copy: the template function HIR and a method's template impl HIR.
     owners: Vec<(u32, Option<u32>)>,
+    /// The same replay against the template with its function bodies left
+    /// out, when that template could be built.
+    declarations_only: Option<Arc<DeclarationsOnlyTemplate>>,
+}
+
+/// An instance-copy replay's frontend inputs in the copy space of a
+/// declarations-only template (`TemplateBlanking`). The frontend checks
+/// these; its results are converted back to the template's full space
+/// before the request checks them, so everything after the frontend sees
+/// the same identities as a replay against the full template.
+pub(in crate::compiler::gpu_compiler) struct DeclarationsOnlyTemplate {
+    pub blanking: TemplateBlanking,
+    /// The instance sources with every blanked body's interior spaces.
+    pub sources: Arc<[String]>,
+    pub specialization: CheckedBodySpecializationBatch,
+    pub contracts: Arc<CheckedUnitContracts>,
+    /// The first copy row in copy space.
+    pub first_copy_row: u32,
+    pub selected_function_hir: u32,
+}
+
+impl DeclarationsOnlyTemplate {
+    /// None when the template retained no body spans or has nothing to
+    /// blank; an error when an input identity has no copy-space image.
+    fn build(
+        template: &OriginalUnitFacts,
+        unit: [u32; 2],
+        instance: &InstanceRequest,
+        specialization: &CheckedBodySpecializationBatch,
+        selected_function_hir: u32,
+    ) -> Result<Option<Self>> {
+        let Some(bodies) = template.owner_spans().and_then(|spans| spans.bodies.as_ref()) else {
+            return Ok(None);
+        };
+        let full_contracts = template.checked_contracts();
+        let Some(blanking) = TemplateBlanking::new(unit, bodies, full_contracts, &instance.sources.sources)? else {
+            return Ok(None);
+        };
+        let map = blanking.map(BlankingDirection::ToCopy);
+        let (removed_tokens, removed_rows) = blanking.removed();
+        let first_copy_row = instance.first_copy_row.checked_sub(removed_rows)
+            .ok_or_else(|| anyhow!("blanked rows exceed the template's rows"))?;
+        let specialization = specialization.declarations_only(&map, first_copy_row, removed_tokens)?;
+        let mut contracts = CheckedUnitContracts::clone(full_contracts);
+        map.contracts(&mut contracts)?;
+        let selected_function_hir = map.row(selected_function_hir)?;
+        let sources = blanking.blank_sources(&instance.sources.sources)?.into();
+        Ok(Some(Self { blanking, sources, specialization, contracts: Arc::new(contracts), first_copy_row,
+            selected_function_hir }))
+    }
+}
+
+/// `LANIUS_DECL_ONLY_TEMPLATES=0` replays instance copies against the full
+/// template text (the kill switch).
+pub(in crate::compiler::gpu_compiler) fn declarations_only_templates_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_DECL_ONLY_TEMPLATES", true)
+}
+
+/// `LANIUS_CHECK_DECL_ONLY_TEMPLATES=1` compiles every copy replay against
+/// both templates and fails on any difference, then keeps the full one.
+pub(in crate::compiler::gpu_compiler) fn declarations_only_templates_checked() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_CHECK_DECL_ONLY_TEMPLATES", false)
 }
 
 /// The calls a replay admitted and where its published bodies are.
@@ -517,6 +598,10 @@ impl<'session> ValidatedReplayRequest<'session> {
     }
     pub fn instance_sources(&self) -> Option<&Arc<InstanceSources>> {
         self.instance.as_ref().map(|instance| &instance.sources)
+    }
+    /// The declarations-only template of an instance-copy replay.
+    pub fn declarations_only(&self) -> Option<&DeclarationsOnlyTemplate> {
+        self.instance.as_ref().and_then(|instance| instance.declarations_only.as_deref())
     }
     pub fn identity(&self) -> Arc<()> {
         self.identity.clone()

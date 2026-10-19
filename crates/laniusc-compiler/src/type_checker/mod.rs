@@ -23,7 +23,9 @@ mod instance_closure_passes;
 mod closure_summary;
 pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
 mod owner_spans;
-pub(crate) use owner_spans::{CheckedImplHeader, CheckedOwnerSpan, CheckedOwnerSpans, CheckedTraitCut};
+pub(crate) use owner_spans::{CheckedBodySpan, CheckedImplHeader, CheckedOwnerSpan, CheckedOwnerSpans, CheckedTraitCut};
+mod template_blanking;
+pub(crate) use template_blanking::{BlankingDirection, TemplateBlanking, TemplateIdentityMap};
 mod checked_contracts;
 #[cfg(test)]
 mod scoped_type_graph_tests;

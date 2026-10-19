@@ -17,10 +17,13 @@ pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
 pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};
 pub(super) use native_session::{
     CheckedReplayCalls,
+    DeclarationsOnlyTemplate,
     NativeProgramSession,
     ReplayScope,
     ValidatedOriginalUnit,
     ValidatedReplayRequest,
+    declarations_only_templates_checked,
+    declarations_only_templates_enabled,
     instance_closure_enabled,
     native_program_error,
 };

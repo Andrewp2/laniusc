@@ -49,9 +49,10 @@ uint body_entry_copy_byte(uint entry)
 }
 
 // The first HIR row after the template: every copy row is at or past it.
+// Bit 31 of 705.w marks a declarations-only template (returns/03_validate).
 uint body_copy_first_row()
 {
-    return body_specialization_inputs[705u].w;
+    return body_specialization_inputs[705u].w & 0x7fffffffu;
 }
 
 // (slot, 10, shared root, 0)

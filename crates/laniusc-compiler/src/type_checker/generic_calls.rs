@@ -183,6 +183,8 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "semantic_predicate_subject_parameter_token_by_hir",
     "retained_owner_span_count",
     "retained_owner_spans",
+    "retained_body_span_count",
+    "retained_body_spans",
     "instance_closure_counts",
     "instance_closure_instances",
     "instance_closure_refs",

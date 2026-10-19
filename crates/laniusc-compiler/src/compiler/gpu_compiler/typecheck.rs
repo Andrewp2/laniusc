@@ -520,7 +520,16 @@ impl<'gpu> GpuCompiler<'gpu> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
         // The parse ran with `token_capacity`, which bounds the job's HIR.
-        let lowering_bounds = lowering_bounds.with_token_capacity(token_capacity);
+        let mut lowering_bounds = lowering_bounds.with_token_capacity(token_capacity);
+        // A declarations-only replay emits the same copies as a replay of
+        // the full template, so it keeps that replay's bound: the tokens
+        // its template left out count as the full template's would.
+        if let Some(removed) = object_request
+            .and_then(LoweringObjectRequest::body_specialization)
+            .and_then(gpu_type_checker::CheckedBodySpecializationBatch::declarations_only_removed_tokens)
+        {
+            lowering_bounds.hir_rows = lowering_bounds.hir_rows.saturating_add(removed);
+        }
         let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(parse_bufs);
         let type_check = self.record_typecheck_from_parse_buffers(
             device,
@@ -1709,31 +1718,54 @@ impl<'gpu> GpuCompiler<'gpu> {
         request: &program_evidence::ValidatedReplayRequest<'_>,
     ) -> Result<PendingReplayUnit, CompileError> {
         let template = request.template();
-        let compiled = self
-            .compile_source_pack_unit_with_body_specialization(
-                template.template_sources().clone(),
-                template.interface().library_id,
-                template.interface().unit_id,
-                template.template_dependency_pages().clone(),
-                SourcePackArtifactTarget::X86_64,
-                Some(BodySpecializationInput::authorized(request)),
-                Some(template.template_source_paths().as_ref()),
-            )
-            .await
-            .map_err(|error| match (error, request.instance_sources()) {
-                // The frontend checked instance copies; name template bytes.
-                (CompileError::Diagnostic(diagnostic), Some(instance)) => CompileError::Diagnostic(
-                    instance.template_diagnostic(
-                        diagnostic,
-                        template.template_sources(),
-                        Some(template.template_source_paths().as_ref()),
-                    ),
-                ),
-                (error, _) => error,
-            })?;
+        let declarations_only = request.declarations_only();
+        let compiled = match declarations_only {
+            Some(blanked) if program_evidence::declarations_only_templates_checked() => {
+                let full = self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await;
+                let short = self
+                    .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
+                    .await;
+                compare_declarations_only_replay(template.interface(), blanked, &full, &short)?;
+                full?
+            }
+            Some(blanked) if program_evidence::declarations_only_templates_enabled() => self
+                .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
+                .await?,
+            _ => self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await?,
+        };
         Ok(PendingReplayUnit {
             request_identity: request.identity(),
             unit: compiled,
+        })
+    }
+
+    /// One frontend run of an authorized replay request.
+    async fn compile_replay_input(
+        &self,
+        request: &program_evidence::ValidatedReplayRequest<'_>,
+        input: BodySpecializationInput<'_>,
+    ) -> Result<CompiledSourcePackUnit, CompileError> {
+        let template = request.template();
+        self.compile_source_pack_unit_with_body_specialization(
+            template.template_sources().clone(),
+            template.interface().library_id,
+            template.interface().unit_id,
+            template.template_dependency_pages().clone(),
+            SourcePackArtifactTarget::X86_64,
+            Some(input),
+            Some(template.template_source_paths().as_ref()),
+        )
+        .await
+        .map_err(|error| match (error, request.instance_sources()) {
+            // The frontend checked instance copies; name template bytes.
+            (CompileError::Diagnostic(diagnostic), Some(instance)) => CompileError::Diagnostic(
+                instance.template_diagnostic(
+                    diagnostic,
+                    template.template_sources(),
+                    Some(template.template_source_paths().as_ref()),
+                ),
+            ),
+            (error, _) => error,
         })
     }
 
@@ -1928,9 +1960,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 LoweringObjectRequest::X86_64Specialized {
                     library_id,
                     unit_id,
-                    specialization: body_specialization.unwrap().specialization,
+                    specialization: body_specialization.unwrap().frontend_specialization,
                     replay_selection: body_specialization.unwrap().replay_selection,
-                    template_contracts: body_specialization.unwrap().contracts.as_ref(),
+                    template_contracts: body_specialization.unwrap().frontend_contracts,
                     frontend_trait_check: body_specialization.unwrap().frontend_trait_check,
                 }
             }
@@ -1966,6 +1998,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await?;
         if let Some(input) = body_specialization {
             artifacts.semantic_interface = Some(input.interface.clone());
+            if let Some(blanking) = input.blanking {
+                artifacts.blanked_to_full(blanking).map_err(|error| CompileError::GpuFrontend(format!(
+                    "declarations-only template results do not map back to the template: {error:#}"
+                )))?;
+            }
         }
         let mut unit = finish_source_pack_unit(
             artifacts,
@@ -2043,8 +2080,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                 ));
             }
         };
-        let parser_shape_key =
-            parser_shape_key_for_source_pack(sources, source_paths, library_id, unit_id);
+        // A declarations-only replay checks far fewer tokens than its unit's
+        // own compile, with parser features that follow its copies. Keyed by
+        // content, it neither shrinks the unit's remembered shape nor
+        // predicts another copy set's.
+        let declarations_only = object_request
+            .and_then(LoweringObjectRequest::body_specialization)
+            .is_some_and(gpu_type_checker::CheckedBodySpecializationBatch::is_declarations_only);
+        let parser_shape_key = if declarations_only {
+            parser_shape_key_for_source_pack(sources, None, library_id, unit_id)
+        } else {
+            parser_shape_key_for_source_pack(sources, source_paths, library_id, unit_id)
+        };
         let mut forced_tree_capacity = None;
         let mut require_lexer_boundary = false;
         loop {
@@ -2528,6 +2575,12 @@ struct BodySpecializationInput<'a> {
     interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
     contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
     frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
+    /// What the frontend checks against: `specialization` and `contracts`,
+    /// or their copy-space forms for a declarations-only template, whose
+    /// frontend results `blanking` converts back to full space.
+    frontend_specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
+    frontend_contracts: &'a gpu_type_checker::CheckedUnitContracts,
+    blanking: Option<&'a gpu_type_checker::TemplateBlanking>,
 }
 
 impl<'a> BodySpecializationInput<'a> {
@@ -2543,6 +2596,9 @@ impl<'a> BodySpecializationInput<'a> {
             interface,
             contracts,
             frontend_trait_check: gpu_type_checker::FrontendTraitCheck::Strict,
+            frontend_specialization: specialization,
+            frontend_contracts: contracts.as_ref(),
+            blanking: None,
         }
     }
 
@@ -2557,6 +2613,27 @@ impl<'a> BodySpecializationInput<'a> {
             frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
                 selected_function_hir: request.selected_function_hir(),
             },
+            frontend_specialization: request.specialization(),
+            frontend_contracts: template.checked_contracts().as_ref(),
+            blanking: None,
+        }
+    }
+
+    /// `authorized` against the request's declarations-only template.
+    fn declarations_only(
+        request: &'a program_evidence::ValidatedReplayRequest<'_>,
+        template: &'a program_evidence::DeclarationsOnlyTemplate,
+    ) -> Self {
+        Self {
+            replay_selection: crate::codegen::lowering::ReplaySelection::CopiesFrom(template.first_copy_row),
+            frontend_sources: Some(&template.sources),
+            frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
+                selected_function_hir: template.selected_function_hir,
+            },
+            frontend_specialization: &template.specialization,
+            frontend_contracts: template.contracts.as_ref(),
+            blanking: Some(&template.blanking),
+            ..Self::authorized(request)
         }
     }
 }
@@ -2862,6 +2939,131 @@ struct CheckedSourcePackArtifacts {
     native_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     instance_closure: gpu_type_checker::CheckedInstanceClosure,
     x86_call_hirs: Vec<u32>,
+}
+
+/// `LANIUS_CHECK_DECL_ONLY_TEMPLATES=1`: a replay against the
+/// declarations-only template must give exactly what the full template
+/// gives (calls, owners, native object and inventory, layouts, or the same
+/// diagnostic). Any difference fails the compile.
+fn compare_declarations_only_replay(
+    interface: &crate::compiler::GpuSemanticInterfaceArtifact,
+    blanked: &program_evidence::DeclarationsOnlyTemplate,
+    full: &Result<CompiledSourcePackUnit, CompileError>,
+    short: &Result<CompiledSourcePackUnit, CompileError>,
+) -> Result<(), CompileError> {
+    let mut differences = Vec::new();
+    match (full, short) {
+        (Ok(full), Ok(short)) => {
+            let (objects, symbols) = match (&full.object, &short.object) {
+                (CompiledSourcePackObject::X86_64(full), CompiledSourcePackObject::X86_64(short)) => (
+                    full == short,
+                    full.symbols == short.symbols && full.identity_bytes == short.identity_bytes,
+                ),
+                _ => (false, false),
+            };
+            let mut check = |name: &str, same: bool| if !same { differences.push(name.to_string()) };
+            check("native symbols", symbols);
+            check("generic calls", full.generic_calls == short.generic_calls);
+            check("checked call owners", full.checked_call_owners == short.checked_call_owners);
+            check("native call rows", full.x86_call_hirs == short.x86_call_hirs);
+            check("native call functions", full.x86_call_function_hirs == short.x86_call_function_hirs);
+            check("native layouts", full.body_native_layouts == short.body_native_layouts);
+            check("contracts", full.checked_contracts == short.checked_contracts);
+            check("native object", objects);
+            if !differences.is_empty() && crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
+                if let (CompiledSourcePackObject::X86_64(a), CompiledSourcePackObject::X86_64(b)) = (&full.object, &short.object) {
+                    let first = |x: &[u8], y: &[u8]| x.iter().zip(y).position(|(l, r)| l != r);
+                    eprintln!("[decl-only] object text {} / {} first diff {:?}; rodata {} / {} first diff {:?}; relocations {} / {} same {}; entry {:?} / {:?}",
+                        a.text.len(), b.text.len(), first(&a.text, &b.text), a.rodata.len(), b.rodata.len(),
+                        first(&a.rodata, &b.rodata), a.relocations.len(), b.relocations.len(),
+                        a.relocations == b.relocations, a.entry_offset, b.entry_offset);
+                    for (index, (x, y)) in a.relocations.iter().zip(&b.relocations).enumerate().filter(|(_, (x, y))| x != y).take(4) {
+                        eprintln!("[decl-only] relocation {index}: full {x:?} short {y:?}");
+                    }
+                    if let Some(at) = first(&a.text, &b.text) {
+                        let window = |t: &[u8]| t[at.saturating_sub(8)..(at + 24).min(t.len())].iter().map(|b| format!("{b:02x}")).collect::<String>();
+                        eprintln!("[decl-only] text at {at}: full {} short {}", window(&a.text), window(&b.text));
+                    }
+                }
+                eprintln!("[decl-only] full calls {:?}\n[decl-only] short calls {:?}", full.generic_calls, short.generic_calls);
+                eprintln!("[decl-only] full owners {:?}\n[decl-only] short owners {:?}", full.checked_call_owners, short.checked_call_owners);
+                eprintln!("[decl-only] full native {:?} {:?}\n[decl-only] short native {:?} {:?}",
+                    full.x86_call_hirs, full.x86_call_function_hirs, short.x86_call_hirs, short.x86_call_function_hirs);
+            }
+        }
+        (Err(full), Err(short)) => {
+            if format!("{full:?}") != format!("{short:?}") {
+                differences.push(format!("diagnostics: full {full:?}; declarations-only {short:?}"));
+            }
+        }
+        (Ok(_), Err(short)) => differences.push(format!("only the declarations-only replay failed: {short:?}")),
+        (Err(full), Ok(_)) => differences.push(format!("only the full replay failed: {full:?}")),
+    }
+    let (tokens, rows) = blanked.blanking.removed();
+    if differences.is_empty() {
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
+            eprintln!("[decl-only] unit {}:{} match: {} bodies, {tokens} tokens, {rows} rows left out",
+                interface.library_id, interface.unit_id, blanked.blanking.body_count());
+        }
+        return Ok(());
+    }
+    let message = format!(
+        "declarations-only template of unit {}:{} ({} bodies, {tokens} tokens, {rows} rows left out) differs from the full template: {}",
+        interface.library_id, interface.unit_id, blanked.blanking.body_count(), differences.join("; "));
+    eprintln!("[decl-only] MISMATCH {message}");
+    Err(CompileError::GpuFrontend(message))
+}
+
+impl CheckedSourcePackArtifacts {
+    /// Convert a declarations-only replay's results from the blanked
+    /// template's copy space to the template's full space: every token and
+    /// row the template unit's checked calls, owners and native symbols name.
+    fn blanked_to_full(&mut self, blanking: &gpu_type_checker::TemplateBlanking) -> anyhow::Result<()> {
+        let map = blanking.map(gpu_type_checker::BlankingDirection::ToFull);
+        for call in &mut self.generic_calls {
+            map.call(call)?;
+        }
+        for instance in &mut self.instance_closure.instances {
+            map.call(&mut instance.call)?;
+        }
+        for owner in self.checked_call_owners.iter_mut().chain(self.native_call_owners.iter_mut()) {
+            map.call_owner(owner)?;
+        }
+        for hir in &mut self.x86_call_hirs {
+            *hir = map.row(*hir)?;
+        }
+        // A replay retains no copyable spans of its own.
+        self.owner_spans = None;
+        anyhow::ensure!(self.wasm_object.is_none(), "a declarations-only replay emits x86 only");
+        if let Some(object) = &mut self.x86_object {
+            let mut ranges = object.symbols.iter()
+                .filter(|symbol| symbol.identity_byte_len == 12)
+                .map(|symbol| symbol.identity_byte_start as usize)
+                .collect::<Vec<_>>();
+            ranges.sort_unstable();
+            ranges.dedup();
+            for start in ranges {
+                let bytes = object.identity_bytes.get_mut(start..start + 12)
+                    .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
+                let mut identity = [0u32; 3];
+                for (word, chunk) in identity.iter_mut().zip(bytes.chunks_exact(4)) {
+                    *word = u32::from_le_bytes(chunk.try_into().unwrap());
+                }
+                map.qualified_symbol(&mut identity)?;
+                for (chunk, word) in bytes.chunks_exact_mut(4).zip(identity) {
+                    chunk.copy_from_slice(&word.to_le_bytes());
+                }
+            }
+            for symbol in &mut object.symbols {
+                let start = symbol.identity_byte_start as usize;
+                let bytes = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)
+                    .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
+                (symbol.identity_hash_lo, symbol.identity_hash_hi) = crate::compiler::stable_name_hash(bytes);
+            }
+            object.validate().map_err(anyhow::Error::msg)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]

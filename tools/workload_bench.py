@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 import pathlib
@@ -236,13 +237,15 @@ def main():
             except Exception as e:  # noqa: BLE001
                 verdict = f"RUN-ERROR {e}"
                 ok = False
+        # The output's digest, so two runs can be compared byte for byte.
+        digest = hashlib.sha256(exe.read_bytes()).hexdigest()[:16] if exe.exists() else None
         try:
             exe.unlink()
         except FileNotFoundError:
             pass
         print(f"{w.name} {label} {'ok' if resp.get('ok') else 'FAIL'} {ms:.1f}ms {verdict}", flush=True)
         jobs.write(json.dumps({"workload": w.name, "job": label, "ms": round(ms, 3), "ok": ok,
-                               "verdict": verdict, "response": resp}) + "\n")
+                               "verdict": verdict, "sha256": digest, "response": resp}) + "\n")
         jobs.flush()
         return ms, ok
 
