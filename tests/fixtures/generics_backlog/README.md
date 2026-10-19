@@ -30,7 +30,11 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   from a local module, `Counter::get(next)` after `import gen::count;`.
   LNC0027 "call resolution failed" ("call does not match a resolved function
   or method"). `next.get()` works (p57). Fails before and after bf4fd323,
-  so it is not the import-visible capacity. Owner: P13.
+  so it is not the import-visible capacity. It is not about imports at all:
+  a local `Counter::get(next)` fails the same way, and so does the qualified
+  `gen::count::Counter::get(next)`, while a static `Counter::make(40)` works
+  locally and imported. Calling a self method through its type's path is
+  not an implemented call form (no doc or test claims it). Owner: P13.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.
