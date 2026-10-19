@@ -1,0 +1,6 @@
+// expect: error LNC0017
+// A str has no zero value.
+fn main() -> i32 {
+    let s: str;
+    return 0;
+}

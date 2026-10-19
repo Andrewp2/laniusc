@@ -17,3 +17,10 @@ compiler_generic_types_execution  generic_constant_values_execute_with_declared_
 compiler_generic_types_execution  generic_constant_values_reject_noninteger_array_lengths  TBD  [i32; N] with const N: bool reaches LNC0047 at native layout instead of LNC0006
 compiler_generic_types_execution  qualified_enum_variants_bind_qualifier_scope_before_members  TBD  not triaged
 compiler_generic_types_execution  typed_array_receiver_executes_through_adjusted_borrow  TBD  not triaged
+
+# laniusc-compiler lib tests (cargo test -p laniusc-compiler --lib): the PEV GPU
+# tests below fail the same way in every P7a gate since before integ27.
+laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::batch_tests::gpu_batch_rejects_changed_retained_witness_before_replay  P7a  pre-existing, PEV, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_binding_abi_replays_unreachable_folded_allocation_before_publication  P7a  pre-existing, PEV, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_rejected_append_preserves_accepted_constant_rows_and_receipts  P7a  pre-existing, PEV, owner P7a (parked)
+laniusc_compiler  compiler::gpu_compiler::program_evidence::dispatch::typed_constant_fault_tests::gpu_validates_folded_projection_allocations_including_unreachable_child  P7a  pre-existing, PEV, owner P7a (parked)

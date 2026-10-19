@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::*;
 
@@ -57,6 +57,40 @@ pub(super) fn rebase_contract_owner(
             "semantic-interface rebased owner exceeds contract owner domain".to_string()
         })?;
     Ok(tag | index)
+}
+
+/// Row indexes that validate_implementations builds once, so that no
+/// implementation, method or binding has to scan a whole table.
+struct ImplementationIndexes {
+    /// Predicate rows by owner reference, in row order.
+    predicates_by_owner: HashMap<u32, Vec<usize>>,
+    /// Parameter member rows by (owner reference, owning method symbol), in
+    /// row order.
+    parameters_by_owner_method: HashMap<(u32, u32), Vec<usize>>,
+}
+
+impl ImplementationIndexes {
+    fn new(interface: &GpuSemanticInterfaceArtifact) -> Self {
+        let mut predicates_by_owner = HashMap::<u32, Vec<usize>>::new();
+        for (row, predicate) in interface.predicates.iter().enumerate() {
+            predicates_by_owner.entry(predicate.owner_ref).or_default().push(row);
+        }
+        let mut parameters_by_owner_method = HashMap::<(u32, u32), Vec<usize>>::new();
+        for (row, member) in interface.members.iter().enumerate() {
+            if member.kind == GpuSemanticInterfaceMemberKind::Parameter as u32 {
+                parameters_by_owner_method.entry((member.owner_ref, member.value_hi)).or_default().push(row);
+            }
+        }
+        Self { predicates_by_owner, parameters_by_owner_method }
+    }
+
+    fn predicates_of(&self, owner_ref: u32) -> &[usize] {
+        self.predicates_by_owner.get(&owner_ref).map_or(&[], Vec::as_slice)
+    }
+
+    fn parameters_of(&self, owner_ref: u32, method: u32) -> &[usize] {
+        self.parameters_by_owner_method.get(&(owner_ref, method)).map_or(&[], Vec::as_slice)
+    }
 }
 
 impl GpuSemanticInterfaceArtifact {
@@ -159,7 +193,7 @@ impl GpuSemanticInterfaceArtifact {
         Ok(scopes.into_iter().next())
     }
 
-    fn validate_inherent_implementation(&self, index: usize) -> Result<(), String> {
+    fn validate_inherent_implementation(&self, index: usize, indexes: &ImplementationIndexes) -> Result<(), String> {
         let implementation = self.implementations[index];
         if implementation.visibility != 1
             || [implementation.trait_library_id, implementation.trait_unit_id,
@@ -226,15 +260,17 @@ impl GpuSemanticInterfaceArtifact {
                     && parameter.value_hi == method.value_hi).map(|parameter| parameter.type_index)).collect();
             self.validate_implementation_graph(index, roots, &scopes)?;
         }
-        self.validate_implementation_prerequisites(index, scope)
+        self.validate_implementation_prerequisites(index, scope, indexes)
     }
 
-    fn validate_implementation_prerequisites(&self, index: usize, scope: Option<u32>) -> Result<(), String> {
+    fn validate_implementation_prerequisites(&self, index: usize, scope: Option<u32>,
+        indexes: &ImplementationIndexes) -> Result<(), String> {
         let implementation = self.implementations[index];
         let owner_ref = IMPLEMENTATION_OWNER_TAG | index as u32;
         let prerequisites = checked_range("implementation prerequisite", index,
             implementation.first_prerequisite, implementation.prerequisite_count, self.predicates.len())?;
-        for (row, predicate) in self.predicates.iter().enumerate().filter(|(_, predicate)| predicate.owner_ref == owner_ref) {
+        for &row in indexes.predicates_of(owner_ref) {
+            let predicate = &self.predicates[row];
             if predicate.owner_scope_symbol & 0xc000_0000 == 0xc000_0000
                 && (!prerequisites.contains(&row) || Some(predicate.owner_scope_symbol) != scope)
             {
@@ -360,11 +396,12 @@ impl GpuSemanticInterfaceArtifact {
         if !self.implementations.is_empty() && [self.library_id, self.unit_id].contains(&INVALID) {
             return Err("semantic-interface implementation has an unresolved defining unit".into());
         }
+        let indexes = ImplementationIndexes::new(self);
         for (index, implementation) in self.implementations.iter().enumerate() {
             let owner_ref = IMPLEMENTATION_OWNER_TAG | index as u32;
             match GpuSemanticInterfaceImplementationKind::from_u32(implementation.kind) {
                 Some(GpuSemanticInterfaceImplementationKind::Inherent) => {
-                    self.validate_inherent_implementation(index)?;
+                    self.validate_inherent_implementation(index, &indexes)?;
                     continue;
                 }
                 Some(GpuSemanticInterfaceImplementationKind::Trait) => {}
@@ -402,7 +439,7 @@ impl GpuSemanticInterfaceArtifact {
             }
             let (implementation_scope, inherited_counts) = self.validate_trait_implementation_header(index,
                 std::iter::once(implementation.subject_type)
-                    .chain(roots.iter().copied()).collect())?;
+                    .chain(roots.iter().copied()).collect(), &indexes)?;
             let implementation_scopes = implementation_scope.into_iter().collect::<BTreeSet<_>>();
             let members =
                 self.contract_owner_member_range(ContractOwner::Implementation(index as u32))?;
@@ -441,8 +478,8 @@ impl GpuSemanticInterfaceArtifact {
                     {
                         return Err(format!("semantic-interface implementation method {row} has an incomplete inherited header"));
                     }
-                    if self.predicates.iter().any(|predicate|
-                        predicate.owner_ref == owner_ref && predicate.owner_scope_symbol == member.value_hi)
+                    if indexes.predicates_of(owner_ref).iter().any(|&predicate|
+                        self.predicates[predicate].owner_scope_symbol == member.value_hi)
                     {
                         return Err(format!("semantic-interface trait implementation method {row} own prerequisites are unsupported"));
                     }
@@ -551,11 +588,9 @@ impl GpuSemanticInterfaceArtifact {
                     {
                         return Err(format!("semantic-interface implementation method binding {row} signature disagrees with its trait"));
                     }
-                    let expected_parameters = self.members.iter().filter(|parameter| {
-                        parameter.owner_ref == implementation.trait_declaration_index
-                            && parameter.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
-                            && parameter.value_hi == expected.value_hi
-                    });
+                    let expected_parameters = indexes
+                        .parameters_of(implementation.trait_declaration_index, expected.value_hi)
+                        .iter().map(|&parameter| &self.members[parameter]);
                     for expected_parameter in expected_parameters {
                         let actual = self.members[members.clone()].iter().find(|parameter|
                             parameter.kind == GpuSemanticInterfaceMemberKind::Parameter as u32 &&
@@ -589,7 +624,8 @@ impl GpuSemanticInterfaceArtifact {
         Ok(())
     }
 
-    fn validate_trait_implementation_header(&self, index: usize, roots: Vec<u32>) -> Result<(Option<u32>, [u32; 2]), String> {
+    fn validate_trait_implementation_header(&self, index: usize, roots: Vec<u32>,
+        indexes: &ImplementationIndexes) -> Result<(Option<u32>, [u32; 2]), String> {
         let scope = self.implementation_parameter_scope(index as u32)?;
         let members = self.contract_owner_member_range(ContractOwner::Implementation(index as u32))?;
         let mut parameters = BTreeSet::new();
@@ -621,7 +657,7 @@ impl GpuSemanticInterfaceArtifact {
         if used != parameters {
             return Err(format!("semantic-interface trait implementation {index} has an unconstrained implementation parameter"));
         }
-        self.validate_implementation_prerequisites(index, scope)?;
+        self.validate_implementation_prerequisites(index, scope, indexes)?;
         Ok((scope, [slots[0].len() as u32, slots[1].len() as u32]))
     }
 

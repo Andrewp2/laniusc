@@ -38,6 +38,8 @@ StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_aggregate_decl_token;
 StructuredBuffer<uint> semantic_aggregate_word_count;
 StructuredBuffer<uint> type_instance_native_words;
+// An imported nominal's declaration kind: 6 struct, 7 enum (low 31 bits).
+StructuredBuffer<uint> imported_layout_kind;
 StructuredBuffer<uint> semantic_array_length;
 StructuredBuffer<uint> semantic_iterable_kind;
 StructuredBuffer<uint> semantic_value_id;
@@ -611,11 +613,30 @@ void semantic_type_ref_for_hir(uint node, uint hir_count,
     payload = semantic_expr_ref_payload[node];
 }
 
+static const uint IMPORTED_LAYOUT_STRUCT = 6u;
+
+// An imported struct instance whose checked native layout is known.
+bool imported_struct_instance(uint instance)
+{
+    if (type_instance_decl_token[instance] != LIR_INVALID ||
+        external_type_library_id[instance] == LIR_INVALID)
+        return false;
+    uint capacity; uint stride;
+    imported_layout_kind.GetDimensions(capacity, stride);
+    uint words = type_instance_native_words[instance];
+    return instance < capacity &&
+        (imported_layout_kind[instance] & 0x7fffffffu) == IMPORTED_LAYOUT_STRUCT &&
+        words != 0u && words != LIR_INVALID;
+}
+
 // The opcode of the zero value that `let x: T;` stores, from the checked
 // declaration type: a zero constant for numbers, bool, char and ptr, and a
-// zero-filled aggregate for fixed arrays and local structs. Other types are
-// unsupported: the zero bits of str, references and slices are not values,
-// and an enum's would silently pick its first variant.
+// zero-filled aggregate for fixed arrays, slices, local structs and imported
+// structs. A slice's zero is (null, 0, 0), a valid empty view: its length
+// is 0, so every index fails the bounds check. An imported struct is filled
+// from its imported layout. Other types are unsupported: the zero bits of
+// str and references are not values, and an enum's would silently pick its
+// first variant.
 uint zero_initializer_op(uint node, uint hir_count)
 {
     uint tag;
@@ -640,9 +661,13 @@ uint zero_initializer_op(uint node, uint hir_count)
     }
     else if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity())
     {
-        if (type_instance_kind[payload] == 2u) return SEMANTIC_LIR_OP_AGGREGATE_NEW;
-        if (type_instance_kind[payload] == TYPE_INSTANCE_NAMED)
+        uint kind = type_instance_kind[payload];
+        if (kind == 2u || kind == 3u) return SEMANTIC_LIR_OP_AGGREGATE_NEW;
+        if (kind == TYPE_INSTANCE_NAMED)
+        {
+            if (imported_struct_instance(payload)) return SEMANTIC_LIR_OP_AGGREGATE_NEW;
             declaration_token = type_instance_decl_token[payload];
+        }
     }
     uint declaration = declaration_token < gParams.n_tokens
         ? semantic_aggregate_hir_by_name_token[declaration_token] : LIR_INVALID;

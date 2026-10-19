@@ -544,6 +544,7 @@ pub(crate) fn begin_counted_compute_pass<'encoder>(
     descriptor: &wgpu::ComputePassDescriptor<'_>,
 ) -> wgpu::ComputePass<'encoder> {
     RECORDED_COMPUTE_PASS_COUNT.fetch_add(1, Ordering::Relaxed);
+    note_thread_gpu_activity(|activity| activity.compute_passes += 1);
     let label = descriptor.label.unwrap_or("<unlabeled>");
     if compute_pass_breakdown_enabled() {
         let mut counts = RECORDED_COMPUTE_PASSES_BY_LABEL
@@ -743,6 +744,72 @@ mod compute_pass_counting_tests {
     }
 }
 
+/// GPU objects created (and tracked buffers released) by the current thread.
+/// The process-wide counters also count other threads, such as concurrently
+/// running tests, so a check that one operation creates nothing compares
+/// this thread's counts around it. Compiler record and check paths run on
+/// the calling thread; only construction spreads over threads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ThreadGpuActivity {
+    pub pipelines: u64,
+    pub bind_groups: u64,
+    pub compute_passes: u64,
+    pub buffers_created: u64,
+    pub buffers_released: u64,
+}
+
+impl ThreadGpuActivity {
+    const NONE: Self = Self {
+        pipelines: 0,
+        bind_groups: 0,
+        compute_passes: 0,
+        buffers_created: 0,
+        buffers_released: 0,
+    };
+
+    /// The activity between `earlier` and `self`.
+    pub(crate) fn since(self, earlier: Self) -> Self {
+        Self {
+            pipelines: self.pipelines - earlier.pipelines,
+            bind_groups: self.bind_groups - earlier.bind_groups,
+            compute_passes: self.compute_passes - earlier.compute_passes,
+            buffers_created: self.buffers_created - earlier.buffers_created,
+            buffers_released: self.buffers_released - earlier.buffers_released,
+        }
+    }
+}
+
+thread_local! {
+    static THREAD_GPU_ACTIVITY: std::cell::Cell<ThreadGpuActivity> =
+        const { std::cell::Cell::new(ThreadGpuActivity::NONE) };
+}
+
+/// This thread's GPU object counts so far.
+pub(crate) fn this_thread_gpu_activity() -> ThreadGpuActivity {
+    THREAD_GPU_ACTIVITY
+        .try_with(std::cell::Cell::get)
+        .unwrap_or(ThreadGpuActivity::NONE)
+}
+
+/// Counts one GPU object event on this thread. A buffer dropped while the
+/// thread's locals are being destroyed is not counted.
+pub(crate) fn note_thread_gpu_activity(count: impl FnOnce(&mut ThreadGpuActivity)) {
+    let _ = THREAD_GPU_ACTIVITY.try_with(|cell| {
+        let mut activity = cell.get();
+        count(&mut activity);
+        cell.set(activity);
+    });
+}
+
+static PIPELINES_SEALED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks the end of startup pipeline preparation: a daemon's jobs must create
+/// none after it reports readiness. Each pipeline created later is named on
+/// stderr, so a kernel missing from the eager set identifies itself.
+pub(crate) fn seal_pipeline_creation() {
+    PIPELINES_SEALED.store(true, Ordering::Relaxed);
+}
+
 /// Returns the number of compute pipelines created by this process.
 ///
 /// The daemon uses this monotonic count to enforce that compilation jobs do
@@ -773,6 +840,7 @@ pub(crate) fn bind_group_creation_counts_by_label() -> HashMap<String, u64> {
 
 fn record_bind_group_creation(label: Option<&str>) {
     BIND_GROUP_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    note_thread_gpu_activity(|activity| activity.bind_groups += 1);
     *BIND_GROUP_CREATIONS_BY_LABEL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1849,6 +1917,10 @@ pub fn pipeline_from_spirv_and_bgls(
     let compute_pipeline_end = Instant::now();
     let creation = compute_pipeline_end.duration_since(compute_pipeline_start);
     PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    note_thread_gpu_activity(|activity| activity.pipelines += 1);
+    if PIPELINES_SEALED.load(Ordering::Relaxed) {
+        eprintln!("[laniusc] compute pipeline `{label}` created after daemon readiness");
+    }
     PIPELINE_CREATION_NANOS.fetch_add(creation.as_nanos() as u64, Ordering::Relaxed);
     crate::gpu::device::note_pipeline_creation(device, creation);
     trace_pipeline(label, "compute_pipeline.done");

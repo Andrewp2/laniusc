@@ -128,7 +128,47 @@ impl<'a> DependencyInterfacePages<'a> {
     }
 }
 
+/// The parser token capacity a cold job records: its token count with
+/// headroom (`token_capacity_with_headroom`) within the lexer's token buffer.
+fn cold_token_capacity(token_count: u32, bufs: &crate::lexer::buffers::GpuBuffers) -> u32 {
+    if !crate::parser::driver::warm_shape_headroom().0 {
+        return token_count.max(1);
+    }
+    crate::parser::driver::token_capacity_with_headroom(
+        token_count,
+        u32::try_from(bufs.tokens_out.count).unwrap_or(u32::MAX),
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ParserRetry {
+    LexerBoundary,
+    TreeCapacity,
+}
+
 impl<'gpu> GpuCompiler<'gpu> {
+    fn note_parser_retry(&self, retry: ParserRetry) {
+        // A zero-length span marks the retry in a trace.
+        drop(crate::gpu::trace::HostSpan::new(
+            "host.frontend",
+            match retry {
+                ParserRetry::LexerBoundary => "frontend.retry.lexer_boundary",
+                ParserRetry::TreeCapacity => "frontend.retry.tree_capacity",
+            },
+        ));
+        #[cfg(test)]
+        {
+            let mut cache = self
+                .parser_shape_cache
+                .lock()
+                .expect("compiler.parser_shape_cache poisoned");
+            match retry {
+                ParserRetry::LexerBoundary => cache.lexer_boundary_retries += 1,
+                ParserRetry::TreeCapacity => cache.tree_capacity_retries += 1,
+            }
+        }
+    }
+
     fn cached_parser_shape(
         &self,
         key: &blake3::Hash,
@@ -195,7 +235,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         let tree_capacity = match reusable_capacity {
             Some(capacity) => capacity,
             None => {
-                self.parser
+                let measured = self
+                    .parser
                     .measure_resident_partial_parse_capacity(
                         input.token_capacity,
                         input.token_buffer,
@@ -206,7 +247,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                         timer,
                     )
                     .map_err(&map_parser_error)?
-                    .tree_capacity
+                    .tree_capacity;
+                // A warm edit within the token headroom must also fit the
+                // tree, or it would replace the parser workspace.
+                if crate::parser::driver::warm_shape_headroom().1 {
+                    crate::parser::driver::tree_capacity_with_headroom(
+                        measured,
+                        input.token_capacity,
+                    )
+                } else {
+                    measured
+                }
             }
         };
         host_timer.stamp(match (forced_tree_capacity, reusable_capacity) {
@@ -1451,7 +1502,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 device,
                                 queue,
                                 bufs,
-                                token_count.max(1),
+                                cold_token_capacity(token_count, bufs),
                                 parser_feature_flags,
                                 forced_tree_capacity,
                                 encoder,
@@ -1481,6 +1532,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             match attempt {
                 DeferredParserFinish::Complete(artifact) => return Ok(artifact),
                 DeferredParserFinish::RetryWithTreeCapacity(required) => {
+                    self.note_parser_retry(ParserRetry::TreeCapacity);
                     self.release_for_frontend_workspace_replacement(
                         &self.gpu.device,
                         FrontendWorkspaceReplacement::Parser,
@@ -1488,6 +1540,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     forced_tree_capacity = Some(required);
                 }
                 DeferredParserFinish::RetryAfterLexerBoundary => {
+                    self.note_parser_retry(ParserRetry::LexerBoundary);
                     require_lexer_boundary = true;
                 }
                 DeferredParserFinish::RetryWithSynchronousCanonical => {}
@@ -1509,13 +1562,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<(), CompileError> {
+        // Export the interface as x86 compilation does (library 0, unit 0),
+        // so check reports its errors too, such as LNC0075.
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
             source_paths,
-            None,
+            Some(0),
             0,
             DependencyInterfacePages::Flat(&[]),
-            false,
+            true,
             None,
             None,
         )
@@ -2083,6 +2138,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 match attempt {
                     DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
                     DeferredParserFinish::RetryWithTreeCapacity(required) => {
+                        self.note_parser_retry(ParserRetry::TreeCapacity);
                         self.release_for_frontend_workspace_replacement(
                             &self.gpu.device,
                             FrontendWorkspaceReplacement::Parser,
@@ -2090,6 +2146,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         forced_tree_capacity = Some(required);
                     }
                     DeferredParserFinish::RetryAfterLexerBoundary => {
+                        self.note_parser_retry(ParserRetry::LexerBoundary);
                         require_lexer_boundary = true;
                     }
                     DeferredParserFinish::RetryWithSynchronousCanonical => {}
@@ -2109,7 +2166,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             device,
                             queue,
                             bufs,
-                            token_count.max(1),
+                            cold_token_capacity(token_count, bufs),
                             parser_feature_flags,
                             forced_tree_capacity,
                             encoder,
@@ -2141,6 +2198,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             match attempt {
                 DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
                 DeferredParserFinish::RetryWithTreeCapacity(required) => {
+                    self.note_parser_retry(ParserRetry::TreeCapacity);
                     self.release_for_frontend_workspace_replacement(
                         &self.gpu.device,
                         FrontendWorkspaceReplacement::Parser,
@@ -2760,7 +2818,12 @@ fn finish_source_pack_unit(
             &artifacts.checked_call_owners,
             &artifacts.checked_contracts,
         ) {
-            Ok(summary) => interface.closure_summary = Some(std::sync::Arc::new(summary)),
+            Ok(summary) => {
+                if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
+                    eprintln!("[instance-closure] unit {library_id}:{unit_id} summary {}", summary.describe());
+                }
+                interface.closure_summary = Some(std::sync::Arc::new(summary));
+            }
             Err(error) => {
                 if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
                     eprintln!("[instance-closure] unit {library_id}:{unit_id} has no summary: {error}");

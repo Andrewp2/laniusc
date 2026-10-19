@@ -866,10 +866,13 @@ impl GpuX86LirStage {
         self.artifact.record_emit(encoder, page_id)
     }
 
+    /// `sized_job` gives the object projection's direct operations the job's
+    /// grids (`JobSized`).
     pub(crate) fn record_after_target_pages(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
+        sized_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         self.artifact
             .record_extra_emits(encoder, self.pages.len())?;
@@ -877,7 +880,7 @@ impl GpuX86LirStage {
             self.object
                 .as_ref()
                 .context("x86 object projection was not allocated for this lowering job")?
-                .record_projection(encoder)
+                .record_projection(encoder, sized_job)
         } else {
             self.artifact.record_length_readback(encoder)
         }
@@ -981,10 +984,9 @@ mod tests {
                 readback_bytes,
                 storage_ro_from_bytes,
                 storage_ro_from_u32s,
-                tracked_buffer_allocation_stats,
             },
             device,
-            passes_core::{map_readback_blocking, pipeline_creation_count},
+            passes_core::map_readback_blocking,
         },
     };
 
@@ -1361,8 +1363,7 @@ mod tests {
             &kernels,
         )
         .unwrap();
-        let pipelines_before = pipeline_creation_count();
-        let buffers_before = tracked_buffer_allocation_stats();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1370,8 +1371,12 @@ mod tests {
             });
         optimizer.record(&mut encoder, None).unwrap();
         stage.record_lir(&mut encoder).unwrap();
-        assert_eq!(pipeline_creation_count(), pipelines_before);
-        assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
+        let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
+        assert_eq!(
+            (activity.pipelines, activity.buffers_created, activity.buffers_released),
+            (0, 0, 0),
+            "recording x86 LIR creates no pipelines or buffers"
+        );
 
         let output = stage.output();
         let functions = stage.functions.output();

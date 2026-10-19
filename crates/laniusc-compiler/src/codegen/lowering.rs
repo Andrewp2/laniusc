@@ -20,6 +20,7 @@ use super::{
     },
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     schedule::GpuStableScheduleSorter,
+    job_sized::JobSized,
 };
 use crate::{
     gpu::{
@@ -847,6 +848,7 @@ fn register_semantic_inputs<'a>(
         "typecheck.external_type_local_index",
         semantic.external_type_local_index
     );
+    buffer!("typecheck.imported_layout_kind", semantic.imported_layout_kind);
 
     buffer!(
         "typecheck.type_instance_decl_token",
@@ -952,7 +954,7 @@ pub(crate) fn semantic_input_views<'a>(
     semantic: GpuSemanticArtifactView<'a>,
 ) -> Vec<TrackedBufferView<'a>> {
     let mut views = hir.tracked_views();
-    let semantic_views: [TrackedBufferView<'a>; 52] = [
+    let semantic_views: [TrackedBufferView<'a>; 53] = [
         semantic.value_decl_by_hir.into(),
         semantic.value_type_by_hir.into(),
         semantic.value_const_by_hir.into(),
@@ -981,6 +983,7 @@ pub(crate) fn semantic_input_views<'a>(
         semantic.external_type_library_id.into(),
         semantic.external_type_unit_id.into(),
         semantic.external_type_local_index.into(),
+        semantic.imported_layout_kind.into(),
         semantic.type_instance_decl_token.into(),
         semantic.type_instance_arg_count.into(),
         semantic.type_instance_arg_start.into(),
@@ -1010,41 +1013,83 @@ pub(crate) fn semantic_input_views<'a>(
     views
 }
 
+/// Element counts of the semantic stage's direct operations for given
+/// capacities (`JobSized`). Each is the count
+/// `GpuSemanticLoweringStage::from_workspace` builds the operation with; the
+/// build checks that they agree.
+mod sem_extent {
+    use super::LoweringCapacities;
+
+    pub(super) fn hir(c: LoweringCapacities) -> u32 {
+        c.hir_nodes.max(1)
+    }
+    pub(super) fn parameters_rows(c: LoweringCapacities) -> u32 {
+        c.parameters
+    }
+    pub(super) fn parameters(c: LoweringCapacities) -> u32 {
+        c.parameters.max(1)
+    }
+    pub(super) fn tokens_or_hir(c: LoweringCapacities) -> u32 {
+        c.tokens.max(hir(c))
+    }
+    pub(super) fn hir_or_aggregate(c: LoweringCapacities) -> u32 {
+        hir(c).max(c.aggregate_elements)
+    }
+    pub(super) fn declarations_or_hir(c: LoweringCapacities) -> u32 {
+        c.declaration_capacity().max(hir(c))
+    }
+    pub(super) fn place_addresses(c: LoweringCapacities) -> u32 {
+        c.parameters.max(c.local_capacity()).max(1)
+    }
+    pub(super) fn semantic_rows(c: LoweringCapacities) -> u32 {
+        c.semantic_instructions
+    }
+    pub(super) fn call_args(c: LoweringCapacities) -> u32 {
+        c.call_arguments.max(hir(c))
+    }
+    pub(super) fn aggregate_x2(c: LoweringCapacities) -> u32 {
+        c.aggregate_elements.saturating_mul(2)
+    }
+    pub(super) fn strings(c: LoweringCapacities) -> u32 {
+        c.source_bytes.max(hir(c))
+    }
+}
+
 struct GpuSemanticLoweringOperations {
     status_clear: ComputeOperation,
-    function_mark: ComputeOperation,
-    function_templates: ComputeOperation,
-    function_param_mark: ComputeOperation,
+    function_mark: JobSized,
+    function_templates: JobSized,
+    function_param_mark: JobSized,
     function_param_scan: GpuResidentExclusiveScan,
     function_scan: GpuResidentExclusiveScan,
-    local_mark: ComputeOperation,
+    local_mark: JobSized,
     local_scan: GpuResidentExclusiveScan,
-    function_layout_clear: ComputeOperation,
-    function_layout_collect: ComputeOperation,
+    function_layout_clear: JobSized,
+    function_layout_collect: JobSized,
     function_layout_enum_variants: ComputeOperation,
     function_layout_validate: ComputeOperation,
     function_layout_enum_fields: ComputeOperation,
-    function_layout_words: ComputeOperation,
+    function_layout_words: JobSized,
     function_layout_words_round: ComputeOperation,
-    function_scatter: ComputeOperation,
-    function_params: ComputeOperation,
-    project: ComputeOperation,
+    function_scatter: JobSized,
+    function_params: JobSized,
+    project: JobSized,
     call_argument_scan: GpuResidentExclusiveScan,
-    local_scatter: ComputeOperation,
-    place_clear: ComputeOperation,
-    place_mark: ComputeOperation,
-    place_addresses: ComputeOperation,
-    execution_rank_init: ComputeOperation,
-    execution_rank_a_to_b: ComputeOperation,
-    execution_rank_b_to_a: ComputeOperation,
+    local_scatter: JobSized,
+    place_clear: JobSized,
+    place_mark: JobSized,
+    place_addresses: JobSized,
+    execution_rank_init: JobSized,
+    execution_rank_a_to_b: JobSized,
+    execution_rank_b_to_a: JobSized,
     value_uses_clear: ComputeOperation,
-    value_uses_mark: ComputeOperation,
-    count: ComputeOperation,
+    value_uses_mark: JobSized,
+    count: JobSized,
     instruction_scan: GpuResidentExclusiveScan,
-    scatter: ComputeOperation,
-    call_args: ComputeOperation,
-    aggregate_elements: ComputeOperation,
-    strings: ComputeOperation,
+    scatter: JobSized,
+    call_args: JobSized,
+    aggregate_elements: JobSized,
+    strings: JobSized,
 }
 
 /// Executable compact-HIR to target-independent LIR stage. Pipelines,
@@ -1740,59 +1785,59 @@ impl GpuSemanticLoweringStage {
             &total,
         )?;
 
-        let execution_rank_a_to_b = direct_uniform!(
+        let execution_rank_a_to_b = JobSized::new(direct_uniform!(
             "lir.semantic.execution_rank.step_a_to_b",
             &passes.execution_rank_step,
             &count_params,
             hir_nodes,
-        )?;
-        let execution_rank_b_to_a = direct_uniform!(
+        )?, sem_extent::hir, capacities)?;
+        let execution_rank_b_to_a = JobSized::new(direct_uniform!(
             "lir.semantic.execution_rank.step_b_to_a",
             &passes.execution_rank_step,
             &count_params,
             hir_nodes,
-        )?;
+        )?, sem_extent::hir, capacities)?;
         let operations = GpuSemanticLoweringOperations {
             status_clear: direct("lir.status.clear", &passes.status_clear, 1)?,
-            function_mark: direct_uniform!(
+            function_mark: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.mark",
                 &passes.function_mark,
                 &function_params,
                 hir_nodes,
-            )?,
-            function_templates: direct_uniform!(
+            )?, sem_extent::hir, capacities)?,
+            function_templates: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.templates",
                 &passes.function_templates,
                 &template_params,
                 hir_nodes,
-            )?,
-            function_param_mark: direct_uniform!(
+            )?, sem_extent::hir, capacities)?,
+            function_param_mark: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.param_mark",
                 &passes.function_param_mark,
                 &function_params,
                 capacities.parameters,
-            )?,
+            )?, sem_extent::parameters_rows, capacities)?,
             function_param_scan,
             function_scan,
-            local_mark: direct_uniform!(
+            local_mark: JobSized::new(direct_uniform!(
                 "lir.semantic.locals.mark",
                 &passes.local_mark,
                 &function_params,
                 hir_nodes,
-            )?,
+            )?, sem_extent::hir, capacities)?,
             local_scan,
-            function_layout_clear: direct_uniform!(
+            function_layout_clear: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.layout.clear",
                 &passes.function_layout_clear,
                 &function_params,
                 capacities.tokens.max(hir_nodes),
-            )?,
-            function_layout_collect: direct_uniform!(
+            )?, sem_extent::tokens_or_hir, capacities)?,
+            function_layout_collect: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.layout.collect",
                 &passes.function_layout_collect,
                 &function_params,
                 hir_nodes.max(capacities.aggregate_elements),
-            )?,
+            )?, sem_extent::hir_or_aggregate, capacities)?,
             function_layout_enum_variants: layout_round!(
                 "lir.semantic.functions.layout.enum_variants",
                 &passes.function_layout_enum_variants,
@@ -1811,60 +1856,60 @@ impl GpuSemanticLoweringStage {
                 &function_params,
                 12,
             )?,
-            function_layout_words: direct_uniform!(
+            function_layout_words: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.layout.words",
                 &passes.function_layout_words,
                 &words_params,
                 hir_nodes,
-            )?,
+            )?, sem_extent::hir, capacities)?,
             function_layout_words_round: layout_round!(
                 "lir.semantic.functions.layout.words.round",
                 &passes.function_layout_words,
                 &words_round_params,
                 12,
             )?,
-            function_scatter: direct_uniform!(
+            function_scatter: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.scatter",
                 &passes.function_scatter,
                 &function_params,
                 hir_nodes,
-            )?,
-            function_params: direct_uniform!(
+            )?, sem_extent::hir, capacities)?,
+            function_params: JobSized::new(direct_uniform!(
                 "lir.semantic.functions.params",
                 &passes.function_params,
                 &function_params,
                 capacities.parameters.max(1),
-            )?,
-            project: direct_uniform!(
+            )?, sem_extent::parameters, capacities)?,
+            project: JobSized::new(direct_uniform!(
                 "lir.semantic.project",
                 &passes.project,
                 &project_params,
                 hir_nodes,
-            )?,
+            )?, sem_extent::hir, capacities)?,
             call_argument_scan,
-            local_scatter: direct_uniform!(
+            local_scatter: JobSized::new(direct_uniform!(
                 "lir.semantic.locals.scatter",
                 &passes.local_scatter,
                 &function_params,
                 hir_nodes,
-            )?,
-            place_clear: direct_uniform!(
+            )?, sem_extent::hir, capacities)?,
+            place_clear: JobSized::new(direct_uniform!(
                 "lir.semantic.place.clear", &passes.place_clear, &count_params,
                 capacities.declaration_capacity().max(hir_nodes),
-            )?,
-            place_mark: direct_uniform!(
+            )?, sem_extent::declarations_or_hir, capacities)?,
+            place_mark: JobSized::new(direct_uniform!(
                 "lir.semantic.place.mark", &passes.place_mark, &count_params, hir_nodes,
-            )?,
-            place_addresses: direct_uniform!(
+            )?, sem_extent::hir, capacities)?,
+            place_addresses: JobSized::new(direct_uniform!(
                 "lir.semantic.place.addresses", &passes.place_addresses, &function_params,
                 capacities.parameters.max(capacities.local_capacity()).max(1),
-            )?,
-            execution_rank_init: direct_uniform!(
+            )?, sem_extent::place_addresses, capacities)?,
+            execution_rank_init: JobSized::new(direct_uniform!(
                 "lir.semantic.execution_rank.init",
                 &passes.execution_rank_init,
                 &count_params,
                 hir_nodes,
-            )?,
+            )?, sem_extent::hir, capacities)?,
             execution_rank_a_to_b,
             execution_rank_b_to_a,
             value_uses_clear: direct_uniform!(
@@ -1873,43 +1918,43 @@ impl GpuSemanticLoweringStage {
                 &count_params,
                 capacities.tokens,
             )?,
-            value_uses_mark: direct_uniform!(
+            value_uses_mark: JobSized::new(direct_uniform!(
                 "lir.semantic.value_uses.mark",
                 &passes.value_uses_mark,
                 &count_params,
                 hir_nodes,
-            )?,
-            count: direct_uniform!(
+            )?, sem_extent::hir, capacities)?,
+            count: JobSized::new(direct_uniform!(
                 "lir.semantic.count",
                 &passes.count,
                 &count_params,
                 hir_nodes,
-            )?,
+            )?, sem_extent::hir, capacities)?,
             instruction_scan,
-            scatter: direct_uniform!(
+            scatter: JobSized::new(direct_uniform!(
                 "lir.semantic.scatter",
                 &passes.scatter,
                 &scatter_params,
                 capacities.semantic_instructions,
-            )?,
-            call_args: direct_uniform!(
+            )?, sem_extent::semantic_rows, capacities)?,
+            call_args: JobSized::new(direct_uniform!(
                 "lir.semantic.call_args",
                 &passes.call_args,
                 &call_arg_params,
                 capacities.call_arguments.max(hir_nodes),
-            )?,
-            aggregate_elements: direct_uniform!(
+            )?, sem_extent::call_args, capacities)?,
+            aggregate_elements: JobSized::new(direct_uniform!(
                 "lir.semantic.aggregate_elements",
                 &passes.aggregate_elements,
                 &aggregate_params,
                 capacities.aggregate_elements.saturating_mul(2),
-            )?,
-            strings: direct_uniform!(
+            )?, sem_extent::aggregate_x2, capacities)?,
+            strings: JobSized::new(direct_uniform!(
                 "lir.semantic.strings",
                 &passes.strings,
                 &string_params,
                 capacities.source_bytes.max(hir_nodes),
-            )?,
+            )?, sem_extent::strings, capacities)?,
         };
         Ok(Self {
             operations,
@@ -2045,6 +2090,7 @@ impl GpuSemanticLoweringStage {
             None,
             LoweringJobBounds::CONSERVATIVE,
             self.execution_rank_pairs,
+            None,
         )
     }
 
@@ -2060,6 +2106,7 @@ impl GpuSemanticLoweringStage {
         split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
         bounds: LoweringJobBounds,
         execution_rank_pairs: u32,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -2076,13 +2123,13 @@ impl GpuSemanticLoweringStage {
         operations.status_clear.record(encoder)?;
         stamp!("lowering.semantic.status.done");
         operations.value_uses_clear.record(encoder)?;
-        operations.value_uses_mark.record(encoder)?;
-        operations.function_mark.record(encoder)?;
-        operations.function_layout_clear.record(encoder)?;
-        operations.function_layout_collect.record(encoder)?;
+        operations.value_uses_mark.record_job(encoder, job)?;
+        operations.function_mark.record_job(encoder, job)?;
+        operations.function_layout_clear.record_job(encoder, job)?;
+        operations.function_layout_collect.record_job(encoder, job)?;
         // Struct widths that do not depend on enum fields are available to
         // the variant pass; the second walk incorporates enum-valued fields.
-        operations.function_layout_words.record(encoder)?;
+        operations.function_layout_words.record_job(encoder, job)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -2100,45 +2147,45 @@ impl GpuSemanticLoweringStage {
             operations.function_layout_words_round.record(encoder)?;
         }
         operations.function_layout_validate.record(encoder)?;
-        operations.function_templates.record(encoder)?;
+        operations.function_templates.record_job(encoder, job)?;
         operations.function_scan.record(encoder)?;
-        operations.function_param_mark.record(encoder)?;
+        operations.function_param_mark.record_job(encoder, job)?;
         operations.function_param_scan.record(encoder)?;
         stamp!("lowering.semantic.functions.scan.done");
-        operations.local_mark.record(encoder)?;
+        operations.local_mark.record_job(encoder, job)?;
         operations.local_scan.record(encoder)?;
         stamp!("lowering.semantic.locals.scan.done");
-        operations.function_scatter.record(encoder)?;
-        operations.function_params.record(encoder)?;
+        operations.function_scatter.record_job(encoder, job)?;
+        operations.function_params.record_job(encoder, job)?;
         stamp!("lowering.semantic.functions.layout.done");
-        operations.project.record(encoder)?;
+        operations.project.record_job(encoder, job)?;
         stamp!("lowering.semantic.project.done");
         operations.call_argument_scan.record(encoder)?;
         stamp!("lowering.semantic.call_arguments.scan.done");
-        operations.local_scatter.record(encoder)?;
-        operations.place_clear.record(encoder)?;
-        operations.place_mark.record(encoder)?;
+        operations.local_scatter.record_job(encoder, job)?;
+        operations.place_clear.record_job(encoder, job)?;
+        operations.place_mark.record_job(encoder, job)?;
         stamp!("lowering.semantic.locals.scatter.done");
-        operations.execution_rank_init.record(encoder)?;
+        operations.execution_rank_init.record_job(encoder, job)?;
         for _ in 0..execution_rank_pairs.min(self.execution_rank_pairs) {
-            operations.execution_rank_a_to_b.record(encoder)?;
-            operations.execution_rank_b_to_a.record(encoder)?;
+            operations.execution_rank_a_to_b.record_job(encoder, job)?;
+            operations.execution_rank_b_to_a.record_job(encoder, job)?;
         }
         stamp!("lowering.semantic.execution_rank.done");
-        operations.count.record(encoder)?;
+        operations.count.record_job(encoder, job)?;
         operations.instruction_scan.record(encoder)?;
-        operations.place_addresses.record(encoder)?;
+        operations.place_addresses.record_job(encoder, job)?;
         stamp!("lowering.semantic.instructions.scan.done");
-        operations.scatter.record(encoder)?;
+        operations.scatter.record_job(encoder, job)?;
         stamp!("lowering.semantic.instructions.scatter.done");
-        operations.call_args.record(encoder)?;
+        operations.call_args.record_job(encoder, job)?;
         stamp!("lowering.semantic.call_arguments.scatter.done");
-        operations.aggregate_elements.record(encoder)?;
+        operations.aggregate_elements.record_job(encoder, job)?;
         stamp!("lowering.semantic.aggregate_elements.done");
-        operations.strings.record(encoder)?;
+        operations.strings.record_job(encoder, job)?;
         stamp!("lowering.semantic.strings.done");
         if let Some(sorter) = &self.semantic_sorter {
-            sorter.record_timed(encoder, timer.as_deref_mut())?;
+            sorter.record_timed(encoder, timer.as_deref_mut(), job.map(|job| job.semantic_instructions))?;
         }
         stamp!("lowering.semantic.schedule.done");
         Ok(())
@@ -2243,14 +2290,12 @@ mod tests {
                 storage_ro_from_bytes,
                 storage_ro_from_u32s,
                 storage_rw_for_array,
-                tracked_buffer_allocation_stats,
             },
             compiler_graph::CompilerGraphWorkspace,
             device,
             passes_core::{
                 make_pass_data_from_shader_key,
                 map_readback_blocking,
-                pipeline_creation_count,
             },
             scan::hierarchical_scan_levels,
         },
@@ -3110,21 +3155,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(radix_layout.steps, 4);
-        let pipelines_before = pipeline_creation_count();
-        let buffers_before = tracked_buffer_allocation_stats();
-        let passes_before = crate::gpu::passes_core::recorded_compute_pass_count();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.resident_schedule.encoder"),
             });
         sorter.record(&mut encoder).unwrap();
-        let passes_after = crate::gpu::passes_core::recorded_compute_pass_count();
+        let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
         let hierarchy_levels = hierarchical_scan_levels(count.div_ceil(256)).len();
         let passes_per_digit = 3 + 2 * hierarchy_levels as u64;
-        assert_eq!(passes_after - passes_before, 4 * passes_per_digit);
-        assert_eq!(pipeline_creation_count(), pipelines_before);
-        assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
+        assert_eq!(activity.compute_passes, 4 * passes_per_digit);
+        assert_eq!(
+            (activity.pipelines, activity.buffers_created, activity.buffers_released),
+            (0, 0, 0),
+            "recording the scheduler creates no pipelines or buffers"
+        );
 
         let readback = readback_bytes(
             &gpu.device,
@@ -3692,6 +3738,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,
@@ -4047,6 +4094,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,
@@ -4331,6 +4379,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,
@@ -4615,6 +4664,7 @@ mod tests {
             external_type_library_id: &empty_type_instances,
             external_type_unit_id: &empty_type_instances,
             external_type_local_index: &empty_type_instances,
+            imported_layout_kind: &empty_type_instances,
 
             type_instance_decl_token: &empty_type_instances,
             type_instance_arg_count: &empty_type_instances,

@@ -1582,6 +1582,11 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::Tokens,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
     ))?;
+    let imported_layout_kind = graph.add_resource(input(
+        "typecheck.imported_layout_kind",
+        ResourceDomain::Types,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
     let type_generic_param_slot = graph.add_resource(input(
         "typecheck.type_generic_param_slot",
         ResourceDomain::Tokens,
@@ -3405,6 +3410,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("external_type_library_id", external_type_library_id),
             PassAccess::read("external_type_unit_id", external_type_unit_id),
             PassAccess::read("external_type_local_index", external_type_local_index),
+            PassAccess::read("imported_layout_kind", imported_layout_kind),
             PassAccess::read("type_generic_param_slot_by_token", type_generic_param_slot),
             PassAccess::read_write("checked_constant_atoms", checked_constant_atoms),
             PassAccess::read_write("checked_constant_projections", checked_constant_projections),

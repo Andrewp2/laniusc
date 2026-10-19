@@ -197,7 +197,7 @@ impl SourcePackCache {
                 && entry.stdlib_root == stdlib_root
                 && entry.source_root.as_deref() == source_root
         });
-        if same_project && self.reuse_or_refresh_bounded_file_metadata() {
+        if same_project && self.reuse_or_refresh_file_contents(resident_limits) {
             return Ok(&self
                 .entry
                 .as_ref()
@@ -208,18 +208,30 @@ impl SourcePackCache {
         self.entry = None;
         self.transient = None;
 
-        let path_manifest = match source_root {
-            Some(source_root) => load_entry_path_manifest_with_source_root_and_stdlib(
-                input,
-                source_root,
-                stdlib_root,
-            )?,
-            None => load_entry_path_manifest_with_stdlib(input, stdlib_root)?,
+        let path_manifest = {
+            let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.discover");
+            match source_root {
+                Some(source_root) => load_entry_path_manifest_with_source_root_and_stdlib(
+                    input,
+                    source_root,
+                    stdlib_root,
+                )?,
+                None => load_entry_path_manifest_with_stdlib(input, stdlib_root)?,
+            }
         };
-        let file_stamps = source_file_stamps(&path_manifest);
-        let directory_snapshots =
-            source_directory_snapshots(&path_manifest, input, stdlib_root, source_root);
-        let source_pack = cached_compile_input(path_manifest, resident_limits)?;
+        let file_stamps = {
+            let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.stamps");
+            source_file_stamps(&path_manifest)
+        };
+        let directory_snapshots = {
+            let _span =
+                crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.snapshots");
+            source_directory_snapshots(&path_manifest, input, stdlib_root, source_root)
+        };
+        let source_pack = {
+            let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.read");
+            cached_compile_input(path_manifest, resident_limits)?
+        };
         if let (Some(file_stamps), Some(directory_snapshots)) = (file_stamps, directory_snapshots) {
             self.entry = Some(CachedSourcePack {
                 input: input.to_path_buf(),
@@ -243,7 +255,17 @@ impl SourcePackCache {
         }
     }
 
-    fn reuse_or_refresh_bounded_file_metadata(&mut self) -> bool {
+    /// Reuses the cached project when no source file was added, removed or
+    /// changed, and refreshes it in place when only file contents changed:
+    /// a bounded pack's file metadata, or a resident pack's changed texts,
+    /// re-read from disk, when each changed file still imports the same
+    /// modules (so import discovery would find the same files) and the pack
+    /// still fits the resident limits. Anything else reloads the project.
+    fn reuse_or_refresh_file_contents(
+        &mut self,
+        resident_limits: crate::codegen::unit::CompilationUnitLimits,
+    ) -> bool {
+        let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.refresh");
         let Some(entry) = self.entry.as_mut() else {
             return false;
         };
@@ -256,8 +278,17 @@ impl SourcePackCache {
         if changes.is_empty() {
             return true;
         }
-        let CachedCompileInput::Bounded(source_pack) = &mut entry.source_pack else {
-            return false;
+        let source_pack = match &mut entry.source_pack {
+            CachedCompileInput::Bounded(source_pack) => source_pack,
+            CachedCompileInput::Resident(source_pack) => {
+                let refreshed = refresh_resident_sources(source_pack, &changes, resident_limits);
+                if refreshed {
+                    for (index, stamp) in changes {
+                        entry.file_stamps[index] = stamp;
+                    }
+                }
+                return refreshed;
+            }
         };
         for (index, stamp) in changes {
             let Some(file) = source_pack.files.get_mut(index) else {
@@ -277,6 +308,48 @@ impl SourcePackCache {
         }
         true
     }
+}
+
+/// Replaces the texts of a resident pack's changed files with their current
+/// contents, or leaves the pack unchanged and returns false when a changed
+/// file cannot be read, imports different modules than before, or the pack
+/// would outgrow `resident_limits`' source bytes.
+fn refresh_resident_sources(
+    source_pack: &mut ExplicitSourcePack,
+    changes: &[(usize, SourceFileStamp)],
+    resident_limits: crate::codegen::unit::CompilationUnitLimits,
+) -> bool {
+    let mut texts = Vec::with_capacity(changes.len());
+    for (index, stamp) in changes {
+        let Some(old) = source_pack.sources.get(*index) else {
+            return false;
+        };
+        let Ok(new) = fs::read_to_string(&stamp.path) else {
+            return false;
+        };
+        if !crate::compiler::source_root_import_paths_match(old, &new, &stamp.path) {
+            return false;
+        }
+        texts.push((*index, new));
+    }
+    let bytes = source_pack
+        .sources
+        .iter()
+        .enumerate()
+        .map(|(index, text)| {
+            texts
+                .iter()
+                .find(|(changed, _)| *changed == index)
+                .map_or(text.len(), |(_, new)| new.len())
+        })
+        .fold(0usize, usize::saturating_add);
+    if bytes > resident_limits.normalized().max_source_bytes {
+        return false;
+    }
+    for (index, text) in texts {
+        source_pack.sources[index] = text;
+    }
+    true
 }
 
 fn cached_compile_input(
@@ -666,6 +739,7 @@ async fn run_session(
     // warm-up keeps the capacity it sized.
     let warmup = run_warmups(&compiler, options, &mut source_pack_cache).await?;
     let driver_cache = device::driver_shader_cache_status();
+    crate::gpu::passes_core::seal_pipeline_creation();
     if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
         eprintln!("[gpu_compile_host_timer] driver_shader_cache: {}", driver_cache.summary());
     }
@@ -1807,6 +1881,63 @@ mod tests {
         }));
 
         fs::remove_dir_all(root).expect("remove source cache fixture tree");
+    }
+
+    // A resident pack refreshes an edited file's text in place, and an edit
+    // that changes a file's imports reloads the project, even when the newly
+    // imported file was already on disk (no directory change to notice).
+    #[test]
+    fn resident_source_pack_cache_refreshes_edits_and_rediscovers_changed_imports() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should follow the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-daemon-resident-cache-{}-{unique}",
+            std::process::id()
+        ));
+        let stdlib_root = root.join("stdlib");
+        let source_root = root.join("src");
+        let entry = root.join("main.lani");
+        let unit = source_root.join("unit.lani");
+        let other = source_root.join("other.lani");
+        fs::create_dir_all(&stdlib_root).expect("create resident cache stdlib fixture");
+        fs::create_dir_all(&source_root).expect("create resident cache source fixture");
+        fs::write(&entry, "import unit;\nfn main() { return; }\n")
+            .expect("write resident cache entry");
+        fs::write(&unit, "module unit;\nfn unit() { return; }\n")
+            .expect("write resident cache unit");
+        fs::write(&other, "module other;\nfn other() { return; }\n")
+            .expect("write resident cache other");
+        let limits = crate::codegen::unit::CompilationUnitLimits::default();
+        let texts = |cache: &mut SourcePackCache| {
+            cache
+                .load(&entry, &stdlib_root, Some(&source_root), limits)
+                .expect("load resident source pack")
+                .resident()
+                .expect("default limits keep this project resident")
+                .sources
+                .clone()
+        };
+
+        let mut cache = SourcePackCache::default();
+        let initial = texts(&mut cache);
+        assert_eq!(initial.len(), 2);
+
+        let edited = "module unit;\nfn unit() { print(123456); return; }\n";
+        fs::write(&unit, edited).expect("edit resident cache unit");
+        let refreshed = texts(&mut cache);
+        assert_eq!(refreshed.len(), 2);
+        assert!(refreshed.iter().any(|text| text == edited));
+
+        fs::write(&entry, "import unit;\nimport other;\nfn main() { return; }\n")
+            .expect("import other in resident cache entry");
+        let rediscovered = texts(&mut cache);
+        assert_eq!(rediscovered.len(), 3);
+        assert!(rediscovered.iter().any(|text| text.contains("fn other()")));
+        assert!(rediscovered.iter().any(|text| text == edited));
+
+        fs::remove_dir_all(root).expect("remove resident source cache fixture tree");
     }
 
     #[test]

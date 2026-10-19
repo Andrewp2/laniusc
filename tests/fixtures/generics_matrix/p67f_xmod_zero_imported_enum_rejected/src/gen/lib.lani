@@ -1,0 +1,10 @@
+module gen::lib;
+
+pub enum Mode {
+    Low,
+    High(i32),
+}
+
+pub fn low() -> Mode {
+    return Low;
+}

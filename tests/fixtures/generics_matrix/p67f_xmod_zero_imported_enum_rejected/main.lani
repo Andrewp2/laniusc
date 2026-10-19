@@ -1,0 +1,10 @@
+// expect: error LNC0017
+module app::main;
+
+import gen::lib;
+
+// An imported enum has no zero value either.
+fn main() -> i32 {
+    let m: gen::lib::Mode;
+    return 0;
+}

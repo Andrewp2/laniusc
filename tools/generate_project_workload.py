@@ -998,6 +998,10 @@ class Printer:
             inner = e[1]
             s = self.expr(inner, here) if inner[0] == "bin" else self.operand(inner, here)
             return f"({s}) & {MASK}" if top else f"(({s}) & {MASK})"
+        if k == "cmp" and not self.rust and e[1] in ("<", "<=") and e[2][0] == "const" and e[2][1] != here:
+            # Lanius reads `m::C < x` as generic arguments of the path `m::C`,
+            # even in parentheses; the mirrored comparison means the same.
+            return self.expr(("cmp", {"<": ">", "<=": ">="}[e[1]], e[3], e[2]), here, ind, top)
         if k in ("bin", "cmp"):
             return f"{self.operand(e[2], here)} {e[1]} {self.operand(e[3], here)}"
         if k == "call":

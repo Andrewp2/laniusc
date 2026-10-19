@@ -22,6 +22,9 @@ expected stdout stays exact. The edit needs main's `print(part)` / `total = (tot
 4095` shape, which all three generators write; other workloads (or `"run": false` ones) report
 edit mode as unsupported.
 
+The summary reports the first edit on its own as well as the edit median: the first edit after
+a load is a user's common case, and it pays for whatever the identical reps left warm.
+
 Daemon stderr goes to OUT/daemon.stderr; one line per job on stdout, then a summary per
 workload, and every job as JSON in OUT/jobs.jsonl.
 """
@@ -282,6 +285,7 @@ def main():
                         plan.restore()
             med = lambda xs: f"{statistics.median(xs):.1f}" if xs else "-"
             line = (f"SUMMARY {w.name}: identical median {med(ident)} ms {['%.1f' % x for x in ident]}, "
+                    f"first edit {edits[0] if edits else float('nan'):.1f} ms, "
                     f"edit median {med(edits)} ms {['%.1f' % x for x in edits]}, failures={failures}"
                     + (f" ({edit_note})" if edit_note else ""))
             summaries.append(line)
