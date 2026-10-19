@@ -3529,19 +3529,24 @@ impl GpuOptimizationStage {
         encoder: &mut wgpu::CommandEncoder,
         timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.record_for_job(encoder, timer, self.jump_pairs, None)
+        self.record_for_job(encoder, timer, self.jump_pairs, None, true)
     }
 
     /// Records the optimizer with a job's pointer-jump pairs
     /// (`LoweringCapacities::job_jump_pairs`), capped at the built ones, and
     /// its direct operations' grids for the job's capacities
     /// (`LoweringCapacities::for_job`; `None` keeps the built grids).
+    /// `validate_structure: false` leaves out the dispatches that only check
+    /// the optimizer's own results: every `*_validate` pass, and the
+    /// dominator and region trees, which only validators read. A valid
+    /// program lowers to the same bytes either way.
     pub(crate) fn record_for_job(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
         jump_pairs: LoweringJumpPairs,
         job: Option<LoweringCapacities>,
+        validate_structure: bool,
     ) -> Result<()> {
         let jump_pairs = jump_pairs.min(self.jump_pairs);
         if let Some(timer) = timer.as_deref_mut() {
@@ -3585,8 +3590,10 @@ impl GpuOptimizationStage {
         trace_checkpoint!("predecessor_prepare", None);
         self.predecessor_scatter.record_job(encoder, job)?;
         trace_checkpoint!("predecessor_scatter", None);
-        self.predecessor_validate.record_job(encoder, job)?;
-        trace_checkpoint!("predecessor_validate", None);
+        if validate_structure {
+            self.predecessor_validate.record_job(encoder, job)?;
+            trace_checkpoint!("predecessor_validate", None);
+        }
         self.structure_function_init.record_job(encoder, job)?;
         trace_checkpoint!("structure_function_init", None);
         self.structure_function_reduce.record_job(encoder, job)?;
@@ -3602,103 +3609,110 @@ impl GpuOptimizationStage {
         trace_checkpoint!("reachability_seed", None);
         self.reachability_close.record(encoder)?;
         trace_checkpoint!("reachability_close", None);
-        self.reachability_validate.record_job(encoder, job)?;
-        trace_checkpoint!("reachability_validate", None);
+        if validate_structure {
+            self.reachability_validate.record_job(encoder, job)?;
+            trace_checkpoint!("reachability_validate", None);
+        }
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Reachability);
         }
-        self.dominator_clear.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_clear", None);
-        self.dominator_count.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_count", None);
-        self.dominator_seed.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_seed", None);
-        self.dominator_resolve.record(encoder)?;
-        trace_checkpoint!("dominator_resolve", None);
-        self.dominator_validate.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_validate", None);
-        if let Some(trace) = trace.as_mut() {
-            trace.capture(encoder, OptimizationTracePoint::Dominators);
-        }
-        self.dominator_child_clear.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_child_clear", None);
-        self.dominator_child_count.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_child_count", None);
-        self.dominator_child_scan.record(encoder)?;
-        trace_checkpoint!("dominator_child_scan", None);
-        self.dominator_child_prepare.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_child_prepare", None);
-        self.dominator_child_scatter.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_child_scatter", None);
-        self.dominator_child_validate.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_child_validate", None);
-        self.dominator_tour_child_rows_clear.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_tour_child_rows_clear", None);
-        self.dominator_tour_child_rows.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_tour_child_rows", None);
-        self.dominator_tour_init.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_tour_init", None);
-        for trace_iteration in 0..jump_pairs.dominator_tour {
-            self.dominator_tour_a_to_b.record_job(encoder, job)?;
-            trace_checkpoint!("dominator_tour_a_to_b", Some(trace_iteration));
-            self.dominator_tour_b_to_a.record_job(encoder, job)?;
-            trace_checkpoint!("dominator_tour_b_to_a", Some(trace_iteration));
-        }
-        self.dominator_tour_finalize.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_tour_finalize", None);
-        self.dominator_preorder_inverse_clear.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_preorder_inverse_clear", None);
-        self.dominator_preorder_inverse_scatter.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_preorder_inverse_scatter", None);
-        self.dominator_preorder_validate.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_preorder_validate", None);
-        if let Some(trace) = trace.as_mut() {
-            trace.capture(encoder, OptimizationTracePoint::Preorder);
-        }
-        self.dominator_depth_init.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_depth_init", None);
-        for trace_iteration in 0..jump_pairs.dominator_depth {
-            self.dominator_depth_a_to_b.record_job(encoder, job)?;
-            trace_checkpoint!("dominator_depth_a_to_b", Some(trace_iteration));
-            self.dominator_depth_b_to_a.record_job(encoder, job)?;
-            trace_checkpoint!("dominator_depth_b_to_a", Some(trace_iteration));
-        }
-        self.dominator_depth_finalize.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_depth_finalize", None);
-        self.dominator_depth_validate.record_job(encoder, job)?;
-        trace_checkpoint!("dominator_depth_validate", None);
-        self.region_mark.record_job(encoder, job)?;
-        trace_checkpoint!("region_mark", None);
-        self.region_scan.record(encoder)?;
-        trace_checkpoint!("region_scan", None);
-        self.region_function_clear.record_job(encoder, job)?;
-        trace_checkpoint!("region_function_clear", None);
-        self.region_scatter.record_job(encoder, job)?;
-        trace_checkpoint!("region_scatter", None);
-        self.region_parent_init.record_job(encoder, job)?;
-        trace_checkpoint!("region_parent_init", None);
-        for trace_iteration in 0..jump_pairs.region_parent {
-            self.region_parent_a_to_b.record_job(encoder, job)?;
-            trace_checkpoint!("region_parent_a_to_b", Some(trace_iteration));
-            self.region_parent_b_to_a.record_job(encoder, job)?;
-            trace_checkpoint!("region_parent_b_to_a", Some(trace_iteration));
-        }
-        self.region_finalize.record_job(encoder, job)?;
-        trace_checkpoint!("region_finalize", None);
-        self.region_function_finalize.record_job(encoder, job)?;
-        trace_checkpoint!("region_function_finalize", None);
-        self.region_ownership_clear.record(encoder)?;
-        trace_checkpoint!("region_ownership_clear", None);
-        self.region_ownership_ranges.record_job(encoder, job)?;
-        trace_checkpoint!("region_ownership_ranges", None);
-        self.region_ownership_nodes.record_job(encoder, job)?;
-        trace_checkpoint!("region_ownership_nodes", None);
-        self.region_ownership_blocks.record_job(encoder, job)?;
-        trace_checkpoint!("region_ownership_blocks", None);
-        self.region_validate_edges.record_job(encoder, job)?;
-        trace_checkpoint!("region_validate_edges", None);
-        if let Some(trace) = trace.as_mut() {
-            trace.capture(encoder, OptimizationTracePoint::Regions);
+        // The dominator tree, its preorder and depth, and the region tree
+        // are read only by validators (ssa.dominance.validate included), so
+        // a copy replay that skips validation skips them too.
+        if validate_structure {
+            self.dominator_clear.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_clear", None);
+            self.dominator_count.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_count", None);
+            self.dominator_seed.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_seed", None);
+            self.dominator_resolve.record(encoder)?;
+            trace_checkpoint!("dominator_resolve", None);
+            self.dominator_validate.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_validate", None);
+            if let Some(trace) = trace.as_mut() {
+                trace.capture(encoder, OptimizationTracePoint::Dominators);
+            }
+            self.dominator_child_clear.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_child_clear", None);
+            self.dominator_child_count.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_child_count", None);
+            self.dominator_child_scan.record(encoder)?;
+            trace_checkpoint!("dominator_child_scan", None);
+            self.dominator_child_prepare.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_child_prepare", None);
+            self.dominator_child_scatter.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_child_scatter", None);
+            self.dominator_child_validate.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_child_validate", None);
+            self.dominator_tour_child_rows_clear.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_tour_child_rows_clear", None);
+            self.dominator_tour_child_rows.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_tour_child_rows", None);
+            self.dominator_tour_init.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_tour_init", None);
+            for trace_iteration in 0..jump_pairs.dominator_tour {
+                self.dominator_tour_a_to_b.record_job(encoder, job)?;
+                trace_checkpoint!("dominator_tour_a_to_b", Some(trace_iteration));
+                self.dominator_tour_b_to_a.record_job(encoder, job)?;
+                trace_checkpoint!("dominator_tour_b_to_a", Some(trace_iteration));
+            }
+            self.dominator_tour_finalize.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_tour_finalize", None);
+            self.dominator_preorder_inverse_clear.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_preorder_inverse_clear", None);
+            self.dominator_preorder_inverse_scatter.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_preorder_inverse_scatter", None);
+            self.dominator_preorder_validate.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_preorder_validate", None);
+            if let Some(trace) = trace.as_mut() {
+                trace.capture(encoder, OptimizationTracePoint::Preorder);
+            }
+            self.dominator_depth_init.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_depth_init", None);
+            for trace_iteration in 0..jump_pairs.dominator_depth {
+                self.dominator_depth_a_to_b.record_job(encoder, job)?;
+                trace_checkpoint!("dominator_depth_a_to_b", Some(trace_iteration));
+                self.dominator_depth_b_to_a.record_job(encoder, job)?;
+                trace_checkpoint!("dominator_depth_b_to_a", Some(trace_iteration));
+            }
+            self.dominator_depth_finalize.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_depth_finalize", None);
+            self.dominator_depth_validate.record_job(encoder, job)?;
+            trace_checkpoint!("dominator_depth_validate", None);
+            self.region_mark.record_job(encoder, job)?;
+            trace_checkpoint!("region_mark", None);
+            self.region_scan.record(encoder)?;
+            trace_checkpoint!("region_scan", None);
+            self.region_function_clear.record_job(encoder, job)?;
+            trace_checkpoint!("region_function_clear", None);
+            self.region_scatter.record_job(encoder, job)?;
+            trace_checkpoint!("region_scatter", None);
+            self.region_parent_init.record_job(encoder, job)?;
+            trace_checkpoint!("region_parent_init", None);
+            for trace_iteration in 0..jump_pairs.region_parent {
+                self.region_parent_a_to_b.record_job(encoder, job)?;
+                trace_checkpoint!("region_parent_a_to_b", Some(trace_iteration));
+                self.region_parent_b_to_a.record_job(encoder, job)?;
+                trace_checkpoint!("region_parent_b_to_a", Some(trace_iteration));
+            }
+            self.region_finalize.record_job(encoder, job)?;
+            trace_checkpoint!("region_finalize", None);
+            self.region_function_finalize.record_job(encoder, job)?;
+            trace_checkpoint!("region_function_finalize", None);
+            self.region_ownership_clear.record(encoder)?;
+            trace_checkpoint!("region_ownership_clear", None);
+            self.region_ownership_ranges.record_job(encoder, job)?;
+            trace_checkpoint!("region_ownership_ranges", None);
+            self.region_ownership_nodes.record_job(encoder, job)?;
+            trace_checkpoint!("region_ownership_nodes", None);
+            self.region_ownership_blocks.record_job(encoder, job)?;
+            trace_checkpoint!("region_ownership_blocks", None);
+            self.region_validate_edges.record_job(encoder, job)?;
+            trace_checkpoint!("region_validate_edges", None);
+            if let Some(trace) = trace.as_mut() {
+                trace.capture(encoder, OptimizationTracePoint::Regions);
+            }
         }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");
@@ -3711,12 +3725,16 @@ impl GpuOptimizationStage {
         trace_checkpoint!("access_metadata", None);
         self.access_scatter.record_job(encoder, job)?;
         trace_checkpoint!("access_scatter", None);
-        self.access_validate.record_job(encoder, job)?;
-        trace_checkpoint!("access_validate", None);
+        if validate_structure {
+            self.access_validate.record_job(encoder, job)?;
+            trace_checkpoint!("access_validate", None);
+        }
         self.access_sort.record(encoder)?;
         trace_checkpoint!("access_sort", None);
-        self.access_sort_validate.record_job(encoder, job)?;
-        trace_checkpoint!("access_sort_validate", None);
+        if validate_structure {
+            self.access_sort_validate.record_job(encoder, job)?;
+            trace_checkpoint!("access_sort_validate", None);
+        }
         self.access_group_mark.record_job(encoder, job)?;
         trace_checkpoint!("access_group_mark", None);
         self.access_group_scan.record(encoder)?;
@@ -3727,8 +3745,10 @@ impl GpuOptimizationStage {
         trace_checkpoint!("access_group_finalize", None);
         self.access_local_definitions.record(encoder)?;
         trace_checkpoint!("access_local_definitions", None);
-        self.access_local_definitions_validate.record_job(encoder, job)?;
-        trace_checkpoint!("access_local_definitions_validate", None);
+        if validate_structure {
+            self.access_local_definitions_validate.record_job(encoder, job)?;
+            trace_checkpoint!("access_local_definitions_validate", None);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.accesses.done");
         }
@@ -3740,16 +3760,20 @@ impl GpuOptimizationStage {
         trace_checkpoint!("declaration_block_scatter", None);
         self.declaration_block_finalize.record_job(encoder, job)?;
         trace_checkpoint!("declaration_block_finalize", None);
-        self.declaration_block_validate.record_job(encoder, job)?;
-        trace_checkpoint!("declaration_block_validate", None);
+        if validate_structure {
+            self.declaration_block_validate.record_job(encoder, job)?;
+            trace_checkpoint!("declaration_block_validate", None);
+        }
         self.demand_seed_mark.record_job(encoder, job)?;
         trace_checkpoint!("demand_seed_mark", None);
         self.demand_seed_scan.record(encoder)?;
         trace_checkpoint!("demand_seed_scan", None);
         self.demand_seed_scatter.record_job(encoder, job)?;
         trace_checkpoint!("demand_seed_scatter", None);
-        self.demand_seed_validate.record_job(encoder, job)?;
-        trace_checkpoint!("demand_seed_validate", None);
+        if validate_structure {
+            self.demand_seed_validate.record_job(encoder, job)?;
+            trace_checkpoint!("demand_seed_validate", None);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_seeds.done");
         }
@@ -3777,8 +3801,10 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_closure.sort.done");
         }
-        self.demand_validate.record_job(encoder, job)?;
-        trace_checkpoint!("demand_validate", None);
+        if validate_structure {
+            self.demand_validate.record_job(encoder, job)?;
+            trace_checkpoint!("demand_validate", None);
+        }
         self.demand_materialize.record_job(encoder, job)?;
         trace_checkpoint!("demand_materialize", None);
         self.demand_commit.record_job(encoder, job)?;
@@ -3792,8 +3818,10 @@ impl GpuOptimizationStage {
         trace_checkpoint!("block_argument_scan", None);
         self.block_argument_scatter.record_job(encoder, job)?;
         trace_checkpoint!("block_argument_scatter", None);
-        self.block_argument_validate.record_job(encoder, job)?;
-        trace_checkpoint!("block_argument_validate", None);
+        if validate_structure {
+            self.block_argument_validate.record_job(encoder, job)?;
+            trace_checkpoint!("block_argument_validate", None);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.block_arguments.done");
         }
@@ -3801,8 +3829,10 @@ impl GpuOptimizationStage {
         trace_checkpoint!("demand_alias_worker_clear", None);
         self.demand_alias_resolve.record(encoder)?;
         trace_checkpoint!("demand_alias_resolve", None);
-        self.demand_alias_validate.record_job(encoder, job)?;
-        trace_checkpoint!("demand_alias_validate", None);
+        if validate_structure {
+            self.demand_alias_validate.record_job(encoder, job)?;
+            trace_checkpoint!("demand_alias_validate", None);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.demand_aliases.done");
         }
@@ -3836,8 +3866,10 @@ impl GpuOptimizationStage {
         }
         self.trivial_block_argument_finalize.record_job(encoder, job)?;
         trace_checkpoint!("trivial_block_argument_finalize", None);
-        self.trivial_block_argument_validate.record_job(encoder, job)?;
-        trace_checkpoint!("trivial_block_argument_validate", None);
+        if validate_structure {
+            self.trivial_block_argument_validate.record_job(encoder, job)?;
+            trace_checkpoint!("trivial_block_argument_validate", None);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.trivial_block_arguments.done");
         }
@@ -3847,8 +3879,10 @@ impl GpuOptimizationStage {
         trace_checkpoint!("ssa_value_scan", None);
         self.ssa_value_scatter.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_scatter", None);
-        self.ssa_value_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_value_validate", None);
+        if validate_structure {
+            self.ssa_value_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_value_validate", None);
+        }
         self.ssa_value_resolve_init.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_resolve_init", None);
         self.ssa_value_resolve_reads.record_job(encoder, job)?;
@@ -3861,16 +3895,22 @@ impl GpuOptimizationStage {
         }
         self.ssa_value_resolve_finalize.record_job(encoder, job)?;
         trace_checkpoint!("ssa_value_resolve_finalize", None);
-        self.ssa_value_resolve_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_value_resolve_validate", None);
+        if validate_structure {
+            self.ssa_value_resolve_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_value_resolve_validate", None);
+        }
         self.ssa_operand_rewrite.record_job(encoder, job)?;
         trace_checkpoint!("ssa_operand_rewrite", None);
-        self.ssa_operand_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_operand_validate", None);
+        if validate_structure {
+            self.ssa_operand_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_operand_validate", None);
+        }
         self.ssa_incoming_rewrite.record_job(encoder, job)?;
         trace_checkpoint!("ssa_incoming_rewrite", None);
-        self.ssa_dominance_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_dominance_validate", None);
+        if validate_structure {
+            self.ssa_dominance_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_dominance_validate", None);
+        }
         if let Some(trace) = trace.as_mut() {
             trace.capture(encoder, OptimizationTracePoint::Ssa);
         }
@@ -3885,12 +3925,16 @@ impl GpuOptimizationStage {
         trace_checkpoint!("ssa_aggregate_use_scan", None);
         self.ssa_use_scatter.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_scatter", None);
-        self.ssa_use_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_use_validate", None);
+        if validate_structure {
+            self.ssa_use_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_use_validate", None);
+        }
         self.ssa_use_sort.record(encoder)?;
         trace_checkpoint!("ssa_use_sort", None);
-        self.ssa_use_sort_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_use_sort_validate", None);
+        if validate_structure {
+            self.ssa_use_sort_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_use_sort_validate", None);
+        }
         self.ssa_use_group_mark.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_group_mark", None);
         self.ssa_use_group_scan.record(encoder)?;
@@ -3899,8 +3943,10 @@ impl GpuOptimizationStage {
         trace_checkpoint!("ssa_use_group_scatter", None);
         self.ssa_use_group_finalize.record_job(encoder, job)?;
         trace_checkpoint!("ssa_use_group_finalize", None);
-        self.ssa_use_group_validate.record_job(encoder, job)?;
-        trace_checkpoint!("ssa_use_group_validate", None);
+        if validate_structure {
+            self.ssa_use_group_validate.record_job(encoder, job)?;
+            trace_checkpoint!("ssa_use_group_validate", None);
+        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.ssa_uses.done");
         }
