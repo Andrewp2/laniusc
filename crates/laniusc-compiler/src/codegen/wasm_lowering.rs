@@ -915,10 +915,9 @@ mod tests {
                 readback_bytes,
                 storage_ro_from_bytes,
                 storage_ro_from_u32s,
-                tracked_buffer_allocation_stats,
             },
             device,
-            passes_core::{map_readback_blocking, pipeline_creation_count},
+            passes_core::map_readback_blocking,
         },
     };
 
@@ -1246,8 +1245,7 @@ mod tests {
             &kernels,
         )
         .unwrap();
-        let pipelines_before = pipeline_creation_count();
-        let buffers_before = tracked_buffer_allocation_stats();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1255,8 +1253,12 @@ mod tests {
             });
         optimizer.record(&mut encoder, None).unwrap();
         stage.record_lir(&mut encoder).unwrap();
-        assert_eq!(pipeline_creation_count(), pipelines_before);
-        assert_eq!(tracked_buffer_allocation_stats(), buffers_before);
+        let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
+        assert_eq!(
+            (activity.pipelines, activity.buffers_created, activity.buffers_released),
+            (0, 0, 0),
+            "recording Wasm LIR creates no pipelines or buffers"
+        );
 
         let functions = stage.functions.output();
         let artifact = stage.module.output();
@@ -1441,7 +1443,7 @@ mod tests {
             &kernels,
         )
         .unwrap();
-        let allocations_before = tracked_buffer_allocation_stats();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1449,7 +1451,12 @@ mod tests {
             });
         executable_optimizer.record(&mut encoder, None).unwrap();
         executable_stage.record(&mut encoder).unwrap();
-        assert_eq!(tracked_buffer_allocation_stats(), allocations_before);
+        let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
+        assert_eq!(
+            (activity.buffers_created, activity.buffers_released),
+            (0, 0),
+            "recording the resident Wasm artifact creates no buffers"
+        );
         gpu.queue.submit(Some(encoder.finish()));
         let resident_artifact = executable_stage
             .finish_artifact(&gpu.device, &gpu.queue)

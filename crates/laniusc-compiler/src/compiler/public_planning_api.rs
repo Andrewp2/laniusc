@@ -18,6 +18,7 @@ pub use inputs::{
     load_explicit_source_pack_manifest_from_paths,
     load_explicit_source_pack_path_manifest_from_paths,
 };
+pub(crate) use inputs::source_root_import_paths_match;
 
 mod compact_manifest;
 pub(super) use compact_manifest::compact_manifest_from_dependency_streams;

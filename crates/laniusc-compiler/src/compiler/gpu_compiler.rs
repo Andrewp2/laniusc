@@ -93,6 +93,12 @@ struct CachedParserShape {
 struct ParserShapeCache {
     entries: std::collections::HashMap<blake3::Hash, CachedParserShape>,
     clock: u64,
+    /// Speculative frontend runs discarded for more tokens or other features
+    /// than the cached shape, and parses rerun for a larger tree.
+    #[cfg(test)]
+    lexer_boundary_retries: u64,
+    #[cfg(test)]
+    tree_capacity_retries: u64,
 }
 
 impl ParserShapeCache {
@@ -200,7 +206,13 @@ fn initialize_pipeline_families(
                 .stack_size(PIPELINE_INIT_STACK_BYTES)
                 .spawn_scoped(scope, || {
                     let start = std::time::Instant::now();
+                    // Native body specialization admits program evidence in
+                    // x86 jobs; its pipelines are prepared with the linker's.
                     let linker = x86::GpuX86Linker::new_with_device(gpu)
+                        .and_then(|linker| {
+                            program_evidence::prepare_evidence_kernels(&gpu.device)?;
+                            Ok(linker)
+                        })
                         .map(Box::new)
                         .map_err(|err| err.to_string());
                     let lowering = Ok(Box::new(GpuLoweringWorkspaceCache::new(
@@ -571,6 +583,93 @@ mod tests {
     }
 
     #[test]
+    fn physical_gpu_warm_shape_headroom_covers_edits_and_retries_past_it() {
+        std::thread::Builder::new()
+            .name("parser shape headroom".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_warm_shape_headroom)
+            .expect("spawn parser shape headroom check")
+            .join()
+            .expect("parser shape headroom check panicked");
+    }
+
+    // A cold job records its parser shape with token headroom, so a warm edit
+    // that adds a few tokens runs speculatively to completion. An edit that
+    // adds more tokens than the headroom, in the same source bytes (code
+    // where the original had a comment), still compiles correctly through
+    // the lexer-boundary retry.
+    fn run_warm_shape_headroom() {
+        use std::sync::atomic::Ordering;
+
+        use crate::parser::driver::TEST_WARM_SHAPE_HEADROOM;
+
+        struct HeadroomGuard;
+        impl Drop for HeadroomGuard {
+            fn drop(&mut self) {
+                TEST_WARM_SHAPE_HEADROOM.store(u8::MAX, Ordering::Relaxed);
+            }
+        }
+        let _guard = HeadroomGuard;
+        TEST_WARM_SHAPE_HEADROOM.store(1, Ordering::Relaxed);
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::all(),
+        ))
+        .expect("initialize compiler");
+        let filler: String = (0..600)
+            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}\n"))
+            .collect();
+        // 13 tokens each: 10,400 tokens, more than the headroom's one to two
+        // allocation buckets.
+        let extra: String = (0..800)
+            .map(|index| format!("fn g{index}(x: i32) -> i32 {{ return x; }}\n"))
+            .collect();
+        assert!(
+            extra.len() > 4,
+            "the extra functions replace a comment of the same length"
+        );
+        let comment = format!("//{}\n", "x".repeat(extra.len() - 3));
+        assert_eq!(comment.len(), extra.len());
+        let main = "fn main() -> i32 { return f7(35); }\n";
+        let base = format!("{filler}{comment}{main}");
+        let small_edit = format!("{filler}{comment}fn main() -> i32 {{ return f7(35) + 0; }}\n");
+        let outgrown = format!("{filler}{extra}{main}");
+        assert!(small_edit.len() < base.len() + 64);
+        assert_eq!(outgrown.len(), base.len());
+        let retries = || {
+            let cache = compiler
+                .parser_shape_cache
+                .lock()
+                .expect("compiler.parser_shape_cache poisoned");
+            (cache.lexer_boundary_retries, cache.tree_capacity_retries)
+        };
+        let run = |case: &str, source: &str, expected_retries: (u64, u64)| {
+            let before = retries();
+            let artifact = pollster::block_on(compiler.compile_source_to_x86_64(source))
+                .unwrap_or_else(|error| panic!("{case}: x86 compile: {error}"));
+            let after = retries();
+            assert_eq!(
+                (after.0 - before.0, after.1 - before.1),
+                expected_retries,
+                "{case}: (lexer-boundary, tree-capacity) retries"
+            );
+            assert_lowered_program_result(
+                LoweringTarget::X86_64,
+                &format!("headroom-{case}"),
+                &artifact,
+                42,
+            );
+        };
+        run("cold", &base, (0, 0));
+        run("identical", &base, (0, 0));
+        run("small_edit", &small_edit, (0, 0));
+        run("outgrown", &outgrown, (1, 0));
+        run("outgrown_again", &outgrown, (0, 0));
+        run("back_to_base", &base, (0, 0));
+    }
+
+    #[test]
     fn physical_gpu_job_bounded_resets_match_fresh_workspaces() {
         std::thread::Builder::new()
             .name("lowering job resets".into())
@@ -585,12 +684,14 @@ mod tests {
     // the imported bytes its own resources can address, and its x86 analysis
     // and artifact clears cover only its rows (LoweringCapacities::for_job).
     // The bytes past them keep the big job's words; here they are poisoned as
-    // well. Big and small jobs alternate in one compiler, and every artifact
-    // must match the one a fresh workspace gives.
+    // well. Big and small jobs alternate in one compiler, with job-sized
+    // direct operations on, and every artifact must match the one a fresh
+    // workspace gives with them off.
     fn run_job_bounded_reset_equivalence() {
         use std::sync::atomic::Ordering;
 
         use crate::codegen::lowering_pipeline::{
+            TEST_JOB_SIZED_DIRECT_OPS,
             TEST_PHASE_RESET_POISON,
             TEST_PHASE_RESET_POISONED_BYTES,
         };
@@ -599,9 +700,14 @@ mod tests {
         impl Drop for PoisonGuard {
             fn drop(&mut self) {
                 TEST_PHASE_RESET_POISON.store(u64::MAX, Ordering::Relaxed);
+                TEST_JOB_SIZED_DIRECT_OPS.store(u8::MAX, Ordering::Relaxed);
             }
         }
 
+        // Fresh artifacts come from built grids; the poisoned jobs below
+        // turn job-sized grids on.
+        let _guard = PoisonGuard;
+        TEST_JOB_SIZED_DIRECT_OPS.store(0, Ordering::Relaxed);
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
             gpu,
@@ -630,7 +736,22 @@ mod tests {
                 "generic_enum_struct_payload",
                 "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }",
             ),
+            // A `let` without an initializer is zero (faab83b2), so a job
+            // must not see a big job's words in its locals.
+            (
+                "zero_initialized_array",
+                "fn main() -> i32 { let a: [i32; 1024]; a[5] = 40; return a[0] + a[5] + a[1023] + 2; }",
+            ),
+            (
+                "zero_initialized_struct_and_array",
+                "struct S { x: i64, b: bool, } fn main() -> i32 { let s: S; let v: [i64; 3]; let t: i64 = s.x + v[0] + v[1] + v[2]; if (s.b) { return 1; } if (t == 0) { return 42; } return 2; }",
+            ),
+            (
+                "zero_initialized_in_a_loop",
+                "fn main() -> i32 { let total: i32 = 0; for i in 0 .. 3 { let a: [i32; 4]; let x: i32; total = total + a[0] + a[3] + x; a[0] = 7; a[3] = 9; x = 5; } return total + 42; }",
+            ),
         ];
+        let zero_cases = 5..cases.len();
         // The filler functions with every case's features: loops, nested
         // aggregates with an array field, enums and matches, a generic enum
         // with a struct payload. The featureless `constant` job runs after it,
@@ -649,7 +770,15 @@ mod tests {
         // Wasm lowering does not handle enum payloads yet (LNC0057 for struct
         // payloads; an invalid module for a scalar one), so the Wasm side runs
         // the cases without them and a rich job without the enums.
-        let wasm_runs = |case: &str| !matches!(case, "enums_and_matches" | "generic_enum_struct_payload");
+        // The i64 struct case stays x86-only.
+        let wasm_runs = |case: &str| {
+            !matches!(
+                case,
+                "enums_and_matches"
+                    | "generic_enum_struct_payload"
+                    | "zero_initialized_struct_and_array"
+            )
+        };
         let rich_wasm: String = (0..2_000)
             .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}"))
             .chain([
@@ -681,6 +810,14 @@ mod tests {
             release();
             x86(source)
         });
+        for index in zero_cases {
+            assert_lowered_program_result(
+                LoweringTarget::X86_64,
+                &format!("reset-{}", cases[index].0),
+                &fresh_x86[index],
+                42,
+            );
+        }
         let fresh_wasm = cases.map(|(case, source)| {
             wasm_runs(case).then(|| {
                 release();
@@ -698,7 +835,7 @@ mod tests {
         release();
         let fresh_rich_wasm = wasm(&rich_wasm);
 
-        let _guard = PoisonGuard;
+        TEST_JOB_SIZED_DIRECT_OPS.store(1, Ordering::Relaxed);
         for word in [1u32, u32::MAX] {
             TEST_PHASE_RESET_POISON.store(u64::from(word), Ordering::Relaxed);
             let poisoned = TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed);

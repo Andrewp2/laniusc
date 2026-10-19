@@ -161,9 +161,10 @@ impl TargetStage {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
+        sized_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_after_target_pages(encoder, object),
+            Self::X86_64(stage) => stage.record_after_target_pages(encoder, object, sized_job),
             Self::Wasm(stage) => stage.record_after_target_pages(encoder, object),
         }
     }
@@ -246,6 +247,28 @@ fn full_clears() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_LOWERING_FULL_CLEARS", false))
 }
+
+/// Whether the job-sized direct lowering operations (`JobSized`) record the
+/// job's grid; `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps every workspace's built
+/// grid, for A/B runs.
+fn job_sized_direct_ops() -> bool {
+    #[cfg(test)]
+    {
+        match TEST_JOB_SIZED_DIRECT_OPS.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => return false,
+            1 => return true,
+            _ => {}
+        }
+    }
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_JOB_SIZED_DIRECT_OPS", true))
+}
+
+/// Test override of `LANIUS_JOB_SIZED_DIRECT_OPS`: 0 off, 1 on, anything
+/// else follows the environment.
+#[cfg(test)]
+pub(crate) static TEST_JOB_SIZED_DIRECT_OPS: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(u8::MAX);
 
 /// `LANIUS_LOWERING_PHASE_RESET_POISON=<word>` (decimal or 0x hex) fills the
 /// imported bytes a job's phase reset leaves with that word, so a reader that
@@ -648,6 +671,13 @@ impl GpuLoweringPipeline {
         (job != self.capacities).then_some(job)
     }
 
+    /// The job's capacities when they are below this workspace's, for the
+    /// direct operations whose grids they bound (`JobSized`), unless
+    /// `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps the built grids.
+    fn sized_job(&self, job: LoweringCapacities) -> Option<LoweringCapacities> {
+        self.smaller_job(job).filter(|_| job_sized_direct_ops())
+    }
+
     /// Clears the storage imported from the type checker up to the bytes the
     /// job's resources can address: each resource's size in a graph built
     /// for `job`. A job at this workspace's capacities clears whole slots.
@@ -844,7 +874,11 @@ impl GpuLoweringPipeline {
         for page_id in 0..self.target.target_page_count() {
             self.target.record_emit_page(encoder, page_id)?;
         }
-        self.target.record_after_target_pages(encoder, object)?;
+        self.target.record_after_target_pages(
+            encoder,
+            object,
+            job.filter(|_| job_sized_direct_ops()),
+        )?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, self.target.emission_timer_label());
         }
@@ -891,6 +925,7 @@ impl GpuLoweringPipeline {
             split,
             bounds,
             jump_pairs.execution_rank,
+            self.sized_job(job),
         )?;
         if let Some(split) = split {
             split.submit_prefix(
@@ -901,7 +936,7 @@ impl GpuLoweringPipeline {
             );
         }
         self.optimizer
-            .record_with_jump_pairs(encoder, timer.as_deref_mut(), jump_pairs)?;
+            .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job))?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -983,6 +1018,7 @@ impl GpuLoweringPipeline {
             split,
             bounds,
             jump_pairs.execution_rank,
+            self.sized_job(job),
         )?;
         if let Some(split) = split {
             split.submit_prefix(
@@ -993,7 +1029,7 @@ impl GpuLoweringPipeline {
             );
         }
         self.optimizer
-            .record_with_jump_pairs(encoder, timer.as_deref_mut(), jump_pairs)?;
+            .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job))?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -1117,7 +1153,7 @@ impl GpuLoweringPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gpu::{device, passes_core::pipeline_creation_count};
+    use crate::gpu::device;
 
     #[test]
     fn job_totals_past_the_jobs_capacities_fail_as_the_gpu_checks_would() {
@@ -1175,10 +1211,10 @@ mod tests {
                 crate::compiler::GpuCompilerBackends::all(),
             ))
             .unwrap();
-        let pipelines_after_prepare = pipeline_creation_count();
+        let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let source = "fn main() -> i32 { return 42; }";
         pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
         pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
-        assert_eq!(pipeline_creation_count(), pipelines_after_prepare);
+        assert_eq!(crate::gpu::passes_core::this_thread_gpu_activity().since(before).pipelines, 0);
     }
 }

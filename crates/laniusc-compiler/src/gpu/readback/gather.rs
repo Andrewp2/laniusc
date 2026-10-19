@@ -574,11 +574,10 @@ mod tests {
     use super::*;
     use crate::gpu::device;
 
+    /// Bind groups this thread created: concurrently running tests create
+    /// gather bind groups too, and recording a gather creates no others.
     fn gather_bind_groups_created() -> u64 {
-        passes_core::bind_group_creation_counts_by_label()
-            .get(GATHER_LABEL)
-            .copied()
-            .unwrap_or(0)
+        passes_core::this_thread_gpu_activity().bind_groups
     }
 
     fn storage(device: &wgpu::Device, label: &str) -> LaniusBuffer<u8> {

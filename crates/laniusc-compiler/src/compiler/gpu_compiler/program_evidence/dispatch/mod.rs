@@ -194,6 +194,17 @@ impl GpuPacket {
     }
 }
 
+/// Creates every program-evidence pipeline (the kernel caches keep them),
+/// so that a daemon's jobs after readiness create none.
+pub(in crate::compiler::gpu_compiler) fn prepare_kernels(device: &wgpu::Device) -> Result<()> {
+    kernels::CatalogKernels::load(device)?;
+    kernels::RecipeKernels::load(device)?;
+    kernels::BatchKernels::load(device)?;
+    kernels::ProofKernels::load(device)?;
+    kernels::NativeLayoutKernel::load(device)?;
+    Ok(())
+}
+
 impl GpuProgramEvidence {
     pub fn admit(
         workspace: WorkspaceLease,

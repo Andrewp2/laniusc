@@ -8,6 +8,24 @@
 use anyhow::{Context, Result};
 use encase::ShaderType;
 
+use super::job_sized::JobSized;
+
+/// Element counts of the object projection's direct operations for given
+/// capacities (`JobSized`), as `GpuX86ObjectProjection::new` builds them.
+mod object_extent {
+    use super::LoweringCapacities;
+
+    pub(super) fn relocations(c: LoweringCapacities) -> u32 {
+        c.semantic_instructions.max(1)
+    }
+    pub(super) fn functions(c: LoweringCapacities) -> u32 {
+        c.hir_nodes.max(1)
+    }
+    pub(super) fn artifact_bytes(c: LoweringCapacities) -> u32 {
+        c.artifact_bytes.max(1)
+    }
+}
+
 use super::{
     lowering_ir::{
         LoweringCapacities,
@@ -61,11 +79,11 @@ pub(crate) struct GpuX86ObjectStage {
     function_capacity: u32,
     artifact_capacity: u32,
     normalize_status: ComputeOperation,
-    relocation_flags: ComputeOperation,
-    definition_flags_op: ComputeOperation,
-    relocations_op: ComputeOperation,
-    definitions_op: ComputeOperation,
-    bytes_op: ComputeOperation,
+    relocation_flags: JobSized,
+    definition_flags_op: JobSized,
+    relocations_op: JobSized,
+    definitions_op: JobSized,
+    bytes_op: JobSized,
     relocation_scan: GpuResidentExclusiveScan,
     symbol_scan: GpuResidentExclusiveScan,
     definition_scan: GpuResidentExclusiveScan,
@@ -243,6 +261,8 @@ impl GpuX86ObjectStage {
             &params,
             relocation_capacity,
         )?;
+        let relocation_flags_op =
+            JobSized::new(relocation_flags_op, object_extent::relocations, capacities)?;
         let relocation_scan = GpuResidentExclusiveScan::new(
             device,
             kernels,
@@ -278,6 +298,8 @@ impl GpuX86ObjectStage {
             &params,
             function_capacity,
         )?;
+        let definition_flags_op =
+            JobSized::new(definition_flags_op, object_extent::functions, capacities)?;
         let definition_scan = GpuResidentExclusiveScan::new(
             device,
             kernels,
@@ -302,6 +324,7 @@ impl GpuX86ObjectStage {
             &relocations_pass,
             relocation_capacity,
         )?;
+        let relocations_op = JobSized::new(relocations_op, object_extent::relocations, capacities)?;
         let definitions_op = ComputeOperation::direct(
             device,
             &context,
@@ -310,6 +333,7 @@ impl GpuX86ObjectStage {
             &definitions_pass,
             function_capacity,
         )?;
+        let definitions_op = JobSized::new(definitions_op, object_extent::functions, capacities)?;
         let bytes_op = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -319,6 +343,7 @@ impl GpuX86ObjectStage {
             &params,
             artifact_capacity,
         )?;
+        let bytes_op = JobSized::new(bytes_op, object_extent::artifact_bytes, capacities)?;
         let metadata_readback_copies = [
             (
                 "artifact.x86.object.relocation_total.readback",
@@ -432,15 +457,21 @@ impl GpuX86ObjectStage {
         self.normalize_status.record(encoder)
     }
 
-    pub(crate) fn record_projection(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.relocation_flags.record(encoder)?;
+    /// Records the object projection; with `job`, its direct operations
+    /// dispatch the job's grids (`JobSized`).
+    pub(crate) fn record_projection(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
+    ) -> Result<()> {
+        self.relocation_flags.record_job(encoder, job)?;
         self.relocation_scan.record(encoder)?;
         self.symbol_scan.record(encoder)?;
-        self.definition_flags_op.record(encoder)?;
+        self.definition_flags_op.record_job(encoder, job)?;
         self.definition_scan.record(encoder)?;
-        self.relocations_op.record(encoder)?;
-        self.definitions_op.record(encoder)?;
-        self.bytes_op.record(encoder)?;
+        self.relocations_op.record_job(encoder, job)?;
+        self.definitions_op.record_job(encoder, job)?;
+        self.bytes_op.record_job(encoder, job)?;
         for copy in &self.metadata_readback_copies {
             copy.record(encoder);
         }

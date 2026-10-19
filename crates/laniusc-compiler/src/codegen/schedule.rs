@@ -41,6 +41,7 @@ struct ScheduleStep {
 /// created on a warm job.
 pub(crate) struct GpuStableScheduleSorter {
     steps: Vec<ScheduleStep>,
+    target_capacity: u32,
     scans: [GpuResidentExclusiveScan; 2],
     _radix_params: DynamicUniformBuffer<ScheduleParams>,
     order: LaniusBuffer<u32>,
@@ -208,6 +209,7 @@ impl GpuStableScheduleSorter {
 
         Ok(Self {
             steps,
+            target_capacity,
             scans,
             _radix_params: radix_params,
             order: order.clone(),
@@ -225,14 +227,22 @@ impl GpuStableScheduleSorter {
 
     #[cfg(test)]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_timed(encoder, None)
+        self.record_timed(encoder, None, None)
     }
 
+    /// Records the sort. With `job_rows`, the histogram and scatter grids
+    /// cover that many semantic rows instead of the built capacity: both
+    /// kernels take their active blocks from the GPU-written row total, so a
+    /// grid that covers the job's rows covers every active block.
     pub(crate) fn record_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
+        job_rows: Option<u32>,
     ) -> Result<()> {
+        let rows = job_rows
+            .filter(|_| super::job_sized::job_sized_allows("schedule.sort"))
+            .map(|rows| rows.max(1).min(self.target_capacity));
         let mut stamp = |label: String, encoder: &mut wgpu::CommandEncoder| {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, label);
@@ -240,7 +250,10 @@ impl GpuStableScheduleSorter {
         };
         for step in &self.steps {
             let digit = step.key_step;
-            step.histogram.record(encoder)?;
+            match rows {
+                Some(rows) => step.histogram.record_elements(encoder, rows)?,
+                None => step.histogram.record(encoder)?,
+            }
             stamp(
                 format!("lowering.semantic.schedule.digit.{digit}.histogram.done"),
                 encoder,
@@ -250,7 +263,10 @@ impl GpuStableScheduleSorter {
                 format!("lowering.semantic.schedule.digit.{digit}.scan.done"),
                 encoder,
             );
-            step.scatter.record(encoder)?;
+            match rows {
+                Some(rows) => step.scatter.record_elements(encoder, rows)?,
+                None => step.scatter.record(encoder)?,
+            }
             stamp(
                 format!("lowering.semantic.schedule.digit.{digit}.scatter.done"),
                 encoder,
