@@ -23,13 +23,12 @@ either fails. It needs only a checkout and the binary.
 The exit status is 1 when a case outside the list fails, or the compiler
 itself does not build.
 
-Known gaps (2026-10-19): 71 of 81 pass. vc's three strides for records that
+Known gaps (2026-10-19): 75 of 81 pass. vc's three strides for records that
 hold a slice (syntax_tree::Tree, aliases::Catalog, body_catalog::FunctionBody)
-now come from core::mem::size_of, since slices are three words. The 10 FAILs:
-  laniusc accepts an invalid program (vc rejects it):
-    invalid_generic_slice_length (bool length), invalid_generic_slice_pointer
-    (integer pointer), invalid_void_return (`return;` in an i32 fn),
-    invalid_while_condition (`while (1)`)
+now come from core::mem::size_of, since slices are three words, and laniusc
+now rejects a bool or integer slice_from_raw_parts argument where a length or
+ptr belongs, `return;` in an i32 fn, and a non-bool while condition. The 6
+FAILs:
   the case assumes two-word slices: backend_descriptor_slice_field (alloc(16)
     for a one-slice record; the laniusc build reads past it, exit -11)
   semantics differ: compiler_uninitialized_self_assignment (laniusc zero-fills
