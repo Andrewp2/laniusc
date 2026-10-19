@@ -315,6 +315,19 @@ impl ComputeOperation {
         self.record_as(encoder, self.name)
     }
 
+    /// The element count a direct operation was built to dispatch, or `None`
+    /// for an indirect one.
+    pub(crate) fn direct_elements(&self) -> Option<u32> {
+        match &self.dispatch {
+            Dispatch::Direct { elements, .. } => Some(*elements),
+            Dispatch::Indirect { .. } => None,
+        }
+    }
+
+    pub(crate) fn name(&self) -> &'static str {
+        self.name
+    }
+
     /// Records a direct operation for a smaller active domain than the
     /// capacity used to build its stable pipeline and bind group.
     pub(crate) fn record_elements(

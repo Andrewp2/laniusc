@@ -5,6 +5,7 @@
 //! HIR plus retained type-check metadata after frontend status success.
 
 pub(crate) mod functions;
+pub(crate) mod job_sized;
 mod link_byte_source;
 pub(crate) mod link_layout;
 pub(crate) mod lowering;

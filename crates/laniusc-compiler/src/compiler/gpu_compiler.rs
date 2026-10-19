@@ -666,12 +666,14 @@ mod tests {
     // the imported bytes its own resources can address, and its x86 analysis
     // and artifact clears cover only its rows (LoweringCapacities::for_job).
     // The bytes past them keep the big job's words; here they are poisoned as
-    // well. Big and small jobs alternate in one compiler, and every artifact
-    // must match the one a fresh workspace gives.
+    // well. Big and small jobs alternate in one compiler, with job-sized
+    // direct operations on, and every artifact must match the one a fresh
+    // workspace gives with them off.
     fn run_job_bounded_reset_equivalence() {
         use std::sync::atomic::Ordering;
 
         use crate::codegen::lowering_pipeline::{
+            TEST_JOB_SIZED_DIRECT_OPS,
             TEST_PHASE_RESET_POISON,
             TEST_PHASE_RESET_POISONED_BYTES,
         };
@@ -680,6 +682,7 @@ mod tests {
         impl Drop for PoisonGuard {
             fn drop(&mut self) {
                 TEST_PHASE_RESET_POISON.store(u64::MAX, Ordering::Relaxed);
+                TEST_JOB_SIZED_DIRECT_OPS.store(u8::MAX, Ordering::Relaxed);
             }
         }
 
@@ -780,6 +783,7 @@ mod tests {
         let fresh_rich_wasm = wasm(&rich_wasm);
 
         let _guard = PoisonGuard;
+        TEST_JOB_SIZED_DIRECT_OPS.store(1, Ordering::Relaxed);
         for word in [1u32, u32::MAX] {
             TEST_PHASE_RESET_POISON.store(u64::from(word), Ordering::Relaxed);
             let poisoned = TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed);
