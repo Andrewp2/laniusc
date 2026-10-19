@@ -10,6 +10,7 @@ groupshared uint stable_radix_values_a[STABLE_RADIX_WG_SIZE];
 groupshared uint stable_radix_values_b[STABLE_RADIX_WG_SIZE];
 groupshared uint stable_radix_scan[STABLE_RADIX_WG_SIZE];
 groupshared uint stable_radix_bucket_start[STABLE_RADIX_BUCKET_CAPACITY];
+groupshared uint stable_radix_bucket_base[STABLE_RADIX_WG_SIZE];
 
 void stable_sort_radix_byte(uint lane, uint key, uint value)
 {
@@ -83,11 +84,22 @@ public void stable_radix_scatter_block<
     uint n_blocks,
     uint key_step,
     uint bucket_count,
-    StructuredBuffer<uint> radix_bucket_base,
+    StructuredBuffer<uint> radix_bucket_total,
     StructuredBuffer<uint> radix_block_bucket_prefix)
 {
     if (block_idx >= n_blocks)
         return;
+
+    // A bucket's global base is the exclusive scan of the bucket totals the
+    // bucket-prefix pass wrote. Every block scans the 256 totals itself, so
+    // no separate bucket-base pass runs between bucket prefix and scatter.
+    uint bucket_total = lane < bucket_count ? radix_bucket_total[lane] : 0u;
+    uint bucket_inclusive = prefix_scan_inclusive<
+        uint,
+        PrefixScanU32Add,
+        256>(lane, bucket_total, stable_radix_scan);
+    stable_radix_bucket_base[lane] = bucket_inclusive - bucket_total;
+    GroupMemoryBarrierWithGroupSync();
 
     uint active_count = TSource.active_count();
     uint order_i = block_idx * uint(GSIZE) + lane;
@@ -117,6 +129,6 @@ public void stable_radix_scatter_block<
     uint local_rank = lane - stable_radix_bucket_start[key];
     uint prefix_slot = radix_block_bucket_slot(block_idx, key, bucket_count);
     uint block_prefix = radix_block_bucket_prefix[prefix_slot];
-    uint dst = stable_radix_dst(radix_bucket_base[key], block_prefix, local_rank);
+    uint dst = stable_radix_dst(stable_radix_bucket_base[key], block_prefix, local_rank);
     scatter_emit<uint, TSink>(dst, active_count, value);
 }

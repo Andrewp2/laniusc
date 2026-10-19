@@ -17,7 +17,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> opt_ir_ssa_use_total;
 StructuredBuffer<uint> opt_ir_ssa_use_values;
 StructuredBuffer<uint> radix_order_in;
-StructuredBuffer<uint> radix_bucket_base;
+StructuredBuffer<uint> radix_bucket_total;
 StructuredBuffer<uint> radix_block_bucket_prefix;
 RWStructuredBuffer<uint> radix_order_out;
 
@@ -74,6 +74,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
             gParams.max_blocks,
             gParams.key_step,
             RADIX_U8_BUCKETS,
-            radix_bucket_base,
+            radix_bucket_total,
             radix_block_bucket_prefix);
 }

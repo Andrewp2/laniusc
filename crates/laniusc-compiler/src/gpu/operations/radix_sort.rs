@@ -56,7 +56,6 @@ struct RadixSortPasses<'a> {
     pub small: Option<&'a PassData>,
     pub histogram: &'a PassData,
     pub bucket_prefix: &'a PassData,
-    pub bucket_bases: &'a PassData,
     pub scatter: &'a PassData,
 }
 
@@ -72,7 +71,6 @@ pub(crate) struct RadixSortResources {
     pub histogram: &'static str,
     pub bucket_prefix: &'static str,
     pub bucket_total: &'static str,
-    pub bucket_base: &'static str,
 }
 
 pub(super) fn resolve_radix_sort_graph_resources(
@@ -108,7 +106,6 @@ pub(super) fn resolve_radix_sort_graph_resources(
         histogram: resource(resources.histogram)?,
         bucket_prefix: resource(resources.bucket_prefix)?,
         bucket_total: resource(resources.bucket_total)?,
-        bucket_base: resource(resources.bucket_base)?,
     })
 }
 
@@ -300,7 +297,6 @@ impl RadixSortKernels {
             small: self.small.and_then(|key| kernels.optional(key)),
             histogram: kernels.dynamic_uniform_kernel(self.histogram, "gParams"),
             bucket_prefix: kernels.dynamic_uniform_kernel("radix/bucket_prefix", "gParams"),
-            bucket_bases: kernels.dynamic_uniform_kernel("radix/bucket_bases", "gParams"),
             scatter: kernels.dynamic_uniform_kernel(self.scatter, "gParams"),
         }
     }
@@ -313,7 +309,6 @@ impl RadixSortKernels {
         for step in [passes.order_to_temporary, passes.temporary_to_order] {
             graph.assign_kernel(step.histogram, self.histogram)?;
             graph.assign_kernel(step.bucket_prefix, "radix/bucket_prefix")?;
-            graph.assign_kernel(step.bucket_bases, "radix/bucket_bases")?;
             graph.assign_kernel(step.scatter, self.scatter)?;
         }
         Ok(())
@@ -386,14 +381,12 @@ pub(crate) struct RadixSortDispatch<'a> {
     pub small: RadixDispatchDomain<'a>,
     pub rows: RadixDispatchDomain<'a>,
     pub bucket_prefix: RadixDispatchDomain<'a>,
-    pub bucket_bases: RadixDispatchDomain<'a>,
 }
 
 struct OwnedRadixSortPasses {
     small: Option<PassData>,
     histogram: PassData,
     bucket_prefix: PassData,
-    bucket_bases: PassData,
     scatter: PassData,
 }
 
@@ -403,7 +396,6 @@ impl From<RadixSortPasses<'_>> for OwnedRadixSortPasses {
             small: passes.small.cloned(),
             histogram: passes.histogram.clone(),
             bucket_prefix: passes.bucket_prefix.clone(),
-            bucket_bases: passes.bucket_bases.clone(),
             scatter: passes.scatter.clone(),
         }
     }
@@ -427,7 +419,6 @@ struct OwnedRadixSortDispatch {
     small: OwnedRadixDispatchDomain,
     rows: OwnedRadixDispatchDomain,
     bucket_prefix: OwnedRadixDispatchDomain,
-    bucket_bases: OwnedRadixDispatchDomain,
 }
 
 impl From<RadixSortDispatch<'_>> for OwnedRadixSortDispatch {
@@ -436,7 +427,6 @@ impl From<RadixSortDispatch<'_>> for OwnedRadixSortDispatch {
             small: dispatch.small.into(),
             rows: dispatch.rows.into(),
             bucket_prefix: dispatch.bucket_prefix.into(),
-            bucket_bases: dispatch.bucket_bases.into(),
         }
     }
 }
@@ -475,7 +465,6 @@ struct StandardRadixSortOperation<P> {
     small: Option<wgpu::BindGroup>,
     histogram: Vec<wgpu::BindGroup>,
     bucket_prefix: Option<wgpu::BindGroup>,
-    bucket_bases: Option<wgpu::BindGroup>,
     scatter: Vec<wgpu::BindGroup>,
     initial_direction: usize,
 }
@@ -546,7 +535,6 @@ where
                 small: Some(small),
                 histogram: Vec::new(),
                 bucket_prefix: None,
-                bucket_bases: None,
                 scatter: Vec::new(),
                 initial_direction: 0,
             });
@@ -566,7 +554,6 @@ where
         let bucket_prefix_rows =
             buffer_binding_from_resources(registry, plan.resources.bucket_prefix)?;
         let bucket_total = buffer_binding_from_resources(registry, plan.resources.bucket_total)?;
-        let bucket_base = buffer_binding_from_resources(registry, plan.resources.bucket_base)?;
         let param_values = (0..steps).map(make_params).collect::<Vec<_>>();
         let params =
             dynamic_uniforms_from_vals(device, &format!("{}.params", plan.label), &param_values);
@@ -597,7 +584,7 @@ where
                 &[
                     ("gParams", params.binding()),
                     ("radix_order_in", read_order),
-                    ("radix_bucket_base", bucket_base.clone()),
+                    ("radix_bucket_total", bucket_total.clone()),
                     ("radix_block_bucket_prefix", bucket_prefix_rows.clone()),
                     ("radix_order_out", write_order),
                 ],
@@ -613,18 +600,7 @@ where
                 ("name_count_in", count),
                 ("radix_block_histogram", histogram_rows),
                 ("radix_block_bucket_prefix", bucket_prefix_rows),
-                ("radix_bucket_total", bucket_total.clone()),
-            ],
-        )?;
-        let bucket_bases = reflected_bind_group_with_overrides(
-            device,
-            &format!("{}.bucket_bases", plan.label),
-            passes.bucket_bases,
-            registry,
-            &[
-                ("gParams", params.binding()),
                 ("radix_bucket_total", bucket_total),
-                ("radix_bucket_base", bucket_base),
             ],
         )?;
 
@@ -638,7 +614,6 @@ where
             small: None,
             histogram,
             bucket_prefix: Some(bucket_prefix),
-            bucket_bases: Some(bucket_bases),
             scatter,
             initial_direction,
         })
@@ -684,16 +659,6 @@ where
                     .expect("non-small radix sort must bind bucket prefix"),
                 labels.bucket_prefix,
                 &dispatch.bucket_prefix,
-                &dynamic_offsets,
-            )?;
-            record_dispatch(
-                encoder,
-                &passes.bucket_bases,
-                self.bucket_bases
-                    .as_ref()
-                    .expect("non-small radix sort must bind bucket bases"),
-                labels.bucket_bases,
-                &dispatch.bucket_bases,
                 &dynamic_offsets,
             )?;
             record_dispatch(
@@ -745,7 +710,7 @@ mod tests {
 
     #[test]
     fn shared_radix_steps_request_dynamic_uniform_variants() {
-        for key in ["radix/bucket_prefix", "radix/bucket_bases"] {
+        for key in ["radix/bucket_prefix"] {
             let reflection = crate::reflection::parse_reflection_from_file(
                 crate::shader_artifacts::artifact_path(&format!("{key}.reflect.json")),
             )

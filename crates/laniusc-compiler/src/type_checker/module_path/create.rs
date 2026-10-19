@@ -290,7 +290,6 @@ pub(in crate::type_checker) fn create_with_passes(
             small: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
             rows: RadixDispatchDomain::Indirect(&decl_key_radix_dispatch_args),
             bucket_prefix: RadixDispatchDomain::Direct(RADIX_U8_BUCKET_COUNT.saturating_mul(256)),
-            bucket_bases: RadixDispatchDomain::Direct(256),
         },
         |key_step| ModuleKeyRadixParams {
             module_capacity: record_capacity_u32,
