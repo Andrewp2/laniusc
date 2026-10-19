@@ -194,6 +194,85 @@ USER_LIBRARY = {
 }
 USER_LIBRARY_ORDER = tuple(USER_LIBRARY)
 
+# `--string-helpers N` (0 by default, which leaves the output byte-identical):
+# string literals in generic bodies, as messages and labels. The user library
+# generics below get one message each, and every area gets N generic audit
+# helpers with two labels each, called once from its evaluate function. None
+# of them changes a value: each string goes to a diagnostics helper (`expect`,
+# `annotate`) that passes its condition or code through. `str` has no methods
+# yet, so passing a string to a function is all real code does with it today.
+STRING_HELPERS = 0
+STRING_PRELUDE = (
+    "// Diagnostics sinks: the message documents the check; the value passes through.\n"
+    "fn expect(condition: bool, message: str) -> bool {\n    return condition;\n}\n\n"
+    "fn annotate(code: i32, context: str, hint: str) -> i32 {\n    return code;\n}\n\n"
+)
+STRING_LIBRARY = {
+    "some_if": (
+        "fn some_if<T>(present: bool, value: T) -> core::option::Option<T> {\n"
+        "    let reason: str = \"value withheld: present flag not set\";\n"
+        "    if (expect(present, reason)) {\n        return core::option::Some(value);\n    }\n"
+        "    return core::option::None();\n}\n"
+    ),
+    "ok_if": (
+        "fn ok_if<T, E>(ok: bool, value: T, error: E) -> core::result::Result<T, E> {\n"
+        "    let reason: str = \"check failed; returning the caller's error\";\n"
+        "    if (expect(ok, reason)) {\n        return core::result::Ok(value);\n    }\n"
+        "    return core::result::Err(error);\n}\n"
+    ),
+    "checked_score": (
+        "fn checked_score<T>(item: T, limit: i32) -> core::result::Result<i32, i32> where T: Score {\n"
+        "    let score: i32 = item.score();\n"
+        "    let message: str = \"score exceeds the configured limit\";\n"
+        "    if (expect(score > limit, message)) {\n        return core::result::Err(score - limit);\n    }\n"
+        "    return core::result::Ok(score);\n}\n"
+    ),
+}
+STRING_MESSAGES = (
+    "index out of range",
+    "capacity exhausted; dropping the newest item",
+    "unexpected empty container",
+    "budget exceeded by the requested amount",
+    "duplicate key ignored",
+    "value outside the accepted band [0, 4095]",
+    "retrying with the fallback value",
+    "invalid state: queue drained twice",
+    "record weight below threshold",
+    "no matching entry for the requested key",
+    "overflow while accumulating the checksum",
+    "pair components were swapped",
+    "configuration missing; using defaults",
+    "cannot remove from an empty set",
+    "stale handle rejected",
+    "expected a non-negative count",
+)
+
+
+def string_label(area: Area, helper: int, slot: int) -> str:
+    message = STRING_MESSAGES[(area.index * 7 + helper * 3 + slot) % len(STRING_MESSAGES)]
+    return f"{area.name}/audit{helper}: {message}" if slot == 0 else message
+
+
+def render_string_helpers(area: Area) -> str:
+    text = ""
+    for helper in range(STRING_HELPERS):
+        text += (
+            f"// Explains why a value would fail audit {helper}; the code passes through.\n"
+            f"fn {area.name}_audit{helper}<T>(value: T, code: i32) -> i32 {{\n"
+            f"    let context: str = \"{string_label(area, helper, 0)}\";\n"
+            f"    let hint: str = \"{string_label(area, helper, 1)}\";\n"
+            "    return annotate(code, context, hint);\n}\n\n"
+        )
+    return text
+
+
+def string_helper_calls(area: Area) -> str:
+    calls = ""
+    for helper in range(STRING_HELPERS):
+        argument = "total" if helper % 2 == 0 else "total > 2048"
+        calls += f"    total = {area.name}_audit{helper}({argument}, total);\n"
+    return calls
+
 # Record field terms: "value" and "x" are the leaf's variables, "a" and "b"
 # the step's constants, anything else a literal.
 ROWS = (("value", "a", "x"), ("x", "b", "value"), ("a", "b", "x"), ("b", "value", "a"))
@@ -777,10 +856,12 @@ def render_area_body(area: Area, keyed: bool) -> str:
     text = f"// area {area.name}\n\n"
     text += "".join(render_record(record, keyed) for record in area.records)
     text += "".join(render_leaf(area, leaf) for leaf in area.leaves)
+    text += render_string_helpers(area)
     calls = "".join(
         f"    total = (total + {leaf.name}((seed + {salt}) {MASK})) {MASK};\n"
         for leaf, salt in zip(area.leaves, area.salts)
     )
+    calls += string_helper_calls(area)
     return text + f"fn {area.name}_evaluate(seed: i32) -> i32 {{\n    let total: i32 = 0;\n{calls}    return total;\n}}\n\n"
 
 
@@ -791,7 +872,13 @@ def render_single_file(workload: Workload, target_bytes: int | None = None, matr
     if matrix_probe:
         header = f"// expect: {int(expected_stdout(workload).split()[-1]) & 127}\n"
     imports = "".join(f"import core::{name};\n" for name in IMPORTS if name in items)
-    library = "".join(USER_LIBRARY[name] + "\n" for name in USER_LIBRARY_ORDER if name in items)
+    library = "".join(
+        (STRING_LIBRARY.get(name, USER_LIBRARY[name]) if STRING_HELPERS else USER_LIBRARY[name]) + "\n"
+        for name in USER_LIBRARY_ORDER
+        if name in items
+    )
+    if STRING_HELPERS:
+        library = STRING_PRELUDE + library
     prefix = f"{header}module bench::stdlib_generic;\n\n{imports}\n// user library\n\n{library}"
     body = "".join(render_area_body(area, "record_keys" in items) for area in workload.areas)
     suffix = base.render_main(Names(), workload, "total & 127" if matrix_probe else "0")
@@ -958,7 +1045,12 @@ def main() -> int:
     parser.add_argument("--matrix-probe", action="store_true",
                         help="single file whose main returns the checksum mod 128, with a `// expect:` line")
     parser.add_argument("--stats", action="store_true", help="print workload statistics")
+    parser.add_argument("--string-helpers", type=int, default=0, metavar="N",
+                        help="put string literals in generic bodies: messages in the user library "
+                             "generics and N generic audit helpers per area (0: none)")
     args = parser.parse_args()
+    global STRING_HELPERS
+    STRING_HELPERS = args.string_helpers
 
     kinds = kinds_for(args.backlog, args.without)
     if args.probes:
@@ -981,6 +1073,7 @@ def main() -> int:
         "backlog": args.backlog,
         "without": sorted(args.without),
         "type_pool": args.type_pool,
+        **({"string_helpers": args.string_helpers} if args.string_helpers else {}),
         "entry": "stdlib_generic.lani",
         "source_root": None,
         "expected_stdout": stdout,
