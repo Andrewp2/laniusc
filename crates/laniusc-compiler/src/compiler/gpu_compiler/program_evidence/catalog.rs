@@ -57,6 +57,16 @@ pub(in crate::compiler::gpu_compiler) struct ImplementationMethodTarget {
     pub target: [u32; 3],
 }
 
+impl FrozenSnapshot {
+    fn interface_bytes(&self) -> Result<&[u8]> {
+        if let Some(bytes) = self.interface_bytes.get() {
+            return Ok(bytes);
+        }
+        let bytes: Arc<[u8]> = self.original_facts.interface().to_bytes().map_err(|e| anyhow!(e))?.into();
+        Ok(self.interface_bytes.get_or_init(|| bytes))
+    }
+}
+
 pub(in crate::compiler::gpu_compiler) struct CatalogInput<'a> {
     pub facts: &'a OriginalUnitFacts,
 }
@@ -69,7 +79,10 @@ pub(super) struct FrozenSnapshot {
     pub sources: Arc<[String]>,
     pub source_paths: Arc<[Option<std::path::PathBuf>]>,
     pub dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
-    pub interface_bytes: Arc<[u8]>,
+    /// The interface's serialization, made on first use: freeze admits the
+    /// interface with check_serializable and needs the bytes only for a
+    /// dependency artifact that differs from it by value.
+    interface_bytes: std::sync::OnceLock<Arc<[u8]>>,
     /// The complete original accepted inventory is authoritative even when a
     /// reparse produces fresh environments for the same source occurrences.
     pub original_calls: Arc<[CheckedGenericCall]>,
@@ -214,12 +227,10 @@ impl FrozenCatalog {
                 sources: input.facts.template_sources().clone(),
                 source_paths: input.facts.template_source_paths().clone(),
                 dependency_pages: input.facts.template_dependency_pages().clone(),
-                interface_bytes: input
-                    .facts
-                    .interface()
-                    .to_bytes()
-                    .map_err(|e| anyhow!(e))?
-                    .into(),
+                interface_bytes: {
+                    input.facts.interface().check_serializable().map_err(|e| anyhow!(e))?;
+                    std::sync::OnceLock::new()
+                },
                 original_calls: input.facts.generic_calls().clone(),
                 original_call_owners: input.facts.checked_call_owners().clone(),
                 call_owner_by_hir,
@@ -247,14 +258,14 @@ impl FrozenCatalog {
                     if equal && cfg!(any(test, debug_assertions)) {
                         ensure!(
                             artifact.to_bytes().map_err(|e| anyhow!(e))?.as_slice()
-                                == authority.interface_bytes.as_ref(),
+                                == authority.interface_bytes()?,
                             "equal dependency artifact serialized to different bytes"
                         );
                     }
                     ensure!(
                         equal
                             || artifact.to_bytes().map_err(|e| anyhow!(e))?.as_slice()
-                                == authority.interface_bytes.as_ref(),
+                                == authority.interface_bytes()?,
                         "dependency page conflicts with authoritative unit {key:?}"
                     );
                 }

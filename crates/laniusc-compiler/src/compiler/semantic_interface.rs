@@ -1237,6 +1237,15 @@ impl GpuSemanticInterfaceArtifact {
         Ok(())
     }
 
+    /// Succeeds exactly when [`Self::to_bytes`] does, without serializing:
+    /// to_bytes fails only in validate (which also bounds every count it
+    /// writes) or in its encoded length.
+    pub fn check_serializable(&self) -> Result<(), String> {
+        self.validate()?;
+        encoded_byte_len(self)?;
+        Ok(())
+    }
+
     /// Serializes the interface into its bounded little-endian binary format.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
