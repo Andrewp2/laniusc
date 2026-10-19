@@ -322,9 +322,62 @@ impl GpuParser {
     }
 }
 
+/// Tokens a cold job's parser capacity leaves past its own token count. A
+/// warm job of the same source runs with the shape the last cold job
+/// recorded and retries from the lexer boundary when it has more tokens, so
+/// without headroom any edit that adds a token discards a whole speculative
+/// run. One allocation bucket covers ordinary edits for a few hundred
+/// thousand tokens of extra grid.
+pub(crate) const WARM_SHAPE_TOKEN_HEADROOM: u32 = ResidentParserAllocation::GRANULARITY;
+
+/// The token capacity a cold job records for `token_count` tokens: the
+/// allocation bucket at least `WARM_SHAPE_TOKEN_HEADROOM` past the count,
+/// never past the lexer's token buffer and never below the count.
+pub(crate) fn token_capacity_with_headroom(token_count: u32, token_buffer_capacity: u32) -> u32 {
+    let count = token_count.max(1);
+    ResidentParserAllocation::capacity_bucket(count.saturating_add(WARM_SHAPE_TOKEN_HEADROOM))
+        .min(token_buffer_capacity)
+        .max(count)
+}
+
+/// A measured tree capacity with room for `WARM_SHAPE_TOKEN_HEADROOM` more
+/// tokens at the job's own tree nodes per token, bucketed like the
+/// allocation, so a warm edit within the token headroom does not overflow
+/// the tree and replace the parser workspace.
+pub(crate) fn tree_capacity_with_headroom(tree_capacity: u32, token_capacity: u32) -> u32 {
+    let tree = u64::from(tree_capacity.max(1));
+    let extra = (tree * u64::from(WARM_SHAPE_TOKEN_HEADROOM))
+        .div_ceil(u64::from(token_capacity.max(1)));
+    ResidentParserAllocation::capacity_bucket(u32::try_from(tree + extra).unwrap_or(u32::MAX))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ResidentParserAllocation;
+    use super::{
+        ResidentParserAllocation,
+        WARM_SHAPE_TOKEN_HEADROOM,
+        token_capacity_with_headroom,
+        tree_capacity_with_headroom,
+    };
+
+    #[test]
+    fn warm_shape_headroom_covers_a_bucket_of_tokens_within_the_token_buffer() {
+        for count in [0, 1, 4_095, 4_096, 4_097, 250_000] {
+            let capacity = token_capacity_with_headroom(count, u32::MAX);
+            assert_eq!(capacity % ResidentParserAllocation::GRANULARITY, 0);
+            assert!(capacity >= count.max(1) + WARM_SHAPE_TOKEN_HEADROOM);
+            assert!(capacity < count.max(1) + 2 * WARM_SHAPE_TOKEN_HEADROOM);
+        }
+        // The lexer's token buffer caps the headroom but never the count.
+        assert_eq!(token_capacity_with_headroom(10_000, 12_000), 12_000);
+        assert_eq!(token_capacity_with_headroom(10_000, 9_000), 10_000);
+        // Seven tree nodes per token: room for the headroom's tokens too.
+        let tree = tree_capacity_with_headroom(70_000, 10_000);
+        assert_eq!(tree % ResidentParserAllocation::GRANULARITY, 0);
+        assert!(tree >= 70_000 + 7 * WARM_SHAPE_TOKEN_HEADROOM);
+        assert!(tree < 70_000 + 7 * WARM_SHAPE_TOKEN_HEADROOM + ResidentParserAllocation::GRANULARITY);
+        assert_eq!(tree_capacity_with_headroom(u32::MAX, 1), u32::MAX);
+    }
 
     #[test]
     fn resident_allocation_grows_without_shrinking_capacity_or_optional_storage() {
