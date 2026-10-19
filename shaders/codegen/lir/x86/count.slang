@@ -279,6 +279,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (!x86_direct_array_pair(value_core) &&
             (x86_semantic_type_is_aggregate(core) || value_words != 0u))
             copy_words = max(core.value_word_count, value_words);
+        // A zero source needs one fill of the destination, not a word copy.
+        if (copy_words != 0u && x86_zero_aggregate(value_core, value_operands))
+            copy_words = 1u;
     }
     uint operation_rows = x86_lir_count(core, operands);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
@@ -304,7 +307,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (row >= element_total) break;
             words += semantic_lir_aggregate_elements[row].word_count;
         }
-        operation_rows = 1u + max(core.value_word_count, words);
+        operation_rows = x86_zero_aggregate(core, operands) ? 2u
+            : 1u + max(core.value_word_count, words);
     }
     if (x86_lir_opcode(core) == X86_LIR_OP_FIELD_STORE &&
         operands.c < total)

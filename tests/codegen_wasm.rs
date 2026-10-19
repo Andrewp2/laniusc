@@ -25,6 +25,44 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_lets_without_initializers_as_zero_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn main() -> i32 {
+    let a: i32;
+    let flag: bool;
+    let words: [i32; 4];
+    words[1] = 40;
+    if (flag) { return 1; }
+    return a + words[0] + words[1] + words[3] + 2;
+}
+"#,
+    )
+    .expect("lets without initializers should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM zero-initialized lets",
+        "zero_initialized_lets",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
+fn wasm_rejects_lets_without_initializers_of_types_without_a_zero_value() {
+    // A str or a reference has no zero value; Wasm must reject the
+    // declaration rather than emit its placeholder constant.
+    for declaration in ["let s: str;", "let r: &i32;"] {
+        let source = format!("fn main() -> i32 {{\n    {declaration}\n    return 0;\n}}\n");
+        assert!(
+            common::compile_source_to_wasm_with_timeout(&source).is_err(),
+            "`{declaration}` must not compile to WASM"
+        );
+    }
+}
+
+#[test]
 fn wasm_executes_scalar_constant_return_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

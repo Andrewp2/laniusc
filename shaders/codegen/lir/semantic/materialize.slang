@@ -611,6 +611,45 @@ void semantic_type_ref_for_hir(uint node, uint hir_count,
     payload = semantic_expr_ref_payload[node];
 }
 
+// The opcode of the zero value that `let x: T;` stores, from the checked
+// declaration type: a zero constant for numbers, bool, char and ptr, and a
+// zero-filled aggregate for fixed arrays and local structs. Other types are
+// unsupported: the zero bits of str, references and slices are not values,
+// and an enum's would silently pick its first variant.
+uint zero_initializer_op(uint node, uint hir_count)
+{
+    uint tag;
+    uint payload;
+    semantic_type_ref_for_hir(node, hir_count, tag, payload);
+    uint declaration_token = LIR_INVALID;
+    if (tag == 1u)
+    {
+        if (scalar_is_float(payload)) return SEMANTIC_LIR_OP_CONST_F32;
+        if (scalar_is_integer(payload) || payload == SCALAR_BOOL ||
+            payload == SCALAR_CHAR || payload == SCALAR_PTR)
+            return SEMANTIC_LIR_OP_CONST_I32;
+        // Legacy codes: 128 + element is a fixed array of that scalar.
+        if (payload >= 128u && payload < TY_STRUCT_BASE)
+        {
+            uint element = payload - 128u;
+            return scalar_is_float(element) || scalar_is_integer(element) ||
+                element == SCALAR_BOOL || element == SCALAR_CHAR || element == SCALAR_PTR
+                ? SEMANTIC_LIR_OP_AGGREGATE_NEW : SEMANTIC_LIR_OP_INVALID;
+        }
+        if (payload >= TY_STRUCT_BASE) declaration_token = payload - TY_STRUCT_BASE;
+    }
+    else if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity())
+    {
+        if (type_instance_kind[payload] == 2u) return SEMANTIC_LIR_OP_AGGREGATE_NEW;
+        if (type_instance_kind[payload] == TYPE_INSTANCE_NAMED)
+            declaration_token = type_instance_decl_token[payload];
+    }
+    uint declaration = declaration_token < gParams.n_tokens
+        ? semantic_aggregate_hir_by_name_token[declaration_token] : LIR_INVALID;
+    return declaration < hir_count && compact_hir_core[declaration].kind == HIR_STRUCT_ITEM
+        ? SEMANTIC_LIR_OP_AGGREGATE_NEW : SEMANTIC_LIR_OP_INVALID;
+}
+
 bool imported_constant_for_hir(uint node, uint hir_count)
 {
     return node < hir_count &&
@@ -795,6 +834,15 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
         schedule.execution_tie = !compound_lhs_read && rhs_root < hir_count &&
             compact_hir_core[rhs_root].kind == HIR_MATCH_EXPR
             ? 0xffffffffu : local_row;
+        return schedule;
+    }
+    if (semantic_lir_is_zero_let(hir, payload))
+    {
+        // No initializer completes first: the zero value, then its store,
+        // run at the statement itself.
+        schedule.execution_region = hir.token_start;
+        schedule.execution_rank = 0xffffffffu;
+        schedule.execution_tie = 0xfffffffeu + min(local_row, 1u);
         return schedule;
     }
     if (root == LIR_INVALID || root >= hir_count)
@@ -1028,6 +1076,16 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         op = SEMANTIC_LIR_OP_CALL_SYMBOL;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
         op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
+    bool zero_let = semantic_lir_is_zero_let(hir, payload);
+    // A type with no zero value still gets a constant producer, so the store
+    // keeps a value edge; both rows carry UNSUPPORTED and the targets reject
+    // the declaration at its source.
+    uint zero_op = zero_let ? zero_initializer_op(node, hir_count)
+                            : SEMANTIC_LIR_OP_INVALID;
+    bool zero_unsupported = zero_let && zero_op == SEMANTIC_LIR_OP_INVALID;
+    if (zero_let)
+        op = local_row != 0u ? SEMANTIC_LIR_OP_VALUE_SET
+            : zero_unsupported ? SEMANTIC_LIR_OP_CONST_I32 : zero_op;
 
     uint match_payload_row = match_payload_for_pattern(node);
     bool match_binding = match_payload_row != LIR_INVALID;
@@ -1114,7 +1172,7 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         }
     }
     if ((op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
-         op == SEMANTIC_LIR_OP_STORE) && !match_expression &&
+         op == SEMANTIC_LIR_OP_STORE || zero_let) && !match_expression &&
         !match_binding && !short_circuit)
         core.type_id = semantic_value_type[node];
     // The six synthetic rows of &&/|| carry the boolean result, even when
@@ -1396,7 +1454,7 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     // The layout passes mark by-value cycles and unsupported nested payloads
     // with LIR_INVALID. Never let that sentinel become an x86 copy width or
     // silently skip the initialization of a match scrutinee.
-    if (op == SEMANTIC_LIR_OP_INVALID ||
+    if (op == SEMANTIC_LIR_OP_INVALID || zero_unsupported ||
         core.value_word_count == LIR_INVALID ||
         (match_binding && local_row != 0u && type_ref_tag == 2u))
         core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
@@ -1781,6 +1839,15 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         operands.b = op == SEMANTIC_LIR_OP_CONVERT
             ? semantic_type_for_hir(payload.b, hir_count)
             : lir_for_hir(payload.c, hir_count);
+    }
+    if (zero_let)
+    {
+        // A zero constant (both literal words zero) or a zero-filled
+        // aggregate with no elements, then the store of that row.
+        operands.a = local_row == 0u ? 0u : semantic_value_id[node];
+        operands.b = local_row == 0u ? 0u : first_row;
+        operands.c = op == SEMANTIC_LIR_OP_AGGREGATE_NEW
+            ? SEMANTIC_LIR_AGGREGATE_ZERO : LIR_INVALID;
     }
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC && intrinsic_slice_from_raw_parts(operands.a))
     {

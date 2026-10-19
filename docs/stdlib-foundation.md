@@ -2591,19 +2591,19 @@ also fixes the imported struct-return relocation path described below.
     eight-argument calls with a three-word return and hidden return pointer.
     `core::slice::copy_nonoverlapping_range` uses two backed views and five
     scalar arguments and runs in the native fixture and checksum sample.
-25. **Uninitialized array backing for stack buffers.**
+25. **Resolved: uninitialized array backing for stack buffers.** `let x: T;`
+    now gives zeroed storage (see "Zero-initialized declarations" in
+    docs/compiler-semantic-contracts.md).
     `tests/fixtures/stdlib_foundation/repro_uninitialized_array_data_ptr.lani`
-    passes `laniusc check --stdlib-root stdlib`, but `--emit x86_64` stops with
-    `LNC0057` when an uninitialized fixed array is passed to
-    `core::mem::i32_array_data_ptr`. Array repeat syntax such as `[0; 1024]`
-    also fails parsing. A fully enumerated 4096-byte stack array emitted and
-    ran in isolation, but repeated source-pack compilation failed parsing its
-    closing bracket. Consequently `std::env::current_dir_len` cannot yet
-    replace its 4096-byte allocation with stack storage. Its heap allocation
-    checks for null and returns `ENV_READ_UNAVAILABLE` on failure; the
-    allocation failure is injected in `tests/stdlib_env_execution.rs`.
-    Callers can use the tested `std::env_checked::current_dir_read_into` with
-    their own buffer.
+    passes an uninitialized `[i32; 4]` to `core::mem::i32_array_data_ptr` and
+    runs on x86 (`tests/codegen_x86.rs`). A `[i32; 1024]` declaration lowers
+    to one fill, not a copy per word. Array repeat syntax such as `[0; 1024]`
+    still fails parsing (generics backlog b09). `std::env::current_dir_len`
+    could now replace its 4096-byte heap allocation with a stack buffer. It
+    still allocates, checks for null and returns `ENV_READ_UNAVAILABLE` on
+    failure; the allocation failure is injected in
+    `tests/stdlib_env_execution.rs`. Callers can use the tested
+    `std::env_checked::current_dir_read_into` with their own buffer.
 26. **Unsigned 64-bit arithmetic above the low 32 bits.** Compile
     `tests/fixtures/stdlib_foundation/repro_u64_division.lani` with
     `--stdlib-root stdlib --emit x86_64` and run the ELF. It exits 1 because

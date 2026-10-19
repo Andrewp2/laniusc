@@ -143,9 +143,19 @@ bool semantic_lir_is_short_circuit(HirCore core, HirPayload payload)
         (payload.a == HIR_EXPR_AND || payload.a == HIR_EXPR_OR);
 }
 
+// `let x: T;` (a binding without an initializer) zero-initializes x. It
+// lowers to two rows: the zero value of T, then the declaration store.
+bool semantic_lir_is_zero_let(HirCore core, HirPayload payload)
+{
+    return (core.kind == HIR_LET_STMT || core.kind == HIR_STMT) &&
+        payload.a == HIR_STMT_LET &&
+        payload.b != LIR_INVALID && payload.c == LIR_INVALID;
+}
+
 uint semantic_lir_row_count(HirCore core, HirPayload payload)
 {
     if (semantic_lir_is_short_circuit(core, payload)) return 6u;
+    if (semantic_lir_is_zero_let(core, payload)) return 2u;
     if (core.kind == HIR_CONST_ITEM) return 1u;
     if (semantic_lir_is_if(core, payload))
         return payload.d == LIR_INVALID ? 2u : 3u;
@@ -210,6 +220,10 @@ uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
         if (local_row == 3u) return SEMANTIC_LIR_OP_BRANCH;
         return SEMANTIC_LIR_OP_CONTROL_END;
     }
+    // Materialization picks the zero value's opcode from the checked type;
+    // only its place before the store is fixed here.
+    if (semantic_lir_is_zero_let(core, payload))
+        return local_row == 0u ? SEMANTIC_LIR_OP_CONST_I32 : SEMANTIC_LIR_OP_VALUE_SET;
     return semantic_lir_op(core, payload);
 }
 

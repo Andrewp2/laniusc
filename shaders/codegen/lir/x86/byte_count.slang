@@ -198,6 +198,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         core.op == X86_LIR_OP_CALL_ARG ||
         core.op == X86_LIR_OP_INLINE_RESULT ||
         core.op == X86_LIR_OP_INTRINSIC_IDENTITY ||
+        (core.op == X86_LIR_OP_AGGREGATE_FILL && operands.c == 0u) ||
         (core.op == X86_LIR_OP_INDEX_STORE &&
          (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u &&
          core.result_or_target == 0u) ||
