@@ -206,7 +206,13 @@ fn initialize_pipeline_families(
                 .stack_size(PIPELINE_INIT_STACK_BYTES)
                 .spawn_scoped(scope, || {
                     let start = std::time::Instant::now();
+                    // Native body specialization admits program evidence in
+                    // x86 jobs; its pipelines are prepared with the linker's.
                     let linker = x86::GpuX86Linker::new_with_device(gpu)
+                        .and_then(|linker| {
+                            program_evidence::prepare_evidence_kernels(&gpu.device)?;
+                            Ok(linker)
+                        })
                         .map(Box::new)
                         .map_err(|err| err.to_string());
                     let lowering = Ok(Box::new(GpuLoweringWorkspaceCache::new(

@@ -801,6 +801,15 @@ pub(crate) fn note_thread_gpu_activity(count: impl FnOnce(&mut ThreadGpuActivity
     });
 }
 
+static PIPELINES_SEALED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks the end of startup pipeline preparation: a daemon's jobs must create
+/// none after it reports readiness. Each pipeline created later is named on
+/// stderr, so a kernel missing from the eager set identifies itself.
+pub(crate) fn seal_pipeline_creation() {
+    PIPELINES_SEALED.store(true, Ordering::Relaxed);
+}
+
 /// Returns the number of compute pipelines created by this process.
 ///
 /// The daemon uses this monotonic count to enforce that compilation jobs do
@@ -1909,6 +1918,9 @@ pub fn pipeline_from_spirv_and_bgls(
     let creation = compute_pipeline_end.duration_since(compute_pipeline_start);
     PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
     note_thread_gpu_activity(|activity| activity.pipelines += 1);
+    if PIPELINES_SEALED.load(Ordering::Relaxed) {
+        eprintln!("[laniusc] compute pipeline `{label}` created after daemon readiness");
+    }
     PIPELINE_CREATION_NANOS.fetch_add(creation.as_nanos() as u64, Ordering::Relaxed);
     crate::gpu::device::note_pipeline_creation(device, creation);
     trace_pipeline(label, "compute_pipeline.done");

@@ -11,7 +11,7 @@ mod native_session;
 mod packet;
 mod proof_store;
 
-pub(super) use dispatch::EvidenceWorkspacePool;
+pub(super) use dispatch::{EvidenceWorkspacePool, prepare_kernels as prepare_evidence_kernels};
 
 pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
 pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};

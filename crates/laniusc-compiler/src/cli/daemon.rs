@@ -739,6 +739,7 @@ async fn run_session(
     // warm-up keeps the capacity it sized.
     let warmup = run_warmups(&compiler, options, &mut source_pack_cache).await?;
     let driver_cache = device::driver_shader_cache_status();
+    crate::gpu::passes_core::seal_pipeline_creation();
     if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
         eprintln!("[gpu_compile_host_timer] driver_shader_cache: {}", driver_cache.summary());
     }
