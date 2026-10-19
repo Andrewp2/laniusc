@@ -70,7 +70,8 @@ impl NativeProgramSession {
             packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;
         }
         // The instance closure's origins join the same check: each closed
-        // instance of a callee without requirements is one call of its own.
+        // instance is one call of its own; a bounded callee's predicates
+        // are soft obligations, so a refuted bound demotes only that call.
         let mut closure_calls = Vec::new();
         let mut closure_stats = [0usize; 4];
         if instance_closure_enabled() {
