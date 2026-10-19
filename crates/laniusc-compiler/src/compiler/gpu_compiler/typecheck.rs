@@ -1699,7 +1699,9 @@ impl<'gpu> GpuCompiler<'gpu> {
             true,
         )?;
         Ok(PendingOriginalUnit {
-            facts: OriginalUnitFacts::from_unit(&unit),
+            // This call's finish_semantic_interface decoded the interface
+            // with from_bytes, which validated it.
+            facts: OriginalUnitFacts::from_unit(&unit).with_interface_validated_in_this_job(),
             unit,
         })
     }
@@ -2349,6 +2351,10 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
 #[derive(Clone)]
 pub(super) struct OriginalUnitFacts {
     snapshot: std::sync::Arc<OriginalUnitSnapshot>,
+    /// The interface passed validate earlier in the job that holds these
+    /// facts. Only the pending-original compile sets it, and the
+    /// pending-original cache clears it, so it never crosses into another job.
+    interface_validated_in_this_job: bool,
 }
 
 struct OriginalUnitSnapshot {
@@ -2377,7 +2383,34 @@ impl OriginalUnitFacts {
                 owner_spans: unit.owner_spans.clone(),
                 instance_closure: unit.instance_closure.clone(),
             }),
+            interface_validated_in_this_job: false,
         }
+    }
+
+    fn with_interface_validated_in_this_job(mut self) -> Self {
+        self.interface_validated_in_this_job = true;
+        self
+    }
+
+    /// The same facts for use by a later job, which must validate again.
+    fn for_a_later_job(&self) -> Self {
+        Self { snapshot: self.snapshot.clone(), interface_validated_in_this_job: false }
+    }
+
+    /// Succeeds exactly when `interface().check_serializable()` does. When
+    /// validate already passed on this interface earlier in this job, only
+    /// the encoded length is checked. LANIUS_CHECK_INTERFACE_REVALIDATE=1
+    /// runs validate again anyway and fails if the two results disagree.
+    pub(super) fn check_interface_serializable(&self) -> Result<(), String> {
+        let interface = &self.snapshot.interface;
+        if !self.interface_validated_in_this_job {
+            return interface.check_serializable();
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INTERFACE_REVALIDATE", false) {
+            interface.validate().map_err(|reason| format!(
+                "semantic interface validated in this job no longer validates: {reason}"))?;
+        }
+        interface.check_encoded_len()
     }
 
     /// Admission receipts match this exact immutable snapshot, never numeric
@@ -2453,7 +2486,7 @@ impl PendingOriginalUnit {
     pub(super) fn retain(&self) -> RetainedPendingOriginal {
         RetainedPendingOriginal {
             unit: std::sync::Arc::new(self.unit.clone()),
-            facts: self.facts.clone(),
+            facts: self.facts.for_a_later_job(),
         }
     }
 
