@@ -714,7 +714,22 @@ mod tests {
                 "generic_enum_struct_payload",
                 "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }",
             ),
+            // A `let` without an initializer is zero (faab83b2), so a job
+            // must not see a big job's words in its locals.
+            (
+                "zero_initialized_array",
+                "fn main() -> i32 { let a: [i32; 1024]; a[5] = 40; return a[0] + a[5] + a[1023] + 2; }",
+            ),
+            (
+                "zero_initialized_struct_and_array",
+                "struct S { x: i64, b: bool, } fn main() -> i32 { let s: S; let v: [i64; 3]; let t: i64 = s.x + v[0] + v[1] + v[2]; if (s.b) { return 1; } if (t == 0) { return 42; } return 2; }",
+            ),
+            (
+                "zero_initialized_in_a_loop",
+                "fn main() -> i32 { let total: i32 = 0; for i in 0 .. 3 { let a: [i32; 4]; let x: i32; total = total + a[0] + a[3] + x; a[0] = 7; a[3] = 9; x = 5; } return total + 42; }",
+            ),
         ];
+        let zero_cases = 5..cases.len();
         // The filler functions with every case's features: loops, nested
         // aggregates with an array field, enums and matches, a generic enum
         // with a struct payload. The featureless `constant` job runs after it,
@@ -733,7 +748,15 @@ mod tests {
         // Wasm lowering does not handle enum payloads yet (LNC0057 for struct
         // payloads; an invalid module for a scalar one), so the Wasm side runs
         // the cases without them and a rich job without the enums.
-        let wasm_runs = |case: &str| !matches!(case, "enums_and_matches" | "generic_enum_struct_payload");
+        // The i64 struct case stays x86-only.
+        let wasm_runs = |case: &str| {
+            !matches!(
+                case,
+                "enums_and_matches"
+                    | "generic_enum_struct_payload"
+                    | "zero_initialized_struct_and_array"
+            )
+        };
         let rich_wasm: String = (0..2_000)
             .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }}"))
             .chain([
@@ -765,6 +788,14 @@ mod tests {
             release();
             x86(source)
         });
+        for index in zero_cases {
+            assert_lowered_program_result(
+                LoweringTarget::X86_64,
+                &format!("reset-{}", cases[index].0),
+                &fresh_x86[index],
+                42,
+            );
+        }
         let fresh_wasm = cases.map(|(case, source)| {
             wasm_runs(case).then(|| {
                 release();
