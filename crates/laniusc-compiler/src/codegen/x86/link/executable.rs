@@ -352,10 +352,10 @@ impl GpuX86Linker {
             }
             let page_capacity = (page.output_len as usize).div_ceil(4).max(1) * 4;
             let text_bytes = input
-                .read_text_range(page.text_input.clone())
+                .read_text_range_borrowed(page.text_input.clone())
                 .map_err(anyhow::Error::msg)?;
             let rodata_bytes = input
-                .read_rodata_range(page.rodata_input.clone())
+                .read_rodata_range_borrowed(page.rodata_input.clone())
                 .map_err(anyhow::Error::msg)?;
             let sources_read = started.elapsed();
             let input_limit = device.limits().max_storage_buffer_binding_size as usize;
@@ -711,6 +711,9 @@ pub(super) fn relocation_words(
     object_bases: &[[u32; 2]],
     indices: &[usize],
 ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+    // Read once: an environment lookup per relocation is a measurable share
+    // of the link on programs with tens of thousands of relocations.
+    let trace_identities = crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false);
     let mut a = Vec::with_capacity(indices.len() * 4);
     let mut b = Vec::with_capacity(indices.len() * 4);
     let mut c = Vec::with_capacity(indices.len() * 4);
@@ -737,7 +740,7 @@ pub(super) fn relocation_words(
             target_section,
             relocation.target_offset,
         )?;
-        if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
+        if trace_identities {
             eprintln!(
                 "[x86_object_identity] relocation index={index} site={} target={} kind={} target_kind={} addend={}",
                 site_file,

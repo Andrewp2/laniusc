@@ -24,6 +24,60 @@ pub(crate) enum GpuLinkByteSource {
     },
 }
 
+/// Resident link columns are rebuilt for every daemon job. A fresh
+/// multi-megabyte allocation is faulted in page by page while it is filled
+/// (about 2.5 ms for a 5 MB text column on the laptop), so dropped columns
+/// return their allocation here and the next link fills warm pages instead.
+static RETAINED_COLUMNS: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
+const RETAINED_COLUMN_MIN_BYTES: usize = 256 << 10;
+const RETAINED_COLUMN_MAX_BYTES: usize = 64 << 20;
+const RETAINED_COLUMN_COUNT: usize = 4;
+
+/// An empty buffer with room for `capacity` bytes, reusing a retained
+/// column allocation when one exists.
+pub(crate) fn retained_column_with_capacity(capacity: usize) -> Vec<u8> {
+    if capacity < RETAINED_COLUMN_MIN_BYTES {
+        return Vec::with_capacity(capacity);
+    }
+    let reused = RETAINED_COLUMNS.lock().ok().and_then(|mut pool| {
+        // The smallest allocation that fits, else the largest one.
+        let fitting = (0..pool.len())
+            .filter(|&i| pool[i].capacity() >= capacity)
+            .min_by_key(|&i| pool[i].capacity());
+        let index = fitting.or_else(|| (0..pool.len()).max_by_key(|&i| pool[i].capacity()))?;
+        Some(pool.swap_remove(index))
+    });
+    let mut bytes = reused.unwrap_or_default();
+    bytes.clear();
+    bytes.reserve_exact(capacity);
+    bytes
+}
+
+fn retain_column(bytes: &mut Vec<u8>) {
+    let capacity = bytes.capacity();
+    if !(RETAINED_COLUMN_MIN_BYTES..=RETAINED_COLUMN_MAX_BYTES).contains(&capacity) {
+        return;
+    }
+    let Ok(mut pool) = RETAINED_COLUMNS.lock() else {
+        return;
+    };
+    if pool.len() < RETAINED_COLUMN_COUNT {
+        pool.push(std::mem::take(bytes));
+    } else if let Some(smallest) = (0..pool.len()).min_by_key(|&i| pool[i].capacity())
+        && pool[smallest].capacity() < capacity
+    {
+        pool[smallest] = std::mem::take(bytes);
+    }
+}
+
+impl Drop for GpuLinkByteSource {
+    fn drop(&mut self) {
+        if let Self::Resident { bytes, .. } = self {
+            retain_column(bytes);
+        }
+    }
+}
+
 impl GpuLinkByteSource {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn resident(label: &'static str, bytes: Vec<u8>) -> Self {
@@ -84,6 +138,28 @@ impl GpuLinkByteSource {
         }
     }
 
+    /// Borrows a resident range instead of copying it; file-backed sources
+    /// still read into an owned buffer.
+    pub(crate) fn read_range_borrowed(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<std::borrow::Cow<'_, [u8]>, String> {
+        match self {
+            Self::Resident { label, bytes } => bytes
+                .get(range.clone())
+                .map(std::borrow::Cow::Borrowed)
+                .ok_or_else(|| {
+                    format!(
+                        "{label} range {}..{} exceeds source length {}",
+                        range.start,
+                        range.end,
+                        bytes.len()
+                    )
+                }),
+            Self::FileSegments { .. } => self.read_range(range).map(std::borrow::Cow::Owned),
+        }
+    }
+
     pub(crate) fn read_range(&self, range: std::ops::Range<usize>) -> Result<Vec<u8>, String> {
         match self {
             Self::Resident { label, bytes } => {
@@ -139,5 +215,22 @@ impl GpuLinkByteSource {
                 Ok(output)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reused_column_allocation_starts_empty() {
+        let capacity = RETAINED_COLUMN_MIN_BYTES * 2;
+        let mut first = retained_column_with_capacity(capacity);
+        first.extend(std::iter::repeat_n(0xa5u8, capacity));
+        drop(GpuLinkByteSource::resident("test column", first));
+
+        let reused = retained_column_with_capacity(capacity);
+        assert!(reused.is_empty());
+        assert!(reused.capacity() >= capacity);
     }
 }

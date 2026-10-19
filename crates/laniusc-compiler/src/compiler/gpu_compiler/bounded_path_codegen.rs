@@ -5,7 +5,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::*;
+use super::{
+    resident_source_pack_executor::{ResidentLinkedOutput, ResidentSourcePackExecutor},
+    *,
+};
 
 static NEXT_BOUNDED_BUILD_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -147,16 +150,24 @@ impl<'gpu> GpuCompiler<'gpu> {
             return Ok(byte_len);
         }
 
-        let bytes = self.compile_path_manifest(source_pack, target).await?;
-        fs::write(output, &bytes).map_err(|err| {
-            source_pack_artifact_store_error(format!(
-                "write compiled output {}: {err}",
-                output.display()
-            ))
-        })?;
-        set_executable_if_needed(output, target)?;
-        u64::try_from(bytes.len()).map_err(|_| {
-            source_pack_artifact_store_error("compiled output length does not fit u64")
+        // A resident multi-library link writes its pages straight into the
+        // output file; the other paths return bytes written here.
+        let bytes = match self.compile_path_manifest_output(source_pack, target, Some(output)).await? {
+            ResidentLinkedOutput::File(byte_len) => return Ok(byte_len),
+            ResidentLinkedOutput::Bytes(bytes) => bytes,
+        };
+        let _span = crate::gpu::trace::HostSpan::new("host.compiler", "daemon.write");
+        write_output_file_atomically(output, target, |file| {
+            use std::io::Write;
+            file.write_all(&bytes).map_err(|err| {
+                source_pack_artifact_store_error(format!(
+                    "write compiled output {}: {err}",
+                    output.display()
+                ))
+            })?;
+            u64::try_from(bytes.len()).map_err(|_| {
+                source_pack_artifact_store_error("compiled output length does not fit u64")
+            })
         })
     }
 
@@ -165,6 +176,22 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_pack: &ExplicitSourcePackPathManifest,
         target: SourcePackArtifactTarget,
     ) -> Result<Vec<u8>, CompileError> {
+        match self.compile_path_manifest_output(source_pack, target, None).await? {
+            ResidentLinkedOutput::Bytes(bytes) => Ok(bytes),
+            ResidentLinkedOutput::File(_) => Err(source_pack_artifact_store_error(
+                "resident source-pack link wrote a file without an output path",
+            )),
+        }
+    }
+
+    /// Compiles to bytes, or with `output` lets a resident multi-library link
+    /// write the final file itself.
+    async fn compile_path_manifest_output(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        target: SourcePackArtifactTarget,
+        output: Option<&Path>,
+    ) -> Result<ResidentLinkedOutput, CompileError> {
         let limits = self.resident_source_unit_limits();
         // Multiple libraries retain their dependency graph and nominal unit
         // identities. Small projects carry compact interfaces and objects in
@@ -179,8 +206,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         let result = if file_backed {
             self.compile_path_manifest_bounded(source_pack, target, limits)
                 .await
+                .map(ResidentLinkedOutput::Bytes)
         } else if resident_units {
-            self.compile_path_manifest_resident_units(source_pack, target, limits)
+            self.compile_path_manifest_resident_units(source_pack, target, limits, output)
                 .await
         } else {
             let source_pack = load_explicit_source_pack_from_path_manifest(source_pack)?;
@@ -195,6 +223,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 lowering_target,
             )
             .await
+            .map(ResidentLinkedOutput::Bytes)
         };
         if report_memory {
             let units = source_pack.frontend_unit_plan(limits);
@@ -231,12 +260,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_pack: &ExplicitSourcePackPathManifest,
         target: SourcePackArtifactTarget,
         limits: CompilationUnitLimits,
-    ) -> Result<Vec<u8>, CompileError> {
+        output: Option<&Path>,
+    ) -> Result<ResidentLinkedOutput, CompileError> {
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
-        let mut executor =
-            super::resident_source_pack_executor::ResidentSourcePackExecutor::new(self, target);
+        let mut executor = match output {
+            Some(output) => ResidentSourcePackExecutor::with_output_file(self, target, output),
+            None => ResidentSourcePackExecutor::new(self, target),
+        };
         execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor)
             .await
             .map(|result| result.linked_output)
@@ -400,6 +432,45 @@ fn set_executable_if_needed(
         })?;
     }
     Ok(())
+}
+
+/// Writes a compiled output through a sibling temporary file that is renamed
+/// into place once complete and (for x86_64) executable. The destination is
+/// therefore either untouched or the whole new output, never a partial file.
+pub(super) fn write_output_file_atomically(
+    output: &Path,
+    target: SourcePackArtifactTarget,
+    write: impl FnOnce(&mut fs::File) -> Result<u64, CompileError>,
+) -> Result<u64, CompileError> {
+    let file_name = output.file_name().ok_or_else(|| {
+        source_pack_artifact_store_error(format!(
+            "compiled output {} has no file name",
+            output.display()
+        ))
+    })?;
+    let id = NEXT_BOUNDED_BUILD_ID.fetch_add(1, Ordering::Relaxed);
+    let temporary = output.with_file_name(format!(
+        ".{}.laniusc-{}-{id}.tmp",
+        file_name.to_string_lossy(),
+        std::process::id()
+    ));
+    let result = (|| {
+        let mut file = fs::File::create(&temporary).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "create compiled output {}: {err}",
+                temporary.display()
+            ))
+        })?;
+        let byte_len = write(&mut file)?;
+        drop(file);
+        set_executable_if_needed(&temporary, target)?;
+        replace_file(&temporary, output)?;
+        Ok(byte_len)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 struct TemporaryBoundedArtifactRoot {

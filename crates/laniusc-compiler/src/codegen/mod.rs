@@ -22,7 +22,7 @@ pub(crate) mod wasm_object_artifact;
 pub(crate) mod x86_artifact;
 pub(crate) mod x86_lowering;
 pub(crate) mod x86_object_artifact;
-pub(crate) use link_byte_source::GpuLinkByteSource;
+pub(crate) use link_byte_source::{GpuLinkByteSource, retained_column_with_capacity};
 
 /// Target-independent source-pack unit, job, artifact, and shard planning.
 pub mod unit;
