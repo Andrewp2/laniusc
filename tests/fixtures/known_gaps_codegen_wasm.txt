@@ -1,5 +1,5 @@
 # codegen_wasm tests that fail today (P19, after Wasm body specialization
-# through the shared program admission path): 0 of 121. Gates should check
+# through the shared program admission path): 0 of 122. Gates should check
 # for "no failure outside this list" instead of rereading the whole suite.
 #
 # One test per line: name, failure today, detail.

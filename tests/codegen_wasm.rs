@@ -85,31 +85,53 @@ fn main() -> i32 {
 }
 
 #[test]
-fn wasm_rejects_nonzero_array_repeat_until_lowered() {
-    // The Wasm emitter has no repeat-fill lowering yet; it must reject a
-    // nonzero `[value; count]` instead of emitting one element, and name the
-    // rejected source with the Wasm backend boundary (LNC0036), as x86 does
-    // with LNC0017, instead of reporting a compiler failure.
-    let err = common::compile_source_to_wasm_with_timeout(
-        "fn main() -> i32 {\n    let a = [7; 4];\n    return a[3];\n}\n",
+fn wasm_executes_nonzero_array_repeat_with_node() {
+    // `[value; count]` stores its element once and doubles it in place, for
+    // scalar and aggregate elements and counts that are not powers of two.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct P { a: i32, b: i32 }
+fn main() -> i32 {
+    let a = [7; 4];
+    let ps: [P; 5] = [P { a: 3, b: 4 }; 5];
+    let one: [i32; 1] = [2; 1];
+    let s: i32 = 0;
+    let i: i32 = 0;
+    while (i < 5) { s += ps[i].a + ps[i].b; i += 1; }
+    return s + a[0] + a[3] - 14 + one[0] + 5;
+}
+"#,
     )
-    .expect_err("a nonzero array repeat must not compile to WASM yet");
-    let laniusc_compiler::compiler::CompileError::Diagnostic(diagnostic) = err else {
-        panic!("an unsupported Wasm row should be a source diagnostic: {err:?}");
-    };
-    let rendered = diagnostic.render();
-    assert_eq!(diagnostic.code, "LNC0036", "{rendered}");
-    assert_eq!(diagnostic.category, "target codegen", "{rendered}");
-    assert!(
-        diagnostic.message.contains("Wasm backend") && !rendered.contains("x86"),
-        "the diagnostic should name the Wasm backend: {rendered}"
-    );
-    let source_line = diagnostic
-        .primary_label
-        .as_ref()
-        .and_then(|label| label.source_line.as_deref())
-        .unwrap_or_else(|| panic!("the diagnostic should carry a source line: {rendered}"));
-    assert_eq!(source_line, "    let a = [7; 4];", "{rendered}");
+    .expect("a nonzero array repeat should compile to WASM");
+    let status =
+        common::run_wasm_main_return_with_node("WASM array repeat", "array_repeat", &wasm);
+    assert_eq!(status, 42);
+}
+
+#[test]
+fn wasm_executes_slice_views_and_slice_fields_with_node() {
+    // A Wasm slice is the address of its first element: an array-to-slice
+    // view, a slice argument, and a slice field all alias the array.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct View { items: [i32], len: i32 }
+fn second(xs: [i32]) -> i32 { return xs[1]; }
+fn main() -> i32 {
+    let a: [i32; 3] = [1, 1, 1];
+    let s: [i32] = a;
+    s[0] = 20;
+    let v: View = View { items: a, len: 3 };
+    v.items[1] = 19;
+    return a[0] + second(s) + v.items[2] + v.len - 1;
+}
+"#,
+    )
+    .expect("slice views and slice fields should compile to WASM");
+    let status =
+        common::run_wasm_main_return_with_node("WASM slice views", "slice_views", &wasm);
+    assert_eq!(status, 42);
 }
 
 #[test]
