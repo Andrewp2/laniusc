@@ -9,13 +9,15 @@ TRACE is a LANIUS_PERFETTO_TRACE file. The job is the `daemon.job.NAME` span
   original compile  job start to the end of the first source-pack compile
                     (its compile.source-pack.finish.wasm_object stamp)
   replays           each later source-pack compile, one per monomorphization
-                    replay run (from its record.parser_capacity_retry stamp to
-                    its finish.wasm_object stamp)
+                    replay run (from its record.parser_capacity_retry stamp, or
+                    record.parser_capacity_reused on an edit job, to its
+                    finish.wasm_object stamp)
   gaps              the time between replays and after the last one: generic
                     call discovery, program evidence, link
 
 Each part's wall time is attributed to the innermost host span open at each
-moment, with priority readback wait > submit > compiler stamp > lexer stamp.
+moment, with priority readback wait > submit > compiler stamp > lexer stamp >
+specialization span (the specialization lane: scan, plan, prepare, patch ...).
 Time under no host span is host work nobody instrumented, or the host idling on
 the GPU; the GPU-busy column (the union of gpu.frontend pass spans) tells which.
 Readbacks are grouped by phase: call inference, canonical rounds and so on.
@@ -39,9 +41,10 @@ import pathlib
 import re
 import sys
 
-HOST_PRIORITY = {"host.readback": 0, "host.submit": 1, "host.compiler": 2, "host.lexer": 3}
+HOST_PRIORITY = {"host.readback": 0, "host.submit": 1, "host.compiler": 2, "host.lexer": 3, "specialization": 4}
 NO_SPAN = "no host span"
-FIRST_STAMP = "compile.source-pack.record.parser_capacity_retry"
+FIRST_STAMPS = ("compile.source-pack.record.parser_capacity_retry",
+                "compile.source-pack.record.parser_capacity_reused")
 LAST_STAMP = "compile.source-pack.finish.wasm_object"
 ROUND = re.compile(r"\[typecheck\.call_inference\] round=(\d+) changed=(\d+)")
 
@@ -112,7 +115,7 @@ class Job:
         for e in self.host:
             if self.lanes[e["tid"]] != "host.compiler":
                 continue
-            if e["name"] == FIRST_STAMP and block_start is None:
+            if e["name"] in FIRST_STAMPS and block_start is None:
                 block_start = e["ts"]
             elif e["name"] == LAST_STAMP and block_start is not None:
                 blocks.append((block_start, e["ts"] + e["dur"]))
@@ -149,6 +152,8 @@ class Job:
             return "wait: " + readback_phase(best["name"])
         if lane == "host.submit":
             return "submit"
+        if lane == "specialization":
+            return "specialization." + best["name"]
         return best["name"].replace("compile.source-pack.", "")
 
     def readback_rows(self, windows) -> dict[str, list[float]]:
