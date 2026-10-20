@@ -6,7 +6,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from compiler_stress_bounded_project import generate_bounded_project
-from compiler_stress_model import WORKLOAD_PROFILES, build_workload, evaluate, render
+from compiler_stress_model import (
+    COMMON_SUBSET_LANGUAGES,
+    WORKLOAD_PROFILES,
+    build_workload,
+    evaluate,
+    render,
+)
 from generate_compiler_stress import largest_workload_that_fits
 
 
@@ -65,6 +71,34 @@ class CompilerStressModelTests(unittest.TestCase):
             self.assertNotIn("values[", source)
             self.assertNotIn("pair.", source)
             self.assertNotIn("Pair", source)
+
+    def test_added_languages_render_the_scalar_common_subset(self) -> None:
+        workload = build_workload(19, 64, "pareas-common-subset")
+        for language in COMMON_SUBSET_LANGUAGES:
+            source = render(language, workload)
+            self.assertIn("leaf_0000063", source)
+            self.assertIn(f"{workload.root}(7)", source)
+            self.assertNotIn("values[", source)
+            self.assertNotIn("Pair", source)
+        go = render("go", workload)
+        self.assertTrue(go.startswith("package main\n\nimport \"fmt\"\n"))
+        self.assertIn("func leaf_0000000(x int32) int32 {", go)
+        self.assertNotIn("while", go)
+        for language in ("go", "v"):
+            source = render(language, workload)
+            self.assertFalse(any(line.endswith(";") for line in source.splitlines()), language)
+            self.assertNotIn("if ((", source)
+            self.assertIn("if mixed < ", source)
+        self.assertIn("mut i := i32(0)", render("v", workload))
+        self.assertIn("let mut value: i32 =", render("vx", workload))
+        self.assertIn('print("\\n");', render("vx", workload))
+        self.assertIn("function leaf_0000000(x: number): number {", render("ts", workload))
+        self.assertIn("import core.stdc.stdio : printf;", render("d", workload))
+
+    def test_added_languages_require_the_common_subset(self) -> None:
+        for language in COMMON_SUBSET_LANGUAGES:
+            with self.assertRaisesRegex(ValueError, "pareas-common-subset"):
+                render(language, build_workload(19, 8, "mixed-function-sizes"))
 
     def test_pareas_rejects_a_workload_with_unsupported_constructs(self) -> None:
         with self.assertRaisesRegex(ValueError, "pareas-common-subset"):

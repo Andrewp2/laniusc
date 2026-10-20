@@ -10,6 +10,11 @@ from dataclasses import dataclass
 
 LANGUAGES = ("rust", "c", "cpp", "zig", "lanius")
 PAREAS_LANGUAGE = "pareas"
+# Languages rendered only for the scalar pareas-common-subset profile (no
+# arrays or structs). "d" serves both dmd and LDC, "ts" both tsc and tsrs.
+COMMON_SUBSET_LANGUAGES = ("go", "d", "v", "vx", "ts")
+# Languages whose statements are written without trailing semicolons.
+SEMICOLON_FREE_LANGUAGES = ("go", "v")
 VALUE_MASK = 4095
 
 
@@ -360,10 +365,12 @@ def evaluate_leaf(leaf: Leaf, x: int) -> int:
 
 
 def render(language: str, workload: Workload, target_bytes: int | None = None) -> str:
-    if language not in (*LANGUAGES, PAREAS_LANGUAGE):
+    if language not in (*LANGUAGES, PAREAS_LANGUAGE, *COMMON_SUBSET_LANGUAGES):
         raise ValueError(f"unsupported language {language}")
     if language == PAREAS_LANGUAGE and workload.profile != "pareas-common-subset":
         raise ValueError("Pareas rendering requires the pareas-common-subset profile")
+    if language in COMMON_SUBSET_LANGUAGES and workload.profile != "pareas-common-subset":
+        raise ValueError(f"{language} rendering requires the pareas-common-subset profile")
     common_subset = workload.profile == "pareas-common-subset"
     prefix = header(language, common_subset)
     functions = "".join(
@@ -393,6 +400,11 @@ def header(language: str, common_subset: bool = False) -> str:
             "zig": "const c = @cImport({ @cInclude(\"stdio.h\"); });\n\n",
             "lanius": "module bench::scaling;\n\n",
             "pareas": "",
+            "go": "package main\n\nimport \"fmt\"\n\n",
+            "d": "import core.stdc.stdio : printf;\n\n",
+            "v": "module main\n\n",
+            "vx": "",
+            "ts": "",
         }[language]
     return {
         "rust": "#![allow(dead_code, unused_parens)]\n\nstruct Pair { left: i32, right: i32 }\n\n",
@@ -410,7 +422,7 @@ def render_leaf(language: str, leaf: Leaf, common_subset: bool = False) -> str:
         lines.extend(render_operation(language, operation))
     lines.extend(render_family(language, leaf, common_subset))
     lines.extend(["    return value;", "}", ""])
-    return "\n".join(lines) + "\n"
+    return "\n".join(statement_lines(language, lines)) + "\n"
 
 
 def render_operation(language: str, operation: Operation) -> list[str]:
@@ -423,7 +435,7 @@ def render_operation(language: str, operation: Operation) -> list[str]:
     if operation.kind == "shift":
         return [f"    value = ((value << {operation.a}) ^ (value >> 1) ^ {operation.b}) & {VALUE_MASK};"]
     return [
-        f"    if ((value & {operation.a}) != 0) {{",
+        open_if(language, f"(value & {operation.a}) != 0", 1),
         f"        value = (value + {operation.a}) & {VALUE_MASK};",
         "    } else {",
         f"        value = (value + {operation.b}) & {VALUE_MASK};",
@@ -434,10 +446,10 @@ def render_operation(language: str, operation: Operation) -> list[str]:
 def render_family(language: str, leaf: Leaf, common_subset: bool = False) -> list[str]:
     if leaf.family == 0:
         lines = [declare(language, "i", "0")]
-        lines.append(f"    while (i < {3 + leaf.family_a % 5}) {{")
+        lines.append(open_while(language, f"i < {3 + leaf.family_a % 5}", 1))
         lines.append(f"        value = (value * 3 + {index_expr(language, 'i')} + {leaf.family_b}) & {VALUE_MASK};")
         lines.extend([
-            "        if ((value & 1) == 0) {",
+            open_if(language, "(value & 1) == 0", 2),
             f"            value = (value + {leaf.family_c}) & {VALUE_MASK};",
             "        }",
             increment(language, "i"),
@@ -462,7 +474,7 @@ def render_family(language: str, leaf: Leaf, common_subset: bool = False) -> lis
             return lines
         lines = [array_declare(language, expressions), "    value = 0;", index_declare(language)]
         lines.extend([
-            "    while (i < 4) {",
+            open_while(language, "i < 4", 1),
             f"        value = (value + values[i] * ({index_expr(language, 'i')} + 1)) & {VALUE_MASK};",
             increment(language, "i"),
             "    }",
@@ -485,9 +497,9 @@ def render_family(language: str, leaf: Leaf, common_subset: bool = False) -> lis
         ]
     if leaf.family == 3:
         return [
-            f"    if (value < {1024 + leaf.family_a % 2048}) {{",
+            open_if(language, f"value < {1024 + leaf.family_a % 2048}", 1),
             f"        value = (value + {leaf.family_b} + x) & {VALUE_MASK};",
-            "        if ((value & 2) != 0) {",
+            open_if(language, "(value & 2) != 0", 2),
             f"            value = (value ^ {leaf.family_c}) & {VALUE_MASK};",
             "        }",
             "    } else {",
@@ -506,14 +518,34 @@ def render_reducer(language: str, reducer: Reducer) -> str:
         declare_readonly(language, "left", call(language, reducer.left, f"(x + {reducer.left_salt}) & {VALUE_MASK}")),
         declare_readonly(language, "right", call(language, reducer.right, f"(x + {reducer.right_salt}) & {VALUE_MASK}")),
         declare_readonly(language, "mixed", f"(left + right + {reducer.bias}) & {VALUE_MASK}"),
-        f"    if (mixed < {reducer.threshold}) {{",
+        open_if(language, f"mixed < {reducer.threshold}", 1),
         f"        return (mixed + x + {reducer.then_salt}) & {VALUE_MASK};",
         "    }",
         f"    return (mixed * 3 + {reducer.else_salt}) & {VALUE_MASK};",
         "}",
         "",
     ]
-    return "\n".join(lines) + "\n"
+    return "\n".join(statement_lines(language, lines)) + "\n"
+
+
+def statement_lines(language: str, lines: list[str]) -> list[str]:
+    if language not in SEMICOLON_FREE_LANGUAGES:
+        return lines
+    return [line[:-1] if line.endswith(";") else line for line in lines]
+
+
+def open_if(language: str, condition: str, depth: int) -> str:
+    indent = "    " * depth
+    if language in ("go", "v"):
+        return f"{indent}if {condition} {{"
+    return f"{indent}if ({condition}) {{"
+
+
+def open_while(language: str, condition: str, depth: int) -> str:
+    indent = "    " * depth
+    if language in ("go", "v"):
+        return f"{indent}for {condition} {{"
+    return f"{indent}while ({condition}) {{"
 
 
 def function_start(language: str, name: str) -> str:
@@ -525,6 +557,14 @@ def function_start(language: str, name: str) -> str:
         return f"fn {name}(x: i32) i32 {{"
     if language == "pareas":
         return f"fn {name}[x: int]: int {{"
+    if language == "go":
+        return f"func {name}(x int32) int32 {{"
+    if language == "d":
+        return f"int {name}(int x) {{"
+    if language == "v":
+        return f"fn {name}(x i32) i32 {{"
+    if language == "ts":
+        return f"function {name}(x: number): number {{"
     return f"fn {name}(x: i32) -> i32 {{"
 
 
@@ -537,6 +577,18 @@ def declare(language: str, name: str, expression: str) -> str:
         return f"    var {name}: i32 = {expression};"
     if language == "pareas":
         return f"    var {name} = {expression};"
+    if language == "go":
+        return f"    var {name} int32 = {expression};"
+    if language == "d":
+        return f"    int {name} = {expression};"
+    if language == "v":
+        # V infers i32 from the i32 operand; only a bare literal needs a cast.
+        typed = f"i32({expression})" if expression.isdigit() else expression
+        return f"    mut {name} := {typed};"
+    if language == "vx":
+        return f"    let mut {name}: i32 = {expression};"
+    if language == "ts":
+        return f"    let {name}: number = {expression};"
     return f"    let {name}: i32 = {expression};"
 
 
@@ -549,6 +601,14 @@ def declare_readonly(language: str, name: str, expression: str) -> str:
         return f"    const {name}: i32 = {expression};"
     if language == "pareas":
         return f"    var {name} = {expression};"
+    if language == "go":
+        return f"    var {name} int32 = {expression};"
+    if language == "d":
+        return f"    const int {name} = {expression};"
+    if language == "v":
+        return f"    {name} := {expression};"
+    if language == "ts":
+        return f"    const {name}: number = {expression};"
     return f"    let {name}: i32 = {expression};"
 
 
@@ -607,6 +667,17 @@ def main_function(language: str, root: str) -> str:
 }}
 """,
         "pareas": f"fn main[]: int {{ return {call(language, root, '7')}; }}\n",
+        "go": f"func main() {{ fmt.Println({root}(7)) }}\n",
+        "d": f'int main() {{ printf("%d\\n", {root}(7)); return 0; }}\n',
+        "v": f"fn main() {{ println({root}(7)) }}\n",
+        # Vx's print(i32) writes the digits without a newline.
+        "vx": f"""fn main() -> i32 {{
+    print({root}(7));
+    print("\\n");
+    return 0;
+}}
+""",
+        "ts": f"console.log({root}(7));\n",
     }[language]
 
 

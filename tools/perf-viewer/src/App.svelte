@@ -161,7 +161,10 @@
           </div>
         </div>
         {#if !frozenBaselineCount}
-          <p class="comparison-note" aria-live="polite">No retained external benchmark has the same workload identity. This chart contains only Lanius results.</p>
+          <p class="comparison-note" aria-live="polite">No retained external benchmark from this machine has the same workload identity. This chart contains only Lanius results.</p>
+        {/if}
+        {#if latencyValues.some((value) => value.contextOnly)}
+          <p class="comparison-note">Struck-through rows are context only: TCC does not optimize, and TypeScript (tsc, tsrs) type-checks and emits JavaScript rather than native code, so neither is compared with native builds.</p>
         {/if}
         {#if comparisonView === 'chart'}
           <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatComparisonMs} accessibleName="Compile time comparison" />

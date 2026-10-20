@@ -11,6 +11,7 @@ from compiler_stress_bounded_project import (
     generate_bounded_project,
 )
 from compiler_stress_model import (
+    COMMON_SUBSET_LANGUAGES,
     LANGUAGES,
     WORKLOAD_PROFILES,
     build_workload,
@@ -122,7 +123,7 @@ def generate_source_set(
     natural_lanius_bytes = len(render("lanius", workload).encode())
     lanius_source = render("lanius", workload, target_bytes)
     languages = (
-        (*LANGUAGES, "pareas")
+        (*LANGUAGES, "pareas", *COMMON_SUBSET_LANGUAGES)
         if profile == "pareas-common-subset"
         else LANGUAGES
     )
@@ -188,6 +189,11 @@ def source_name(language: str) -> str:
         "zig": "scaling.zig",
         "lanius": "scaling.lani",
         "pareas": "scaling.par",
+        "go": "scaling.go",
+        "d": "scaling.d",
+        "v": "scaling.v",
+        "vx": "scaling.vx",
+        "ts": "scaling.ts",
     }[language]
 
 

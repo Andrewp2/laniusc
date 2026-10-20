@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import time
@@ -17,6 +18,8 @@ from lanius_perf import (
     result_reference,
     resolve_workload_spec,
     single_file_comparison_group,
+    stress_command_records,
+    stress_machine,
     timeline_compiler_phase,
     timeline_execution_domain,
     typical_project_comparison_group,
@@ -657,3 +660,36 @@ class DaemonShutdownTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StressImportTests(unittest.TestCase):
+    def write_machine(self, directory: Path, gpu: str, cpus: int) -> None:
+        directory.mkdir(parents=True)
+        (directory / "machine_info.json").write_text(json.dumps({
+            "system": "Linux", "cpu": "x86_64", "logical_cpus": cpus, "gpu": gpu,
+            "cpu_model": "test cpu", "memory_total": "1 kB",
+        }))
+
+    def test_imported_machine_is_the_measuring_machine(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.write_machine(root / "a", "RTX 3070 Laptop GPU, 615, 8192", 16)
+            self.write_machine(root / "b", "RTX 3070 Laptop GPU, 615, 8192", 16)
+            machine = stress_machine([root / "a", root / "b"])
+            self.assertEqual(machine["gpu"], "RTX 3070 Laptop GPU, 615, 8192")
+            self.assertEqual(machine["logical_cpus"], 16)
+            self.assertEqual(machine["cpu_model"], "test cpu")
+
+    def test_directories_from_different_machines_are_rejected(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.write_machine(root / "a", "RTX 3070 Laptop GPU, 615, 8192", 16)
+            self.write_machine(root / "b", "RTX 3090, 580, 24576", 32)
+            with self.assertRaisesRegex(ValueError, "different machines"):
+                stress_machine([root / "a", root / "b"])
+
+    def test_multi_step_commands_record_each_step(self):
+        records = stress_command_records([["vxc", "-c", "a.vx"], ["clang", "a.o", "-o", "a"]])
+        self.assertEqual(list(records), ["compile", "link"])
+        self.assertEqual(records["link"]["argv"], ["clang", "a.o", "-o", "a"])
+        self.assertEqual(list(stress_command_records(["gcc", "a.c"])), ["command"])

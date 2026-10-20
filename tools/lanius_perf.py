@@ -462,6 +462,10 @@ def parse_args() -> argparse.Namespace:
     importer.add_argument("directories", nargs="+", type=Path)
     importer.add_argument("--source-corpus", type=Path, required=True)
     importer.add_argument("--output", type=Path, required=True)
+    importer.add_argument(
+        "--run-id",
+        help="run id for the imported document (default: imported-single-file-<bytes>-comparison)",
+    )
 
     catalog = subparsers.add_parser("catalog", help="rebuild the viewer data catalog")
     catalog.add_argument("--result-root", type=Path, default=DEFAULT_RESULT_ROOT)
@@ -825,6 +829,82 @@ def prepare_workload(spec: WorkloadSpec, target: str):
     return run_id, workload, [case], None, [command]
 
 
+STRESS_SOURCE_SUFFIX = {
+    "lanius": "lani",
+    "c": "c",
+    "tcc": "c",
+    "cpp": "cpp",
+    "rust": "rs",
+    "zig": "zig",
+    "pareas": "par",
+    "go": "go",
+    "d": "d",
+    "ldc": "d",
+    "v": "v",
+    "vx": "vx",
+    "tsc": "ts",
+    "tsrs": "ts",
+}
+STRESS_TYPESCRIPT_COMPILERS = ("tsc", "tsrs")
+STRESS_MEASUREMENT_NOTES = {
+    "go": "go build of one main-package file; the standard library is compiled into a GOCACHE private to the run by the unmeasured warm seed (the Go analogue of a precompiled libc); every measured sample added GOCACHE entries, i.e. compiled the application fresh; the o0 lane passes -gcflags='-N -l' to the main package only",
+    "d": "dmd compiles and links (via cc); o0 is dmd's default (no -O), optimized is -O -release -inline",
+    "ldc": "ldc2 compiles and links (via cc); o0 is -O0, optimized is -O3 -release (dub's release build for LDC; inlining is enabled at -O3)",
+    "v": "o0 is V's default development build (generated C compiled by V's bundled TCC), optimized is -prod (generated C compiled by the system cc at -O3 -flto); -w -n silence warnings and notices; V's module cache (builtin modules, third-party C objects) is private to the run and warmed by the unmeasured warm seed; every measured sample wrote a new whole-program cache entry, i.e. was not served from V's executable cache",
+    "vx": "vxc v0.0.3 has no action that writes a linked executable, so each sample is `vxc -O<n> -c` (object emission) followed by the link vxc's own run action performs with its bundled clang; wall time covers both steps",
+    "tsc": "TypeScript does not produce native code: full type check plus ES2022 JavaScript emit of one file (tsconfig files: [the .ts], strict, skipLibCheck), run with node to check the output; the measured binary is the native tsgo executable from @typescript/typescript-linux-x64, not the node launcher",
+    "tsrs": "TypeScript does not produce native code: full type check plus ES2022 JavaScript emit of one file (tsconfig files: [the .ts], strict, skipLibCheck), run with node to check the output; the measured binary is the native tsrs executable from @tsrs/linux-x64-gnu, not the node launcher",
+}
+
+
+def stress_machine(directories: list[Path]) -> dict | None:
+    """The machine the imported samples were measured on (not the importing one)."""
+    machines = []
+    for directory in directories:
+        path = directory / "machine_info.json"
+        if not path.is_file():
+            continue
+        info = json.loads(path.read_text())
+        machine = {
+            "platform": info.get("system"),
+            "cpu": info.get("cpu"),
+            "logical_cpus": info.get("logical_cpus"),
+            "gpu": info.get("gpu") or None,
+        }
+        for key in ("cpu_model", "memory_total"):
+            if info.get(key):
+                machine[key] = info[key]
+        machines.append(machine)
+    if not machines:
+        return None
+    identities = {
+        (str(machine["gpu"] or "").split(",")[0].strip(), machine["logical_cpus"])
+        for machine in machines
+    }
+    if len(identities) != 1:
+        raise ValueError(f"imported directories were measured on different machines: {sorted(identities)}")
+    return machines[-1]
+
+
+def stress_compiler_version(directory: Path, language: str, template: list) -> str:
+    provenance_path = directory / "provenance.json"
+    if not provenance_path.is_file():
+        return "unavailable (imported measurement)"
+    tools = json.loads(provenance_path.read_text()).get("tools", {})
+    executable = (template[0][0] if template and isinstance(template[0], list) else template[0]) if template else None
+    record = tools.get(executable) if executable is not None else None
+    if record is None:
+        record = next((value for value in tools.values() if value.get("language") == language), None)
+    return str(record.get("version")) if record else "unavailable (imported measurement)"
+
+
+def stress_command_records(template: list) -> dict:
+    if template and isinstance(template[0], list):
+        names = ["compile", "link", *[f"step_{index}" for index in range(2, len(template))]]
+        return {name: command_record(step, ROOT) for name, step in zip(names, template)}
+    return {"command": command_record(template, ROOT)}
+
+
 def import_stress(args: argparse.Namespace) -> None:
     directories = [resolve(path) for path in args.directories]
     corpus = resolve(args.source_corpus)
@@ -833,10 +913,13 @@ def import_stress(args: argparse.Namespace) -> None:
             directory,
             json.loads((directory / "samples.json").read_text()),
             json.loads((directory / "commands.json").read_text()),
+            json.loads((directory / "config.json").read_text())
+            if (directory / "config.json").is_file()
+            else {},
         )
         for directory in directories
     ]
-    all_samples = [sample for _, document, _ in documents for sample in document["samples"]]
+    all_samples = [sample for _, document, _, _ in documents for sample in document["samples"]]
     if not all_samples:
         raise ValueError("imported compiler-stress inputs have no samples")
     corpus_config = corpus / "config.json"
@@ -846,7 +929,7 @@ def import_stress(args: argparse.Namespace) -> None:
     seeds = tuple(int(seed) for seed in corpus_settings.get("seeds", []))
     if not seeds:
         seeds = tuple(sorted({int(sample["seed"]) for sample in all_samples}))
-    run_id = f"imported-single-file-{target_bytes}-comparison"
+    run_id = args.run_id or f"imported-single-file-{target_bytes}-comparison"
     result = new_document(
         ROOT,
         run_id,
@@ -861,47 +944,41 @@ def import_stress(args: argparse.Namespace) -> None:
                 target_bytes, profile, seeds
             ),
         },
+        stress_machine(directories),
     )
-    grouped: dict[tuple[str, str], list[dict]] = {}
+    # Later inputs replace an earlier sample of the same compiler,
+    # configuration, and seed. This lets a fresh Lanius-only run update a
+    # frozen comparison without duplicating samples, and lets one
+    # configuration be measured in several jobs over disjoint seeds.
+    grouped: dict[tuple[str, str], dict[object, dict]] = {}
     command_sets = {}
-    for directory, sample_document, commands in documents:
-        local: dict[tuple[str, str], list[dict]] = {}
+    for directory, sample_document, commands, config in documents:
         for sample in sample_document["samples"]:
-            local.setdefault((sample["language"], sample["lane"]), []).append(sample)
-            command_sets[(sample["language"], sample["lane"])] = (directory, commands)
-        # Later inputs deliberately replace an earlier measurement with the
-        # same compiler/configuration. This lets a fresh Lanius-only run update
-        # a frozen cross-language comparison without duplicating samples.
-        grouped.update(local)
-    extension = {
-        "lanius": "lani",
-        "c": "c",
-        "tcc": "c",
-        "cpp": "cpp",
-        "rust": "rs",
-        "zig": "zig",
-        "pareas": "par",
-    }
-    for (language, lane), imported_samples in sorted(grouped.items()):
-        seed = imported_samples[0].get("seed")
-        source = next(
-            iter((corpus / "sources" / f"seed-{seed}").rglob(f"*.{extension[language]}")),
-            None,
-        )
-        if source is None:
-            raise ValueError(f"source corpus has no {language} source for seed {seed}")
-        facts = source_facts([source], ROOT)
+            key = (sample["language"], sample["lane"])
+            grouped.setdefault(key, {})[sample.get("seed")] = sample
+            command_sets[key] = (directory, commands, config)
+    for (language, lane), by_seed in sorted(grouped.items()):
+        imported_samples = list(by_seed.values())
+        suffix = STRESS_SOURCE_SUFFIX[language]
+        sample_facts_by_seed = {}
+        for sample in imported_samples:
+            sample_source = next(
+                iter((corpus / "sources" / f"seed-{sample.get('seed')}").rglob(f"*.{suffix}")),
+                None,
+            )
+            if sample_source is None:
+                raise ValueError(
+                    f"source corpus has no {language} source for seed {sample.get('seed')}"
+                )
+            sample_facts_by_seed[sample.get("seed")] = source_facts([sample_source], ROOT)
+        # The representative source is the median-SLOC seed, as for Lanius runs.
+        representative = sorted(
+            sample_facts_by_seed.items(), key=lambda item: (item[1]["sloc"], item[0])
+        )[len(sample_facts_by_seed) // 2]
+        facts = representative[1]
         rows = []
         for index, sample in enumerate(imported_samples):
-            sample_source = next(
-                iter(
-                    (corpus / "sources" / f"seed-{sample.get('seed')}").rglob(
-                        f"*.{extension[language]}"
-                    )
-                ),
-                source,
-            )
-            sample_facts = source_facts([sample_source], ROOT)
+            sample_facts = sample_facts_by_seed[sample.get("seed")]
             rows.append(
                 {
                     "index": index,
@@ -917,11 +994,16 @@ def import_stress(args: argparse.Namespace) -> None:
                             "write": sample.get("daemon_write_ms"),
                         }
                         if sample.get("daemon_compile_ms") is not None
-                        else None
+                        else (
+                            {"compile": sample["step_wall_ms"][0], "link": sample["step_wall_ms"][1]}
+                            if isinstance(sample.get("step_wall_ms"), list)
+                            and len(sample["step_wall_ms"]) == 2
+                            else None
+                        )
                     ),
                 }
             )
-        directory, commands = command_sets[(language, lane)]
+        directory, commands, config = command_sets[(language, lane)]
         template = (
             commands.get(lane, {}).get(language)
             if language != "lanius"
@@ -934,20 +1016,47 @@ def import_stress(args: argparse.Namespace) -> None:
             if language == "lanius" and lane == "hot_daemon_variable_project"
             else lane
         )
+        semantics = {
+            "imported": True,
+            "source_artifact": str(directory.relative_to(ROOT)),
+            "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
+        }
+        if language in STRESS_MEASUREMENT_NOTES:
+            semantics["compiler_note"] = STRESS_MEASUREMENT_NOTES[language]
+        fastest_basis = (config.get("fastest_basis") or {}).get(language)
+        if lane == "fastest" and fastest_basis:
+            semantics["fastest_basis"] = fastest_basis
+        cache_entries = [
+            sample["cache_entries_added"]
+            for sample in imported_samples
+            if sample.get("cache_entries_added") is not None
+        ]
+        if cache_entries:
+            semantics["cache_entries_added_min"] = min(cache_entries)
+        if language in STRESS_TYPESCRIPT_COMPILERS:
+            semantics["typescript_checkers"] = config.get("typescript_checkers")
+            overhead = (config.get("typescript_launcher_overhead") or {}).get("compilers", {}).get(language)
+            if overhead:
+                semantics["node_launcher_overhead"] = overhead
         result["measurements"].append(
             {
                 "id": f"{language}-{configuration}",
-                "compiler": {"name": language, "version": "unavailable (imported measurement)"},
-                "target": "x86_64" if language != "pareas" else "riscv32",
+                "compiler": {
+                    "name": language,
+                    "version": stress_compiler_version(directory, language, template),
+                },
+                "target": (
+                    "riscv32"
+                    if language == "pareas"
+                    else "javascript-es2022"
+                    if language in STRESS_TYPESCRIPT_COMPILERS
+                    else "x86_64"
+                ),
                 "configuration": configuration,
                 "configuration_display": configuration,
                 "source": facts,
-                "commands": {"command": command_record(template, ROOT)},
-                "measurement_semantics": {
-                    "imported": True,
-                    "source_artifact": str(directory.relative_to(ROOT)),
-                    "note": "raw timing samples are exact; old runner retained a command template rather than a materialized command per sample",
-                },
+                "commands": stress_command_records(template),
+                "measurement_semantics": semantics,
                 "samples": rows,
                 "summary": summarize(rows, facts),
                 "validation": {"artifacts_validated": True},

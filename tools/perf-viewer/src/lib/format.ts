@@ -25,10 +25,17 @@ export function compilerPhaseName(phase: string): string {
 const COMPILER_NAMES: Record<string, string> = {
   c: 'C',
   cpp: 'C++',
+  d: 'D (dmd)',
+  go: 'Go',
   lanius: 'Lanius',
+  ldc: 'D (LDC)',
   pareas: 'Pareas',
   rust: 'Rust',
   tcc: 'TCC',
+  tsc: 'TypeScript (tsc)',
+  tsrs: 'TypeScript (tsrs)',
+  v: 'V',
+  vx: 'Vx',
   zig: 'Zig',
 };
 
@@ -38,6 +45,11 @@ const CONFIGURATION_NAMES: Record<string, string> = {
   daemon_warm_workspace: 'preallocated',
   o0: '-O0',
   cuda: 'CUDA',
+  // TypeScript emits JavaScript, not native code: not comparable to native builds.
+  check_emit: 'type check + JS emit (no native code)',
+  // Each compiler's fastest single-file configuration with its own
+  // parallelism (an unofficial 5-seed pass, not the 20-seed lanes).
+  fastest: 'fastest config, 5 seeds',
 };
 
 export function formatMs(value: number): string {
@@ -100,9 +112,16 @@ export function measurementColor(measurement: Measurement): string {
   return ({
     c: 'var(--orange)',
     cpp: 'var(--green)',
+    d: 'var(--pink)',
+    go: 'var(--sky)',
+    ldc: 'var(--sand)',
     pareas: 'var(--violet)',
     rust: 'var(--red)',
     tcc: 'var(--context-series)',
+    tsc: 'var(--yellow)',
+    tsrs: 'var(--lime)',
+    v: 'var(--teal)',
+    vx: 'var(--magenta)',
     zig: 'var(--blue)',
   } as Record<string, string>)[compiler] ?? 'var(--muted)';
 }
