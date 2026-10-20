@@ -2942,7 +2942,7 @@ fn finish_source_pack_unit(
         }
     }
     let closure = &artifacts.instance_closure;
-    let instance_closure = (closure.found != 0 || closure.error.is_some())
+    let instance_closure = (closure.found != 0 || closure.error.is_some() || !closure.copy_rows.is_empty())
         .then(|| std::sync::Arc::new(std::mem::take(&mut artifacts.instance_closure)));
     Ok(CompiledSourcePackUnit {
         owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
@@ -3060,6 +3060,11 @@ impl CheckedSourcePackArtifacts {
         }
         for instance in &mut self.instance_closure.instances {
             map.call(&mut instance.call)?;
+        }
+        for row in self.instance_closure.copy_rows.iter_mut().flatten() {
+            if let gpu_type_checker::CheckedRowFact::Type(ty) = row {
+                map.ty(ty)?;
+            }
         }
         for owner in self.checked_call_owners.iter_mut().chain(self.native_call_owners.iter_mut()) {
             map.call_owner(owner)?;

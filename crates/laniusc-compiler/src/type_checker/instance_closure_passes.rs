@@ -43,6 +43,21 @@ const EXPORT_FINAL_KERNEL: &str = "type_checker/closure/04a_export_final";
 const IMPORT_SUMMARY_KERNEL: &str = "type_checker/closure/00b_import_summary";
 const MARK_DEPENDENCY_KERNEL: &str = "type_checker/closure/01b_mark_dependency_roots";
 const EXPAND_DEPENDENCY_KERNEL: &str = "type_checker/closure/03b_expand_dependency";
+pub(super) const INSTANCE_TABLE_CLEAR_PASS: &str = "type_check.instance_table.clear";
+pub(super) const INSTANCE_TABLE_KEYS_PASS: &str = "type_check.instance_table.keys";
+pub(super) const INSTANCE_TABLE_RANK_PASS: &str = "type_check.instance_table.rank";
+pub(super) const INSTANCE_TABLE_ARGS_PASS: &str = "type_check.instance_table.args";
+pub(super) const INSTANCE_TABLE_ROWS_PASS: &str = "type_check.instance_table.rows";
+pub(super) const INSTANCE_TABLE_ROWS_FINAL_PASS: &str = "type_check.instance_table.rows_final";
+const TABLE_KEYS_KERNEL: &str = "type_checker/closure/05_table_keys";
+const TABLE_RANK_KERNEL: &str = "type_checker/closure/05b_table_rank";
+const TABLE_ARGS_KERNEL: &str = "type_checker/closure/05c_table_args";
+const TABLE_ROWS_KERNEL: &str = "type_checker/closure/06_table_rows";
+const TABLE_ROWS_FINAL_KERNEL: &str = "type_checker/closure/06a_table_rows_final";
+/// Words of `instance_table_counts` (`IT_COUNT_WORDS`).
+pub(super) const INSTANCE_TABLE_COUNT_WORDS: u64 = 4;
+/// Row dispatches ahead of the final one (as the export's retries).
+const TABLE_ROW_RETRIES: usize = 4;
 /// The job's dependency closure summaries (D1b; closure_summary.rs).
 pub(super) const CLOSURE_SUMMARY_INPUTS: &str = "closure_summary_inputs";
 const CLOSURE_SUMMARY_CT: &str = "closure_summary_ct";
@@ -234,6 +249,163 @@ pub(super) fn register_instance_closure_passes(
         graph.add_indirect_dispatch(name, "instance_closure_args")?;
     }
     Ok(())
+}
+
+/// Virtual rows one job's instance table holds: half its HIR rows. A full
+/// row table flags the table, and the host ignores it.
+pub(super) fn instance_table_row_capacity(hir_rows: u64) -> u64 {
+    (hir_rows / 2).max(1024)
+}
+
+/// Declares the instance table (D2; closure/instance_table.slang) and
+/// registers its passes, after the expression references and the owner
+/// spans. `realize_bindings` as for the closure's export.
+pub(super) fn register_instance_table_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    hir_rows: u64,
+    realize_bindings: &[ReflectedResourceBinding],
+) -> Result<(), String> {
+    // Off (the default), the passes are never recorded: the table keeps
+    // one row of each buffer so the graph holds no workspace for it.
+    let enabled = instance_table_enabled();
+    let instances = if enabled { instance_capacity(hir_rows) } else { 1 };
+    let row_capacity = if enabled { instance_table_row_capacity(hir_rows) } else { 1 };
+    let counts = storage(graph, "instance_table_counts", INSTANCE_TABLE_COUNT_WORDS * 4)?;
+    storage(graph, "instance_table_keys", instances * 16)?;
+    storage(graph, "instance_table", instances * 32)?;
+    let rows = storage(graph, "instance_row_refs", row_capacity * 8)?;
+    graph.add_resource(ResourceDesc {
+        name: "instance_table_args",
+        domain: ResourceDomain::DispatchArguments,
+        class: ResourceClass::Workspace,
+        bytes: 12,
+        usage: WorkspaceUsageClass::StorageIndirect,
+    })?;
+    graph.add_pass(PassDesc {
+        name: INSTANCE_TABLE_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Types,
+        accesses: vec![
+            PassAccess::write("instance_table_counts", counts),
+            PassAccess::write("instance_row_refs", rows),
+        ],
+    })?;
+    for (name, kernel) in [
+        (INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL),
+        (INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL),
+    ] {
+        graph.add_kernel_pass_by_name(name, CompilerPhase::TypeCheck, ResourceDomain::Types, kernels, kernel, &[])?;
+        graph.add_indirect_dispatch(name, "instance_closure_args")?;
+    }
+    // Keys are written for every appended instance before rank reads them;
+    // the table's entries are read only below the counted entries. Every
+    // kernel binds all of the table module's buffers; the keys pass never
+    // touches the table itself, so it reads nothing uninitialized there.
+    graph.mark_pass_bindings_initialize(INSTANCE_TABLE_KEYS_PASS, &["instance_table_keys", "instance_table"])?;
+    graph.mark_pass_bindings_initialize(INSTANCE_TABLE_RANK_PASS, &["instance_table"])?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_TABLE_ARGS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        TABLE_ARGS_KERNEL,
+        &[],
+    )?;
+    graph.mark_pass_bindings_initialize(INSTANCE_TABLE_ARGS_PASS, &["instance_table_args"])?;
+    for (name, kernel) in [
+        (INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL),
+        (INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL),
+    ] {
+        graph.add_kernel_pass_by_name(
+            name,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Types,
+            kernels,
+            kernel,
+            realize_bindings,
+        )?;
+        graph.add_indirect_dispatch(name, "instance_table_args")?;
+    }
+    Ok(())
+}
+
+/// `LANIUS_INSTANCE_TABLE=1` builds the instance table in original jobs
+/// that run the closure (D2, behind its flag);
+/// `LANIUS_CHECK_INSTANCE_TABLE=1` also reads it back and checks it against
+/// every copy run's own types.
+pub(in crate::type_checker) fn instance_table_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| instance_table_checked()
+        || crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_TABLE", false))
+}
+
+pub(crate) fn instance_table_checked() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INSTANCE_TABLE", false))
+}
+
+/// The instance table of one original job: clear, keys, ranks, the row
+/// dispatch size, then the row realizations with their retries.
+pub(in crate::type_checker) struct InstanceTableOperations {
+    clear: crate::gpu::operations::ClearBuffersOperation,
+    keys: ComputeOperation,
+    rank: ComputeOperation,
+    args: ComputeOperation,
+    rows: ComputeOperation,
+    rows_final: ComputeOperation,
+}
+
+impl InstanceTableOperations {
+    pub(in crate::type_checker) fn new(
+        device: &wgpu::Device,
+        graph: &compiler_graph::TypeCheckCompilerGraph,
+        resources: &ResourceMap<'_>,
+        passes: &TypeCheckPasses,
+    ) -> Result<Self> {
+        let buffer = |name| typed_buffer_from_resources::<u32>(resources, name);
+        let counts = buffer("instance_table_counts")?;
+        let rows = buffer("instance_row_refs")?;
+        let clear = crate::gpu::operations::ClearBuffersOperation::new(
+            graph,
+            INSTANCE_TABLE_CLEAR_PASS,
+            &[
+                ("instance_table_counts", (&counts).into()),
+                ("instance_row_refs", (&rows).into()),
+            ],
+        )?;
+        let closure_args = buffer("instance_closure_args")?;
+        let table_args = buffer("instance_table_args")?;
+        let indirect = |name, kernel, args| {
+            ComputeOperation::indirect(device, graph, resources, name, &passes.kernel(kernel), args)
+        };
+        Ok(Self {
+            clear,
+            keys: indirect(INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL, &closure_args)?,
+            rank: indirect(INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL, &closure_args)?,
+            args: ComputeOperation::direct(
+                device,
+                graph,
+                resources,
+                INSTANCE_TABLE_ARGS_PASS,
+                &passes.kernel(TABLE_ARGS_KERNEL),
+                1,
+            )?,
+            rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
+            rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
+        })
+    }
+
+    pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.clear.record(encoder);
+        self.keys.record(encoder)?;
+        self.rank.record(encoder)?;
+        self.args.record(encoder)?;
+        for _ in 0..TABLE_ROW_RETRIES {
+            self.rows.record(encoder)?;
+        }
+        self.rows_final.record(encoder)
+    }
 }
 
 /// `LANIUS_CLOSURE_BOUND_MEMBERS=0` leaves bound-member calls to the replay

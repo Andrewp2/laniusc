@@ -189,6 +189,12 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "instance_closure_instances",
     "instance_closure_refs",
     "instance_closure_targets",
+    // The instance table (D2), read only in its validation mode, and the
+    // subtree ends the copy side of that check reads.
+    "instance_table_counts",
+    "instance_table",
+    "instance_row_refs",
+    "compact_hir_links",
 ];
 
 /// These facts are produced by the separate interface-export graph. The
@@ -287,6 +293,7 @@ impl RetainedGenericCallInputs {
                         .alias(hir.method_signatures.byte_size / 4),
                     "compact_hir_payload" => hir.payload.alias(hir.payload.byte_size / 4),
                     "compact_hir_core" => hir.core.alias(hir.core.byte_size / 4),
+                    "compact_hir_links" => hir.links.alias(hir.links.byte_size / 4),
                     "compact_hir_count" => hir.count.clone(),
                     "compact_field_count" => hir.field_count.clone(),
                     "compact_fields" => hir.fields.alias(hir.fields.byte_size / 4),
@@ -755,6 +762,98 @@ pub(crate) struct CheckedInstanceClosure {
     pub rejects: [u32; 7],
     /// Why the readback failed, when it did.
     pub error: Option<String>,
+    /// The instance table of an original job (D2), read back only in
+    /// validation mode (`LANIUS_CHECK_INSTANCE_TABLE`).
+    pub table: Option<CheckedInstanceTable>,
+    /// An instance-copy replay in that validation mode: each copy's rows
+    /// (its function row's subtree), in copy order.
+    pub copy_rows: Vec<Vec<CheckedRowFact>>,
+    /// The HIR kind of each of those rows.
+    pub copy_row_kinds: Vec<Vec<u32>>,
+}
+
+/// The decoded instance table of an original job (closure/instance_table.slang).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CheckedInstanceTable {
+    /// IT_FLAG_* bits (a flagged table has no entries) and failed rows.
+    pub flags: u32,
+    pub failed: u32,
+    pub entries: Vec<CheckedInstanceTableEntry>,
+}
+
+/// One instance: its template function row, the closure's depth and closed
+/// arguments, and the realized fact of every virtual row (one per row of the
+/// function's subtree).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CheckedInstanceTableEntry {
+    pub function_row: u32,
+    pub depth: u32,
+    pub arguments: Vec<CheckedGenericType>,
+    pub constants: Vec<CheckedGenericConstantValue>,
+    pub rows: Vec<CheckedRowFact>,
+}
+
+/// The expression type of one row, for the instance table's validation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CheckedRowFact {
+    Type(CheckedGenericType),
+    /// No type (tag 0): its raw reference.
+    Untyped(u32, u32),
+    /// The GPU could not realize it (its failure code).
+    Failed(u32),
+    /// The host could not decode it.
+    Undecoded(String),
+}
+
+impl CheckedRowFact {
+    pub(crate) fn scope(&mut self, unit: [u32; 2]) {
+        if let Self::Type(ty) = self {
+            ty.scope(unit);
+        }
+    }
+}
+
+impl CheckedInstanceTableEntry {
+    /// Scope every identity to `unit`, as the closure's calls are.
+    pub(crate) fn scope(&mut self, unit: [u32; 2]) {
+        for ty in &mut self.arguments {
+            ty.scope(unit);
+        }
+        for value in &mut self.constants {
+            value.scope(unit);
+        }
+        for row in &mut self.rows {
+            row.scope(unit);
+        }
+    }
+
+    /// Whether this (scoped) entry is the instance of template function
+    /// `function_row` with these arguments, scoped to `unit` here.
+    pub(crate) fn is_instance(
+        &self,
+        function_row: u32,
+        arguments: &[CheckedGenericArgument],
+        constants: &[CheckedGenericConstant],
+        unit: [u32; 2],
+    ) -> bool {
+        if self.function_row != function_row
+            || self.arguments.len() != arguments.len()
+            || self.constants.len() != constants.len()
+        {
+            return false;
+        }
+        let mut arguments = arguments.to_vec();
+        arguments.sort_by_key(|argument| argument.slot);
+        let mut constants = constants.to_vec();
+        constants.sort_by_key(|constant| constant.slot);
+        arguments.into_iter().zip(&self.arguments).all(|(mut argument, ty)| {
+            argument.ty.scope(unit);
+            argument.ty == *ty
+        }) && constants.into_iter().zip(&self.constants).all(|(mut constant, value)| {
+            constant.value.scope(unit);
+            constant.value == *value
+        })
+    }
 }
 
 impl CheckedInstanceClosure {
@@ -2452,12 +2551,15 @@ pub(super) fn read_unit_facts(
     }
     timer.stamp("contracts");
     if call_ids.is_empty() {
+        let mut instance_closure = CheckedInstanceClosure::default();
+        attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
+            instance_copies, &callable_hirs, &mut types);
         return Ok(CheckedUnitFacts {
             generic_calls: Vec::new(),
             contracts,
             call_owners: Vec::new(),
             native_call_owners: Vec::new(),
-            instance_closure: CheckedInstanceClosure::default(),
+            instance_closure,
         });
     }
     // Without generic parameters (type or constant) no local callee is
@@ -3035,7 +3137,7 @@ pub(super) fn read_unit_facts(
         .collect();
     timer.stamp("owners");
     // The closure is an optimization: a decode failure only loses it.
-    let instance_closure = match closure_counts {
+    let mut instance_closure = match closure_counts {
         Some(start) => read_instance_closure(&readback, device, queue, inputs,
             &counts[start..start + super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize],
             &call_spans, &calls, &mut types)
@@ -3045,6 +3147,8 @@ pub(super) fn read_unit_facts(
             }),
         None => CheckedInstanceClosure::default(),
     };
+    attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
+        instance_copies, &callable_hirs, &mut types);
     timer.stamp("instance_closure");
     Ok(CheckedUnitFacts {
         generic_calls: calls.into_iter().flatten().collect(),
@@ -3239,7 +3343,188 @@ fn read_instance_closure(
         instance.depth,
         format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
     ));
+    if super::instance_closure_passes::instance_table_checked() {
+        closure.table = Some(read_instance_table(readback, device, queue, inputs, instances, refs, types)?);
+    }
     Ok(closure)
+}
+
+/// The instance table's validation mode: a copy replay's own rows. The
+/// k-th callable at or past the first copy row is copy k (as for the owner
+/// aliases).
+#[allow(clippy::too_many_arguments)]
+fn attach_copy_rows(
+    closure: &mut CheckedInstanceClosure,
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    inputs: &RetainedGenericCallInputs,
+    semantic: &OwnedGpuSemanticArtifact,
+    instance_copies: Option<&super::CheckedBodySpecializationBatch>,
+    callable_hirs: &[u32],
+    types: &mut CheckedTypeReadback,
+) {
+    if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row())
+        .filter(|_| super::instance_closure_passes::instance_table_checked())
+    {
+        let functions = &callable_hirs[callable_hirs.partition_point(|&row| row < first)..];
+        match read_copy_rows(readback, device, queue, inputs, semantic, functions, types) {
+            Ok((rows, kinds)) => {
+                closure.copy_rows = rows;
+                closure.copy_row_kinds = kinds;
+            }
+            Err(error) => closure.error = Some(format!("copy rows: {error:#}")),
+        }
+        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false) {
+            eprintln!("[instance-table] copy rows: first copy row {first}, {} copies of {} callables, {} read",
+                functions.len(), callable_hirs.len(), closure.copy_rows.len());
+        }
+    } else if instance_copies.is_some() && super::instance_closure_passes::instance_table_checked()
+        && crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false)
+    {
+        eprintln!("[instance-table] copy rows: the replay batch has no copy rows");
+    }
+}
+
+/// IT_ROW_FAILED (instance_table.slang).
+const INSTANCE_ROW_FAILED: u32 = u32::MAX;
+
+/// The facts of every row of each copy of an instance-copy replay (the
+/// instance table's validation mode): `functions` are the copies' function
+/// rows in copy order, each standing for its subtree.
+#[allow(clippy::too_many_arguments)]
+fn read_copy_rows(
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    inputs: &RetainedGenericCallInputs,
+    semantic: &super::OwnedGpuSemanticArtifact,
+    functions: &[u32],
+    types: &mut CheckedTypeReadback,
+) -> Result<(Vec<Vec<CheckedRowFact>>, Vec<Vec<u32>>)> {
+    if functions.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let mut batch = WordBatch::default();
+    let links = batch.rows(inputs.buffer("compact_hir_links"), functions, 4, 4, "copy function links")?;
+    let words = batch.read(readback, device, queue, "copy function links")?;
+    let mut batch = WordBatch::default();
+    let mut spans = Vec::with_capacity(functions.len());
+    for (index, &function) in functions.iter().enumerate() {
+        let end = words[links + index * 4 + 2];
+        ensure!(end > function, "copy function {function} has no subtree");
+        let count = (end - function) as usize;
+        let tags = batch.push(&semantic.expr_ref_tag_by_hir, function as u64, count, "copy row tags")?;
+        let payloads = batch.push(&semantic.expr_ref_payload_by_hir, function as u64, count, "copy row payloads")?;
+        let core = batch.push(inputs.buffer("compact_hir_core"), function as u64 * 4, count * 4, "copy row kinds")?;
+        spans.push((tags, payloads, core, count));
+    }
+    let words = batch.read(readback, device, queue, "copy rows")?;
+    let words = &words;
+    let roots = spans.iter()
+        .flat_map(|&(tags, payloads, _, count)| (0..count).map(move |row| (words[tags + row], words[payloads + row])))
+        .filter(|&(tag, _)| matches!(tag, 1..=3))
+        .collect::<Vec<_>>();
+    types.prefetch_types(readback, device, queue, inputs, &roots)?;
+    let kinds = spans.iter()
+        .map(|&(_, _, core, count)| (0..count).map(|row| words[core + row * 4]).collect())
+        .collect();
+    let rows = spans.into_iter().map(|(tags, payloads, _, count)| (0..count)
+        .map(|row| read_row_fact(readback, device, queue, inputs, words[tags + row], words[payloads + row], types))
+        .collect()).collect();
+    Ok((rows, kinds))
+}
+
+/// The fact of one row from its (tag, payload) expression reference.
+fn read_row_fact(
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    inputs: &RetainedGenericCallInputs,
+    tag: u32,
+    payload: u32,
+    types: &mut CheckedTypeReadback,
+) -> CheckedRowFact {
+    if tag == 0 {
+        return CheckedRowFact::Untyped(tag, payload);
+    }
+    match read_type(readback, device, queue, inputs, tag, payload, types) {
+        Ok(ty) => CheckedRowFact::Type(ty),
+        Err(error) => CheckedRowFact::Undecoded(format!("{tag}:{payload}: {error:#}")),
+    }
+}
+
+/// Read the instance table (validation mode only): every entry with its
+/// closure instance's arguments (`instances` and `refs` are the closure's
+/// instance rows and argument operands) and its virtual rows' facts.
+#[allow(clippy::too_many_arguments)]
+fn read_instance_table(
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    inputs: &RetainedGenericCallInputs,
+    instances: &[u32],
+    refs: &[u32],
+    types: &mut CheckedTypeReadback,
+) -> Result<CheckedInstanceTable> {
+    let mut batch = WordBatch::default();
+    let start = batch.push(inputs.buffer("instance_table_counts"), 0,
+        super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize, "instance table counts")?;
+    let counts = batch.read(readback, device, queue, "instance table counts")?;
+    let &[entries, rows, flags, failed] = &counts[start..start + 4] else {
+        return Err(anyhow!("instance table counters are truncated"));
+    };
+    let mut table = CheckedInstanceTable { flags, failed, entries: Vec::new() };
+    if flags != 0 || entries == 0 {
+        return Ok(table);
+    }
+    let (entries, rows) = (entries as usize, rows as usize);
+    let table_buffer = inputs.buffer("instance_table");
+    let rows_buffer = inputs.buffer("instance_row_refs");
+    ensure!(entries * 32 <= table_buffer.byte_size && rows * 8 <= rows_buffer.byte_size,
+        "instance table is truncated");
+    let mut batch = WordBatch::default();
+    let entry_start = batch.push(table_buffer, 0, entries * 8, "instance table")?;
+    let row_start = (rows != 0)
+        .then(|| batch.push(rows_buffer, 0, rows * 2, "instance table rows"))
+        .transpose()?;
+    let words = batch.read(readback, device, queue, "instance table")?;
+    let entry_words = &words[entry_start..entry_start + entries * 8];
+    let row_words = row_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
+    let roots = row_words.chunks_exact(2)
+        .filter(|row| matches!(row[0], 2..=4))
+        .map(|row| (row[0] - 1, row[1]))
+        .collect::<Vec<_>>();
+    types.prefetch_types(readback, device, queue, inputs, &roots)?;
+    let operand = |index: usize| refs.get(index * 2..index * 2 + 2).map(|pair| (pair[0], pair[1]));
+    for entry in entry_words.chunks_exact(8) {
+        let &[function_row, count, _, base, index, depth, _, _] = entry else { unreachable!() };
+        let instance = instances.get(index as usize * 8..index as usize * 8 + 8)
+            .ok_or_else(|| anyhow!("instance table entry names closure instance {index} past the table"))?;
+        let (argument_base, shape) = (instance[4] as usize, instance[7]);
+        let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
+        let mut arguments = Vec::with_capacity(type_count);
+        let mut constants = Vec::with_capacity(arity.saturating_sub(type_count));
+        for slot in 0..arity {
+            let (tag, payload) = operand(argument_base + slot)
+                .ok_or_else(|| anyhow!("instance table entry's arguments are past the read table"))?;
+            if slot < type_count {
+                arguments.push(read_type(readback, device, queue, inputs, tag, payload, types)?);
+            } else {
+                constants.push(types.constant(tag, payload));
+            }
+        }
+        let end = base as usize + count as usize;
+        let facts = row_words.get(base as usize * 2..end * 2)
+            .ok_or_else(|| anyhow!("instance table entry's rows are past the row table"))?;
+        let rows = facts.chunks_exact(2).map(|row| match row[0] {
+            0 => CheckedRowFact::Failed(u32::MAX - 1),
+            INSTANCE_ROW_FAILED => CheckedRowFact::Failed(row[1]),
+            tag => read_row_fact(readback, device, queue, inputs, tag - 1, row[1], types),
+        }).collect();
+        table.entries.push(CheckedInstanceTableEntry { function_row, depth, arguments, constants, rows });
+    }
+    Ok(table)
 }
 
 impl super::GpuTypeChecker {

@@ -2503,6 +2503,14 @@ impl GpuTypeChecker {
                 bind_groups.semantic_projection.owner_spans_clear.record(encoder);
                 bind_groups.semantic_projection.owner_spans.record(encoder)?;
             }
+            if instance_closure && instance_closure_passes::instance_table_enabled() {
+                // D2: the closure's instances' rows, from the final
+                // expression references (behind LANIUS_INSTANCE_TABLE).
+                bind_groups.semantic_projection.instance_table.record(encoder)?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.instance_table.done");
+                }
+            }
             let semantic_projection = &bind_groups.semantic_projection;
             semantic_projection.local_const_literals.record(encoder)?;
             // Constant reference rounds; a round after one that staged no
