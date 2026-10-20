@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::PathBuf,
     sync::Arc,
 };
@@ -179,14 +179,69 @@ pub(in crate::compiler::gpu_compiler) struct ProgramPacket {
     /// Callers must drop it; partial rows are never launchable.
     poisoned: bool,
     awaiting_result: Option<u32>,
-    original_contexts: BTreeMap<(u32, u32), u32>,
+    // Point lookups only (never iterated), so hashed.
+    original_contexts: HashMap<(u32, u32), u32>,
     original_units: BTreeSet<u32>,
-    call_occurrences: BTreeMap<(u32, u32), CallOccurrence>,
-    admitted_calls: BTreeMap<u32, u32>,
+    call_occurrences: HashMap<(u32, u32), CallOccurrence>,
+    admitted_calls: HashMap<u32, u32>,
     /// (replay context, call HIR) -> actual function HIR for the calls a
     /// replay context owns outside its template's frozen call inventory
     /// (`append_context_calls`).
     context_call_owners: BTreeMap<(u32, u32), u32>,
+    /// Host encodings already written by this packet (`environment`,
+    /// `call_predicates`); they change no row.
+    encodings: EnvironmentEncodings,
+}
+
+/// The environment rows (tables 7, 12 and 11) a call's checked bindings
+/// encode to are a function of the callee owner and the call's arguments,
+/// constants and required parameter counts, given this packet's frozen
+/// catalog and atoms (interning is idempotent). Thousands of call sites share
+/// a few environments, so the first site of each is encoded in full and the
+/// rest copy its rows; every call still gets its own environment, call and
+/// obligation rows, so the GPU sees exactly the tables the full encoding
+/// writes. Only environments whose graph copy writes no compound (table 5)
+/// or edge (table 6) row are reused. Lives for one packet (one job).
+///
+/// `LANIUS_EVIDENCE_ENCODING_MEMO=0` encodes every call in full.
+/// `LANIUS_CHECK_EVIDENCE_ENCODING_MEMO=1` encodes every call in full and
+/// fails the append if a reusable encoding would have written other rows.
+struct EnvironmentEncodings {
+    enabled: bool,
+    checked: bool,
+    by_owner: HashMap<u32, Vec<EnvironmentEncoding>>,
+    predicates: HashMap<u32, Arc<[u32]>>,
+}
+
+struct EnvironmentEncoding {
+    facts: Arc<[CheckedGenericCall]>,
+    fact_index: usize,
+    /// Table-7 root rows, in the order the full encoding writes them.
+    roots: Vec<[u32; 2]>,
+    /// Table-12 rows as (parameter atom, index into `roots`), in row order.
+    bindings: Vec<(u32, usize)>,
+}
+
+impl EnvironmentEncodings {
+    fn new() -> Self {
+        Self {
+            enabled: crate::gpu::env::env_bool_truthy("LANIUS_EVIDENCE_ENCODING_MEMO", true),
+            checked: crate::gpu::env::env_bool_truthy("LANIUS_CHECK_EVIDENCE_ENCODING_MEMO", false),
+            by_owner: HashMap::new(),
+            predicates: HashMap::new(),
+        }
+    }
+
+    fn find(&self, owner: u32, call: &CheckedGenericCall) -> Option<usize> {
+        if !self.enabled { return None; }
+        self.by_owner.get(&owner)?.iter().position(|known| {
+            let known = &known.facts[known.fact_index];
+            known.required_generic_parameters == call.required_generic_parameters
+                && known.required_constant_parameters == call.required_constant_parameters
+                && known.arguments == call.arguments
+                && known.constants == call.constants
+        })
+    }
 }
 
 impl ProgramPacket {
@@ -218,11 +273,12 @@ impl ProgramPacket {
             proof_store,
             poisoned: false,
             awaiting_result: None,
-            original_contexts: BTreeMap::new(),
+            original_contexts: HashMap::new(),
             original_units: BTreeSet::new(),
-            call_occurrences: BTreeMap::new(),
-            admitted_calls: BTreeMap::new(),
+            call_occurrences: HashMap::new(),
+            admitted_calls: HashMap::new(),
             context_call_owners: BTreeMap::new(),
+            encodings: EnvironmentEncodings::new(),
         })
     }
     fn ready(&self) -> Result<()> {
@@ -668,10 +724,10 @@ impl ProgramPacket {
         let callable = self.resolve_target(snapshot, call.target)?;
         let callee_owner = self.catalog.tables.row(4, callable)?[1];
         let call_row = self.tables.count(15)?;
-        let environment = self.environment(callee_owner, call, call_row)?;
-        let predicates = self.catalog.applicable_predicates(callee_owner)?;
+        let environment = self.environment(callee_owner, &facts, fact_index, call_row)?;
+        let predicates = self.call_predicates(callee_owner)?;
         let first = self.tables.count(16)?;
-        for predicate in &predicates {
+        for predicate in predicates.iter() {
             self.tables
                 .push(16, &[call_row, *predicate, environment, 0])?;
         }
@@ -942,7 +998,95 @@ impl ProgramPacket {
             .copied()
             .ok_or_else(|| anyhow!("checked target has no exact callable owner"))
     }
-    fn environment(&mut self, owner: u32, call: &CheckedGenericCall, call_row: u32) -> Result<u32> {
+    /// The callee owner's applicable predicates (a frozen-catalog function).
+    fn call_predicates(&mut self, owner: u32) -> Result<Arc<[u32]>> {
+        if !self.encodings.enabled {
+            return Ok(self.catalog.applicable_predicates(owner)?.into());
+        }
+        if let Some(predicates) = self.encodings.predicates.get(&owner) {
+            return Ok(predicates.clone());
+        }
+        let predicates: Arc<[u32]> = self.catalog.applicable_predicates(owner)?.into();
+        self.encodings.predicates.insert(owner, predicates.clone());
+        Ok(predicates)
+    }
+
+    /// One call's environment rows (see `EnvironmentEncodings`).
+    fn environment(
+        &mut self,
+        owner: u32,
+        facts: &Arc<[CheckedGenericCall]>,
+        fact_index: usize,
+        call_row: u32,
+    ) -> Result<u32> {
+        let call = facts.get(fact_index).ok_or_else(|| anyhow!("checked call index absent"))?;
+        let known = self.encodings.find(owner, call);
+        if let Some(index) = known && !self.encodings.checked {
+            let Self { encodings, tables, prefix, .. } = self;
+            let encoding = &encodings.by_owner[&owner][index];
+            let base = add(prefix[7], tables.count(7)?, "environment roots")?;
+            for root in &encoding.roots {
+                tables.push(7, root)?;
+            }
+            let environment = tables.count(11)?;
+            let first = tables.count(12)?;
+            for &(atom, position) in &encoding.bindings {
+                let root = add(base, u32_len(position, "environment root")?, "environment root")?;
+                tables.push(12, &[environment, atom, root, 0])?;
+            }
+            tables.push(11, &[
+                owner,
+                if encoding.bindings.is_empty() { 0 } else { first },
+                u32_len(encoding.bindings.len(), "bindings")?,
+                1,
+                call_row,
+            ])?;
+            return Ok(environment);
+        }
+        let before = [5, 6, 7, 12].map(|table| self.tables.count(table));
+        let environment = self.encoded_environment(owner, call, call_row)?;
+        if !self.encodings.enabled {
+            return Ok(environment);
+        }
+        let [nodes, edges, roots, bindings] = before.map(|count| count.unwrap_or(u32::MAX));
+        if self.tables.count(5)? != nodes || self.tables.count(6)? != edges {
+            // A compound graph's rows are positional; it is encoded in full.
+            return Ok(environment);
+        }
+        let base = add(self.prefix[7], roots, "environment roots")?;
+        let written_roots = (roots..self.tables.count(7)?)
+            .map(|row| Ok(self.tables.row(7, row)?.try_into().unwrap()))
+            .collect::<Result<Vec<[u32; 2]>>>()?;
+        let written_bindings = (bindings..self.tables.count(12)?)
+            .map(|row| {
+                let row = self.tables.row(12, row)?;
+                let position = row[2].checked_sub(base)
+                    .filter(|&position| (position as usize) < written_roots.len())
+                    .ok_or_else(|| anyhow!("environment binding outside its own roots"))?;
+                Ok((row[1], position as usize))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        match known {
+            Some(index) => {
+                let encoding = &self.encodings.by_owner[&owner][index];
+                ensure!(
+                    encoding.roots == written_roots && encoding.bindings == written_bindings,
+                    "[evidence-encoding-memo] MISMATCH: call HIR {} encodes other environment rows than call HIR {}",
+                    call.call_hir,
+                    encoding.facts[encoding.fact_index].call_hir
+                );
+            }
+            None => self.encodings.by_owner.entry(owner).or_default().push(EnvironmentEncoding {
+                facts: facts.clone(),
+                fact_index,
+                roots: written_roots,
+                bindings: written_bindings,
+            }),
+        }
+        Ok(environment)
+    }
+
+    fn encoded_environment(&mut self, owner: u32, call: &CheckedGenericCall, call_row: u32) -> Result<u32> {
         ensure!(
             call.has_all_parameter_slots(),
             "checked call has incomplete generic parameter metadata"

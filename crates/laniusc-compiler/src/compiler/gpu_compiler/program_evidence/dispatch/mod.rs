@@ -1082,6 +1082,7 @@ impl GpuProgramEvidence {
             self.proof_kernels = Some(kernels::ProofKernels::load(&self.device)?);
         }
         crate::gpu::device::persist_created_pipelines_for_device(&self.device);
+        let prepare_span = crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.check.prepare");
         let submission = packet.packet.prepare_submission()?;
         // Any transfer, dispatch, map, or semantic failure terminates this arena.
         // In particular a map error may not expose a stale prior successful row.
@@ -1137,6 +1138,8 @@ impl GpuProgramEvidence {
             .upload(&mut encoder, &submission.plan.writes)?;
         passes_core::flush_deferred_compute(&mut encoder);
         self.queue.submit(Some(encoder.finish()));
+        drop(prepare_span);
+        let solve_span = crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.check.solve");
         let mut capacities = proof::initial_capacities(
             &packet.packet.proof_store,
             submission.obligation_span.count,
@@ -1201,6 +1204,8 @@ impl GpuProgramEvidence {
             );
         }
 
+        drop(solve_span);
+        let _accept_span = crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.check.results");
         // Exact arena association comes from these private owned buffers, not a
         // caller-supplied byte slice. One batched transfer reads all required rows.
         let regions = [
