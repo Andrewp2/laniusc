@@ -93,6 +93,27 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
     return tag != TYPE_REF_INVALID;
 }
 
+// The type code a named instance's declaration publishes in this dispatch.
+// Its own lane writes visible_type[decl_token] here, so reading that word
+// from another lane races the write (2026-10-19: `original.value` typed i32
+// or unknown by warp order). A scalar or generic-parameter declaration
+// reference is what that lane publishes, so it is computed from the
+// read-only reference instead. Any other declaration keeps the value an
+// earlier pass published.
+uint nominal_declaration_type_code(uint decl_token)
+{
+    uint tag = decl_type_ref_tag[decl_token];
+    uint payload = decl_type_ref_payload[decl_token];
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload))
+    {
+        uint slot = type_generic_param_slot_by_token[payload];
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
+    }
+    return visible_type[decl_token];
+}
+
 uint type_code_for_non_alias_ref(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
@@ -118,7 +139,7 @@ uint type_code_for_non_alias_ref(uint tag, uint payload)
         {
             uint decl_token = type_instance_decl_token[payload];
             if (valid_token(decl_token))
-                return visible_type[decl_token];
+                return nominal_declaration_type_code(decl_token);
         }
     }
     return TY_UNKNOWN;
@@ -231,7 +252,7 @@ uint type_code_for_ref(uint tag, uint payload)
             if (alias_ty != TY_UNKNOWN)
                 return alias_ty;
             if (valid_token(decl_token))
-                return visible_type[decl_token];
+                return nominal_declaration_type_code(decl_token);
         }
     }
     return TY_UNKNOWN;
@@ -263,7 +284,13 @@ void publish_hir_visible_type(uint token_i)
         return;
 
     uint decl_ty = declaration_type_from_ref(decl);
-    if (decl_ty == TY_UNKNOWN)
+    // The declaration's lane leaves its word alone when it has no type of its
+    // own and resolves to no other declaration, so only then is the word
+    // published by an earlier pass safe to read here.
+    uint decl_decl = resolved_visible_decl(decl);
+    if (decl_ty == TY_UNKNOWN && decl_decl != INVALID && decl_decl != decl)
+        decl_ty = declaration_type_from_ref(decl_decl);
+    else if (decl_ty == TY_UNKNOWN)
         decl_ty = visible_type[decl];
     if (decl_ty != TY_UNKNOWN)
         visible_type[token_i] = decl_ty;

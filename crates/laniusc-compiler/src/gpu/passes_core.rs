@@ -2599,7 +2599,8 @@ fn debug_dump_names() -> &'static [String] {
 /// Remembers a bound buffer whose reflected name is listed in
 /// `LANIUS_DEBUG_DUMP_BUFFERS` so `debug_dump_buffers` can print it.
 pub(crate) fn debug_register_dump_buffer(name: &str, buffer: &wgpu::Buffer, offset: u64, end: u64) {
-    if !debug_dump_names().iter().any(|wanted| wanted == name) {
+    // `*` registers every reflected binding (determinism diffs).
+    if !debug_dump_names().iter().any(|wanted| wanted == name || wanted == "*") {
         return;
     }
     DEBUG_DUMP_BUFFERS
@@ -2622,7 +2623,12 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
         .lock()
         .expect("debug dump registry poisoned")
         .clone();
-    for wanted in debug_dump_names() {
+    let wanted_names: Vec<String> = if debug_dump_names().iter().any(|name| name == "*") {
+        entries.keys().cloned().collect()
+    } else {
+        debug_dump_names().to_vec()
+    };
+    for wanted in &wanted_names {
         let Some((buffer, offset, end)) = entries.get(wanted) else {
             eprintln!("[lanius-dump] {stage} {wanted}: never bound");
             continue;
@@ -2654,6 +2660,15 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
             continue;
         }
         let mapped = slice.get_mapped_range();
+        // `LANIUS_DEBUG_DUMP_DIR=dir` writes the words to `dir/<stage>.<name>.bin`
+        // instead of printing them.
+        if let Some(dir) = std::env::var_os("LANIUS_DEBUG_DUMP_DIR") {
+            let path = std::path::Path::new(&dir).join(format!("{stage}.{wanted}.bin"));
+            if let Err(err) = std::fs::write(&path, &mapped[..]) {
+                eprintln!("[lanius-dump] {stage} {wanted}: write {}: {err}", path.display());
+            }
+            continue;
+        }
         let values = mapped
             .chunks_exact(4)
             .map(|chunk| {

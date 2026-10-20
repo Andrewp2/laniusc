@@ -1,0 +1,182 @@
+{
+  "bindings": [
+    {
+      "binding": 0,
+      "bytes": 48,
+      "file": "000_gParams.bin",
+      "name": "gParams",
+      "post_file": "post/000_gParams.bin",
+      "uniform": true
+    },
+    {
+      "binding": 1,
+      "bytes": 4,
+      "file": "001_token_count.bin",
+      "name": "token_count",
+      "post_file": "post/001_token_count.bin",
+      "uniform": false
+    },
+    {
+      "binding": 2,
+      "bytes": 32768,
+      "file": "002_visible_decl.bin",
+      "name": "visible_decl",
+      "post_file": "post/002_visible_decl.bin",
+      "uniform": false
+    },
+    {
+      "binding": 3,
+      "bytes": 32768,
+      "file": "003_decl_type_ref_tag.bin",
+      "name": "decl_type_ref_tag",
+      "post_file": "post/003_decl_type_ref_tag.bin",
+      "uniform": false
+    },
+    {
+      "binding": 4,
+      "bytes": 32768,
+      "file": "004_decl_type_ref_payload.bin",
+      "name": "decl_type_ref_payload",
+      "post_file": "post/004_decl_type_ref_payload.bin",
+      "uniform": false
+    },
+    {
+      "binding": 5,
+      "bytes": 32768,
+      "file": "005_type_generic_param_slot_by_token.bin",
+      "name": "type_generic_param_slot_by_token",
+      "post_file": "post/005_type_generic_param_slot_by_token.bin",
+      "uniform": false
+    },
+    {
+      "binding": 6,
+      "bytes": 32768,
+      "file": "006_type_expr_ref_tag.bin",
+      "name": "type_expr_ref_tag",
+      "post_file": "post/006_type_expr_ref_tag.bin",
+      "uniform": false
+    },
+    {
+      "binding": 7,
+      "bytes": 32768,
+      "file": "007_type_expr_ref_payload.bin",
+      "name": "type_expr_ref_payload",
+      "post_file": "post/007_type_expr_ref_payload.bin",
+      "uniform": false
+    },
+    {
+      "binding": 8,
+      "bytes": 69632,
+      "file": "008_type_instance_kind.bin",
+      "name": "type_instance_kind",
+      "post_file": "post/008_type_instance_kind.bin",
+      "uniform": false
+    },
+    {
+      "binding": 9,
+      "bytes": 69632,
+      "file": "009_type_instance_decl_token.bin",
+      "name": "type_instance_decl_token",
+      "post_file": "post/009_type_instance_decl_token.bin",
+      "uniform": false
+    },
+    {
+      "binding": 10,
+      "bytes": 69632,
+      "file": "010_type_instance_arg_count.bin",
+      "name": "type_instance_arg_count",
+      "post_file": "post/010_type_instance_arg_count.bin",
+      "uniform": false
+    },
+    {
+      "binding": 11,
+      "bytes": 69632,
+      "file": "011_type_instance_arg_row_start.bin",
+      "name": "type_instance_arg_row_start",
+      "post_file": "post/011_type_instance_arg_row_start.bin",
+      "uniform": false
+    },
+    {
+      "binding": 12,
+      "bytes": 4,
+      "file": "012_type_instance_arg_row_count_out.bin",
+      "name": "type_instance_arg_row_count_out",
+      "post_file": "post/012_type_instance_arg_row_count_out.bin",
+      "uniform": false
+    },
+    {
+      "binding": 13,
+      "bytes": 32768,
+      "file": "013_type_instance_arg_row_ref_tag.bin",
+      "name": "type_instance_arg_row_ref_tag",
+      "post_file": "post/013_type_instance_arg_row_ref_tag.bin",
+      "uniform": false
+    },
+    {
+      "binding": 14,
+      "bytes": 32768,
+      "file": "014_type_instance_arg_row_ref_payload.bin",
+      "name": "type_instance_arg_row_ref_payload",
+      "post_file": "post/014_type_instance_arg_row_ref_payload.bin",
+      "uniform": false
+    },
+    {
+      "binding": 15,
+      "bytes": 1310720,
+      "file": "015_type_instance_arg_ref_tag.bin",
+      "name": "type_instance_arg_ref_tag",
+      "post_file": "post/015_type_instance_arg_ref_tag.bin",
+      "uniform": false
+    },
+    {
+      "binding": 16,
+      "bytes": 1310720,
+      "file": "016_type_instance_arg_ref_payload.bin",
+      "name": "type_instance_arg_ref_payload",
+      "post_file": "post/016_type_instance_arg_ref_payload.bin",
+      "uniform": false
+    },
+    {
+      "binding": 17,
+      "bytes": 69632,
+      "file": "017_type_instance_elem_ref_tag.bin",
+      "name": "type_instance_elem_ref_tag",
+      "post_file": "post/017_type_instance_elem_ref_tag.bin",
+      "uniform": false
+    },
+    {
+      "binding": 18,
+      "bytes": 69632,
+      "file": "018_type_instance_elem_ref_payload.bin",
+      "name": "type_instance_elem_ref_payload",
+      "post_file": "post/018_type_instance_elem_ref_payload.bin",
+      "uniform": false
+    },
+    {
+      "binding": 19,
+      "bytes": 32768,
+      "file": "019_visible_type.bin",
+      "name": "visible_type",
+      "post_file": "post/019_visible_type.bin",
+      "uniform": false
+    }
+  ],
+  "dispatch_index": 0,
+  "dispatched": true,
+  "dynamic_offsets": [],
+  "groups": [
+    1,
+    1,
+    1
+  ],
+  "indirect": true,
+  "kernel": "type_checker/scope/hir",
+  "label": "type_check.scope.hir",
+  "pass": "type_checker/scope/hir",
+  "post": true,
+  "thread_group_size": [
+    256,
+    1,
+    1
+  ]
+}
