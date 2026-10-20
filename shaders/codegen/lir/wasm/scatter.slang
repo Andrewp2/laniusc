@@ -140,6 +140,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
+    else if (wasm_aggregate_copy_is_view(core))
+    {
+        opcode = WASM_LIR_OP_NOP;
+    }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY ||
              (copy_set_value && local_row < WASM_HEAP_COPY_ROWS))
     {

@@ -164,6 +164,7 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     // Snapshot into a fresh heap block, as AGGREGATE_NEW allocates one:
     // save the source address, memory.copy its words, then push the new
     // address and bump the heap. An aggregate local set snapshots, then sets.
+    if (wasm_aggregate_copy_is_view(core)) return 1u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY) return WASM_HEAP_COPY_ROWS;
     if (copy_set_value) return WASM_HEAP_COPY_ROWS + 1u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
@@ -395,16 +396,26 @@ bool wasm_memory_value_unsupported(OptIrNodeCore core)
         wasm_scalar_class(core.type_id) == WASM_CLASS_I64;
 }
 
-// A by-value aggregate snapshot copies the value's words. Slice descriptors
-// and array views (array-pair rows) and packed byte arrays (type 131) have no
-// Wasm representation yet. Nested aggregates are pointers in the Wasm layout,
-// so the copy is one level deep, as Wasm constructors already are.
-bool wasm_aggregate_copy_supported(OptIrNodeCore core)
+// A Wasm slice is the address of its first element, so a slice snapshot or
+// an array-to-slice view (an array-pair copy) is the address already on the
+// stack: one NOP row.
+bool wasm_aggregate_copy_is_view(OptIrNodeCore core)
 {
     return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY &&
-        core.value_word_count != 0u && core.type_id != 131u &&
-        (core.flags & (SEMANTIC_LIR_FLAG_ARRAY_PAIR | SEMANTIC_LIR_FLAG_PLACE_VIEW |
-                       SEMANTIC_LIR_FLAG_NATIVE_PLACE)) == 0u;
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u &&
+        (core.flags & SEMANTIC_LIR_FLAG_NATIVE_PLACE) == 0u;
+}
+
+// A by-value aggregate snapshot copies the value's words. An i32 array
+// (type 131, packed only in x86 storage) has one Wasm word per element, as
+// its native word count says. The copy is of the whole inline layout.
+bool wasm_aggregate_copy_supported(OptIrNodeCore core)
+{
+    return wasm_aggregate_copy_is_view(core) ||
+        (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY &&
+         core.value_word_count != 0u && core.value_word_count != WASM_LIR_INVALID &&
+         (core.flags & (SEMANTIC_LIR_FLAG_ARRAY_PAIR | SEMANTIC_LIR_FLAG_PLACE_VIEW |
+                        SEMANTIC_LIR_FLAG_NATIVE_PLACE)) == 0u);
 }
 
 bool wasm_lir_supported(OptIrNodeCore core)
