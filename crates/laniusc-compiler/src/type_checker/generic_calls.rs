@@ -188,6 +188,7 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "instance_closure_counts",
     "instance_closure_instances",
     "instance_closure_refs",
+    "instance_closure_targets",
 ];
 
 /// These facts are produced by the separate interface-export graph. The
@@ -3037,7 +3038,7 @@ pub(super) fn read_unit_facts(
     let instance_closure = match closure_counts {
         Some(start) => read_instance_closure(&readback, device, queue, inputs,
             &counts[start..start + super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize],
-            &call_ids, &calls, &mut types)
+            &call_spans, &calls, &mut types)
             .unwrap_or_else(|error| CheckedInstanceClosure {
                 error: Some(format!("{error:#}")),
                 ..Default::default()
@@ -3055,10 +3056,34 @@ pub(super) fn read_unit_facts(
 }
 
 /// The template of a decoded closure instance: a retained call of this job
-/// (its position), or a dependency summary's edge (D1b).
+/// (its position), a dependency summary's edge (D1b), or a bound-member call
+/// of this job (its position, not retained) with the target the closure
+/// routed it to (D3; instance_closure_targets).
 enum ClosureTemplate<'a> {
     Local(usize),
     Dependency([u32; 2], &'a CheckedGenericCall),
+    Routed(usize, [u32; 4]),
+}
+
+/// The call a routed bound-member closure instance stands for: its template
+/// call site with the routed local target, as host retention reads the call
+/// once a replay routes it (`CheckedGenericTarget::Local` of a method).
+fn routed_closure_template(call_hir: u32, source_span: [u32; 2], target: [u32; 4]) -> CheckedGenericCall {
+    let [function_start_token, native_symbol, specialization_symbol, types] = target;
+    CheckedGenericCall {
+        call_hir,
+        source_span,
+        target: CheckedGenericTarget::Local {
+            function_start_token,
+            generic_parameter_count: types,
+            native_symbol,
+            specialization_symbol,
+        },
+        arguments: Vec::new(),
+        constants: Vec::new(),
+        required_constant_parameters: Some(0),
+        required_generic_parameters: Some(types),
+    }
 }
 
 /// IC_FLAG_DEPTH (instance_closure.slang): a frontier was left at the
@@ -3077,7 +3102,7 @@ fn read_instance_closure(
     queue: &wgpu::Queue,
     inputs: &RetainedGenericCallInputs,
     counts: &[u32],
-    call_ids: &[u32],
+    call_spans: &[(u32, [u32; 2])],
     calls: &[Option<CheckedGenericCall>],
     types: &mut CheckedTypeReadback,
 ) -> Result<CheckedInstanceClosure> {
@@ -3098,21 +3123,26 @@ fn read_instance_closure(
     }
     let refs_buffer = inputs.buffer("instance_closure_refs");
     let ref_words = (argument_words as usize).min(refs_buffer.byte_size / 8) * 2;
+    let targets_table = inputs.buffer("instance_closure_targets");
+    ensure!(targets_table.byte_size / 16 >= length, "instance closure targets are truncated");
     let mut batch = WordBatch::default();
     let rows = batch.push(table, 0, length * 8, "instance closure")?;
+    let target_rows = batch.push(targets_table, 0, length * 4, "instance closure targets")?;
     let refs_start = (ref_words != 0)
         .then(|| batch.push(refs_buffer, 0, ref_words, "instance closure arguments"))
         .transpose()?;
     let words = batch.read(readback, device, queue, "instance closure")?;
     let instances = &words[rows..rows + length * 8];
+    let targets = &words[target_rows..target_rows + length * 4];
     let refs = refs_start.map_or(&[][..], |start| &words[start..start + ref_words]);
     let operand = |index: usize| (refs[index * 2], refs[index * 2 + 1]);
     // (depth, template, argument base, type count, arity)
     let mut kept = Vec::new();
     let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false);
     let summaries = inputs.closure_summaries.as_deref();
-    for row in instances.chunks_exact(8) {
+    for (row, target) in instances.chunks_exact(8).zip(targets.chunks_exact(4)) {
         let &[_, callee, depth, _, base, template_word, status, shape] = row else { unreachable!() };
+        let target = [target[0], target[1], target[2], target[3]];
         let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
         let reject = if status != INSTANCE_CLOSURE_EXPORTED { Some(0) }
             else if depth < 2 { Some(1) }
@@ -3126,9 +3156,12 @@ fn read_instance_closure(
             summaries.and_then(|summaries| summaries.edge_template(template_word))
                 .map(|(unit, call)| ClosureTemplate::Dependency(unit, call))
         } else {
-            call_ids.binary_search(&template_word).ok()
-                .filter(|&position| calls[position].is_some())
-                .map(ClosureTemplate::Local)
+            call_spans.binary_search_by_key(&template_word, |&(call, _)| call).ok()
+                .and_then(|position| match (&calls[position], target[0]) {
+                    (Some(_), _) => Some(ClosureTemplate::Local(position)),
+                    (None, INVALID) => None,
+                    (None, _) => Some(ClosureTemplate::Routed(position, target)),
+                })
         }).flatten();
         if debug {
             eprintln!("[instance-closure] row={row:?} ref_words={ref_words} reject={reject:?} template_found={}",
@@ -3149,9 +3182,15 @@ fn read_instance_closure(
         .collect::<Vec<_>>();
     types.prefetch_constants(readback, device, queue, inputs, &constant_roots)?;
     for (depth, template, base, type_count, arity) in kept {
+        let routed;
         let (unit, template) = match template {
             ClosureTemplate::Local(position) => (None, calls[position].as_ref().expect("kept template call")),
             ClosureTemplate::Dependency(unit, call) => (Some(unit), call),
+            ClosureTemplate::Routed(position, target) => {
+                let (call_hir, source_span) = call_spans[position];
+                routed = routed_closure_template(call_hir, source_span, target);
+                (None, &routed)
+            }
         };
         if template.required_generic_parameters != Some(type_count as u32)
             || template.required_constant_parameters != Some((arity - type_count) as u32)

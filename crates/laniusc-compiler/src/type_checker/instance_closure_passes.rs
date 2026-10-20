@@ -24,6 +24,7 @@ pub(super) const INSTANCE_CLOSURE_CLEAR_PASS: &str = "type_check.instance_closur
 pub(super) const INSTANCE_CLOSURE_MARK_PASS: &str = "type_check.instance_closure.mark";
 pub(super) const INSTANCE_CLOSURE_ADVANCE_PASS: &str = "type_check.instance_closure.advance";
 pub(super) const INSTANCE_CLOSURE_EXPAND_PASS: &str = "type_check.instance_closure.expand";
+pub(super) const INSTANCE_CLOSURE_EXPAND_BOUND_PASS: &str = "type_check.instance_closure.expand_bound";
 pub(super) const INSTANCE_CLOSURE_EXPORT_PASS: &str = "type_check.instance_closure.export";
 pub(super) const INSTANCE_CLOSURE_EXPORT_FINAL_PASS: &str =
     "type_check.instance_closure.export_final";
@@ -36,6 +37,7 @@ pub(super) const INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS: &str =
 const MARK_KERNEL: &str = "type_checker/closure/01_mark";
 const ADVANCE_KERNEL: &str = "type_checker/closure/02_advance";
 const EXPAND_KERNEL: &str = "type_checker/closure/03_expand";
+const EXPAND_BOUND_KERNEL: &str = "type_checker/closure/03c_expand_bound";
 const EXPORT_KERNEL: &str = "type_checker/closure/04_export";
 const EXPORT_FINAL_KERNEL: &str = "type_checker/closure/04a_export_final";
 const IMPORT_SUMMARY_KERNEL: &str = "type_checker/closure/00b_import_summary";
@@ -104,6 +106,7 @@ pub(super) fn register_instance_closure_passes(
     let set = storage(graph, "instance_closure_set", (2 * instances).next_power_of_two() * 8)?;
     storage(graph, "instance_closure_instances", instances * 32)?;
     storage(graph, "instance_closure_refs", instances * ARGUMENTS_PER_INSTANCE * 8)?;
+    storage(graph, "instance_closure_targets", instances * 16)?;
     let head = storage(graph, "instance_closure_edge_head", hir_rows.max(1) * 4)?;
     storage(graph, "instance_closure_edge_next", hir_rows.max(1) * 4)?;
     let summary_ct = storage(
@@ -157,7 +160,12 @@ pub(super) fn register_instance_closure_passes(
     // argument table only reserves its blocks here (export fills them).
     graph.mark_pass_bindings_initialize(
         INSTANCE_CLOSURE_MARK_PASS,
-        &["instance_closure_instances", "instance_closure_refs", "instance_closure_edge_next"],
+        &[
+            "instance_closure_instances",
+            "instance_closure_refs",
+            "instance_closure_targets",
+            "instance_closure_edge_next",
+        ],
     )?;
     // Roots into the dependencies' summary functions append after mark's.
     graph.add_kernel_pass_by_name(
@@ -185,6 +193,16 @@ pub(super) fn register_instance_closure_passes(
         &[],
     )?;
     graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_PASS, "instance_closure_args")?;
+    // The same frontier's bound-member edges route under each instance (D3).
+    graph.add_kernel_pass_by_name(
+        INSTANCE_CLOSURE_EXPAND_BOUND_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EXPAND_BOUND_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_BOUND_PASS, "instance_closure_args")?;
     // The same frontier's summary instances expand through their edges.
     graph.add_kernel_pass_by_name(
         INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
@@ -218,6 +236,13 @@ pub(super) fn register_instance_closure_passes(
     Ok(())
 }
 
+/// `LANIUS_CLOSURE_BOUND_MEMBERS=0` leaves bound-member calls to the replay
+/// rounds (D3's kill switch): their edges are linked but never routed.
+pub(in crate::type_checker) fn closure_bound_members_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_CLOSURE_BOUND_MEMBERS", true))
+}
+
 /// The closure of one original job: clear, mark the edges and roots, the
 /// expansion rounds, the closing advance, then the export. A job with
 /// dependency summaries also imports them, roots its calls into them and
@@ -229,6 +254,7 @@ pub(in crate::type_checker) struct InstanceClosureOperations {
     mark_dependency: ComputeOperation,
     advance: ComputeOperation,
     expand: ComputeOperation,
+    expand_bound: ComputeOperation,
     expand_dependency: ComputeOperation,
     export: ComputeOperation,
     export_final: ComputeOperation,
@@ -279,6 +305,7 @@ impl InstanceClosureOperations {
             )?,
             advance: direct(INSTANCE_CLOSURE_ADVANCE_PASS, ADVANCE_KERNEL, 1)?,
             expand: indirect(INSTANCE_CLOSURE_EXPAND_PASS, EXPAND_KERNEL)?,
+            expand_bound: indirect(INSTANCE_CLOSURE_EXPAND_BOUND_PASS, EXPAND_BOUND_KERNEL)?,
             expand_dependency: indirect(
                 INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
                 EXPAND_DEPENDENCY_KERNEL,
@@ -308,6 +335,9 @@ impl InstanceClosureOperations {
         for _ in 0..INSTANCE_CLOSURE_LEVELS {
             self.advance.record(encoder)?;
             self.expand.record(encoder)?;
+            if closure_bound_members_enabled() {
+                self.expand_bound.record(encoder)?;
+            }
             if import_rounds != 0 {
                 self.expand_dependency.record(encoder)?;
             }
