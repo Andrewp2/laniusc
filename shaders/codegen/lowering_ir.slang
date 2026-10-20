@@ -893,6 +893,10 @@ static const uint X86_LIR_OP_PLACE_STORE = 49u;
 
 // IR_OPCODE
 static const uint WASM_LIR_OP_UNREACHABLE = 0x00u;
+// Pads a row whose shape needs no instruction (a scalar element store
+// slot of a constructor whose aggregate elements need two).
+// IR_OPCODE
+static const uint WASM_LIR_OP_NOP = 0x01u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_BLOCK = 0x02u;
 // IR_OPCODE

@@ -40,6 +40,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u &&
         operands.a < count &&
         opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_VALUE_GET;
+    uint value_op = operands.b < count
+        ? opt_ir_op(opt_ir_core[operands.b]) : SEMANTIC_LIR_OP_INVALID;
     target_lir_count[row] = wasm_lir_count(
-        core, operands, call_index_base, direct_field_store_receiver);
+        core, operands, call_index_base, direct_field_store_receiver,
+        wasm_set_copies_aggregate(core, value_op));
 }

@@ -279,6 +279,73 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_aggregate_values_do_not_alias_with_node() {
+    // Wasm aggregates are inline: a copy (let, assignment, argument,
+    // constructor element, field or element store) never shares storage with
+    // its source, at any nesting depth.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+struct Pair { left: i32, right: i32 }
+struct Outer { a: i32, inner: Pair, b: i32 }
+
+fn make(x: i32) -> Outer {
+    return Outer { a: x, inner: Pair { left: x + 1, right: x + 2 }, b: x + 3 };
+}
+
+fn poke(o: Outer) -> i32 {
+    let q: Outer = o;
+    q.inner.left = 100;
+    o.inner.right = 200;
+    return q.inner.left + o.inner.right;
+}
+
+fn main() -> i32 {
+    let a: Pair = Pair { left: 1, right: 2 };
+    let b: Pair = a;
+    b.left = 9;
+    if (a.left != 1) { return 1; }
+    let o: Outer = Outer { a: 0, inner: a, b: 3 };
+    a.left = 8;
+    if (o.inner.left != 1) { return 2; }
+    o.inner = b;
+    b.right = 6;
+    if (o.inner.left != 9) { return 3; }
+    if (o.inner.right != 2) { return 3; }
+    if (poke(o) != 300) { return 4; }
+    if (o.inner.left != 9) { return 4; }
+    if (o.inner.right != 2) { return 4; }
+    let arr: [Pair; 2] = [Pair { left: 1, right: 2 }, Pair { left: 3, right: 4 }];
+    arr[0] = a;
+    a.left = 99;
+    arr[1].left = 5;
+    if (arr[0].left != 8) { return 5; }
+    if (arr[1].left != 5) { return 5; }
+    if (arr[1].right != 4) { return 5; }
+    let m: Outer = make(10);
+    let m2: Outer = m;
+    m2.inner.right = 77;
+    if (m.inner.right != 12) { return 6; }
+    if (m2.inner.right != 77) { return 6; }
+    if (m.b != 13) { return 6; }
+    let i: Pair = m.inner;
+    i.left = 55;
+    if (m.inner.left != 11) { return 7; }
+    return 42;
+}
+"#,
+    )
+    .expect("aggregate value semantics should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM aggregate values do not alias",
+        "aggregate_values_do_not_alias",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
 fn wasm_executes_multi_payload_enum_constructor_and_pattern_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

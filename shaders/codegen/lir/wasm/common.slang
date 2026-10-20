@@ -15,8 +15,59 @@ bool wasm_never_call(OptIrNodeCore core)
         (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL || opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL);
 }
 
+// Bytes per native layout word in Wasm linear memory.
+static const uint WASM_WORD_BYTES = 4u;
+
+// The row's value is a struct, enum, or array (as x86_semantic_type_is_aggregate).
+bool wasm_type_is_aggregate(OptIrNodeCore core)
+{
+    if (core.type_id == SEMANTIC_LIR_TY_POINTER) return false;
+    uint type_ref_tag = opt_ir_type_ref_tag(core);
+    return type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
+        (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR &&
+         core.type_ref_payload >= 128u) ||
+        (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u);
+}
+
+// Wasm aggregates use the native layout with nested aggregates inline: a
+// value is the address of its first word, a nested field or element is the
+// address inside its owner, and storing one copies its words. Slice
+// descriptors (array-pair rows) have no inline Wasm representation.
+bool wasm_inline_aggregate(OptIrNodeCore core)
+{
+    return wasm_type_is_aggregate(core) && core.value_word_count != 0u &&
+        core.value_word_count != WASM_LIR_INVALID &&
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) == 0u;
+}
+
+// A local assignment of an aggregate snapshots the value into a fresh heap
+// block, so the local never aliases its source. Constructors and copies
+// already produce a fresh block.
+bool wasm_set_copies_aggregate(OptIrNodeCore core, uint value_op)
+{
+    uint op = opt_ir_op(core);
+    bool local_set = op == SEMANTIC_LIR_OP_VALUE_SET ||
+        (op == SEMANTIC_LIR_OP_STORE &&
+         (core.flags & (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) == 0u);
+    return local_set && wasm_inline_aggregate(core) &&
+        value_op != SEMANTIC_LIR_OP_AGGREGATE_NEW &&
+        value_op != SEMANTIC_LIR_OP_AGGREGATE_COPY;
+}
+
+// A field or element store of an aggregate copies its words into place.
+bool wasm_store_copies_aggregate(OptIrNodeCore core)
+{
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
+        (core.flags & (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u &&
+        wasm_inline_aggregate(core);
+}
+
+// Rows of the heap snapshot shared by AGGREGATE_COPY and aggregate sets.
+static const uint WASM_HEAP_COPY_ROWS = 10u;
+
 uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
-                    bool call_index_base, bool direct_field_store_receiver)
+                    bool call_index_base, bool direct_field_store_receiver,
+                    bool copy_set_value)
 {
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_NOP) return 0u;
     // Expression operands are already on the Wasm stack when their semantic
@@ -26,12 +77,13 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
         (core.flags & SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID) != 0u &&
         (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
-        return operands.b * 6u +
+        return operands.b * 7u +
             ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) + 5u;
     // Snapshot into a fresh heap block, as AGGREGATE_NEW allocates one:
     // save the source address, memory.copy its words, then push the new
-    // address and bump the heap.
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY) return 10u;
+    // address and bump the heap. An aggregate local set snapshots, then sets.
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY) return WASM_HEAP_COPY_ROWS;
+    if (copy_set_value) return WASM_HEAP_COPY_ROWS + 1u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     // A call of a `-> !` function is followed by `unreachable`: the callee
     // has no result, and the stack after the call is polymorphic, so the
@@ -52,7 +104,8 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     // index, so that form also preserves the aggregate pointer.
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
         (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-        return call_index_base ? 8u : 6u;
+        return (call_index_base ? 8u : 6u) +
+            (wasm_store_copies_aggregate(core) ? 1u : 0u);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
         return 5u;
@@ -63,7 +116,8 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     // from a source declaration token.
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
         (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
-        return direct_field_store_receiver ? 8u : 7u;
+        return (direct_field_store_receiver ? 8u : 7u) +
+            (wasm_store_copies_aggregate(core) ? 1u : 0u);
     // The language print intrinsic accepts an i32, while the stable Wasm
     // runtime boundary accepts i64. Keep that ABI choice in target lowering:
     // one row widens the checked value and one row calls import zero.
