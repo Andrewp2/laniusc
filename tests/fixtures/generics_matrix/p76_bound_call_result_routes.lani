@@ -1,0 +1,23 @@
+// expect: 42
+// Bound-member calls whose result is the trait's type argument: symbolic in
+// the template, each instance types the call with the return type of the
+// implementation method its receiver selects, a nongeneric one (Plain), a
+// generic one binding the result (Slot<T>), or one binding a second slot
+// (Pair<A, B>), and under a bound with a closed argument (twice).
+trait Get<T> { fn get(self) -> T; }
+struct Plain { v: i32 }
+struct Slot<T> { value: T }
+struct Pair<A, B> { a: A, b: B }
+impl Get<i32> for Plain { fn get(self) -> i32 { return self.v; } }
+impl<T> Get<T> for Slot<T> { fn get(self) -> T { return self.value; } }
+impl<A, B> Get<B> for Pair<A, B> { fn get(self) -> B { return self.b; } }
+fn fetch<S, T>(s: S, fallback: T) -> T where S: Get<T> { let v: T = s.get(); return v; }
+fn twice<S>(s: S, t: S) -> i32 where S: Get<i32> { return s.get() + t.get(); }
+fn main() -> i32 {
+    let p: Plain = Plain { v: 10 };
+    let s: Slot<i32> = Slot { value: 7 };
+    let q: Pair<bool, i32> = Pair { a: true, b: 5 };
+    let flag: Slot<bool> = Slot { value: true };
+    if (!fetch(flag, false)) { return 1; }
+    return fetch(p, 0) + fetch(s, 0) + fetch(q, 0) + twice(p, p);
+}
