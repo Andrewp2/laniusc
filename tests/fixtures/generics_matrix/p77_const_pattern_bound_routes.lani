@@ -1,0 +1,23 @@
+// expect: 42
+// Bound-member calls routed to implementations whose receiver patterns bind
+// constant parameters: a constant-only pattern (Bits<N>), one constant
+// spelled twice (Sq<N, N>), and a type beside a constant whose method
+// returns the type argument (Buf<T, N>).
+trait Size { fn size(self) -> usize; }
+trait First<T> { fn first(self) -> T; }
+struct Bits<const N: usize> { on: [bool; N] }
+struct Sq<const A: usize, const B: usize> { rows: [i32; A], cols: [i32; B] }
+struct Buf<T, const N: usize> { data: [T; N] }
+impl<const N: usize> Size for Bits<N> { fn size(self) -> usize { return N; } }
+impl<const N: usize> Size for Sq<N, N> { fn size(self) -> usize { return N * N; } }
+impl<T, const N: usize> First<T> for Buf<T, N> { fn first(self) -> T { return self.data[0]; } }
+fn measure<S>(s: S) -> usize where S: Size { return s.size(); }
+fn head<S, T>(s: S, fallback: T) -> T where S: First<T> { return s.first(); }
+fn main() -> i32 {
+    let bits: Bits<4> = Bits<4> { on: [true, true, false, true] };
+    let sq: Sq<3, 3> = Sq<3, 3> { rows: [1, 2, 3], cols: [4, 5, 6] };
+    let buf: Buf<i32, 2> = Buf<i32, 2> { data: [20, 1] };
+    let flags: Buf<bool, 1> = Buf<bool, 1> { data: [true] };
+    if (measure(bits) != 4 || measure(sq) != 9 || !head(flags, false)) { return 1; }
+    return head(buf, 0) + sq.cols[2] + 16;
+}

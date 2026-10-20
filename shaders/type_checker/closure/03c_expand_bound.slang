@@ -45,12 +45,15 @@ void route_bound_edge(uint call, uint token, uint4 instance, inout CtSpare subst
     uint member = fn_hir_by_decl_token[candidate];
     // The routed callee as methods/09 publishes it and host retention reads
     // it: its function start token (backend_call_fn_index), and a public
-    // method's HIR or a private one's start token as its native symbol.
+    // method's HIR or a private one's start token as its native symbol;
+    // then its type parameter count, and its constant parameter count
+    // shifted by 16.
     uint start = fn_start_token_by_decl_token[candidate];
     start = valid_token(start) ? start : candidate;
     bool public_method = (compact_method_signatures[selected].metadata & 0xffffu) == 1u;
+    uint types = ct_type_slots(env);
     uint4 target = uint4(start, public_method ? (0x80000000u | core.node) : (0x40000000u | start),
-        0x80000000u | core.node, ct_arity(env));
+        0x80000000u | core.node, types | ((ct_arity(env) - types) << 16u));
     ic_insert_target(env, member, instance.z + 1u, call, target);
 }
 
