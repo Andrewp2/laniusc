@@ -124,11 +124,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint expected = return_tag == TYPE_REF_SCALAR
         ? fn_return_ref_payload[fn_token]
         : TY_UNKNOWN;
-    // A unit function may end without a return; a `-> !` function falls off
-    // its end into a trap.
-    if (expected == TY_VOID || expected == SCALAR_NEVER)
+    // A unit function may end without a return. A `-> !` function must
+    // provably diverge on every path: each path ends in a diverging call (a
+    // `-> !` call or `assert(false)`, see 01_mark). Its `return` statements
+    // are rejected by conditions/compact_stmt.
+    if (expected == TY_VOID)
         return;
 
     if (return_fn_flags[node] == 0u)
-        record_error(fn_token, ERR_ASSIGN_MISMATCH, expected * 256u + TY_VOID);
+        record_error(fn_token, ERR_ASSIGN_MISMATCH,
+            expected == SCALAR_NEVER ? NEVER_RETURN_FALLS_OFF : expected * 256u + TY_VOID);
 }

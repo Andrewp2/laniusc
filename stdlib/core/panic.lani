@@ -2,11 +2,11 @@
 
 module core::panic;
 
-pub fn panic() {
+pub fn panic() -> ! {
     assert(false);
 }
 
-pub fn unreachable() {
+pub fn unreachable() -> ! {
     assert(false);
 }
 

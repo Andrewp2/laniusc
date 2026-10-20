@@ -291,14 +291,13 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
     uint fn_token = compact_hir_payload[fn].b;
     if (!valid_token(fn_token)) return;
     // A `-> !` function does not return: only a never value may follow its
-    // `return`, and a returned never value fits any function.
+    // `return`, and a returned never value fits any function. The error is
+    // reported at the `return` keyword (detail NEVER_RETURN_STATEMENT).
     if (type_ref_is_never(fn_return_ref_tag[fn_token], fn_return_ref_payload[fn_token]))
     {
         if (!never_value(stmt.b))
-            record_min_token_error(status,
-                valid_token(expression_token(stmt.b)) ? expression_token(stmt.b) : core.token_start,
-                ERR_ASSIGN_MISMATCH,
-                SCALAR_NEVER * 256u + (valid_hir(stmt.b) ? scalar_type(stmt.b) : TY_VOID));
+            record_min_token_error(status, core.token_start, ERR_ASSIGN_MISMATCH,
+                NEVER_RETURN_STATEMENT);
         return;
     }
     if (never_value(stmt.b)) return;

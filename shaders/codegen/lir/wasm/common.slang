@@ -8,6 +8,13 @@ static const uint TY_UINT = 4u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
+// A call whose checked result is the never type `!`.
+bool wasm_never_call(OptIrNodeCore core)
+{
+    return core.type_id == SCALAR_NEVER &&
+        (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL || opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL);
+}
+
 uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
                     bool call_index_base, bool direct_field_store_receiver)
 {
@@ -22,6 +29,10 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
         return operands.b * 6u +
             ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) + 5u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
+    // A call of a `-> !` function is followed by `unreachable`: the callee
+    // has no result, and the stack after the call is polymorphic, so the
+    // call fits a statement and any value position alike.
+    if (wasm_never_call(core)) return 2u;
     // Strings are represented by the Wasm ABI as `(data_ptr, byte_len)`.
     // A semantic value operation still names one source value, so target
     // lowering expands its local access to the two ABI stack values here.

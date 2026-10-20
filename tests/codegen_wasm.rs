@@ -4069,3 +4069,37 @@ fn main() -> i32 {
     let status = common::run_wasm_main_return_with_node("WASM alloc_failed", "alloc_failed", &wasm);
     assert_eq!(status, 1);
 }
+
+// A call of a `-> !` function lowers to `call; unreachable`, so it validates
+// as a statement inside a block and wherever a value is expected.
+#[test]
+fn wasm_never_calls_validate_as_statements_and_values_with_node() {
+    common::require_node();
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
+        include_str!("../stdlib/core/panic.lani"),
+        r#"
+module app::main;
+import core::panic;
+fn pick(flag: bool) -> i32 {
+    if (flag) {
+        return 42;
+    }
+    return core::panic::panic();
+}
+fn main() -> i32 {
+    if (false) {
+        core::panic::unreachable();
+    }
+    let x: i32 = pick(true);
+    if (x != 42) {
+        let y: i32 = core::panic::panic();
+        return y;
+    }
+    return x;
+}
+"#,
+    ])
+    .expect("never calls should compile to WASM");
+    let status = common::run_wasm_main_return_with_node("WASM never calls", "never_calls", &wasm);
+    assert_eq!(status, 42);
+}

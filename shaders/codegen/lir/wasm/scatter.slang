@@ -87,7 +87,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (inline_host_operation) opcode = WASM_LIR_OP_F32_CONVERT_I32_S;
     else if (imported_host_operation) opcode = WASM_LIR_OP_CALL;
     uint immediate = 0u;
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING)
+    if (wasm_never_call(core) && local_row == 1u)
+        opcode = WASM_LIR_OP_UNREACHABLE;
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING)
     {
         uint string_count = semantic_lir_string_total[0u];
         if (operands.a < string_count)

@@ -26,6 +26,11 @@ StructuredBuffer<uint> compact_hir_nearest_fn;
 // scalar never.
 StructuredBuffer<uint> call_inference_result_tag;
 StructuredBuffer<uint> call_inference_result_payload;
+// Language intrinsic tags by callee token (calls/02c_intrinsics): 2 is
+// assert. Call rows list their arguments in compact_call_args from payload.b.
+StructuredBuffer<uint> call_intrinsic_tag;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 RWStructuredBuffer<uint> return_fn_flags;
 RWStructuredBuffer<uint> return_block_flags;
 
@@ -38,6 +43,10 @@ static const uint HIR_FN = 3u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_IF_STMT = 10u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_EXPR_FALSE = 5u;
+static const uint INTRINSIC_ASSERT = 2u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint THEN_ARM_RETURNED = 1u;
 static const uint ELSE_ARM_RETURNED = 2u;
@@ -65,16 +74,41 @@ bool return_statement_node(uint node)
            compact_hir_payload[node].a == STMT_RECORD_KIND_RETURN;
 }
 
-// A call of type never that is a whole expression statement (`fail();`) ends
-// its block like a return. Compaction drops the expression-statement row, so
-// such a call is a direct child of its block.
+// `assert(false)`: the assert intrinsic with the literal `false` as its one
+// argument always traps, so it diverges like a call of a `-> !` function.
+// This is how a `-> !` body that calls no other one (core::panic::panic)
+// proves that it does not return.
+bool assert_false_call(uint node)
+{
+    HirPayload call = compact_hir_payload[node];
+    uint callee = call.a;
+    if (!valid_node(callee) || call.c != 1u || call.b >= compact_call_arg_count[0u])
+        return false;
+    HirCore callee_core = compact_hir_core[callee];
+    if (callee_core.kind == HIR_MEMBER_EXPR) return false;
+    uint token = compact_hir_payload[callee].d;
+    if (token >= gParams.n_tokens) token = callee_core.token_start;
+    if (token >= gParams.n_tokens || call_intrinsic_tag[token] != INTRINSIC_ASSERT)
+        return false;
+    HirCallArg argument = compact_call_args[call.b];
+    return argument.call == node && valid_node(argument.value) &&
+           compact_hir_core[argument.value].kind == HIR_LITERAL_EXPR &&
+           compact_hir_payload[argument.value].a == HIR_EXPR_FALSE;
+}
+
+// A diverging call that is a whole expression statement (`fail();`) ends its
+// block like a return: a call of type never (a `-> !` function) or
+// `assert(false)`. Compaction drops the expression-statement row, so such a
+// call is a direct child of its block.
 bool diverging_statement_call(uint node)
 {
-    if (!valid_node(node) || compact_hir_core[node].kind != HIR_CALL_EXPR ||
-        !type_ref_is_never(call_inference_result_tag[node], call_inference_result_payload[node]))
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_CALL_EXPR)
         return false;
     uint block = compact_hir_core[node].parent;
-    return valid_node(block) && compact_hir_core[block].kind == HIR_BLOCK;
+    if (!valid_node(block) || compact_hir_core[block].kind != HIR_BLOCK)
+        return false;
+    return type_ref_is_never(call_inference_result_tag[node], call_inference_result_payload[node]) ||
+           assert_false_call(node);
 }
 
 uint arm_bit(uint control, uint returning_node)

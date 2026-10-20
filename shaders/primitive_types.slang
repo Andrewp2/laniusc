@@ -95,6 +95,14 @@ public bool type_ref_is_never(uint tag, uint payload)
     return tag == 1u && payload == SCALAR_NEVER;
 }
 
+// Type-mismatch details for a `-> !` function that can return: a `return`
+// statement in it, or a path that reaches the end of its body. The Rust
+// diagnostics decode them (gpu_compiler/helpers.rs).
+// PRIMITIVE_CONSTANT
+public static const uint NEVER_RETURN_STATEMENT = 0x20000001u;
+// PRIMITIVE_CONSTANT
+public static const uint NEVER_RETURN_FALLS_OFF = 0x20000002u;
+
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]
 public bool scalar_is_identity(uint scalar)

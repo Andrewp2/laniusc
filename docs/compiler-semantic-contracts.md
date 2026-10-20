@@ -99,6 +99,35 @@ Lowering:
 There is no definite-assignment check: a read before any assignment reads
 zero.
 
+## The never type `!` (2026-10-20)
+
+`fn f() -> ! { ... }` declares a function that does not return. `!` is a
+return type only (the grammar gives it a token right after `->`), so it is
+not a let annotation or a generic argument. `core::panic::panic()` and
+`core::panic::unreachable()` return `!`.
+
+- A call of a `-> !` function has the type never (scalar ID 18,
+  `SCALAR_NEVER`), and that value fits any expected type: a let annotation,
+  an assignment, a struct field, a call argument (it binds no generic
+  parameter), a `return` in any function, and a match arm. A match takes the
+  type of its other arms (`10n_type_match_exprs`), so
+  `None -> core::panic::panic()` works in a generic function returning `T`;
+  a match whose every arm is never is never.
+- A diverging call is a never call or `assert(false)` (the assert intrinsic
+  with the literal `false`). As a whole statement it ends its block like a
+  `return` (`returns/01_mark`), so a body may end in one, and an `if` whose
+  arms each return or diverge counts as returning.
+- A `-> !` function must not return. A `return` in one is rejected unless it
+  returns a never value (LNC0006 "a function returning `!` cannot return",
+  at the `return`), and every path through its body must end in a diverging
+  call (LNC0006 at the function name: "the end of its body can be
+  reached"). Loops are not analyzed: an infinite loop does not count as
+  diverging.
+- x86 needs no special lowering: the callee never returns, so nothing after
+  the call runs. Wasm gives a `-> !` function no result and emits
+  `unreachable` after each call of one, which keeps the stack valid both for
+  a statement and where a value is expected.
+
 ## Array repeat literals (2026-10-18)
 
 `[value; count]` is a `[T; count]` whose every element is `value`, evaluated

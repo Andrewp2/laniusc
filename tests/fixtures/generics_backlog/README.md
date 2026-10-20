@@ -13,9 +13,6 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b11: a diverging match arm, `None -> core::panic::panic()`, in a generic
-  function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
-  Blocks a generic unwrap or expect; no existing module panics.
 - b13: a generic function returning another generic function's imported
   `core::option::Option<T>` result, `return get(value);`. LNC0006 "type
   mismatch" at 5:65, from both `check` and a compile, even with the function
@@ -76,6 +73,9 @@ subject is still rejected with LNC0008. A bound on an imported trait,
 `where T: core::cmp::Eq<T>` with `T::eq(a, b)` (b06), is p53; it unblocks the
 module families that compare elements (option_*, result_*, slice_*, range_*,
 vec_*, set_*, map_* and deque_*, 75 modules).
+b11 (a diverging match arm, `None -> core::panic::panic()`, in a generic
+function returning T) is p78: `!` is the never type and
+`core::panic::panic()` returns it.
 
 Open stdlib needs (owner TBD):
 - String equality on `str` elements. `words[0] != "after"` with

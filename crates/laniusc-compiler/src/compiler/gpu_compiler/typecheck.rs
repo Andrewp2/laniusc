@@ -3838,6 +3838,21 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 .with_note("provide an argument or a result type that determines every declared constant parameter"),
         ),
         GpuTypeCheckCode::AssignMismatch
+            if detail == crate::primitive_types::NEVER_RETURN_STATEMENT
+                || detail == crate::primitive_types::NEVER_RETURN_FALLS_OFF =>
+        {
+            let label = if detail == crate::primitive_types::NEVER_RETURN_STATEMENT {
+                "a function returning `!` cannot return"
+            } else {
+                "this function returns `!`, but the end of its body can be reached"
+            };
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(path, source, start, len, label))
+                    .with_note("a `-> !` function must not return: end every path with a call to another `-> !` function (such as core::panic::panic()) or `assert(false)`, or change the return type"),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {
             invalid_member_access_diagnostic(path, source, start, len, u32::MAX)

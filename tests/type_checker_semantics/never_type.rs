@@ -1,8 +1,13 @@
-// The never type `!`: a call of a `-> !` function has type never, which is
-// accepted wherever a type is expected; a match takes the type of its other
-// arms; a body may end in such a call; a `-> !` function may fall off its end.
+// The never type `!` (a return type only). A call of a `-> !` function has
+// type never, which fits any expected type; a match takes the type of its
+// other arms; a body may end in such a call. A `-> !` function must not
+// return: it may not contain a `return` of a value, and every path through its
+// body must end in a diverging call (another `-> !` call or `assert(false)`).
 
-use super::{assert_gpu_type_check_ok, assert_gpu_type_check_pack_ok, assert_gpu_type_check_rejects};
+use super::{
+    assert_gpu_type_check_diagnostic, assert_gpu_type_check_ok, assert_gpu_type_check_pack_ok,
+    assert_gpu_type_check_rejects,
+};
 
 const FAIL: &str = "fn fail() -> ! {\n    assert(false);\n}\n";
 
@@ -11,12 +16,20 @@ fn with_fail(body: &str) -> String {
 }
 
 #[test]
-fn type_checker_accepts_never_function_falling_off_its_end() {
+fn type_checker_accepts_never_functions_whose_every_path_diverges() {
     assert_gpu_type_check_ok(&with_fail(
         r#"
+fn die(flag: bool) -> ! {
+    if (flag) {
+        fail();
+    } else {
+        assert(false);
+    }
+}
+
 fn main() -> i32 {
     if (false) {
-        fail();
+        die(true);
     }
     return 0;
 }
@@ -33,6 +46,25 @@ fn pick(flag: bool) -> i32 {
         return 1;
     }
     fail();
+}
+
+fn main() -> i32 {
+    return pick(true) - 1;
+}
+"#,
+    ));
+}
+
+#[test]
+fn type_checker_accepts_if_arms_ending_in_return_and_never_call() {
+    assert_gpu_type_check_ok(&with_fail(
+        r#"
+fn pick(flag: bool) -> i32 {
+    if (flag) {
+        return 1;
+    } else {
+        fail();
+    }
 }
 
 fn main() -> i32 {
@@ -80,13 +112,7 @@ fn main() -> i32 {
 #[test]
 fn type_checker_accepts_generic_unwrap_with_imported_panic_arm() {
     assert_gpu_type_check_pack_ok(&[
-        r#"
-module core::panic;
-
-pub fn panic() -> ! {
-    assert(false);
-}
-"#,
+        include_str!("../../stdlib/core/panic.lani"),
         r#"
 module app::main;
 
@@ -131,18 +157,44 @@ fn main() -> i32 {
 }
 
 #[test]
-fn type_checker_rejects_value_returned_from_never_function() {
-    assert_gpu_type_check_rejects(
+fn type_checker_rejects_return_from_never_function() {
+    assert_gpu_type_check_diagnostic(
         r#"
-fn fail() -> ! {
-    return 1;
+fn fail(flag: bool) -> ! {
+    if (flag) {
+        return 1;
+    }
+    assert(false);
 }
 
 fn main() -> i32 {
-    fail();
+    fail(true);
     return 0;
 }
 "#,
+        "LNC0006",
+        &[":4:9", "a function returning `!` cannot return"],
+    );
+}
+
+#[test]
+fn type_checker_rejects_never_function_that_can_reach_its_end() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn fail(flag: bool) -> ! {
+    if (flag) {
+        assert(false);
+    }
+    assert(true);
+}
+
+fn main() -> i32 {
+    fail(true);
+    return 0;
+}
+"#,
+        "LNC0006",
+        &[":2:4", "the end of its body can be reached"],
     );
 }
 
@@ -158,25 +210,6 @@ fn choose(p: Pick) -> i32 {
 
 fn main() -> i32 {
     return choose(A);
-}
-"#,
-    ));
-}
-
-#[test]
-fn type_checker_accepts_if_arms_ending_in_return_and_never_call() {
-    assert_gpu_type_check_ok(&with_fail(
-        r#"
-fn pick(flag: bool) -> i32 {
-    if (flag) {
-        return 1;
-    } else {
-        fail();
-    }
-}
-
-fn main() -> i32 {
-    return pick(true) - 1;
 }
 "#,
     ));

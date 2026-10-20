@@ -23,7 +23,8 @@ uint wasm_module_value_type(uint type_id)
 
 uint wasm_module_result_count(uint type_id)
 {
-    if (type_id == 0u || type_id == 1u) return 0u;
+    // Unit and never (`-> !`) functions have no result.
+    if (type_id == 0u || type_id == 1u || type_id == SCALAR_NEVER) return 0u;
     return type_id == WASM_MODULE_TY_STRING ? 2u : 1u;
 }
 

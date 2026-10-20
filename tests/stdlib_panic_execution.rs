@@ -52,3 +52,34 @@ fn panic_and_unreachable_trap_instead_of_returning() {
         let _ = bytes;
     }
 }
+
+// `core::panic::panic()` returns `!`, so it can stand in a generic match arm
+// of any type: unwrap returns the payload of Some and traps on None.
+#[test]
+fn generic_unwrap_with_panic_arm_returns_some_and_traps_on_none() {
+    for (name, value, exit_code) in [("unwrap_some", "Some(42)", Some(42)), ("unwrap_none", "None", None)] {
+        let entry = common::TempArtifact::new("laniusc_panic", name, Some("lani"));
+        entry.write_str(&format!(
+            "module app::main;\nimport core::panic;\nenum Opt<T> {{ Some(T), None }}\n\
+             fn unwrap<T>(value: Opt<T>) -> T {{\n    \
+             return match (value) {{ Some(inner) -> inner, None -> core::panic::panic() }};\n}}\n\
+             fn main() -> i32 {{\n    let a: Opt<i32> = {value};\n    return unwrap(a);\n}}\n"
+        ));
+        let bytes = compile_fixture(name, entry.path());
+
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            use std::os::unix::process::ExitStatusExt;
+
+            if let Some(code) = exit_code {
+                let output = common::run_x86_64_elf_output(name, name, &bytes);
+                assert_eq!(output.status.code(), Some(code), "{name}: {output:?}");
+            } else {
+                let output = common::run_x86_64_elf_output_expecting_signal(name, name, &bytes);
+                assert_eq!(output.status.signal(), Some(4), "{name}: {output:?}");
+            }
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let _ = (bytes, exit_code);
+    }
+}
