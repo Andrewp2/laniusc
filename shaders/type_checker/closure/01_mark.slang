@@ -2,7 +2,8 @@
 // per call node whose callee is a generic local body. A call inside a
 // function with a generic environment is an edge of that function; a call
 // inside a nongeneric function whose environment is complete and closed is
-// a root instance at depth 1.
+// a root instance at depth 1. A bound-member call (closure_bound_call) is
+// an edge of its generic function too; 03c routes it.
 import hir_records;
 import type_checker.canonical.canonical_api;
 import type_checker.substitution.ct_subst;
@@ -44,7 +45,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint call = dtid.x + dtid.y * 16776960u;
     if (call >= hir_count()) return;
     uint token; uint callee; uint2 masks;
-    if (!closure_call(call, token, callee, masks)) return;
+    if (!closure_call(call, token, callee, masks))
+    {
+        // A bound-member call is an edge of its generic function (03c).
+        uint bound_owner = compact_hir_nearest_fn[call];
+        if (closure_bound_call(call, token) && valid_node(bound_owner) &&
+            compact_hir_core[bound_owner].kind == HIR_FN && has_generic_environment(bound_owner))
+            ic_link_edge(bound_owner, call);
+        return;
+    }
     uint owner = compact_hir_nearest_fn[call];
     if (!valid_node(owner) || compact_hir_core[owner].kind != HIR_FN) return;
     if (has_generic_environment(owner))

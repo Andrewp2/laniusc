@@ -83,6 +83,43 @@ bool closure_call(uint call, out uint token, out uint callee, out uint2 masks)
     return (masks.x | masks.y) != 0u;
 }
 
+StructuredBuffer<uint> method_call_receiver_ref_tag;
+StructuredBuffer<uint> method_call_receiver_ref_payload;
+StructuredBuffer<uint> predicate_method_contract_owner_hir;
+
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+
+// The trait HIR item whose required member is declaration `target`, or
+// INVALID (a required member publishes no method row; methods/02_collect).
+uint bound_member_trait(uint target)
+{
+    if (!valid_token(target) || method_decl_method_row[target] != INVALID) return INVALID;
+    uint member = fn_hir_by_decl_token[target];
+    if (!valid_node(member)) return INVALID;
+    uint trait = predicate_method_contract_owner_hir[member];
+    return valid_node(trait) && compact_hir_core[trait].kind == HIR_ITEM &&
+        compact_hir_payload[trait].a == HIR_ITEM_KIND_TRAIT ? trait : INVALID;
+}
+
+// A bound-member call of the closure (D3): `value.member(...)` whose
+// receiver is a type parameter (methods/07a) and whose callee is the
+// required member of a trait of this unit. A replay routes it to the
+// implementation its concrete receiver selects (methods/09); 03c routes it
+// under each instance environment. Sets the method token.
+bool closure_bound_call(uint call, out uint token)
+{
+    token = INVALID;
+    if (compact_hir_core[call].kind != HIR_CALL_EXPR) return false;
+    uint callee = compact_hir_payload[call].a;
+    if (!valid_node(callee) || compact_hir_core[callee].kind != HIR_MEMBER_EXPR) return false;
+    token = compact_hir_payload[callee].c;
+    if (!valid_token(token) || call_dependency_library_id[token] != INVALID) return false;
+    if (method_call_receiver_ref_tag[token] != TYPE_REF_GENERIC_PARAM ||
+        !valid_token(method_call_receiver_ref_payload[token])) return false;
+    return bound_member_trait(call_fn_index[token]) != INVALID;
+}
+
 // The instance key of the call at `token` (callee row `callee`, candidate
 // masks `masks`) inside the instance whose tagged environment is `caller`
 // (CT_NONE in a nongeneric function): the call's value environment with

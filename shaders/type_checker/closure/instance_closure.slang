@@ -36,6 +36,11 @@ public RWStructuredBuffer<uint4> instance_closure_instances;
 // The checked operand of each instance argument (realized type rows, then
 // constants as (kind, payload)), at the instance's argument base.
 public RWStructuredBuffer<uint2> instance_closure_refs;
+// The routed target of each instance a bound-member edge found (03c):
+// (function start token, native symbol, specialization symbol, type
+// parameters), as host retention reads a routed call (generic_calls.rs);
+// all INVALID for an instance of a direct call.
+public RWStructuredBuffer<uint4> instance_closure_targets;
 // Edges: the first call (+1) of each generic function row, and the next
 // call (+1) of each call row; 0 ends a list.
 public RWStructuredBuffer<uint> instance_closure_edge_head;
@@ -98,7 +103,7 @@ uint ref_capacity()
 
 // Append the new instance `env` (set slot `slot`): its two rows and its
 // argument block.
-void append_instance(uint env, uint callee, uint depth, uint slot)
+void append_instance(uint env, uint callee, uint depth, uint slot, uint4 target)
 {
     uint index;
     InterlockedAdd(instance_closure_counts[IC_COUNT_LENGTH], 1u, index);
@@ -117,6 +122,7 @@ void append_instance(uint env, uint callee, uint depth, uint slot)
         base = IC_INVALID;
     }
     instance_closure_instances[2u * index] = uint4(env, callee, depth, slot);
+    instance_closure_targets[index] = target;
     instance_closure_instances[2u * index + 1u] =
         uint4(base, IC_INVALID, 0u, arity | (ct_type_slots(env) << 16u));
 }
@@ -126,6 +132,12 @@ void append_instance(uint env, uint callee, uint depth, uint slot)
 // lane keeps the smallest template call, so the result does not depend on
 // lane order.
 public void ic_insert(uint env, uint callee, uint depth, uint call)
+{
+    ic_insert_target(env, callee, depth, call, uint4(IC_INVALID, IC_INVALID, IC_INVALID, IC_INVALID));
+}
+
+// ic_insert for an instance with a routed target (instance_closure_targets).
+public void ic_insert_target(uint env, uint callee, uint depth, uint call, uint4 target)
 {
     uint capacity = set_capacity();
     if (capacity == 0u)
@@ -143,7 +155,7 @@ public void ic_insert(uint env, uint callee, uint depth, uint call)
         {
             uint ignored;
             InterlockedMax(instance_closure_set[slot].y, ~call, ignored);
-            if (previous == 0u) append_instance(env, callee, depth, slot);
+            if (previous == 0u) append_instance(env, callee, depth, slot, target);
             return;
         }
         slot = (slot + 1u) & (capacity - 1u);
