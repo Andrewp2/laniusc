@@ -258,6 +258,12 @@ impl CachedInstanceRun {
 /// outlives its run. App-unit templates are never stored.
 pub(super) struct LibraryInstanceCache {
     runs: UnitCache<Arc<CachedInstanceRun>>,
+    /// The template sources of this compiler's standard-library pending
+    /// originals (`compile_cached_pending_original_unit`, library 0 under the
+    /// daemon entry loader), registered by every job before specialization.
+    /// A template whose sources are not one of these, such as a resident
+    /// single-unit program whose app unit is numbered 0:0, is never cached.
+    standard_templates: Vec<Arc<[String]>>,
     /// The last template's sources and dependency pages and their content
     /// hash, reused while the retained snapshot keeps the same allocations.
     template: Option<(Arc<[String]>, Arc<[Vec<GpuSemanticInterfaceArtifact>]>, blake3::Hash)>,
@@ -267,6 +273,7 @@ impl Default for LibraryInstanceCache {
     fn default() -> Self {
         Self {
             runs: UnitCache { maximum_bytes: DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES, ..UnitCache::default() },
+            standard_templates: Vec::new(),
             template: None,
         }
     }
@@ -274,9 +281,22 @@ impl Default for LibraryInstanceCache {
 
 impl LibraryInstanceCache {
     /// Only standard-library templates are cached (the same rule as the
-    /// pending-original cache): a user's edit never changes them.
-    pub(super) fn cacheable_library(library_id: u32) -> bool {
-        library_id == STANDARD_LIBRARY_ID && library_instance_cache_enabled()
+    /// pending-original cache): a user's edit never changes them. The
+    /// template must be a registered standard-library original of this job.
+    pub(super) fn cacheable_template(&self, unit: &CompiledSourcePackUnit) -> bool {
+        unit.interface.library_id == STANDARD_LIBRARY_ID
+            && library_instance_cache_enabled()
+            && self.standard_templates.iter().any(|sources| Arc::ptr_eq(sources, &unit.template_sources))
+    }
+
+    fn register_standard_template(&mut self, sources: &Arc<[String]>) {
+        if self.standard_templates.iter().any(|known| Arc::ptr_eq(known, sources)) { return; }
+        // A few library units per daemon; a replaced original's sources go first.
+        const MAXIMUM_STANDARD_TEMPLATES: usize = 64;
+        if self.standard_templates.len() >= MAXIMUM_STANDARD_TEMPLATES {
+            self.standard_templates.remove(0);
+        }
+        self.standard_templates.push(sources.clone());
     }
 
     /// Content hash of one template unit: its sources, their paths and its
@@ -355,6 +375,7 @@ impl LibraryInstanceCache {
 
     fn clear(&mut self) {
         self.runs.clear();
+        self.standard_templates.clear();
         self.template = None;
     }
 
@@ -857,7 +878,7 @@ impl GpuCompiler<'_> {
         if let Some(hit) = cache_hint.as_ref().and_then(|hint| self.pending_original_cache
             .lock().expect("pending-original cache mutex poisoned").get_by_hint(hint))
         {
-            return Ok(hit.pending());
+            return Ok(self.register_standard_original(job, hit.pending()));
         }
         let sources = read_explicit_source_path_files(
             "pending native library-interface job", source_files)?;
@@ -874,7 +895,8 @@ impl GpuCompiler<'_> {
                 .lock().expect("pending-original cache mutex poisoned");
             match &cache_key {
                 Some(key) => if let Some(hit) = cache.get(key) {
-                    return Ok(hit.pending());
+                    drop(cache);
+                    return Ok(self.register_standard_original(job, hit.pending()));
                 },
                 None => cache.record_miss(),
             }
@@ -892,7 +914,18 @@ impl GpuCompiler<'_> {
                 cache.insert_hint(hint, key);
             }
         }
-        Ok(pending)
+        Ok(self.register_standard_original(job, pending))
+    }
+
+    /// A standard-library original's templates may enter the warm library
+    /// instance cache (D7b) in this job; no other unit's may.
+    fn register_standard_original(&self, job: &SourcePackJob, pending: PendingOriginalUnit) -> PendingOriginalUnit {
+        if job.library_id == STANDARD_LIBRARY_ID {
+            self.library_instance_cache.lock()
+                .expect("library instance cache mutex poisoned")
+                .register_standard_template(pending.facts().template_sources());
+        }
+        pending
     }
 }
 

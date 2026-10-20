@@ -20,7 +20,7 @@ use super::{
     },
     program_evidence::CheckedReplayCalls,
     typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
-    unit_cache::{CachedInstanceRun, CompiledUnitCacheKey, LibraryInstanceCache, library_instance_cache_checked},
+    unit_cache::{CachedInstanceRun, CompiledUnitCacheKey, library_instance_cache_checked},
     *,
 };
 use std::sync::Arc;
@@ -389,7 +389,7 @@ impl GpuCompiler<'_> {
                             let output = RunOutput::from_replay(replay, checked, run.keys.len())?;
                             let finished = std::time::Instant::now();
                             if run.copies && !run.solo {
-                                self.store_library_instance_run(&run.keys, &pending, &instance_of, &output);
+                                self.store_library_instance_run(&templates, &run.keys, &pending, &instance_of, &output);
                             }
                             (output, [started, prepared, compiled, finished], false)
                         }
@@ -897,13 +897,13 @@ impl GpuCompiler<'_> {
             let (library_id, unit_id, _) = pending[key].target;
             templates.get(&(library_id, unit_id)).map(|template| (library_id, unit_id, *template))
         });
+        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
         let Some((library_id, unit_id, template)) = template
-            .filter(|&(library_id, ..)| instance_copies && LibraryInstanceCache::cacheable_library(library_id))
+            .filter(|&(.., template)| instance_copies && cache.cacheable_template(template))
         else {
             lookup.misses = keys;
             return Ok(lookup);
         };
-        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
         let template_hash = cache.template_hash(template).map_err(CompileError::GpuCodegen)?;
         let mut eligible = HashMap::<blake3::Hash, &Vec<u8>>::new();
         for key in &keys {
@@ -946,6 +946,7 @@ impl GpuCompiler<'_> {
     /// later jobs. Runs of other templates are never stored.
     fn store_library_instance_run(
         &self,
+        templates: &BTreeMap<(u32, u32), &CompiledSourcePackUnit>,
         keys: &[Vec<u8>],
         pending: &BTreeMap<Vec<u8>, PendingBody>,
         instance_of: &HashMap<Vec<u8>, blake3::Hash>,
@@ -953,11 +954,13 @@ impl GpuCompiler<'_> {
     ) {
         let Some(first) = keys.first() else { return };
         let (library_id, unit_id, _) = pending[first].target;
-        if !LibraryInstanceCache::cacheable_library(library_id) { return; }
+        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
+        if !templates.get(&(library_id, unit_id)).is_some_and(|template| cache.cacheable_template(template)) {
+            return;
+        }
         let Some(instances) = keys.iter().map(|key| instance_of.get(key).copied()).collect::<Option<Vec<_>>>()
         else { return };
         let (Some(copy_symbols), Some(entry_facts)) = (&output.copy_symbols, &output.entry_facts) else { return };
-        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
         cache.record_miss();
         cache.insert(library_id, unit_id, CachedInstanceRun {
             instances,
