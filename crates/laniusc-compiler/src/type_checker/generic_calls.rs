@@ -194,6 +194,7 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "instance_table_counts",
     "instance_table",
     "instance_row_refs",
+    "instance_row_calls",
     "compact_hir_links",
 ];
 
@@ -770,6 +771,8 @@ pub(crate) struct CheckedInstanceClosure {
     pub copy_rows: Vec<Vec<CheckedRowFact>>,
     /// The HIR kind of each of those rows.
     pub copy_row_kinds: Vec<Vec<u32>>,
+    /// The retained generic calls of each copy, by row offset in its copy.
+    pub copy_calls: Vec<Vec<(usize, CheckedGenericCall)>>,
 }
 
 /// The decoded instance table of an original job (closure/instance_table.slang).
@@ -787,10 +790,14 @@ pub(crate) struct CheckedInstanceTable {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckedInstanceTableEntry {
     pub function_row: u32,
+    /// The template function's start token (a local call's target token).
+    pub function_token: u32,
     pub depth: u32,
     pub arguments: Vec<CheckedGenericType>,
     pub constants: Vec<CheckedGenericConstantValue>,
     pub rows: Vec<CheckedRowFact>,
+    /// Each virtual row's call (instance_row_calls): (IT_CALL_* kind, value).
+    pub calls: Vec<[u32; 2]>,
 }
 
 /// The expression type of one row, for the instance table's validation.
@@ -2581,7 +2588,7 @@ pub(super) fn read_unit_facts(
     if call_ids.is_empty() {
         let mut instance_closure = CheckedInstanceClosure::default();
         attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
-            instance_copies, &callable_hirs, &mut types);
+            instance_copies, &callable_hirs, &[], &[], &mut types);
         return Ok(CheckedUnitFacts {
             generic_calls: Vec::new(),
             contracts,
@@ -3176,7 +3183,7 @@ pub(super) fn read_unit_facts(
         None => CheckedInstanceClosure::default(),
     };
     attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
-        instance_copies, &callable_hirs, &mut types);
+        instance_copies, &callable_hirs, &call_ids, &calls, &mut types);
     timer.stamp("instance_closure");
     Ok(CheckedUnitFacts {
         generic_calls: calls.into_iter().flatten().collect(),
@@ -3391,6 +3398,8 @@ fn attach_copy_rows(
     semantic: &OwnedGpuSemanticArtifact,
     instance_copies: Option<&super::CheckedBodySpecializationBatch>,
     callable_hirs: &[u32],
+    call_ids: &[u32],
+    calls: &[Option<CheckedGenericCall>],
     types: &mut CheckedTypeReadback,
 ) {
     if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row())
@@ -3399,6 +3408,15 @@ fn attach_copy_rows(
         let functions = &callable_hirs[callable_hirs.partition_point(|&row| row < first)..];
         match read_copy_rows(readback, device, queue, inputs, semantic, functions, types) {
             Ok((rows, kinds)) => {
+                closure.copy_calls = functions.iter().zip(&rows).map(|(&function, rows)| {
+                    let (start, end) = (function, function + rows.len() as u32);
+                    let first = call_ids.partition_point(|&call| call < start);
+                    call_ids[first..].iter().zip(&calls[first..])
+                        .take_while(|&(&call, _)| call < end)
+                        .filter_map(|(&call, retained)| retained.as_ref()
+                            .map(|retained| ((call - start) as usize, retained.clone())))
+                        .collect()
+                }).collect();
                 closure.copy_rows = rows;
                 closure.copy_row_kinds = kinds;
             }
@@ -3510,24 +3528,35 @@ fn read_instance_table(
     let (entries, rows) = (entries as usize, rows as usize);
     let table_buffer = inputs.buffer("instance_table");
     let rows_buffer = inputs.buffer("instance_row_refs");
-    ensure!(entries * 32 <= table_buffer.byte_size && rows * 8 <= rows_buffer.byte_size,
-        "instance table is truncated");
+    let calls_buffer = inputs.buffer("instance_row_calls");
+    ensure!(entries * 32 <= table_buffer.byte_size && rows * 8 <= rows_buffer.byte_size
+        && rows * 8 <= calls_buffer.byte_size, "instance table is truncated");
     let mut batch = WordBatch::default();
     let entry_start = batch.push(table_buffer, 0, entries * 8, "instance table")?;
     let row_start = (rows != 0)
         .then(|| batch.push(rows_buffer, 0, rows * 2, "instance table rows"))
         .transpose()?;
+    let call_start = (rows != 0)
+        .then(|| batch.push(calls_buffer, 0, rows * 2, "instance table calls"))
+        .transpose()?;
     let words = batch.read(readback, device, queue, "instance table")?;
     let entry_words = &words[entry_start..entry_start + entries * 8];
     let row_words = row_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
+    let call_words = call_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
+    let function_rows = entry_words.chunks_exact(8).map(|entry| entry[0]).collect::<Vec<_>>();
+    let mut batch = WordBatch::default();
+    let token_start = batch.rows(inputs.buffer("compact_hir_core"), &function_rows, 4, 3,
+        "instance table function tokens")?;
+    let token_words = batch.read(readback, device, queue, "instance table function tokens")?;
     let roots = row_words.chunks_exact(2)
         .filter(|row| matches!(row[0], 2..=4))
         .map(|row| (row[0] - 1, row[1]))
         .collect::<Vec<_>>();
     types.prefetch_types(readback, device, queue, inputs, &roots)?;
     let operand = |index: usize| refs.get(index * 2..index * 2 + 2).map(|pair| (pair[0], pair[1]));
-    for entry in entry_words.chunks_exact(8) {
+    for (position, entry) in entry_words.chunks_exact(8).enumerate() {
         let &[function_row, count, _, base, index, depth, _, _] = entry else { unreachable!() };
+        let function_token = token_words[token_start + position * 3 + 2];
         let instance = instances.get(index as usize * 8..index as usize * 8 + 8)
             .ok_or_else(|| anyhow!("instance table entry names closure instance {index} past the table"))?;
         let (argument_base, shape) = (instance[4] as usize, instance[7]);
@@ -3551,7 +3580,12 @@ fn read_instance_table(
             INSTANCE_ROW_FAILED => CheckedRowFact::Failed(row[1]),
             tag => read_row_fact(readback, device, queue, inputs, tag - 1, row[1], types),
         }).collect();
-        table.entries.push(CheckedInstanceTableEntry { function_row, depth, arguments, constants, rows });
+        let calls = call_words.get(base as usize * 2..end * 2)
+            .ok_or_else(|| anyhow!("instance table entry's calls are past the call table"))?
+            .chunks_exact(2).map(|call| [call[0], call[1]]).collect();
+        table.entries.push(CheckedInstanceTableEntry {
+            function_row, function_token, depth, arguments, constants, rows, calls,
+        });
     }
     Ok(table)
 }

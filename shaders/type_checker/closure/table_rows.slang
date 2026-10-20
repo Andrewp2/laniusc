@@ -38,21 +38,6 @@ static const uint ROW_FAILED_SUBSTITUTION = 0x200u;
 #include "closure_calls.slang"
 #include "bound_route.slang"
 
-// The entry holding virtual row `row`: the last entry whose base is at or
-// below it. Bases increase with the entry index.
-uint it_entry_of_row(uint row, uint entries)
-{
-    uint lo = 0u;
-    uint hi = entries;
-    while (hi - lo > 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        if (instance_table[2u * mid].w <= row) lo = mid;
-        else hi = mid;
-    }
-    return lo;
-}
-
 // The expression reference of a template row. Every template is a local
 // body today (source IT_SOURCE_LOCAL: this job's HIR); a dependency's
 // bodies (D_PLAN D7c) will be a second source read here.

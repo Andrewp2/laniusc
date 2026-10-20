@@ -886,34 +886,6 @@ impl<'session> ValidatedReplayRequest<'session> {
 }
 
 
-/// The instance table's validation (D2, `LANIUS_CHECK_INSTANCE_TABLE=1`):
-/// each copy of this run against the original job's table entry for the
-/// same template function and arguments, row by row, as decoded types.
-/// It only reports, on stderr; nothing depends on the table yet.
-///
-/// Array lengths compare as counts, as canonical array identity does (a
-/// realized length is a u32 count; a copy keeps its constant's scalar):
-/// rows equal that way are counted apart too.
-///
-/// Parameter rows (HIR kind 4) are counted apart: their expression slot
-/// holds the row's scalar cache, which differs between jobs for the same
-/// copy. Lowering takes a parameter's type from its type row; whether any
-/// reader uses the parameter row's slot is for D5's accessor audit.
-///
-/// Return statement rows (HIR kind 9) are counted apart as well. A copy's
-/// slot is its scalar cache, which expression_types/00_init fills by reading
-/// the statement's payload as an expression form (HIR_STMT_RETURN and
-/// HIR_EXPR_NAME are both 2). Readers checked (10-19): lowering's
-/// materialize types a return from its function's result and its value row
-/// (payload.b) and sizes it from the function's result words, overriding
-/// what the row's own slot gave; 00_project's value type of the row is read
-/// only for value, store and match operations; the checker's return
-/// validation reads payload.b; the other expression-ref readers
-/// (call_args, aggregate_elements, place_mark, receiver_*, count,
-/// local_mark, local_scatter, match_reference, function_layout_*,
-/// function_templates, compact_expr, compact_aggregate_requests,
-/// inference_expression_reference, 08_validate_call_args, 01a/01b) index
-/// expression, type, pattern or declaration rows.
 /// `ty` with every array length that is a count written as a u32 count.
 fn lengths_as_counts(ty: crate::type_checker::CheckedGenericType) -> crate::type_checker::CheckedGenericType {
     use crate::type_checker::{CheckedGenericApplicationArgument as Argument, CheckedGenericType as Type};
@@ -944,6 +916,43 @@ fn lengths_as_counts(ty: crate::type_checker::CheckedGenericType) -> crate::type
     }
 }
 
+/// The instance table's validation (D2, `LANIUS_CHECK_INSTANCE_TABLE=1`):
+/// each copy of this run against the original job's table entry for the
+/// same template function and arguments, row by row, as decoded types.
+/// It only reports, on stderr; nothing depends on the table yet.
+///
+/// Array lengths compare as counts, as canonical array identity does (a
+/// realized length is a u32 count; a copy keeps its constant's scalar):
+/// rows equal that way are counted apart too.
+///
+/// Parameter rows (HIR kind 4) are counted apart: their expression slot
+/// holds the row's scalar cache, which differs between jobs for the same
+/// copy. Lowering takes a parameter's type from its type row; whether any
+/// reader uses the parameter row's slot is for D5's accessor audit.
+///
+/// Return statement rows (HIR kind 9) are counted apart as well. A copy's
+/// slot is its scalar cache, which expression_types/00_init fills by reading
+/// the statement's payload as an expression form (HIR_STMT_RETURN and
+/// HIR_EXPR_NAME are both 2). Readers checked (10-19): lowering's
+/// materialize types a return from its function's result and its value row
+/// (payload.b) and sizes it from the function's result words, overriding
+/// what the row's own slot gave; 00_project's value type of the row is read
+/// only for value, store and match operations; the checker's return
+/// validation reads payload.b; the other expression-ref readers
+/// (call_args, aggregate_elements, place_mark, receiver_*, count,
+/// local_mark, local_scatter, match_reference, function_layout_*,
+/// function_templates, compact_expr, compact_aggregate_requests,
+/// inference_expression_reference, 08_validate_call_args, 01a/01b) index
+/// expression, type, pattern or declaration rows.
+///
+/// Calls (D3, instance_row_calls): a row naming a callee entry must be a
+/// retained generic call of the copy whose target is that entry's function
+/// and whose arguments are the entry's; a row the table leaves to the
+/// template's callee, or routes to a nongeneric method, must have no
+/// retained generic call; a dependency call must be one into a dependency.
+/// Unresolved rows (today: calls on a type parameter that a replay routes
+/// to an implementation outside this unit, such as an imported trait's)
+/// are counted.
 fn report_instance_table(
     unit: [u32; 2],
     template: Option<&crate::type_checker::CheckedInstanceClosure>,
@@ -951,7 +960,13 @@ fn report_instance_table(
     specialization: &CheckedBodySpecializationBatch,
     owners: &[(u32, Option<u32>)],
 ) {
-    use crate::type_checker::CheckedRowFact;
+    use crate::type_checker::{CheckedGenericTarget, CheckedRowFact};
+    // instance_row_calls kinds (closure/instance_table.slang, IT_CALL_*).
+    const IT_CALL_NONE: u32 = 0;
+    const IT_CALL_ENTRY: u32 = 1;
+    const IT_CALL_METHOD: u32 = 2;
+    const IT_CALL_UNRESOLVED: u32 = 3;
+    const IT_CALL_DEPENDENCY: u32 = 4;
     const HIR_PARAM: u32 = 4;
     const HIR_RETURN_STMT: u32 = 9;
     let label = format!("[instance-table] unit {}:{}", unit[0], unit[1]);
@@ -972,6 +987,8 @@ fn report_instance_table(
     let copy_rows = copies.map_or(&[][..], |closure| closure.copy_rows.as_slice());
     let [mut matched, mut unmatched, mut missing, mut lengths] = [0usize; 4];
     let [mut rows, mut equal, mut differ, mut undecoded, mut params, mut counts, mut returns] = [0usize; 7];
+    // Calls: equal (entry, method, none, dependency), differ, unresolved.
+    let [mut call_entries, mut call_methods, mut call_dependencies, mut call_differ, mut unresolved] = [0usize; 5];
     for (index, (entry, &(function, _))) in specialization.entries().iter().zip(owners).enumerate() {
         let Some(found) = entries.iter()
             .find(|candidate| candidate.is_instance(function, &entry.arguments, &entry.constants, unit))
@@ -995,6 +1012,34 @@ fn report_instance_table(
             eprintln!("{label} copy {index} (function {function}) has {} rows, its entry {}",
                 copy.len(), found.rows.len());
             continue;
+        }
+        let copy_calls = copies.and_then(|closure| closure.copy_calls.get(index))
+            .map_or(&[][..], Vec::as_slice);
+        for (row, &[kind, value]) in found.calls.iter().enumerate() {
+            let retained = copy_calls.iter().find(|(offset, _)| *offset == row).map(|(_, call)| call);
+            let agrees = match (kind, retained) {
+                (IT_CALL_NONE, None) => true,
+                (IT_CALL_METHOD, None) => { call_methods += 1; true }
+                (IT_CALL_ENTRY, Some(call)) => entries.get(value as usize).is_some_and(|callee| {
+                    matches!(call.target, CheckedGenericTarget::Local { function_start_token, .. }
+                        if function_start_token == callee.function_token)
+                        && callee.is_instance(callee.function_row, &call.arguments, &call.constants, unit)
+                }) && { call_entries += 1; true },
+                (IT_CALL_DEPENDENCY, Some(call)) => matches!(call.target,
+                    CheckedGenericTarget::Dependency { .. } | CheckedGenericTarget::DependencyMethod { .. })
+                    && { call_dependencies += 1; true },
+                (IT_CALL_UNRESOLVED, _) => { unresolved += 1; true }
+                _ => false,
+            };
+            if !agrees {
+                call_differ += 1;
+                if call_differ <= 4 {
+                    let callee = (kind == IT_CALL_ENTRY).then(|| entries.get(value as usize)).flatten()
+                        .map(|callee| (callee.function_row, callee.function_token, &callee.arguments, &callee.constants));
+                    eprintln!("{label} copy {index} function {function} call row +{row}: table ({kind}, {value}) \
+                        callee {callee:?}; copy {:?}", retained.map(|call| (&call.target, &call.arguments, &call.constants)));
+                }
+            }
         }
         let kinds = copies.and_then(|closure| closure.copy_row_kinds.get(index));
         for (row, (expected, actual)) in found.rows.iter().zip(copy).enumerate() {
@@ -1027,7 +1072,8 @@ fn report_instance_table(
         "{label} entries={} flags={} failed={} copies={} matched={matched} unmatched={unmatched} \
          missing_rows={missing} length_mismatch={lengths} rows={rows} equal={equal} differ={differ} \
          param_rows_differ={params} return_rows_differ={returns} array_count_equal={counts} \
-         both_undecoded={undecoded}",
+         both_undecoded={undecoded} call_entries={call_entries} call_methods={call_methods} \
+         call_dependencies={call_dependencies} call_unresolved={unresolved} call_differ={call_differ}",
         table.entries.len(), table.flags, table.failed, specialization.entries().len(),
     );
 }
