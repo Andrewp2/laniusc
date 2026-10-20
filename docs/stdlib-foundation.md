@@ -2599,7 +2599,8 @@ also fixes the imported struct-return relocation path described below.
     runs on x86 (`tests/codegen_x86.rs`). A `[i32; 1024]` declaration lowers
     to one fill, not a copy per word. The array repeat `[0; 1024]` (generics
     backlog b09) lowers to the same fill on x86 and Wasm; a nonzero repeat
-    such as `[7; 4]` runs on x86 and is rejected on Wasm for now.
+    such as `[7; 4]` runs on both (Wasm stores the element once and doubles
+    it in place with `memory.copy`).
     `std::env::current_dir_len`
     could now replace its 4096-byte heap allocation with a stack buffer. It
     still allocates, checks for null and returns `ENV_READ_UNAVAILABLE` on

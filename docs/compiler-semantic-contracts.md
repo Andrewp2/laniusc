@@ -61,8 +61,8 @@ The zero value of each type:
 
 A `str`, a reference or an enum at the top level is rejected as unsupported,
 because its zero bits are not a value or would silently pick the first
-variant. x86 reports LNC0017 at the declaration. Wasm rejects it too, but only
-with its generic LNC0057 (see `tests/fixtures/known_gaps_codegen_wasm.txt`).
+variant. x86 reports LNC0017 at the declaration. Wasm rejects it the same
+way with its backend-boundary code, LNC0036.
 Fields and elements are not checked. A struct with a `str` field gets the
 empty string, with a null data pointer; one with a reference field gets a null
 reference.
