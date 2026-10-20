@@ -183,6 +183,26 @@ fn size_work_bounded(
     size_goal_buckets(capacities)
 }
 
+/// Raises a solve's first-attempt capacities to the pool's floor (the
+/// capacities earlier solves ended with), then restores the Work-bounded
+/// relations for this session's accepted prefix.
+pub(super) fn with_floor(
+    mut capacities: [u32; PROOF_STORE_TABLES],
+    floor: &[u32; PROOF_STORE_TABLES],
+    session: &ProofStoreSession,
+) -> Result<[u32; PROOF_STORE_TABLES]> {
+    for (capacity, &floor) in capacities.iter_mut().zip(floor) {
+        *capacity = (*capacity).max(floor);
+    }
+    size_work_bounded(&mut capacities, session.accepted_prefix())?;
+    Ok(capacities)
+}
+
+/// LANIUS_PEV_CAPACITY_FLOOR=0 seeds every solve from its own counts only.
+pub(super) fn capacity_floor_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_PEV_CAPACITY_FLOOR", true)
+}
+
 // Each source obligation creates one root Work, Goal, RootLink and normalization
 // request before recursive expansion. Seed these linear tables directly rather
 // than repeatedly restarting that known root inventory from a fixed small cap.
@@ -196,6 +216,11 @@ pub(super) fn initial_capacities(
     for table in [WORK, 10, 13, 14] {
         capacities[table] = capacities[table].max(source_obligations);
     }
+    // Expansion adds child Works beyond the roots; an exact root count
+    // overflows on the first child and restarts the whole attempt. Round
+    // the seed up as a growth retry would.
+    capacities[WORK] = capacities[WORK].max(
+        source_obligations.checked_next_power_of_two().unwrap_or(source_obligations));
     // Goal and subject-root rows append after accepted persistent history.
     // Use its exact ledger counts, not capacity as a proxy for existing rows.
     for table in [2usize, 3] {
