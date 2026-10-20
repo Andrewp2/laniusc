@@ -16,7 +16,10 @@ from typing import Iterable
 
 SCHEMA = "lanius.performance-run.v1"
 SLOC_POLICY = "nonblank physical lines excluding comment-only lines"
-SOURCE_SUFFIXES = {".lani", ".c", ".h", ".cc", ".cpp", ".hpp", ".rs", ".zig", ".par"}
+SOURCE_SUFFIXES = {
+    ".lani", ".c", ".h", ".cc", ".cpp", ".hpp", ".rs", ".zig", ".par",
+    ".go", ".d", ".v", ".vx", ".ts",
+}
 COMPACT_RECORD_ARRAYS = {
     "edges",
     "events",

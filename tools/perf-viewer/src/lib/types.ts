@@ -242,7 +242,10 @@ export interface Measurement {
 export interface PerformanceRun {
   schema: 'lanius.performance-run.v1';
   run: { id: string; recorded_at: string; git_commit: string; git_dirty: boolean };
-  machine: { platform: string; cpu?: string; logical_cpus?: number; gpu?: string | null };
+  machine: {
+    platform: string; cpu?: string; cpu_model?: string; memory_total?: string;
+    logical_cpus?: number; gpu?: string | null;
+  };
   workload: {
     id: string;
     kind: 'single_file' | 'typical_project';

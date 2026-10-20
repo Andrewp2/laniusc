@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { composeMeasurements } from './comparison.ts';
+import { composeMeasurements, isComparisonCandidate, machineIdentity } from './comparison.ts';
 import type { CatalogEntry, Measurement } from './types.ts';
 
 const GROUP = 'typical-project/v1/seed-20260808/files-100';
@@ -37,11 +37,15 @@ function measurement(compiler: string, configuration: string): Measurement {
   } as Measurement;
 }
 
+const LAPTOP = { platform: 'Linux', logical_cpus: 16, gpu: 'NVIDIA GeForce RTX 3070 Laptop GPU, 615.71.09, 8192' };
+const DESKTOP = { platform: 'Linux', logical_cpus: 32, gpu: 'NVIDIA GeForce RTX 3090, 580.173.02, 24576' };
+
 function entry(
   path: string,
   measurements: Measurement[],
   baselineOnly = false,
   comparisonGroup = GROUP,
+  machine: CatalogEntry['document']['machine'] = { platform: 'test' },
 ): CatalogEntry {
   return {
     result_id: path,
@@ -49,7 +53,7 @@ function entry(
     document: {
       schema: 'lanius.performance-run.v1',
       run: { id: path, recorded_at: '2026-08-18T00:00:00Z', git_commit: 'test', git_dirty: false },
-      machine: { platform: 'test' },
+      machine,
       workload: {
         id: 'typical-100', kind: 'typical_project', classification: 'test', generator: 'test',
         comparison_group: comparisonGroup, baseline_only: baselineOnly,
@@ -110,4 +114,45 @@ test('a selected measurement wins over a frozen duplicate', () => {
     'lanius:daemon_warm_workspace',
     'c:o0',
   ]);
+});
+
+test('frozen baselines from another machine are never mixed in', () => {
+  const selected = entry('laptop-lanius.json', [measurement('lanius', 'daemon_warm_workspace')], false, GROUP, LAPTOP);
+  const desktop = entry('desktop.json', [
+    measurement('c', 'o0'), measurement('pareas', 'cuda'),
+  ], true, GROUP, DESKTOP);
+  const laptop = entry('laptop.json', [
+    measurement('c', 'o0'), measurement('go', 'optimized'), measurement('tsrs', 'check_emit'),
+  ], true, GROUP, { ...LAPTOP, gpu: 'NVIDIA GeForce RTX 3070 Laptop GPU, 620.00, 8192' });
+
+  const composed = composeMeasurements(selected, [selected, desktop, laptop]);
+
+  assert.deepEqual(composed.map((value) => `${value.compiler.name}:${value.configuration}`), [
+    'lanius:daemon_warm_workspace',
+    'c:o0',
+    'go:optimized',
+    'tsrs:check_emit',
+  ]);
+  assert.ok(composed.slice(1).every((value) => value.comparison_origin?.result_path === 'laptop.json'));
+  assert.notEqual(machineIdentity(LAPTOP), machineIdentity(DESKTOP));
+});
+
+test('the added cross-language compilers compose like the original ones', () => {
+  const selected = entry('lanius.json', [measurement('lanius', 'daemon_warm_workspace')]);
+  const added = entry('added.json', [
+    measurement('d', 'o0'), measurement('d', 'optimized'),
+    measurement('ldc', 'o0'), measurement('ldc', 'optimized'),
+    measurement('go', 'o0'), measurement('go', 'optimized'),
+    measurement('v', 'o0'), measurement('v', 'optimized'),
+    measurement('vx', 'o0'), measurement('vx', 'optimized'),
+    measurement('tsc', 'check_emit'), measurement('tsrs', 'check_emit'),
+  ], true);
+
+  const composed = composeMeasurements(selected, [selected, added]);
+
+  assert.equal(composed.length, 13);
+  assert.deepEqual(
+    composed.filter((value) => !isComparisonCandidate(value)).map((value) => value.compiler.name),
+    ['tsc', 'tsrs'],
+  );
 });
