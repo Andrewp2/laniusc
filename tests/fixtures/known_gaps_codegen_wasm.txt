@@ -1,10 +1,7 @@
-# codegen_wasm tests that fail today (P18, on main edbd5d8c plus the Wasm
-# aggregate, call-statement, i64, conversion and range-loop lowering): 1 of
-# 121. Gates should check for "no failure outside this list" instead of
-# rereading the whole suite.
+# codegen_wasm tests that fail today (P19, after Wasm body specialization
+# through the shared program admission path): 0 of 121. Gates should check
+# for "no failure outside this list" instead of rereading the whole suite.
 #
 # One test per line: name, failure today, detail.
 # - LNC0036: the Wasm backend rejects the program with a source-spanned
 #   diagnostic (an unsupported semantic LIR row; the note names its op).
-
-wasm_executes_generic_struct_parameter_member_reads_with_node  LNC0036  a generic local call (CALL_SYMBOL, op 39, no library) needs body specialization, which only the x86 link path has
