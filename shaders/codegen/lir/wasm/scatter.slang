@@ -189,9 +189,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             bool element_is_f32 =
                 (aggregate_element.value_metadata &
                  SEMANTIC_LIR_VALUE_TYPE_MASK) == TY_FLOAT;
+            // A fixed array that initializes a slice field stores its
+            // address: a Wasm slice is the address of its first element.
             bool element_is_aggregate =
                 (aggregate_element.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u &&
                 (aggregate_element.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) == 0u &&
+                aggregate_element.slice_array_length == WASM_LIR_INVALID &&
                 aggregate_element.word_count != 0u &&
                 aggregate_element.word_count != WASM_LIR_INVALID;
             uint temporary = element_is_f32

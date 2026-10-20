@@ -13,7 +13,10 @@ A probe is a `.lani` file, or a directory holding a multi-module project: the
 entry `main.lani` plus a source root `src/` (`gen::lib` is `src/gen/lib.lani`).
 Its expected exit code is 42 unless the first line of the file (of `main.lani`
 for a directory) is `// expect: N`; `// expect: error LNC0021` expects the
-compile to fail with that diagnostic code instead.
+compile to fail with that diagnostic code instead. LNC0017 is the x86
+backend-boundary code (a rejection in shared lowering, like a type with no
+zero value); the Wasm backend reports the same rejection as LNC0036, so with
+`--target wasm` an expected LNC0017 matches LNC0036.
 The daemon runs under a systemd memory cap so a runaway driver shader compile
 kills only the daemon, not the desktop session.
 """
@@ -206,7 +209,10 @@ for probe in probes:
         elapsed = time.time() - started
         if expect_error:
             code = None if elf.exists() else diagnostic_code(msg)
-            status = "PASS" if code == expect_error else f"WRONG({code or 'compiled'}, want {expect_error})"
+            wanted = {expect_error}
+            if wasm and expect_error == "LNC0017":
+                wanted.add("LNC0036")
+            status = "PASS" if code in wanted else f"WRONG({code or 'compiled'}, want {expect_error})"
             results.append((probe.stem, status, elapsed, "" if status == "PASS" else diagnostic(msg)))
         elif not elf.exists():
             results.append((probe.stem, "COMPILE-FAIL", elapsed, diagnostic(msg)))
