@@ -71,6 +71,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint value_op = operands.b < semantic_count
         ? opt_ir_op(opt_ir_core[operands.b]) : SEMANTIC_LIR_OP_INVALID;
     bool copy_set_value = wasm_set_copies_aggregate(core, value_op);
+    uint value_type = operands.b < semantic_count ? opt_ir_core[operands.b].type_id : core.type_id;
+    uint shift_amount_opcode = wasm_shift_amount_opcode(core, value_type);
     uint previous_row = scheduled_row > 0u
         ? semantic_schedule_order[scheduled_row - 1u] : WASM_LIR_INVALID;
     OptIrNodeOperands previous_operands = opt_ir_operands[min(previous_row, semantic_row)];
@@ -179,8 +181,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint phase = local_row % 7u;
             SemanticLirAggregateElement aggregate_element =
                 semantic_lir_aggregate_elements[operands.a + element];
-            if ((aggregate_element.value_metadata &
-                 SEMANTIC_LIR_VALUE_TYPE_MASK) == SCALAR_F64)
+            if (wasm_scalar_class(aggregate_element.value_metadata &
+                    SEMANTIC_LIR_VALUE_TYPE_MASK) != WASM_CLASS_I32 &&
+                (aggregate_element.value_metadata &
+                 SEMANTIC_LIR_VALUE_TYPE_MASK) != SCALAR_F32)
                 flags |= TARGET_LIR_FLAG_UNSUPPORTED;
             bool element_is_f32 =
                 (aggregate_element.value_metadata &
@@ -230,7 +234,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
              (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
     {
-        bool call_index_base = operands.a < semantic_count &&
+        bool call_index_base = operands.a < semantic_count && previous_row == operands.a &&
             (opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||
              opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL_SYMBOL);
         if (call_index_base)
@@ -365,9 +369,56 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? WASM_LIR_OP_LOCAL_GET : WASM_LIR_OP_LOCAL_SET;
         immediate = operands.a;
     }
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I64)
+    {
+        // An i32-class (pointer-sized) constant keeps its low word. A long
+        // i64 constant is `zext(lo) | (hi << 32)`.
+        bool wide = wasm_scalar_class(core.type_id) == WASM_CLASS_I64;
+        if (!wide || wasm_const_i64_is_short(operands))
+        {
+            opcode = wide ? WASM_LIR_OP_I64_CONST : WASM_LIR_OP_I32_CONST;
+            immediate = operands.a;
+        }
+        else
+        {
+            opcode = local_row == 0u ? WASM_LIR_OP_I64_CONST_U32
+                : local_row <= 2u ? WASM_LIR_OP_I64_CONST
+                : local_row == 3u ? WASM_LIR_OP_I64_SHL : WASM_LIR_OP_I64_OR;
+            immediate = local_row == 0u ? operands.a
+                : local_row == 1u ? operands.b : local_row == 2u ? 32u : 0u;
+        }
+    }
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONVERT)
+    {
+        // The class change, then renormalize a narrow i32-class target.
+        uint class_opcode = wasm_convert_class_opcode(core.type_id, operands.b);
+        uint class_rows = wasm_convert_class_rows(core, operands);
+        if (class_opcode == WASM_LIR_OP_UNREACHABLE) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+        uint narrow_row = local_row - class_rows;
+        bool narrow_target = wasm_scalar_class(core.type_id) == WASM_CLASS_I32;
+        bool mask = narrow_target &&
+            (core.type_id == SCALAR_U8 || core.type_id == SCALAR_U16);
+        opcode = local_row < class_rows ? class_opcode
+            : mask ? (narrow_row == 0u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_I32_AND)
+            : narrow_target && core.type_id == SCALAR_I8 ? WASM_LIR_OP_I32_EXTEND8_S
+            : narrow_target && core.type_id == SCALAR_I16 ? WASM_LIR_OP_I32_EXTEND16_S
+            : WASM_LIR_OP_NOP;
+        immediate = local_row >= class_rows && mask && narrow_row == 0u
+            ? (core.type_id == SCALAR_U8 ? 0xffu : 0xffffu) : 0u;
+    }
+    else if (shift_amount_opcode != WASM_LIR_OP_NOP)
+    {
+        // Bring the shift amount to the shifted value's class, then shift.
+        if (shift_amount_opcode == WASM_LIR_OP_UNREACHABLE)
+            flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+        if (local_row == 0u) opcode = shift_amount_opcode;
+    }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT)
     {
-        opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_I32_MUL;
+        bool wide = wasm_scalar_class(core.type_id) == WASM_CLASS_I64;
+        opcode = local_row == 0u
+            ? (wide ? WASM_LIR_OP_I64_CONST : WASM_LIR_OP_I32_CONST)
+            : (wide ? WASM_LIR_OP_I64_MUL : WASM_LIR_OP_I32_MUL);
         if (local_row == 0u)
         {
             operands.result = target_start;
@@ -379,8 +430,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
     {
+        // The argument is the value scheduled just before; an i64 one is
+        // already the import's width.
+        bool wide_argument = previous_row < semantic_count &&
+            wasm_row_value_class(opt_ir_core[previous_row]) == WASM_CLASS_I64;
         opcode = local_row == 0u
-            ? WASM_LIR_OP_I64_EXTEND_I32_S : WASM_LIR_OP_CALL;
+            ? (wide_argument ? WASM_LIR_OP_NOP : WASM_LIR_OP_I64_EXTEND_I32_S)
+            : WASM_LIR_OP_CALL;
         immediate = 0u;
     }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
@@ -395,8 +451,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF &&
              (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u)
     {
-        opcode = local_row == 0u ? WASM_LIR_OP_I32_EQZ : WASM_LIR_OP_BRANCH_IF;
-        immediate = local_row == 0u ? 0u : operands.b;
+        // A range loop's exhaustion exit pushes the induction value again.
+        uint reload = local_row == 2u
+            ? wasm_exhaustion_reload(core, operands, opt_ir_core, opt_ir_operands, semantic_count)
+            : WASM_LIR_INVALID;
+        opcode = local_row == 0u ? WASM_LIR_OP_I32_EQZ
+            : local_row == 1u ? WASM_LIR_OP_BRANCH_IF : WASM_LIR_OP_LOCAL_GET;
+        immediate = local_row == 0u ? 0u : local_row == 1u ? operands.b : reload;
     }
     else if (imported_host_operation)
         immediate = host_import;

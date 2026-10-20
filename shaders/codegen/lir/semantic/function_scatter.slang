@@ -1,3 +1,4 @@
+import primitive_types;
 import native_value_layout;
 import hir_records;
 import codegen.lir.semantic.common;
@@ -163,6 +164,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     result.param_count = range.count;
     result.result_type = constant ? semantic_value_type_by_hir[hir]
         : semantic_function_return_type_by_hir[hir];
+    // A constant's result is its checked value type (`const ONE: f32`).
+    uint const_value = constant ? compact_const_value[hir] : LIR_INVALID;
+    if (const_value < hir_count && semantic_expr_ref_tag_by_hir[const_value] == 1u &&
+        scalar_is_known(semantic_expr_ref_payload_by_hir[const_value]))
+        result.result_type = semantic_expr_ref_payload_by_hir[const_value];
     uint return_type_node = compact_fn_return_type[hir];
     uint result_decl_token = LIR_INVALID;
     uint result_decl_hir = LIR_INVALID;
@@ -170,7 +176,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint ref_tag = semantic_expr_ref_tag_by_hir[return_type_node];
         uint ref_payload = semantic_expr_ref_payload_by_hir[return_type_node];
-        if (ref_tag == 1u && ref_payload >= 1u && ref_payload <= 7u)
+        // The checked return type follows aliases (`-> ClockReadResult` is i64).
+        if (ref_tag == 1u && scalar_is_known(ref_payload))
             result.result_type = ref_payload;
         result_decl_token = semantic_aggregate_decl_token_by_hir[return_type_node];
         if (!valid_token(result_decl_token))

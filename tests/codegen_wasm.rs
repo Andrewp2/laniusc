@@ -394,6 +394,58 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_i64_and_unsigned_integer_arithmetic_with_node() {
+    // i64/u64 are native Wasm i64 (long constants, division, negation,
+    // shifts, calls); pointer-sized integers are i32; unsigned types use the
+    // unsigned division and comparison opcodes; `as` converts between classes
+    // and renormalizes narrow targets.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn wide(x: i64) -> i64 {
+    return x * 3 - 1;
+}
+
+fn main() -> i32 {
+    let big: i64 = 5000000000;
+    let neg: i64 = -7;
+    if (big / 1000 != 5000000) { return 1; }
+    if (neg % 4 != -3) { return 2; }
+    if (-neg != 7) { return 3; }
+    if (wide(big) != 14999999999) { return 4; }
+    let u: u32 = 4000000000;
+    if (u / 2 != 2000000000) { return 5; }
+    if (u < 5) { return 6; }
+    let s: usize = 12;
+    let n: usize = s * 2 + 1;
+    if (n % 5 != 0) { return 7; }
+    let k: i64 = n as i64;
+    if (k != 25) { return 8; }
+    let back: i32 = (big >> 20) as i32;
+    if (back != 4768) { return 9; }
+    let b: u8 = 300 as u8;
+    if (b != 44) { return 10; }
+    let m: u64 = 1;
+    let sh: u64 = m << 40;
+    if (sh != 1099511627776) { return 11; }
+    let f: f32 = k as f32;
+    if (f != 25.0) { return 12; }
+    let t: i64 = f as i64;
+    if (t != 25) { return 13; }
+    return 42;
+}
+"#,
+    )
+    .expect("i64 and unsigned arithmetic should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM i64 and unsigned arithmetic",
+        "i64_unsigned_arithmetic",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+}
+
+#[test]
 fn wasm_executes_multi_payload_enum_constructor_and_pattern_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

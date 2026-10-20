@@ -1017,6 +1017,88 @@ static const uint WASM_LIR_OP_F32_DIV = 0x95u;
 static const uint WASM_LIR_OP_I64_EXTEND_I32_S = 0xacu;
 // IR_OPCODE
 static const uint WASM_LIR_OP_F32_CONVERT_I32_S = 0xb2u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_CONST = 0x42u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_EQZ = 0x50u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_EQ = 0x51u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_NE = 0x52u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_LT_S = 0x53u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_LT_U = 0x54u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_GT_S = 0x55u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_GT_U = 0x56u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_LE_S = 0x57u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_LE_U = 0x58u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_GE_S = 0x59u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_GE_U = 0x5au;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_DIV_U = 0x6eu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_REM_U = 0x70u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_SHR_U = 0x76u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_ADD = 0x7cu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_SUB = 0x7du;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_MUL = 0x7eu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_DIV_S = 0x7fu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_DIV_U = 0x80u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_REM_S = 0x81u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_REM_U = 0x82u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_AND = 0x83u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_OR = 0x84u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_XOR = 0x85u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_SHL = 0x86u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_SHR_S = 0x87u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_SHR_U = 0x88u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_WRAP_I64 = 0xa7u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_TRUNC_F32_S = 0xa8u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_TRUNC_F32_U = 0xa9u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_EXTEND_I32_U = 0xadu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_TRUNC_F32_S = 0xaeu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_TRUNC_F32_U = 0xafu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F32_CONVERT_I32_U = 0xb3u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F32_CONVERT_I64_S = 0xb4u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F32_CONVERT_I64_U = 0xb5u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_EXTEND8_S = 0xc0u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_EXTEND16_S = 0xc1u;
+// `i64.const` of a zero-extended u32 immediate, as a padded five-byte
+// signed LEB (a pseudo-op: its immediate encoding differs from i64.const).
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_CONST_U32 = 0x103u;
 
 // IR_OPCODE
 static const uint TARGET_LIR_FLAG_UNSUPPORTED = 1u;

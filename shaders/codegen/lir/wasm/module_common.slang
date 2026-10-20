@@ -3,6 +3,7 @@ import codegen.lir.wasm.host_abi;
 import primitive_types;
 
 static const uint WASM_MODULE_I32 = 0x7fu;
+static const uint WASM_MODULE_I64 = 0x7eu;
 static const uint WASM_MODULE_F32 = 0x7du;
 static const uint WASM_MODULE_TY_FLOAT = 5u;
 static const uint WASM_MODULE_TY_STRING = 7u;
@@ -18,6 +19,8 @@ uint wasm_module_value_type(uint type_id)
 {
     // ABI passes reject f64 before publication; never encode it as i32.
     if (type_id == SCALAR_F64) return 0u;
+    // Pointer-sized integers are i32 on wasm32; i64 and u64 are native i64.
+    if (type_id == SCALAR_I64 || type_id == SCALAR_U64) return WASM_MODULE_I64;
     return type_id == WASM_MODULE_TY_FLOAT ? WASM_MODULE_F32 : WASM_MODULE_I32;
 }
 

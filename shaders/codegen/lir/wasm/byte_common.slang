@@ -45,8 +45,10 @@ uint wasm_lir_byte_len(WasmLirInstruction inst)
         inst.opcode == WASM_LIR_OP_CALL_SYMBOL) return 6u;
     if (inst.opcode == WASM_LIR_OP_I32_CONST)
         if ((inst.flags & TARGET_LIR_FLAG_DATA_RELOCATION) != 0u) return 6u;
-    if (inst.opcode == WASM_LIR_OP_I32_CONST)
+    // A sign-extended 32-bit immediate has the same LEB in i64.const.
+    if (inst.opcode == WASM_LIR_OP_I32_CONST || inst.opcode == WASM_LIR_OP_I64_CONST)
         return 1u + wasm_i32_leb_len(inst.immediate);
+    if (inst.opcode == WASM_LIR_OP_I64_CONST_U32) return 6u;
     if (inst.opcode == WASM_LIR_OP_F32_CONST) return 5u;
     if (inst.opcode == WASM_LIR_OP_MEMORY_COPY) return 4u;
     if (inst.opcode == WASM_LIR_OP_I32_LOAD || inst.opcode == WASM_LIR_OP_F32_LOAD ||
@@ -90,6 +92,13 @@ uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
     // Prefix 0xfc, sub-opcode 10, destination and source memory 0.
     if (inst.opcode == WASM_LIR_OP_MEMORY_COPY)
         return byte_i == 0u ? 0xfcu : byte_i == 1u ? 0x0au : 0u;
+    // Five padded LEB bytes of the zero-extended value; bit 34 (the sign) is 0.
+    if (inst.opcode == WASM_LIR_OP_I64_CONST_U32)
+    {
+        if (byte_i == 0u) return WASM_LIR_OP_I64_CONST;
+        uint part = (inst.immediate >> ((byte_i - 1u) * 7u)) & 0x7fu;
+        return byte_i < 5u ? part | 0x80u : part;
+    }
     if (byte_i == 0u) return inst.opcode;
     uint immediate_i = byte_i - 1u;
     if (inst.opcode == WASM_LIR_OP_I32_CONST)
@@ -99,7 +108,7 @@ uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
             uint byte_value = value & 0x7fu;
             return immediate_i < 4u ? byte_value | 0x80u : byte_value;
         }
-    if (inst.opcode == WASM_LIR_OP_I32_CONST)
+    if (inst.opcode == WASM_LIR_OP_I32_CONST || inst.opcode == WASM_LIR_OP_I64_CONST)
         return wasm_i32_leb_byte(inst.immediate, immediate_i);
     if (inst.opcode == WASM_LIR_OP_F32_CONST)
         return (inst.immediate >> (immediate_i * 8u)) & 0xffu;
