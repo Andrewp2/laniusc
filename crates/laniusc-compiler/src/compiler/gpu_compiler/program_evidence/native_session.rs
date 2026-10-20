@@ -871,10 +871,44 @@ impl<'session> ValidatedReplayRequest<'session> {
 /// same template function and arguments, row by row, as decoded types.
 /// It only reports, on stderr; nothing depends on the table yet.
 ///
+/// Array lengths compare as counts, as canonical array identity does (a
+/// realized length is a u32 count; a copy keeps its constant's scalar):
+/// rows equal that way are counted apart too.
+///
 /// Parameter rows (HIR kind 4) are counted apart: their expression slot
 /// holds the row's scalar cache, which differs between jobs for the same
 /// copy. Lowering takes a parameter's type from its type row; whether any
 /// reader uses the parameter row's slot is for D5's accessor audit.
+/// `ty` with every array length that is a count written as a u32 count.
+fn lengths_as_counts(ty: crate::type_checker::CheckedGenericType) -> crate::type_checker::CheckedGenericType {
+    use crate::type_checker::{CheckedGenericApplicationArgument as Argument, CheckedGenericType as Type};
+    use crate::type_checker::CheckedGenericConstantValue as Value;
+    match ty {
+        Type::Array { element, length, words } => {
+            let length = match length {
+                Value::Literal(value) => value.count()
+                    .and_then(|count| crate::constant_value::CheckedConstantValue::from_words(
+                        crate::primitive_types::SCALAR_U32, [count, 0]))
+                    .map_or(Value::Literal(value), Value::Literal),
+                other => other,
+            };
+            Type::Array { element: Box::new(lengths_as_counts(*element)), length, words }
+        }
+        Type::Slice(element) => Type::Slice(Box::new(lengths_as_counts(*element))),
+        Type::Reference(target) => Type::Reference(Box::new(lengths_as_counts(*target))),
+        Type::Nominal { identity, arguments, words, local_replay } => Type::Nominal {
+            identity,
+            arguments: arguments.into_iter().map(|argument| match argument {
+                Argument::Type(ty) => Argument::Type(lengths_as_counts(ty)),
+                other => other,
+            }).collect(),
+            words,
+            local_replay,
+        },
+        other => other,
+    }
+}
+
 fn report_instance_table(
     unit: [u32; 2],
     template: Option<&crate::type_checker::CheckedInstanceClosure>,
@@ -901,7 +935,7 @@ fn report_instance_table(
     }
     let copy_rows = copies.map_or(&[][..], |closure| closure.copy_rows.as_slice());
     let [mut matched, mut unmatched, mut missing, mut lengths] = [0usize; 4];
-    let [mut rows, mut equal, mut differ, mut undecoded, mut params] = [0usize; 5];
+    let [mut rows, mut equal, mut differ, mut undecoded, mut params, mut counts] = [0usize; 6];
     for (index, (entry, &(function, _))) in specialization.entries().iter().zip(owners).enumerate() {
         let Some(found) = entries.iter()
             .find(|candidate| candidate.is_instance(function, &entry.arguments, &entry.constants, unit))
@@ -935,12 +969,18 @@ fn report_instance_table(
             match (expected, &actual) {
                 _ if *expected == actual => equal += 1,
                 _ if kind == Some(HIR_PARAM) => params += 1,
+                (CheckedRowFact::Type(left), CheckedRowFact::Type(right))
+                    if lengths_as_counts(left.clone()) == lengths_as_counts(right.clone()) => counts += 1,
                 (CheckedRowFact::Undecoded(_), CheckedRowFact::Undecoded(_)) => undecoded += 1,
                 _ => {
                     differ += 1;
                     if differ <= 8 {
                         eprintln!("{label} copy {index} function {function} row +{row} kind {kind:?}: \
                             table {expected:?}; copy {actual:?}");
+                        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false) {
+                            eprintln!("{label} copy {index} constants: table {:?}; copy {:?}",
+                                found.constants, entry.constants);
+                        }
                     }
                 }
             }
@@ -949,7 +989,7 @@ fn report_instance_table(
     eprintln!(
         "{label} entries={} flags={} failed={} copies={} matched={matched} unmatched={unmatched} \
          missing_rows={missing} length_mismatch={lengths} rows={rows} equal={equal} differ={differ} \
-         param_rows_differ={params} both_undecoded={undecoded}",
+         param_rows_differ={params} array_count_equal={counts} both_undecoded={undecoded}",
         table.entries.len(), table.flags, table.failed, specialization.entries().len(),
     );
 }
