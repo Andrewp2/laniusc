@@ -73,6 +73,7 @@ pub struct GpuCompiler<'gpu> {
     stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
     pending_original_cache: std::sync::Mutex<unit_cache::PendingOriginalCache>,
+    library_instance_cache: std::sync::Mutex<unit_cache::LibraryInstanceCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
     program_evidence_workspace: program_evidence::EvidenceWorkspacePool,
@@ -449,6 +450,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 stable_unit_plan: std::sync::Mutex::new(None),
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
                 pending_original_cache: std::sync::Mutex::new(unit_cache::PendingOriginalCache::pending_default()),
+                library_instance_cache: std::sync::Mutex::new(unit_cache::LibraryInstanceCache::default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
                 program_evidence_workspace: program_evidence::EvidenceWorkspacePool::new(
@@ -528,6 +530,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     pub async fn release_resident_job_buffers(&self) -> GpuResidentJobBufferTrim {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.program_evidence_workspace.release();
+        self.clear_library_instance_cache();
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();

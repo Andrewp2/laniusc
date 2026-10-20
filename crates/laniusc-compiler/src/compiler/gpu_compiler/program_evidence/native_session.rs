@@ -36,7 +36,7 @@ use crate::{
         BlankingDirection,
         TemplateBlanking,
     },
-    codegen::{lowering::ReplaySelection, x86::GpuX86ObjectSection},
+    codegen::{lowering::ReplaySelection, x86::{GpuX86ObjectSection, GpuX86RelocatableObject}},
 };
 
 pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
@@ -309,6 +309,77 @@ impl NativeProgramSession {
         self.prepare_batch(origins, true)
     }
 
+    /// A library instance-cache hit (D7b): the bodies of an earlier job's copy
+    /// run, published again without a frontend run. Each origin must be a
+    /// GPU-admitted concrete call of this job and gets its own replay context,
+    /// exactly as `prepare_instance_batch` gives it; each cached copy's calls
+    /// (`entry_facts`, in entry order) are appended under that context and this
+    /// job's evidence must admit them again before anything patches them.
+    /// The cached object may call outside its template only where this job's
+    /// impl bindings name the callee. Returns the admitted calls in the order
+    /// `check_instance_unit` returns them.
+    pub fn admit_cached_instances(
+        &mut self,
+        origins: &[&AdmittedCall],
+        template_unit: [u32; 2],
+        entry_facts: &[Arc<[CheckedGenericCall]>],
+        object: &GpuX86RelocatableObject,
+    ) -> Result<Vec<AdmittedCall>> {
+        self.ready()?;
+        ensure!(!origins.is_empty() && origins.len() == entry_facts.len(),
+            "cached instance run does not match its origins");
+        let mut target_snapshot = None;
+        let mut bindings = Vec::new();
+        let mut contexts = Vec::with_capacity(origins.len());
+        for (index, origin) in origins.iter().enumerate() {
+            let (origin_call, snapshot, selected_owner_hir, obligations) =
+                self.packet.packet_mut()?.replay_origin(origin)?;
+            ensure!(*target_snapshot.get_or_insert(snapshot) == snapshot,
+                "cached instance run spans several template snapshots");
+            ensure!(self.catalog.snapshots[snapshot as usize].unit == template_unit,
+                "cached instance run belongs to another template unit");
+            let end = obligations.first.checked_add(obligations.count)
+                .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
+            let evidence = self.evidence.get(obligations.first as usize..end as usize)
+                .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?
+                .iter()
+                .map(|proof| {
+                    ensure!(proof.is_concrete(), "concrete replay origin retains symbolic evidence");
+                    Ok(proof.clone())
+                })
+                .collect::<Result<Vec<_>>>()?;
+            bindings.extend(impl_bindings(&self.catalog, template_unit, &evidence, index as u32)?);
+            let context = self.packet.packet_mut()?.replay_context(ReplayContextInput {
+                snapshot,
+                selected_owner_hir,
+                evidence: &evidence,
+                origin_call,
+            })?;
+            contexts.push((selected_owner_hir, context));
+        }
+        let snapshot = target_snapshot.expect("nonempty run");
+        check_external_callees(&self.catalog.snapshots[snapshot as usize], object, &bindings)?;
+        let mut call_hirs = Vec::with_capacity(contexts.len());
+        for (&(selected_hir, context), facts) in contexts.iter().zip(entry_facts) {
+            let indices = (0..facts.len()).collect::<Vec<_>>();
+            self.packet.packet_mut()?.append_context_calls(
+                snapshot, context, selected_hir, facts.clone(), &indices)?;
+            call_hirs.push(facts.iter().map(|call| call.call_hir).collect::<Vec<_>>());
+        }
+        // One check covers the new contexts and their calls.
+        self.check()?;
+        let packet = self.packet.packet_mut()?;
+        let mut admitted = Vec::new();
+        for (&(_, context), call_hirs) in contexts.iter().zip(&call_hirs) {
+            let context_calls = packet.admitted_context_calls(snapshot, context)?;
+            ensure!(context_calls.len() == call_hirs.len()
+                && context_calls.iter().zip(call_hirs).all(|(call, &hir)| call.source().call_hir == hir),
+                "a cached instance copy's admitted calls differ from its appended calls");
+            admitted.extend(context_calls);
+        }
+        Ok(admitted)
+    }
+
     fn prepare_batch<'session>(
         &'session mut self,
         origins: &[&AdmittedCall],
@@ -567,6 +638,10 @@ pub(in crate::compiler::gpu_compiler) struct CheckedReplayCalls {
     /// Per entry of an instance-copy replay, the native symbol of its copy's
     /// definition in the replay object.
     pub copy_symbols: Option<Vec<u32>>,
+    /// Per entry of an instance-copy replay, the checked calls of its copy
+    /// as appended under its replay context (the library instance cache
+    /// keeps them so a later job can admit them again).
+    pub entry_facts: Option<Vec<Arc<[CheckedGenericCall]>>>,
 }
 
 impl<'session> ValidatedReplayRequest<'session> {
@@ -635,7 +710,7 @@ impl<'session> ValidatedReplayRequest<'session> {
             &selected.keys().copied().collect(), unit,
         )?;
         check_external_callees(&self.session.catalog.snapshots[self.target_snapshot as usize],
-            unit, self.specialization.impl_bindings())?;
+            unit_object(unit)?, self.specialization.impl_bindings())?;
         self.session
             .packet
             .packet_mut()?
@@ -646,7 +721,7 @@ impl<'session> ValidatedReplayRequest<'session> {
         for &context in selected.values() {
             calls.extend(packet.admitted_context_calls(self.target_snapshot, context)?);
         }
-        Ok(CheckedReplayCalls { calls, entry_hirs: self.selected_hirs, copy_symbols: None })
+        Ok(CheckedReplayCalls { calls, entry_hirs: self.selected_hirs, copy_symbols: None, entry_facts: None })
     }
 
     /// An instance-copy replay publishes exactly one definition per copy and
@@ -668,7 +743,7 @@ impl<'session> ValidatedReplayRequest<'session> {
         let callable_symbols = frozen.contracts.binders.iter()
             .filter_map(|owner| owner.callable.map(|callable| callable.native_symbol))
             .collect::<BTreeSet<_>>();
-        check_external_callees(frozen, unit, self.specialization.impl_bindings())?;
+        check_external_callees(frozen, unit_object(unit)?, self.specialization.impl_bindings())?;
         let CompiledSourcePackObject::X86_64(object) = &unit.object else {
             return Err(anyhow!("replay emission has the wrong target"));
         };
@@ -757,8 +832,10 @@ impl<'session> ValidatedReplayRequest<'session> {
         }
         let mut calls = Vec::new();
         let mut published = Vec::new();
+        let mut kept_facts = Vec::with_capacity(self.entries.len());
         for (index, &(selected_hir, context)) in self.entries.iter().enumerate() {
             let entry_facts: Arc<[CheckedGenericCall]> = std::mem::take(&mut facts[index]).into();
+            kept_facts.push(entry_facts.clone());
             let call_hirs = entry_facts.iter().map(|call| call.call_hir).collect::<Vec<_>>();
             published.extend(entry_facts.iter().cloned());
             // A copy's calls are context calls of its entry, owned by the
@@ -779,7 +856,8 @@ impl<'session> ValidatedReplayRequest<'session> {
                 "an instance copy's admitted calls differ from its appended calls");
             admitted.extend(context_calls);
         }
-        Ok(CheckedReplayCalls { calls: admitted, entry_hirs, copy_symbols: Some(copy_symbols) })
+        Ok(CheckedReplayCalls { calls: admitted, entry_hirs, copy_symbols: Some(copy_symbols),
+            entry_facts: Some(kept_facts) })
     }
 }
 
@@ -819,12 +897,9 @@ fn impl_bindings(
 /// replay's impl bindings names (methods/09 routes bound members there).
 fn check_external_callees(
     frozen: &FrozenSnapshot,
-    unit: &CompiledSourcePackUnit,
+    object: &GpuX86RelocatableObject,
     bindings: &[BodyImplBinding],
 ) -> Result<()> {
-    let CompiledSourcePackObject::X86_64(object) = &unit.object else {
-        return Err(anyhow!("replay emission has the wrong target"));
-    };
     let imports = frozen.dependency_pages.iter().flatten()
         .map(|artifact| [artifact.library_id, artifact.unit_id])
         .collect::<BTreeSet<_>>();
@@ -843,6 +918,13 @@ fn check_external_callees(
             "replay calls {identity:?} outside its template's imports, and no implementation binding names it");
     }
     Ok(())
+}
+
+fn unit_object(unit: &CompiledSourcePackUnit) -> Result<&GpuX86RelocatableObject> {
+    match &unit.object {
+        CompiledSourcePackObject::X86_64(object) => Ok(object),
+        _ => Err(anyhow!("replay emission has the wrong target")),
+    }
 }
 
 /// Scratch replay substitutes the selected enclosing impl environment in

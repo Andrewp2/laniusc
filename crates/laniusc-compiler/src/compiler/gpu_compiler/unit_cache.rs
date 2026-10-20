@@ -16,6 +16,8 @@ use crate::compiler::{
 const DEFAULT_COMPILED_UNIT_CACHE_BYTES: usize = 256 * 1024 * 1024;
 /// Pending originals of standard-library units (see `PendingOriginalCache`).
 const DEFAULT_PENDING_ORIGINAL_CACHE_BYTES: usize = 128 * 1024 * 1024;
+/// Library instance runs (see `LibraryInstanceCache`).
+const DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES: usize = 32 * 1024 * 1024;
 /// The daemon entry loader assigns library 0 to the standard library and
 /// library 1 to user sources (`clear_project_compiled_unit_cache`).
 const STANDARD_LIBRARY_ID: u32 = 0;
@@ -174,6 +176,12 @@ impl CachedUnitValue for Arc<CompiledSourcePackUnit> {
     }
 }
 
+impl CachedUnitValue for Arc<CachedInstanceRun> {
+    fn resident_byte_len(&self) -> usize {
+        CachedInstanceRun::resident_byte_len(self)
+    }
+}
+
 impl CachedUnitValue for RetainedPendingOriginal {
     fn resident_byte_len(&self) -> usize {
         RetainedPendingOriginal::resident_byte_len(self)
@@ -195,6 +203,176 @@ pub(super) type CompiledUnitCache = UnitCache<Arc<CompiledSourcePackUnit>>;
 /// new `PendingOriginalUnit`, which that build's program admission must
 /// release like a fresh compilation (the catalog still admits it every job).
 pub(super) type PendingOriginalCache = UnitCache<RetainedPendingOriginal>;
+
+/// The finished outputs of one instance-copy run of a standard-library
+/// template (D7b), as `request.finish` returned them, before publication
+/// renames its definitions. Entries are in run order. Holding one confers
+/// no authority: a later job publishes it only after its own program
+/// evidence admits a fresh origin for every entry and admits every entry's
+/// calls again (`NativeProgramSession::admit_cached_instances`).
+pub(super) struct CachedInstanceRun {
+    /// Per entry: hash of (template content, LGS4 scheduling key, impl bindings).
+    pub instances: Vec<blake3::Hash>,
+    /// Per entry: the GPU's native seed layouts. A hit needs this job's
+    /// layout witnesses to equal them exactly.
+    pub layouts: Arc<[Vec<u32>]>,
+    pub object: crate::codegen::x86::GpuX86RelocatableObject,
+    pub call_hirs: Arc<[u32]>,
+    pub call_owners: Arc<[u32]>,
+    pub copy_symbols: Vec<u32>,
+    pub entry_hirs: Vec<u32>,
+    pub entry_facts: Vec<Arc<[crate::type_checker::CheckedGenericCall]>>,
+}
+
+impl CachedInstanceRun {
+    fn resident_byte_len(&self) -> usize {
+        let object = &self.object;
+        let mut bytes = std::mem::size_of::<Self>()
+            .saturating_add(self.instances.len().saturating_mul(32))
+            .saturating_add(vector_resident_bytes(&object.text))
+            .saturating_add(vector_resident_bytes(&object.rodata))
+            .saturating_add(vector_resident_bytes(&object.relocations))
+            .saturating_add(vector_resident_bytes(&object.symbols))
+            .saturating_add(vector_resident_bytes(&object.identity_bytes))
+            .saturating_add(self.call_hirs.len().saturating_add(self.call_owners.len()).saturating_mul(4))
+            .saturating_add(vector_resident_bytes(&self.copy_symbols))
+            .saturating_add(vector_resident_bytes(&self.entry_hirs));
+        for layouts in self.layouts.iter() {
+            bytes = bytes.saturating_add(vector_resident_bytes(layouts));
+        }
+        for facts in &self.entry_facts {
+            bytes = bytes.saturating_add(facts.len()
+                .saturating_mul(std::mem::size_of::<crate::type_checker::CheckedGenericCall>()));
+            for call in facts.iter() {
+                bytes = bytes.saturating_add(call.resident_argument_bytes());
+            }
+        }
+        bytes
+    }
+}
+
+/// Warm library instance cache (D7b): finished instance-copy runs of
+/// standard-library templates, retained across jobs of one compiler. A run
+/// is stored under the hash of its ordered instance hashes, and each
+/// instance hash indexes its run through the hint table, so no index entry
+/// outlives its run. App-unit templates are never stored.
+pub(super) struct LibraryInstanceCache {
+    runs: UnitCache<Arc<CachedInstanceRun>>,
+    /// The last template's sources and dependency pages and their content
+    /// hash, reused while the retained snapshot keeps the same allocations.
+    template: Option<(Arc<[String]>, Arc<[Vec<GpuSemanticInterfaceArtifact>]>, blake3::Hash)>,
+}
+
+impl Default for LibraryInstanceCache {
+    fn default() -> Self {
+        Self {
+            runs: UnitCache { maximum_bytes: DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES, ..UnitCache::default() },
+            template: None,
+        }
+    }
+}
+
+impl LibraryInstanceCache {
+    /// Only standard-library templates are cached (the same rule as the
+    /// pending-original cache): a user's edit never changes them.
+    pub(super) fn cacheable_library(library_id: u32) -> bool {
+        library_id == STANDARD_LIBRARY_ID && library_instance_cache_enabled()
+    }
+
+    /// Content hash of one template unit: its sources, their paths and its
+    /// dependency interfaces.
+    pub(super) fn template_hash(&mut self, unit: &CompiledSourcePackUnit) -> Result<blake3::Hash, String> {
+        if let Some((sources, pages, hash)) = &self.template
+            && Arc::ptr_eq(sources, &unit.template_sources)
+            && Arc::ptr_eq(pages, &unit.template_dependency_pages)
+        {
+            return Ok(*hash);
+        }
+        let mut content = blake3::Hasher::new();
+        content.update(b"laniusc-library-instance-template-v1");
+        content.update(&unit.interface.library_id.to_le_bytes());
+        content.update(&unit.interface.unit_id.to_le_bytes());
+        hash_len(&mut content, unit.template_sources.len());
+        for source in unit.template_sources.iter() {
+            hash_bytes(&mut content, source.as_bytes());
+        }
+        hash_len(&mut content, unit.template_source_paths.len());
+        for path in unit.template_source_paths.iter() {
+            match path {
+                Some(path) => hash_bytes(&mut content, path.as_os_str().as_encoded_bytes()),
+                None => hash_len(&mut content, usize::MAX),
+            }
+        }
+        hash_dependency_interfaces(&mut content, &unit.template_dependency_pages)?;
+        let hash = content.finalize();
+        self.template = Some((unit.template_sources.clone(), unit.template_dependency_pages.clone(), hash));
+        Ok(hash)
+    }
+
+    fn run_key(library_id: u32, unit_id: u32, instances: &[blake3::Hash]) -> CompiledUnitCacheKey {
+        let mut content = blake3::Hasher::new();
+        content.update(b"laniusc-library-instance-run-v1");
+        hash_len(&mut content, instances.len());
+        for instance in instances {
+            content.update(instance.as_bytes());
+        }
+        CompiledUnitCacheKey { target: 2, library_id, unit_id, content_hash: content.finalize() }
+    }
+
+    fn instance_hint(library_id: u32, unit_id: u32, instance: blake3::Hash) -> CompiledUnitCacheHintKey {
+        CompiledUnitCacheHintKey { target: 2, library_id, unit_id, content_hash: instance }
+    }
+
+    /// The stored run that holds an instance, if any. A peek: only a
+    /// published hit (`record_hit`) counts and refreshes the run.
+    pub(super) fn run_of(
+        &self,
+        library_id: u32,
+        unit_id: u32,
+        instance: blake3::Hash,
+    ) -> Option<(CompiledUnitCacheKey, Arc<CachedInstanceRun>)> {
+        let key = self.runs.hints.get(&Self::instance_hint(library_id, unit_id, instance))?;
+        let run = self.runs.entries.get(key)?.value.clone();
+        Some((key.clone(), run))
+    }
+
+    pub(super) fn record_hit(&mut self, key: &CompiledUnitCacheKey) {
+        let _ = self.runs.get(key);
+    }
+
+    pub(super) fn record_miss(&mut self) {
+        self.runs.record_miss();
+    }
+
+    pub(super) fn insert(&mut self, library_id: u32, unit_id: u32, run: CachedInstanceRun) {
+        let key = Self::run_key(library_id, unit_id, &run.instances);
+        let instances = run.instances.clone();
+        self.runs.insert(key.clone(), Arc::new(run));
+        for instance in instances {
+            self.runs.insert_hint(Self::instance_hint(library_id, unit_id, instance), key.clone());
+        }
+    }
+
+    fn clear(&mut self) {
+        self.runs.clear();
+        self.template = None;
+    }
+
+    fn stats(&self) -> CompiledUnitCacheStats {
+        self.runs.stats()
+    }
+}
+
+/// `LANIUS_LIBRARY_INSTANCE_CACHE=0` replays every library instance in every job.
+fn library_instance_cache_enabled() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_LIBRARY_INSTANCE_CACHE", true)
+}
+
+/// `LANIUS_CHECK_LIBRARY_INSTANCE_CACHE=1` replays every hit run anyway and
+/// fails the job when its outputs differ from the cached ones.
+pub(super) fn library_instance_cache_checked() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_CHECK_LIBRARY_INSTANCE_CACHE", false)
+}
 
 /// A byte-bounded least-recently-used map from unit identity to a value.
 pub(super) struct UnitCache<V> {
@@ -564,6 +742,23 @@ impl GpuCompiler<'_> {
             .lock()
             .expect("pending-original cache mutex poisoned")
             .clear();
+        self.clear_library_instance_cache();
+    }
+
+    /// Drops the warm library instance cache (D7b). The memory-pressure trim
+    /// (`release_resident_job_buffers`) calls this too.
+    pub(crate) fn clear_library_instance_cache(&self) {
+        self.library_instance_cache
+            .lock()
+            .expect("library instance cache mutex poisoned")
+            .clear();
+    }
+
+    pub(crate) fn library_instance_cache_stats(&self) -> CompiledUnitCacheStats {
+        self.library_instance_cache
+            .lock()
+            .expect("library instance cache mutex poisoned")
+            .stats()
     }
 
     /// Drops project results while retaining the daemon entry loader's
@@ -579,6 +774,9 @@ impl GpuCompiler<'_> {
             .lock()
             .expect("pending-original cache mutex poisoned")
             .clear_except_library(STANDARD_LIBRARY_ID);
+        // Instance keys name project types, and runs a warm-up job built must
+        // not seed the first project job.
+        self.clear_library_instance_cache();
     }
 
     pub(super) fn cached_compiled_unit_by_hint(
