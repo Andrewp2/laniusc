@@ -13,8 +13,16 @@ import type_checker.substitution.ct_realize;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;
 
+import hir_records;
+
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+
+static const uint HIR_MATCH_EXPR = 34u;
+static const uint TYPE_REF_INVALID = 0u;
 
 static const uint INVALID = 0xffffffffu;
 // Failure codes beside ct_realize's (CT_REALIZE_*).
@@ -39,10 +47,24 @@ uint it_entry_of_row(uint row, uint entries)
 // The expression reference of a template row. Every template is a local
 // body today (source IT_SOURCE_LOCAL: this job's HIR); a dependency's
 // bodies (D_PLAN D7c) will be a second source read here.
+//
+// A match expression whose result is symbolic keeps no expression type in
+// the template (its scalar cache is empty); its checked type is the match
+// token's declared type, which 01_expression_refs prefers once concrete. The
+// template's symbolic declared type stands for it here.
 uint2 template_expr_ref(uint source, uint template_row)
 {
     if (source != IT_SOURCE_LOCAL) return uint2(INVALID, 0u);
-    return uint2(semantic_expr_ref_tag_by_hir[template_row], semantic_expr_ref_payload_by_hir[template_row]);
+    uint2 reference = uint2(semantic_expr_ref_tag_by_hir[template_row],
+        semantic_expr_ref_payload_by_hir[template_row]);
+    if (reference.x != TYPE_REF_INVALID) return reference;
+    HirCore core = compact_hir_core[template_row];
+    uint tokens; uint stride;
+    decl_type_ref_tag.GetDimensions(tokens, stride);
+    if (core.kind == HIR_MATCH_EXPR && core.token_start < tokens &&
+        decl_type_ref_tag[core.token_start] != TYPE_REF_INVALID)
+        return uint2(decl_type_ref_tag[core.token_start], decl_type_ref_payload[core.token_start]);
+    return reference;
 }
 
 void fail_row(uint row, uint failure)
