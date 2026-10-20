@@ -17,9 +17,10 @@ use super::generic_calls::{
     CheckedNominalIdentity,
     CheckedTypeReadback,
     RetainedGenericCallInputs,
+    WordBatch,
     read_type,
 };
-use crate::gpu::readback::{PagedReadback, ReadbackRegion};
+use crate::gpu::readback::PagedReadback;
 use crate::parser::passes::hir::item::fields::{HIR_ITEM_KIND_ENUM, HIR_ITEM_KIND_STRUCT};
 
 const INVALID: u32 = u32::MAX;
@@ -386,16 +387,63 @@ pub(super) fn read_nominal_recipes(
     }).collect())
 }
 
-fn scalar_regions<'a>(
-    inputs: &'a RetainedGenericCallInputs,
-    requests: &[(&str, u32)],
-) -> Result<Vec<ReadbackRegion<'a>>> {
-    requests
-        .iter()
-        .map(|&(name, row)| {
-            ReadbackRegion::from_buffer(inputs.buffer(name), u64::from(row) * 4, 4, name)
-        })
-        .collect()
+/// Scalar requests (table, word) queued as one row read per table rather
+/// than one region per word: thousands of one-word regions cost the read
+/// plan and the gather a record each. [`Self::ordered`] restores request
+/// order.
+pub(super) struct ScalarRows {
+    /// Per table: where its words start, counted from the batch's length
+    /// when the requests were pushed, and the request position of each of
+    /// its rows.
+    groups: Vec<(usize, Vec<usize>)>,
+    count: usize,
+}
+
+impl ScalarRows {
+    /// Validates every request against its table, then queues the reads;
+    /// a failure leaves `batch` unchanged.
+    pub(super) fn push<'a>(
+        batch: &mut WordBatch<'a>,
+        inputs: &'a RetainedGenericCallInputs,
+        requests: &[(&str, u32)],
+    ) -> Result<Self> {
+        let mut by_table = BTreeMap::<&str, (Vec<u32>, Vec<usize>)>::new();
+        for (position, &(name, row)) in requests.iter().enumerate() {
+            ensure!(
+                (row as usize) < inputs.buffer(name).byte_size / 4,
+                "{name} exceeds its logical GPU buffer view"
+            );
+            let (rows, positions) = by_table.entry(name).or_default();
+            rows.push(row);
+            positions.push(position);
+        }
+        let base = batch.len();
+        let mut groups = Vec::with_capacity(by_table.len());
+        if !super::generic_calls::unit_facts_row_reads() {
+            for (position, &(name, row)) in requests.iter().enumerate() {
+                groups.push((batch.push(inputs.buffer(name), u64::from(row), 1, name)? - base,
+                    vec![position]));
+            }
+            return Ok(Self { groups, count: requests.len() });
+        }
+        for (name, (rows, positions)) in by_table {
+            groups.push((batch.rows(inputs.buffer(name), &rows, 1, 1, name)? - base, positions));
+        }
+        Ok(Self { groups, count: requests.len() })
+    }
+
+    /// The requested words, in request order, from the batch's words that
+    /// start where the requests were pushed.
+    pub(super) fn ordered(&self, words: &[u32]) -> Result<Vec<u32>> {
+        let mut ordered = vec![0; self.count];
+        for (start, positions) in &self.groups {
+            ensure!(start + positions.len() <= words.len(), "checked contract facts are truncated");
+            for (offset, &position) in positions.iter().enumerate() {
+                ordered[position] = words[start + offset];
+            }
+        }
+        Ok(ordered)
+    }
 }
 
 fn read_scalars(
@@ -408,8 +456,9 @@ fn read_scalars(
     if requests.is_empty() {
         return Ok(Vec::new());
     }
-    let regions = scalar_regions(inputs, requests)?;
-    readback.read_regions_words(device, queue, &regions, "checked contract facts")
+    let mut batch = WordBatch::default();
+    let rows = ScalarRows::push(&mut batch, inputs, requests)?;
+    rows.ordered(&batch.read(readback, device, queue, "checked contract facts")?)
 }
 
 fn validate_source_rows(source: ContractSourceRows<'_>) -> Result<()> {
@@ -481,16 +530,18 @@ fn range_requests(predicates: &[u32]) -> Result<Vec<(&'static str, u32)>> {
     Ok(range_requests)
 }
 
-/// Plan only sparse, active scalar rows. A caller may defer planning failures
-/// and let `read_contracts` report them in its original validation order.
-pub(super) fn metadata_regions<'a>(
+/// Queue only sparse, active scalar rows into the caller's batch. A caller
+/// may defer planning failures (the batch is then unchanged) and let
+/// `read_contracts` report them in its original validation order.
+pub(super) fn push_metadata<'a>(
+    batch: &mut WordBatch<'a>,
     inputs: &'a RetainedGenericCallInputs,
     source: ContractSourceRows<'_>,
-) -> Result<Vec<ReadbackRegion<'a>>> {
+) -> Result<ScalarRows> {
     validate_source_rows(source)?;
-    let mut regions = scalar_regions(inputs, &fact_requests(source.predicates)?)?;
-    regions.extend(scalar_regions(inputs, &range_requests(source.predicates)?)?);
-    Ok(regions)
+    let mut requests = fact_requests(source.predicates)?;
+    requests.extend(range_requests(source.predicates)?);
+    ScalarRows::push(batch, inputs, &requests)
 }
 
 #[allow(clippy::too_many_arguments)]

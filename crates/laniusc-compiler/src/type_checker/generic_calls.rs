@@ -1155,12 +1155,6 @@ impl<'a> WordBatch<'a> {
         start
     }
 
-    pub(super) fn extend(&mut self, regions: impl IntoIterator<Item = ReadbackRegion<'a>>) {
-        for region in regions {
-            self.push_region(region);
-        }
-    }
-
     /// Words queued so far: where the next push starts.
     pub(super) fn len(&self) -> usize {
         self.words
@@ -1182,6 +1176,24 @@ impl<'a> WordBatch<'a> {
         debug_assert_eq!(words.len(), self.words);
         Ok(words)
     }
+}
+
+/// Scalar contract requests and nominal headers are read as one row read per
+/// table; LANIUS_UNIT_FACTS_ROW_READS=0 reads one region per word or header
+/// row instead (the earlier transport, same words).
+pub(super) fn unit_facts_row_reads() -> bool {
+    crate::gpu::env::env_bool_truthy("LANIUS_UNIT_FACTS_ROW_READS", true)
+}
+
+/// The 10-word retained nominal header rows from their two row reads: one
+/// word per header of the name-token column, then 9 words per header of the
+/// HIR columns.
+fn nominal_headers_words(tokens: &[u32], hirs: &[u32]) -> Vec<u32> {
+    tokens
+        .iter()
+        .zip(hirs.chunks_exact(9))
+        .flat_map(|(&token, hir)| std::iter::once(token).chain(hir.iter().copied()))
+        .collect()
 }
 
 /// Rows `indices` of a table of `stride`-word rows, in one round trip.
@@ -2257,20 +2269,31 @@ pub(super) fn read_unit_facts(
             hir != INVALID && token != INVALID,
             "retained nominal declaration {declaration} has no HIR or name token"
         );
-        for (buffer, row, width) in [
-            (nominal_columns[0], token, 1),
-            (nominal_columns[1], hir, 4),
-            (nominal_columns[2], hir, 4),
-            (nominal_columns[3], hir, 1),
-        ] {
-            batch.push(
-                buffer,
-                u64::from(row) * width as u64,
-                width,
-                "retained nominal ownership",
-            )?;
-        }
     }
+    // Two row reads, not four regions per header; decoded as 10 words per
+    // header (name token's declaration, HIR core, HIR payload, public index).
+    let nominal_hir_start = if unit_facts_row_reads() {
+        let tokens = nominal_headers.iter().map(|header| header.2).collect::<Vec<_>>();
+        let hirs = nominal_headers.iter().map(|header| header.1).collect::<Vec<_>>();
+        batch.rows(nominal_columns[0], &tokens, 1, 1, "retained nominal ownership")?;
+        Some(batch.table_rows(
+            &hirs,
+            &[(nominal_columns[1], 4, 4), (nominal_columns[2], 4, 4), (nominal_columns[3], 1, 1)],
+            "retained nominal ownership",
+        )?)
+    } else {
+        for &(_, hir, token, _) in &nominal_headers {
+            for (buffer, row, width) in [
+                (nominal_columns[0], token, 1),
+                (nominal_columns[1], hir, 4),
+                (nominal_columns[2], hir, 4),
+                (nominal_columns[3], hir, 1),
+            ] {
+                batch.push(buffer, u64::from(row) * width as u64, width, "retained nominal ownership")?;
+            }
+        }
+        None
+    };
     let caller_metadata_start = batch.len();
     batch.rows(&semantic.enclosing_fn_by_hir, &call_ids, 1, 1, "retained actual caller")?;
     // Both result domains share this batch. Masks own validity; unpublished
@@ -2310,17 +2333,13 @@ pub(super) fn read_unit_facts(
         declaration_tokens: columns[14],
     };
     let contract_metadata_start = batch.len();
-    // Only gather valid sparse regions here. Defer any planning failure to
+    // Only gather valid sparse rows here. Defer any planning failure to
     // read_contracts, after parameter, nominal, and enclosing-owner checks.
     let contract_metadata = if interface_exported && predicate_count != 0 {
-        checked_contracts::metadata_regions(inputs, contract_source).ok()
+        checked_contracts::push_metadata(&mut batch, inputs, contract_source).ok()
     } else {
         None
     };
-    let contract_metadata_available = contract_metadata.is_some();
-    if let Some(regions) = contract_metadata {
-        batch.extend(regions);
-    }
     timer.stamp("plan_rows");
     let metadata = batch.read(&readback, device, queue, "generic call rows")?;
     timer.stamp("rows_read");
@@ -2339,7 +2358,13 @@ pub(super) fn read_unit_facts(
     types.argument_row_count = Some(counts[12]);
     types.read_nominal_metadata(
         &nominal_headers,
-        &metadata[nominal_metadata_start..caller_metadata_start],
+        &match nominal_hir_start {
+            Some(hir_start) => nominal_headers_words(
+                &metadata[nominal_metadata_start..hir_start],
+                &metadata[hir_start..caller_metadata_start],
+            ),
+            None => metadata[nominal_metadata_start..caller_metadata_start].to_vec(),
+        },
     )?;
     timer.stamp("rows");
     let callers = &metadata[caller_metadata_start..mask_start];
@@ -2421,6 +2446,9 @@ pub(super) fn read_unit_facts(
         }
     }
     timer.stamp("masks_and_owners");
+    let contract_metadata = contract_metadata
+        .map(|rows| rows.ordered(&metadata[contract_metadata_start..]))
+        .transpose()?;
     let mut contracts = if interface_exported {
         checked_contracts::read_contracts(
             &readback,
@@ -2429,7 +2457,7 @@ pub(super) fn read_unit_facts(
             inputs,
             &mut types,
             contract_source,
-            contract_metadata_available.then_some(&metadata[contract_metadata_start..]),
+            contract_metadata.as_deref(),
         )?
     } else {
         // The compiled replay retains its template Arc; do not deep-copy
