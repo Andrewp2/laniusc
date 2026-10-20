@@ -29,8 +29,8 @@ test('the added cross-language compilers have display names and distinct colors'
     ['go', 'optimized', 'Go · optimized'],
     ['v', 'o0', 'V · -O0'],
     ['vx', 'optimized', 'Vx · optimized'],
-    ['tsc', 'check_emit', 'TypeScript (tsc) · type check + JS emit (no native code)'],
-    ['tsrs', 'check_emit', 'TypeScript (tsrs) · type check + JS emit (no native code)'],
+    ['tsc', 'check_emit', 'TypeScript (tsc) · type check + JS emit'],
+    ['tsrs', 'check_emit', 'TypeScript (tsrs) · type check + JS emit'],
   ];
   const colors = new Set<string>();
   for (const [name, configuration, label] of cases) {
@@ -49,11 +49,4 @@ test('the added cross-language compilers have display names and distinct colors'
   const original = ['c', 'cpp', 'rust', 'zig', 'tcc', 'pareas'].map((name) =>
     measurementColor({ compiler: { name, version: 'test' }, configuration: 'o0' } as Measurement));
   for (const color of original) assert.ok(!colors.has(color), color);
-  const fastest = {
-    compiler: { name: 'vx', version: 'test' },
-    configuration: 'fastest',
-    target: 'x86_64',
-    source: { files: 1 },
-  } as Measurement;
-  assert.equal(measurementLabel(fastest, false), 'Vx · fastest config, 5 seeds');
 });

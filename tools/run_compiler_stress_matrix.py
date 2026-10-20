@@ -67,27 +67,6 @@ def parse_external_compilers(value: str) -> tuple[str, ...]:
     return languages
 
 
-# Opt-in lane (select it with --lanes fastest): each compiler's fastest
-# single-file configuration, using whatever parallelism the compiler offers
-# for one file. FASTEST_BASIS says what each one is; the probe that chose them
-# compiled an unmeasured seed with every candidate.
-FASTEST_LANE = "fastest"
-FASTEST_BASIS = {
-    "c": "o0 lane (gcc -O0); gcc compiles one translation unit on one thread",
-    "cpp": "o0 lane (g++ -O0); g++ compiles one translation unit on one thread",
-    "tcc": "default lane; single-threaded",
-    "rust": "optimized lane (opt-level=3 compiles faster than opt-level=0 here); -Zthreads=16 parallel frontend and rustc's default 16 codegen units",
-    "zig": "optimized lane (ReleaseFast is faster than Debug here); zig 0.13 has no option that parallelizes one file",
-    "d": "o0 lane (dmd without -O); dmd is single-threaded",
-    "ldc": "o0 lane (-O0); LDC codegens one module on one thread",
-    "go": "o0 lane plus -c=16 backend concurrency (-gcflags='-N -l -c=16'); measured no faster than the default -c on one file",
-    "v": "o0 lane (V development build, bundled TCC); V already threads its transform and cgen by default (-no-parallel was 40% slower) and -parallel-cc was slower with TCC",
-    "vx": "o0 lane plus -j 16 (vxc's parallel frontend on 16 threads, about 11% faster than the sequential driver)",
-    "tsc": "check_emit lane with --checkers 4; default, 4, and 16 checkers measured within noise on one file, --singleThreaded slower",
-    "tsrs": "check_emit lane with --checkers 4; default, 4, 16 checkers and --singleThreaded measured within noise on one file",
-}
-
-
 def lanes_for(language: str) -> tuple[str, ...]:
     if language == "tcc":
         return ("default",)
@@ -198,10 +177,6 @@ def main() -> int:
     selected_lanes = {
         language: tuple(
             lane for lane in lanes_for(language) if lane_filter is None or lane in lane_filter
-        ) + (
-            (FASTEST_LANE,)
-            if lane_filter is not None and FASTEST_LANE in lane_filter and language in FASTEST_BASIS
-            else ()
         )
         for language in args.external_compilers
     }
@@ -355,11 +330,6 @@ def main() -> int:
         "lanius_measured": not args.skip_lanius,
         "toolchains": str(toolchains),
         "typescript_checkers": TYPESCRIPT_CHECKERS,
-        "fastest_basis": {
-            language: FASTEST_BASIS[language]
-            for language, lanes in selected_lanes.items()
-            if FASTEST_LANE in lanes
-        },
         "typescript_launcher_overhead": launcher_overhead,
         "workload_profile": args.profile,
         "timing_policy": "wall clock from request/process start through artifact write (for Vx: vxc object emission plus the link vxc itself performs); Pareas compiler_ms is its synchronized frontend plus backend profile and excludes context initialization",
@@ -477,20 +447,6 @@ def compiler_commands(
         "typescript_launchers": {
             "tsc": ["node", str(toolchains / TSC_LAUNCHER)],
             "tsrs": ["node", str(toolchains / TSRS_LAUNCHER)],
-        },
-        FASTEST_LANE: {
-            "c": ["gcc", "-O0", "-g0", "{source}", "-o", "{output}"],
-            "cpp": ["g++", "-O0", "-g0", "{source}", "-o", "{output}"],
-            "tcc": [*tcc_command, "-std=c11", "{source}", "-o", "{output}"],
-            "rust": ["rustc", "-Awarnings", f"-Zthreads={rust_frontend_threads}", "-C", "opt-level=3", "-C", "debuginfo=0", "-C", "strip=debuginfo", "{source}", "-o", "{output}"],
-            "zig": ["zig", "build-exe", "-lc", "-O", "ReleaseFast", "-fstrip", "{source}", "-femit-bin={output}"],
-            "d": [dmd, "-od={workdir}", "-of={output}", "{source}"],
-            "ldc": [ldc2, "-O0", "-od={workdir}", "-of={output}", "{source}"],
-            "go": [go, "build", "-gcflags=-N -l -c=16", "-o", "{output}", "{source}"],
-            "v": [v, "-w", "-n", "-o", "{output}", "{source}"],
-            "vx": vx_commands(toolchains, "-O0", jobs=16),
-            "tsc": [str(toolchains / TSC_NATIVE), "-p", "{workdir}/tsconfig.json", "--checkers", str(TYPESCRIPT_CHECKERS)],
-            "tsrs": [str(toolchains / TSRS_NATIVE), "-p", "{workdir}/tsconfig.json", "--checkers", str(TYPESCRIPT_CHECKERS)],
         },
         "cuda": {
             "pareas": [pareas, "-p", "1", "{source}", "-o", "{output}"],

@@ -4,8 +4,6 @@ import unittest
 from pathlib import Path
 
 from run_compiler_stress_matrix import (
-    FASTEST_BASIS,
-    FASTEST_LANE,
     compiler_commands,
     lanes_for,
     materialize,
@@ -94,17 +92,6 @@ class CompilerStressMatrixTests(unittest.TestCase):
         self.assertEqual(compile_step[1:], ["-O2", "-c", "/s/scaling.vx", "-o", "/b/w/scaling.o"])
         self.assertIn("/b/w/scaling.o", link_step)
         self.assertEqual(link_step[link_step.index("-o") + 1], "/b/out")
-
-    def test_fastest_lane_covers_every_external_compiler_but_pareas(self) -> None:
-        commands = compiler_commands(Path("repo"), toolchains=Path("/tc"))
-        self.assertEqual(set(commands[FASTEST_LANE]), set(FASTEST_BASIS))
-        self.assertNotIn("pareas", FASTEST_BASIS)
-        self.assertNotIn(FASTEST_LANE, lanes_for("c"))
-        self.assertIn("-gcflags=-N -l -c=16", commands[FASTEST_LANE]["go"])
-        compile_step, _ = materialize(
-            commands[FASTEST_LANE]["vx"], Path("/s/scaling.vx"), Path("/b/out"), Path("/b/w")
-        )
-        self.assertEqual(compile_step[1:4], ["-O0", "-j", "16"])
 
     def test_tcc_library_path_is_optional(self) -> None:
         commands = compiler_commands(

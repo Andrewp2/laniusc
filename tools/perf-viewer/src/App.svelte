@@ -13,7 +13,7 @@
   import PhaseChart from './components/PhaseChart.svelte';
   import Timeline from './components/Timeline.svelte';
   import { loadCatalog } from './lib/catalog';
-  import { composeMeasurements, isComparisonCandidate, selectableResults } from './lib/comparison';
+  import { composeMeasurements, selectableResults } from './lib/comparison';
   import {
     analysisCapabilities, formatComparisonMs, formatMs, formatRecordedAt, hasMemoryData, hasPhaseData,
     measurementColor, measurementLabel, resultLabel, resultOptionLabel,
@@ -47,7 +47,7 @@
       name: measurementLabel(measurement, mixedFileCounts),
       value: measurement.summary.wall_ms.median,
       color: measurementColor(measurement),
-      contextOnly: !isComparisonCandidate(measurement),
+      contextOnly: measurement.compiler.name.toLowerCase() === 'tcc',
     }))
     .sort((left, right) => left.value - right.value || left.name.localeCompare(right.name)));
   const phaseAvailable = $derived(measurements.some(hasPhaseData));
@@ -164,7 +164,7 @@
           <p class="comparison-note" aria-live="polite">No retained external benchmark from this machine has the same workload identity. This chart contains only Lanius results.</p>
         {/if}
         {#if latencyValues.some((value) => value.contextOnly)}
-          <p class="comparison-note">Struck-through rows are context only: TCC does not optimize, and TypeScript (tsc, tsrs) type-checks and emits JavaScript rather than native code, so neither is compared with native builds.</p>
+          <p class="comparison-note">Struck-through rows are context only: TCC does not optimize.</p>
         {/if}
         {#if comparisonView === 'chart'}
           <BarChart values={latencyValues} unit="ms" {logarithmic} valueFormatter={formatComparisonMs} accessibleName="Compile time comparison" />

@@ -45,11 +45,7 @@ const CONFIGURATION_NAMES: Record<string, string> = {
   daemon_warm_workspace: 'preallocated',
   o0: '-O0',
   cuda: 'CUDA',
-  // TypeScript emits JavaScript, not native code: not comparable to native builds.
-  check_emit: 'type check + JS emit (no native code)',
-  // Each compiler's fastest single-file configuration with its own
-  // parallelism (an unofficial 5-seed pass, not the 20-seed lanes).
-  fastest: 'fastest config, 5 seeds',
+  check_emit: 'type check + JS emit',
 };
 
 export function formatMs(value: number): string {

@@ -19,129 +19,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "gcc -O0 -g0 '{source}' -o '{output}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "c",
-        "version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "c-fastest",
-      "measurement_semantics": {
-        "fastest_basis": "o0 lane (gcc -O0); gcc compiles one translation unit on one thread",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 982758,
-          "source_sloc": 30794,
-          "wall_ms": 1198.886794
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 983729,
-          "source_sloc": 30852,
-          "wall_ms": 1186.722275
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 981771,
-          "source_sloc": 30755,
-          "wall_ms": 1283.420678
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 977015,
-          "source_sloc": 30812,
-          "wall_ms": 1272.311127
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 971937,
-          "source_sloc": 30572,
-          "wall_ms": 1163.64465
-        }
-      ],
-      "source": {
-        "bytes": 982758,
-        "file_records": [
-          {"bytes":982758,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.c","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 982.758,
-        "largest_file_bytes": 982758,
-        "megabytes": 0.982758,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 819725.4360614802,
-        "median_sloc_per_second": 25685.494372039935,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              3,
-              0,
-              2
-            ],
-            "edges": [
-              1163.64465,
-              1203.5699926666666,
-              1243.4953353333333,
-              1283.420678
-            ],
-            "unit": "ms"
-          },
-          "mad": 35.24214400000005,
-          "maximum": 1283.420678,
-          "mean": 1220.9971048,
-          "median": 1198.886794,
-          "minimum": 1163.64465,
-          "p95": 1281.1987678,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "gcc",
-            "-O0",
-            "-g0",
-            "{source}",
-            "-o",
-            "{output}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "gcc -O0 -g0 '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -401,7 +279,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "gcc -O2 -g0 '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -661,129 +539,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "g++ -O0 -g0 '{source}' -o '{output}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "cpp",
-        "version": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "cpp-fastest",
-      "measurement_semantics": {
-        "fastest_basis": "o0 lane (g++ -O0); g++ compiles one translation unit on one thread",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 971937,
-          "source_sloc": 30572,
-          "wall_ms": 1300.661815
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 983729,
-          "source_sloc": 30852,
-          "wall_ms": 1365.439203
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 982758,
-          "source_sloc": 30794,
-          "wall_ms": 1323.515439
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 977015,
-          "source_sloc": 30812,
-          "wall_ms": 1376.852006
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 981771,
-          "source_sloc": 30755,
-          "wall_ms": 1325.543334
-        }
-      ],
-      "source": {
-        "bytes": 982758,
-        "file_records": [
-          {"bytes":982758,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.cpp","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 982.758,
-        "largest_file_bytes": 982758,
-        "megabytes": 0.982758,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 740655.5295611331,
-        "median_sloc_per_second": 23201.806543127317,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              3,
-              0,
-              2
-            ],
-            "edges": [
-              1300.661815,
-              1326.0585453333333,
-              1351.4552756666667,
-              1376.852006
-            ],
-            "unit": "ms"
-          },
-          "mad": 24.881519000000026,
-          "maximum": 1376.852006,
-          "mean": 1338.4023594,
-          "median": 1325.543334,
-          "minimum": 1300.661815,
-          "p95": 1374.5694454,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "g++",
-            "-O0",
-            "-g0",
-            "{source}",
-            "-o",
-            "{output}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "g++ -O0 -g0 '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -1043,7 +799,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "g++ -O2 -g0 '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -1301,128 +1057,7 @@
             "-of={output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/dmd/dmd2/linux/bin64/dmd '-od={workdir}' '-of={output}' '{source}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "d",
-        "version": "DMD64 D Compiler v2.113.0"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "d-fastest",
-      "measurement_semantics": {
-        "compiler_note": "dmd compiles and links (via cc); o0 is dmd's default (no -O), optimized is -O -release -inline",
-        "fastest_basis": "o0 lane (dmd without -O); dmd is single-threaded",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 989817,
-          "source_sloc": 30794,
-          "wall_ms": 277.012252
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 988714,
-          "source_sloc": 30755,
-          "wall_ms": 276.230951
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 978044,
-          "source_sloc": 30572,
-          "wall_ms": 272.856167
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 984302,
-          "source_sloc": 30812,
-          "wall_ms": 288.114902
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 990364,
-          "source_sloc": 30852,
-          "wall_ms": 263.549851
-        }
-      ],
-      "source": {
-        "bytes": 989817,
-        "file_records": [
-          {"bytes":989817,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.d","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 989.817,
-        "largest_file_bytes": 989817,
-        "megabytes": 0.989817,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 3579302.0167388846,
-        "median_sloc_per_second": 111337.99412651625,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              1,
-              3,
-              1
-            ],
-            "edges": [
-              263.549851,
-              271.73820133333334,
-              279.9265516666666,
-              288.114902
-            ],
-            "unit": "ms"
-          },
-          "mad": 3.374783999999977,
-          "maximum": 288.114902,
-          "mean": 275.5528246,
-          "median": 276.230951,
-          "minimum": 263.549851,
-          "p95": 285.894372,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/dmd/dmd2/linux/bin64/dmd",
-            "-od={workdir}",
-            "-of={output}",
-            "{source}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/dmd/dmd2/linux/bin64/dmd '-od={workdir}' '-of={output}' '{source}'",
           "environment_overrides": {}
         }
@@ -1684,7 +1319,7 @@
             "-of={output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/dmd/dmd2/linux/bin64/dmd -O -release -inline '-od={workdir}' '-of={output}' '{source}'",
           "environment_overrides": {}
         }
@@ -1940,136 +1575,12 @@
           "argv": [
             "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/go/go/bin/go",
             "build",
-            "-gcflags=-N -l -c=16",
-            "-o",
-            "{output}",
-            "{source}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/go/go/bin/go build '-gcflags=-N -l -c=16' -o '{output}' '{source}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "go",
-        "version": "go version go1.27.3 linux/amd64"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "go-fastest",
-      "measurement_semantics": {
-        "cache_entries_added_min": 5,
-        "compiler_note": "go build of one main-package file; the standard library is compiled into a GOCACHE private to the run by the unmeasured warm seed (the Go analogue of a precompiled libc); every measured sample added GOCACHE entries, i.e. compiled the application fresh; the o0 lane passes -gcflags='-N -l' to the main package only",
-        "fastest_basis": "o0 lane plus -c=16 backend concurrency (-gcflags='-N -l -c=16'); measured no faster than the default -c on one file",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 965607,
-          "source_sloc": 30573,
-          "wall_ms": 520.659165
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 979428,
-          "source_sloc": 30795,
-          "wall_ms": 528.814008
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 978059,
-          "source_sloc": 30756,
-          "wall_ms": 557.706774
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 978927,
-          "source_sloc": 30853,
-          "wall_ms": 512.531258
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 974511,
-          "source_sloc": 30813,
-          "wall_ms": 560.970014
-        }
-      ],
-      "source": {
-        "bytes": 979428,
-        "file_records": [
-          {"bytes":979428,"lines":32058,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.go","sloc":30795}
-        ],
-        "files": 1,
-        "kilobytes": 979.428,
-        "largest_file_bytes": 979428,
-        "megabytes": 0.979428,
-        "physical_lines": 32058,
-        "sloc": 30795,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 1852121.8900842734,
-        "median_sloc_per_second": 58234.085206003096,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              2,
-              1,
-              2
-            ],
-            "edges": [
-              512.531258,
-              528.67751,
-              544.823762,
-              560.970014
-            ],
-            "unit": "ms"
-          },
-          "mad": 16.282749999999965,
-          "maximum": 560.970014,
-          "mean": 536.1362438,
-          "median": 528.814008,
-          "minimum": 512.531258,
-          "p95": 560.317366,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/go/go/bin/go",
-            "build",
             "-gcflags=-N -l",
             "-o",
             "{output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/go/go/bin/go build '-gcflags=-N -l' -o '{output}' '{source}'",
           "environment_overrides": {}
         }
@@ -2330,7 +1841,7 @@
             "{output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/go/go/bin/go build -o '{output}' '{source}'",
           "environment_overrides": {}
         }
@@ -2591,129 +2102,7 @@
             "-of={output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ldc/ldc2-1.43.0-linux-x86_64/bin/ldc2 -O0 '-od={workdir}' '-of={output}' '{source}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "ldc",
-        "version": "LDC - the LLVM D compiler (1.43.0):"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "ldc-fastest",
-      "measurement_semantics": {
-        "compiler_note": "ldc2 compiles and links (via cc); o0 is -O0, optimized is -O3 -release (dub's release build for LDC; inlining is enabled at -O3)",
-        "fastest_basis": "o0 lane (-O0); LDC codegens one module on one thread",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 990364,
-          "source_sloc": 30852,
-          "wall_ms": 400.705237
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 984302,
-          "source_sloc": 30812,
-          "wall_ms": 412.402619
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 989817,
-          "source_sloc": 30794,
-          "wall_ms": 402.196502
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 988714,
-          "source_sloc": 30755,
-          "wall_ms": 408.422082
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 978044,
-          "source_sloc": 30572,
-          "wall_ms": 382.869113
-        }
-      ],
-      "source": {
-        "bytes": 989817,
-        "file_records": [
-          {"bytes":989817,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.d","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 989.817,
-        "largest_file_bytes": 989817,
-        "megabytes": 0.989817,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 2461028.365681808,
-        "median_sloc_per_second": 76564.56445262668,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              1,
-              2,
-              2
-            ],
-            "edges": [
-              382.869113,
-              392.713615,
-              402.55811700000004,
-              412.402619
-            ],
-            "unit": "ms"
-          },
-          "mad": 6.2255799999999795,
-          "maximum": 412.402619,
-          "mean": 401.31911060000004,
-          "median": 402.196502,
-          "minimum": 382.869113,
-          "p95": 411.60651160000003,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ldc/ldc2-1.43.0-linux-x86_64/bin/ldc2",
-            "-O0",
-            "-od={workdir}",
-            "-of={output}",
-            "{source}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ldc/ldc2-1.43.0-linux-x86_64/bin/ldc2 -O0 '-od={workdir}' '-of={output}' '{source}'",
           "environment_overrides": {}
         }
@@ -2974,7 +2363,7 @@
             "-of={output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ldc/ldc2-1.43.0-linux-x86_64/bin/ldc2 -O3 -release '-od={workdir}' '-of={output}' '{source}'",
           "environment_overrides": {}
         }
@@ -3232,134 +2621,6 @@
             "-Awarnings",
             "-Zthreads=16",
             "-C",
-            "opt-level=3",
-            "-C",
-            "debuginfo=0",
-            "-C",
-            "strip=debuginfo",
-            "{source}",
-            "-o",
-            "{output}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "rustc -Awarnings -Zthreads=16 -C opt-level=3 -C debuginfo=0 -C strip=debuginfo '{source}' -o '{output}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "rust",
-        "version": "rustc 1.101.0-nightly (e9bbadf68 2026-10-12)"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "rust-fastest",
-      "measurement_semantics": {
-        "fastest_basis": "optimized lane (opt-level=3 compiles faster than opt-level=0 here); -Zthreads=16 parallel frontend and rustc's default 16 codegen units",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 1003685,
-          "source_sloc": 30794,
-          "wall_ms": 898.218968
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 1003426,
-          "source_sloc": 30852,
-          "wall_ms": 900.385654
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 1002342,
-          "source_sloc": 30755,
-          "wall_ms": 919.754015
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 990058,
-          "source_sloc": 30572,
-          "wall_ms": 946.169186
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 998646,
-          "source_sloc": 30812,
-          "wall_ms": 906.636837
-        }
-      ],
-      "source": {
-        "bytes": 1003685,
-        "file_records": [
-          {"bytes":1003685,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.rs","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 1003.685,
-        "largest_file_bytes": 1003685,
-        "megabytes": 1.003685,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 1101484.0333473014,
-        "median_sloc_per_second": 33984.9416464864,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              3,
-              1,
-              1
-            ],
-            "edges": [
-              898.218968,
-              914.202374,
-              930.18578,
-              946.169186
-            ],
-            "unit": "ms"
-          },
-          "mad": 8.417868999999996,
-          "maximum": 946.169186,
-          "mean": 914.2329320000001,
-          "median": 906.636837,
-          "minimum": 898.218968,
-          "p95": 940.8861518,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "rustc",
-            "-Awarnings",
-            "-Zthreads=16",
-            "-C",
             "opt-level=0",
             "-C",
             "debuginfo=0",
@@ -3369,7 +2630,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "rustc -Awarnings -Zthreads=16 -C opt-level=0 -C debuginfo=0 -C strip=debuginfo '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -3635,7 +2896,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "rustc -Awarnings -Zthreads=16 -C opt-level=3 -C debuginfo=0 -C strip=debuginfo '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -3896,7 +3157,7 @@
             "-o",
             "{output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/tcc.exe -B/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/lib/tcc -L/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/lib/tcc -std=c11 '{source}' -o '{output}'",
           "environment_overrides": {}
         }
@@ -4149,136 +3410,13 @@
       "commands": {
         "command": {
           "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/tcc.exe",
-            "-B/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/lib/tcc",
-            "-L/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/lib/tcc",
-            "-std=c11",
-            "{source}",
-            "-o",
-            "{output}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/tcc.exe -B/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/lib/tcc -L/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/thirdparty/tcc/lib/tcc -std=c11 '{source}' -o '{output}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "tcc",
-        "version": "tcc version 0.9.28rc 2026-07-24 HEAD@85ba3ae8 (x86_64 Linux)"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "tcc-fastest",
-      "measurement_semantics": {
-        "fastest_basis": "default lane; single-threaded",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 981771,
-          "source_sloc": 30755,
-          "wall_ms": 14.450705
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 971937,
-          "source_sloc": 30572,
-          "wall_ms": 14.733279
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 983729,
-          "source_sloc": 30852,
-          "wall_ms": 13.42135
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 977015,
-          "source_sloc": 30812,
-          "wall_ms": 15.346781
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 982758,
-          "source_sloc": 30794,
-          "wall_ms": 15.438969
-        }
-      ],
-      "source": {
-        "bytes": 982758,
-        "file_records": [
-          {"bytes":982758,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.c","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 982.758,
-        "largest_file_bytes": 982758,
-        "megabytes": 0.982758,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 65968817.939305976,
-        "median_sloc_per_second": 2075030.2766953644,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              1,
-              2,
-              2
-            ],
-            "edges": [
-              13.42135,
-              14.093889666666668,
-              14.766429333333333,
-              15.438969
-            ],
-            "unit": "ms"
-          },
-          "mad": 0.6135020000000004,
-          "maximum": 15.438969,
-          "mean": 14.678216800000001,
-          "median": 14.733279,
-          "minimum": 13.42135,
-          "p95": 15.4205314,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
             "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@typescript/typescript-linux-x64/lib/tsc",
             "-p",
             "{workdir}/tsconfig.json",
             "--checkers",
             "4"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@typescript/typescript-linux-x64/lib/tsc -p '{workdir}/tsconfig.json' --checkers 4",
           "environment_overrides": {}
         }
@@ -4545,136 +3683,13 @@
       "commands": {
         "command": {
           "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@typescript/typescript-linux-x64/lib/tsc",
-            "-p",
-            "{workdir}/tsconfig.json",
-            "--checkers",
-            "4"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@typescript/typescript-linux-x64/lib/tsc -p '{workdir}/tsconfig.json' --checkers 4",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "tsc",
-        "version": "Version 7.0.2"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "tsc-fastest",
-      "measurement_semantics": {
-        "compiler_note": "TypeScript does not produce native code: full type check plus ES2022 JavaScript emit of one file (tsconfig files: [the .ts], strict, skipLibCheck), run with node to check the output; the measured binary is the native tsgo executable from @typescript/typescript-linux-x64, not the node launcher",
-        "fastest_basis": "check_emit lane with --checkers 4; default, 4, and 16 checkers measured within noise on one file, --singleThreaded slower",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast",
-        "typescript_checkers": 4
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 1026071,
-          "source_sloc": 30754,
-          "wall_ms": 313.673982
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 1027832,
-          "source_sloc": 30793,
-          "wall_ms": 314.75592
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 1010933,
-          "source_sloc": 30571,
-          "wall_ms": 314.77261
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 1026141,
-          "source_sloc": 30851,
-          "wall_ms": 318.447653
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 1023587,
-          "source_sloc": 30811,
-          "wall_ms": 314.150567
-        }
-      ],
-      "source": {
-        "bytes": 1027832,
-        "file_records": [
-          {"bytes":1027832,"lines":32054,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.ts","sloc":30793}
-        ],
-        "files": 1,
-        "kilobytes": 1027.832,
-        "largest_file_bytes": 1027832,
-        "megabytes": 1.027832,
-        "physical_lines": 32054,
-        "sloc": 30793,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 3258268.828781073,
-        "median_sloc_per_second": 97831.36088433221,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              4,
-              0,
-              1
-            ],
-            "edges": [
-              313.673982,
-              315.2652056666667,
-              316.8564293333333,
-              318.447653
-            ],
-            "unit": "ms"
-          },
-          "mad": 0.6053529999999796,
-          "maximum": 318.447653,
-          "mean": 315.16014640000003,
-          "median": 314.75592,
-          "minimum": 313.673982,
-          "p95": 317.7126444,
-          "samples": 5
-        }
-      },
-      "target": "javascript-es2022",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
             "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@tsrs/linux-x64-gnu/tsrs",
             "-p",
             "{workdir}/tsconfig.json",
             "--checkers",
             "4"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@tsrs/linux-x64-gnu/tsrs -p '{workdir}/tsconfig.json' --checkers 4",
           "environment_overrides": {}
         }
@@ -4941,129 +3956,6 @@
       "commands": {
         "command": {
           "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@tsrs/linux-x64-gnu/tsrs",
-            "-p",
-            "{workdir}/tsconfig.json",
-            "--checkers",
-            "4"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/ts/node_modules/@tsrs/linux-x64-gnu/tsrs -p '{workdir}/tsconfig.json' --checkers 4",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "tsrs",
-        "version": "Version 7.1.0-dev.20260930.4 (tsrs 0.18.0-ts7.1.0-dev.20260929, microsoft/TypeScript@b85298b6a81f)"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "tsrs-fastest",
-      "measurement_semantics": {
-        "compiler_note": "TypeScript does not produce native code: full type check plus ES2022 JavaScript emit of one file (tsconfig files: [the .ts], strict, skipLibCheck), run with node to check the output; the measured binary is the native tsrs executable from @tsrs/linux-x64-gnu, not the node launcher",
-        "fastest_basis": "check_emit lane with --checkers 4; default, 4, 16 checkers and --singleThreaded measured within noise on one file",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast",
-        "typescript_checkers": 4
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 1010933,
-          "source_sloc": 30571,
-          "wall_ms": 165.638025
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 1026141,
-          "source_sloc": 30851,
-          "wall_ms": 178.51336
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 1026071,
-          "source_sloc": 30754,
-          "wall_ms": 167.786241
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 1027832,
-          "source_sloc": 30793,
-          "wall_ms": 166.766139
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 1023587,
-          "source_sloc": 30811,
-          "wall_ms": 163.482506
-        }
-      ],
-      "source": {
-        "bytes": 1027832,
-        "file_records": [
-          {"bytes":1027832,"lines":32054,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.ts","sloc":30793}
-        ],
-        "files": 1,
-        "kilobytes": 1027.832,
-        "largest_file_bytes": 1027832,
-        "megabytes": 1.027832,
-        "physical_lines": 32054,
-        "sloc": 30793,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 6115346.490180921,
-        "median_sloc_per_second": 184565.10816281466,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              4,
-              0,
-              1
-            ],
-            "edges": [
-              163.482506,
-              168.49279066666668,
-              173.50307533333333,
-              178.51336
-            ],
-            "unit": "ms"
-          },
-          "mad": 1.1281140000000107,
-          "maximum": 178.51336,
-          "mean": 168.4372542,
-          "median": 166.766139,
-          "minimum": 163.482506,
-          "p95": 176.3679362,
-          "samples": 5
-        }
-      },
-      "target": "javascript-es2022",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
             "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/v",
             "-w",
             "-n",
@@ -5071,131 +3963,7 @@
             "{output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/v -w -n -o '{output}' '{source}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "v",
-        "version": "V 0.5.2 b7fd295"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "v-fastest",
-      "measurement_semantics": {
-        "cache_entries_added_min": 1,
-        "compiler_note": "o0 is V's default development build (generated C compiled by V's bundled TCC), optimized is -prod (generated C compiled by the system cc at -O3 -flto); -w -n silence warnings and notices; V's module cache (builtin modules, third-party C objects) is private to the run and warmed by the unmeasured warm seed; every measured sample wrote a new whole-program cache entry, i.e. was not served from V's executable cache",
-        "fastest_basis": "o0 lane (V development build, bundled TCC); V already threads its transform and cgen by default (-no-parallel was 40% slower) and -parallel-cc was slower with TCC",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 938815,
-          "source_sloc": 30812,
-          "wall_ms": 2750.837316
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 946413,
-          "source_sloc": 30852,
-          "wall_ms": 2665.742164
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 944872,
-          "source_sloc": 30794,
-          "wall_ms": 2673.275707
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 944095,
-          "source_sloc": 30755,
-          "wall_ms": 2658.791555
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 935709,
-          "source_sloc": 30572,
-          "wall_ms": 2610.121325
-        }
-      ],
-      "source": {
-        "bytes": 944872,
-        "file_records": [
-          {"bytes":944872,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.v","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 944.872,
-        "largest_file_bytes": 944872,
-        "megabytes": 0.944872,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 355027.95911060215,
-        "median_sloc_per_second": 11567.285123259691,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              1,
-              3,
-              1
-            ],
-            "edges": [
-              2610.121325,
-              2657.0266553333336,
-              2703.9319856666666,
-              2750.837316
-            ],
-            "unit": "ms"
-          },
-          "mad": 7.533543000000009,
-          "maximum": 2750.837316,
-          "mean": 2671.7536133999997,
-          "median": 2665.742164,
-          "minimum": 2610.121325,
-          "p95": 2735.3249942,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/v",
-            "-w",
-            "-n",
-            "-o",
-            "{output}",
-            "{source}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/v -w -n -o '{output}' '{source}'",
           "environment_overrides": {}
         }
@@ -5458,7 +4226,7 @@
             "{output}",
             "{source}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/v/v -w -n -prod -o '{output}' '{source}'",
           "environment_overrides": {}
         }
@@ -5715,173 +4483,12 @@
           "argv": [
             "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/bin/vxc",
             "-O0",
-            "-j",
-            "16",
             "-c",
             "{source}",
             "-o",
             "{workdir}/scaling.o"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/bin/vxc -O0 -j 16 -c '{source}' -o '{workdir}/scaling.o'",
-          "environment_overrides": {}
-        },
-        "link": {
-          "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/bin/clang",
-            "-Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib",
-            "-Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib",
-            "{workdir}/scaling.o",
-            "-o",
-            "{output}",
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_c_runner_utils.so",
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_runner_utils.so",
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_std_core.so",
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_mlir_shims.so",
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_x86_dispatch.so",
-            "-lffi",
-            "-rdynamic",
-            "-lm"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/bin/clang -Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib -Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib '{workdir}/scaling.o' -o '{output}' /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_c_runner_utils.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_runner_utils.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_std_core.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_mlir_shims.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_x86_dispatch.so -lffi -rdynamic -lm",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "vx",
-        "version": "vxc 0.0.3"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "vx-fastest",
-      "measurement_semantics": {
-        "compiler_note": "vxc v0.0.3 has no action that writes a linked executable, so each sample is `vxc -O<n> -c` (object emission) followed by the link vxc's own run action performs with its bundled clang; wall time covers both steps",
-        "fastest_basis": "o0 lane plus -j 16 (vxc's parallel frontend on 16 threads, about 11% faster than the sequential driver)",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": {
-            "compile": 6299.463639,
-            "link": 57.010202
-          },
-          "seed": 23,
-          "source_bytes": 1002799,
-          "source_sloc": 30797,
-          "wall_ms": 6356.479683
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": {
-            "compile": 6226.372062,
-            "link": 62.300036
-          },
-          "seed": 22,
-          "source_bytes": 1002589,
-          "source_sloc": 30855,
-          "wall_ms": 6288.67794
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": {
-            "compile": 6266.838111,
-            "link": 65.25021
-          },
-          "seed": 24,
-          "source_bytes": 997725,
-          "source_sloc": 30815,
-          "wall_ms": 6332.094154
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": {
-            "compile": 6204.098198,
-            "link": 57.662329
-          },
-          "seed": 20,
-          "source_bytes": 989284,
-          "source_sloc": 30575,
-          "wall_ms": 6261.768662
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": {
-            "compile": 6191.470645,
-            "link": 54.457201
-          },
-          "seed": 21,
-          "source_bytes": 1001470,
-          "source_sloc": 30758,
-          "wall_ms": 6245.942574
-        }
-      ],
-      "source": {
-        "bytes": 1002799,
-        "file_records": [
-          {"bytes":1002799,"lines":32058,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.vx","sloc":30797}
-        ],
-        "files": 1,
-        "kilobytes": 1002.799,
-        "largest_file_bytes": 1002799,
-        "megabytes": 1.002799,
-        "physical_lines": 32058,
-        "sloc": 30797,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 157987.95091290135,
-        "median_sloc_per_second": 4882.80574553107,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              2,
-              1,
-              2
-            ],
-            "edges": [
-              6245.942574,
-              6282.788277,
-              6319.63398,
-              6356.479683
-            ],
-            "unit": "ms"
-          },
-          "mad": 42.735365999999885,
-          "maximum": 6356.479683,
-          "mean": 6296.9926026,
-          "median": 6288.67794,
-          "minimum": 6245.942574,
-          "p95": 6351.602577199999,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "compile": {
-          "argv": [
-            "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/bin/vxc",
-            "-O0",
-            "-c",
-            "{source}",
-            "-o",
-            "{workdir}/scaling.o"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/bin/vxc -O0 -c '{source}' -o '{workdir}/scaling.o'",
           "environment_overrides": {}
         },
@@ -5902,7 +4509,7 @@
             "-rdynamic",
             "-lm"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/bin/clang -Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib -Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib '{workdir}/scaling.o' -o '{output}' /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_c_runner_utils.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_runner_utils.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_std_core.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_mlir_shims.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_x86_dispatch.so -lffi -rdynamic -lm",
           "environment_overrides": {}
         }
@@ -6223,7 +4830,7 @@
             "-o",
             "{workdir}/scaling.o"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/bin/vxc -O2 -c '{source}' -o '{workdir}/scaling.o'",
           "environment_overrides": {}
         },
@@ -6244,7 +4851,7 @@
             "-rdynamic",
             "-lm"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/bin/clang -Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib -Wl,-rpath,/home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib '{workdir}/scaling.o' -o '{output}' /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_c_runner_utils.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/llvm/lib/libmlir_runner_utils.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_std_core.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_mlir_shims.so /home/andrew-peterson/code/laniusc/target/claude-work/toolchains/vx/vx-v0.0.3-x86_64-unknown-linux-gnu/lib/libvx_x86_dispatch.so -lffi -rdynamic -lm",
           "environment_overrides": {}
         }
@@ -6562,136 +5169,12 @@
             "build-exe",
             "-lc",
             "-O",
-            "ReleaseFast",
-            "-fstrip",
-            "{source}",
-            "-femit-bin={output}"
-          ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
-          "display": "zig build-exe -lc -O ReleaseFast -fstrip '{source}' '-femit-bin={output}'",
-          "environment_overrides": {}
-        }
-      },
-      "compiler": {
-        "name": "zig",
-        "version": "0.13.0"
-      },
-      "configuration": "fastest",
-      "configuration_display": "fastest",
-      "id": "zig-fastest",
-      "measurement_semantics": {
-        "fastest_basis": "optimized lane (ReleaseFast is faster than Debug here); zig 0.13 has no option that parallelizes one file",
-        "imported": true,
-        "note": "raw timing samples are exact; the runner retained a command template rather than a materialized command per sample",
-        "source_artifact": "target/claude-work/xlang/runs/fast"
-      },
-      "samples": [
-        {
-          "compiler_ms": null,
-          "index": 0,
-          "request_phases_ms": null,
-          "seed": 24,
-          "source_bytes": 998800,
-          "source_sloc": 30812,
-          "wall_ms": 843.965235
-        },
-        {
-          "compiler_ms": null,
-          "index": 1,
-          "request_phases_ms": null,
-          "seed": 20,
-          "source_bytes": 990195,
-          "source_sloc": 30572,
-          "wall_ms": 770.424288
-        },
-        {
-          "compiler_ms": null,
-          "index": 2,
-          "request_phases_ms": null,
-          "seed": 22,
-          "source_bytes": 1003564,
-          "source_sloc": 30852,
-          "wall_ms": 787.465383
-        },
-        {
-          "compiler_ms": null,
-          "index": 3,
-          "request_phases_ms": null,
-          "seed": 23,
-          "source_bytes": 1003830,
-          "source_sloc": 30794,
-          "wall_ms": 799.821107
-        },
-        {
-          "compiler_ms": null,
-          "index": 4,
-          "request_phases_ms": null,
-          "seed": 21,
-          "source_bytes": 1002489,
-          "source_sloc": 30755,
-          "wall_ms": 799.899296
-        }
-      ],
-      "source": {
-        "bytes": 1003830,
-        "file_records": [
-          {"bytes":1003830,"lines":32056,"path":"target/claude-work/xlang/runs/native1/sources/seed-23/1000000/scaling.zig","sloc":30794}
-        ],
-        "files": 1,
-        "kilobytes": 1003.83,
-        "largest_file_bytes": 1003830,
-        "megabytes": 1.00383,
-        "physical_lines": 32056,
-        "sloc": 30794,
-        "sloc_policy": "nonblank physical lines excluding comment-only lines"
-      },
-      "summary": {
-        "compiler_ms": null,
-        "median_bytes_per_second": 1255068.15363401,
-        "median_sloc_per_second": 38501.10947372136,
-        "wall_ms": {
-          "histogram": {
-            "counts": [
-              2,
-              2,
-              1
-            ],
-            "edges": [
-              770.424288,
-              794.937937,
-              819.451586,
-              843.965235
-            ],
-            "unit": "ms"
-          },
-          "mad": 12.35572400000001,
-          "maximum": 843.965235,
-          "mean": 800.3150618,
-          "median": 799.821107,
-          "minimum": 770.424288,
-          "p95": 835.1520472000001,
-          "samples": 5
-        }
-      },
-      "target": "x86_64",
-      "validation": {
-        "artifacts_validated": true
-      }
-    },
-    {
-      "commands": {
-        "command": {
-          "argv": [
-            "zig",
-            "build-exe",
-            "-lc",
-            "-O",
             "Debug",
             "-fstrip",
             "{source}",
             "-femit-bin={output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "zig build-exe -lc -O Debug -fstrip '{source}' '-femit-bin={output}'",
           "environment_overrides": {}
         }
@@ -6953,7 +5436,7 @@
             "{source}",
             "-femit-bin={output}"
           ],
-          "cwd": "/home/andrew-peterson/code/laniusc/.claude/worktrees/agent-afaac5f13b255abb2",
+          "cwd": "/home/andrew-peterson/code/laniusc",
           "display": "zig build-exe -lc -O ReleaseFast -fstrip '{source}' '-femit-bin={output}'",
           "environment_overrides": {}
         }
@@ -7204,10 +5687,10 @@
     }
   ],
   "run": {
-    "git_commit": "68cf8fe7988a6488ca4979486a750597c6d73fcc",
+    "git_commit": "90b2a0012b23279f40fe3d5b84f047d4fdff3d03",
     "git_dirty": true,
-    "id": "laptop-single-file-1mb-cross-language-20261020",
-    "recorded_at": "2026-10-20T16:50:59.934172+00:00"
+    "id": "imported-single-file-1000000-comparison",
+    "recorded_at": "2026-10-20T17:09:08.191458+00:00"
   },
   "schema": "lanius.performance-run.v1",
   "workload": {
@@ -7215,7 +5698,7 @@
     "classification": "imported controlled cross-language compiler stress",
     "comparison_group": "compiler-stress/comparative-single-file/pareas-common-subset/1000000/seeds-20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39",
     "generator": "tools/generate_compiler_stress.py",
-    "id": "laptop-single-file-1mb-cross-language-20261020",
+    "id": "imported-single-file-1000000-comparison",
     "imported": true,
     "kind": "single_file"
   }
