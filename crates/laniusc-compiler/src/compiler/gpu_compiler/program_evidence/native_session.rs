@@ -879,6 +879,21 @@ impl<'session> ValidatedReplayRequest<'session> {
 /// holds the row's scalar cache, which differs between jobs for the same
 /// copy. Lowering takes a parameter's type from its type row; whether any
 /// reader uses the parameter row's slot is for D5's accessor audit.
+///
+/// Return statement rows (HIR kind 9) are counted apart as well. A copy's
+/// slot is its scalar cache, which expression_types/00_init fills by reading
+/// the statement's payload as an expression form (HIR_STMT_RETURN and
+/// HIR_EXPR_NAME are both 2). Readers checked (10-19): lowering's
+/// materialize types a return from its function's result and its value row
+/// (payload.b) and sizes it from the function's result words, overriding
+/// what the row's own slot gave; 00_project's value type of the row is read
+/// only for value, store and match operations; the checker's return
+/// validation reads payload.b; the other expression-ref readers
+/// (call_args, aggregate_elements, place_mark, receiver_*, count,
+/// local_mark, local_scatter, match_reference, function_layout_*,
+/// function_templates, compact_expr, compact_aggregate_requests,
+/// inference_expression_reference, 08_validate_call_args, 01a/01b) index
+/// expression, type, pattern or declaration rows.
 /// `ty` with every array length that is a count written as a u32 count.
 fn lengths_as_counts(ty: crate::type_checker::CheckedGenericType) -> crate::type_checker::CheckedGenericType {
     use crate::type_checker::{CheckedGenericApplicationArgument as Argument, CheckedGenericType as Type};
@@ -918,6 +933,7 @@ fn report_instance_table(
 ) {
     use crate::type_checker::CheckedRowFact;
     const HIR_PARAM: u32 = 4;
+    const HIR_RETURN_STMT: u32 = 9;
     let label = format!("[instance-table] unit {}:{}", unit[0], unit[1]);
     let Some(table) = template.and_then(|closure| closure.table.as_ref()) else {
         eprintln!("{label} no table: template closure {}, found {}, flags {:#x}, error {:?}, {} copies",
@@ -935,7 +951,7 @@ fn report_instance_table(
     }
     let copy_rows = copies.map_or(&[][..], |closure| closure.copy_rows.as_slice());
     let [mut matched, mut unmatched, mut missing, mut lengths] = [0usize; 4];
-    let [mut rows, mut equal, mut differ, mut undecoded, mut params, mut counts] = [0usize; 6];
+    let [mut rows, mut equal, mut differ, mut undecoded, mut params, mut counts, mut returns] = [0usize; 7];
     for (index, (entry, &(function, _))) in specialization.entries().iter().zip(owners).enumerate() {
         let Some(found) = entries.iter()
             .find(|candidate| candidate.is_instance(function, &entry.arguments, &entry.constants, unit))
@@ -969,6 +985,7 @@ fn report_instance_table(
             match (expected, &actual) {
                 _ if *expected == actual => equal += 1,
                 _ if kind == Some(HIR_PARAM) => params += 1,
+                _ if kind == Some(HIR_RETURN_STMT) => returns += 1,
                 (CheckedRowFact::Type(left), CheckedRowFact::Type(right))
                     if lengths_as_counts(left.clone()) == lengths_as_counts(right.clone()) => counts += 1,
                 (CheckedRowFact::Undecoded(_), CheckedRowFact::Undecoded(_)) => undecoded += 1,
@@ -989,7 +1006,8 @@ fn report_instance_table(
     eprintln!(
         "{label} entries={} flags={} failed={} copies={} matched={matched} unmatched={unmatched} \
          missing_rows={missing} length_mismatch={lengths} rows={rows} equal={equal} differ={differ} \
-         param_rows_differ={params} array_count_equal={counts} both_undecoded={undecoded}",
+         param_rows_differ={params} return_rows_differ={returns} array_count_equal={counts} \
+         both_undecoded={undecoded}",
         table.entries.len(), table.flags, table.failed, specialization.entries().len(),
     );
 }
