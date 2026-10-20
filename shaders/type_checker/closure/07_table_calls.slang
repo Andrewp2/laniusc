@@ -16,6 +16,10 @@
 // Every other row, and a call of a nongeneric function, keeps the template's
 // callee (IT_CALL_NONE). A call the table cannot name is IT_CALL_UNRESOLVED:
 // lowering an instance over the table needs every call named.
+//
+// A row whose callee entry has this row's template call as its origin also
+// offers its own entry as that origin's parent (D4, instance_table_origins):
+// the smallest such entry wins, whatever the lane order.
 import hir_records;
 import type_checker.canonical.canonical_api;
 import type_checker.substitution.ct_subst;
@@ -116,6 +120,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 entry = instance_table[2u * index];
     uint2 call = uint2(IT_CALL_NONE, 0u);
     // Only this job's own bodies are templates today (IT_SOURCE_LOCAL).
-    if (instance_table[2u * index + 1u].z == IT_SOURCE_LOCAL) call = row_call(entry.x + (row - entry.w), entry.z);
+    uint template_row = entry.x + (row - entry.w);
+    if (instance_table[2u * index + 1u].z == IT_SOURCE_LOCAL) call = row_call(template_row, entry.z);
     instance_row_calls[row] = call;
+    if (call.x == IT_CALL_ENTRY && it_origin_call(call.y) == template_row)
+    {
+        uint ignored;
+        InterlockedMax(instance_table_origins[call.y], ~index, ignored);
+    }
 }

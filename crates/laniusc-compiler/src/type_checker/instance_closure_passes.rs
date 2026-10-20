@@ -276,6 +276,7 @@ pub(super) fn register_instance_table_passes(
     let counts = storage(graph, "instance_table_counts", INSTANCE_TABLE_COUNT_WORDS * 4)?;
     storage(graph, "instance_table_keys", instances * 16)?;
     storage(graph, "instance_table", instances * 32)?;
+    let origins = storage(graph, "instance_table_origins", instances * 4)?;
     let rows = storage(graph, "instance_row_refs", row_capacity * 8)?;
     let calls = storage(graph, "instance_row_calls", row_capacity * 8)?;
     graph.add_resource(ResourceDesc {
@@ -293,6 +294,7 @@ pub(super) fn register_instance_table_passes(
             PassAccess::write("instance_table_counts", counts),
             PassAccess::write("instance_row_refs", rows),
             PassAccess::write("instance_row_calls", calls),
+            PassAccess::write("instance_table_origins", origins),
         ],
     })?;
     for (name, kernel) in [
@@ -382,6 +384,7 @@ impl InstanceTableOperations {
         let counts = buffer("instance_table_counts")?;
         let rows = buffer("instance_row_refs")?;
         let calls = buffer("instance_row_calls")?;
+        let origins = buffer("instance_table_origins")?;
         let clear = crate::gpu::operations::ClearBuffersOperation::new(
             graph,
             INSTANCE_TABLE_CLEAR_PASS,
@@ -389,6 +392,7 @@ impl InstanceTableOperations {
                 ("instance_table_counts", (&counts).into()),
                 ("instance_row_refs", (&rows).into()),
                 ("instance_row_calls", (&calls).into()),
+                ("instance_table_origins", (&origins).into()),
             ],
         )?;
         let closure_args = buffer("instance_closure_args")?;

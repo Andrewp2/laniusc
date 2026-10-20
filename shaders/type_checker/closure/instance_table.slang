@@ -11,7 +11,8 @@
 // row count), 05b_table_rank (the same lanes: rank and base by counting),
 // 05c_table_args (sizes the row dispatches), 06_table_rows / 06a (one lane
 // per virtual row, retried while a realization is busy), 07_table_calls (one
-// lane per virtual row: the callee instance of each call row, D3).
+// lane per virtual row: the callee instance of each call row, D3, and each
+// entry's origin, D4).
 //
 // The table is an observation for now: the host reads it only in validation
 // mode (LANIUS_CHECK_INSTANCE_TABLE), against the copy run's own types.
@@ -34,6 +35,13 @@ public RWStructuredBuffer<uint2> instance_row_refs;
 // Per virtual row: (IT_CALL_* kind, value) of the call it makes, for a call
 // row (07_table_calls); (IT_CALL_NONE, 0) for every other row.
 public RWStructuredBuffer<uint2> instance_row_calls;
+// Per entry: ~(its origin's parent entry), or 0 for a root (07_table_calls).
+// An entry's origin is its closure instance's template call: the smallest
+// call that reaches it, the one the host admits for it (D1). Its parent is
+// the smallest entry whose row for that call names the entry (IT_CALL_ENTRY);
+// a root's origin call is in a body the table does not hold (a nongeneric
+// function). Read through it_origin_call and it_origin_parent.
+public RWStructuredBuffer<uint> instance_table_origins;
 
 // Call kinds of instance_row_calls.
 public static const uint IT_CALL_NONE = 0u;        // no generic or bound call: the template's callee
@@ -85,6 +93,21 @@ public bool it_key_less(uint4 a, uint4 b)
     if (a.x != b.x) return a.x < b.x;
     if (a.y != b.y) return a.y < b.y;
     return a.z < b.z;
+}
+
+// The origin call HIR row of entry `entry` (its closure instance's template
+// call).
+public uint it_origin_call(uint entry)
+{
+    return instance_closure_instances[2u * instance_table[2u * entry + 1u].x + 1u].y;
+}
+
+// The entry whose call row is entry `entry`'s origin, or IT_NO_ENTRY for a
+// root.
+public uint it_origin_parent(uint entry)
+{
+    uint word = instance_table_origins[entry];
+    return word == 0u ? IT_NO_ENTRY : ~word;
 }
 
 // The entry holding virtual row `row`: the last entry whose base is at or

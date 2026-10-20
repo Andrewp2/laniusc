@@ -933,6 +933,9 @@ fn lengths_as_counts(ty: crate::type_checker::CheckedGenericType) -> crate::type
 /// Unresolved rows (today: calls on a type parameter that a replay routes
 /// to an implementation outside this unit, such as an imported trait's)
 /// are counted.
+///
+/// Origins (D4, instance_table_origins) are checked against the table's own
+/// calls and the closure instances the host admits; see below.
 fn report_instance_table(
     unit: [u32; 2],
     template: Option<&crate::type_checker::CheckedInstanceClosure>,
@@ -1048,12 +1051,46 @@ fn report_instance_table(
             }
         }
     }
+    // Origins (D4): the parent's row for the origin call names the entry,
+    // and no smaller entry's does; no entry's row names a root from its
+    // origin call. An entry at depth 2 or deeper is a closure instance the
+    // host admits (D1): the call at its origin, with its arguments.
+    let closure_instances = template.map_or(&[][..], |closure| closure.instances.as_slice());
+    let names = |parent: usize, call: u32, entry: usize| entries.get(parent)
+        .and_then(|parent| call.checked_sub(parent.function_row).and_then(|row| parent.calls.get(row as usize)))
+        == Some(&[IT_CALL_ENTRY, entry as u32]);
+    let [mut origin_roots, mut origin_parents, mut origin_admitted, mut origin_differ] = [0usize; 4];
+    for (position, entry) in entries.iter().enumerate() {
+        let first = (0..entries.len()).find(|&parent| names(parent, entry.origin_call, position));
+        let linked = first == entry.origin_parent.map(|parent| parent as usize);
+        match entry.origin_parent {
+            None => origin_roots += 1,
+            Some(_) => origin_parents += 1,
+        }
+        let admitted = entry.depth < 2 || closure_instances.iter().any(|instance| {
+            instance.call.call_hir == entry.origin_call
+                && matches!(instance.call.target, CheckedGenericTarget::Local { function_start_token, .. }
+                    if function_start_token == entry.function_token)
+                && entry.is_instance(entry.function_row, &instance.call.arguments, &instance.call.constants, unit)
+        });
+        origin_admitted += usize::from(admitted && entry.depth >= 2);
+        if !(linked && admitted) {
+            origin_differ += 1;
+            if origin_differ <= 4 {
+                eprintln!("{label} entry {position} (function {}, depth {}) origin call {}: parent {:?}, \
+                    first naming entry {first:?}, admitted {admitted}",
+                    entry.function_row, entry.depth, entry.origin_call, entry.origin_parent);
+            }
+        }
+    }
     eprintln!(
         "{label} entries={} flags={} failed={} copies={} matched={matched} unmatched={unmatched} \
          missing_rows={missing} length_mismatch={lengths} rows={rows} equal={equal} differ={differ} \
          param_rows_differ={params} return_rows_differ={returns} array_count_equal={counts} \
          both_undecoded={undecoded} call_entries={call_entries} call_methods={call_methods} \
-         call_dependencies={call_dependencies} call_unresolved={unresolved} call_differ={call_differ}",
+         call_dependencies={call_dependencies} call_unresolved={unresolved} call_differ={call_differ} \
+         origin_roots={origin_roots} origin_parents={origin_parents} origin_admitted={origin_admitted} \
+         origin_differ={origin_differ}",
         table.entries.len(), table.flags, table.failed, specialization.entries().len(),
     );
 }

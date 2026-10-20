@@ -195,6 +195,7 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "instance_table",
     "instance_row_refs",
     "instance_row_calls",
+    "instance_table_origins",
     "compact_hir_links",
 ];
 
@@ -798,6 +799,11 @@ pub(crate) struct CheckedInstanceTableEntry {
     pub rows: Vec<CheckedRowFact>,
     /// Each virtual row's call (instance_row_calls): (IT_CALL_* kind, value).
     pub calls: Vec<[u32; 2]>,
+    /// The origin (D4, instance_table_origins): the closure instance's
+    /// template call HIR, and the entry whose row for that call names this
+    /// entry, `None` for a root.
+    pub origin_call: u32,
+    pub origin_parent: Option<u32>,
 }
 
 /// The expression type of one row, for the instance table's validation.
@@ -3529,10 +3535,13 @@ fn read_instance_table(
     let table_buffer = inputs.buffer("instance_table");
     let rows_buffer = inputs.buffer("instance_row_refs");
     let calls_buffer = inputs.buffer("instance_row_calls");
+    let origins_buffer = inputs.buffer("instance_table_origins");
     ensure!(entries * 32 <= table_buffer.byte_size && rows * 8 <= rows_buffer.byte_size
-        && rows * 8 <= calls_buffer.byte_size, "instance table is truncated");
+        && rows * 8 <= calls_buffer.byte_size && entries * 4 <= origins_buffer.byte_size,
+        "instance table is truncated");
     let mut batch = WordBatch::default();
     let entry_start = batch.push(table_buffer, 0, entries * 8, "instance table")?;
+    let origin_start = batch.push(origins_buffer, 0, entries, "instance table origins")?;
     let row_start = (rows != 0)
         .then(|| batch.push(rows_buffer, 0, rows * 2, "instance table rows"))
         .transpose()?;
@@ -3559,7 +3568,11 @@ fn read_instance_table(
         let function_token = token_words[token_start + position * 3 + 2];
         let instance = instances.get(index as usize * 8..index as usize * 8 + 8)
             .ok_or_else(|| anyhow!("instance table entry names closure instance {index} past the table"))?;
-        let (argument_base, shape) = (instance[4] as usize, instance[7]);
+        let (argument_base, origin_call, shape) = (instance[4] as usize, instance[5], instance[7]);
+        let origin_parent = match words[origin_start + position] {
+            0 => None,
+            word => Some(!word),
+        };
         let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
         let mut arguments = Vec::with_capacity(type_count);
         let mut constants = Vec::with_capacity(arity.saturating_sub(type_count));
@@ -3585,6 +3598,7 @@ fn read_instance_table(
             .chunks_exact(2).map(|call| [call[0], call[1]]).collect();
         table.entries.push(CheckedInstanceTableEntry {
             function_row, function_token, depth, arguments, constants, rows, calls,
+            origin_call, origin_parent,
         });
     }
     Ok(table)
