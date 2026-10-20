@@ -8,8 +8,8 @@ const WASM_PADDED_INDEX_BYTES: usize = 5;
 const WASM_HOST_TYPE_ENTRIES_BYTES: usize = 132;
 const WASM_HOST_IMPORT_SECTION_BYTES: usize = 712;
 const WASM_MEMORY_SECTION_BYTES: usize = 17;
-const WASM_GLOBAL_SECTION_BYTES: usize = 12;
-const WASM_EXPORT_SECTION_BYTES: usize = 31;
+const WASM_GLOBAL_SECTION_BYTES: usize = 21;
+const WASM_EXPORT_SECTION_BYTES: usize = 45;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct GpuWasmOutputPage {

@@ -70,14 +70,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (pos >= layout.reserved0 && pos < layout.reserved1)
     {
         wasm_module_store_byte(wasm_module_bytes, gParams.artifact_capacity, pos,
-            wasm_memory_section_byte(pos - layout.reserved0, gParams.reserved0));
+            wasm_memory_section_byte(pos - layout.reserved0,
+                wasm_initial_pages(semantic_lir_string_pool_len[0u])));
         return;
     }
     if (pos >= layout.reserved1 && pos < layout.export_section_start)
     {
-        uint bump_start = (semantic_lir_string_pool_len[0u] + 3u) & ~3u;
         wasm_module_store_byte(wasm_module_bytes, gParams.artifact_capacity, pos,
-            wasm_global_section_byte(pos - layout.reserved1, bump_start));
+            wasm_global_section_byte(pos - layout.reserved1,
+                wasm_stack_top(semantic_lir_string_pool_len[0u])));
         return;
     }
     if (layout.entrypoint_count == 1u && pos >= layout.export_section_start &&

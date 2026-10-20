@@ -246,6 +246,13 @@ struct WasmAbiGraphResources {
     local_value_total: ResourceId,
     functions: ResourceId,
     local_index_by_token: ResourceId,
+    // Shadow-stack frames (docs/wasm-memory-layout.md).
+    frame_words: ResourceId,
+    frame_prefix: ResourceId,
+    frame_total: ResourceId,
+    frame_slots: ResourceId,
+    frame_bounds: ResourceId,
+    frame_view_hint: ResourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -5036,6 +5043,41 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::Tokens,
                 LoweringCapacities::bytes::<u32>(value_capacity),
             ))?,
+            frame_words: graph.add_resource(workspace(
+                "lir.wasm.frame_words",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+            ))?,
+            frame_prefix: graph.add_resource(workspace(
+                "lir.wasm.frame_prefix",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+            ))?,
+            frame_total: graph.add_resource(workspace(
+                "lir.wasm.frame_total",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(1),
+            ))?,
+            // Per semantic row: the slot's absolute word 0, a parameter
+            // home's checked type, an argument view's word 0 and length.
+            frame_slots: graph.add_resource(workspace(
+                "lir.wasm.frame_slots",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(
+                    capacities.semantic_instructions.max(1).saturating_mul(4),
+                ),
+            ))?,
+            frame_view_hint: graph.add_resource(workspace(
+                "lir.wasm.frame_view_hint",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+            ))?,
+            // Per function: the first and one-past-last frame word.
+            frame_bounds: graph.add_resource(workspace(
+                "lir.wasm.frame_bounds",
+                ResourceDomain::Declarations,
+                LoweringCapacities::bytes::<u32>(capacities.hir_nodes.max(1).saturating_mul(2)),
+            ))?,
         })
     } else {
         None
@@ -8672,23 +8714,151 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
     }
-    let target_count_accesses = match target {
-        LoweringTarget::Wasm => vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            // Call statements (a call whose HIR parent is its block) drop
-            // their unused results.
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("compact_hir_core", hir_core),
-            // `[value; count]` sizes its fill from the element's words.
+    if let Some(wasm) = wasm_abi {
+        // Frame words per scheduled row, their scan, then each function's
+        // frame range and each slot's word (docs/wasm-memory-layout.md).
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_views",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::CallArguments,
+            accesses: vec![
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
+                PassAccess::read("semantic_lir_call_args", semantic_call_args),
+                PassAccess::write("wasm_frame_view_hint", wasm.frame_view_hint),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_words",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("opt_ir_operands", opt_operands),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("compact_hir_core", hir_core),
+                PassAccess::read(
+                    "semantic_place_storage_by_token",
+                    semantic_place_storage_by_token,
+                ),
+                PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
+                PassAccess::read("semantic_lir_call_args", semantic_call_args),
+                PassAccess::read("wasm_frame_view_hint", wasm.frame_view_hint),
+                PassAccess::write("wasm_frame_words", wasm.frame_words),
+                PassAccess::write("wasm_frame_slots", wasm.frame_slots),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_scan.local",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("scan_count", opt_total),
+                PassAccess::read("scan_input", wasm.frame_words),
+                PassAccess::write("scan_local_prefix", target_scan_local),
+                PassAccess::write("scan_block_sum", target_scan_block_sum),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_scan.hierarchy_up",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("scan_count", opt_total),
+                PassAccess::read("scan_block_sum", target_scan_block_sum),
+                PassAccess::write("scan_block_prefix", target_scan_block_prefix),
+                PassAccess::write("scan_hierarchy", target_scan_hierarchy),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_scan.hierarchy_down",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("scan_count", opt_total),
+                PassAccess::read_write("scan_block_prefix", target_scan_block_prefix),
+                PassAccess::read_write("scan_hierarchy", target_scan_hierarchy),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_scan.apply",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("scan_count", opt_total),
+                PassAccess::read("scan_local_prefix", target_scan_local),
+                PassAccess::read("scan_block_prefix", target_scan_block_prefix),
+                PassAccess::write("scan_output_prefix", wasm.frame_prefix),
+                PassAccess::write("scan_total", wasm.frame_total),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.wasm.frame_bounds",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("semantic_lir_params", semantic_params),
+                PassAccess::read("semantic_lir_offset", semantic_offsets),
+                PassAccess::read("wasm_frame_words", wasm.frame_words),
+                PassAccess::read("wasm_frame_prefix", wasm.frame_prefix),
+                PassAccess::read_write("wasm_frame_slots", wasm.frame_slots),
+                PassAccess::write("wasm_frame_bounds", wasm.frame_bounds),
+            ],
+        })?;
+    }
+    let wasm_frame_accesses = |wasm: Option<WasmAbiGraphResources>| {
+        let wasm = wasm.expect("Wasm frame resources");
+        vec![
             PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
+                "semantic_place_storage_by_token",
+                semantic_place_storage_by_token,
             ),
-            PassAccess::write("target_lir_count", target_counts),
-        ],
+            PassAccess::read(
+                "semantic_place_address_by_token",
+                semantic_place_address_by_token,
+            ),
+            PassAccess::read("wasm_frame_slots", wasm.frame_slots),
+            PassAccess::read("wasm_frame_bounds", wasm.frame_bounds),
+            PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("semantic_lir_params", semantic_params),
+            PassAccess::read("semantic_param_value_layout", semantic_param_value_layout),
+        ]
+    };
+    let target_count_accesses = match target {
+        LoweringTarget::Wasm => [
+            vec![
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("opt_ir_operands", opt_operands),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                // Call statements (a call whose HIR parent is its block) drop
+                // their unused results.
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("compact_hir_core", hir_core),
+                PassAccess::read(
+                    "semantic_lir_layout_word_offset",
+                    semantic_layout_word_offset,
+                ),
+                // `[value; count]` sizes its fill from the element's words.
+                PassAccess::read(
+                    "semantic_lir_aggregate_elements",
+                    semantic_aggregate_elements,
+                ),
+                PassAccess::write("target_lir_count", target_counts),
+            ],
+            wasm_frame_accesses(wasm_abi),
+        ]
+        .concat(),
         LoweringTarget::X86_64 => vec![
             PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::read("opt_ir_control", opt_control),
@@ -8743,7 +8913,7 @@ fn lowering_compiler_graph_builder(
         accesses: target_count_accesses,
     })?;
     let target_scatter_accesses = match target {
-        LoweringTarget::Wasm => vec![
+        LoweringTarget::Wasm => [wasm_frame_accesses(wasm_abi), vec![
             PassAccess::read("opt_ir_total", opt_total),
             PassAccess::read("opt_ir_core", opt_core),
             PassAccess::read("opt_ir_operands", opt_operands),
@@ -8769,7 +8939,8 @@ fn lowering_compiler_graph_builder(
                 "target_lir_operands",
                 target_operands.expect("Wasm operand resource"),
             ),
-        ],
+        ]]
+        .concat(),
         LoweringTarget::X86_64 => vec![
             PassAccess::read("opt_ir_total", opt_total),
             PassAccess::read("opt_ir_core", opt_core),
@@ -11938,6 +12109,19 @@ mod tests {
                 "lir.opt.access.local_definitions.validate",
                 "codegen/lir/optimization/access_local_definitions_validate",
             ),
+            ("lir.wasm.frame_views", "codegen/lir/wasm/frame_views"),
+            ("lir.wasm.frame_words", "codegen/lir/wasm/frame_words"),
+            ("lir.wasm.frame_scan.local", "scan/counted/00_local"),
+            (
+                "lir.wasm.frame_scan.hierarchy_up",
+                "scan/counted/01_hierarchy_up",
+            ),
+            (
+                "lir.wasm.frame_scan.hierarchy_down",
+                "scan/counted/02_hierarchy_down",
+            ),
+            ("lir.wasm.frame_scan.apply", "scan/counted/02_apply"),
+            ("lir.wasm.frame_bounds", "codegen/lir/wasm/frame_bounds"),
             ("lir.wasm.count", "codegen/lir/wasm/count"),
             ("lir.target.count_scan.local", "scan/counted/00_local"),
             (

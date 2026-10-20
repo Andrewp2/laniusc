@@ -1099,6 +1099,27 @@ static const uint WASM_LIR_OP_I32_EXTEND16_S = 0xc1u;
 // signed LEB (a pseudo-op: its immediate encoding differs from i64.const).
 // IR_OPCODE
 static const uint WASM_LIR_OP_I64_CONST_U32 = 0x103u;
+// `memory.fill` (prefix 0xfc, sub-opcode 11, memory 0).
+// IR_OPCODE
+static const uint WASM_LIR_OP_MEMORY_FILL = 0x104u;
+// Linear-memory accesses of the native layout's narrow and wide values.
+// Every memory opcode carries a memarg with offset 0.
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_LOAD = 0x29u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_LOAD8_S = 0x2cu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_LOAD8_U = 0x2du;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_LOAD16_S = 0x2eu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_LOAD16_U = 0x2fu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_STORE = 0x37u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_STORE8 = 0x3au;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_STORE16 = 0x3bu;
 
 // IR_OPCODE
 static const uint TARGET_LIR_FLAG_UNSUPPORTED = 1u;

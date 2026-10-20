@@ -101,7 +101,7 @@ impl GpuWasmModuleStage {
             &WasmModuleParams {
                 function_capacity,
                 artifact_capacity,
-                reserved0: capacities.source_bytes.max(16 * 65_536).div_ceil(65_536),
+                reserved0: 0,
                 reserved1: 0,
             },
         );

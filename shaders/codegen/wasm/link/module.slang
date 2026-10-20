@@ -63,9 +63,10 @@ uint byte_at(uint pos)
         r -= 11u;
         return leb5(WASM_HOST_TYPE_COUNT + r / 5u, r % 5u);
     }
-    if (pos < global_start) return wasm_memory_section_byte(pos - memory_start, 16384u);
-    uint bump_start = (gLink.data_len + 3u) & ~3u;
-    if (pos < export_start) return wasm_global_section_byte(pos - global_start, bump_start);
+    if (pos < global_start)
+        return wasm_memory_section_byte(pos - memory_start, wasm_initial_pages(gLink.data_len));
+    if (pos < export_start)
+        return wasm_global_section_byte(pos - global_start, wasm_stack_top(gLink.data_len));
     if (pos < code_start)
         return wasm_export_section_byte(pos - export_start,
             WASM_HOST_IMPORT_COUNT + gLink.entry_function);

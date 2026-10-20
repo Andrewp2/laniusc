@@ -33,6 +33,15 @@ struct WasmCountParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+struct WasmFrameParams {
+    semantic_capacity: u32,
+    n_tokens: u32,
+    function_capacity: u32,
+    call_arg_capacity: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
 struct WasmScatterParams {
     semantic_capacity: u32,
     target_capacity: u32,
@@ -92,6 +101,11 @@ struct WasmAttachBodyParams {
 /// The complete second lowering level for Wasm through stable scheduling.
 /// Every object needed by `record` is resident and bound during construction.
 pub(crate) struct GpuWasmLirStage {
+    frame_views: ComputeOperation,
+    frame_words: ComputeOperation,
+    frame_scan: GpuResidentExclusiveScan,
+    frame_bounds: ComputeOperation,
+    _frame_params: LaniusBuffer<WasmFrameParams>,
     count_pages: Vec<ComputeOperation>,
     pages: Vec<WasmLirPage>,
     param_width: ComputeOperation,
@@ -213,6 +227,21 @@ impl GpuWasmLirStage {
             )
             .map_err(anyhow::Error::msg)?;
         let value_capacity = capacities.declaration_capacity();
+        let frame_views_pass = load(
+            kernels,
+            "lir.wasm.frame_views",
+            "codegen/lir/wasm/frame_views",
+        )?;
+        let frame_words_pass = load(
+            kernels,
+            "lir.wasm.frame_words",
+            "codegen/lir/wasm/frame_words",
+        )?;
+        let frame_bounds_pass = load(
+            kernels,
+            "lir.wasm.frame_bounds",
+            "codegen/lir/wasm/frame_bounds",
+        )?;
         let count_pass = load(kernels, "lir.wasm.count", "codegen/lir/wasm/count")?;
         let scatter_pass = load(kernels, "lir.wasm.scatter", "codegen/lir/wasm/scatter")?;
         let validate_pass = load(kernels, "lir.wasm.validate", "codegen/lir/wasm/validate")?;
@@ -278,6 +307,72 @@ impl GpuWasmLirStage {
         opt.register(graph, &mut resources)?;
         resources.graph_buffer(graph, "hir.core", hir_core)?;
         let context = (graph, &allocations);
+        let frame_params = uniform_from_val(
+            device,
+            "lir.wasm.frame.params",
+            &WasmFrameParams {
+                semantic_capacity,
+                n_tokens: value_capacity,
+                function_capacity: capacities.hir_nodes.max(1),
+                call_arg_capacity: capacities.call_arguments.max(1),
+            },
+        );
+        let frame_views = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.wasm.frame_views",
+            &frame_views_pass,
+            &frame_params,
+            capacities.call_arguments.max(1),
+        )?;
+        let frame_words_buffer = alias_u32("lir.wasm.frame_words", semantic_capacity)?;
+        let frame_prefix = alias_u32("lir.wasm.frame_prefix", semantic_capacity)?;
+        let frame_total = alias_u32("lir.wasm.frame_total", 1)?;
+        let frame_words = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.wasm.frame_words",
+            &frame_words_pass,
+            &frame_params,
+            semantic_capacity,
+        )?;
+        let frame_scan = GpuResidentExclusiveScan::new(
+            device,
+            kernels,
+            graph,
+            workspace,
+            &allocations,
+            GraphScanContract {
+                local_pass: "lir.wasm.frame_scan.local",
+                up_pass: "lir.wasm.frame_scan.hierarchy_up",
+                down_pass: "lir.wasm.frame_scan.hierarchy_down",
+                apply_pass: "lir.wasm.frame_scan.apply",
+                count: "lir.opt.total",
+                input: "lir.wasm.frame_words",
+                local: "lir.target.count_scan_local",
+                block_sum: "lir.target.count_scan_block_sum",
+                block_prefix: "lir.target.count_scan_block_prefix",
+                hierarchy: "lir.target.count_scan_hierarchy",
+                output: "lir.wasm.frame_prefix",
+                total: "lir.wasm.frame_total",
+            },
+            semantic_capacity,
+            opt.count,
+            &frame_words_buffer,
+            &frame_prefix,
+            &frame_total,
+        )?;
+        let frame_bounds = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.wasm.frame_bounds",
+            &frame_bounds_pass,
+            &frame_params,
+            semantic_capacity,
+        )?;
         let count_params = (0..semantic_capacity.div_ceil(SEMANTIC_LIR_PAGE_ROWS))
             .map(|page_id| {
                 let semantic_start = page_id * SEMANTIC_LIR_PAGE_ROWS;
@@ -654,6 +749,11 @@ impl GpuWasmLirStage {
             (capacities.artifact_bytes as usize).min(4 << 20),
         );
         Ok(Self {
+            frame_views,
+            frame_words,
+            frame_scan,
+            frame_bounds,
+            _frame_params: frame_params,
             count_pages,
             pages,
             param_width,
@@ -784,11 +884,22 @@ impl GpuWasmLirStage {
         self.record_after_counts(encoder)
     }
 
+    /// Places every shadow-stack slot; counting reads the frames.
+    fn record_frames(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.frame_views.record(encoder)?;
+        self.frame_words.record(encoder)?;
+        self.frame_scan.record(encoder)?;
+        self.frame_bounds.record(encoder)
+    }
+
     pub(crate) fn record_count_page(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         page_id: usize,
     ) -> Result<()> {
+        if page_id == 0 {
+            self.record_frames(encoder)?;
+        }
         self.count_pages
             .get(page_id)
             .context("Wasm semantic count page is outside the configured unit capacity")?
@@ -878,6 +989,7 @@ impl GpuWasmLirStage {
 
     #[cfg(test)]
     fn record_counts(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.record_frames(encoder)?;
         for count in &self.count_pages {
             count.record(encoder)?;
         }

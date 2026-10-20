@@ -1,4 +1,5 @@
 import codegen.lir.wasm.host_abi;
+import codegen.lir.wasm.module_sections;
 import codegen.lowering_ir;
 
 struct Params { uint function_capacity; uint artifact_capacity; uint reserved0; uint reserved1; };
@@ -32,9 +33,9 @@ void main()
     layout.function_entries_start = layout.function_section_start + 11u;
     uint function_section_end = layout.function_entries_start + layout.function_count * 5u;
     layout.reserved0 = function_section_end;
-    layout.reserved1 = layout.reserved0 + 17u;
-    layout.export_section_start = layout.reserved1 + 12u;
-    uint export_length = layout.entrypoint_count == 1u ? 31u : 0u;
+    layout.reserved1 = layout.reserved0 + WASM_MEMORY_SECTION_LENGTH;
+    layout.export_section_start = layout.reserved1 + WASM_GLOBAL_SECTION_LENGTH;
+    uint export_length = layout.entrypoint_count == 1u ? WASM_EXPORT_SECTION_LENGTH : 0u;
     layout.code_section_start = layout.export_section_start + export_length;
     layout.code_entries_start = layout.code_section_start + 11u;
     uint string_bytes = semantic_lir_string_pool_len[0u];

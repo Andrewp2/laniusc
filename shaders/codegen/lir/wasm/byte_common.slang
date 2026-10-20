@@ -29,6 +29,24 @@ bool wasm_has_u32_immediate(uint opcode)
         opcode == WASM_LIR_OP_GLOBAL_SET;
 }
 
+// Loads and stores (0x28 through 0x3e) take a memarg: the natural alignment's
+// log2, then offset 0. Lanius addresses words below a value's address, so
+// every offset is explicit address arithmetic.
+bool wasm_is_memory_access(uint opcode)
+{
+    return opcode >= WASM_LIR_OP_I32_LOAD && opcode <= 0x3eu;
+}
+
+uint wasm_memory_access_align(uint opcode)
+{
+    if (opcode == WASM_LIR_OP_I64_LOAD || opcode == WASM_LIR_OP_I64_STORE) return 3u;
+    if (opcode == WASM_LIR_OP_I32_LOAD8_S || opcode == WASM_LIR_OP_I32_LOAD8_U ||
+        opcode == WASM_LIR_OP_I32_STORE8) return 0u;
+    if (opcode == WASM_LIR_OP_I32_LOAD16_S || opcode == WASM_LIR_OP_I32_LOAD16_U ||
+        opcode == WASM_LIR_OP_I32_STORE16) return 1u;
+    return 2u;
+}
+
 bool wasm_has_block_type(uint opcode)
 {
     return opcode == WASM_LIR_OP_BLOCK || opcode == WASM_LIR_OP_LOOP ||
@@ -37,7 +55,8 @@ bool wasm_has_block_type(uint opcode)
 
 uint wasm_lir_byte_len(WasmLirInstruction inst)
 {
-    if (inst.opcode == WASM_LIR_OP_CALL_HOST) return 0u;
+    // NOP pads fixed-shape row groups; it encodes nothing.
+    if (inst.opcode == WASM_LIR_OP_CALL_HOST || inst.opcode == WASM_LIR_OP_NOP) return 0u;
     // All language-function calls use a five-byte padded LEB. This is a valid
     // Wasm encoding and makes local and external call sites equally patchable
     // without changing any following byte offsets during object linking.
@@ -51,9 +70,8 @@ uint wasm_lir_byte_len(WasmLirInstruction inst)
     if (inst.opcode == WASM_LIR_OP_I64_CONST_U32) return 6u;
     if (inst.opcode == WASM_LIR_OP_F32_CONST) return 5u;
     if (inst.opcode == WASM_LIR_OP_MEMORY_COPY) return 4u;
-    if (inst.opcode == WASM_LIR_OP_I32_LOAD || inst.opcode == WASM_LIR_OP_F32_LOAD ||
-        inst.opcode == WASM_LIR_OP_I32_STORE || inst.opcode == WASM_LIR_OP_F32_STORE)
-        return 3u;
+    if (inst.opcode == WASM_LIR_OP_MEMORY_FILL) return 3u;
+    if (wasm_is_memory_access(inst.opcode)) return 3u;
     if (wasm_has_u32_immediate(inst.opcode))
         return 1u + wasm_u32_leb_len(inst.immediate);
     if (wasm_has_block_type(inst.opcode)) return 2u;
@@ -92,6 +110,9 @@ uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
     // Prefix 0xfc, sub-opcode 10, destination and source memory 0.
     if (inst.opcode == WASM_LIR_OP_MEMORY_COPY)
         return byte_i == 0u ? 0xfcu : byte_i == 1u ? 0x0au : 0u;
+    // Prefix 0xfc, sub-opcode 11, memory 0.
+    if (inst.opcode == WASM_LIR_OP_MEMORY_FILL)
+        return byte_i == 0u ? 0xfcu : byte_i == 1u ? 0x0bu : 0u;
     // Five padded LEB bytes of the zero-extended value; bit 34 (the sign) is 0.
     if (inst.opcode == WASM_LIR_OP_I64_CONST_U32)
     {
@@ -112,9 +133,8 @@ uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
         return wasm_i32_leb_byte(inst.immediate, immediate_i);
     if (inst.opcode == WASM_LIR_OP_F32_CONST)
         return (inst.immediate >> (immediate_i * 8u)) & 0xffu;
-    if (inst.opcode == WASM_LIR_OP_I32_LOAD || inst.opcode == WASM_LIR_OP_F32_LOAD ||
-        inst.opcode == WASM_LIR_OP_I32_STORE || inst.opcode == WASM_LIR_OP_F32_STORE)
-        return immediate_i == 0u ? 2u : 0u;
+    if (wasm_is_memory_access(inst.opcode))
+        return immediate_i == 0u ? wasm_memory_access_align(inst.opcode) : 0u;
     if (wasm_has_u32_immediate(inst.opcode))
         return wasm_u32_leb_byte(inst.immediate, immediate_i);
     if (wasm_has_block_type(inst.opcode)) return 0x40u;

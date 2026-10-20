@@ -11,7 +11,16 @@ StructuredBuffer<OptIrNodeCore> opt_ir_core;
 StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> opt_ir_source_hir;
+StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<uint> semantic_lir_layout_word_offset;
+StructuredBuffer<uint4> semantic_place_storage_by_token;
+StructuredBuffer<uint> semantic_place_address_by_token;
+StructuredBuffer<uint> wasm_frame_slots;
+StructuredBuffer<uint> wasm_frame_bounds;
+StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<uint> semantic_param_value_layout;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 RWStructuredBuffer<uint> target_lir_count;
 
@@ -30,36 +39,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         target_lir_count[row] = 0u;
         return;
     }
-    uint semantic_row = semantic_schedule_order[row];
-    OptIrNodeCore core = opt_ir_core[semantic_row];
-    OptIrNodeOperands operands = opt_ir_operands[semantic_row];
-    uint previous_row = row > 0u ? semantic_schedule_order[row - 1u] : 0xffffffffu;
-    // A call base scheduled after the subscript sits above it on the stack;
-    // a load's base is that call only when the call is the row just before.
-    bool call_index_base =
-        ((opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD && previous_row == operands.a) ||
-         opt_ir_op(core) == SEMANTIC_LIR_OP_STORE) &&
-        (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u &&
-        operands.a < count &&
-        (opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||
-         opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL_SYMBOL);
-    bool direct_field_store_receiver = opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
-        (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u &&
-        operands.a < count &&
-        opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_VALUE_GET;
-    uint value_op = operands.b < count
-        ? opt_ir_op(opt_ir_core[operands.b]) : SEMANTIC_LIR_OP_INVALID;
-    uint value_type = operands.b < count ? opt_ir_core[operands.b].type_id : core.type_id;
-    bool reload_short_circuit = previous_row < count &&
-        wasm_reloads_short_circuit(core, operands,
-            opt_ir_core[previous_row], opt_ir_operands[previous_row]);
-    target_lir_count[row] = wasm_lir_count(
-        core, operands, call_index_base, direct_field_store_receiver,
-        wasm_set_copies_aggregate(core, value_op),
-        wasm_discarded_result_values(core,
-            wasm_statement_call(compact_hir_core, opt_ir_source_hir[semantic_row])),
-        reload_short_circuit, value_type,
-        wasm_exhaustion_reload(core, operands, opt_ir_core, opt_ir_operands, count) !=
-            WASM_LIR_INVALID,
-        wasm_repeat_element_words(core, operands, semantic_lir_aggregate_elements));
+    WasmPlanRow plan = wasm_plan_row_at(row, count, semantic_lir_functions, semantic_schedule_order, opt_ir_core,
+        opt_ir_operands, opt_ir_source_hir, semantic_function_id_by_hir, compact_hir_core,
+        semantic_lir_layout_word_offset, semantic_place_storage_by_token,
+        semantic_place_address_by_token, wasm_frame_slots, wasm_frame_bounds);
+    target_lir_count[row] = wasm_plan_rows(plan, WASM_LIR_INVALID,
+        semantic_lir_aggregate_elements, opt_ir_core,
+        semantic_lir_params, semantic_param_value_layout);
 }

@@ -170,7 +170,7 @@ const fs = require('fs');
 (async () => {
   let instance = null;
   let stdout = '';
-  let heapPtr = 1024;
+  let heapPtr = null;
   const cwd = '/lanius/test/cwd';
   const exitSignal = Symbol('lanius-exit');
   function alignUp(value, align) {
@@ -178,9 +178,20 @@ const fs = require('fs');
     return (value + amount - 1) & ~(amount - 1);
   }
   function allocate(size, align) {
+    if (heapPtr === null) {
+      const base = instance.exports.__heap_base;
+      heapPtr = base ? (base.value >>> 0) : 1024;
+    }
     const start = alignUp(heapPtr, align);
     const end = start + (size >>> 0);
-    if (end > instance.exports.memory.buffer.byteLength) return 0;
+    const memory = instance.exports.memory;
+    if (end > memory.buffer.byteLength) {
+      try {
+        memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536));
+      } catch (_) {
+        return 0;
+      }
+    }
     heapPtr = end;
     return start | 0;
   }

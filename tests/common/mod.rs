@@ -834,7 +834,7 @@ const fs = require('fs');
   const dirStore = new Set();
   const fileHandles = new Map();
   let nextFileHandle = 3;
-  let heapPtr = 1024;
+  let heapPtr = null;
   for (const file of JSON.parse(process.env.LANIUS_WASM_INITIAL_FILES || '[]')) {
     fileStore.set(file.path, Buffer.from(file.bytes));
   }
@@ -849,11 +849,22 @@ const fs = require('fs');
     const a = Math.max(1, align >>> 0);
     return (value + a - 1) & ~(a - 1);
   }
+  // The heap starts at the module's exported `__heap_base`, above its data
+  // and shadow stack, and grows the memory on demand.
   function allocMemory(size, align) {
+    if (heapPtr === null) {
+      const base = instance && instance.exports && instance.exports.__heap_base;
+      heapPtr = base ? (base.value >>> 0) : 1024;
+    }
     const start = alignUp(heapPtr, align);
     const end = start + (size >>> 0);
-    if (end > memory().buffer.byteLength) {
-      return 0;
+    const mem = memory();
+    if (end > mem.buffer.byteLength) {
+      try {
+        mem.grow(Math.ceil((end - mem.buffer.byteLength) / 65536));
+      } catch (_) {
+        return 0;
+      }
     }
     heapPtr = end;
     return start | 0;
@@ -1281,7 +1292,7 @@ const fs = require('fs');
   const dirStore = new Set();
   const fileHandles = new Map();
   let nextFileHandle = 3;
-  let heapPtr = 1024;
+  let heapPtr = null;
   function memory() {
     const memory = instance && instance.exports && instance.exports.memory;
     if (!memory) {
@@ -1293,11 +1304,22 @@ const fs = require('fs');
     const a = Math.max(1, align >>> 0);
     return (value + a - 1) & ~(a - 1);
   }
+  // The heap starts at the module's exported `__heap_base`, above its data
+  // and shadow stack, and grows the memory on demand.
   function allocMemory(size, align) {
+    if (heapPtr === null) {
+      const base = instance && instance.exports && instance.exports.__heap_base;
+      heapPtr = base ? (base.value >>> 0) : 1024;
+    }
     const start = alignUp(heapPtr, align);
     const end = start + (size >>> 0);
-    if (end > memory().buffer.byteLength) {
-      return 0;
+    const mem = memory();
+    if (end > mem.buffer.byteLength) {
+      try {
+        mem.grow(Math.ceil((end - mem.buffer.byteLength) / 65536));
+      } catch (_) {
+        return 0;
+      }
     }
     heapPtr = end;
     return start | 0;

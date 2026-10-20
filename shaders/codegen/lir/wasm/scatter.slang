@@ -17,6 +17,13 @@ StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
+StructuredBuffer<uint4> semantic_place_storage_by_token;
+StructuredBuffer<uint> semantic_place_address_by_token;
+StructuredBuffer<uint> wasm_frame_slots;
+StructuredBuffer<uint> wasm_frame_bounds;
+StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<uint> semantic_param_value_layout;
 StructuredBuffer<uint> semantic_lir_string_total;
 StructuredBuffer<SemanticLirString> semantic_lir_strings;
 StructuredBuffer<uint> target_lir_offset;
@@ -26,10 +33,6 @@ RWStructuredBuffer<WasmLirInstruction> target_lir_core;
 RWStructuredBuffer<WasmLirOperands> target_lir_operands;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
-static const uint TARGET_PAGE_ROWS = 65536u;
-static const uint WASM_SYNTHETIC_I32_TEMP = 0xfffffffeu;
-static const uint WASM_SYNTHETIC_F32_TEMP = 0xfffffffdu;
-static const uint WASM_SYNTHETIC_I32_ADDRESS_TEMP = 0xfffffffcu;
 
 uint scheduled_owner(uint target_row, uint semantic_count)
 {
@@ -59,18 +62,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint scheduled_row = scheduled_owner(row, semantic_count);
     uint semantic_row = semantic_schedule_order[scheduled_row];
     uint target_start = target_lir_offset[scheduled_row];
-    uint local_row = row - target_start;
-    semantic_to_target_start[semantic_row] = target_start;
     OptIrNodeCore core = opt_ir_core[semantic_row];
     OptIrNodeOperands operands = opt_ir_operands[semantic_row];
-    // Inline aggregate layout: aggregate fields and elements are addresses,
-    // element strides span the element's words, and aggregate stores copy.
-    bool aggregate_value = wasm_inline_aggregate(core);
-    uint stride = aggregate_value ? core.value_word_count * WASM_WORD_BYTES : WASM_WORD_BYTES;
-    bool store_copy = wasm_store_copies_aggregate(core);
-    uint value_op = operands.b < semantic_count
-        ? opt_ir_op(opt_ir_core[operands.b]) : SEMANTIC_LIR_OP_INVALID;
-    bool copy_set_value = wasm_set_copies_aggregate(core, value_op);
+
+    WasmPlanRow plan = wasm_plan_row_at(scheduled_row, semantic_count, semantic_lir_functions,
+        semantic_schedule_order,
+        opt_ir_core, opt_ir_operands, opt_ir_source_hir, semantic_function_id_by_hir,
+        compact_hir_core, semantic_lir_layout_word_offset, semantic_place_storage_by_token,
+        semantic_place_address_by_token, wasm_frame_slots, wasm_frame_bounds);
+    wasm_plan_rows(plan, row - target_start, semantic_lir_aggregate_elements, opt_ir_core,
+        semantic_lir_params, semantic_param_value_layout);
+    // Relocations address the row's first instruction after any prologue.
+    semantic_to_target_start[semantic_row] = target_start + wasm_plan_body_start;
+    bool legacy = wasm_plan_opcode == WASM_PLAN_LEGACY;
+    // The scalar lowering's own row within its range.
+    uint local_row = legacy ? wasm_plan_immediate : 0u;
+
     uint value_type = operands.b < semantic_count ? opt_ir_core[operands.b].type_id : core.type_id;
     uint shift_amount_opcode = wasm_shift_amount_opcode(core, value_type);
     uint previous_row = scheduled_row > 0u
@@ -84,13 +91,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? wasm_host_import_for_service(operands.a) : WASM_HOST_INVALID;
     bool imported_host_operation = host_import != WASM_HOST_INVALID;
     bool supported_intrinsic = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        (operands.a == WASM_INTRINSIC_PRINT || operands.a == WASM_INTRINSIC_ASSERT ||
-         operands.a == INTRINSIC_I32_ARRAY_DATA_PTR);
+        wasm_intrinsic_supported(operands.a);
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
     // Host/intrinsic support cannot override an unsupported checked width.
     if (core.type_id == SCALAR_F64) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    if (wasm_plan_unsupported) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // An `||` negation whose operand is not the just-stored left side.
     if (wasm_short_circuit_not(core) && !reload_short_circuit)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
@@ -104,13 +111,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opt_ir_source_hir[semantic_row]] == WASM_LIR_INVALID
         ? 0u : (1u << 8u);
 
-    uint opcode = wasm_scalar_opcode(core, operands);
-    if (inline_host_operation) opcode = WASM_LIR_OP_F32_CONVERT_I32_S;
-    else if (imported_host_operation) opcode = WASM_LIR_OP_CALL;
-    uint immediate = 0u;
+    uint opcode = wasm_plan_opcode;
+    uint immediate = wasm_plan_immediate;
+    if (legacy)
+    {
+        opcode = wasm_scalar_opcode(core, operands);
+        if (inline_host_operation) opcode = WASM_LIR_OP_F32_CONVERT_I32_S;
+        else if (imported_host_operation) opcode = WASM_LIR_OP_CALL;
+        immediate = 0u;
+    }
     bool discarded = local_row >= 1u && wasm_discarded_result_values(core,
         wasm_statement_call(compact_hir_core, opt_ir_source_hir[semantic_row])) != 0u;
-    if (wasm_never_call(core) && local_row == 1u)
+    if (!legacy) {}
+    else if (wasm_never_call(core) && local_row == 1u)
         opcode = WASM_LIR_OP_UNREACHABLE;
     else if (discarded)
         opcode = WASM_LIR_OP_DROP;
@@ -140,254 +153,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
-    else if (wasm_aggregate_copy_is_view(core))
-    {
-        opcode = WASM_LIR_OP_NOP;
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY ||
-             (copy_set_value && local_row < WASM_HEAP_COPY_ROWS))
-    {
-        // The stack holds the source address. Copy its words to the heap
-        // top, push that address, then bump the heap past the copy.
-        uint byte_count = core.value_word_count * WASM_WORD_BYTES;
-        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-            : local_row == 1u ? WASM_LIR_OP_GLOBAL_GET
-            : local_row == 2u ? WASM_LIR_OP_LOCAL_GET
-            : local_row == 3u ? WASM_LIR_OP_I32_CONST
-            : local_row == 4u ? WASM_LIR_OP_MEMORY_COPY
-            : local_row == 5u || local_row == 6u ? WASM_LIR_OP_GLOBAL_GET
-            : local_row == 7u ? WASM_LIR_OP_I32_CONST
-            : local_row == 8u ? WASM_LIR_OP_I32_ADD
-            : WASM_LIR_OP_GLOBAL_SET;
-        immediate = local_row == 0u || local_row == 2u ? WASM_SYNTHETIC_I32_TEMP
-            : local_row == 3u || local_row == 7u ? byte_count : 0u;
-    }
-    else if (copy_set_value)
-    {
-        // The snapshot's address is on the stack: set the local to it.
-        opcode = WASM_LIR_OP_LOCAL_SET;
-        immediate = operands.a;
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
-    {
-        // Each element is 7 rows: save the value, form the element address,
-        // then store a scalar (and pad), or copy a nested aggregate's words.
-        uint element_rows = operands.b * 7u;
-        // `[value; count]` stores its one element, then doubles it in place.
-        uint repeat_words = wasm_repeat_element_words(
-            core, operands, semantic_lir_aggregate_elements);
-        if (operands.c == SEMANTIC_LIR_AGGREGATE_REPEAT && repeat_words == WASM_LIR_INVALID)
-            flags |= TARGET_LIR_FLAG_UNSUPPORTED;
-        uint repeat_rows = WASM_REPEAT_STEP_ROWS *
-            wasm_repeat_steps(repeat_words, core.value_word_count);
-        bool tagged_enum = (operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u;
-        uint tag_rows = tagged_enum ? 5u : 0u;
-        if (local_row < element_rows)
-        {
-            uint element = operands.b - 1u - local_row / 7u;
-            uint phase = local_row % 7u;
-            SemanticLirAggregateElement aggregate_element =
-                semantic_lir_aggregate_elements[operands.a + element];
-            if (wasm_scalar_class(aggregate_element.value_metadata &
-                    SEMANTIC_LIR_VALUE_TYPE_MASK) != WASM_CLASS_I32 &&
-                (aggregate_element.value_metadata &
-                 SEMANTIC_LIR_VALUE_TYPE_MASK) != SCALAR_F32)
-                flags |= TARGET_LIR_FLAG_UNSUPPORTED;
-            bool element_is_f32 =
-                (aggregate_element.value_metadata &
-                 SEMANTIC_LIR_VALUE_TYPE_MASK) == TY_FLOAT;
-            // A fixed array that initializes a slice field stores its
-            // address: a Wasm slice is the address of its first element.
-            bool element_is_aggregate =
-                (aggregate_element.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u &&
-                (aggregate_element.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) == 0u &&
-                aggregate_element.slice_array_length == WASM_LIR_INVALID &&
-                aggregate_element.word_count != 0u &&
-                aggregate_element.word_count != WASM_LIR_INVALID;
-            uint temporary = element_is_f32
-                ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
-            opcode = phase == 0u ? WASM_LIR_OP_LOCAL_SET
-                : phase == 1u ? WASM_LIR_OP_GLOBAL_GET
-                : phase == 2u ? WASM_LIR_OP_I32_CONST
-                : phase == 3u ? WASM_LIR_OP_I32_ADD
-                : phase == 4u ? WASM_LIR_OP_LOCAL_GET
-                : element_is_aggregate
-                    ? (phase == 5u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_MEMORY_COPY)
-                : phase == 6u ? WASM_LIR_OP_NOP
-                : element_is_f32 ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
-            immediate = phase == 0u || phase == 4u ? temporary
-                : phase == 2u ? aggregate_element.word_offset * WASM_WORD_BYTES
-                : phase == 5u && element_is_aggregate
-                    ? aggregate_element.word_count * WASM_WORD_BYTES : 0u;
-        }
-        else if (local_row < element_rows + repeat_rows)
-        {
-            // memory.copy(heap + filled, heap, length).
-            uint step_row = local_row - element_rows;
-            uint phase = step_row % WASM_REPEAT_STEP_ROWS;
-            uint filled_bytes;
-            uint length_bytes;
-            wasm_repeat_step(repeat_words, core.value_word_count,
-                step_row / WASM_REPEAT_STEP_ROWS, filled_bytes, length_bytes);
-            opcode = phase == 0u || phase == 3u ? WASM_LIR_OP_GLOBAL_GET
-                : phase == 1u || phase == 4u ? WASM_LIR_OP_I32_CONST
-                : phase == 2u ? WASM_LIR_OP_I32_ADD : WASM_LIR_OP_MEMORY_COPY;
-            immediate = phase == 1u ? filled_bytes : phase == 4u ? length_bytes : 0u;
-        }
-        else if (local_row < element_rows + repeat_rows + tag_rows)
-        {
-            uint phase = local_row - element_rows - repeat_rows;
-            opcode = phase == 0u ? WASM_LIR_OP_GLOBAL_GET
-                : phase == 1u ? WASM_LIR_OP_I32_CONST
-                : phase == 2u ? WASM_LIR_OP_I32_ADD
-                : phase == 3u ? WASM_LIR_OP_I32_CONST
-                : WASM_LIR_OP_I32_STORE;
-            immediate = phase == 3u
-                ? operands.c & SEMANTIC_LIR_AGGREGATE_TAG_MASK : 0u;
-        }
-        else
-        {
-            uint phase = local_row - element_rows - repeat_rows - tag_rows;
-            opcode = phase == 0u || phase == 1u ? WASM_LIR_OP_GLOBAL_GET
-                : phase == 2u ? WASM_LIR_OP_I32_CONST
-                : phase == 3u ? WASM_LIR_OP_I32_ADD
-                : WASM_LIR_OP_GLOBAL_SET;
-            immediate = phase == 2u ? core.value_word_count * WASM_WORD_BYTES : 0u;
-        }
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
-             (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-    {
-        bool call_index_base = operands.a < semantic_count && previous_row == operands.a &&
-            (opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||
-             opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL_SYMBOL);
-        if (call_index_base)
-        {
-            // Calls are effect rows and therefore follow the already emitted
-            // subscript expression. Save the returned aggregate address, then
-            // consume the remaining subscript without assuming an implicit
-            // operand swap in Wasm's stack machine.
-            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-                : local_row == 1u ? WASM_LIR_OP_I32_CONST
-                : local_row == 2u ? WASM_LIR_OP_I32_MUL
-                : local_row == 3u ? WASM_LIR_OP_LOCAL_GET
-                : local_row == 4u ? WASM_LIR_OP_I32_ADD
-                : aggregate_value ? WASM_LIR_OP_NOP
-                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
-            immediate = local_row == 0u || local_row == 3u
-                ? WASM_SYNTHETIC_I32_TEMP : local_row == 1u ? stride : 0u;
-        }
-        else
-        {
-            opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST
-                : local_row == 1u ? WASM_LIR_OP_I32_MUL
-                : local_row == 2u ? WASM_LIR_OP_I32_ADD
-                : aggregate_value ? WASM_LIR_OP_NOP
-                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
-            immediate = local_row == 0u ? stride : 0u;
-        }
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
-             (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
-    {
-        bool call_index_base = operands.a < semantic_count &&
-            (opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL ||
-             opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_CALL_SYMBOL);
-        uint value_temporary = core.type_id == TY_FLOAT
-            ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
-        if (call_index_base)
-        {
-            // The stack is `(index, aggregate, value)`: preserve both values,
-            // scale the index, restore the aggregate, and then restore the RHS.
-            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-                : local_row == 1u ? WASM_LIR_OP_LOCAL_SET
-                : local_row == 2u ? WASM_LIR_OP_I32_CONST
-                : local_row == 3u ? WASM_LIR_OP_I32_MUL
-                : local_row == 4u ? WASM_LIR_OP_LOCAL_GET
-                : local_row == 5u ? WASM_LIR_OP_I32_ADD
-                : local_row == 6u ? WASM_LIR_OP_LOCAL_GET
-                : store_copy ? (local_row == 7u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_MEMORY_COPY)
-                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
-            immediate = local_row == 0u || local_row == 6u ? value_temporary
-                : local_row == 1u || local_row == 4u
-                ? WASM_SYNTHETIC_I32_ADDRESS_TEMP
-                : local_row == 2u ? stride
-                : store_copy && local_row == 7u ? stride : 0u;
-        }
-        else
-        {
-            // The stack is `(aggregate, index, value)`. Wasm stores consume
-            // `(address, value)`, so preserve the RHS while forming the address.
-            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-                : local_row == 1u ? WASM_LIR_OP_I32_CONST
-                : local_row == 2u ? WASM_LIR_OP_I32_MUL
-                : local_row == 3u ? WASM_LIR_OP_I32_ADD
-                : local_row == 4u ? WASM_LIR_OP_LOCAL_GET
-                : store_copy ? (local_row == 5u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_MEMORY_COPY)
-                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
-            immediate = local_row == 0u || local_row == 4u ? value_temporary
-                : local_row == 1u ? stride
-                : store_copy && local_row == 5u ? stride : 0u;
-        }
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
-             (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
-    {
-        // A nested aggregate field is the address inside its owner.
-        opcode = local_row == 0u ? WASM_LIR_OP_I32_CONST
-            : local_row == 1u ? WASM_LIR_OP_I32_CONST
-            : local_row == 2u ? WASM_LIR_OP_I32_MUL
-            : local_row == 3u ? WASM_LIR_OP_I32_ADD
-            : aggregate_value ? WASM_LIR_OP_NOP
-            : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_LOAD : WASM_LIR_OP_I32_LOAD;
-        immediate = local_row == 0u ? semantic_lir_layout_word_offset[semantic_row]
-            : local_row == 1u ? WASM_WORD_BYTES : 0u;
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_STORE &&
-             (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u)
-    {
-        bool direct_receiver = operands.a < semantic_count &&
-            opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_VALUE_GET;
-        uint receiver_declaration = direct_receiver
-            ? opt_ir_operands[operands.a].a : WASM_LIR_INVALID;
-        uint temporary = core.type_id == TY_FLOAT
-            ? WASM_SYNTHETIC_F32_TEMP : WASM_SYNTHETIC_I32_TEMP;
-        if (direct_receiver)
-        {
-            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-                : local_row == 1u ? WASM_LIR_OP_LOCAL_GET
-                : local_row == 2u ? WASM_LIR_OP_I32_CONST
-                : local_row == 3u ? WASM_LIR_OP_I32_CONST
-                : local_row == 4u ? WASM_LIR_OP_I32_MUL
-                : local_row == 5u ? WASM_LIR_OP_I32_ADD
-                : local_row == 6u ? WASM_LIR_OP_LOCAL_GET
-                : store_copy ? (local_row == 7u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_MEMORY_COPY)
-                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
-            immediate = local_row == 0u || local_row == 6u ? temporary
-                : local_row == 1u ? receiver_declaration
-                : local_row == 2u ? semantic_lir_layout_word_offset[semantic_row]
-                : local_row == 3u ? WASM_WORD_BYTES
-                : store_copy && local_row == 7u ? stride : 0u;
-        }
-        else
-        {
-            opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
-                : local_row == 1u ? WASM_LIR_OP_I32_CONST
-                : local_row == 2u ? WASM_LIR_OP_I32_CONST
-                : local_row == 3u ? WASM_LIR_OP_I32_MUL
-                : local_row == 4u ? WASM_LIR_OP_I32_ADD
-                : local_row == 5u ? WASM_LIR_OP_LOCAL_GET
-                : store_copy ? (local_row == 6u ? WASM_LIR_OP_I32_CONST : WASM_LIR_OP_MEMORY_COPY)
-                : core.type_id == TY_FLOAT ? WASM_LIR_OP_F32_STORE : WASM_LIR_OP_I32_STORE;
-            immediate = local_row == 0u || local_row == 5u ? temporary
-                : local_row == 1u ? semantic_lir_layout_word_offset[semantic_row]
-                : local_row == 2u ? WASM_WORD_BYTES
-                : store_copy && local_row == 6u ? stride : 0u;
-        }
-    }
     else if ((opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
               opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) &&
-             core.type_id == 7u)
+             core.type_id == TY_STRING)
     {
         opcode = opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET
             ? WASM_LIR_OP_LOCAL_GET : WASM_LIR_OP_LOCAL_SET;
@@ -443,14 +211,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opcode = local_row == 0u
             ? (wide ? WASM_LIR_OP_I64_CONST : WASM_LIR_OP_I32_CONST)
             : (wide ? WASM_LIR_OP_I64_MUL : WASM_LIR_OP_I32_MUL);
-        if (local_row == 0u)
-        {
-            operands.result = target_start;
-            operands.a = 0xffffffffu;
-            operands.b = WASM_LIR_INVALID;
-            operands.c = WASM_LIR_INVALID;
-            immediate = 0xffffffffu;
-        }
+        if (local_row == 0u) immediate = 0xffffffffu;
     }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
     {
@@ -462,15 +223,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? (wide_argument ? WASM_LIR_OP_NOP : WASM_LIR_OP_I64_EXTEND_I32_S)
             : WASM_LIR_OP_CALL;
         immediate = 0u;
-    }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-             operands.a == INTRINSIC_I32_ARRAY_DATA_PTR)
-    {
-        // Aggregate values are represented by their linear-memory pointer on
-        // the Wasm value stack.  The compiler-only projection must preserve
-        // that pointer without calling the source-level placeholder body.
-        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET : WASM_LIR_OP_LOCAL_GET;
-        immediate = WASM_SYNTHETIC_I32_TEMP;
     }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF &&
              (core.flags & SEMANTIC_LIR_FLAG_BRANCH_FALSE) != 0u)
@@ -508,13 +260,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // semantic function id; symbolic calls retain their exact declaration
     // identity. The object projector therefore never has to recover a target
     // from an already encoded immediate or from source/HIR rows.
-    target_operands.a = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ||
-        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL ? operands.a : 0u;
-    target_operands.b = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.b : 0u;
-    target_operands.c = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.c : 0u;
+    bool call_row = legacy && (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ||
+        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL);
+    target_operands.a = call_row ? operands.a : 0u;
+    target_operands.b = call_row && opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.b : 0u;
+    target_operands.c = call_row && opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? operands.c : 0u;
     target_operands.metadata = core.type_id;
-    if ((opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
-         opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == 7u)
+    if (legacy && (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET ||
+                   opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET) && core.type_id == TY_STRING)
     {
         target_operands.a = operands.a;
         // local.set consumes the top stack value. Assign a two-word string
@@ -523,5 +276,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         target_operands.c = opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET
             ? 1u - local_row : local_row;
     }
+    else if (!legacy && wasm_plan_component != WASM_LIR_INVALID)
+    {
+        // One component of a string parameter's local pair.
+        target_operands.a = immediate;
+        target_operands.c = wasm_plan_component;
+        target_operands.metadata = TY_STRING;
+    }
+    else if (!legacy && core.type_id == TY_STRING) target_operands.metadata = 0u;
     target_lir_operands[page_row] = target_operands;
 }

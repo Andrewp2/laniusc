@@ -26,6 +26,8 @@ static const uint INVALID = 0xffffffffu;
 static const uint WASM_SYNTHETIC_I32_TEMP = 0xfffffffeu;
 static const uint WASM_SYNTHETIC_F32_TEMP = 0xfffffffdu;
 static const uint WASM_SYNTHETIC_I32_ADDRESS_TEMP = 0xfffffffcu;
+static const uint WASM_SYNTHETIC_I64_TEMP = 0xfffffffbu;
+static const uint WASM_SYNTHETIC_I32_INDEX_TEMP = 0xfffffffau;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [shader("compute")]
@@ -44,15 +46,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint function_id = inst.semantic_instruction < gParams.semantic_capacity
             ? semantic_function_id_by_hir[
                 opt_ir_source_hir[inst.semantic_instruction]] : INVALID;
-        if ((declaration == WASM_SYNTHETIC_I32_TEMP ||
-             declaration == WASM_SYNTHETIC_F32_TEMP ||
-             declaration == WASM_SYNTHETIC_I32_ADDRESS_TEMP) &&
+        // Synthetic temporaries follow the function's own locals in the
+        // order module_emit_functions declares them: 0xfffffffe - index.
+        if (declaration >= WASM_SYNTHETIC_I32_INDEX_TEMP && declaration != INVALID &&
             function_id != INVALID)
         {
             WasmLirFunction function = wasm_lir_functions[function_id];
             inst.immediate = function.param_value_count + function.local_value_count +
-                (declaration == WASM_SYNTHETIC_F32_TEMP ? 1u :
-                 declaration == WASM_SYNTHETIC_I32_ADDRESS_TEMP ? 2u : 0u);
+                (WASM_SYNTHETIC_I32_TEMP - declaration);
         }
         else
             inst.immediate = declaration != INVALID && declaration < gParams.n_tokens
