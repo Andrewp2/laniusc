@@ -3304,6 +3304,21 @@ mod tests {
             storage_ro_from_u32s(&gpu.device, "test.wasm_lir.layout_word_offset", &[0; 5]);
         let semantic_to_target =
             storage_rw_for_array::<u32>(&gpu.device, "test.wasm_lir.semantic_to_target", 5);
+        // No frames: rows have no function, so no prologue, slot or home.
+        let place_storage =
+            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.place_storage", &[u32::MAX; 4]);
+        let place_address =
+            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.place_address", &[u32::MAX; 5]);
+        let frame_slots =
+            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.frame_slots", &[u32::MAX; 20]);
+        let frame_bounds =
+            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.frame_bounds", &[u32::MAX; 10]);
+        let lir_functions =
+            storage_rw_for_array::<SemanticLirFunction>(&gpu.device, "test.wasm_lir.functions", 1);
+        let lir_params =
+            storage_rw_for_array::<SemanticLirParam>(&gpu.device, "test.wasm_lir.params", 1);
+        let param_layout =
+            storage_ro_from_u32s(&gpu.device, "test.wasm_lir.param_layout", &[0; 2]);
         let target_core =
             storage_rw_for_array::<WasmLirInstruction>(&gpu.device, "test.wasm_lir.core", 5);
         let target_operands =
@@ -3357,6 +3372,34 @@ mod tests {
                 ),
                 ("opt_ir_source_hir", opt_source_hir.as_entire_binding()),
                 ("compact_hir_core", compact_hir_core.as_entire_binding()),
+                (
+                    "semantic_function_id_by_hir",
+                    semantic_function.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_layout_word_offset",
+                    semantic_layout.as_entire_binding(),
+                ),
+                (
+                    "semantic_lir_aggregate_elements",
+                    semantic_aggregate_elements.as_entire_binding(),
+                ),
+                (
+                    "semantic_place_storage_by_token",
+                    place_storage.as_entire_binding(),
+                ),
+                (
+                    "semantic_place_address_by_token",
+                    place_address.as_entire_binding(),
+                ),
+                ("wasm_frame_slots", frame_slots.as_entire_binding()),
+                ("wasm_frame_bounds", frame_bounds.as_entire_binding()),
+                ("semantic_lir_functions", lir_functions.as_entire_binding()),
+                ("semantic_lir_params", lir_params.as_entire_binding()),
+                (
+                    "semantic_param_value_layout",
+                    param_layout.as_entire_binding(),
+                ),
                 ("target_lir_count", target_counts.as_entire_binding()),
             ],
         )
@@ -3387,6 +3430,22 @@ mod tests {
                 (
                     "semantic_lir_aggregate_elements",
                     semantic_aggregate_elements.as_entire_binding(),
+                ),
+                (
+                    "semantic_place_storage_by_token",
+                    place_storage.as_entire_binding(),
+                ),
+                (
+                    "semantic_place_address_by_token",
+                    place_address.as_entire_binding(),
+                ),
+                ("wasm_frame_slots", frame_slots.as_entire_binding()),
+                ("wasm_frame_bounds", frame_bounds.as_entire_binding()),
+                ("semantic_lir_functions", lir_functions.as_entire_binding()),
+                ("semantic_lir_params", lir_params.as_entire_binding()),
+                (
+                    "semantic_param_value_layout",
+                    param_layout.as_entire_binding(),
                 ),
                 (
                     "semantic_lir_string_total",

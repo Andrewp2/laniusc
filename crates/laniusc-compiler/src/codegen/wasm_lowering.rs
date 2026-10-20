@@ -1640,7 +1640,7 @@ mod tests {
             read_words(&gpu.device, &object_relocation),
             &[45, 2, 0, 0, 7, 11, 23, 0]
         );
-        let durable = stage.finish_object(&gpu.device, &gpu.queue, 7, 11).unwrap();
+        let (durable, _) = stage.finish_object(&gpu.device, &gpu.queue, 7, 11).unwrap();
         assert_eq!(durable.functions.len(), 1);
         assert_eq!(durable.functions[0].symbol_index, 1);
         assert_eq!(durable.type_bytes.len(), 14);

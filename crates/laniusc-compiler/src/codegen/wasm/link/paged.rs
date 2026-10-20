@@ -180,7 +180,7 @@ mod tests {
         let plan = GpuWasmPagedExecutablePlan::new(&input, 32).expect("plan pages");
         assert_eq!(
             plan.output_len,
-            8 + 11 + 132 + 3 + 712 + 11 + 5 + 17 + 12 + 31 + 11 + 40
+            8 + 11 + 132 + 3 + 712 + 11 + 5 + 17 + 21 + 45 + 11 + 40
         );
         assert_eq!(
             plan.pages.iter().map(|page| page.output_len).sum::<u32>(),
