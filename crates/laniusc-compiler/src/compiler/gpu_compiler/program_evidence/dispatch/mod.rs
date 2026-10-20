@@ -783,12 +783,12 @@ impl GpuProgramEvidence {
         Ok(None)
     }
 
-    /// LANIUS_PEV_SOLVER_WAVES=1 replaces the stepped loop with GPU-planned
-    /// rounds, unless a dispatch capture is selected (the CPU replay tool
-    /// reads ordinary parameter blocks) or a test fault hook needs a host
-    /// boundary between steps.
+    /// GPU-planned rounds replace the stepped loop by default, unless a
+    /// dispatch capture is selected (the CPU replay tool reads ordinary
+    /// parameter blocks) or a test fault hook needs a host boundary between
+    /// steps. LANIUS_PEV_SOLVER_WAVES=0 restores the stepped loop.
     fn solver_waves(&self, packet: &GpuPacket) -> Result<bool> {
-        if !crate::gpu::env::env_bool_truthy("LANIUS_PEV_SOLVER_WAVES", false)
+        if !crate::gpu::env::env_bool_truthy("LANIUS_PEV_SOLVER_WAVES", true)
             || std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_some()
         {
             return Ok(false);
