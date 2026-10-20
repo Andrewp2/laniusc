@@ -47,6 +47,7 @@
       name: measurementLabel(measurement, mixedFileCounts),
       value: measurement.summary.wall_ms.median,
       color: measurementColor(measurement),
+      contextOnly: measurement.compiler.name.toLowerCase() === 'tcc',
     }))
     .sort((left, right) => left.value - right.value || left.name.localeCompare(right.name)));
   const phaseAvailable = $derived(measurements.some(hasPhaseData));
