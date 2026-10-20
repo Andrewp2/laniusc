@@ -148,6 +148,9 @@ impl GpuCompiler<'_> {
             let scan_started = std::time::Instant::now();
             let mut pending = BTreeMap::<Vec<u8>, PendingBody>::new();
             let mut patches = Vec::<(usize, usize, Vec<u8>)>::new();
+            // Thousands of call sites share a few environments; each distinct
+            // one is computed once per round (the memo ends with the scan).
+            let mut environments = EnvironmentMemo::new();
             for context_index in round_start..round_end {
                 // An original unit's scan is spanned on its own; replay
                 // contexts share the round's remaining span.
@@ -185,7 +188,7 @@ impl GpuCompiler<'_> {
                         }
                         continue;
                     };
-                    let identity = declaration_identity(library_id, unit_id, declaration_index);
+                    let identity = declaration_identity_bytes(library_id, unit_id, declaration_index);
                     // A reusable native body does not waive the declaration's
                     // generic requirements. Validate unused parameters too, before
                     // accepting tag-only definitions or scheduling a replay.
@@ -204,18 +207,26 @@ impl GpuCompiler<'_> {
                     }
                     let target = (library_id, unit_id, declaration_index);
                     let caller = context.call_owners.get(symbol_index).copied().unwrap_or(u32::MAX);
-                    let environment = checked_replay_environment(call, owner_library, owner_unit)
-                        .map_err(|error| {
-                            // An environment that outgrows the checked type graph
-                            // while a body instantiates its own declaration again is
-                            // polymorphic recursion, not a capacity problem.
-                            if instantiates_ancestor(&contexts, context_index, caller, target) {
-                                instantiation_depth_error(
-                                    call, templates.get(&(owner_library, owner_unit)).copied(), Some(error))
-                            } else {
-                                error
-                            }
-                        })?;
+                    let memo_key = [owner_library, owner_unit, library_id, unit_id, declaration_index];
+                    let environment = match environments.get(memo_key, call) {
+                        Some(environment) => environment,
+                        None => {
+                            let environment = checked_replay_environment(call, owner_library, owner_unit)
+                                .map_err(|error| {
+                                    // An environment that outgrows the checked type graph
+                                    // while a body instantiates its own declaration again is
+                                    // polymorphic recursion, not a capacity problem.
+                                    if instantiates_ancestor(&contexts, context_index, caller, target) {
+                                        instantiation_depth_error(
+                                            call, templates.get(&(owner_library, owner_unit)).copied(), Some(error))
+                                    } else {
+                                        error
+                                    }
+                                })?;
+                            environments.insert(memo_key, call, &environment)?;
+                            environment
+                        }
+                    };
                     let Some((concrete_identity, concrete_layouts)) = environment else {
                         // A symbolic call belongs to an uninstantiated template.
                         // Its concrete replay will supply a new call environment.
@@ -243,7 +254,11 @@ impl GpuCompiler<'_> {
                             .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
                         trace.reused += 1;
                     } else if let Some(body) = pending.get_mut(&concrete_identity) {
-                        body.witnesses.push(concrete_layouts);
+                        // An equal witness adds nothing to the union the
+                        // witnesses are merged into (`merge_layout_witnesses`).
+                        if !body.witnesses.contains(&concrete_layouts) {
+                            body.witnesses.push(concrete_layouts);
+                        }
                         trace.reused += 1;
                     } else {
                         let depth = context.entry_depth(caller);
@@ -1209,6 +1224,75 @@ impl SpecializationTrace {
             self.start.elapsed().as_secs_f64() * 1000.0,
         );
     }
+}
+
+/// `declaration_identity` without an allocation.
+fn declaration_identity_bytes(library_id: u32, unit_id: u32, declaration_index: u32) -> [u8; 12] {
+    let mut bytes = [0u8; 12];
+    bytes[..4].copy_from_slice(&library_id.to_le_bytes());
+    bytes[4..8].copy_from_slice(&unit_id.to_le_bytes());
+    bytes[8..].copy_from_slice(&declaration_index.to_le_bytes());
+    bytes
+}
+
+/// One scan round's `checked_replay_environment` results. The environment is
+/// a pure function of the owner unit and the call's target, arguments,
+/// constants and required parameter counts (not its HIR row or source span),
+/// so equal calls share one result. Lives for one round of one job only.
+/// `LANIUS_SCAN_ENVIRONMENT_MEMO=0` computes every site;
+/// `LANIUS_CHECK_SCAN_ENVIRONMENT_MEMO=1` computes every hit again and fails
+/// the job if it differs.
+struct EnvironmentMemo<'a> {
+    enabled: bool,
+    checked: bool,
+    by_target: HashMap<[u32; 5], Vec<(&'a CheckedGenericCall, Option<(Vec<u8>, Vec<u32>)>)>>,
+}
+
+impl<'a> EnvironmentMemo<'a> {
+    fn new() -> Self {
+        Self {
+            enabled: crate::gpu::env::env_bool_truthy("LANIUS_SCAN_ENVIRONMENT_MEMO", true),
+            checked: crate::gpu::env::env_bool_truthy("LANIUS_CHECK_SCAN_ENVIRONMENT_MEMO", false),
+            by_target: HashMap::new(),
+        }
+    }
+
+    fn get(&self, key: [u32; 5], call: &CheckedGenericCall) -> Option<Option<(Vec<u8>, Vec<u32>)>> {
+        if !self.enabled || self.checked { return None; }
+        self.by_target.get(&key)?.iter()
+            .find(|(known, _)| same_environment(known, call))
+            .map(|(_, environment)| environment.clone())
+    }
+
+    fn insert(
+        &mut self,
+        key: [u32; 5],
+        call: &'a CheckedGenericCall,
+        environment: &Option<(Vec<u8>, Vec<u32>)>,
+    ) -> Result<(), CompileError> {
+        if !self.enabled { return Ok(()); }
+        let entries = self.by_target.entry(key).or_default();
+        if let Some((known, stored)) = entries.iter().find(|(known, _)| same_environment(known, call)) {
+            // Check mode: every site was computed; a memo hit must agree.
+            if stored != environment {
+                eprintln!("[scan-environment-memo] MISMATCH call_hir={} first_call_hir={} target={:?}",
+                    call.call_hir, known.call_hir, call.target);
+                return Err(CompileError::GpuCodegen(format!(
+                    "scan environment memo mismatch at call HIR {}", call.call_hir)));
+            }
+            return Ok(());
+        }
+        entries.push((call, environment.clone()));
+        Ok(())
+    }
+}
+
+fn same_environment(left: &CheckedGenericCall, right: &CheckedGenericCall) -> bool {
+    left.target == right.target
+        && left.required_generic_parameters == right.required_generic_parameters
+        && left.required_constant_parameters == right.required_constant_parameters
+        && left.arguments == right.arguments
+        && left.constants == right.constants
 }
 
 fn declaration_identity(library_id: u32, unit_id: u32, declaration_index: u32) -> Vec<u8> {

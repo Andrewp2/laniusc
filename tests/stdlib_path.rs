@@ -72,7 +72,8 @@ fn main() {
         Some(0),
         "the stdlib-root loader names the library of stdlib-root files as the standard library"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, std/path.lani and core/utf8.lani (std::path imports core::utf8).
+    assert_eq!(manifest.files.len(), 3);
     assert!(
         runtime_bound_api_diagnostic_info("std::path::path_byte_is_ascii_letter").is_none(),
         "std::path::path_byte_is_ascii_letter is a source-level helper and must not claim a runtime binding"
@@ -149,7 +150,8 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, std/path.lani and core/utf8.lani (std::path imports core::utf8).
+    assert_eq!(manifest.files.len(), 3);
     assert!(
         runtime_bound_api_diagnostic_info("std::path::path_component_header_is_normal_relative").is_none(),
         "std::path::path_component_header_is_normal_relative is a source-level helper and must not claim a runtime binding"
@@ -222,7 +224,8 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, std/path.lani and core/utf8.lani (std::path imports core::utf8).
+    assert_eq!(manifest.files.len(), 3);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::path lexically rooted header contract",
@@ -291,7 +294,8 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, std/path.lani and core/utf8.lani (std::path imports core::utf8).
+    assert_eq!(manifest.files.len(), 3);
     assert!(
         runtime_bound_api_diagnostic_info("std::path::path_header_is_absolute").is_none(),
         "std::path::path_header_is_absolute is a source-level helper and must not claim a runtime binding"
@@ -398,7 +402,8 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, std/path.lani and core/utf8.lani (std::path imports core::utf8).
+    assert_eq!(manifest.files.len(), 3);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::path Windows component header contract",
