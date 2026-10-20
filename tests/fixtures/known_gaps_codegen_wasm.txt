@@ -1,16 +1,10 @@
 # codegen_wasm tests that fail today (P18, on main edbd5d8c plus the Wasm
-# aggregate, call-statement, i64 and range-loop lowering): 4 of 121. Gates
-# should check for "no failure outside this list" instead of rereading the
-# whole suite.
+# aggregate, call-statement, i64, conversion and range-loop lowering): 1 of
+# 121. Gates should check for "no failure outside this list" instead of
+# rereading the whole suite.
 #
 # One test per line: name, failure today, detail.
-# - LNC0057: the generic lowering failure (flags=0x400 is an
-#   optimization-structure failure).
-# - LNC0006: the type checker rejects the source (std host-import wrappers).
-# - runtime: the module compiles, but node rejects or traps on it, or the
-#   returned value is wrong.
+# - LNC0036: the Wasm backend rejects the program with a source-spanned
+#   diagnostic (an unsupported semantic LIR row; the note names its op).
 
-wasm_branches_through_ifs_beyond_legacy_control_depth  LNC0057  GPU lowering flags=0x400
-wasm_executes_generic_struct_parameter_member_reads_with_node  runtime  invalid module: a generic call is emitted as `call 0` (Wasm has no specialization)
-wasm_executes_std_env_imports_with_node  LNC0006  diagnostic
-wasm_executes_std_process_argument_read_imports_with_node  LNC0006  diagnostic
+wasm_executes_generic_struct_parameter_member_reads_with_node  LNC0036  a generic local call (CALL_SYMBOL, op 39, no library) needs body specialization, which only the x86 link path has

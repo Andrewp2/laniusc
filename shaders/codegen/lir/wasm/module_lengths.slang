@@ -35,7 +35,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // instruction bytes, the function-end opcode, and a non-void
     // `unreachable` fallthrough guard when a result is required.
     wasm_code_entry_length[function_id] = 29u + function.local_count * 6u +
-        function.body_byte_count + results;
+        function.body_byte_count + min(results, 1u);
     if ((function.flags & WASM_MODULE_FUNCTION_ENTRYPOINT) != 0u)
     {
         uint ignored;

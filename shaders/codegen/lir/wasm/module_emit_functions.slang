@@ -60,7 +60,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint code_pos = layout.code_entries_start + wasm_code_entry_offset[function_id];
     uint body_content_length = 23u + function.local_count * 6u +
-        function.body_byte_count + 1u + result_count;
+        function.body_byte_count + 1u + min(result_count, 1u);
     store_leb5(code_pos, body_content_length);
     store_leb5(code_pos + 5u, function.local_count + 3u);
     uint local_pos = code_pos + 10u;

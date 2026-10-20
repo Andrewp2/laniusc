@@ -94,6 +94,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // An `||` negation whose operand is not the just-stored left side.
     if (wasm_short_circuit_not(core) && !reload_short_circuit)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    // A generic local call names no library: only the x86 specialization
+    // and link path resolves it, and Wasm has no specialization yet.
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL && operands.a == WASM_LIR_INVALID)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // Rows the semantic pass could not lower (an unknown layout, a
     // declaration type with no zero value, an unsupported iterable) are
     // rejected as on x86, never lowered from their placeholder operands.

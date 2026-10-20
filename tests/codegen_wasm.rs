@@ -715,7 +715,7 @@ fn main() -> i32 {
     let ptr: ptr = core::mem::i32_array_data_ptr(buffer);
     let count: i32 = std::process::argc();
     let len: i32 = std::process::arg_len(0);
-    let copied: i32 = std::process::arg_read(0, ptr, len);
+    let copied: i32 = std::process::arg_read(0, ptr, len as usize);
     if (count != 2) {
         return 1;
     }
@@ -725,7 +725,7 @@ fn main() -> i32 {
     if (copied != len) {
         return 3;
     }
-    let written: i32 = std::io::write_stdout(ptr, copied);
+    let written: i32 = std::io::write_stdout(ptr, copied as usize);
     if (written != copied) {
         return 4;
     }
@@ -976,11 +976,11 @@ fn main() -> i32 {
         return 4;
     }
 
-    let value_len: i32 = std::env::var_len(ptr, key_len);
+    let value_len: i32 = std::env::var_len(ptr, key_len as usize);
     if (value_len <= 0) {
         return 5;
     }
-    let value_read: i32 = std::env::var_read(ptr, key_len, ptr, 64);
+    let value_read: i32 = std::env::var_read(ptr, key_len as usize, ptr, 64);
     if (value_read != value_len) {
         return 6;
     }
