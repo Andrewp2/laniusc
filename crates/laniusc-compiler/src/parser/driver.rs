@@ -1269,11 +1269,13 @@ impl GpuParser {
                             .token_file_id_copy_operation(source, &buffers.default_token_file_id)?,
                     ));
                 }
-                cached
+                let copy = &cached
                     .as_ref()
                     .expect("token file-id copy operation was initialized")
-                    .1
-                    .record_size(encoder, bytes);
+                    .1;
+                // With parser shape headroom the token capacity can exceed the
+                // lexer's file-id buffer; the lexer's rows are all it produced.
+                copy.record_size(encoder, bytes.min(copy.size()));
             }
         } else {
             buffers.clear_operations().record_token_file_id(encoder);

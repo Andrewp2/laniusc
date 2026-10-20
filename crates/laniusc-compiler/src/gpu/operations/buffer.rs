@@ -618,6 +618,11 @@ impl CopyBufferOperation {
         self.record_size(encoder, self.size);
     }
 
+    /// Bytes this operation was validated to copy.
+    pub(crate) fn size(&self) -> u64 {
+        self.size
+    }
+
     /// Records an active prefix of a capacity-sized copy operation. This lets
     /// daemon jobs retain the graph validation and buffer identities while
     /// varying only the number of rows copied by the current request.
