@@ -13,11 +13,18 @@ use anyhow::{Result, anyhow, ensure};
 
 use crate::gpu::buffers::{CapacityBufferCache, LaniusBuffer};
 
+use super::super::proof_store::PROOF_STORE_TABLES;
+
 #[derive(Default)]
 struct PhysicalWorkspace {
     buffers: CapacityBufferCache,
     next_slots: HashMap<String, u64>,
     params: ParamsRing,
+    /// Row capacities of every proof-store table at the end of earlier
+    /// solves: a shape hint for the next solve's first attempt, never a
+    /// result. The solve still runs every wave, and a table it outgrows
+    /// still grows or retries. A trim drops it with the buffers.
+    proof_capacity_floor: [u32; PROOF_STORE_TABLES],
 }
 
 /// Records of one params-ring page.
@@ -204,6 +211,23 @@ impl WorkspaceLease {
         self.queue().write_buffer(&ring.pages[page], offset, &bytes);
         ring.next += 1;
         Ok((ring.pages[page].clone(), u32::try_from(offset)?))
+    }
+
+    /// The proof-store row capacities earlier solves of this pool ended
+    /// with (zero after a trim or for a fresh pool).
+    pub(super) fn proof_capacity_floor(&self) -> [u32; PROOF_STORE_TABLES] {
+        let owner = self.owner.workspace.lock().expect("evidence workspace poisoned");
+        owner.as_ref().map_or([0; PROOF_STORE_TABLES], |workspace| workspace.proof_capacity_floor)
+    }
+
+    /// Raises the floor to the capacities a solve ended with.
+    pub(super) fn raise_proof_capacity_floor(&self, capacities: &[u32; PROOF_STORE_TABLES]) {
+        let mut owner = self.owner.workspace.lock().expect("evidence workspace poisoned");
+        if let Some(workspace) = owner.as_mut() {
+            for (floor, &capacity) in workspace.proof_capacity_floor.iter_mut().zip(capacities) {
+                *floor = (*floor).max(capacity);
+            }
+        }
     }
 
     pub(super) fn initialized(

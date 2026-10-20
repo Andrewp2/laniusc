@@ -1435,3 +1435,65 @@ fn gpu_batch_rejects_a_soft_marker_other_than_one() {
     assert_eq!(failure.receipt[0], 2, "invalid input");
     assert_eq!(failure.receipt[1], 21, "the context-marker detail");
 }
+
+/// `count` checked calls, each at its own marked struct: one distinct root
+/// goal per call, so the proof tables grow with `count`.
+fn distinct_marks(count: usize) -> String {
+    let mut decls = String::new();
+    let mut body = String::new();
+    for k in 1..=count {
+        decls.push_str(&format!("pub struct S{k} {{ v: i32 }}\npub impl Mark for S{k} {{}}\n"));
+        body.push_str(&format!("    total = total + check<S{k}>();\n"));
+    }
+    format!(
+        "module batch_cases::marked;\npub trait Mark {{}}\n{decls}\
+         pub fn check<T>()->i32 where T:Mark {{ return 1; }}\n\
+         fn main()->i32 {{\n    let total: i32 = 0;\n{body}    return total - {count};\n}}\n"
+    )
+}
+
+#[test]
+fn gpu_proof_store_floor_is_only_a_hint_bigger_jobs_still_grow_and_trim_clears_it() {
+    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+    let small = compile_unit(&compiler, [98, 0], FORWARDING, vec![]);
+    let wide = compile_unit(&compiler, [99, 0], &distinct_marks(200), vec![]);
+    let floor = || compiler.program_evidence_workspace.checkout().proof_capacity_floor();
+    let solve = |unit: &CompiledSourcePackUnit| {
+        let before = proof_store_growths();
+        let (mut gpu, mut packet) = batch_job(&compiler, &[unit]);
+        let outcome = gpu.check(&mut packet).expect("valid program").iter()
+            .map(|evidence| (evidence.is_concrete(), evidence.is_refuted()))
+            .collect::<Vec<_>>();
+        drop((gpu, packet));
+        let growths = proof_store_growths() - before;
+        (outcome, growths)
+    };
+
+    pollster::block_on(compiler.release_resident_job_buffers());
+    assert_eq!(floor(), [0; PROOF_STORE_TABLES], "a trimmed pool has no floor");
+    solve(&small);
+    let small_floor = floor();
+    assert!(small_floor.iter().all(|&rows| rows >= 64), "a solve leaves its capacities: {small_floor:?}");
+
+    // The small job's floor does not fit the wide job: its solve still grows
+    // the store, and it proves every call.
+    let (floored, growths) = solve(&wide);
+    assert!(growths > 0, "the wide job outgrows the small job's floor");
+    assert!(floored.len() >= 200 && floored.iter().all(|&(concrete, refuted)| concrete && !refuted),
+        "{floored:?}");
+    let wide_floor = floor();
+    assert!(wide_floor.iter().zip(&small_floor).all(|(wide, small)| wide >= small)
+        && wide_floor != small_floor, "{small_floor:?} -> {wide_floor:?}");
+
+    // Warm, the floor covers the wide job: no growth, the same evidence.
+    let (warm, growths) = solve(&wide);
+    assert_eq!(growths, 0, "the floor sizes a repeated job's first attempt");
+    assert_eq!(warm, floored);
+
+    // A trim clears the floor; the same job grows again and agrees.
+    pollster::block_on(compiler.release_resident_job_buffers());
+    assert_eq!(floor(), [0; PROOF_STORE_TABLES], "a trim clears the floor");
+    let (fresh, growths) = solve(&wide);
+    assert!(growths > 0, "without a floor the wide job grows from the seed");
+    assert_eq!(fresh, floored);
+}

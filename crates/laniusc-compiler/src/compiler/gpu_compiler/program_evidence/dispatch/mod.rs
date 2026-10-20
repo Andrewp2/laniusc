@@ -429,6 +429,7 @@ impl GpuProgramEvidence {
         if capacities == current {
             return Ok(());
         }
+        PROOF_STORE_GROWTHS.with(|count| count.set(count.get() + 1));
         if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_WAVES", false) {
             let grown = (0..PROOF_STORE_TABLES)
                 .filter(|&table| capacities[table] != current[table])
@@ -1140,6 +1141,14 @@ impl GpuProgramEvidence {
             &packet.packet.proof_store,
             submission.obligation_span.count,
         )?;
+        let floor_enabled = proof::capacity_floor_enabled();
+        if floor_enabled {
+            capacities = proof::with_floor(
+                capacities,
+                &self.workspace.proof_capacity_floor(),
+                &packet.packet.proof_store,
+            )?;
+        }
         let mut retry = false;
         // LANIUS_DEBUG_SOLVER_WAVES=1 prints each solve's wall time and
         // counter readbacks, and each capacity retry.
@@ -1173,8 +1182,14 @@ impl GpuProgramEvidence {
                     attempt_started.elapsed().as_secs_f64() * 1000.0,
                 );
             }
+            PROOF_STORE_GROWTHS.with(|count| count.set(count.get() + 1));
             capacities = grown;
             retry = true;
+        }
+        if floor_enabled {
+            let layout = packet.packet.proof_store.layout();
+            self.workspace.raise_proof_capacity_floor(
+                &std::array::from_fn(|table| layout.slices[table].capacity));
         }
         if debug {
             eprintln!(
@@ -1532,6 +1547,16 @@ fn catalog_bootstrap(catalog: &FrozenCatalog) -> Result<(Vec<u32>, Vec<u32>)> {
 thread_local! {
     /// Solver counter readbacks of the current check (debug output only).
     static SOLVER_READBACKS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Proof-store growths (in place or by an attempt retry) on this thread,
+    /// cumulative; tests read differences.
+    static PROOF_STORE_GROWTHS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Proof-store growths on this thread so far (in-place regrowths plus
+/// capacity retries).
+#[cfg(test)]
+pub(super) fn proof_store_growths() -> u64 {
+    PROOF_STORE_GROWTHS.with(std::cell::Cell::get)
 }
 
 fn words(bytes: &[u8]) -> Result<Vec<u32>> {
